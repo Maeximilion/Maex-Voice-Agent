@@ -32,10 +32,9 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-0.2 Rest** `db.py` mit Engine und Session ergänzen
-2. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
-3. **T-0.6** `core/` – Hülle, Fehlerklassen, JSON-Logging
-4. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`); damit wird auch `make migrate` lauffähig (T-0.4 Rest)
+1. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
+2. **T-0.6** `core/` – Hülle, Fehlerklassen, JSON-Logging
+3. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`); damit wird auch `make migrate` lauffähig (T-0.4 Rest)
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
@@ -98,11 +97,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | Bundle v1.1: Modul-Architektur (11), Playbooks + Slash-Befehle (12), Deployment (13), Menü-Importformat (14), Outbox, Agent-Kern + Simulator, CI, Prod-Compose; 18 neue Aufgaben |
 | 16.09.2026 | Platzhalter statt Namen: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com` in Code, Doku, Mockup und Caddyfile; Regel in `CLAUDE.md` §1 |
 | 16.09.2026 | **T-0.1 fertig:** `make up` gegen echtes Docker, Postgres + API healthy, n8n erreichbar (nach Fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` und `/v1/tools/ping` geprüft, `make lint` + `make test` im Container grün. Codex-Review (4 Findings) eingearbeitet. `ruff format` erstmals gelaufen (T-0.4: nur `make migrate` offen, wartet auf T-1.1) |
+| 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-0.2 abgeschlossen (`db.py`), nächste Schritte neu nummeriert.
 - **16.09.2026:** T-0.1 abgeschlossen, Codex-Review eingearbeitet, Platzhalter-Regel, nächste Schritte neu nummeriert.
 - **16.09.2026:** v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
 - **15.09.2026:** Erstfassung beim Export nach Claude Code.

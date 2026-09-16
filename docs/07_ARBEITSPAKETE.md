@@ -22,7 +22,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | ID | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|
 | T-0.1 | `docker-compose.yml`: Postgres 16 + API. `docker compose up` läuft, `/health` antwortet `{"status":"ok"}` | CLAUDE.md §3 | – | fertig 16.09.2026: Postgres + API healthy, `/health` geprüft, Codex-Findings am Dockerfile behoben |
-| T-0.2 | FastAPI-Grundgerüst: `main.py`, `config.py` (Settings aus `.env`), `db.py`, Fehler-Handler mit der Antwort-Hülle aus 04 §1 | 04 §1 | T-0.1 | in Arbeit: `main.py` + `config.py` fertig und getestet, `db.py` fehlt |
+| T-0.2 | FastAPI-Grundgerüst: `main.py`, `config.py` (Settings aus `.env`), `db.py`, Fehler-Handler mit der Antwort-Hülle aus 04 §1 | 04 §1 | T-0.1 | fertig 16.09.2026: `db.py` mit Engine, `SessionLocal`, `get_db`; 4 Tests gegen echte Postgres |
 | T-0.3 | Token-Auth als Dependency, greift für alle `/v1/tools/*` | 02 §7 | T-0.2 | fertig, mit Test |
 | T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | in Arbeit: `make test`, `make lint`, `make fmt`, `make up` laufen im Container, ruff format + check sauber; `make migrate` wartet auf Alembic (T-1.1) |
 | T-0.5 | Latenz-Testhelfer: misst p95 je Tool-Endpunkt, schlägt über 300 ms fehl | 04 §1 | T-0.4 | offen |

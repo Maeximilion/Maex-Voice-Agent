@@ -6,6 +6,7 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 
 ### Hinzugefügt
 - Projektgerüst: FastAPI-App mit /health, Token-Auth, einheitlicher Antwort-Hülle
+- `api/db.py`: Engine mit Verbindungs-Ping, Session je Request über `get_db`, Tests gegen echte Postgres
 - Docker Compose für Postgres, API und n8n
 - Spezifikationen docs/00 bis docs/15
 - Slash-Befehle für Claude Code unter .claude/commands/
@@ -23,4 +24,4 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
 
 ### Offen
-- `db.py`, Alembic-Migration 001 und Seed-Skript (T-0.2, T-1.1, T-1.2)
+- Alembic-Migration 001 und Seed-Skript (T-1.1, T-1.2)

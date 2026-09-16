@@ -44,11 +44,12 @@ make test
 
 Die API läuft danach unter `http://localhost:8000`, n8n unter `http://localhost:5678`. `/health` antwortet mit `{"status": "ok", "env": "dev"}`.
 
-Ohne Docker, nur für Tests und Lint:
+Tests und Lint aus einer lokalen Python-Umgebung. Die Datenbanktests brauchen eine erreichbare Postgres, zum Beispiel die aus `make up`; `DATABASE_URL` zeigt dann auf `localhost` statt auf den Container-Namen `db`:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r api/requirements.txt
+export DATABASE_URL=postgresql+psycopg://maex:maex@localhost:5432/maex_agent
 pytest -q
 ruff check api scripts evals && ruff format --check api scripts evals
 ```
