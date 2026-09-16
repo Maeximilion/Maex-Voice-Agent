@@ -166,6 +166,7 @@ Eine Aufgabe ist fertig, wenn **alle** Punkte stimmen:
 - Conventional Commits: `feat(tools): check_delivery mit Polygon-Prüfung`
 - Ein Commit = eine abgeschlossene Aufgabe
 - `main` bleibt immer lauffähig
+- Kein „🤖 Generated with Claude Code"-Badge/-Footer in PR-Beschreibungen oder sonst im Repo (README, Docs, Dateien)
 
 **Sicherheit**
 - `.env`, echte Aufnahmen, Transkripte und Kundendaten kommen **nie** ins Repo
