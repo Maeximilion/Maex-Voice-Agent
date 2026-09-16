@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.1.1
+> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.2.0
 
 ---
 
@@ -150,6 +150,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.2.0 · 16.09.2026:** Merge PR #2: T-1.1 bis T-1.4 fertig (core/, Alembic, Seed, get_service_status, check_slot), Rebrand Maex Voice-Agent mit Platzhaltern, README-Strategie + CHANGELOG.md + /gate eingeführt, Codex-Review-Fixes
 - **v1.1.1 · 16.09.2026:** Fahrplan-Abschnitt, Versionierungsschema und Auto-Update (Skript + CI-Sync-Check) eingeführt
 - **v1.1.0 · 16.09.2026:** Bundle v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
 - **v1.0.0 · 15.09.2026:** Erstfassung beim Export nach Claude Code.
