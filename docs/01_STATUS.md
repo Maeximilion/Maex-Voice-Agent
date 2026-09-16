@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Bundle v1.1
+> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.1.1
 
 ---
 
@@ -13,9 +13,28 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 
 **Ungeprüft:** `docker-compose.yml` wurde geschrieben, aber noch nie gegen echtes Docker gestartet. Das ist T-0.1 und der erste Schritt in Claude Code.
 
+Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. Volle Details je Stufe: `docs/00_PCF.md` §5.
+
 ---
 
-## Gates
+## Fahrplan: wo wir stehen, wo wir hinwollen
+
+| Stufe | Ziel | Gate | Stand |
+|---|---|---|---|
+| P Plan | Plan freigegeben | – | ✅ 11.09.2026 |
+| **0 Fundament** | Fakten, Recht, Budget, Anbieter klären | G0 Go/No-Go | 🟡 läuft – Block „Gerüst" in `docs/07_ARBEITSPAKETE.md` |
+| 1 Durchstich Reservierung | ganze Kette einmal echt (Testnummer → KI → Tool → DB → GUI) | G1 | ⬜ |
+| 2 Abholung | Menü sicher verstanden, Bestellung korrekt in der Küche | G2 | ⬜ |
+| 3 Lieferung | Adresse und Zone ohne Fehler | G3 | ⬜ |
+| 4 Einlernen & Schattenmessung | echte Fehlerquote messen, ohne Kundenrisiko | G4 | ⬜ |
+| 5 Überlauf-Betrieb | KI nimmt an, nur wenn das Team nicht abnimmt | G5 | ⬜ |
+| 6 Hauptannahme & Betrieb | KI nimmt zuerst an, Team bleibt Rückfallebene, Monats-Review läuft | Monats-Review | ⬜ Zielzustand |
+
+**Wir sind hier:** Stufe 0, Block „Gerüst" – Gerüst starten, `core/`, Alembic, CI (siehe „Was als Nächstes dran ist"). **Wo wir hinwollen:** Stufe 6, laufender Betrieb mit KI als primärer Annahme und Team als Rückfallebene.
+
+---
+
+## Gates im Detail
 
 | Gate | Inhalt | Status |
 |---|---|---|
@@ -93,10 +112,26 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | Adminansicht als klickbares Desktop-Mockup in `gui/mockups/` aufgenommen, Vorlage für T-3.1 |
 | 16.09.2026 | GUI-Runde abgeschlossen: Betriebs- und Adminansicht als Mockup abgenommen, Änderungen in `docs/06_GUI.md` §7 |
 | 16.09.2026 | Bundle v1.1: Modul-Architektur (11), Playbooks + Slash-Befehle (12), Deployment (13), Menü-Importformat (14), Outbox, Agent-Kern + Simulator, CI, Prod-Compose; 18 neue Aufgaben |
+| 16.09.2026 | README-Status auf den tatsächlichen Stand synchronisiert |
 
 ---
 
-## Änderungsprotokoll dieser Datei
+## Versionierung dieser Datei
 
-- **16.09.2026:** v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
-- **15.09.2026:** Erstfassung beim Export nach Claude Code.
+Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-Bundle-Version:
+
+| Bump | Auslöser | Beispiel |
+|---|---|---|
+| **MAJOR** | Gate bestanden / Stufenwechsel / Architektur-Entscheidung (E-Nr.) gekippt | G0 bestanden → Stufe 1 beginnt |
+| **MINOR** | Entscheidung getroffen (D-Nr. beantwortet), neues Arbeitspaket-Ergebnis ändert „Was als Nächstes dran ist" | D1 Anbieter gewählt |
+| **PATCH** | reine Status-Pflege: Task-Haken, neue Annahme ⚠️, neuer/gelöster Blocker | T-0.1 auf ✅ |
+
+**Auto-Update:** `python scripts/status_bump.py <patch|minor|major> "<eine Zeile Änderung>"` setzt Datum, Version und Changelog-Zeile automatisch. Wird von `/done`, `/task` und `/handover` aufgerufen (siehe `.claude/commands/`) – von Hand nur bei Bedarf. Zusätzliches Sicherheitsnetz: CI (`.github/workflows/ci.yml`) schlägt fehl, wenn sich `docs/07_ARBEITSPAKETE.md` ändert, `docs/01_STATUS.md` im selben Diff aber unangetastet bleibt.
+
+---
+
+## Changelog
+
+- **v1.1.1 · 16.09.2026:** Fahrplan-Abschnitt, Versionierungsschema und Auto-Update (Skript + CI-Sync-Check) eingeführt
+- **v1.1.0 · 16.09.2026:** Bundle v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
+- **v1.0.0 · 15.09.2026:** Erstfassung beim Export nach Claude Code.
