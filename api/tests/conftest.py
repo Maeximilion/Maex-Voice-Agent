@@ -8,13 +8,10 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.main import app
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "db" / "alembic.ini"
 
@@ -74,36 +71,3 @@ def migrated_db_url():
         yield url
     finally:
         drop_scratch_db(url)
-
-
-def make_auth_header() -> dict:
-    """Erstellt Auth-Header mit Token."""
-    return {"Authorization": f"Bearer {settings.agent_api_token}"}
-
-
-@pytest.fixture
-def db(migrated_db_url):
-    """Frische Datenbank-Session für jeden Test."""
-    engine = create_engine(migrated_db_url)
-    with Session(engine) as session:
-        yield session
-    engine.dispose()
-
-
-@pytest.fixture
-def client(migrated_db_url):
-    """FastAPI TestClient mit Datenbank-Dependency-Injection."""
-    from api.db import get_db
-
-    engine = create_engine(migrated_db_url)
-
-    def override_get_db():
-        with Session(engine) as session:
-            yield session
-
-    app.dependency_overrides[get_db] = override_get_db
-    try:
-        yield TestClient(app)
-    finally:
-        app.dependency_overrides.clear()
-        engine.dispose()
