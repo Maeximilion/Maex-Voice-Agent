@@ -1,37 +1,25 @@
 """Einstiegspunkt der Agent-API.
 
-Stand: Gerüst. Die Tools kommen in api/tools/ dazu — siehe docs/04_API_TOOLS.md.
-Wichtig: Jede Antwort folgt der Hülle aus docs/04_API_TOOLS.md §1. Der Agent
-liest unsere Antworten vor, deshalb darf nie ein Stacktrace nach außen gelangen.
+Stand: Gerüst. Die Tools kommen in api/tools/ dazu, siehe docs/04_API_TOOLS.md.
+Jede Antwort folgt der Hülle aus docs/04 §1. Der Agent liest unsere Antworten vor,
+deshalb darf nie ein Stacktrace nach außen gelangen.
 """
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from api.config import settings
+from api.core import envelope
+from api.core.auth import require_token
+from api.core.errors import AppError
+from api.core.logging import configure_logging, get_logger, request_context_middleware
+
+configure_logging(settings.log_level)
+logger = get_logger("api")
 
 app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
-
-
-def require_token(authorization: str = Header(default="")) -> None:
-    """Bearer-Token prüfen. Gilt für alle /v1/tools/*-Endpunkte."""
-    expected = f"Bearer {settings.agent_api_token}"
-    if authorization != expected:
-        raise HTTPException(status_code=401, detail="unauthorized")
-
-
-def ok(data: dict, say: str | None = None) -> JSONResponse:
-    return JSONResponse({"ok": True, "data": data, "say": say})
-
-
-def fail(
-    code: str, message: str, say: str | None = None, status: int = 200
-) -> JSONResponse:
-    # Status 200, damit die Voice-Plattform die Antwort dem Agenten vorlegen kann.
-    return JSONResponse(
-        {"ok": False, "error": {"code": code, "message": message}, "say": say},
-        status_code=status,
-    )
+app.middleware("http")(request_context_middleware)
 
 
 @app.get("/health")
@@ -42,19 +30,33 @@ def health() -> dict:
 @app.post("/v1/tools/ping", dependencies=[Depends(require_token)])
 def ping() -> JSONResponse:
     """Beweist, dass Auth und Antwort-Hülle stehen. Wird später entfernt."""
-    return ok({"pong": True})
+    return envelope.ok({"pong": True})
+
+
+@app.exception_handler(AppError)
+def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
+    return envelope.from_error(exc)
+
+
+@app.exception_handler(RequestValidationError)
+def validation_error_handler(
+    _request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    first = exc.errors()[0] if exc.errors() else {}
+    field = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
+    return envelope.fail(
+        "invalid_input", f"{field}: {first.get('msg', 'ungültige Eingabe')}"
+    )
 
 
 @app.exception_handler(HTTPException)
-def http_exception_handler(_request, exc: HTTPException) -> JSONResponse:
-    return fail("invalid_input", str(exc.detail), status=exc.status_code)
+def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
+    return envelope.fail("invalid_input", str(exc.detail), status=exc.status_code)
 
 
 @app.exception_handler(Exception)
-def unhandled_exception_handler(_request, _exc: Exception) -> JSONResponse:
-    return fail(
-        "service_unavailable",
-        "interner Fehler",
-        say="Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant.",
-        status=200,
+def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+    logger.error("unbehandelter Fehler", exc_info=exc)
+    return envelope.fail(
+        "service_unavailable", "interner Fehler", say=envelope.SAY_ON_FAILURE
     )

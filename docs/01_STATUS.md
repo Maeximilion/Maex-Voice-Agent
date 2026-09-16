@@ -32,9 +32,9 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
-2. **T-0.6** `core/` – Hülle, Fehlerklassen, JSON-Logging
-3. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`); damit wird auch `make migrate` lauffähig (T-0.4 Rest)
+1. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`); damit wird auch `make migrate` lauffähig (T-0.4 Rest)
+2. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
+3. **T-0.8** Zahlwörter `domain/menu/numberwords.py` (jetzt startklar, hängt nur an T-0.6)
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
@@ -67,6 +67,8 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 - Ein Betrieb (<Pilotbetrieb>), aber mandantenfähiges Schema: jede betriebsbezogene Tabelle trägt `tenant_id`
 - Deutsch als einzige Sprache in Stufe 1 bis 6
 - Bezahlt wird bei Abholung oder Lieferung, keine Zahlung am Telefon
+- **Betriebstag beginnt um 05:00 Ortszeit** (`api/core/time.py`, `DAY_STARTS_AT`): eine Bestellung um 00:30 zählt zum Vortag. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
+- Fehler der Fachlogik antworten mit HTTP 200 in der Hülle, damit die Voice-Plattform sie dem Agenten vorlegt; nur fehlende Auth ist 401
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -98,11 +100,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | Platzhalter statt Namen: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com` in Code, Doku, Mockup und Caddyfile; Regel in `CLAUDE.md` §1 |
 | 16.09.2026 | **T-0.1 fertig:** `make up` gegen echtes Docker, Postgres + API healthy, n8n erreichbar (nach Fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` und `/v1/tools/ping` geprüft, `make lint` + `make test` im Container grün. Codex-Review (4 Findings) eingearbeitet. `ruff format` erstmals gelaufen (T-0.4: nur `make migrate` offen, wartet auf T-1.1) |
 | 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
+| 16.09.2026 | **T-0.6 fertig:** `api/core/` mit `envelope` (Hülle), `errors` (8 Codes aus 04 §1, `AppError` wird zentral übersetzt), `auth` (aus `main.py` gezogen), `logging` (JSON-Zeilen mit `request_id`/`call_id`, Middleware misst Dauer, `X-Request-ID` wird übernommen oder erzeugt), `time` (UTC/Ortszeit, Betriebstag, Sommerzeit-sichere Tagesgrenzen). `main.py` nutzt nur noch `core`. 34 Tests grün |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-0.6 abgeschlossen (`core/`), Annahme Betriebstag 05:00, T-0.8 startklar.
 - **16.09.2026:** T-0.2 abgeschlossen (`db.py`), nächste Schritte neu nummeriert.
 - **16.09.2026:** T-0.1 abgeschlossen, Codex-Review eingearbeitet, Platzhalter-Regel, nächste Schritte neu nummeriert.
 - **16.09.2026:** v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.

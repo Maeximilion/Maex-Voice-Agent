@@ -26,7 +26,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-0.3 | Token-Auth als Dependency, greift für alle `/v1/tools/*` | 02 §7 | T-0.2 | fertig, mit Test |
 | T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | in Arbeit: `make test`, `make lint`, `make fmt`, `make up` laufen im Container, ruff format + check sauber; `make migrate` wartet auf Alembic (T-1.1) |
 | T-0.5 | Latenz-Testhelfer: misst p95 je Tool-Endpunkt, schlägt über 300 ms fehl | 04 §1 | T-0.4 | offen |
-| T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | offen |
+| T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | fertig 16.09.2026: `envelope`, `errors`, `auth`, `logging`, `time`; `ids.py` folgt mit T-1.5 |
 | T-0.7 | Slash-Befehle in `.claude/commands/` einmal durchspielen, CI-Workflow grün bekommen | 12, 13 §6 | T-0.4 | offen |
 | T-0.8 | `domain/menu/numberwords.py`: deutsche Zahlwörter und Mengen, ≥ 100 Unit-Tests, ohne DB | 11 §menu | T-0.6 | offen |
 

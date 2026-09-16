@@ -7,6 +7,7 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 ### Hinzugefügt
 - Projektgerüst: FastAPI-App mit /health, Token-Auth, einheitlicher Antwort-Hülle
 - `api/db.py`: Engine mit Verbindungs-Ping, Session je Request über `get_db`, Tests gegen echte Postgres
+- `api/core/`: Antwort-Hülle, Fehlerklassen mit den acht Codes aus docs/04, Token-Auth, JSON-Logging mit `request_id`/`call_id`, Zeit-Helfer mit Betriebstag
 - Docker Compose für Postgres, API und n8n
 - Spezifikationen docs/00 bis docs/15
 - Slash-Befehle für Claude Code unter .claude/commands/
