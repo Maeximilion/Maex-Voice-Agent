@@ -1,0 +1,324 @@
+# 03 – Datenmodell
+
+> PostgreSQL 16. Jede Änderung als Alembic-Migration, `up` und `down` getestet.
+
+---
+
+## Grundregeln
+
+- **Geld** immer `INTEGER` in Cent. Kein `FLOAT`, kein `NUMERIC` mit Nachkommastellen im Code.
+- **Telefonnummern** als E.164-Text (`+4972215551234`), beim Eingang normalisiert.
+- **Zeiten** als `TIMESTAMPTZ` in UTC. Anzeige in `Europe/Berlin`.
+- **IDs** als `UUID` (`gen_random_uuid()`), außer bei Menüpositionen: dort zusätzlich die **Kartennummer** als eindeutiger fachlicher Schlüssel.
+- **Mandantenfähig**: jede betriebsbezogene Tabelle trägt `tenant_id`. Aktuell genau ein Mandant, aber das Schema bleibt offen.
+- **Weich löschen** bei allem, was ein Vorgang ist (`deleted_at`). Hart löschen nur bei personenbezogenen Daten nach Frist.
+- Jede Tabelle hat `created_at` und `updated_at`.
+
+---
+
+## Stufe 1 – Reservierung
+
+### `tenants`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| name | TEXT | „Yoki Yoki GmbH" |
+| timezone | TEXT | `Europe/Berlin` |
+
+### `service_config`
+Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| tenant_id | UUID PK FK | |
+| call_mode | TEXT | `shadow` / `overflow` / `primary` / `paused` |
+| delivery_enabled | BOOL | Schalter „Lieferung pausieren" |
+| pickup_wait_minutes | INT | aktuelle Wartezeit Abholung |
+| delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
+| team_phone | TEXT | Durchwahl für `transfer_to_team` |
+| max_call_seconds | INT | Kostenbremse, Default 420 |
+
+### `opening_hours`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| weekday | SMALLINT | 0 = Montag … 6 = Sonntag |
+| opens_at | TIME | |
+| closes_at | TIME | |
+| service | TEXT | `dinein` / `pickup` / `delivery` |
+
+Mehrere Zeilen je Wochentag erlaubt (Mittag und Abend getrennt).
+
+### `special_days`
+Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| date | DATE | |
+| closed | BOOL | |
+| opens_at / closes_at | TIME NULL | nur wenn `closed = false` |
+| note | TEXT | erscheint in der GUI |
+
+### `capacity`
+Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| weekday | SMALLINT | |
+| slot_start / slot_end | TIME | z. B. 18:00–20:00 |
+| max_guests | INT | Gäste gesamt im Fenster |
+| slot_minutes | INT | Raster, Default 30 |
+
+### `reservations`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| call_id | UUID FK | Pflicht |
+| status | TEXT | `draft` / `confirmed` / `cancelled` |
+| guest_name | TEXT | |
+| phone | TEXT | E.164 |
+| party_size | INT | |
+| reserved_for | TIMESTAMPTZ | |
+| note | TEXT | Kinderstuhl, Allergie, Anlass |
+| idempotency_key | TEXT UNIQUE | |
+
+### `calls`
+Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| external_session_id | TEXT | ID der Voice-Plattform |
+| caller_id | TEXT NULL | NULL bei unterdrückter Nummer |
+| started_at / ended_at | TIMESTAMPTZ | |
+| duration_seconds | INT | |
+| intent | TEXT | `reservation` / `pickup` / `delivery` / `info` / `complaint` / `unknown` |
+| outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error` |
+| transfer_reason | TEXT NULL | |
+| cost_cents | INT NULL | von der Plattform, sobald verfügbar |
+| model | TEXT NULL | welches Modell lief |
+| tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
+| delete_after | DATE | Löschfrist |
+
+### `callbacks`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id / call_id | UUID FK | |
+| phone | TEXT | |
+| reason | TEXT | `complaint` / `not_understood` / `human_requested` / `out_of_scope` |
+| summary | TEXT | was der Kunde wollte, in einem Satz |
+| status | TEXT | `open` / `done` |
+| done_by / done_at | TEXT / TIMESTAMPTZ | |
+
+### `outbox`
+Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorgang geschrieben.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | dient n8n als Idempotenz-Schlüssel |
+| tenant_id | UUID FK | |
+| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` |
+| payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
+| status | TEXT | `pending` / `sent` / `failed` |
+| attempts | INT | |
+| next_attempt_at | TIMESTAMPTZ | Backoff: 5 s, 30 s, 2 min, 10 min, dann `failed` + Alarm |
+| last_error | TEXT NULL | |
+| sent_at | TIMESTAMPTZ NULL | |
+
+### `audit_log`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | BIGSERIAL PK | |
+| tenant_id | UUID | |
+| at | TIMESTAMPTZ | |
+| actor | TEXT | `agent` / `gui:<user>` / `system` |
+| action | TEXT | `order.confirm`, `config.update`, … |
+| entity / entity_id | TEXT / UUID | |
+| payload | JSONB | vorher/nachher bei Änderungen |
+
+---
+
+## Stufe 2 – Abholung
+
+### `menu_items`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| number | TEXT | Kartennummer, z. B. „23", eindeutig je Mandant |
+| name | TEXT | |
+| category | TEXT | Vorspeise, Suppe, Wok, Sushi … |
+| price_cents | INT | |
+| active | BOOL | |
+| sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
+| description | TEXT | |
+
+**Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
+
+### `item_options`
+Varianten und Extras mit Preisdifferenz.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| menu_item_id | UUID FK | |
+| group_name | TEXT | „Fleisch", „Schärfe", „Größe" |
+| option_name | TEXT | „Huhn", „mittel", „groß" |
+| price_delta_cents | INT | kann negativ sein |
+| is_default | BOOL | |
+| required | BOOL | Gruppe muss gewählt werden |
+
+### `item_allergens`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| menu_item_id | UUID FK | |
+| allergen_code | TEXT | LMIV-Code |
+| confirmed_by | TEXT | wer den Wert gepflegt hat |
+| confirmed_at | TIMESTAMPTZ | |
+
+**Regel:** Kein Eintrag bedeutet *keine Auskunft*, nicht *kein Allergen*. Der Agent sagt dann: Rückruf durch das Team.
+
+### `item_aliases`
+Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| menu_item_id | UUID FK | |
+| alias | TEXT | „Frühlingsrollen", „die knusprigen", „Nummer 23" |
+| source | TEXT | `manual` / `call` / `import` |
+| hits | INT | wie oft er getroffen hat |
+
+### `orders`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id / call_id | UUID FK | |
+| type | TEXT | `pickup` / `delivery` |
+| status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
+| customer_id | UUID NULL FK | |
+| phone | TEXT | |
+| customer_name | TEXT | |
+| address_id | UUID NULL FK | nur bei Lieferung |
+| items_total_cents | INT | |
+| delivery_fee_cents | INT | |
+| total_cents | INT | |
+| ready_at | TIMESTAMPTZ | zugesagte Zeit |
+| note | TEXT | |
+| idempotency_key | TEXT UNIQUE | |
+| handover_state | TEXT | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse |
+
+`approved` existiert nur im Überlauf-Betrieb (Stufe 5): Das Team gibt frei, bevor die Küche loslegt.
+
+### `order_items`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| order_id | UUID FK | |
+| menu_item_id | UUID FK | **Pflicht.** Ohne ID keine Position. |
+| quantity | INT | |
+| unit_price_cents | INT | Preis zum Bestellzeitpunkt, eingefroren |
+| options | JSONB | gewählte Optionen mit Preisdifferenz |
+| note | TEXT | „ohne Zwiebeln" |
+
+---
+
+## Stufe 3 – Lieferung
+
+### `customers`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| phone | TEXT | E.164, unique je Mandant |
+| name | TEXT | |
+| last_order_at | TIMESTAMPTZ | |
+| order_count | INT | |
+| blocked | BOOL | Spam- oder Scherzanrufer |
+| delete_after | DATE | Löschfrist |
+
+### `addresses`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| customer_id | UUID FK | |
+| street / house_number | TEXT | getrennt, die Hausnummer kommt oft über die Tastatur |
+| postal_code / city | TEXT | |
+| floor_note | TEXT | „2. OG, Klingel Müller" |
+| zone_id | UUID NULL FK | beim Anlegen aufgelöst und gespeichert |
+| lat / lon | DOUBLE NULL | nur bei Polygon-Zonen |
+| is_default | BOOL | |
+
+### `delivery_zones`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| name | TEXT | „Zone 1 Sinzheim" |
+| match_type | TEXT | `postal_code` oder `polygon` |
+| postal_codes | TEXT[] | bei `postal_code` |
+| polygon | JSONB | GeoJSON bei `polygon` |
+| fee_cents | INT | Lieferpauschale |
+| min_order_cents | INT | Mindestbestellwert |
+| eta_minutes | INT | |
+| active | BOOL | |
+
+**Start:** `postal_code` genügt und ist ohne Geo-Erweiterung testbar. Polygone erst, wenn die Liefergebiets-Kalkulation sie liefert. Dann ist PostGIS eine Option, `shapely` im Python-Code reicht aber für diese Datenmenge.
+
+---
+
+## Stufe 4 – Qualität
+
+### `eval_cases`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| name | TEXT | |
+| transcript | TEXT | Kundenseite, ggf. mit Störungen |
+| expected | JSONB | erwartetes Ergebnis-JSON |
+| tags | TEXT[] | `menu`, `address`, `noise`, `dialect`, `escalation` |
+| source | TEXT | `roleplay` / `real_call` / `handcrafted` |
+
+### `eval_runs`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| at | TIMESTAMPTZ | |
+| prompt_version / model | TEXT | |
+| passed / failed | INT | |
+| accuracy | NUMERIC | |
+| details | JSONB | je Fall: erwartet, bekommen, Abweichung |
+| git_sha | TEXT | |
+
+---
+
+## Löschkonzept
+
+| Daten | Frist | Umsetzung |
+|---|---|---|
+| Anrufaufnahmen | 30 Tage ⚠️ | täglicher Job, harte Löschung |
+| Transkripte | 90 Tage ⚠️ | täglicher Job |
+| `calls` ohne personenbezogene Felder | 24 Monate | Statistik bleibt, `caller_id` wird genullt |
+| Kunden ohne Bestellung | 24 Monate ⚠️ | `delete_after`, täglicher Job |
+| Bestellungen | nach steuerlicher Aufbewahrungspflicht | Master ist ohnehin die Kasse |
+
+⚠️ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
+
+---
+
+## Migrationsreihenfolge
+
+| Migration | Inhalt |
+|---|---|
+| 001 | `tenants`, `service_config`, `opening_hours`, `special_days`, `capacity`, `reservations`, `calls`, `callbacks`, `outbox`, `audit_log` |
+| 002 | Extension `pg_trgm` · `menu_items`, `item_options`, `item_allergens`, `item_aliases` (Trigram-Index auf `name` und `alias`), `orders`, `order_items` |
+| 003 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
+| 004 | `eval_cases`, `eval_runs` |

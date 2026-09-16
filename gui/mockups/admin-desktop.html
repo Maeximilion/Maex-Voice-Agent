@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Yoki Voice-Agent – Adminansicht (Mockup)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F6F3; --surface:#FFFFFF; --surface-2:#EDF1EC;
+  --text:#1E2A24; --muted:#66716B; --line:#D9DFDA; --line-strong:#B9C2BB;
+  --accent:#0F6E56; --accent-bg:#E1F5EE; --accent-text:#085041;
+  --warn:#854F0B; --warn-bg:#FAEEDA; --danger:#A32D2D; --danger-bg:#FCEBEB;
+  --ok:#3B6D11; --ok-bg:#EAF3DE;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#141917; --surface:#1C2320; --surface-2:#232B27;
+  --text:#E6EBE7; --muted:#9AA69F; --line:#2E3733; --line-strong:#465049;
+  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#9FE1CB;
+  --warn:#FAC775; --warn-bg:#3D2A0C; --danger:#F09595; --danger-bg:#3F1A1A;
+  --ok:#C0DD97; --ok-bg:#243A16;
+}}
+:root[data-theme="dark"]{
+  --bg:#141917; --surface:#1C2320; --surface-2:#232B27;
+  --text:#E6EBE7; --muted:#9AA69F; --line:#2E3733; --line-strong:#465049;
+  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#9FE1CB;
+  --warn:#FAC775; --warn-bg:#3D2A0C; --danger:#F09595; --danger-bg:#3F1A1A;
+  --ok:#C0DD97; --ok-bg:#243A16;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;font-variant-numeric:tabular-nums}
+a{color:var(--accent)}
+button{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 12px;cursor:pointer}
+button:hover{background:var(--surface-2)}
+button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover{filter:brightness(1.08)}
+input[type=text],select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 10px;height:36px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+
+header{background:var(--surface);border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;justify-content:space-between;height:56px}
+.brand{display:flex;align-items:baseline;gap:10px}
+.brand b{font-weight:600;font-size:17px}
+.brand span{color:var(--muted)}
+.mode{display:flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:14px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.kpis{display:flex;gap:0;border-top:1px solid var(--line)}
+.kpi{flex:1;padding:12px 0;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--line);padding-right:20px;margin-right:20px}
+.kpi:last-child{border-right:0}
+.kpi small{color:var(--muted);font-size:13px}
+.kpi b{font-size:22px;font-weight:500;line-height:1.1}
+.kpi b.good{color:var(--ok)}
+.kpi em{font-style:normal;font-size:12px;color:var(--muted)}
+
+nav{display:flex;gap:2px;border-bottom:1px solid var(--line);margin-top:8px}
+nav button{background:none;border:0;border-bottom:2px solid transparent;border-radius:0;padding:12px 14px;color:var(--muted);margin-bottom:-1px}
+nav button:hover{color:var(--text);background:none}
+nav button[aria-selected="true"]{color:var(--text);border-bottom-color:var(--accent);font-weight:500}
+nav button .n{display:inline-block;min-width:18px;padding:0 5px;border-radius:9px;font-size:12px;background:var(--danger-bg);color:var(--danger);margin-left:6px;line-height:18px}
+
+main{padding:24px 0 60px}
+section[hidden]{display:none}
+.toolbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+.toolbar input{width:320px}
+.toolbar .spacer{flex:1}
+.filters{display:flex;gap:6px}
+.chip{padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:13px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--text);color:var(--bg);border-color:var(--text)}
+
+.list{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.row{display:grid;grid-template-columns:56px 1fr 120px 90px 200px;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}
+.row:first-child{border-top:0}
+.row:hover{background:var(--surface-2)}
+.row[aria-expanded="true"]{background:var(--surface-2)}
+.row .num{color:var(--muted)}
+.row .cat{color:var(--muted);font-size:13px}
+.row .price{text-align:right}
+.row .badges{display:flex;gap:6px;justify-content:flex-end}
+.badge{font-size:12px;padding:2px 8px;border-radius:4px;font-weight:500;white-space:nowrap}
+.badge.warn{background:var(--warn-bg);color:var(--warn)}
+.badge.danger{background:var(--danger-bg);color:var(--danger)}
+.badge.ok{background:var(--ok-bg);color:var(--ok)}
+.badge.accent{background:var(--accent-bg);color:var(--accent-text)}
+.detail{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:16px 16px 20px 84px;border-top:1px solid var(--line);background:var(--surface-2)}
+.detail h4{margin:0 0 8px;font-size:13px;font-weight:500;color:var(--muted)}
+.aliases{display:flex;flex-wrap:wrap;gap:6px}
+.alias{display:inline-flex;gap:8px;align-items:center;padding:4px 10px;border:1px solid var(--line-strong);border-radius:999px;background:var(--surface);font-size:13px}
+.alias i{font-style:normal;color:var(--muted)}
+.alias button{border:0;background:none;padding:0 2px;color:var(--muted);line-height:1}
+.suggest{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+.suggest div{display:flex;align-items:center;gap:12px;padding:8px 12px;border-left:3px solid var(--accent);background:var(--accent-bg);color:var(--accent-text);border-radius:0 6px 6px 0;font-size:14px}
+.suggest div span{flex:1}
+.suggest div small{color:var(--accent-text);opacity:.85}
+.suggest button{padding:4px 10px;font-size:13px}
+.opts table,.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.opts td,.tbl td,.tbl th{padding:6px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
+.tbl th{color:var(--muted);font-weight:500;font-size:13px;border-top:0}
+.tbl td.r,.tbl th.r{text-align:right}
+.allerg{display:flex;gap:6px;flex-wrap:wrap}
+.allerg span{width:26px;height:26px;border:1px solid var(--line-strong);border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:13px;background:var(--surface)}
+.pricefix{display:flex;gap:8px;align-items:center;margin-top:10px;font-size:14px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.week{display:grid;grid-template-columns:110px repeat(3,1fr);font-size:14px}
+.week div{padding:9px 8px;border-top:1px solid var(--line)}
+.week .h{border-top:0;color:var(--muted);font-size:13px}
+.week .d{color:var(--muted)}
+.closed{color:var(--muted)}
+.chart{width:100%;height:220px;display:block}
+.legend{display:flex;gap:16px;font-size:13px;color:var(--muted);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.callrow td.result span{font-size:12px;padding:2px 8px;border-radius:4px}
+.note{font-size:13px;color:var(--muted);margin-top:10px}
+footer{border-top:1px solid var(--line);padding:16px 0;color:var(--muted);font-size:13px;display:flex;justify-content:space-between}
+@media (max-width:900px){
+  .kpis{flex-wrap:wrap}.kpi{flex:1 1 45%;border-right:0}
+  .row{grid-template-columns:48px 1fr 90px}.row .cat,.row .badges{display:none}
+  .detail{grid-template-columns:1fr;padding-left:16px}
+  .grid2{grid-template-columns:1fr}.toolbar input{width:100%}
+  .wrap{padding:0 14px}
+}
+@media (prefers-reduced-motion: no-preference){ .detail{animation:open .15s ease-out} @keyframes open{from{opacity:0}to{opacity:1}} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <div class="top">
+      <div class="brand"><b>Yoki Yoki</b><span>Telefonannahme</span></div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="mode"><span class="dot"></span>KI nimmt an<span style="color:var(--muted)">· seit 11:00</span></div>
+        <button id="theme" aria-label="Hell/Dunkel wechseln">Dunkel</button>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><small>Genauigkeit, 7 Tage</small><b class="good">98,7 %</b><em>Ziel ≥ 99 % · 3 Korrekturen bei 231 Bestellungen</em></div>
+      <div class="kpi"><small>Kosten je Bestellung</small><b>0,31 €</b><em>Plattform 0,24 € + Modell 0,07 €</em></div>
+      <div class="kpi"><small>An das Team übergeben</small><b>6,2 %</b><em>19 von 306 Anrufen, davon 4 Beschwerden</em></div>
+      <div class="kpi"><small>Verpasste Anrufe</small><b>0</b><em>Vorher im Schnitt 11 pro Woche</em></div>
+    </div>
+    <nav role="tablist" aria-label="Bereiche">
+      <button role="tab" aria-selected="true" data-tab="menu">Menü<span class="n">2</span></button>
+      <button role="tab" aria-selected="false" data-tab="zeiten">Zeiten</button>
+      <button role="tab" aria-selected="false" data-tab="lieferung">Lieferung</button>
+      <button role="tab" aria-selected="false" data-tab="anrufe">Anrufe</button>
+      <button role="tab" aria-selected="false" data-tab="kennzahlen">Kennzahlen</button>
+      <button role="tab" aria-selected="false" data-tab="evals">Evals</button>
+      <button role="tab" aria-selected="false" data-tab="daten">Daten</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- MENÜ -->
+<section id="tab-menu" role="tabpanel">
+  <div class="toolbar">
+    <input type="text" id="q" placeholder="Gericht oder Nummer">
+    <div class="filters">
+      <button class="chip" aria-pressed="true" data-f="all">Alle</button>
+      <button class="chip" aria-pressed="false" data-f="warn">Mit Hinweis</button>
+      <button class="chip" aria-pressed="false" data-f="noalias">Ohne Alias</button>
+    </div>
+    <div class="spacer"></div>
+    <button>Import aus CSV</button>
+    <button class="primary">Gericht anlegen</button>
+  </div>
+
+  <div class="list" id="menu">
+    <div class="row" tabindex="0" aria-expanded="true" data-tags="warn"><span class="num">23</span><span>Frühlingsrollen (4 Stück)<br><span class="cat">Vorspeisen</span></span><span class="cat">Vegetarisch</span><span class="price">6,90 €</span><span class="badges"><span class="badge accent">1 Vorschlag</span></span></div>
+    <div class="detail">
+      <div>
+        <h4>Aliase und Treffer, 30 Tage</h4>
+        <div class="aliases">
+          <span class="alias">frühlingsrollen <i>212</i><button aria-label="Alias entfernen">×</button></span>
+          <span class="alias">die knusprigen rollen <i>41</i><button aria-label="Alias entfernen">×</button></span>
+          <span class="alias">springrolls <i>9</i><button aria-label="Alias entfernen">×</button></span>
+          <span class="alias">rollen mit gemüse <i>0</i><button aria-label="Alias entfernen">×</button></span>
+        </div>
+        <div class="suggest">
+          <div><span>„vier rollen" <small>· 7× nicht erkannt, aus der Schattenmessung</small></span><button class="accept">Annehmen</button><button>Verwerfen</button></div>
+        </div>
+        <div style="margin-top:12px;display:flex;gap:8px"><input type="text" placeholder="Neuen Alias eintragen" style="flex:1"><button>Hinzufügen</button></div>
+      </div>
+      <div>
+        <h4>Optionen</h4>
+        <div class="opts"><table>
+          <tr><td>Sauce</td><td>süßsauer (Standard) · Erdnuss +0,50 €</td><td style="color:var(--muted)">optional</td></tr>
+        </table></div>
+        <h4 style="margin-top:14px">Allergene, bestätigt von Maxi am 01.08.2026</h4>
+        <div class="allerg"><span>A</span><span>F</span></div>
+        <h4 style="margin-top:14px">Verfügbarkeit</h4>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px"><input type="checkbox" checked> Aktiv auf der Karte</label>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-top:4px"><input type="checkbox"> Heute ausverkauft</label>
+      </div>
+    </div>
+
+    <div class="row" tabindex="0" aria-expanded="false" data-tags="warn"><span class="num">47</span><span>Ente knusprig mit Gemüse<br><span class="cat">Hauptgerichte</span></span><span class="cat">Chinesisch</span><span class="price">14,90 €</span><span class="badges"><span class="badge warn">Allergene fehlen</span></span></div>
+    <div class="detail" hidden>
+      <div><h4>Aliase und Treffer, 30 Tage</h4><div class="aliases"><span class="alias">knusprige ente <i>156</i><button aria-label="Alias entfernen">×</button></span><span class="alias">ente <i>88</i><button aria-label="Alias entfernen">×</button></span></div></div>
+      <div><h4>Allergene</h4><p style="margin:0;font-size:14px">Noch nicht gepflegt. Die KI gibt zu diesem Gericht keine Auskunft und legt bei Nachfrage einen Rückruf an.</p><button style="margin-top:8px">Allergene eintragen</button></div>
+    </div>
+
+    <div class="row" tabindex="0" aria-expanded="false" data-tags="warn"><span class="num">12</span><span>Phở Bò<br><span class="cat">Suppen</span></span><span class="cat">Vietnamesisch</span><span class="price">12,90 €</span><span class="badges"><span class="badge danger">Kasse: 13,50 €</span></span></div>
+    <div class="detail" hidden>
+      <div><h4>Aliase und Treffer, 30 Tage</h4><div class="aliases"><span class="alias">fo <i>73</i><button aria-label="Alias entfernen">×</button></span><span class="alias">pho <i>64</i><button aria-label="Alias entfernen">×</button></span><span class="alias">rindfleischsuppe <i>22</i><button aria-label="Alias entfernen">×</button></span></div></div>
+      <div><h4>Preisabweichung</h4><p style="margin:0;font-size:14px">Der Abgleich von heute 03:00 hat in der Kasse 13,50 € gefunden, hier stehen 12,90 €. Die KI nennt bis zur Klärung den Preis aus dieser Liste.</p><div class="pricefix"><button class="primary">13,50 € übernehmen</button><button>12,90 € behalten</button></div></div>
+    </div>
+
+    <div class="row" tabindex="0" aria-expanded="false" data-tags=""><span class="num">31</span><span>Bún Bò Nam Bộ<br><span class="cat">Reisnudeln</span></span><span class="cat">Vietnamesisch</span><span class="price">13,90 €</span><span class="badges"></span></div>
+    <div class="detail" hidden><div><h4>Aliase und Treffer, 30 Tage</h4><div class="aliases"><span class="alias">bun bo <i>95</i><button aria-label="Alias entfernen">×</button></span><span class="alias">nudelsalat mit rind <i>17</i><button aria-label="Alias entfernen">×</button></span></div></div><div><h4>Allergene, bestätigt</h4><div class="allerg"><span>A</span><span>E</span><span>F</span></div></div></div>
+
+    <div class="row" tabindex="0" aria-expanded="false" data-tags="noalias"><span class="num">88</span><span>Sushi-Set Nigiri, 8 Stück<br><span class="cat">Sushi</span></span><span class="cat">Sushi</span><span class="price">16,50 €</span><span class="badges"><span class="badge warn">Kein Alias</span></span></div>
+    <div class="detail" hidden><div><h4>Aliase</h4><p style="margin:0;font-size:14px">Noch keiner. Ohne Alias findet die KI dieses Gericht nur über die Nummer.</p><div style="margin-top:8px;display:flex;gap:8px"><input type="text" placeholder="z. B. nigiri set" style="flex:1"><button>Hinzufügen</button></div></div><div><h4>Allergene, bestätigt</h4><div class="allerg"><span>D</span><span>F</span><span>R</span></div></div></div>
+
+    <div class="row" tabindex="0" aria-expanded="false" data-tags=""><span class="num">64</span><span>Gebratene Nudeln mit Hähnchen<br><span class="cat">Nudeln</span></span><span class="cat">Chinesisch</span><span class="price">11,90 €</span><span class="badges"><span class="badge ok">Heute ausverkauft</span></span></div>
+    <div class="detail" hidden><div><h4>Aliase und Treffer, 30 Tage</h4><div class="aliases"><span class="alias">gebratene nudeln <i>140</i><button aria-label="Alias entfernen">×</button></span><span class="alias">bratnudeln huhn <i>52</i><button aria-label="Alias entfernen">×</button></span></div></div><div><h4>Verfügbarkeit</h4><p style="margin:0;font-size:14px">Um 17:42 vom Tablet auf „ausverkauft" gesetzt. Die KI bietet stattdessen Nummer 65 an. Morgen früh automatisch wieder aktiv.</p></div></div>
+  </div>
+  <p class="note">147 Gerichte · letzter Import 09.09.2026 · letzter Preisabgleich heute 03:00</p>
+</section>
+
+<!-- ZEITEN -->
+<section id="tab-zeiten" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Öffnungszeiten</h3>
+      <div class="week">
+        <div class="h"></div><div class="h">Im Haus</div><div class="h">Abholung</div><div class="h">Lieferung</div>
+        <div class="d">Montag</div><div class="closed">Ruhetag</div><div class="closed">–</div><div class="closed">–</div>
+        <div class="d">Dienstag</div><div>11:30–14:30, 17:30–22:00</div><div>11:30–14:00, 17:30–21:30</div><div>17:30–21:00</div>
+        <div class="d">Mittwoch</div><div>11:30–14:30, 17:30–22:00</div><div>11:30–14:00, 17:30–21:30</div><div>17:30–21:00</div>
+        <div class="d">Donnerstag</div><div>11:30–14:30, 17:30–22:00</div><div>11:30–14:00, 17:30–21:30</div><div>17:30–21:00</div>
+        <div class="d">Freitag</div><div>11:30–14:30, 17:30–22:30</div><div>11:30–14:00, 17:30–22:00</div><div>17:30–21:30</div>
+        <div class="d">Samstag</div><div>17:00–22:30</div><div>17:00–22:00</div><div>17:00–21:30</div>
+        <div class="d">Sonntag</div><div>11:30–14:30, 17:00–22:00</div><div>11:30–14:00, 17:00–21:30</div><div>11:30–13:30, 17:00–21:00</div>
+      </div>
+      <button style="margin-top:14px">Zeiten bearbeiten</button>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Sondertage</h3>
+      <table class="tbl">
+        <tr><th>Datum</th><th>Was gilt</th><th>Ansage</th></tr>
+        <tr><td>03.10.2026</td><td>Tag der Deutschen Einheit, wie Sonntag</td><td style="color:var(--muted)">automatisch</td></tr>
+        <tr><td>24.12.2026</td><td>geschlossen</td><td>„Am Heiligabend haben wir geschlossen, ab dem 27. sind wir wieder da."</td></tr>
+        <tr><td>25.–26.12.2026</td><td>geschlossen</td><td>wie oben</td></tr>
+      </table>
+      <div style="margin-top:12px;padding:10px 12px;border-left:3px solid var(--accent);background:var(--accent-bg);color:var(--accent-text);font-size:14px">Vorschlag: 1.11.2026 Allerheiligen ist Feiertag in Baden-Württemberg. Wie Sonntag behandeln? <button style="margin-left:8px;padding:3px 10px;font-size:13px">Übernehmen</button></div>
+      <h3 style="margin:20px 0 8px;font-size:16px;font-weight:500">Wartezeit jetzt</h3>
+      <p style="margin:0;font-size:14px">Abholung <b>25 Min</b> · Lieferung <b>50 Min</b> · zuletzt vom Tablet geändert um 18:05</p>
+    </div>
+  </div>
+</section>
+
+<!-- LIEFERUNG -->
+<section id="tab-lieferung" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Zonen</h3>
+      <table class="tbl">
+        <tr><th>Zone</th><th>Orte</th><th class="r">Pauschale</th><th class="r">Mindestwert</th><th class="r">Lieferzeit</th></tr>
+        <tr><td>1</td><td>Sinzheim mit Ortsteilen, Baden-Baden Oos</td><td class="r">2,50 €</td><td class="r">20,00 €</td><td class="r">40 Min</td></tr>
+        <tr><td>2</td><td>Baden-Baden Innenstadt, Steinbach, Hügelsheim, Iffezheim</td><td class="r">3,50 €</td><td class="r">25,00 €</td><td class="r">50 Min</td></tr>
+        <tr><td>3</td><td>Bühl, Ottersweier Kernort, Rheinmünster, Geroldsau, Oberbeuern</td><td class="r">4,90 €</td><td class="r">30,00 €</td><td class="r">60 Min</td></tr>
+      </table>
+      <p class="note">Westgrenze ist der Rhein. Rastatt wird nicht beliefert. Außerhalb bietet die KI Abholung an.</p>
+      <button style="margin-top:8px">Zonen bearbeiten</button>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Abgelehnte Adressen, 7 Tage</h3>
+      <table class="tbl">
+        <tr><th>Anfragen</th><th>Ort</th><th>Reaktion</th></tr>
+        <tr><td>5</td><td>Rastatt</td><td>Abholung angeboten, 2× angenommen</td></tr>
+        <tr><td>3</td><td>Gaggenau</td><td>Abholung angeboten, 0× angenommen</td></tr>
+        <tr><td>2</td><td>Ottersweier Unzhurst</td><td>Abholung angeboten, 1× angenommen</td></tr>
+      </table>
+      <p class="note">Häufen sich Anfragen aus einem Ort, lohnt sich ein Blick auf die Zonen.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ANRUFE -->
+<section id="tab-anrufe" role="tabpanel" hidden>
+  <div class="toolbar">
+    <select><option>Heute</option><option>Gestern</option><option>7 Tage</option></select>
+    <select><option>Alle Ergebnisse</option><option>Abgeschlossen</option><option>Übergeben</option><option>Rückruf</option><option>Abgebrochen</option></select>
+    <select><option>Alle Anliegen</option><option>Abholung</option><option>Lieferung</option><option>Reservierung</option><option>Auskunft</option><option>Beschwerde</option></select>
+    <div class="spacer"></div><span style="color:var(--muted);font-size:14px">41 Anrufe heute</span>
+  </div>
+  <div class="card" style="padding:0">
+    <table class="tbl" style="font-size:14px">
+      <tr><th style="padding-left:16px">Zeit</th><th>Nummer</th><th>Anliegen</th><th>Ergebnis</th><th class="r">Dauer</th><th class="r">Kosten</th><th class="r" style="padding-right:16px">Tools</th></tr>
+      <tr class="callrow"><td style="padding-left:16px">18:42</td><td>+49 176 55…</td><td>Abholung</td><td class="result"><span style="background:var(--ok-bg);color:var(--ok)">abgeschlossen · A17</span></td><td class="r">2:14</td><td class="r">0,29 €</td><td class="r" style="padding-right:16px">6</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">18:39</td><td>+49 176 41…</td><td>Beschwerde</td><td class="result"><span style="background:var(--danger-bg);color:var(--danger)">Rückruf angelegt</span></td><td class="r">0:48</td><td class="r">0,11 €</td><td class="r" style="padding-right:16px">2</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">18:31</td><td>+49 7221 3…</td><td>Lieferung</td><td class="result"><span style="background:var(--warn-bg);color:var(--warn)">bestätigt · Küche nicht erreicht</span></td><td class="r">3:02</td><td class="r">0,38 €</td><td class="r" style="padding-right:16px">8</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">18:20</td><td>unterdrückt</td><td>Reservierung</td><td class="result"><span style="background:var(--ok-bg);color:var(--ok)">abgeschlossen · 4 Pers. 19:30</span></td><td class="r">1:36</td><td class="r">0,21 €</td><td class="r" style="padding-right:16px">4</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">18:07</td><td>+49 151 22…</td><td>Lieferung</td><td class="result"><span style="background:var(--surface-2);color:var(--muted)">an Team übergeben · Adresse nach 3 Versuchen</span></td><td class="r">2:51</td><td class="r">0,35 €</td><td class="r" style="padding-right:16px">7</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">17:58</td><td>+49 7223 9…</td><td>Auskunft</td><td class="result"><span style="background:var(--ok-bg);color:var(--ok)">abgeschlossen · Öffnungszeiten</span></td><td class="r">0:41</td><td class="r">0,09 €</td><td class="r" style="padding-right:16px">1</td></tr>
+      <tr class="callrow"><td style="padding-left:16px">17:44</td><td>+49 176 80…</td><td>Abholung</td><td class="result"><span style="background:var(--surface-2);color:var(--muted)">abgebrochen · Kunde legte auf</span></td><td class="r">0:19</td><td class="r">0,05 €</td><td class="r" style="padding-right:16px">1</td></tr>
+    </table>
+  </div>
+  <p class="note">Klick auf eine Zeile öffnet Verlauf, Tool-Aufrufe mit Dauer und, falls vorhanden, das Transkript. Transkripte werden nach 90 Tagen gelöscht.</p>
+</section>
+
+<!-- KENNZAHLEN -->
+<section id="tab-kennzahlen" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin:0 0 4px;font-size:16px;font-weight:500">Genauigkeit und Übergaben, 14 Tage</h3>
+      <svg class="chart" viewBox="0 0 560 220" role="img" aria-label="Liniendiagramm: Genauigkeit steigt von 96,1 auf 98,7 Prozent, Übergabequote sinkt von 11 auf 6 Prozent">
+        <g stroke="var(--line)" stroke-width="1"><line x1="40" y1="20" x2="540" y2="20"/><line x1="40" y1="70" x2="540" y2="70"/><line x1="40" y1="120" x2="540" y2="120"/><line x1="40" y1="170" x2="540" y2="170"/></g>
+        <g fill="var(--muted)" font-size="11" font-family="inherit"><text x="34" y="24" text-anchor="end">100</text><text x="34" y="74" text-anchor="end">98</text><text x="34" y="124" text-anchor="end">96</text><text x="34" y="174" text-anchor="end">94</text></g>
+        <line x1="40" y1="45" x2="540" y2="45" stroke="var(--ok)" stroke-dasharray="4 4" stroke-width="1"/>
+        <text x="540" y="41" text-anchor="end" font-size="11" fill="var(--ok)">Ziel 99 %</text>
+        <polyline fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linejoin="round" points="40,118 78,110 117,113 155,102 193,96 232,94 270,85 308,86 347,78 385,75 423,66 462,60 500,54 540,52"/>
+        <polyline fill="none" stroke="var(--danger)" stroke-width="2" stroke-linejoin="round" stroke-opacity=".8" points="40,140 78,138 117,143 155,132 193,128 232,125 270,118 308,120 347,112 385,108 423,104 462,101 500,98 540,96"/>
+        <g fill="var(--muted)" font-size="11"><text x="40" y="196" text-anchor="middle">03.09.</text><text x="290" y="196" text-anchor="middle">09.09.</text><text x="540" y="196" text-anchor="middle">16.09.</text></g>
+      </svg>
+      <div class="legend"><span><i style="background:var(--accent)"></i>Genauigkeit</span><span><i style="background:var(--danger)"></i>Übergabequote, rechte Skala 0–20 %</span></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Woche im Vergleich</h3>
+      <table class="tbl">
+        <tr><th></th><th class="r">Diese Woche</th><th class="r">Vorwoche</th><th class="r">Vor Start</th></tr>
+        <tr><td>Anrufe</td><td class="r">306</td><td class="r">291</td><td class="r">~250</td></tr>
+        <tr><td>Verpasste Anrufe</td><td class="r">0</td><td class="r">0</td><td class="r">11</td></tr>
+        <tr><td>Bestellungen per Telefon</td><td class="r">231</td><td class="r">218</td><td class="r">~190</td></tr>
+        <tr><td>Korrekturen durch das Team</td><td class="r">3</td><td class="r">5</td><td class="r">–</td></tr>
+        <tr><td>Beschwerden</td><td class="r">4</td><td class="r">6</td><td class="r">5</td></tr>
+        <tr><td>Kosten gesamt</td><td class="r">71,60 €</td><td class="r">68,20 €</td><td class="r">–</td></tr>
+        <tr><td>Kosten je Bestellung</td><td class="r">0,31 €</td><td class="r">0,31 €</td><td class="r">–</td></tr>
+        <tr><td>Mittlere Anrufdauer</td><td class="r">1:52</td><td class="r">2:04</td><td class="r">–</td></tr>
+      </table>
+      <p class="note">„Vor Start" sind die Werte aus der Baseline-Messung in Stufe 0.</p>
+    </div>
+  </div>
+</section>
+
+<!-- EVALS -->
+<section id="tab-evals" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Letzter Lauf</h3>
+      <p style="margin:0 0 10px;font-size:14px">Heute 02:10 · Prompt v7 · Modell klein · 218 Fälle · Commit 4f2a9c1</p>
+      <table class="tbl">
+        <tr><th>Metrik</th><th class="r">Wert</th><th class="r">Vorher</th></tr>
+        <tr><td>Genauigkeit</td><td class="r"><b>99,1 %</b></td><td class="r">98,6 %</td></tr>
+        <tr><td>Geratene Positionen</td><td class="r"><b>0</b></td><td class="r">0</td></tr>
+        <tr><td>Unbestätigte Vorgänge</td><td class="r"><b>0</b></td><td class="r">0</td></tr>
+        <tr><td>Verpasste Eskalationen</td><td class="r"><b>0</b></td><td class="r">0</td></tr>
+        <tr><td>Falsche Eskalationen</td><td class="r">2,3 %</td><td class="r">3,1 %</td></tr>
+        <tr><td>Tokens je Fall</td><td class="r">1.840</td><td class="r">1.910</td></tr>
+      </table>
+      <p style="margin:12px 0 0"><span class="badge ok">Mergefähig</span></p>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Fehlgeschlagene Fälle, 2 von 218</h3>
+      <table class="tbl">
+        <tr><th>Fall</th><th>Erwartet</th><th>Bekommen</th></tr>
+        <tr><td>menu_0118 „zwei ente und die suppe"</td><td>47 ×2, 12 ×1</td><td>Nachfrage bei „die suppe" – 3 Treffer</td></tr>
+        <tr><td>addr_0032 „Rheinstraße vierundfünfzig"</td><td>Hausnummer 54</td><td>Hausnummer 4 und 54 als Alternativen</td></tr>
+      </table>
+      <p class="note">Beide sind Nachfragen, keine falschen Buchungen. Der zweite Fall wird mit T-0.8 (Zahlwörter) behoben.</p>
+      <h3 style="margin:18px 0 8px;font-size:16px;font-weight:500">Genauigkeit je Prompt-Version</h3>
+      <p style="margin:0;font-size:14px">v4 96,2 % · v5 97,0 % · v6 98,6 % · <b>v7 99,1 %</b></p>
+    </div>
+  </div>
+</section>
+
+<!-- DATEN -->
+<section id="tab-daten" role="tabpanel" hidden>
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Löschfristen</h3>
+      <table class="tbl">
+        <tr><th>Daten</th><th>Frist</th><th class="r">Nächster Lauf</th></tr>
+        <tr><td>Anrufaufnahmen</td><td>30 Tage</td><td class="r">heute 03:00, 14 gelöscht</td></tr>
+        <tr><td>Transkripte</td><td>90 Tage</td><td class="r">heute 03:00, 0 gelöscht</td></tr>
+        <tr><td>Rufnummern in Anruf-Logs</td><td>24 Monate</td><td class="r">–</td></tr>
+        <tr><td>Kunden ohne Bestellung</td><td>24 Monate</td><td class="r">–</td></tr>
+      </table>
+      <p class="note">Fristen aus dem Rechts-Check. Änderungen nur im Adminbereich mit PIN.</p>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 12px;font-size:16px;font-weight:500">Kundenwunsch: Daten löschen</h3>
+      <p style="margin:0 0 10px;font-size:14px">Löscht Kunde, Adressen, Rufnummer in Anruf-Logs und Transkripte zu dieser Nummer. Bestellungen bleiben anonymisiert erhalten, weil die Kasse sie ohnehin führt.</p>
+      <div style="display:flex;gap:8px"><input type="text" placeholder="+49 176 …" style="flex:1"><button>Suchen</button></div>
+      <h3 style="margin:20px 0 8px;font-size:16px;font-weight:500">Export</h3>
+      <div style="display:flex;gap:8px;flex-wrap:wrap"><button>Menü als CSV</button><button>Anrufe des Monats als CSV</button><button>Kennzahlen als CSV</button></div>
+    </div>
+  </div>
+</section>
+
+</main>
+<footer class="wrap"><span>Yoki Voice-Agent · Adminansicht · Mockup mit Beispieldaten, 16.09.2026</span><span>Version 0.1 · Mandant Yoki Yoki GmbH</span></footer>
+
+<script>
+(function(){
+  var tabs=document.querySelectorAll('nav [role=tab]');
+  tabs.forEach(function(t){t.addEventListener('click',function(){
+    tabs.forEach(function(x){x.setAttribute('aria-selected','false')});
+    t.setAttribute('aria-selected','true');
+    document.querySelectorAll('main section').forEach(function(s){s.hidden=true});
+    document.getElementById('tab-'+t.dataset.tab).hidden=false;
+  })});
+
+  document.querySelectorAll('.row').forEach(function(r){
+    function toggle(){var open=r.getAttribute('aria-expanded')==='true';r.setAttribute('aria-expanded',!open);var d=r.nextElementSibling;if(d&&d.classList.contains('detail'))d.hidden=open;}
+    r.addEventListener('click',toggle);
+    r.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();toggle();}});
+  });
+
+  document.querySelectorAll('.accept').forEach(function(b){b.addEventListener('click',function(e){
+    e.stopPropagation();var box=b.closest('.suggest');var al=box.parentElement.querySelector('.aliases');
+    var s=document.createElement('span');s.className='alias';s.innerHTML='vier rollen <i>neu</i><button aria-label="Alias entfernen">×</button>';al.appendChild(s);
+    box.remove();var badge=document.querySelector('.row[aria-expanded="true"] .badge.accent');if(badge)badge.remove();
+    var n=document.querySelector('nav .n');if(n){n.textContent='1'}
+  })});
+
+  var q=document.getElementById('q');var chips=document.querySelectorAll('.chip');var filter='all';
+  function apply(){var term=(q.value||'').toLowerCase();document.querySelectorAll('#menu .row').forEach(function(r){
+    var txt=r.textContent.toLowerCase();var tags=r.dataset.tags||'';
+    var okF=filter==='all'||(filter==='warn'&&tags.indexOf('warn')>-1)||(filter==='noalias'&&tags.indexOf('noalias')>-1);
+    var show=okF&&txt.indexOf(term)>-1;r.style.display=show?'':'none';var d=r.nextElementSibling;if(d&&d.classList.contains('detail'))d.style.display=show?'':'none';
+  })}
+  q.addEventListener('input',apply);
+  chips.forEach(function(c){c.addEventListener('click',function(){chips.forEach(function(x){x.setAttribute('aria-pressed','false')});c.setAttribute('aria-pressed','true');filter=c.dataset.f;apply();})});
+
+  var th=document.getElementById('theme');
+  th.addEventListener('click',function(){var r=document.documentElement;var dark=r.getAttribute('data-theme')==='dark'||(!r.getAttribute('data-theme')&&matchMedia('(prefers-color-scheme: dark)').matches);r.setAttribute('data-theme',dark?'light':'dark');th.textContent=dark?'Dunkel':'Hell';});
+})();
+</script>
+</body>
+</html>
