@@ -41,4 +41,6 @@ Die Aufgabenliste ist `docs/07_ARBEITSPAKETE.md`.
 
 ## Status
 
-Stufe 0 (Fundament). Noch kein Code. Nächstes Gate: G0.
+Stufe 0 (Fundament) · Stand 16.09.2026 · Nächstes Gate: **G0 Go/No-Go** (🔴 offen)
+
+Lauffähiges API-Minimalgerüst (FastAPI `/health`, Token-Auth, einheitliche Antwort-Hülle, 3 Tests grün). Betriebs- und Adminansicht als GUI-Mockup abgenommen. Datenbank, Tools und produktive GUI fehlen noch. Details und nächste Schritte: `docs/01_STATUS.md`.
