@@ -8,7 +8,7 @@
 
 ## 1. Ziel
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer von Yoki Yoki an. Er erledigt Reservierung, Abholung und Lieferung korrekt, übergibt an Küche, Kasse und Team und leitet Beschwerden an Menschen weiter. Die Oberfläche ist so einfach, dass das Team sie im Stress ohne Erklärung bedient.
+Ein KI-Agent nimmt Anrufe auf der Festnetznummer von <Pilotbetrieb> an. Er erledigt Reservierung, Abholung und Lieferung korrekt, übergibt an Küche, Kasse und Team und leitet Beschwerden an Menschen weiter. Die Oberfläche ist so einfach, dass das Team sie im Stress ohne Erklärung bedient.
 
 ### Leitregeln (First Principles)
 
@@ -64,7 +64,7 @@ Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestä
 | E2 | Stufen: Reservierung → Abholung → Lieferung | Jede Stufe bringt genau eine neue Schwierigkeit | Annahme, in G0 per Anruf-Mix bestätigen |
 | E3 | Rollout: Schatten → Überlauf → Hauptannahme | Das Risiko wächst nur mit Belegen | Annahme, gilt bis Veto |
 | E4 | Kasse bleibt Buchungs-Master (TSE); Agent-DB nur für Agent-Daten | Rechtssicherheit, eine einzige Wahrheit für Umsätze | Annahme, gilt bis Veto |
-| E5 | Pilot Yoki Yoki, Nummer bleibt; Menü, Zeiten, Zonen aus der DB | Später auf andere Betriebe übertragbar | Annahme, gilt bis Veto |
+| E5 | Pilot <Pilotbetrieb>, Nummer bleibt; Menü, Zeiten, Zonen aus der DB | Später auf andere Betriebe übertragbar | Annahme, gilt bis Veto |
 | E6 | Einlernen = Wissensbasis + Eval-Suite + Offline-Schattenmodus, kein Modelltraining | Billiger, messbar, rechtlich schlanker | Annahme, gilt bis Veto |
 | E7 | KI gibt sich zu Gesprächsbeginn als KI zu erkennen | AI Act Art. 50, gilt seit 02.08.2026 | Pflicht |
 | E8 | Beschwerde, Mensch-Wunsch, Storno → sofort Team, sonst Rückruf-Aufgabe | Vertrauen, Fehlerbegrenzung | Annahme, gilt bis Veto |
@@ -77,7 +77,7 @@ Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestä
 Anrufer
   │
   ▼
-Festnetz Yoki (bestehender Anbieter)
+Festnetz <Pilotbetrieb> (bestehender Anbieter)
   │  Umleitung / SIP
   │  Modus: Schatten · Überlauf · Primär
   ▼
@@ -255,7 +255,7 @@ Stufen sind die Zeitachse, Chats die Arbeitspakete (Abschnitt 10). Jede Stufe li
 
 - [ ] **AI Act Art. 50:** KI-Hinweis zu Gesprächsbeginn, gilt seit 02.08.2026 ([Quelle](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Aufzeichnung:** Einwilligung von Kunde und Team (§201 StGB); Ansage und Weg zum Widersprechen
-- [ ] **DSGVO:** Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung) · Informationspflicht (kurze Ansage + Datenschutzerklärung auf yokiyoki.de) · AVV mit allen Dienstleistern · Drittlandtransfer prüfen · Löschkonzept · Verzeichnis der Verarbeitungstätigkeiten · Datenschutz-Folgenabschätzung prüfen
+- [ ] **DSGVO:** Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung) · Informationspflicht (kurze Ansage + Datenschutzerklärung auf example.com) · AVV mit allen Dienstleistern · Drittlandtransfer prüfen · Löschkonzept · Verzeichnis der Verarbeitungstätigkeiten · Datenschutz-Folgenabschätzung prüfen
 - [ ] **Team:** informieren, Einwilligung oder Vereinbarung zu Aufnahmen
 - [ ] **Allergene (LMIV):** Auskunft nur aus gepflegten DB-Werten, sonst Rückruf durch das Team
 - [ ] **Kasse (TSE):** KI-Bestellungen werden ordnungsgemäß in der Kasse gebucht

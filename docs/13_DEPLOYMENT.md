@@ -40,9 +40,9 @@ Internet
   │ 443 only
   ▼
 Caddy (TLS automatisch, Reverse Proxy)
-  ├── agent.yokiyoki.de/v1/tools/*  → api:8000  (Token-Pflicht)
-  ├── agent.yokiyoki.de/gui/*        → api:8000  (Basic-Auth oder VPN Annahme)
-  └── n8n.yokiyoki.de                → n8n:5678  (Basic-Auth)
+  ├── agent.example.com/v1/tools/*  → api:8000  (Token-Pflicht)
+  ├── agent.example.com/gui/*        → api:8000  (Basic-Auth oder VPN Annahme)
+  └── n8n.example.com                → n8n:5678  (Basic-Auth)
 Postgres: nur im Docker-Netz, kein offener Port
 ```
 

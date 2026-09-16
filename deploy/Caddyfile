@@ -1,9 +1,9 @@
 # Domains sind Vorschläge – in .env/DNS anpassen
-agent.yokiyoki.de {
+agent.example.com {
     encode gzip
     reverse_proxy api:8000
 }
 
-n8n.yokiyoki.de {
+n8n.example.com {
     reverse_proxy n8n:5678
 }

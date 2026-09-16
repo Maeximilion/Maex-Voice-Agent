@@ -7,9 +7,11 @@
 
 ## 1. Was wir bauen
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer des Restaurants **Yoki Yoki** (Sinzheim bei Baden-Baden) an und erledigt **Reservierung, Abholung und Lieferung**. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert alles über eine Browser-GUI auf dem Tablet.
+Ein KI-Agent nimmt Anrufe auf der Festnetznummer des Restaurants **<Pilotbetrieb>** (<Ort>) an und erledigt **Reservierung, Abholung und Lieferung**. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert alles über eine Browser-GUI auf dem Tablet.
 
 **Aufgabenteilung:** Eine externe Voice-Plattform macht Telefonie, Spracherkennung und Stimme. Wir bauen die **Logik, die Datenbank und die Oberfläche**. Der Agent ruft unsere Tools per HTTPS auf.
+
+**Platzhalter:** Betriebs-, Firmen-, Orts- und Anbieternamen stehen in Code und Doku als `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>` und `example.com`. Die echten Werte kommen aus `.env` und der Datenbank, nie ins Repo. Im Code keine Emojis.
 
 ---
 

@@ -12,7 +12,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://maex:change_me@db:5432/maex_agent"
     agent_api_token: str = "change_me_long_random"
 
-    tenant_name: str = "Yoki Yoki GmbH"
+    tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"
     team_phone: str = "+49000000000"
     max_call_seconds: int = 420

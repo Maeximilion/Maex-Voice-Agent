@@ -8,7 +8,7 @@
 Anrufer
   │
   ▼
-Festnetz Yoki (bestehender Anbieter)
+Festnetz <Pilotbetrieb> (bestehender Anbieter)
   │  Rufumleitung oder SIP
   │  Modus: Schatten · Überlauf · Primär
   ▼
@@ -107,7 +107,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 
 | Datum | Master | Kopie |
 |---|---|---|
-| Umsätze und Bons | Kassensystem order smart (TSE) | – |
+| Umsätze und Bons | <Kassensystem> (TSE) | – |
 | Menü und Preise | Kasse, falls exportierbar; sonst Agent-DB | Agent-DB mit wöchentlichem Abgleich-Check |
 | Öffnungszeiten, Wartezeit, Zonen | Agent-DB | GUI zeigt an |
 | Kundenstamm für die Telefonerkennung | Agent-DB | – |

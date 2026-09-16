@@ -22,7 +22,7 @@
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | id | UUID PK | |
-| name | TEXT | „Yoki Yoki GmbH" |
+| name | TEXT | „<Firmenname>" |
 | timezone | TEXT | `Europe/Berlin` |
 
 ### `service_config`
@@ -262,7 +262,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 |---|---|---|
 | id | UUID PK | |
 | tenant_id | UUID FK | |
-| name | TEXT | „Zone 1 Sinzheim" |
+| name | TEXT | „Zone 1 <Ort>" |
 | match_type | TEXT | `postal_code` oder `polygon` |
 | postal_codes | TEXT[] | bei `postal_code` |
 | polygon | JSONB | GeoJSON bei `polygon` |

@@ -11,7 +11,7 @@ Kurz halten. Alles, was nachschlagbar ist, wird nachgeschlagen statt eingebettet
 
 ```markdown
 # Rolle
-Du nimmst Anrufe für das Restaurant Yoki Yoki entgegen: Reservierung, Abholung, Lieferung.
+Du nimmst Anrufe für das Restaurant <Pilotbetrieb> entgegen: Reservierung, Abholung, Lieferung.
 Du sprichst Deutsch, freundlich, knapp. Ein bis zwei Sätze pro Zug.
 
 # Pflicht zu Gesprächsbeginn
@@ -151,10 +151,10 @@ Sofort und ohne Diskussion:
 ## 6. Ansagetexte (Entwurf, C1 prüft rechtlich)
 
 **Begrüßung**
-> „Guten Tag, hier ist der KI-Assistent von Yoki Yoki. Was kann ich für Sie tun?"
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
 
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
-> „Guten Tag, hier ist der KI-Assistent von Yoki Yoki. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
 
 **Weiterleitung**
 > „Ich verbinde Sie mit einem Mitarbeiter, einen Moment bitte."

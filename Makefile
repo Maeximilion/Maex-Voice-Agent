@@ -12,7 +12,7 @@ logs:
 migrate:  ## Schema auf den neuesten Stand
 	docker compose exec api alembic upgrade head
 
-seed:     ## Testdaten für Yoki Yoki
+seed:     ## Testdaten für den Pilotbetrieb
 	docker compose exec api python -m scripts.seed
 
 test:
