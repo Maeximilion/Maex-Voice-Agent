@@ -1,5 +1,6 @@
 """domain/reservations: create_reservation als Entwurf mit readback, Idempotenz und Grenzfällen."""
 
+import threading
 import uuid
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
@@ -226,3 +227,78 @@ def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id)
     create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
     with pytest.raises(Conflict):
         create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
+
+
+def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
+    """Gleicher Schlüssel, gleiche Antwort — auch wenn der Tag zwischen den Aufrufen wechselt."""
+    kurz_vor_mitternacht = datetime(2026, 9, 15, 23, 50, tzinfo=BERLIN)
+    nach_mitternacht = datetime(2026, 9, 16, 0, 30, tzinfo=BERLIN)
+    req = request(
+        tenant_id,
+        call_id,
+        idempotency_key="k-mitternacht",
+        reserved_for=berlin(MITTWOCH, 18, 30),
+    )
+
+    first = create_reservation(session, req, now=kurz_vor_mitternacht)
+    assert "morgen" in first.readback
+
+    second = create_reservation(session, req, now=nach_mitternacht)
+    assert second.readback == first.readback
+    assert second == first
+
+
+def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
+    """Acht gleichzeitige Anfragen auf ein Fenster mit 40 Plätzen: nur vier dürfen durchkommen."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        call = Call(
+            tenant_id=tenant,
+            external_session_id="ext",
+            started_at=NOW,
+            delete_after=DIENSTAG,
+        )
+        s.add(call)
+        s.commit()
+        call = call.id
+
+    start = threading.Barrier(8)
+    results: list[object] = []
+    lock = threading.Lock()
+
+    def book(n: int) -> None:
+        start.wait(timeout=10)
+        with Session(engine) as own:
+            try:
+                create_reservation(
+                    own,
+                    request(
+                        tenant, call, idempotency_key=f"parallel-{n}", party_size=10
+                    ),
+                    now=NOW,
+                )
+                outcome: object = "ok"
+            except Conflict as exc:
+                outcome = exc
+        with lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=book, args=(n,)) for n in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    with Session(engine) as s:
+        booked = s.scalar(
+            select(func.coalesce(func.sum(Reservation.party_size), 0)).where(
+                Reservation.tenant_id == tenant
+            )
+        )
+    engine.dispose()
+
+    assert results.count("ok") == 4, f"erwartet 4 Buchungen, bekam {results}"
+    assert booked == 40, f"Fenster mit 40 Plätzen ist mit {booked} Gästen überbucht"

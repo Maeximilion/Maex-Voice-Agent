@@ -1,13 +1,13 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.0
+> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.1
 
 ---
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`) antworten in rund 8 bis 15 ms (p95); 129 Tests laufen grün. Der erste Schreibvorgang steht (`create_reservation` als `draft` mit `readback`, Idempotenz und `audit_log`); `confirm`, Outbox, Rückrufe und die GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`) antworten in rund 8 bis 15 ms (p95); 131 Tests laufen grün. Der erste Schreibvorgang steht (`create_reservation` als `draft` mit `readback`, Idempotenz und `audit_log`); `confirm`, Outbox, Rückrufe und die GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -95,7 +95,8 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 - Offene Entwürfe blockieren Kapazität, bis sie bestätigt oder storniert werden; ein Verfallsjob für liegengebliebene Entwürfe fehlt noch (Kandidat für `jobs/`)
 - **`create_reservation` verlangt einen bekannten Anruf** (`domain/reservations/create.py`): die `calls`-Zeile muss vor dem ersten Schreibvorgang existieren (kommt mit T-1.9 über `POST /v1/calls/start`), sonst `not_found` mit Störungs-`say`. Kein stilles Anlegen, damit falsche IDs der Plattform sofort auffallen. Annahme vom 16.09.2026, kippbar
 - **Entwurf prüft den Slot erneut** nach denselben Regeln wie `check_slot`; belegt → `conflict` mit den Alternativen im `say`. Idempotenz-Replay prüft nicht erneut und liefert die gespeicherte Antwort; derselbe Schlüssel unter einem anderen Mandanten → `conflict`
-- **Readback-Format** (`domain/reservations/spoken.py`): „Ein Tisch für vier Personen heute / morgen / am Dienstag, den 22. September um halb sieben, auf den Namen Müller[, mit dem Hinweis: …]. Passt das so?" Personenzahl bis zwölf als Wort, darüber Ziffer. Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
+- **Prüfen und Anlegen sind gesperrt** (`_lock_business_day`): eine Advisory-Sperre je Mandant und Tag (`pg_advisory_xact_lock`) hält bis zum Ende der Transaktion, sonst lesen zwei gleichzeitige Anrufe dieselbe freie Kapazität und überbuchen das Fenster. Grob genug für Telefonlast, fein genug, dass verschiedene Tage sich nicht behindern. Mit dem gleichen Muster arbeitet später `confirm`
+- **Readback-Format** (`domain/reservations/spoken.py`): „Ein Tisch für vier Personen heute / morgen / am Dienstag, den 22. September um halb sieben, auf den Namen Müller[, mit dem Hinweis: …]. Passt das so?" Personenzahl bis zwölf als Wort, darüber Ziffer. Bezugspunkt für „heute" und „morgen" ist `created_at` des Entwurfs, nicht die aktuelle Uhrzeit, damit ein Replay nach Mitternacht denselben Satz liefert. Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
 - **Rufnummern** werden in `domain/customers/phone.py` nach E.164 normalisiert, Default-Land `+49`; `0049…`, `0…`, Leerzeichen, Schrägstriche und Klammern werden aufgelöst. Unterdrückte Nummer ist noch nicht modelliert (kommt mit `find_customer`)
 - Jeder Schreibvorgang schreibt `audit_log` (`actor: agent`, `action: reservation.draft_created`), inline im Domain-Code; ein gemeinsamer Helfer folgt, sobald `confirm` die zweite Stelle ist
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
@@ -158,6 +159,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.3.1 · 16.09.2026:** Codex-Review PR #4 (P1, P2) behoben: Sperre gegen Überbuchung bei parallelen Anrufen, readback stabil über Mitternacht
 - **v1.3.0 · 16.09.2026:** T-1.5 fertig: create_reservation als draft mit readback, Idempotenz und audit_log; core/ids.py und E.164-Normalisierung neu; nächste Schritte T-1.6, T-1.12, T-1.7 bis T-1.9
 - **v1.2.0 · 16.09.2026:** Merge PR #2: T-1.1 bis T-1.4 fertig (core/, Alembic, Seed, get_service_status, check_slot), Rebrand Maex Voice-Agent mit Platzhaltern, README-Strategie + CHANGELOG.md + /gate eingeführt, Codex-Review-Fixes
 - **v1.1.1 · 16.09.2026:** Fahrplan-Abschnitt, Versionierungsschema und Auto-Update (Skript + CI-Sync-Check) eingeführt
