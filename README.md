@@ -15,8 +15,10 @@ Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbi
 
 Was funktioniert:
 
-- `make up` baut das API-Image und startet Postgres und API; `/health` antwortet, Token-Auth greift
-- `make test` und `make lint` laufen im Container, drei Tests grün, ruff sauber
+- `make up` baut das API-Image und startet Postgres, API und n8n; `/health` antwortet, Token-Auth greift
+- Jede Antwort der Agent-API folgt der Hülle aus `docs/04_API_TOOLS.md`; Fehler kommen als JSON mit Code und Vorlesesatz, nie als Stacktrace
+- Datenbankzugang mit einer Session je Request (`api/db.py`), Logs als JSON-Zeilen mit `request_id` und `call_id`
+- `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
 Was noch nicht funktioniert:
