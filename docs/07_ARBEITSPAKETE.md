@@ -26,7 +26,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-0.3 | Token-Auth als Dependency, greift für alle `/v1/tools/*` | 02 §7 | T-0.2 | fertig, mit Test |
 | T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | fertig 16.09.2026: `make test`, `make lint`, `make fmt`, `make up`, `make migrate` laufen im Container, ruff format + check sauber |
 | T-0.5 | Latenz-Testhelfer: misst p95 je Tool-Endpunkt, schlägt über 300 ms fehl | 04 §1 | T-0.4 | fertig 16.09.2026: `p95_ms` in `api/tests/conftest.py`, jeder Tool-Test hat einen Latenztest |
-| T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | fertig 16.09.2026: `envelope`, `errors`, `auth`, `logging`, `time`; `ids.py` folgt mit T-1.5 |
+| T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | fertig 16.09.2026: `envelope`, `errors`, `auth`, `logging`, `time`; `ids.py` seit T-1.5 |
 | T-0.7 | Slash-Befehle in `.claude/commands/` einmal durchspielen, CI-Workflow grün bekommen | 12, 13 §6 | T-0.4 | offen |
 | T-0.8 | `domain/menu/numberwords.py`: deutsche Zahlwörter und Mengen, ≥ 100 Unit-Tests, ohne DB | 11 §menu | T-0.6 | offen |
 
@@ -40,7 +40,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.2 | Seed-Skript `scripts/seed.py`: Mandant <Pilotbetrieb>, Öffnungszeiten, Kapazität, Testkonfiguration | 03 | T-1.1 | fertig 16.09.2026: `scripts/seed.py`, idempotent, Live-Schalter bleibt unangetastet, Werte sind Platzhalter bis C1 |
 | T-1.3 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | fertig 16.09.2026: `domain/status/` + `tools/service_status.py`, 16 Tests, p95 weit unter 300 ms |
 | T-1.4 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | fertig 16.09.2026: `domain/reservations/{capacity,slots,spoken}.py` + `tools/check_slot.py`, 23 Tests, p95 rund 13 ms |
-| T-1.5 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | offen |
+| T-1.5 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | fertig 16.09.2026: `domain/reservations/create.py` + `tools/create_reservation.py`, `core/ids.py`, `domain/customers/phone.py` (E.164), 40 Tests, p95 rund 15 ms |
 | T-1.6 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | offen |
 | T-1.7 | Tool `create_callback` | 04 | T-1.1 | offen |
 | T-1.8 | Tool `transfer_to_team` inkl. Schleifenschutz und Erreichbarkeitsprüfung | 04 | T-1.1 | offen |
