@@ -29,6 +29,9 @@ services:
       - ./api:/app/api
       - ./gui:/app/gui
       - ./prompts:/app/prompts
+      - ./scripts:/app/scripts
+      - ./evals:/app/evals
+      - ./db:/app/db
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
@@ -43,6 +46,8 @@ services:
       N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
       GENERIC_TIMEZONE: Europe/Berlin
+      # n8n lauscht standardmäßig auf "::" und stirbt auf Docker-Hosts ohne IPv6
+      N8N_LISTEN_ADDRESS: 0.0.0.0
     volumes:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows

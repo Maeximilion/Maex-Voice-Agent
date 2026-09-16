@@ -7,11 +7,11 @@
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth und der einheitlichen Antwort-Hülle, drei Tests laufen grün. Datenbank, Tools und GUI fehlen noch komplett.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die ersten Tools im heißen Pfad (`get_service_status`, `check_slot`) antworten in rund 12 bis 13 ms (p95); 86 Tests laufen grün. Die schreibenden Stufe-1-Tools und die GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
-**Ungeprüft:** `docker-compose.yml` wurde geschrieben, aber noch nie gegen echtes Docker gestartet. Das ist T-0.1 und der erste Schritt in Claude Code.
+**Geprüft (16.09.2026):** `make up` baut das API-Image und startet Postgres und API, `/health` antwortet `{"status":"ok"}`, `make lint` und `make test` laufen im Container (T-0.1 fertig). Ein externes Code-Review (Codex) hat vier Findings am Docker-Setup geliefert, alle behoben: CA-Zertifikat im Build optional, Paketpfad `/app/api` erhalten, `scripts/` und `evals/` in den Container gemountet, README-Schnellstart auf das reduziert, was heute läuft.
 
 Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. Volle Details je Stufe: `docs/00_PCF.md` §5.
 
@@ -21,14 +21,14 @@ Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. 
 
 | Stufe | Ziel | Gate | Stand |
 |---|---|---|---|
-| P Plan | Plan freigegeben | – | ✅ 11.09.2026 |
-| **0 Fundament** | Fakten, Recht, Budget, Anbieter klären | G0 Go/No-Go | 🟡 läuft – Block „Gerüst" in `docs/07_ARBEITSPAKETE.md` |
-| 1 Durchstich Reservierung | ganze Kette einmal echt (Testnummer → KI → Tool → DB → GUI) | G1 | ⬜ |
-| 2 Abholung | Menü sicher verstanden, Bestellung korrekt in der Küche | G2 | ⬜ |
-| 3 Lieferung | Adresse und Zone ohne Fehler | G3 | ⬜ |
-| 4 Einlernen & Schattenmessung | echte Fehlerquote messen, ohne Kundenrisiko | G4 | ⬜ |
-| 5 Überlauf-Betrieb | KI nimmt an, nur wenn das Team nicht abnimmt | G5 | ⬜ |
-| 6 Hauptannahme & Betrieb | KI nimmt zuerst an, Team bleibt Rückfallebene, Monats-Review läuft | Monats-Review | ⬜ Zielzustand |
+| P Plan | Plan freigegeben | – | bestanden 11.09.2026 |
+| **0 Fundament** | Fakten, Recht, Budget, Anbieter klären | G0 Go/No-Go | läuft – Block „Gerüst" in `docs/07_ARBEITSPAKETE.md` |
+| 1 Durchstich Reservierung | ganze Kette einmal echt (Testnummer → KI → Tool → DB → GUI) | G1 | offen |
+| 2 Abholung | Menü sicher verstanden, Bestellung korrekt in der Küche | G2 | offen |
+| 3 Lieferung | Adresse und Zone ohne Fehler | G3 | offen |
+| 4 Einlernen & Schattenmessung | echte Fehlerquote messen, ohne Kundenrisiko | G4 | offen |
+| 5 Überlauf-Betrieb | KI nimmt an, nur wenn das Team nicht abnimmt | G5 | offen |
+| 6 Hauptannahme & Betrieb | KI nimmt zuerst an, Team bleibt Rückfallebene, Monats-Review läuft | Monats-Review | offen, Zielzustand |
 
 **Wir sind hier:** Stufe 0, Block „Gerüst" – Gerüst starten, `core/`, Alembic, CI (siehe „Was als Nächstes dran ist"). **Wo wir hinwollen:** Stufe 6, laufender Betrieb mit KI als primärer Annahme und Team als Rückfallebene.
 
@@ -38,24 +38,22 @@ Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. 
 
 | Gate | Inhalt | Status |
 |---|---|---|
-| P | Plan freigegeben | ✅ 11.09.2026 |
-| G0 | Budget · Recht · Telefonie-Weg · Anbieter gewählt | 🔴 offen |
-| G1 | Durchstich Reservierung, 20 Testanrufe fehlerfrei | ⬜ |
-| G2 | Abholung, Evals im Ziel, 0 geratene Positionen | ⬜ |
-| G3 | Lieferung, Zonen-Check fehlerfrei | ⬜ |
-| G4 | Schattenmessung, KI ≥ Team-Baseline | ⬜ |
-| G5 | Überlauf-Betrieb, 2 Wochen im Ziel | ⬜ |
+| P | Plan freigegeben | bestanden 11.09.2026 |
+| G0 | Budget · Recht · Telefonie-Weg · Anbieter gewählt | offen |
+| G1 | Durchstich Reservierung, 20 Testanrufe fehlerfrei | offen |
+| G2 | Abholung, Evals im Ziel, 0 geratene Positionen | offen |
+| G3 | Lieferung, Zonen-Check fehlerfrei | offen |
+| G4 | Schattenmessung, KI ≥ Team-Baseline | offen |
+| G5 | Überlauf-Betrieb, 2 Wochen im Ziel | offen |
 
 ---
 
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-0.1** `docker compose up` einmal wirklich starten, `/health` im Browser prüfen, Fehler ausräumen
-2. **T-0.2 Rest** `db.py` mit Engine und Session ergänzen
-3. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
-4. **T-0.6** `core/` – Hülle, Fehlerklassen, JSON-Logging
-5. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`)
+1. **T-1.5** `create_reservation` als `draft` mit `readback` und Idempotenz (erster Schreibvorgang: `call_id` Pflicht, `core/ids.py` für Idempotenz-Schlüssel)
+2. **T-1.6** `confirm` generisch mit `audit_log` und Outbox-Eintrag, dann **T-1.7** `create_callback`
+3. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
@@ -72,22 +70,29 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | # | Frage | Wer | Wann gebraucht |
 |---|---|---|---|
 | D1 | Voice-Plattform | Maxi nach C2-Recherche | vor T-2.x (Anbindung) |
-| D2 | Übergabeweg in die Kasse. Kasse ist **order smart (app smart GmbH / OrderYOYO)**, der eigene Shop läuft bereits automatisch hinein. Vier Stufen: A Tablet manuell · B Küchenbon direkt · C über den bestehenden Bestell-Eingang der Kasse (Partner-Kanal wie Lieferando, keine öffentliche Doku) · D Kassen-API. ⭐ Start mit A+B, C hängt an der Antwort von app smart (Anfrage per E-Mail vorbereitet, 16.09.2026) | Maxi, app smart | A+B sofort, C vor T-4.6 |
+| D2 | Übergabeweg in die Kasse. Kasse ist **<Kassensystem> (<Kassenanbieter>)**, der eigene Shop läuft bereits automatisch hinein. Vier Stufen: A Tablet manuell · B Küchenbon direkt · C über den bestehenden Bestell-Eingang der Kasse (Partner-Kanal wie Lieferando, keine öffentliche Doku) · D Kassen-API. Empfehlung: Start mit A+B, C hängt an der Antwort von <Kassenanbieter> (Anfrage per E-Mail vorbereitet, 16.09.2026) | Maxi, <Kassenanbieter> | A+B sofort, C vor T-4.6 |
 | D3 | Hosting-Anbieter in der EU | C2 | vor erstem Deployment |
 | D4 | Stimme: natürlich oder hörbar synthetisch | Maxi | Stufe 1, Dialogtest |
 | D5 | Lieferzonen: PLZ-Liste oder Polygone | Maxi | vor T-6.x (Stufe 3) |
-| D6 | GUI-Technik: HTMX ⭐ oder React | Maxi | vor T-3.1 |
-| D7 | Läuft unser eigener Gesprächs-Kern (`agent/`) auch im Betrieb, oder fährt die Plattform ihren eigenen Loop? ⭐ eigener Kern, wenn die Plattform es erlaubt | Maxi mit C2 | zusammen mit D1 |
+| D6 | GUI-Technik: HTMX (empfohlen) oder React | Maxi | vor T-3.1 |
+| D7 | Läuft unser eigener Gesprächs-Kern (`agent/`) auch im Betrieb, oder fährt die Plattform ihren eigenen Loop? empfohlen: eigener Kern, wenn die Plattform es erlaubt | Maxi mit C2 | zusammen mit D1 |
 
 ---
 
-## Getroffene Annahmen (⚠️ kippbar)
+## Getroffene Annahmen (kippbar)
 
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
 - GUI als FastAPI + Jinja2 + HTMX + SSE, ein Container, kein Node-Build
-- Ein Betrieb (Yoki Yoki), aber mandantenfähiges Schema: jede betriebsbezogene Tabelle trägt `tenant_id`
+- Ein Betrieb (<Pilotbetrieb>), aber mandantenfähiges Schema: jede betriebsbezogene Tabelle trägt `tenant_id`
 - Deutsch als einzige Sprache in Stufe 1 bis 6
 - Bezahlt wird bei Abholung oder Lieferung, keine Zahlung am Telefon
+- **Betriebstag beginnt um 05:00 Ortszeit** (`api/core/time.py`, `DAY_STARTS_AT`): eine Bestellung um 00:30 zählt zum Vortag. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
+- Fehler der Fachlogik antworten mit HTTP 200 in der Hülle, damit die Voice-Plattform sie dem Agenten vorlegt; nur fehlende Auth ist 401
+- **Testkonfiguration im Seed ist Platzhalter** (`scripts/seed.py`): Montag Ruhetag, 11:30–14:00 und 17:00–22:00 für alle Services, Kapazität 30 (mittags) / 40 (abends) Gäste im 30-Minuten-Raster, Wartezeit 20/45 min. Echte Werte kommen mit C1 und werden dann im Seed ersetzt
+- Seed überschreibt `service_config` nie: der Live-Schalter (Modus, Lieferung, Wartezeit) gehört dem Team
+- **Kapazität ohne Verweildauer** (`domain/reservations/capacity.py`): `capacity.max_guests` ist die Summe aller Gäste, deren Reservierung im Fenster beginnt; die Fenster bilden die Sitz-Turns ab (z. B. 18–20 und 20–22 Uhr). Entwürfe zählen mit, Stornierte und weich Gelöschte nicht. `check_slot` verlangt zusätzlich ein offenes `dinein`-Fenster (Sondertage greifen). Alternativen nur am selben Tag, im Raster `slot_minutes`, die zwei nächsten am Wunsch, nie in der Vergangenheit. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
+- Offene Entwürfe blockieren Kapazität, bis sie bestätigt oder storniert werden; ein Verfallsjob für liegengebliebene Entwürfe fehlt noch (Kandidat für `jobs/`)
+- **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
 
@@ -97,8 +102,9 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 |---|---|---|
 | Rechts-Check nicht abgeschlossen | jede Verarbeitung echter Anrufaufnahmen (C7 / T-7.x) | `docs/09_BETRIEB_RECHT.md` abarbeiten |
 | Kein Anbieter gewählt | Anbindung der Voice-Plattform, echte Testanrufe | C2 im Chat |
-| Antwort app smart zur Bestell-Schnittstelle steht aus | Stufe C der Kassenanbindung (T-4.6 Variante C) | E-Mail abschicken, Lizenznummer bereithalten; bis dahin A+B bauen |
+| Antwort <Kassenanbieter> zur Bestell-Schnittstelle steht aus | Stufe C der Kassenanbindung (T-4.6 Variante C) | E-Mail abschicken, Lizenznummer bereithalten; bis dahin A+B bauen |
 | Menüdaten liegen nicht strukturiert vor | Stufe 2 komplett | C1 klärt Format, dann T-4.1 Import |
+| Docker Hub Rate-Limit beim ersten `make up` möglich (am 16.09.2026 einmal aufgetreten, nach Wartezeit durch) | Image-Build | `docker login` mit kostenlosem Konto, siehe README, Abschnitt Bekannte Probleme |
 
 ---
 
@@ -108,23 +114,35 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 |---|---|
 | 11.09.2026 | PCF v1.0 erstellt und freigegeben, Architektur Hybrid entschieden (E1) |
 | 15.09.2026 | Repo-Gerüst und Specs für Claude Code exportiert |
-| 15.09.2026 | API-Minimalgerüst: `/health`, Token-Auth, Antwort-Hülle, 3 Tests grün (T-0.3 ✅) |
+| 15.09.2026 | API-Minimalgerüst: `/health`, Token-Auth, Antwort-Hülle, 3 Tests grün (T-0.3 fertig) |
+| 16.09.2026 | README-Pflege eingeführt: `docs/15_README_STRATEGY.md`, `/gate`, `CHANGELOG.md`, Versionen je Gate; alle Emojis aus dem Bundle entfernt |
+| 16.09.2026 | Umbenannt in Maex Voice-Agent (Produkt), der Pilotbetrieb wird als Platzhalter `<Pilotbetrieb>` geführt; Betriebsorte in `docs/13` §0 festgeschrieben: **nichts läuft auf Maxis PC, auch nicht die Transkription** (E9) |
 | 16.09.2026 | Adminansicht als klickbares Desktop-Mockup in `gui/mockups/` aufgenommen, Vorlage für T-3.1 |
 | 16.09.2026 | GUI-Runde abgeschlossen: Betriebs- und Adminansicht als Mockup abgenommen, Änderungen in `docs/06_GUI.md` §7 |
 | 16.09.2026 | Bundle v1.1: Modul-Architektur (11), Playbooks + Slash-Befehle (12), Deployment (13), Menü-Importformat (14), Outbox, Agent-Kern + Simulator, CI, Prod-Compose; 18 neue Aufgaben |
 | 16.09.2026 | README-Status auf den tatsächlichen Stand synchronisiert |
+| 16.09.2026 | Platzhalter statt Namen: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com` in Code, Doku, Mockup und Caddyfile; Regel in `CLAUDE.md` §1 |
+| 16.09.2026 | **T-0.1 fertig:** `make up` gegen echtes Docker, Postgres + API healthy, n8n erreichbar (nach Fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` und `/v1/tools/ping` geprüft, `make lint` + `make test` im Container grün. Codex-Review (4 Findings) eingearbeitet. `ruff format` erstmals gelaufen (T-0.4: nur `make migrate` offen, wartet auf T-1.1) |
+| 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
+| 16.09.2026 | **T-0.6 fertig:** `api/core/` mit `envelope` (Hülle), `errors` (8 Codes aus 04 §1, `AppError` wird zentral übersetzt), `auth` (aus `main.py` gezogen), `logging` (JSON-Zeilen mit `request_id`/`call_id`, Middleware misst Dauer, `X-Request-ID` wird übernommen oder erzeugt), `time` (UTC/Ortszeit, Betriebstag, Sommerzeit-sichere Tagesgrenzen). `main.py` nutzt nur noch `core`. 34 Tests grün |
+| 16.09.2026 | **T-1.1 fertig, T-0.4 fertig:** Alembic unter `db/` (`alembic -c db/alembic.ini`, URL aus `settings`), Migration 001 mit den zehn Stufe-1-Tabellen inkl. `outbox` und `audit_log`, Enums als CHECK-Constraints, `idempotency_key` unique, `deleted_at` auf Reservierungen und Rückrufen. Modelle unter `api/models/` (Base, Mixins für UUID-PK, `tenant_id`, Zeitstempel). Tests gegen eine Wegwerf-DB: up, Modelle ohne Diff zum Schema, down/up, doppelter Schlüssel, fehlende `call_id`, ungültiger `outbox.status`. `make migrate` läuft, Dev-DB auf 001. 42 Tests grün |
+| 16.09.2026 | **T-1.2 fertig:** `scripts/seed.py` mit `seed(session, tenant_name, timezone)` und CLI (`make seed`, JSON-Ausgabe). Idempotent: Mandant und `service_config` nur bei Fehlen, Öffnungszeiten und Kapazität deterministisch ersetzt. Gemeinsame Wegwerf-DB-Fixtures in `api/tests/conftest.py`. Tests: Zähler, zweimal = gleich, Live-Schalter bleibt, zweiter Mandant, CLI. 47 Tests grün |
+| 16.09.2026 | **T-1.3 fertig, T-0.5 fertig:** `domain/status/hours.py` (Fenster je Tag und Service, Sondertag schlägt Wochentag, Fenster über Mitternacht, nächste Öffnung) und `service.py` (`get_service_status`), Schemas `ToolRequest` und `ServiceStatus`, Tool-Router `tools/router.py` mit `tools/service_status.py`. 16 Tests: offen, Ruhetag mit `say`, zwischen den Fenstern, 00:30, Fenster 18–01 Uhr, Sondertag geschlossen, Sonderzeiten am Ruhetag, Sommerzeit Beginn und Ende, Lieferung pausiert, unbekannter Mandant, Hülle, 401, `invalid_input`, `not_found`. **Latenz:** p95 11,3 ms lokal, 12,3 ms im Container (Helfer `p95_ms`, Budget 300 ms), live per curl max 54,9 ms. Uvicorn-Access-Log abgeschaltet, die Middleware-Zeile hat Dauer und `request_id`. 63 Tests grün |
+| 16.09.2026 | **T-1.4 fertig:** `domain/reservations/capacity.py` (Fenster je Wochentag, belegte Gäste aller Fenster in einer Abfrage), `slots.py` (`check_slot`: Öffnungszeit `dinein` und Kapazitätsfenster, bis zu zwei Alternativen im Raster, nächste zuerst), `spoken.py` (gesprochene Uhrzeit „halb sieben"). Schema `CheckSlotRequest` (zeitzonenbewusst, `party_size ≥ 1`), Tool `tools/check_slot.py`. 23 Tests: frei, voll mit Alternativen, kleine Gruppe passt noch, Entwurf zählt / Storno nicht, Gruppe größer als jedes Fenster, Ruhetag, Fensterende exklusiv, keine Alternativen in der Vergangenheit, Vergangenheit → `invalid_input`, naive Zeit → `invalid_input`, gesprochene Zeiten. **Latenz:** p95 13,0 ms lokal. 86 Tests grün |
+| 16.09.2026 | **Codex-Review PR #2 (2 Findings) behoben, roter Test zuerst:** `check_slot` berücksichtigt Fenster des Vortags über Mitternacht (Wunsch 00:30 in einem Fenster 18–01 Uhr war fälschlich belegt); `get_service_status` zählt pausierte Lieferung nicht mehr als offen und verspricht Abholung nur bei offenem Abholfenster. 89 Tests grün |
+| 16.09.2026 | Auto-Update für diese Datei: `scripts/status_bump.py` (Semver, Datum, Changelog-Zeile automatisch), eingebunden in `/done`, `/task`, `/handover`; CI-Schritt „Status-Sync prüfen" schlägt an, wenn `docs/07_ARBEITSPAKETE.md` sich ändert, diese Datei aber nicht; `ruff format`-Altlast in `api/main.py` behoben; `CLAUDE.md`: kein Claude-Code-Attribution-Badge in PRs/Repo |
 
 ---
 
 ## Versionierung dieser Datei
 
-Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-Bundle-Version:
+Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-Bundle-Version und von der Gate-Version der README (`docs/15_README_STRATEGY.md`) — die README versioniert das Produkt nach außen, diese Datei sich selbst nach innen:
 
 | Bump | Auslöser | Beispiel |
 |---|---|---|
 | **MAJOR** | Gate bestanden / Stufenwechsel / Architektur-Entscheidung (E-Nr.) gekippt | G0 bestanden → Stufe 1 beginnt |
 | **MINOR** | Entscheidung getroffen (D-Nr. beantwortet), neues Arbeitspaket-Ergebnis ändert „Was als Nächstes dran ist" | D1 Anbieter gewählt |
-| **PATCH** | reine Status-Pflege: Task-Haken, neue Annahme ⚠️, neuer/gelöster Blocker | T-0.1 auf ✅ |
+| **PATCH** | reine Status-Pflege: Task-Haken, neue Annahme, neuer/gelöster Blocker | T-0.1 auf fertig |
 
 **Auto-Update:** `python scripts/status_bump.py <patch|minor|major> "<eine Zeile Änderung>"` setzt Datum, Version und Changelog-Zeile automatisch. Wird von `/done`, `/task` und `/handover` aufgerufen (siehe `.claude/commands/`) – von Hand nur bei Bedarf. Zusätzliches Sicherheitsnetz: CI (`.github/workflows/ci.yml`) schlägt fehl, wenn sich `docs/07_ARBEITSPAKETE.md` ändert, `docs/01_STATUS.md` im selben Diff aber unangetastet bleibt.
 
@@ -135,3 +153,5 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 - **v1.1.1 · 16.09.2026:** Fahrplan-Abschnitt, Versionierungsschema und Auto-Update (Skript + CI-Sync-Check) eingeführt
 - **v1.1.0 · 16.09.2026:** Bundle v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
 - **v1.0.0 · 15.09.2026:** Erstfassung beim Export nach Claude Code.
+
+Ältere, nicht semver-versionierte Einträge (T-0.1 bis T-1.4, Rebrand, README-Strategie) stehen chronologisch in der Erledigt-Tabelle oben.

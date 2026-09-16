@@ -1,14 +1,14 @@
-# PCF – Yoki Voice-Agent
+# PCF – Maex Voice-Agent
 
 > **KI-Telefonannahme für Lieferung, Abholung und Reservierung**
-> Version 1.0 · 11.09.2026 · Status: 🟢 Plan freigegeben (Gate P bestanden)
+> Version 1.0 · 11.09.2026 · Status: freigegeben (Gate P bestanden)
 > Diese Datei ist die Single Source of Truth für alle Chats des Projekts. Jeder Chat liest sie zu Beginn und endet mit einem Übergabeblock (Abschnitt 12).
 
 ---
 
 ## 1. Ziel
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer von Yoki Yoki an. Er erledigt Reservierung, Abholung und Lieferung korrekt, übergibt an Küche, Kasse und Team und leitet Beschwerden an Menschen weiter. Die Oberfläche ist so einfach, dass das Team sie im Stress ohne Erklärung bedient.
+Ein KI-Agent nimmt Anrufe auf der Festnetznummer von <Pilotbetrieb> an. Er erledigt Reservierung, Abholung und Lieferung korrekt, übergibt an Küche, Kasse und Team und leitet Beschwerden an Menschen weiter. Die Oberfläche ist so einfach, dass das Team sie im Stress ohne Erklärung bedient.
 
 ### Leitregeln (First Principles)
 
@@ -23,7 +23,7 @@ Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestä
 
 ### KPIs
 
-> ⚠️ Alle Zahlen in dieser PCF sind Richtwerte. Sie werden in G0 mit der Team-Baseline kalibriert.
+> Hinweis: Alle Zahlen in dieser PCF sind Richtwerte. Sie werden in G0 mit der Team-Baseline kalibriert.
 
 | KPI | Definition | Richtwert |
 |---|---|---|
@@ -60,14 +60,14 @@ Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestä
 
 | # | Entscheidung | Grund | Status |
 |---|---|---|---|
-| E1 | **Hybrid:** Telefonie und Sprachverarbeitung über einen EU-gehosteten Spezialdienst; Logik, DB und GUI in eigener Hand | Schwerste Technik (Echtzeit-Audio, Latenz) wird eingekauft, die fehlerkritische Logik selbst gebaut, Bausteine bleiben austauschbar | ✅ 11.09.2026 |
-| E2 | Stufen: Reservierung → Abholung → Lieferung | Jede Stufe bringt genau eine neue Schwierigkeit | ⚠️ in G0 per Anruf-Mix bestätigen |
-| E3 | Rollout: Schatten → Überlauf → Hauptannahme | Das Risiko wächst nur mit Belegen | ⚠️ gilt bis Veto |
-| E4 | Kasse bleibt Buchungs-Master (TSE); Agent-DB nur für Agent-Daten | Rechtssicherheit, eine einzige Wahrheit für Umsätze | ⚠️ gilt bis Veto |
-| E5 | Pilot Yoki Yoki, Nummer bleibt; Menü, Zeiten, Zonen aus der DB | Später auf andere Betriebe übertragbar | ⚠️ gilt bis Veto |
-| E6 | Einlernen = Wissensbasis + Eval-Suite + Offline-Schattenmodus, kein Modelltraining | Billiger, messbar, rechtlich schlanker | ⚠️ gilt bis Veto |
-| E7 | KI gibt sich zu Gesprächsbeginn als KI zu erkennen | AI Act Art. 50, gilt seit 02.08.2026 | ✅ Pflicht |
-| E8 | Beschwerde, Mensch-Wunsch, Storno → sofort Team, sonst Rückruf-Aufgabe | Vertrauen, Fehlerbegrenzung | ⚠️ gilt bis Veto |
+| E1 | **Hybrid:** Telefonie und Sprachverarbeitung über einen EU-gehosteten Spezialdienst; Logik, DB und GUI in eigener Hand | Schwerste Technik (Echtzeit-Audio, Latenz) wird eingekauft, die fehlerkritische Logik selbst gebaut, Bausteine bleiben austauschbar | gesetzt 11.09.2026 |
+| E2 | Stufen: Reservierung → Abholung → Lieferung | Jede Stufe bringt genau eine neue Schwierigkeit | Annahme, in G0 per Anruf-Mix bestätigen |
+| E3 | Rollout: Schatten → Überlauf → Hauptannahme | Das Risiko wächst nur mit Belegen | Annahme, gilt bis Veto |
+| E4 | Kasse bleibt Buchungs-Master (TSE); Agent-DB nur für Agent-Daten | Rechtssicherheit, eine einzige Wahrheit für Umsätze | Annahme, gilt bis Veto |
+| E5 | Pilot <Pilotbetrieb>, Nummer bleibt; Menü, Zeiten, Zonen aus der DB | Später auf andere Betriebe übertragbar | Annahme, gilt bis Veto |
+| E6 | Einlernen = Wissensbasis + Eval-Suite + Offline-Schattenmodus, kein Modelltraining | Billiger, messbar, rechtlich schlanker | Annahme, gilt bis Veto |
+| E7 | KI gibt sich zu Gesprächsbeginn als KI zu erkennen | AI Act Art. 50, gilt seit 02.08.2026 | Pflicht |
+| E8 | Beschwerde, Mensch-Wunsch, Storno → sofort Team, sonst Rückruf-Aufgabe | Vertrauen, Fehlerbegrenzung | Annahme, gilt bis Veto |
 
 ---
 
@@ -77,7 +77,7 @@ Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestä
 Anrufer
   │
   ▼
-Festnetz Yoki (bestehender Anbieter)
+Festnetz <Pilotbetrieb> (bestehender Anbieter)
   │  Umleitung / SIP
   │  Modus: Schatten · Überlauf · Primär
   ▼
@@ -99,10 +99,10 @@ GUI (Browser) ───────────┘
   Betrieb-Tablet · Admin
 
 Team-Durchwahl ◄── Weiterleitung, Rückrufe
-RTX 4080 lokal ──  Transkription der Einlern-Aufnahmen
+EU-Server ────────  Transkription der Einlern-Aufnahmen (nachts)
 ```
 
-### 💡 Heißer und kalter Pfad
+### Heißer und kalter Pfad
 
 - **Heiß** heißt: Der Kunde wartet am Telefon. Dazu gehören Menüsuche, Kunde per Nummer, Zonen-Check, Slot-Check und Bestellprüfung. Das muss schnell sein (Richtwert < 300 ms je Tool) und darf nie hängen → direkte Abfragen über eine kleine Agent-API.
 - **Kalt** heißt: Alles nach dem „Ja". Dazu gehören Bon oder Kasse, SMS, Logs und Statistik. Das darf Sekunden dauern, braucht aber Wiederholung bei Fehlern → n8n.
@@ -183,13 +183,13 @@ Stufen sind die Zeitachse, Chats die Arbeitspakete (Abschnitt 10). Jede Stufe li
 
 ### Stufe 4 – Einlernen & Schattenmessung
 **Ziel:** Die echte Fehlerquote unter Realbedingungen messen, ohne dass ein Kunde mit der KI spricht.
-- **C7** Aufnahmen (seit Stufe 1) lokal transkribieren (RTX 4080, faster-whisper) → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon
+- **C7** Aufnahmen (seit Stufe 1) auf dem EU-Server transkribieren (Whisper-Container oder EU-Dienst mit AVV) → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon
 - **C7** Fehler-Taxonomie: Hören · Verstehen · Menü · Adresse · Regel · Dialog → Fixes in C3/C4
 - **C4** Jeder echte Fehler wird ein neuer Eval-Fall; Aliase und FAQ aus echten Anrufen ergänzen
 
 **Gate G4:** ≥ 200 echte Anrufe ausgewertet · KI-Extraktion ≥ Team-Baseline · keine offene kritische Fehlerklasse (Allergene, Adresse, Preis) · Rechts-Check bestätigt
 
-> 💡 Der Offline-Schattenmodus misst das **Verstehen** mit einem Bruchteil der Technik, die Live-Mithören bräuchte. Die **Gesprächsführung** messen die Rollenspiele (G1–G3) und der Überlauf-Betrieb (G5).
+> Der Offline-Schattenmodus misst das **Verstehen** mit einem Bruchteil der Technik, die Live-Mithören bräuchte. Die **Gesprächsführung** messen die Rollenspiele (G1–G3) und der Überlauf-Betrieb (G5).
 
 ### Stufe 5 – Überlauf-Betrieb
 **Ziel:** Die KI nimmt echte Anrufe an, aber nur, wenn das Team nicht abnimmt. Das Team gibt jede KI-Bestellung frei.
@@ -251,11 +251,11 @@ Stufen sind die Zeitachse, Chats die Arbeitspakete (Abschnitt 10). Jede Stufe li
 
 ## 8. Rechts-Check (C1, vor dem ersten echten Anruf)
 
-> ⚠️ Keine Rechtsberatung. Vor Go-live durch Anwalt oder Datenschutzberater prüfen lassen.
+> Hinweis: Keine Rechtsberatung. Vor Go-live durch Anwalt oder Datenschutzberater prüfen lassen.
 
 - [ ] **AI Act Art. 50:** KI-Hinweis zu Gesprächsbeginn, gilt seit 02.08.2026 ([Quelle](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Aufzeichnung:** Einwilligung von Kunde und Team (§201 StGB); Ansage und Weg zum Widersprechen
-- [ ] **DSGVO:** Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung) · Informationspflicht (kurze Ansage + Datenschutzerklärung auf yokiyoki.de) · AVV mit allen Dienstleistern · Drittlandtransfer prüfen · Löschkonzept · Verzeichnis der Verarbeitungstätigkeiten · Datenschutz-Folgenabschätzung prüfen
+- [ ] **DSGVO:** Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung) · Informationspflicht (kurze Ansage + Datenschutzerklärung auf example.com) · AVV mit allen Dienstleistern · Drittlandtransfer prüfen · Löschkonzept · Verzeichnis der Verarbeitungstätigkeiten · Datenschutz-Folgenabschätzung prüfen
 - [ ] **Team:** informieren, Einwilligung oder Vereinbarung zu Aufnahmen
 - [ ] **Allergene (LMIV):** Auskunft nur aus gepflegten DB-Werten, sonst Rückruf durch das Team
 - [ ] **Kasse (TSE):** KI-Bestellungen werden ordnungsgemäß in der Kasse gebucht
@@ -306,8 +306,8 @@ Stufen sind die Zeitachse, Chats die Arbeitspakete (Abschnitt 10). Jede Stufe li
 
 ### C1 – Ist-Aufnahme & Recht
 ```text
-Projekt Yoki Voice-Agent · Chat C1 – Ist-Aufnahme & Recht (Stufe 0)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang). E1 und E7 sind gesetzt, alle anderen Entscheidungen gelten bis Veto.
+Projekt Maex Voice-Agent · Chat C1 – Ist-Aufnahme & Recht (Stufe 0)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). E1 und E7 sind gesetzt, alle anderen Entscheidungen gelten bis Veto.
 Arbeitsweise: code-autopilot · Rückfragen geschlossen mit markierter Empfehlung, eine pro Unterbrechung · Recherchierbares selbst recherchieren.
 
 Ziel: alle Fakten und rechtlichen Grundlagen für Gate G0.
@@ -327,8 +327,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C2 – Architektur, Telefonie & Anbieter
 ```text
-Projekt Yoki Voice-Agent · Chat C2 – Architektur, Telefonie & Anbieter (Stufe 0–1)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang). E1 Hybrid ist gesetzt.
+Projekt Maex Voice-Agent · Chat C2 – Architektur, Telefonie & Anbieter (Stufe 0–1)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). E1 Hybrid ist gesetzt.
 Arbeitsweise: code-autopilot · Rückfragen geschlossen mit markierter Empfehlung · Verträge, Kosten und API-Schlüssel nur nach Freigabe.
 
 Ziel: Voice-Plattform wählen und den ersten Testanruf durchstechen.
@@ -345,8 +345,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C3 – Datenmodell & Agent-API
 ```text
-Projekt Yoki Voice-Agent · Chat C3 – Datenmodell & Agent-API (Stufe 1–3)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4 und 7.
+Projekt Maex Voice-Agent · Chat C3 – Datenmodell & Agent-API (Stufe 1–3)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4 und 7.
 Arbeitsweise: code-autopilot Build-Loop · Umsetzung idealerweise in Claude Code, damit alles echt ausgeführt wird.
 
 Ziel: Agent-DB und schnelle Tools für den heißen Pfad, Stufe für Stufe.
@@ -361,8 +361,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C4 – Dialog, Prompts & Evals
 ```text
-Projekt Yoki Voice-Agent · Chat C4 – Dialog, Prompts & Evals (Stufe 1–4)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang). Die Leitregeln in Abschnitt 1 sind bindend.
+Projekt Maex Voice-Agent · Chat C4 – Dialog, Prompts & Evals (Stufe 1–4)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Die Leitregeln in Abschnitt 1 sind bindend.
 Arbeitsweise: code-autopilot Prompt-Werkstatt · eine Variable pro Iteration · jede Prompt-Version mit Eval-Lauf.
 
 Ziel: Gesprächsflüsse, System-Prompt, Tool-Beschreibungen und Eval-Suite, die G1 bis G3 bestehen.
@@ -376,8 +376,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C5 – Integration mit n8n
 ```text
-Projekt Yoki Voice-Agent · Chat C5 – Integration mit n8n (Stufe 1–5)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4.
+Projekt Maex Voice-Agent · Chat C5 – Integration mit n8n (Stufe 1–5)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4.
 Arbeitsweise: code-autopilot · n8n self-hosted per Docker · Python nur, wo n8n nicht reicht.
 
 Ziel: Der kalte Pfad läuft zuverlässig. Bestätigte Vorgänge landen in Küche und Kasse, Rückrufe beim Team.
@@ -389,8 +389,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C6 – GUI
 ```text
-Projekt Yoki Voice-Agent · Chat C6 – GUI (Stufe 1–5)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang).
+Projekt Maex Voice-Agent · Chat C6 – GUI (Stufe 1–5)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang).
 Arbeitsweise: code-autopilot · Umsetzung idealerweise in Claude Code.
 
 Ziel: eine Oberfläche, die das Team im Stress ohne Erklärung bedient.
@@ -404,12 +404,12 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C7 – Einlernen & Qualität
 ```text
-Projekt Yoki Voice-Agent · Chat C7 – Einlernen & Qualität (ab Stufe 1, Messung in Stufe 4)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang). Start erst nach der Rechtsfreigabe (Abschnitt 8).
-Arbeitsweise: code-autopilot · Verarbeitung lokal auf der RTX 4080.
+Projekt Maex Voice-Agent · Chat C7 – Einlernen & Qualität (ab Stufe 1, Messung in Stufe 4)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Start erst nach der Rechtsfreigabe (Abschnitt 8).
+Arbeitsweise: code-autopilot · Verarbeitung ausschließlich auf dem EU-Server, nichts auf Maxis PC.
 
 Ziel: aus echten Anrufen lernen und die echte Fehlerquote messen, ohne Kundenrisiko.
-Pipeline: Aufnahme mit Einwilligung → Transkription (faster-whisper) → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon → Fehler-Taxonomie → neue Aliase, FAQ und Eval-Fälle → Löschen nach Frist
+Pipeline: Aufnahme mit Einwilligung → Transkription auf dem EU-Server → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon → Fehler-Taxonomie → neue Aliase, FAQ und Eval-Fälle → Löschen nach Frist
 
 Gate G4: ≥ 200 Anrufe · KI ≥ Team-Baseline · keine kritische Fehlerklasse offen
 Ende: Übergabeblock nach PCF-Abschnitt 12.
@@ -417,8 +417,8 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 
 ### C8 – Rollout & Betrieb
 ```text
-Projekt Yoki Voice-Agent · Chat C8 – Rollout & Betrieb (Stufe 5–6)
-Lies zuerst die aktuelle „PCF – Yoki Voice-Agent" (Google Drive oder Anhang). Voraussetzung: G1 bis G4 bestanden.
+Projekt Maex Voice-Agent · Chat C8 – Rollout & Betrieb (Stufe 5–6)
+Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Voraussetzung: G1 bis G4 bestanden.
 Arbeitsweise: code-autopilot · jede Umschaltung mit Rückweg.
 
 Ziel: sicherer Wechsel vom Überlauf zur Hauptannahme und stabiler Betrieb.
@@ -433,7 +433,7 @@ Ende: Übergabeblock nach PCF-Abschnitt 12.
 ## 11. Repo & Versionierung
 
 ```text
-yoki-voice-agent/
+maex-voice-agent/
 ├── api/             Tools im heißen Pfad
 ├── db/migrations/   versionierte Schema-Änderungen
 ├── n8n/             Workflow-Exporte mit Datum und Version

@@ -3,7 +3,7 @@ Erzeuge den Übergabeblock für diese Session nach `docs/00_PCF.md` Abschnitt 12
 ## Übergabe <heutiges Datum> – <Aufgaben-IDs>
 Stand: was läuft, was nicht
 Artefakte: geänderte Dateien, Branch, Commits
-Entscheidungen: getroffene Annahmen ⚠️ mit Begründung
+Entscheidungen: getroffene Annahmen mit Begründung
 Gate: Stand des nächsten Gates
 Offen: nächster konkreter Schritt zuerst
 Stolpersteine: was die nächste Session wissen muss
