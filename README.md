@@ -18,7 +18,7 @@ Was funktioniert:
 - `make up` baut das API-Image und startet Postgres, API und n8n; `/health` antwortet, Token-Auth greift
 - Jede Antwort der Agent-API folgt der Hülle aus `docs/04_API_TOOLS.md`; Fehler kommen als JSON mit Code und Vorlesesatz, nie als Stacktrace
 - Datenbankzugang mit einer Session je Request (`api/db.py`), Logs als JSON-Zeilen mit `request_id` und `call_id`
-- `make migrate` legt die zehn Tabellen der Stufe 1 an (Alembic unter `db/`, Modelle unter `api/models/`)
+- `make migrate` legt die zehn Tabellen der Stufe 1 an (Alembic unter `db/`, Modelle unter `api/models/`), `make seed` füllt sie idempotent mit einer Testkonfiguration
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
@@ -26,7 +26,7 @@ Was noch nicht funktioniert:
 
 - Kein Telefonanschluss, kein Anbieter gewählt (Entscheidung D1)
 - Keine Datenbanktabellen, keine Tools, keine Oberfläche
-- `make seed` läuft erst mit T-1.2 (Seed-Skript fehlt noch), die Tabellen sind nach `make migrate` leer
+- Die Testkonfiguration aus `make seed` (Öffnungszeiten, Kapazität) ist ein Platzhalter, bis die Ist-Aufnahme des Betriebs vorliegt
 
 ## Voraussetzungen
 
@@ -42,6 +42,7 @@ cd maex-voice-agent
 cp .env.example .env
 make up
 make migrate
+make seed
 curl http://localhost:8000/health
 make test
 ```

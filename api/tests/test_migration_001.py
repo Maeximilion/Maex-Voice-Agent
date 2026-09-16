@@ -1,21 +1,16 @@
 """Migration 001 gegen eine Wegwerf-Datenbank: up, down, Modelle ohne Diff, Constraints greifen."""
 
 import uuid
-from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
-from api.config import settings
 from api.models import Base
-
-ALEMBIC_INI = Path(__file__).resolve().parents[2] / "db" / "alembic.ini"
+from api.tests.conftest import alembic_config as _config
 
 STUFE_1_TABELLEN = {
     "tenants",
@@ -29,29 +24,6 @@ STUFE_1_TABELLEN = {
     "outbox",
     "audit_log",
 }
-
-
-@pytest.fixture(scope="module")
-def scratch_db_url() -> str:
-    """Eigene Datenbank je Testlauf, damit die Entwicklungsdaten unberührt bleiben."""
-    base_url = make_url(settings.database_url)
-    name = f"maex_migtest_{uuid.uuid4().hex[:8]}"
-    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    try:
-        # str(URL) maskiert das Passwort als "***", deshalb explizit rendern.
-        yield base_url.set(database=name).render_as_string(hide_password=False)
-    finally:
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE "{name}" WITH (FORCE)'))
-        admin.dispose()
-
-
-def _config(url: str) -> Config:
-    cfg = Config(str(ALEMBIC_INI))
-    cfg.set_main_option("sqlalchemy.url", url)
-    return cfg
 
 
 def _table_names(url: str) -> set[str]:

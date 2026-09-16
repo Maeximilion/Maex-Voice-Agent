@@ -7,7 +7,7 @@
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001; 42 Tests laufen grün. Seed, Tools und GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; 47 Tests laufen grün. Tools und GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -32,9 +32,9 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.2** Seed-Skript `scripts/seed.py`: Mandant, Öffnungszeiten, Kapazität, Testkonfiguration (hängt an T-1.1, jetzt startklar)
-2. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
-3. **T-0.8** Zahlwörter `domain/menu/numberwords.py` (startklar, hängt nur an T-0.6)
+1. **T-1.3** Tool `get_service_status` inkl. Sondertage und Wartezeiten (Session 3 beginnt: erstes Tool im heißen Pfad mit Latenzmessung)
+2. **T-1.4** Tool `check_slot`, dann **T-1.5** `create_reservation`
+3. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
@@ -69,6 +69,8 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 - Bezahlt wird bei Abholung oder Lieferung, keine Zahlung am Telefon
 - **Betriebstag beginnt um 05:00 Ortszeit** (`api/core/time.py`, `DAY_STARTS_AT`): eine Bestellung um 00:30 zählt zum Vortag. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
 - Fehler der Fachlogik antworten mit HTTP 200 in der Hülle, damit die Voice-Plattform sie dem Agenten vorlegt; nur fehlende Auth ist 401
+- **Testkonfiguration im Seed ist Platzhalter** (`scripts/seed.py`): Montag Ruhetag, 11:30–14:00 und 17:00–22:00 für alle Services, Kapazität 30 (mittags) / 40 (abends) Gäste im 30-Minuten-Raster, Wartezeit 20/45 min. Echte Werte kommen mit C1 und werden dann im Seed ersetzt
+- Seed überschreibt `service_config` nie: der Live-Schalter (Modus, Lieferung, Wartezeit) gehört dem Team
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -102,11 +104,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
 | 16.09.2026 | **T-0.6 fertig:** `api/core/` mit `envelope` (Hülle), `errors` (8 Codes aus 04 §1, `AppError` wird zentral übersetzt), `auth` (aus `main.py` gezogen), `logging` (JSON-Zeilen mit `request_id`/`call_id`, Middleware misst Dauer, `X-Request-ID` wird übernommen oder erzeugt), `time` (UTC/Ortszeit, Betriebstag, Sommerzeit-sichere Tagesgrenzen). `main.py` nutzt nur noch `core`. 34 Tests grün |
 | 16.09.2026 | **T-1.1 fertig, T-0.4 fertig:** Alembic unter `db/` (`alembic -c db/alembic.ini`, URL aus `settings`), Migration 001 mit den zehn Stufe-1-Tabellen inkl. `outbox` und `audit_log`, Enums als CHECK-Constraints, `idempotency_key` unique, `deleted_at` auf Reservierungen und Rückrufen. Modelle unter `api/models/` (Base, Mixins für UUID-PK, `tenant_id`, Zeitstempel). Tests gegen eine Wegwerf-DB: up, Modelle ohne Diff zum Schema, down/up, doppelter Schlüssel, fehlende `call_id`, ungültiger `outbox.status`. `make migrate` läuft, Dev-DB auf 001. 42 Tests grün |
+| 16.09.2026 | **T-1.2 fertig:** `scripts/seed.py` mit `seed(session, tenant_name, timezone)` und CLI (`make seed`, JSON-Ausgabe). Idempotent: Mandant und `service_config` nur bei Fehlen, Öffnungszeiten und Kapazität deterministisch ersetzt. Gemeinsame Wegwerf-DB-Fixtures in `api/tests/conftest.py`. Tests: Zähler, zweimal = gleich, Live-Schalter bleibt, zweiter Mandant, CLI. 47 Tests grün |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-1.2 abgeschlossen (Seed), Session 2 der empfohlenen Reihenfolge komplett, nächste Schritte auf Session 3 (T-1.3 bis T-1.5).
 - **16.09.2026:** T-1.1 und T-0.4 abgeschlossen (Alembic, Migration 001, Modelle), T-1.2 startklar. Regel: Empfehlungen werden direkt abgenommen (`CLAUDE.md` §6).
 - **16.09.2026:** T-0.6 abgeschlossen (`core/`), Annahme Betriebstag 05:00, T-0.8 startklar.
 - **16.09.2026:** T-0.2 abgeschlossen (`db.py`), nächste Schritte neu nummeriert.

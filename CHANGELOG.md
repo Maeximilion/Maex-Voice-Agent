@@ -9,6 +9,7 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - `api/db.py`: Engine mit Verbindungs-Ping, Session je Request über `get_db`, Tests gegen echte Postgres
 - `api/core/`: Antwort-Hülle, Fehlerklassen mit den acht Codes aus docs/04, Token-Auth, JSON-Logging mit `request_id`/`call_id`, Zeit-Helfer mit Betriebstag
 - Alembic unter `db/` und Migration 001 mit den zehn Stufe-1-Tabellen; SQLAlchemy-Modelle unter `api/models/`; `make migrate` legt das Schema an
+- `scripts/seed.py`: idempotente Testkonfiguration (Mandant, Live-Schalter, Öffnungszeiten, Kapazität), `make seed`
 - Docker Compose für Postgres, API und n8n
 - Spezifikationen docs/00 bis docs/15
 - Slash-Befehle für Claude Code unter .claude/commands/
@@ -26,4 +27,4 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
 
 ### Offen
-- Seed-Skript mit Testdaten für den Pilotbetrieb (T-1.2)
+- Stufe-1-Tools `get_service_status`, `check_slot`, `create_reservation`, `confirm` (T-1.3 bis T-1.6)
