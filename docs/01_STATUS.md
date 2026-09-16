@@ -7,7 +7,7 @@
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; das erste Tool im heißen Pfad (`get_service_status`) antwortet in rund 12 ms (p95); 63 Tests laufen grün. Die übrigen Stufe-1-Tools und die GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die ersten Tools im heißen Pfad (`get_service_status`, `check_slot`) antworten in rund 12 bis 13 ms (p95); 86 Tests laufen grün. Die schreibenden Stufe-1-Tools und die GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -32,8 +32,8 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.4** Tool `check_slot`: Verfügbarkeit aus `capacity` und `reservations`, bis zu 2 Alternativen
-2. **T-1.5** `create_reservation` als `draft` mit `readback` und Idempotenz, dann **T-1.6** `confirm`
+1. **T-1.5** `create_reservation` als `draft` mit `readback` und Idempotenz (erster Schreibvorgang: `call_id` Pflicht, `core/ids.py` für Idempotenz-Schlüssel)
+2. **T-1.6** `confirm` generisch mit `audit_log` und Outbox-Eintrag, dann **T-1.7** `create_callback`
 3. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
@@ -71,6 +71,8 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 - Fehler der Fachlogik antworten mit HTTP 200 in der Hülle, damit die Voice-Plattform sie dem Agenten vorlegt; nur fehlende Auth ist 401
 - **Testkonfiguration im Seed ist Platzhalter** (`scripts/seed.py`): Montag Ruhetag, 11:30–14:00 und 17:00–22:00 für alle Services, Kapazität 30 (mittags) / 40 (abends) Gäste im 30-Minuten-Raster, Wartezeit 20/45 min. Echte Werte kommen mit C1 und werden dann im Seed ersetzt
 - Seed überschreibt `service_config` nie: der Live-Schalter (Modus, Lieferung, Wartezeit) gehört dem Team
+- **Kapazität ohne Verweildauer** (`domain/reservations/capacity.py`): `capacity.max_guests` ist die Summe aller Gäste, deren Reservierung im Fenster beginnt; die Fenster bilden die Sitz-Turns ab (z. B. 18–20 und 20–22 Uhr). Entwürfe zählen mit, Stornierte und weich Gelöschte nicht. `check_slot` verlangt zusätzlich ein offenes `dinein`-Fenster (Sondertage greifen). Alternativen nur am selben Tag, im Raster `slot_minutes`, die zwei nächsten am Wunsch, nie in der Vergangenheit. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
+- Offene Entwürfe blockieren Kapazität, bis sie bestätigt oder storniert werden; ein Verfallsjob für liegengebliebene Entwürfe fehlt noch (Kandidat für `jobs/`)
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -106,11 +108,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | **T-1.1 fertig, T-0.4 fertig:** Alembic unter `db/` (`alembic -c db/alembic.ini`, URL aus `settings`), Migration 001 mit den zehn Stufe-1-Tabellen inkl. `outbox` und `audit_log`, Enums als CHECK-Constraints, `idempotency_key` unique, `deleted_at` auf Reservierungen und Rückrufen. Modelle unter `api/models/` (Base, Mixins für UUID-PK, `tenant_id`, Zeitstempel). Tests gegen eine Wegwerf-DB: up, Modelle ohne Diff zum Schema, down/up, doppelter Schlüssel, fehlende `call_id`, ungültiger `outbox.status`. `make migrate` läuft, Dev-DB auf 001. 42 Tests grün |
 | 16.09.2026 | **T-1.2 fertig:** `scripts/seed.py` mit `seed(session, tenant_name, timezone)` und CLI (`make seed`, JSON-Ausgabe). Idempotent: Mandant und `service_config` nur bei Fehlen, Öffnungszeiten und Kapazität deterministisch ersetzt. Gemeinsame Wegwerf-DB-Fixtures in `api/tests/conftest.py`. Tests: Zähler, zweimal = gleich, Live-Schalter bleibt, zweiter Mandant, CLI. 47 Tests grün |
 | 16.09.2026 | **T-1.3 fertig, T-0.5 fertig:** `domain/status/hours.py` (Fenster je Tag und Service, Sondertag schlägt Wochentag, Fenster über Mitternacht, nächste Öffnung) und `service.py` (`get_service_status`), Schemas `ToolRequest` und `ServiceStatus`, Tool-Router `tools/router.py` mit `tools/service_status.py`. 16 Tests: offen, Ruhetag mit `say`, zwischen den Fenstern, 00:30, Fenster 18–01 Uhr, Sondertag geschlossen, Sonderzeiten am Ruhetag, Sommerzeit Beginn und Ende, Lieferung pausiert, unbekannter Mandant, Hülle, 401, `invalid_input`, `not_found`. **Latenz:** p95 11,3 ms lokal, 12,3 ms im Container (Helfer `p95_ms`, Budget 300 ms), live per curl max 54,9 ms. Uvicorn-Access-Log abgeschaltet, die Middleware-Zeile hat Dauer und `request_id`. 63 Tests grün |
+| 16.09.2026 | **T-1.4 fertig:** `domain/reservations/capacity.py` (Fenster je Wochentag, belegte Gäste aller Fenster in einer Abfrage), `slots.py` (`check_slot`: Öffnungszeit `dinein` und Kapazitätsfenster, bis zu zwei Alternativen im Raster, nächste zuerst), `spoken.py` (gesprochene Uhrzeit „halb sieben"). Schema `CheckSlotRequest` (zeitzonenbewusst, `party_size ≥ 1`), Tool `tools/check_slot.py`. 23 Tests: frei, voll mit Alternativen, kleine Gruppe passt noch, Entwurf zählt / Storno nicht, Gruppe größer als jedes Fenster, Ruhetag, Fensterende exklusiv, keine Alternativen in der Vergangenheit, Vergangenheit → `invalid_input`, naive Zeit → `invalid_input`, gesprochene Zeiten. **Latenz:** p95 13,0 ms lokal. 86 Tests grün |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-1.4 abgeschlossen (`check_slot`), Annahme Kapazität ohne Verweildauer, nächste Schritte T-1.5 bis T-1.7.
 - **16.09.2026:** T-1.3 und T-0.5 abgeschlossen (erstes Tool, Latenz-Helfer), nächste Schritte T-1.4 bis T-1.6.
 - **16.09.2026:** T-1.2 abgeschlossen (Seed), Session 2 der empfohlenen Reihenfolge komplett, nächste Schritte auf Session 3 (T-1.3 bis T-1.5).
 - **16.09.2026:** T-1.1 und T-0.4 abgeschlossen (Alembic, Migration 001, Modelle), T-1.2 startklar. Regel: Empfehlungen werden direkt abgenommen (`CLAUDE.md` §6).

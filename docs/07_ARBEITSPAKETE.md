@@ -39,7 +39,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.1 | Alembic einrichten, Migration 001 (Stufe-1-Tabellen), `up`/`down` getestet | 03 | T-0.2 | fertig 16.09.2026: `db/alembic.ini`, `env.py`, `versions/001_stufe1.py`, Modelle `api/models/`; up/down/up gegen Wegwerf-DB getestet, Modelle und Schema ohne Diff |
 | T-1.2 | Seed-Skript `scripts/seed.py`: Mandant <Pilotbetrieb>, Öffnungszeiten, Kapazität, Testkonfiguration | 03 | T-1.1 | fertig 16.09.2026: `scripts/seed.py`, idempotent, Live-Schalter bleibt unangetastet, Werte sind Platzhalter bis C1 |
 | T-1.3 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | fertig 16.09.2026: `domain/status/` + `tools/service_status.py`, 16 Tests, p95 weit unter 300 ms |
-| T-1.4 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | offen |
+| T-1.4 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | fertig 16.09.2026: `domain/reservations/{capacity,slots,spoken}.py` + `tools/check_slot.py`, 23 Tests, p95 rund 13 ms |
 | T-1.5 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | offen |
 | T-1.6 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | offen |
 | T-1.7 | Tool `create_callback` | 04 | T-1.1 | offen |
