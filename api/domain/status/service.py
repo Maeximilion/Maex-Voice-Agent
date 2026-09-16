@@ -27,6 +27,8 @@ WEEKDAYS = (
     "Samstag",
     "Sonntag",
 )
+DELIVERY = "delivery"
+PICKUP = "pickup"
 
 
 def get_service_status(
@@ -41,26 +43,27 @@ def get_service_status(
     now = now or utcnow()
     data = load_hours(session, tenant_id, now.astimezone(zone).date())
 
-    windows = {
-        service: open_window_at(data, now, service, zone) for service in all_services()
-    }
-    open_windows = [w for w in windows.values() if w is not None]
-    is_open = bool(open_windows)
-    closes_at = (
-        max(closes for _, closes in open_windows).astimezone(UTC) if is_open else None
-    )
-    delivery_open = windows.get("delivery") is not None
+    # Ein pausierter Service zählt nicht als offen, auch wenn sein Fenster läuft.
+    enabled = [s for s in all_services() if s != DELIVERY or config.delivery_enabled]
+    windows = {s: open_window_at(data, now, s, zone) for s in all_services()}
+    active = [windows[s] for s in enabled if windows[s] is not None]
+    is_open = bool(active)
+    closes_at = max(closes for _, closes in active).astimezone(UTC) if is_open else None
+    pickup_open = windows[PICKUP] is not None
+    delivery_open = windows[DELIVERY] is not None
 
     say = None
     if not is_open:
-        say = _say_closed(next_opening(data, now, all_services(), zone), now, zone)
+        say = _say_closed(next_opening(data, now, enabled, zone), now, zone)
     elif delivery_open and not config.delivery_enabled:
-        say = "Lieferung ist gerade pausiert. Abholung ist möglich."
+        say = "Lieferung ist gerade pausiert."
+        if pickup_open:
+            say += " Abholung ist möglich."
 
     return ServiceStatus(
         is_open=is_open,
         closes_at=closes_at,
-        pickup_enabled=windows.get("pickup") is not None,
+        pickup_enabled=pickup_open,
         delivery_enabled=delivery_open and config.delivery_enabled,
         pickup_wait_minutes=config.pickup_wait_minutes,
         delivery_wait_minutes=config.delivery_wait_minutes,

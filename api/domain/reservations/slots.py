@@ -1,7 +1,7 @@
 """check_slot: Ist der Wunschtermin frei, und wenn nicht, welche zwei Termine liegen am nächsten?"""
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -41,18 +41,21 @@ def check_slot(
 
     zone = ZoneInfo(tenant.timezone)
     local = reserved_for.astimezone(zone)
-    day = local.date()
+    # Fenster des Vortags reichen über Mitternacht (18:00 bis 01:00), deshalb beide Tage.
+    days = (local.date() - timedelta(days=1), local.date())
 
-    hours = load_hours(session, tenant_id, day, days=1)
-    open_windows = windows_for_day(hours, day, DINEIN, zone)
-    windows = capacity_windows(session, tenant_id, day, zone)
+    hours = load_hours(session, tenant_id, days[0], days=2)
+    open_windows = [w for d in days for w in windows_for_day(hours, d, DINEIN, zone)]
+    windows = [w for d in days for w in capacity_windows(session, tenant_id, d, zone)]
     booked = booked_guests(session, tenant_id, windows)
 
     def fits(at: datetime) -> bool:
         if not any(opens <= at < closes for opens, closes in open_windows):
             return False
         window = _window_for(windows, at)
-        return window is not None and booked[window] + party_size <= window.max_guests
+        if window is None:
+            return False
+        return booked[window] + party_size <= window.max_guests
 
     if fits(local):
         return SlotCheck(available=True)

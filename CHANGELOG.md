@@ -27,6 +27,8 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - Dockerfile: Zusatz-CA-Zertifikat (`api/ca-bundle.crt`) ist optional statt Pflicht, Build läuft auf sauberem Checkout
 - Dockerfile: Quellcode landet wieder unter `/app/api`, damit `uvicorn api.main:app` auch ohne Bind-Mount startet
 - Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
+- `check_slot`: Fenster des Vortags, die über Mitternacht reichen, gelten auch für Wünsche nach Mitternacht
+- `get_service_status`: pausierte Lieferung zählt nicht als offen; „Abholung ist möglich" nur bei offenem Abholfenster
 
 ### Offen
 - Schreibende Stufe-1-Tools `create_reservation`, `confirm`, `create_callback`, `transfer_to_team` (T-1.5 bis T-1.8)

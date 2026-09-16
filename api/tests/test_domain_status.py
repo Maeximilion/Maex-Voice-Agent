@@ -153,6 +153,63 @@ def test_lieferung_pausiert_bleibt_offen_mit_hinweis(session, tenant_id):
     assert status.say == "Lieferung ist gerade pausiert. Abholung ist möglich."
 
 
+def test_pausierte_lieferung_als_einziger_service_zaehlt_nicht_als_offen(
+    session, tenant_id
+):
+    # Montag ist Ruhetag; nur Lieferung bekommt ein Fenster, und die ist pausiert.
+    session.add(
+        OpeningHours(
+            tenant_id=tenant_id,
+            weekday=0,
+            opens_at=time(17),
+            closes_at=time(22),
+            service="delivery",
+        )
+    )
+    session.get(ServiceConfig, tenant_id).delivery_enabled = False
+    session.commit()
+    status = get_service_status(session, tenant_id, now=berlin(MONTAG, 18, 30))
+    assert status.is_open is False and status.closes_at is None
+    assert status.pickup_enabled is False and status.delivery_enabled is False
+    assert (
+        status.say
+        == "Wir haben gerade geschlossen. Wir öffnen wieder morgen um 11:30 Uhr."
+    )
+
+    session.get(ServiceConfig, tenant_id).delivery_enabled = True
+    session.commit()
+    status = get_service_status(session, tenant_id, now=berlin(MONTAG, 18, 30))
+    assert status.is_open is True and status.delivery_enabled is True
+
+
+def test_pausierte_lieferung_ohne_abholfenster_verspricht_keine_abholung(
+    session, tenant_id
+):
+    session.add_all(
+        [
+            OpeningHours(
+                tenant_id=tenant_id,
+                weekday=0,
+                opens_at=time(17),
+                closes_at=time(22),
+                service="delivery",
+            ),
+            OpeningHours(
+                tenant_id=tenant_id,
+                weekday=0,
+                opens_at=time(17),
+                closes_at=time(22),
+                service="dinein",
+            ),
+        ]
+    )
+    session.get(ServiceConfig, tenant_id).delivery_enabled = False
+    session.commit()
+    status = get_service_status(session, tenant_id, now=berlin(MONTAG, 18, 30))
+    assert status.is_open is True and status.pickup_enabled is False
+    assert status.say == "Lieferung ist gerade pausiert."
+
+
 def test_unbekannter_mandant_ist_not_found(session, tenant_id):
     with pytest.raises(NotFound):
         get_service_status(session, uuid.uuid4(), now=berlin(DIENSTAG, 18))

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput, NotFound
 from api.domain.reservations import check_slot
 from api.domain.reservations.spoken import spoken_time
-from api.models import Call, Reservation
+from api.models import Call, Capacity, OpeningHours, Reservation
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -158,6 +158,39 @@ def test_alternativen_liegen_nie_in_der_vergangenheit(session, tenant_id):
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 22, 30), 2, now=spaeter)
     assert result.available is False
     assert result.alternatives == []
+
+
+def test_fenster_ueber_mitternacht_gilt_auch_fuer_check_slot(session, tenant_id, book):
+    # Montag 18:00 bis 01:00, 20 Plätze. Wunsch Dienstag 00:30 gehört zu diesem Fenster.
+    session.add_all(
+        [
+            OpeningHours(
+                tenant_id=tenant_id,
+                weekday=0,
+                opens_at=time(18),
+                closes_at=time(1),
+                service="dinein",
+            ),
+            Capacity(
+                tenant_id=tenant_id,
+                weekday=0,
+                slot_start=time(18),
+                slot_end=time(1),
+                max_guests=20,
+            ),
+        ]
+    )
+    session.commit()
+    montag_abend = berlin(MONTAG, 23)
+    wunsch = berlin(DIENSTAG, 0, 30)
+    assert check_slot(session, tenant_id, wunsch, 2, now=montag_abend).available is True
+
+    book(berlin(MONTAG, 22), 19)
+    assert check_slot(session, tenant_id, wunsch, 1, now=montag_abend).available is True
+    result = check_slot(session, tenant_id, wunsch, 2, now=montag_abend)
+    assert result.available is False
+    # Das Nachtfenster ist voll, die nächsten freien Plätze liegen am Dienstagmittag.
+    assert result.alternatives[0] == berlin(DIENSTAG, 11, 30).astimezone(UTC)
 
 
 def test_vergangener_zeitpunkt_ist_invalid_input(session, tenant_id):
