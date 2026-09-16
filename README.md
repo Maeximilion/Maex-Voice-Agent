@@ -2,7 +2,7 @@
 
 Telefonische Bestellannahme für Gastronomiebetriebe. Ein KI-Agent nimmt Anrufe auf der Festnetznummer an, erledigt Reservierung, Abholung und Lieferung und übergibt bestätigte Vorgänge an Küche, Kasse und Team. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert den Betrieb über eine Browser-Oberfläche auf dem Tablet.
 
-Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbieter. Dieses Repository enthält die Fachlogik, die Datenbank, die Oberfläche und die Tests. Pilotbetrieb ist Yoki Yoki in Sinzheim.
+Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbieter. Dieses Repository enthält die Fachlogik, die Datenbank, die Oberfläche und die Tests. Pilotbetrieb, Ort, Domain und Kassenanbieter stehen in den Dokumenten als Platzhalter in spitzen Klammern.
 
 ## Status
 
@@ -15,14 +15,15 @@ Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbi
 
 Was funktioniert:
 
-- API startet, `/health` antwortet, Token-Auth greift, drei Tests laufen grün
+- `make up` baut das API-Image und startet Postgres und API; `/health` antwortet, Token-Auth greift
+- `make test` und `make lint` laufen im Container, drei Tests grün, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
 Was noch nicht funktioniert:
 
 - Kein Telefonanschluss, kein Anbieter gewählt (Entscheidung D1)
 - Keine Datenbanktabellen, keine Tools, keine Oberfläche
-- `docker compose up` wurde noch nicht gegen echtes Docker ausgeführt
+- `make migrate` und `make seed` laufen erst mit T-1.1 und T-1.2 (Alembic und Seed-Skript fehlen noch)
 
 ## Voraussetzungen
 
@@ -37,12 +38,20 @@ git clone <repo-url> maex-voice-agent
 cd maex-voice-agent
 cp .env.example .env
 make up
-make migrate
-make seed
+curl http://localhost:8000/health
 make test
 ```
 
-Die API läuft danach unter `http://localhost:8000`, n8n unter `http://localhost:5678`.
+Die API läuft danach unter `http://localhost:8000`, n8n unter `http://localhost:5678`. `/health` antwortet mit `{"status": "ok", "env": "dev"}`.
+
+Ohne Docker, nur für Tests und Lint:
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r api/requirements.txt
+pytest -q
+ruff check api scripts evals && ruff format --check api scripts evals
+```
 
 ## Konfiguration
 
@@ -106,7 +115,8 @@ Das Projekt ist für die Arbeit mit Claude Code eingerichtet. `CLAUDE.md` enthä
 ## Bekannte Probleme
 
 - Docker Hub begrenzt anonyme Image-Downloads. Schlägt `make up` mit einem Rate-Limit fehl: `docker login` mit einem kostenlosen Docker-Hub-Konto, danach erneut starten.
+- Hinter einem TLS-terminierenden Proxy schlägt `pip install` im Image-Build mit `CERTIFICATE_VERIFY_FAILED` fehl. Abhilfe: das CA-Zertifikat des Proxys als `api/ca-bundle.crt` ablegen (ist in `.gitignore`), der Build bindet es dann automatisch ein.
 
 ## Lizenz und Kontakt
 
-Proprietär, Yoki Yoki GmbH. Kontakt: Maximilian Dumler, maxi.dumler@gmail.com.
+Proprietär, <Firmenname>. Kontakt: Maximilian Dumler, maxi.dumler@gmail.com.

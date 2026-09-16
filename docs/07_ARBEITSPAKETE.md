@@ -21,10 +21,10 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 
 | ID | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|
-| T-0.1 | `docker-compose.yml`: Postgres 16 + API. `docker compose up` läuft, `/health` antwortet `{"status":"ok"}` | CLAUDE.md §3 | – | in Arbeit: Datei da, noch nie gegen echtes Docker gestartet |
+| T-0.1 | `docker-compose.yml`: Postgres 16 + API. `docker compose up` läuft, `/health` antwortet `{"status":"ok"}` | CLAUDE.md §3 | – | fertig 16.09.2026: Postgres + API healthy, `/health` geprüft, Codex-Findings am Dockerfile behoben |
 | T-0.2 | FastAPI-Grundgerüst: `main.py`, `config.py` (Settings aus `.env`), `db.py`, Fehler-Handler mit der Antwort-Hülle aus 04 §1 | 04 §1 | T-0.1 | in Arbeit: `main.py` + `config.py` fertig und getestet, `db.py` fehlt |
 | T-0.3 | Token-Auth als Dependency, greift für alle `/v1/tools/*` | 02 §7 | T-0.2 | fertig, mit Test |
-| T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | in Arbeit: Makefile + pytest laufen (3 Tests grün), ruff noch nie ausgeführt |
+| T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | in Arbeit: `make test`, `make lint`, `make fmt`, `make up` laufen im Container, ruff format + check sauber; `make migrate` wartet auf Alembic (T-1.1) |
 | T-0.5 | Latenz-Testhelfer: misst p95 je Tool-Endpunkt, schlägt über 300 ms fehl | 04 §1 | T-0.4 | offen |
 | T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | offen |
 | T-0.7 | Slash-Befehle in `.claude/commands/` einmal durchspielen, CI-Workflow grün bekommen | 12, 13 §6 | T-0.4 | offen |
@@ -37,7 +37,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | ID | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|
 | T-1.1 | Alembic einrichten, Migration 001 (Stufe-1-Tabellen), `up`/`down` getestet | 03 | T-0.2 | offen |
-| T-1.2 | Seed-Skript `scripts/seed.py`: Mandant Yoki Yoki, Öffnungszeiten, Kapazität, Testkonfiguration | 03 | T-1.1 | offen |
+| T-1.2 | Seed-Skript `scripts/seed.py`: Mandant <Pilotbetrieb>, Öffnungszeiten, Kapazität, Testkonfiguration | 03 | T-1.1 | offen |
 | T-1.3 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | offen |
 | T-1.4 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | offen |
 | T-1.5 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | offen |
@@ -87,7 +87,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-4.3 | Tool `search_menu` mit der Auflösungsreihenfolge aus 04, Trigram-Index, Schwellen konfigurierbar | 04 | T-4.2 | offen |
 | T-4.4 | Tool `get_item_details` inkl. Allergen-Regel „unbekannt ≠ keine" | 04 | T-4.2 | offen |
 | T-4.5 | Tool `draft_order` mit allen Prüfungen und `readback` | 04 | T-4.3 | offen |
-| T-4.6 | Übergabe über n8n mit `handover_state`: **B** Netzwerk-Bondrucker (ESC/POS) zuerst, **C** order smart Bestell-Eingang als zweiter Adapter nach Antwort von app smart; Idempotenz, Wiederholung | 02 §2, 01 D2 | T-1.6 | offen |
+| T-4.6 | Übergabe über n8n mit `handover_state`: **B** Netzwerk-Bondrucker (ESC/POS) zuerst, **C** <Kassensystem>-Bestell-Eingang als zweiter Adapter nach Antwort von <Kassenanbieter>; Idempotenz, Wiederholung | 02 §2, 01 D2 | T-1.6 | offen |
 | T-4.7 | GUI Spalte „Neue Bestellungen" mit Passt/Korrigieren und Korrekturgründen | 06 §3 | T-3.1, T-4.5 | offen |
 | T-4.8 | GUI „Gericht aus" | 06 §3 | T-4.1 | offen |
 | T-4.9 | Preis-Abgleich Kasse gegen Agent-DB als Skript; Abweichung als rotes Badge am Gericht in der Admin-Liste, übernehmen oder verwerfen | 02 §6, 06 §4 | T-4.2 | offen |
@@ -106,7 +106,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-6.1 | Migration 003 (Kunden, Adressen, Zonen) | 03 | T-4.1 | offen |
 | T-6.2 | Tool `find_customer` mit Normalisierung der Rufnummer | 04 | T-6.1 | offen |
 | T-6.3 | Tool `check_delivery`, PLZ-Variante | 04 | T-6.1, D5 | offen |
-| T-6.9 | `scripts/seed_zones.py`: Lieferzonen aus der bestehenden Liefergebietsliste (Ostseite des Rheins, Grenzorte laut Lieferservice-Projekt) | 03, 04 | T-6.1, D5 | offen |
+| T-6.9 | `scripts/seed_zones.py`: Lieferzonen aus der bestehenden Liefergebietsliste des Pilotbetriebs | 03, 04 | T-6.1, D5 | offen |
 | T-6.4 | Polygon-Variante mit `shapely`, GeoJSON-Import | 04 | T-6.3 | offen |
 | T-6.5 | `draft_order` um Lieferung erweitern: Pauschale, Mindestbestellwert, Lieferzeit | 04 | T-6.3, T-4.5 | offen |
 | T-6.6 | GUI Lieferaufträge plus Schalter „Lieferung pausieren" | 06 | T-4.7 | offen |
@@ -139,7 +139,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-9.2 | `deploy/docker-compose.prod.yml` + Caddy auf einem EU-Server, `/health` von außen erreichbar | 13 §3 | T-0.1, D3 | offen |
 | T-9.3 | `scripts/backup.sh` + `restore.sh`, Cron, Wiederherstellung einmal wirklich geprobt | 13 §4 | T-1.1 | offen |
 | T-9.4 | Uptime-Check auf `/health` mit Benachrichtigung | 13 §5 | T-9.2 | offen |
-| T-9.5 | `jobs/holidays.py`: Feiertage Baden-Württemberg als Vorschlag in `special_days` | 11 §jobs | T-1.2 | offen |
+| T-9.5 | `jobs/holidays.py`: Feiertage des Bundeslandes (konfigurierbar) als Vorschlag in `special_days` | 11 §jobs | T-1.2 | offen |
 
 ## Block 6 – Stufe 5/6: Betrieb
 

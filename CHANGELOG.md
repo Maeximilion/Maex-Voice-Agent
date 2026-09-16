@@ -12,5 +12,15 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - CI-Workflow (ruff, pytest)
 - Desktop-Mockup der Adminansicht unter gui/mockups/
 
+### Geändert
+- Betriebs-, Firmen-, Orts- und Anbieternamen durch Platzhalter ersetzt (`<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com`)
+- README-Schnellstart auf die heute lauffähigen Schritte reduziert; `make migrate` und `make seed` folgen mit T-1.1 und T-1.2
+- Compose mountet zusätzlich `scripts/` und `evals/`, damit `make lint` im Container läuft
+
+### Behoben
+- Dockerfile: Zusatz-CA-Zertifikat (`api/ca-bundle.crt`) ist optional statt Pflicht, Build läuft auf sauberem Checkout
+- Dockerfile: Quellcode landet wieder unter `/app/api`, damit `uvicorn api.main:app` auch ohne Bind-Mount startet
+- Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
+
 ### Offen
-- docker compose up wurde noch nicht gegen echtes Docker ausgeführt (T-0.1)
+- `db.py`, Alembic-Migration 001 und Seed-Skript (T-0.2, T-1.1, T-1.2)

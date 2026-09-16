@@ -24,7 +24,9 @@ def ok(data: dict, say: str | None = None) -> JSONResponse:
     return JSONResponse({"ok": True, "data": data, "say": say})
 
 
-def fail(code: str, message: str, say: str | None = None, status: int = 200) -> JSONResponse:
+def fail(
+    code: str, message: str, say: str | None = None, status: int = 200
+) -> JSONResponse:
     # Status 200, damit die Voice-Plattform die Antwort dem Agenten vorlegen kann.
     return JSONResponse(
         {"ok": False, "error": {"code": code, "message": message}, "say": say},
