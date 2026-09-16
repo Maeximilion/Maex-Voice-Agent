@@ -25,6 +25,20 @@ jobs:
       ENV: test
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Status-Sync prüfen
+        run: |
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "kein Vergleichs-Commit vorhanden, Status-Sync-Check übersprungen"
+            exit 0
+          fi
+          CHANGED=$(git diff --name-only "$BASE" "${{ github.sha }}")
+          if echo "$CHANGED" | grep -q '^docs/07_ARBEITSPAKETE\.md$' && ! echo "$CHANGED" | grep -q '^docs/01_STATUS\.md$'; then
+            echo "::error::docs/07_ARBEITSPAKETE.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
+            exit 1
+          fi
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
