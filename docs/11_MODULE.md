@@ -30,7 +30,7 @@
 - `events/` wird von `domain/` nur durch **Schreiben in die Outbox-Tabelle** angestoßen. Kein direkter Aufruf nach außen.
 - `telephony/` kennt den Anbieter. **Sonst niemand.**
 
-💡 Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du die Voice-Plattform tauschen, ohne eine Preisregel anzufassen. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
+Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du die Voice-Plattform tauschen, ohne eine Preisregel anzufassen. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
 
 ---
 
@@ -126,7 +126,7 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 - `dispatcher.py` — alle paar Sekunden: `pending` lesen, an n8n senden, `sent` oder Wiederholung mit Backoff, nach N Versuchen `failed` plus Alarm
 - `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`
 
-💡 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
+Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
 ### `jobs/`
 - `retention.py` — täglicher Löschjob nach 03
@@ -181,13 +181,13 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 
 | Modul | Testart | Ohne DB? |
 |---|---|---|
-| `numberwords`, `normalize`, `pricing`, `readback`, `phone`, `ladder`, `escalation` | reine Unit-Tests, hunderte Fälle, Millisekunden | ✅ |
-| `domain/*` mit DB | Tests gegen Test-Postgres, Fixtures aus `seed.py` | ❌ |
-| `tools/` | HTTP-Tests, prüfen nur Hülle und Auth | ❌ |
-| `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | ✅ |
-| `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | ❌ |
-| `telephony/adapters` | gegen aufgezeichnete Webhooks | ✅ |
-| Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | ❌ |
+| `numberwords`, `normalize`, `pricing`, `readback`, `phone`, `ladder`, `escalation` | reine Unit-Tests, hunderte Fälle, Millisekunden | fertig |
+| `domain/*` mit DB | Tests gegen Test-Postgres, Fixtures aus `seed.py` | offen |
+| `tools/` | HTTP-Tests, prüfen nur Hülle und Auth | offen |
+| `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
+| `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
+| `telephony/adapters` | gegen aufgezeichnete Webhooks | fertig |
+| Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.
 

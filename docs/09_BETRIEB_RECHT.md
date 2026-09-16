@@ -4,7 +4,7 @@
 
 ## 1. Rechts-Check
 
-> ⚠️ Keine Rechtsberatung. Vor dem ersten echten Anruf durch Anwalt oder Datenschutzberater prüfen lassen.
+> Hinweis: Keine Rechtsberatung. Vor dem ersten echten Anruf durch Anwalt oder Datenschutzberater prüfen lassen.
 > **Jeder offene Punkt blockiert die Aufgaben T-7.x und den Wechsel in den Modus `overflow`.**
 
 - [ ] **AI Act Art. 50** — KI-Hinweis im ersten Satz. Gilt seit 02.08.2026.

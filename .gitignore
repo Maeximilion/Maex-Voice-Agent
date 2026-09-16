@@ -15,4 +15,3 @@ backups/
 *.mp3
 evals/reports/
 imports/
-api/ca-bundle.crt

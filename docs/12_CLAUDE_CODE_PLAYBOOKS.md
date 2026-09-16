@@ -1,7 +1,7 @@
 # 12 – Claude-Code-Playbooks
 
 > Nicht jede Session ist gleich. Neun wiederkehrende Situationen, jede mit festem Ablauf.
-> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/bug`, `/eval`, `/handover`.
+> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, `/handover`.
 
 ---
 
@@ -22,7 +22,7 @@
 /start
 → liest CLAUDE.md, docs/01_STATUS.md, docs/07_ARBEITSPAKETE.md
 → nennt Stufe, Gate, Blocker
-→ schlägt 1–3 startklare Aufgaben vor, mit ⭐ Empfehlung
+→ schlägt 1–3 startklare Aufgaben vor, mit Empfehlung
 → wartet auf Wahl
 ```
 
@@ -100,6 +100,13 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 5. Rückweg bereit: vorheriger Tag, alembic downgrade, Backup
 ```
 
+## S8b – Gate bestanden
+```text
+/gate G1
+→ Belege je Kriterium prüfen, Status und README nach docs/15 nachziehen,
+  Schnellstart auf sauberem Checkout testen, CHANGELOG, Tag v0.2.0
+```
+
 ## S9 – Session-Ende
 ```text
 /done      → Tests, Lint, Status in 07 setzen, 01_STATUS aktualisieren, Commit vorschlagen
@@ -110,13 +117,13 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 
 ## Wann Claude Code fragt
 
-Geschlossen, mit ⭐, eine Frage pro Unterbrechung. Fragen ist Pflicht bei:
+Geschlossen, mit Empfehlung, eine Frage pro Unterbrechung. Fragen ist Pflicht bei:
 - Änderung an einer Regel aus `CLAUDE.md` §2
 - Löschen oder Umbenennen von Tabellen mit Daten
 - Allem, was einen externen Dienst kostet oder einen Vertrag berührt
 - Zwei gleichwertigen Architekturwegen, die später schwer umkehrbar sind
 
-Nicht fragen bei: Dateinamen, Testfällen, Reihenfolge innerhalb einer Aufgabe, Formulierung von Kommentaren. Da wird entschieden und mit ⚠️ notiert.
+Nicht fragen bei: Dateinamen, Testfällen, Reihenfolge innerhalb einer Aufgabe, Formulierung von Kommentaren. Da wird entschieden und als Annahme notiert.
 
 ---
 

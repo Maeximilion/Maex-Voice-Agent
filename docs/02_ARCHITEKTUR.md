@@ -30,7 +30,7 @@ GUI (FastAPI + HTMX) ──────────────┘
   Betrieb-Tablet · Admin-PC
 
 Team-Durchwahl ◄── transfer_to_team, Rückrufe
-RTX 4080 lokal ──  Transkription der Einlern-Aufnahmen (offline, Stufe 4)
+Transkription ──  auf dem EU-Server, nachts, Stufe 4 (nichts läuft bei Maxi)
 ```
 
 ---
@@ -111,7 +111,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 | Menü und Preise | Kasse, falls exportierbar; sonst Agent-DB | Agent-DB mit wöchentlichem Abgleich-Check |
 | Öffnungszeiten, Wartezeit, Zonen | Agent-DB | GUI zeigt an |
 | Kundenstamm für die Telefonerkennung | Agent-DB | – |
-| Anrufaufnahmen und Transkripte | lokal auf der RTX 4080, mit Löschfrist | nie im Repo, nie in der Cloud |
+| Anrufaufnahmen und Transkripte | EU-Server, verschlüsselter Speicher, mit Löschfrist | nie im Repo, nie auf Maxis PC |
 
 ---
 

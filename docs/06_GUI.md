@@ -18,7 +18,7 @@
 
 ## 2. Technik
 
-**Vorschlag ⚠️:** FastAPI + Jinja2 + HTMX + Server-Sent-Events, Pico.css als Basis.
+**Vorschlag Annahme:** FastAPI + Jinja2 + HTMX + Server-Sent-Events, Pico.css als Basis.
 
 | Warum | |
 |---|---|
@@ -51,14 +51,14 @@
 **Spalte 1 – Neue Bestellungen**
 ```text
 ┌──────────────────────────────┐
-│ 🔔 18:42   Abholung   A17    │
+│ + 18:42   Abholung   A17    │
 │ Müller · +49 176 …           │
 │ 2× 23 Frühlingsrollen        │
 │    └ Erdnusssauce            │
 │ 1× 47 Ente knusprig          │
 │ ────────────────────────     │
 │ 24,80 €      fertig 19:10    │
-│ [ ✓ Passt ]  [ ✎ Korrigieren ]│
+│ [ Passt ]  [ Korrigieren ]│
 └──────────────────────────────┘
 ```
 - Neue Karte → Ton plus kurzes Blinken
@@ -76,10 +76,10 @@
 **Spalte 3 – Rückrufe**
 ```text
 ┌──────────────────────────────┐
-│ ⚠️ 18:39  Beschwerde          │
+│ Annahme: 18:39  Beschwerde          │
 │ +49 176 …                    │
 │ „Letzte Lieferung war kalt"  │
-│ [ 📞 Anrufen ]  [ ✓ Erledigt ]│
+│ [ Anrufen ]  [ Erledigt ]│
 └──────────────────────────────┘
 ```
 Beschwerden stehen immer oben und haben einen eigenen Ton.
@@ -123,7 +123,7 @@ Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap
 
 - Keine Zahlungsabwicklung (bezahlt wird vor Ort oder an der Tür)
 - Keine Tourenplanung für die Fahrer in Stufe 1 bis 6
-- Keine Nutzerverwaltung mit Rollen. Ein gemeinsamer Zugang je Gerät, PIN für den Adminbereich. ⚠️ Erweiterbar, wenn nötig.
+- Keine Nutzerverwaltung mit Rollen. Ein gemeinsamer Zugang je Gerät, PIN für den Adminbereich. Erweiterbar, wenn nötig.
 - Kein Chat mit dem Agenten, keine Live-Mithörfunktion
 
 ---

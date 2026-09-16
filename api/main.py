@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from api.config import settings
 
-app = FastAPI(title="Yoki Voice-Agent API", version="0.1.0")
+app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
 
 
 def require_token(authorization: str = Header(default="")) -> None:

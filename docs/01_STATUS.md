@@ -19,13 +19,13 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 
 | Gate | Inhalt | Status |
 |---|---|---|
-| P | Plan freigegeben | ✅ 11.09.2026 |
-| G0 | Budget · Recht · Telefonie-Weg · Anbieter gewählt | 🔴 offen |
-| G1 | Durchstich Reservierung, 20 Testanrufe fehlerfrei | ⬜ |
-| G2 | Abholung, Evals im Ziel, 0 geratene Positionen | ⬜ |
-| G3 | Lieferung, Zonen-Check fehlerfrei | ⬜ |
-| G4 | Schattenmessung, KI ≥ Team-Baseline | ⬜ |
-| G5 | Überlauf-Betrieb, 2 Wochen im Ziel | ⬜ |
+| P | Plan freigegeben | bestanden 11.09.2026 |
+| G0 | Budget · Recht · Telefonie-Weg · Anbieter gewählt | offen |
+| G1 | Durchstich Reservierung, 20 Testanrufe fehlerfrei | offen |
+| G2 | Abholung, Evals im Ziel, 0 geratene Positionen | offen |
+| G3 | Lieferung, Zonen-Check fehlerfrei | offen |
+| G4 | Schattenmessung, KI ≥ Team-Baseline | offen |
+| G5 | Überlauf-Betrieb, 2 Wochen im Ziel | offen |
 
 ---
 
@@ -53,22 +53,23 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | # | Frage | Wer | Wann gebraucht |
 |---|---|---|---|
 | D1 | Voice-Plattform | Maxi nach C2-Recherche | vor T-2.x (Anbindung) |
-| D2 | Übergabeweg in die Kasse. Kasse ist **order smart (app smart GmbH / OrderYOYO)**, der eigene Shop läuft bereits automatisch hinein. Vier Stufen: A Tablet manuell · B Küchenbon direkt · C über den bestehenden Bestell-Eingang der Kasse (Partner-Kanal wie Lieferando, keine öffentliche Doku) · D Kassen-API. ⭐ Start mit A+B, C hängt an der Antwort von app smart (Anfrage per E-Mail vorbereitet, 16.09.2026) | Maxi, app smart | A+B sofort, C vor T-4.6 |
+| D2 | Übergabeweg in die Kasse. Kasse ist **order smart (app smart GmbH / OrderYOYO)**, der eigene Shop läuft bereits automatisch hinein. Vier Stufen: A Tablet manuell · B Küchenbon direkt · C über den bestehenden Bestell-Eingang der Kasse (Partner-Kanal wie Lieferando, keine öffentliche Doku) · D Kassen-API. Empfehlung: Start mit A+B, C hängt an der Antwort von app smart (Anfrage per E-Mail vorbereitet, 16.09.2026) | Maxi, app smart | A+B sofort, C vor T-4.6 |
 | D3 | Hosting-Anbieter in der EU | C2 | vor erstem Deployment |
 | D4 | Stimme: natürlich oder hörbar synthetisch | Maxi | Stufe 1, Dialogtest |
 | D5 | Lieferzonen: PLZ-Liste oder Polygone | Maxi | vor T-6.x (Stufe 3) |
-| D6 | GUI-Technik: HTMX ⭐ oder React | Maxi | vor T-3.1 |
-| D7 | Läuft unser eigener Gesprächs-Kern (`agent/`) auch im Betrieb, oder fährt die Plattform ihren eigenen Loop? ⭐ eigener Kern, wenn die Plattform es erlaubt | Maxi mit C2 | zusammen mit D1 |
+| D6 | GUI-Technik: HTMX (empfohlen) oder React | Maxi | vor T-3.1 |
+| D7 | Läuft unser eigener Gesprächs-Kern (`agent/`) auch im Betrieb, oder fährt die Plattform ihren eigenen Loop? empfohlen: eigener Kern, wenn die Plattform es erlaubt | Maxi mit C2 | zusammen mit D1 |
 
 ---
 
-## Getroffene Annahmen (⚠️ kippbar)
+## Getroffene Annahmen (kippbar)
 
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
 - GUI als FastAPI + Jinja2 + HTMX + SSE, ein Container, kein Node-Build
 - Ein Betrieb (Yoki Yoki), aber mandantenfähiges Schema: jede betriebsbezogene Tabelle trägt `tenant_id`
 - Deutsch als einzige Sprache in Stufe 1 bis 6
 - Bezahlt wird bei Abholung oder Lieferung, keine Zahlung am Telefon
+- **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
 
@@ -80,6 +81,7 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | Kein Anbieter gewählt | Anbindung der Voice-Plattform, echte Testanrufe | C2 im Chat |
 | Antwort app smart zur Bestell-Schnittstelle steht aus | Stufe C der Kassenanbindung (T-4.6 Variante C) | E-Mail abschicken, Lizenznummer bereithalten; bis dahin A+B bauen |
 | Menüdaten liegen nicht strukturiert vor | Stufe 2 komplett | C1 klärt Format, dann T-4.1 Import |
+| Docker Hub Rate-Limit beim ersten `make up` möglich | T-0.1 | `docker login` mit kostenlosem Konto, siehe README, Abschnitt Bekannte Probleme |
 
 ---
 
@@ -89,7 +91,9 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 |---|---|
 | 11.09.2026 | PCF v1.0 erstellt und freigegeben, Architektur Hybrid entschieden (E1) |
 | 15.09.2026 | Repo-Gerüst und Specs für Claude Code exportiert |
-| 15.09.2026 | API-Minimalgerüst: `/health`, Token-Auth, Antwort-Hülle, 3 Tests grün (T-0.3 ✅) |
+| 15.09.2026 | API-Minimalgerüst: `/health`, Token-Auth, Antwort-Hülle, 3 Tests grün (T-0.3 fertig) |
+| 16.09.2026 | README-Pflege eingeführt: `docs/15_README_STRATEGY.md`, `/gate`, `CHANGELOG.md`, Versionen je Gate; alle Emojis aus dem Bundle entfernt |
+| 16.09.2026 | Umbenannt in Maex Voice-Agent (Produkt), Yoki Yoki bleibt Pilotbetrieb; Betriebsorte in `docs/13` §0 festgeschrieben: **nichts läuft auf Maxis PC, auch nicht die Transkription** (E9) |
 | 16.09.2026 | Adminansicht als klickbares Desktop-Mockup in `gui/mockups/` aufgenommen, Vorlage für T-3.1 |
 | 16.09.2026 | GUI-Runde abgeschlossen: Betriebs- und Adminansicht als Mockup abgenommen, Änderungen in `docs/06_GUI.md` §7 |
 | 16.09.2026 | Bundle v1.1: Modul-Architektur (11), Playbooks + Slash-Befehle (12), Deployment (13), Menü-Importformat (14), Outbox, Agent-Kern + Simulator, CI, Prod-Compose; 18 neue Aufgaben |

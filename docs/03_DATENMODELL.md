@@ -304,13 +304,13 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 
 | Daten | Frist | Umsetzung |
 |---|---|---|
-| Anrufaufnahmen | 30 Tage ⚠️ | täglicher Job, harte Löschung |
-| Transkripte | 90 Tage ⚠️ | täglicher Job |
+| Anrufaufnahmen | 30 Tage (Vorschlag) | täglicher Job, harte Löschung |
+| Transkripte | 90 Tage (Vorschlag) | täglicher Job |
 | `calls` ohne personenbezogene Felder | 24 Monate | Statistik bleibt, `caller_id` wird genullt |
-| Kunden ohne Bestellung | 24 Monate ⚠️ | `delete_after`, täglicher Job |
+| Kunden ohne Bestellung | 24 Monate (Vorschlag) | `delete_after`, täglicher Job |
 | Bestellungen | nach steuerlicher Aufbewahrungspflicht | Master ist ohnehin die Kasse |
 
-⚠️ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
+Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
 
 ---
 
