@@ -1,162 +1,145 @@
-"""create_reservation: Reservierung als draft mit Readback und Idempotenz."""
+"""create_reservation: Entwurf anlegen, Satz zum Vorlesen zurückgeben. Erst confirm macht ihn gültig."""
 
-import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import InvalidInput, NotFound
+from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import utcnow
-from api.domain.reservations.spoken import spoken_time
-from api.models import Call, Reservation, Tenant
-from api.schemas.reservations import CreateReservationResponse
+from api.domain.customers.phone import normalize_phone
+from api.domain.reservations.slots import check_slot
+from api.domain.reservations.spoken import spoken_date, spoken_party_size, spoken_time
+from api.models import AuditLog, Call, Reservation, Tenant
+from api.schemas.reservations import CreateReservationRequest, ReservationDraft
 
-
-def _normalize_phone(phone: str) -> str:
-    """Normalisiert Telefonnummern zu E.164-Format: +49...
-
-    Erlaubt: +49..., 0049..., +49.... Falls nicht normalisierbar: unverändert zurück.
-    """
-    if not phone:
-        return phone
-    clean = re.sub(r"\D", "", phone)
-    if clean.startswith("49"):
-        return f"+{clean}"
-    if clean.startswith("0"):
-        return f"+49{clean[1:]}"
-    if not clean.startswith("1"):
-        return f"+{clean}"
-    return phone if phone.startswith("+") else f"+{clean}"
-
-
-def _weekday_word(dt: datetime) -> str:
-    """Wochentag im Nominativ für Lesbarkeit."""
-    days = (
-        "Montag",
-        "Dienstag",
-        "Mittwoch",
-        "Donnerstag",
-        "Freitag",
-        "Samstag",
-        "Sonntag",
-    )
-    return days[dt.weekday()]
-
-
-def _format_date(dt: datetime, now: datetime) -> str:
-    """Datumsbeschreibung: „heute", „morgen" oder „am Freitag"."""
-    local_dt = dt.astimezone(dt.tzinfo)
-    local_now = now.astimezone(dt.tzinfo)
-    diff = (local_dt.date() - local_now.date()).days
-    if diff == 0:
-        return "heute"
-    if diff == 1:
-        return "morgen"
-    return f"am {_weekday_word(local_dt)}"
+ACTOR_AGENT = "agent"
+ACTION_DRAFT_CREATED = "reservation.draft_created"
+SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 
 
 def create_reservation(
-    session: Session,
-    tenant_id: uuid.UUID,
-    call_id: uuid.UUID,
-    idempotency_key: str,
-    guest_name: str,
-    phone: str,
-    party_size: int,
-    reserved_for: datetime,
-    note: str | None = None,
-) -> CreateReservationResponse:
-    """Reservierung als draft. Gleicher Schlüssel → gleiche Antwort (idempotent)."""
-    tenant = session.get(Tenant, tenant_id)
+    session: Session, req: CreateReservationRequest, now: datetime | None = None
+) -> ReservationDraft:
+    now = now or utcnow()
+    tenant = session.get(Tenant, req.tenant_id)
     if tenant is None:
         raise NotFound("Mandant unbekannt")
-
-    call = session.get(Call, call_id)
-    if call is None:
-        raise NotFound("Anruf nicht gefunden")
-
     zone = ZoneInfo(tenant.timezone)
-    now = utcnow()
 
-    normalized_phone = _normalize_phone(phone)
-    if not normalized_phone or not normalized_phone.startswith("+"):
-        raise InvalidInput(
-            "Ungültige Telefonnummer",
-            say="Die Telefonnummer konnte nicht verarbeitet werden.",
-        )
+    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
+    existing = _by_key(session, req.idempotency_key)
+    if existing is not None:
+        return _replay(existing, req.tenant_id, zone)
 
-    stmt = select(Reservation).where(
-        Reservation.idempotency_key == idempotency_key
-    )
-    existing = session.execute(stmt).scalar_one_or_none()
-    if existing:
-        return CreateReservationResponse(
-            reservation_id=existing.id,
-            status=existing.status,
-            readback=_make_readback(
-                existing.guest_name,
-                existing.party_size,
-                existing.reserved_for,
-                existing.note,
-                now,
-                zone,
-            ),
-        )
+    call = session.get(Call, req.call_id)
+    if call is None or call.tenant_id != req.tenant_id:
+        raise NotFound("Anruf unbekannt", say=SAY_CALL_UNKNOWN)
+
+    guest_name = req.guest_name.strip()
+    if not guest_name:
+        raise InvalidInput("guest_name: darf nicht leer sein")
+    phone = normalize_phone(req.phone)
+    note = (req.note or "").strip() or None
+
+    _lock_business_day(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
+    slot = check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
+    if not slot.available:
+        raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
 
     reservation = Reservation(
-        id=uuid.uuid4(),
-        tenant_id=tenant_id,
-        call_id=call_id,
+        tenant_id=req.tenant_id,
+        call_id=req.call_id,
         status="draft",
         guest_name=guest_name,
-        phone=normalized_phone,
-        party_size=party_size,
-        reserved_for=reserved_for,
+        phone=phone,
+        party_size=req.party_size,
+        reserved_for=req.reserved_for,
         note=note,
-        idempotency_key=idempotency_key,
+        idempotency_key=req.idempotency_key,
+        # Fester Bezugspunkt für den readback, damit ein Replay über Mitternacht
+        # nicht plötzlich "heute" statt "morgen" sagt.
+        created_at=now,
     )
     session.add(reservation)
-    session.flush()
+    try:
+        session.flush()
+    except IntegrityError:
+        # Zwei gleichzeitige Aufrufe mit demselben Schlüssel: der zweite liest den ersten.
+        session.rollback()
+        existing = _by_key(session, req.idempotency_key)
+        if existing is None:
+            raise
+        return _replay(existing, req.tenant_id, zone)
 
-    return CreateReservationResponse(
-        reservation_id=reservation.id,
-        status="draft",
-        readback=_make_readback(
-            guest_name, party_size, reserved_for, note, now, zone
-        ),
+    session.add(
+        AuditLog(
+            tenant_id=req.tenant_id,
+            actor=ACTOR_AGENT,
+            action=ACTION_DRAFT_CREATED,
+            entity="reservation",
+            entity_id=reservation.id,
+            payload={
+                "call_id": str(req.call_id),
+                "party_size": req.party_size,
+                "reserved_for": req.reserved_for.isoformat(),
+            },
+        )
+    )
+    session.commit()
+    return _draft(reservation, zone)
+
+
+def _lock_business_day(session: Session, tenant_id: uuid.UUID, day: date) -> None:
+    """Prüfen und Anlegen laufen je Betrieb und Tag nacheinander, sonst überbuchen
+    zwei gleichzeitige Anrufe dasselbe Fenster: beide lesen die Kapazität, bevor
+    einer schreibt. Die Sperre hält bis zum Ende der Transaktion."""
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+        {"key": f"reservations:{tenant_id}:{day.isoformat()}"},
     )
 
 
-def _make_readback(
-    guest_name: str,
-    party_size: int,
-    reserved_for: datetime,
-    note: str | None,
-    now: datetime,
-    zone: ZoneInfo,
-) -> str:
-    """Satz zum Vorlesen für den Kunden."""
-    local_time = reserved_for.astimezone(zone)
-    date_str = _format_date(local_time, now.astimezone(zone))
-    time_str = spoken_time(local_time)
-
-    parts = [f"Reservierung für {guest_name}"]
-
-    if party_size == 1:
-        parts.append("eine Person")
-    else:
-        parts.append(f"{party_size} Personen")
-
-    parts.append(f"{date_str} um {time_str}")
-
-    if note:
-        parts.append(f"{note} vorhanden")
-
-    result = ", ".join(parts) + ". Passt das so?"
-    return result
+def _by_key(session: Session, key: str) -> Reservation | None:
+    return session.scalar(select(Reservation).where(Reservation.idempotency_key == key))
 
 
-__all__ = ["create_reservation"]
+def _replay(
+    existing: Reservation, tenant_id: uuid.UUID, zone: ZoneInfo
+) -> ReservationDraft:
+    if existing.tenant_id != tenant_id:
+        raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
+    return _draft(existing, zone)
+
+
+def _draft(r: Reservation, zone: ZoneInfo) -> ReservationDraft:
+    return ReservationDraft(
+        reservation_id=r.id,
+        status=r.status,
+        reserved_for=r.reserved_for,
+        party_size=r.party_size,
+        guest_name=r.guest_name,
+        phone=r.phone,
+        note=r.note,
+        readback=readback(r, zone),
+    )
+
+
+def readback(r: Reservation, zone: ZoneInfo) -> str:
+    """Deterministisch aus dem Entwurf, der Agent liest ihn wörtlich vor.
+
+    Bezug ist der Anlagezeitpunkt, nicht die aktuelle Uhrzeit: derselbe Schlüssel
+    liefert dieselbe Antwort, auch wenn der Tag inzwischen gewechselt hat.
+    """
+    local = r.reserved_for.astimezone(zone)
+    when = spoken_date(local, today=r.created_at.astimezone(zone).date())
+    satz = (
+        f"Ein Tisch für {spoken_party_size(r.party_size)} {when} um {spoken_time(local)}"
+        f", auf den Namen {r.guest_name}"
+    )
+    if r.note:
+        satz += f", mit dem Hinweis: {r.note}"
+    return satz + ". Passt das so?"

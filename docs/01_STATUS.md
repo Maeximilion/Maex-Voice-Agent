@@ -1,21 +1,40 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Bundle v1.1
+> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.3
 
 ---
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die ersten Tools im heißen Pfad (`get_service_status`, `check_slot`) antworten in rund 12 bis 13 ms (p95); 86 Tests laufen grün. Die schreibenden Stufe-1-Tools und die GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`) antworten in rund 8 bis 15 ms (p95); 131 Tests laufen grün. Der erste Schreibvorgang steht (`create_reservation` als `draft` mit `readback`, Idempotenz und `audit_log`); `confirm`, Outbox, Rückrufe und die GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
 **Geprüft (16.09.2026):** `make up` baut das API-Image und startet Postgres und API, `/health` antwortet `{"status":"ok"}`, `make lint` und `make test` laufen im Container (T-0.1 fertig). Ein externes Code-Review (Codex) hat vier Findings am Docker-Setup geliefert, alle behoben: CA-Zertifikat im Build optional, Paketpfad `/app/api` erhalten, `scripts/` und `evals/` in den Container gemountet, README-Schnellstart auf das reduziert, was heute läuft.
 
+Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. Volle Details je Stufe: `docs/00_PCF.md` §5.
+
 ---
 
-## Gates
+## Fahrplan: wo wir stehen, wo wir hinwollen
+
+| Stufe | Ziel | Gate | Stand |
+|---|---|---|---|
+| P Plan | Plan freigegeben | – | bestanden 11.09.2026 |
+| **0 Fundament** | Fakten, Recht, Budget, Anbieter klären | G0 Go/No-Go | läuft – Block „Gerüst" in `docs/07_ARBEITSPAKETE.md` |
+| 1 Durchstich Reservierung | ganze Kette einmal echt (Testnummer → KI → Tool → DB → GUI) | G1 | offen |
+| 2 Abholung | Menü sicher verstanden, Bestellung korrekt in der Küche | G2 | offen |
+| 3 Lieferung | Adresse und Zone ohne Fehler | G3 | offen |
+| 4 Einlernen & Schattenmessung | echte Fehlerquote messen, ohne Kundenrisiko | G4 | offen |
+| 5 Überlauf-Betrieb | KI nimmt an, nur wenn das Team nicht abnimmt | G5 | offen |
+| 6 Hauptannahme & Betrieb | KI nimmt zuerst an, Team bleibt Rückfallebene, Monats-Review läuft | Monats-Review | offen, Zielzustand |
+
+**Wir sind hier:** Stufe 0, Block „Gerüst" – Gerüst starten, `core/`, Alembic, CI (siehe „Was als Nächstes dran ist"). **Wo wir hinwollen:** Stufe 6, laufender Betrieb mit KI als primärer Annahme und Team als Rückfallebene.
+
+---
+
+## Gates im Detail
 
 | Gate | Inhalt | Status |
 |---|---|---|
@@ -32,13 +51,14 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.5** `create_reservation` als `draft` mit `readback` und Idempotenz (erster Schreibvorgang: `call_id` Pflicht, `core/ids.py` für Idempotenz-Schlüssel)
-2. **T-1.6** `confirm` generisch mit `audit_log` und Outbox-Eintrag, dann **T-1.7** `create_callback`
-3. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
+1. **T-1.6** `confirm` generisch (Reservierung, später Bestellung): `draft → confirmed`, Idempotenz, `audit_log`, Outbox-Eintrag `reservation.confirmed`
+2. **T-1.12** Outbox-Dispatcher mit Backoff und Fake-n8n im Test, dann **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
+3. **T-1.9** Anruf-Log `POST /v1/calls/start` und `/end`: bis dahin muss die `calls`-Zeile von Hand oder im Test angelegt werden (siehe Annahmen)
+4. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
-Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
+Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiegelt als Issues: neun Sammel-Issues je Block (#5 bis #13), 68 Arbeitspakete als Sub-Issues darunter, Labels je Stufe. Gepflegt wird der Status hier in der Doku, der Spiegel folgt.
 
 ### Im Chat (Maxi)
 - **C1** Ist-Aufnahme: Kasse, Telefonanlage, Anrufvolumen, Menüformat, Baseline-Messung, Rechts-Check
@@ -73,6 +93,12 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 - Seed überschreibt `service_config` nie: der Live-Schalter (Modus, Lieferung, Wartezeit) gehört dem Team
 - **Kapazität ohne Verweildauer** (`domain/reservations/capacity.py`): `capacity.max_guests` ist die Summe aller Gäste, deren Reservierung im Fenster beginnt; die Fenster bilden die Sitz-Turns ab (z. B. 18–20 und 20–22 Uhr). Entwürfe zählen mit, Stornierte und weich Gelöschte nicht. `check_slot` verlangt zusätzlich ein offenes `dinein`-Fenster (Sondertage greifen). Alternativen nur am selben Tag, im Raster `slot_minutes`, die zwei nächsten am Wunsch, nie in der Vergangenheit. In keinem Dokument definiert, Annahme vom 16.09.2026, kippbar
 - Offene Entwürfe blockieren Kapazität, bis sie bestätigt oder storniert werden; ein Verfallsjob für liegengebliebene Entwürfe fehlt noch (Kandidat für `jobs/`)
+- **`create_reservation` verlangt einen bekannten Anruf** (`domain/reservations/create.py`): die `calls`-Zeile muss vor dem ersten Schreibvorgang existieren (kommt mit T-1.9 über `POST /v1/calls/start`), sonst `not_found` mit Störungs-`say`. Kein stilles Anlegen, damit falsche IDs der Plattform sofort auffallen. Annahme vom 16.09.2026, kippbar
+- **Entwurf prüft den Slot erneut** nach denselben Regeln wie `check_slot`; belegt → `conflict` mit den Alternativen im `say`. Idempotenz-Replay prüft nicht erneut und liefert die gespeicherte Antwort; derselbe Schlüssel unter einem anderen Mandanten → `conflict`
+- **Prüfen und Anlegen sind gesperrt** (`_lock_business_day`): eine Advisory-Sperre je Mandant und Tag (`pg_advisory_xact_lock`) hält bis zum Ende der Transaktion, sonst lesen zwei gleichzeitige Anrufe dieselbe freie Kapazität und überbuchen das Fenster. Grob genug für Telefonlast, fein genug, dass verschiedene Tage sich nicht behindern. Mit dem gleichen Muster arbeitet später `confirm`
+- **Readback-Format** (`domain/reservations/spoken.py`): „Ein Tisch für vier Personen heute / morgen / am Dienstag, den 22. September um halb sieben, auf den Namen Müller[, mit dem Hinweis: …]. Passt das so?" Personenzahl bis zwölf als Wort, darüber Ziffer. Bezugspunkt für „heute" und „morgen" ist `created_at` des Entwurfs, nicht die aktuelle Uhrzeit, damit ein Replay nach Mitternacht denselben Satz liefert. Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
+- **Rufnummern** werden in `domain/customers/phone.py` nach E.164 normalisiert, Default-Land `+49`; `0049…`, `0…`, Leerzeichen, Schrägstriche und Klammern werden aufgelöst. Unterdrückte Nummer ist noch nicht modelliert (kommt mit `find_customer`)
+- Jeder Schreibvorgang schreibt `audit_log` (`actor: agent`, `action: reservation.draft_created`), inline im Domain-Code; ein gemeinsamer Helfer folgt, sobald `confirm` die zweite Stelle ist
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -101,6 +127,7 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | Adminansicht als klickbares Desktop-Mockup in `gui/mockups/` aufgenommen, Vorlage für T-3.1 |
 | 16.09.2026 | GUI-Runde abgeschlossen: Betriebs- und Adminansicht als Mockup abgenommen, Änderungen in `docs/06_GUI.md` §7 |
 | 16.09.2026 | Bundle v1.1: Modul-Architektur (11), Playbooks + Slash-Befehle (12), Deployment (13), Menü-Importformat (14), Outbox, Agent-Kern + Simulator, CI, Prod-Compose; 18 neue Aufgaben |
+| 16.09.2026 | README-Status auf den tatsächlichen Stand synchronisiert |
 | 16.09.2026 | Platzhalter statt Namen: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com` in Code, Doku, Mockup und Caddyfile; Regel in `CLAUDE.md` §1 |
 | 16.09.2026 | **T-0.1 fertig:** `make up` gegen echtes Docker, Postgres + API healthy, n8n erreichbar (nach Fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` und `/v1/tools/ping` geprüft, `make lint` + `make test` im Container grün. Codex-Review (4 Findings) eingearbeitet. `ruff format` erstmals gelaufen (T-0.4: nur `make migrate` offen, wartet auf T-1.1) |
 | 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
@@ -110,18 +137,35 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | **T-1.3 fertig, T-0.5 fertig:** `domain/status/hours.py` (Fenster je Tag und Service, Sondertag schlägt Wochentag, Fenster über Mitternacht, nächste Öffnung) und `service.py` (`get_service_status`), Schemas `ToolRequest` und `ServiceStatus`, Tool-Router `tools/router.py` mit `tools/service_status.py`. 16 Tests: offen, Ruhetag mit `say`, zwischen den Fenstern, 00:30, Fenster 18–01 Uhr, Sondertag geschlossen, Sonderzeiten am Ruhetag, Sommerzeit Beginn und Ende, Lieferung pausiert, unbekannter Mandant, Hülle, 401, `invalid_input`, `not_found`. **Latenz:** p95 11,3 ms lokal, 12,3 ms im Container (Helfer `p95_ms`, Budget 300 ms), live per curl max 54,9 ms. Uvicorn-Access-Log abgeschaltet, die Middleware-Zeile hat Dauer und `request_id`. 63 Tests grün |
 | 16.09.2026 | **T-1.4 fertig:** `domain/reservations/capacity.py` (Fenster je Wochentag, belegte Gäste aller Fenster in einer Abfrage), `slots.py` (`check_slot`: Öffnungszeit `dinein` und Kapazitätsfenster, bis zu zwei Alternativen im Raster, nächste zuerst), `spoken.py` (gesprochene Uhrzeit „halb sieben"). Schema `CheckSlotRequest` (zeitzonenbewusst, `party_size ≥ 1`), Tool `tools/check_slot.py`. 23 Tests: frei, voll mit Alternativen, kleine Gruppe passt noch, Entwurf zählt / Storno nicht, Gruppe größer als jedes Fenster, Ruhetag, Fensterende exklusiv, keine Alternativen in der Vergangenheit, Vergangenheit → `invalid_input`, naive Zeit → `invalid_input`, gesprochene Zeiten. **Latenz:** p95 13,0 ms lokal. 86 Tests grün |
 | 16.09.2026 | **Übergabe Session 1 bis 3:** PR #2 gemerged (`main` = `df7c071`), Übergabeblock in `docs/00_PCF.md` §13. Nächster Schritt T-1.5. Stolpersteine für die Sandbox stehen dort (Docker-Daemon von Hand starten, lokale `.env`, `DATABASE_URL` auf localhost) |
+| 16.09.2026 | **T-1.5 fertig:** `domain/reservations/create.py` (`create_reservation`: Mandant und Anruf prüfen, Rufnummer normalisieren, Slot erneut prüfen, Entwurf + `audit_log`, Idempotenz-Replay auch bei gleichzeitigem Doppelaufruf über den Unique-Index), `spoken.py` um Datum („heute", „morgen", Wochentag) und Personenzahl ergänzt, `core/ids.py` (`new_id`, deterministischer `idempotency_key`), `domain/customers/phone.py` (E.164), Schemas `CreateReservationRequest`/`ReservationDraft`, Tool `tools/create_reservation.py`. 40 Tests: Entwurf mit Audit, Replay ohne zweiten Vorgang, fremder Mandant, voller Slot mit Alternativen, Ruhetag, Vergangenheit, unbekannter Anruf, fremder Anruf, unbekannter Mandant, Rufnummer normalisiert/ungültig, leerer Name, drei Readback-Varianten, Entwurf zählt gegen Kapazität, HTTP-Hülle, Idempotenz über HTTP, fehlender Schlüssel, 401, 18 Rufnummern-Fälle, Schlüssel-Helfer. **Latenz:** p95 15,2 ms lokal, live per curl 3 bis 4 ms warm. 129 Tests grün |
 | 16.09.2026 | **Codex-Review PR #2 (2 Findings) behoben, roter Test zuerst:** `check_slot` berücksichtigt Fenster des Vortags über Mitternacht (Wunsch 00:30 in einem Fenster 18–01 Uhr war fälschlich belegt); `get_service_status` zählt pausierte Lieferung nicht mehr als offen und verspricht Abholung nur bei offenem Abholfenster. 89 Tests grün |
+| 16.09.2026 | Auto-Update für diese Datei: `scripts/status_bump.py` (Semver, Datum, Changelog-Zeile automatisch), eingebunden in `/done`, `/task`, `/handover`; CI-Schritt „Status-Sync prüfen" schlägt an, wenn `docs/07_ARBEITSPAKETE.md` sich ändert, diese Datei aber nicht; `ruff format`-Altlast in `api/main.py` behoben; `CLAUDE.md`: kein Claude-Code-Attribution-Badge in PRs/Repo |
 
 ---
 
-## Änderungsprotokoll dieser Datei
+## Versionierung dieser Datei
 
-- **16.09.2026:** T-1.4 abgeschlossen (`check_slot`), Annahme Kapazität ohne Verweildauer, nächste Schritte T-1.5 bis T-1.7.
-- **16.09.2026:** T-1.3 und T-0.5 abgeschlossen (erstes Tool, Latenz-Helfer), nächste Schritte T-1.4 bis T-1.6.
-- **16.09.2026:** T-1.2 abgeschlossen (Seed), Session 2 der empfohlenen Reihenfolge komplett, nächste Schritte auf Session 3 (T-1.3 bis T-1.5).
-- **16.09.2026:** T-1.1 und T-0.4 abgeschlossen (Alembic, Migration 001, Modelle), T-1.2 startklar. Regel: Empfehlungen werden direkt abgenommen (`CLAUDE.md` §6).
-- **16.09.2026:** T-0.6 abgeschlossen (`core/`), Annahme Betriebstag 05:00, T-0.8 startklar.
-- **16.09.2026:** T-0.2 abgeschlossen (`db.py`), nächste Schritte neu nummeriert.
-- **16.09.2026:** T-0.1 abgeschlossen, Codex-Review eingearbeitet, Platzhalter-Regel, nächste Schritte neu nummeriert.
-- **16.09.2026:** v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
-- **15.09.2026:** Erstfassung beim Export nach Claude Code.
+Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-Bundle-Version und von der Gate-Version der README (`docs/15_README_STRATEGY.md`) — die README versioniert das Produkt nach außen, diese Datei sich selbst nach innen:
+
+| Bump | Auslöser | Beispiel |
+|---|---|---|
+| **MAJOR** | Gate bestanden / Stufenwechsel / Architektur-Entscheidung (E-Nr.) gekippt | G0 bestanden → Stufe 1 beginnt |
+| **MINOR** | Entscheidung getroffen (D-Nr. beantwortet), neues Arbeitspaket-Ergebnis ändert „Was als Nächstes dran ist" | D1 Anbieter gewählt |
+| **PATCH** | reine Status-Pflege: Task-Haken, neue Annahme, neuer/gelöster Blocker | T-0.1 auf fertig |
+
+**Auto-Update:** `python scripts/status_bump.py <patch|minor|major> "<eine Zeile Änderung>"` setzt Datum, Version und Changelog-Zeile automatisch. Wird von `/done`, `/task` und `/handover` aufgerufen (siehe `.claude/commands/`) – von Hand nur bei Bedarf. Zusätzliches Sicherheitsnetz: CI (`.github/workflows/ci.yml`) schlägt fehl, wenn sich `docs/07_ARBEITSPAKETE.md` ändert, `docs/01_STATUS.md` im selben Diff aber unangetastet bleibt.
+
+---
+
+## Changelog
+
+- **v1.3.3 · 16.09.2026:** Repo-Standards: CONTRIBUTING, SECURITY, PR- und Issue-Vorlagen, Dependabot, README-Badges; Label-Taxonomie auf allen 77 Issues
+- **v1.3.2 · 16.09.2026:** Roadmap auf GitHub gespiegelt: neun Block-Issues, 68 Arbeitspakete als Sub-Issues, Issue-Nummern in docs/07 eingetragen
+- **v1.3.1 · 16.09.2026:** Codex-Review PR #4 (P1, P2) behoben: Sperre gegen Überbuchung bei parallelen Anrufen, readback stabil über Mitternacht
+- **v1.3.0 · 16.09.2026:** T-1.5 fertig: create_reservation als draft mit readback, Idempotenz und audit_log; core/ids.py und E.164-Normalisierung neu; nächste Schritte T-1.6, T-1.12, T-1.7 bis T-1.9
+- **v1.2.0 · 16.09.2026:** Merge PR #2: T-1.1 bis T-1.4 fertig (core/, Alembic, Seed, get_service_status, check_slot), Rebrand Maex Voice-Agent mit Platzhaltern, README-Strategie + CHANGELOG.md + /gate eingeführt, Codex-Review-Fixes
+- **v1.1.1 · 16.09.2026:** Fahrplan-Abschnitt, Versionierungsschema und Auto-Update (Skript + CI-Sync-Check) eingeführt
+- **v1.1.0 · 16.09.2026:** Bundle v1.1 – Lupe über den Plan: Module, Playbooks, Deployment, Importformat, Outbox, Agent-Kern, D7.
+- **v1.0.0 · 15.09.2026:** Erstfassung beim Export nach Claude Code.
+
+Ältere, nicht semver-versionierte Einträge (T-0.1 bis T-1.4, Rebrand, README-Strategie) stehen chronologisch in der Erledigt-Tabelle oben.

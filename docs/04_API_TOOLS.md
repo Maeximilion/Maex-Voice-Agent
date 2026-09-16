@@ -189,7 +189,22 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
   "guest_name": "Müller", "phone": "+49…", "party_size": 4,
   "reserved_for": "2026-09-20T18:00:00Z", "note": "Kinderstuhl" }
 ```
+**Response**
+```json
+{
+  "ok": true,
+  "data": {
+    "reservation_id": "…", "status": "draft",
+    "reserved_for": "2026-09-20T18:00:00Z", "party_size": 4,
+    "guest_name": "Müller", "phone": "+4972215551234", "note": "Kinderstuhl",
+    "readback": "Ein Tisch für vier Personen am Sonntag, den 20. September um acht Uhr, auf den Namen Müller, mit dem Hinweis: Kinderstuhl. Passt das so?"
+  },
+  "say": null
+}
+```
 Legt die Reservierung als `draft` an und gibt `readback` zurück — den Satz, den der Agent vorliest. Erst `confirm` macht sie gültig.
+
+**Prüfungen im Code, nicht im Modell:** Anruf bekannt (`call_id` muss in `calls` stehen, sonst `not_found`) · Rufnummer nach E.164 normalisierbar (sonst `invalid_input` mit `say`) · Zeitpunkt in der Zukunft · Slot frei nach denselben Regeln wie `check_slot` (sonst `conflict`, `say` nennt die Alternativen). Der Entwurf zählt sofort gegen die Kapazität und landet im `audit_log`. Gleicher `idempotency_key` → dieselbe Antwort ohne neue Prüfung; Schlüssel eines anderen Mandanten → `conflict`.
 
 ---
 
