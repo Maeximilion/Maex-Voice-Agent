@@ -10,9 +10,9 @@ logs:
 	docker compose logs -f api
 
 migrate:  ## Schema auf den neuesten Stand
-	docker compose exec api alembic upgrade head
+	docker compose exec api alembic -c db/alembic.ini upgrade head
 
-seed:     ## Testdaten für Yoki Yoki
+seed:     ## Testdaten für den Pilotbetrieb
 	docker compose exec api python -m scripts.seed
 
 test:

@@ -7,9 +7,11 @@
 
 ## 1. Was wir bauen
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer des Restaurants **Yoki Yoki** (Sinzheim bei Baden-Baden) an und erledigt **Reservierung, Abholung und Lieferung**. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert alles über eine Browser-GUI auf dem Tablet.
+Ein KI-Agent nimmt Anrufe auf der Festnetznummer des Restaurants **<Pilotbetrieb>** (<Ort>) an und erledigt **Reservierung, Abholung und Lieferung**. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert alles über eine Browser-GUI auf dem Tablet.
 
 **Aufgabenteilung:** Eine externe Voice-Plattform macht Telefonie, Spracherkennung und Stimme. Wir bauen die **Logik, die Datenbank und die Oberfläche**. Der Agent ruft unsere Tools per HTTPS auf.
+
+**Platzhalter:** Betriebs-, Firmen-, Orts- und Anbieternamen stehen in Code und Doku als `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>` und `example.com`. Die echten Werte kommen aus `.env` und der Datenbank, nie ins Repo. Im Code keine Emojis.
 
 ---
 
@@ -30,17 +32,17 @@ Diese sechs Regeln stehen über jeder Bequemlichkeit. Wenn eine Aufgabe sie verl
 
 | Ebene | Technik | Status |
 |---|---|---|
-| Sprache | Python 3.12 | ⚠️ Default |
-| API (heißer Pfad) | FastAPI + Uvicorn, Pydantic v2 | ⚠️ Default |
-| DB | PostgreSQL 16, SQLAlchemy 2 + Alembic | ⚠️ Default |
-| GUI | FastAPI + Jinja2 + HTMX + SSE, Pico.css | ⚠️ Default, Alternative: React + Vite |
-| Automation (kalter Pfad) | n8n, self-hosted per Docker | ✅ gesetzt |
-| Tests | pytest, pytest-asyncio, httpx | ⚠️ Default |
-| Lint/Format | ruff (Format + Lint), mypy im Nicht-Strict-Modus | ⚠️ Default |
-| Betrieb | Docker Compose, Hosting in der EU | ✅ gesetzt |
-| Voice-Plattform | offen → wird in Arbeitspaket C2 entschieden | ❌ offen |
+| Sprache | Python 3.12 | Default |
+| API (heißer Pfad) | FastAPI + Uvicorn, Pydantic v2 | Default |
+| DB | PostgreSQL 16, SQLAlchemy 2 + Alembic | Default |
+| GUI | FastAPI + Jinja2 + HTMX + SSE, Pico.css | Default, Alternative: React + Vite |
+| Automation (kalter Pfad) | n8n, self-hosted per Docker | gesetzt |
+| Tests | pytest, pytest-asyncio, httpx | Default |
+| Lint/Format | ruff (Format + Lint), mypy im Nicht-Strict-Modus | Default |
+| Betrieb | Docker Compose, Hosting in der EU | gesetzt |
+| Voice-Plattform | offen → wird in Arbeitspaket C2 entschieden | offen |
 
-⚠️ = Vorschlag, kippbar. Wenn Maxi widerspricht, wird hier und in `docs/01_STATUS.md` nachgezogen.
+„Default" = Vorschlag, kippbar. Wenn Maxi widerspricht, wird hier und in `docs/01_STATUS.md` nachgezogen.
 
 **Warum HTMX statt React:** ein Container statt zwei, kein Node-Build, kein CORS, Live-Updates über Server-Sent-Events. Für eine Tablet-Oberfläche mit Listen und großen Knöpfen reicht das vollständig. Begründung in `docs/06_GUI.md`.
 
@@ -51,7 +53,7 @@ Diese sechs Regeln stehen über jeder Bequemlichkeit. Wenn eine Aufgabe sie verl
 Der Aufbau ist modular, nach Schichten mit fester Abhängigkeitsrichtung. Vollständig mit Begründung und Bauplan: `docs/11_MODULE.md`. **Vor jeder neuen Datei dort nachsehen, wohin sie gehört.**
 
 ```text
-yoki-voice-agent/
+maex-voice-agent/
 ├── CLAUDE.md              ← diese Datei
 ├── README.md
 ├── docker-compose.yml     Postgres · API · n8n (dev)
@@ -104,13 +106,14 @@ yoki-voice-agent/
 | `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | neun Session-Abläufe (Feature, Bug, Migration, Prompt, Import, Adapter, Deploy …) | zu Session-Beginn, je nach Situation |
 | `docs/13_DEPLOYMENT.md` | Tunnel für Testanrufe, EU-Server, Caddy, Backups, CI | vor dem ersten Testanruf |
 | `docs/14_MENU_IMPORTFORMAT.md` | CSV-Vertrag zwischen Chat (Digitalisierung) und Import | vor T-4.2 |
+| `docs/15_README_STRATEGY.md` | Wann und wie README und CHANGELOG gepflegt werden, Versionierung je Gate | bei jedem Gate, bei neuen Abhängigkeiten |
 
 ---
 
 ## 6. So arbeitest du
 
 ### Slash-Befehle (`.claude/commands/`)
-`/start` Session beginnen · `/task T-x.y` Aufgabe bauen · `/done` abschließen · `/bug "…"` Fehler mit rotem Eval-Fall zuerst · `/eval` Suite laufen und bewerten · `/handover` Übergabeblock. Abläufe im Detail: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+`/start` Session beginnen · `/task T-x.y` Aufgabe bauen · `/done` abschließen · `/bug "…"` Fehler mit rotem Eval-Fall zuerst · `/eval` Suite laufen und bewerten · `/gate Gx` Gate abschließen, README und Version nachziehen · `/handover` Übergabeblock. Abläufe im Detail: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 ### Session-Start
 1. `docs/01_STATUS.md` lesen → aktuelle Stufe und offene Aufgaben
@@ -122,7 +125,9 @@ yoki-voice-agent/
 **Plan → Bauen → Ausführen → Bewerten → Weiterdenken.** Nach jeder Aufgabe selbstständig bis zu **3 Folgeschritte** in Richtung Ziel machen (Tests ergänzen, offensichtliche Lücke schließen, Doku nachziehen), dann Ergebnis melden. Größere Scope-Erweiterungen nur als Vorschlag.
 
 ### Rückfragen
-Geschlossen stellen (Ja/Nein oder A/B/C mit markierter Empfehlung ⭐), **eine pro Unterbrechung**, und genau dann, wenn die Antwort gebraucht wird. Recherchierbares selbst recherchieren. Was du annimmst, markierst du mit ⚠️ und schreibst es in `docs/01_STATUS.md`.
+Geschlossen stellen (Ja/Nein oder A/B/C mit markierter Empfehlung), **eine pro Unterbrechung**, und genau dann, wenn die Antwort gebraucht wird. Recherchierbares selbst recherchieren. Was du annimmst, markierst du als Annahme und schreibst es in `docs/01_STATUS.md`.
+
+**Entscheidungen mit Empfehlung nimmst du selbst ab** (Maxi, 16.09.2026): Plan zeigen, Empfehlung nennen, weiterbauen. Warten nur, wenn es um Geld, Recht, Außenwirkung, Produktivdaten oder Irreversibles geht (§10).
 
 ### Session-Ende
 `docs/01_STATUS.md` aktualisieren: erledigte Aufgaben, neue Erkenntnisse, nächster Schritt. Dazu einen Übergabeblock nach `docs/00_PCF.md` Abschnitt 12 ausgeben.
@@ -139,6 +144,7 @@ Eine Aufgabe ist fertig, wenn **alle** Punkte stimmen:
 - [ ] Für Tools im heißen Pfad: Antwortzeit gemessen, < 300 ms bei lokaler DB
 - [ ] Schema-Änderung als Alembic-Migration, up **und** down getestet
 - [ ] Betroffene Doku in `docs/` nachgezogen
+- [ ] README aktualisiert, falls sich Schnellstart, Voraussetzungen, Konfiguration oder bekannte Probleme geändert haben (`docs/15_README_STRATEGY.md`)
 - [ ] `docs/01_STATUS.md` aktualisiert
 - [ ] Commit nach Conventional Commits, `main` bleibt lauffähig
 
@@ -154,6 +160,7 @@ Eine Aufgabe ist fertig, wenn **alle** Punkte stimmen:
 - Schreibende Tools sind idempotent: gleicher `idempotency_key` → gleiches Ergebnis, kein zweiter Vorgang.
 - Fehler geben strukturiertes JSON zurück, nie einen Stacktrace an den Agenten.
 - Deutsche Kommentare und Fehlermeldungen, englische Bezeichner im Code.
+- Keine Emojis in Code, Doku, Commits oder Oberfläche. Status wird mit Wörtern ausgedrückt.
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery mit Polygon-Prüfung`

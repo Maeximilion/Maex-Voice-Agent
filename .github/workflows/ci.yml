@@ -12,15 +12,15 @@ jobs:
       db:
         image: postgres:16-alpine
         env:
-          POSTGRES_USER: yoki
-          POSTGRES_PASSWORD: yoki
-          POSTGRES_DB: yoki_test
+          POSTGRES_USER: maex
+          POSTGRES_PASSWORD: maex
+          POSTGRES_DB: maex_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U yoki -d yoki_test"
+          --health-cmd "pg_isready -U maex -d maex_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
     env:
-      DATABASE_URL: postgresql+psycopg://yoki:yoki@localhost:5432/yoki_test
+      DATABASE_URL: postgresql+psycopg://maex:maex@localhost:5432/maex_test
       AGENT_API_TOKEN: ci-token
       ENV: test
     steps:

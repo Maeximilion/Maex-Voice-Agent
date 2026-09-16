@@ -15,4 +15,6 @@ backups/
 *.mp3
 evals/reports/
 imports/
+
+# Optionales Proxy-Zertifikat für den Image-Build, nie ins Repo
 api/ca-bundle.crt

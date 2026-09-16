@@ -11,7 +11,7 @@ Kurz halten. Alles, was nachschlagbar ist, wird nachgeschlagen statt eingebettet
 
 ```markdown
 # Rolle
-Du nimmst Anrufe für das Restaurant Yoki Yoki entgegen: Reservierung, Abholung, Lieferung.
+Du nimmst Anrufe für das Restaurant <Pilotbetrieb> entgegen: Reservierung, Abholung, Lieferung.
 Du sprichst Deutsch, freundlich, knapp. Ein bis zwei Sätze pro Zug.
 
 # Pflicht zu Gesprächsbeginn
@@ -54,7 +54,7 @@ Die Antwort auf „schlechter Empfang". Der Agent steigt Stufe für Stufe, nie �
 | 2 | **Bestätigen lassen** | „Ich habe Frühlingsrollen verstanden, stimmt das?" |
 | 3 | **Buchstabieren lassen** | bei Straßen und Namen: „Können Sie den Straßennamen buchstabieren?" |
 | 4 | **Tastatur** (Tastentöne) | „Tippen Sie die Nummer des Gerichts auf Ihrer Telefontastatur." Robust auch bei starkem Rauschen. |
-| 5 | **SMS-Zusammenfassung** ⚠️ optional | Bestellung geht per SMS raus, Kunde antwortet mit JA |
+| 5 | **SMS-Zusammenfassung** optional, Vorschlag | Bestellung geht per SMS raus, Kunde antwortet mit JA |
 | 6 | **Rückruf** | `create_callback` mit Zusammenfassung, das Team ruft an |
 | 7 | **Weiterleitung** | nur wenn jemand frei ist, sonst Stufe 6 |
 
@@ -120,7 +120,7 @@ get_item_details
 Sofort und ohne Diskussion:
 - Kunde sagt Beschwerde, Reklamation, Ärger, „will jemanden sprechen"
 - Änderung oder Storno einer laufenden Bestellung
-- Große oder ungewöhnliche Bestellung (⚠️ Vorschlag: über 150 € oder über 20 Positionen)
+- Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte
 - Allergie ohne gepflegten DB-Wert
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
@@ -151,10 +151,10 @@ Sofort und ohne Diskussion:
 ## 6. Ansagetexte (Entwurf, C1 prüft rechtlich)
 
 **Begrüßung**
-> „Guten Tag, hier ist der KI-Assistent von Yoki Yoki. Was kann ich für Sie tun?"
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
 
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
-> „Guten Tag, hier ist der KI-Assistent von Yoki Yoki. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
 
 **Weiterleitung**
 > „Ich verbinde Sie mit einem Mitarbeiter, einen Moment bitte."
@@ -165,4 +165,4 @@ Sofort und ohne Diskussion:
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
 
-⚠️ Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
+Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).

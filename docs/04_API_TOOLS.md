@@ -71,7 +71,7 @@ Nur sinnvoll, wenn die Nummer übermittelt wurde.
     "customer_id": "…",
     "name": "Herr Müller",
     "addresses": [
-      { "address_id": "…", "label": "Rheinstraße 54, 76532 Baden-Baden", "is_default": true }
+      { "address_id": "…", "label": "Musterstraße 1, 12345 Musterstadt", "is_default": true }
     ],
     "order_count": 12
   },
@@ -150,7 +150,7 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
 **Request**
 ```json
 { "call_id": "…", "tenant_id": "…",
-  "postal_code": "76547", "street": "Landstraße", "house_number": "69", "city": "Sinzheim" }
+  "postal_code": "12345", "street": "Musterstraße", "house_number": "1", "city": "Musterstadt" }
 ```
 **Response**
 ```json

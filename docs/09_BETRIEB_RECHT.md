@@ -4,13 +4,13 @@
 
 ## 1. Rechts-Check
 
-> ⚠️ Keine Rechtsberatung. Vor dem ersten echten Anruf durch Anwalt oder Datenschutzberater prüfen lassen.
+> Hinweis: Keine Rechtsberatung. Vor dem ersten echten Anruf durch Anwalt oder Datenschutzberater prüfen lassen.
 > **Jeder offene Punkt blockiert die Aufgaben T-7.x und den Wechsel in den Modus `overflow`.**
 
 - [ ] **AI Act Art. 50** — KI-Hinweis im ersten Satz. Gilt seit 02.08.2026.
 - [ ] **Aufzeichnung** — Einwilligung von Kunde und Team (§201 StGB). Ansage plus ein Weg zu widersprechen, der zum Menschen führt.
 - [ ] **DSGVO** — Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung)
-- [ ] **DSGVO** — Informationspflicht: kurze Ansage plus Datenschutzerklärung auf yokiyoki.de
+- [ ] **DSGVO** — Informationspflicht: kurze Ansage plus Datenschutzerklärung auf example.com
 - [ ] **DSGVO** — AVV mit Voice-Plattform, Hosting und jedem weiteren Dienstleister
 - [ ] **DSGVO** — Drittlandtransfer prüfen, falls ein Anbieter außerhalb der EU verarbeitet
 - [ ] **DSGVO** — Löschkonzept umgesetzt und getestet (`docs/03_DATENMODELL.md`)
