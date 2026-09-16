@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.2
+> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.3
 
 ---
 
@@ -159,6 +159,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.3.3 · 16.09.2026:** Repo-Standards: CONTRIBUTING, SECURITY, PR- und Issue-Vorlagen, Dependabot, README-Badges; Label-Taxonomie auf allen 77 Issues
 - **v1.3.2 · 16.09.2026:** Roadmap auf GitHub gespiegelt: neun Block-Issues, 68 Arbeitspakete als Sub-Issues, Issue-Nummern in docs/07 eingetragen
 - **v1.3.1 · 16.09.2026:** Codex-Review PR #4 (P1, P2) behoben: Sperre gegen Überbuchung bei parallelen Anrufen, readback stabil über Mitternacht
 - **v1.3.0 · 16.09.2026:** T-1.5 fertig: create_reservation als draft mit readback, Idempotenz und audit_log; core/ids.py und E.164-Normalisierung neu; nächste Schritte T-1.6, T-1.12, T-1.7 bis T-1.9

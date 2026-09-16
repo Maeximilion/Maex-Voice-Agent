@@ -4,6 +4,11 @@ Telefonische Bestellannahme für Gastronomiebetriebe. Ein KI-Agent nimmt Anrufe 
 
 Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbieter. Dieses Repository enthält die Fachlogik, die Datenbank, die Oberfläche und die Tests. Pilotbetrieb, Ort, Domain und Kassenanbieter stehen in den Dokumenten als Platzhalter in spitzen Klammern.
 
+[![CI](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
+[![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-blue)](https://www.postgresql.org/)
+[![Lizenz](https://img.shields.io/badge/lizenz-proprietär-lightgrey)](#lizenz-und-kontakt)
+
 ## Status
 
 | | |
@@ -118,6 +123,12 @@ Das Projekt ist für die Arbeit mit Claude Code eingerichtet. `CLAUDE.md` enthä
 | `docs/13_DEPLOYMENT.md` | Betriebsorte, Tunnel, EU-Server, Backups, CI |
 | `docs/14_MENU_IMPORTFORMAT.md` | CSV-Format für die Menü-Digitalisierung |
 | `docs/15_README_STRATEGY.md` | Wann und wie diese README gepflegt wird |
+
+## Mitarbeiten
+
+Ablauf, Branch-Namen, Commit-Format und Labels stehen in [CONTRIBUTING.md](CONTRIBUTING.md). Der Fahrplan bis zum Zielzustand steht in [`docs/01_STATUS.md`](docs/01_STATUS.md), die Aufgabenliste in [`docs/07_ARBEITSPAKETE.md`](docs/07_ARBEITSPAKETE.md); jedes Arbeitspaket hat ein Issue, jeder Block ein Sammel-Issue.
+
+Sicherheitslücken bitte vertraulich melden, nicht als Issue: [SECURITY.md](SECURITY.md).
 
 ## Bekannte Probleme
 

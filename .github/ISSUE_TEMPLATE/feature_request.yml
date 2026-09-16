@@ -1,0 +1,55 @@
+name: Arbeitspaket oder Funktion
+description: Neue Funktion oder Erweiterung vorschlagen
+labels: ["feature"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Geplante Arbeitspakete stehen bereits in `docs/07_ARBEITSPAKETE.md` und haben dort ein Issue.
+        Dieses Formular ist für alles, was dort noch nicht steht.
+
+  - type: textarea
+    id: ziel
+    attributes:
+      label: Ziel
+      description: Was soll danach möglich sein, das heute nicht möglich ist.
+    validations:
+      required: true
+
+  - type: textarea
+    id: begruendung
+    attributes:
+      label: Warum
+      description: Welches Problem im Betrieb löst das.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: stufe
+    attributes:
+      label: Stufe
+      description: Siehe Fahrplan in `docs/01_STATUS.md`.
+      options:
+        - "0 Fundament"
+        - "1 Reservierung"
+        - "2 Abholung"
+        - "3 Lieferung"
+        - "4 Einlernen"
+        - "5 Betrieb"
+        - unklar
+    validations:
+      required: true
+
+  - type: textarea
+    id: fertig
+    attributes:
+      label: Woran erkennt man, dass es fertig ist
+      description: Prüfbares Kriterium, kein Gefühl.
+    validations:
+      required: true
+
+  - type: textarea
+    id: abhaengigkeiten
+    attributes:
+      label: Abhängigkeiten
+      description: Arbeitspakete oder Entscheidungen, die vorher stehen müssen.

@@ -1,0 +1,63 @@
+name: Fehler melden
+description: Ein Fehler im Betrieb oder in der Entwicklung
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sicherheitslücken bitte nicht hier melden, sondern nach `SECURITY.md`.
+        Keine echten Kundendaten, Rufnummern oder Adressen eintragen.
+
+  - type: textarea
+    id: was-passiert
+    attributes:
+      label: Was passiert
+      description: Beobachtetes Verhalten, mit Fehlermeldung falls vorhanden.
+    validations:
+      required: true
+
+  - type: textarea
+    id: erwartet
+    attributes:
+      label: Was erwartet wurde
+    validations:
+      required: true
+
+  - type: textarea
+    id: nachstellen
+    attributes:
+      label: Schritte zum Nachstellen
+      description: Aufruf, Eingabe, Uhrzeit. Bei einem Tool-Aufruf die Anfrage ohne Zugangsdaten.
+      placeholder: |
+        1. POST /v1/tools/check_slot mit ...
+        2. Antwort war ...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: bereich
+    attributes:
+      label: Bereich
+      options:
+        - Agent-API und Tools
+        - Fachlogik
+        - Datenbank und Migrationen
+        - Oberfläche
+        - Automatisierung und Ereignisse
+        - Betrieb und Deployment
+        - unklar
+    validations:
+      required: true
+
+  - type: input
+    id: stand
+    attributes:
+      label: Stand
+      description: Commit, Tag oder Datum des Laufs.
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log-Auszug
+      description: Die entscheidenden Zeilen, nicht das ganze Log. Zugangsdaten vorher entfernen.
+      render: text
