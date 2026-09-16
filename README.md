@@ -137,4 +137,6 @@ Sicherheitslücken bitte vertraulich melden, nicht als Issue: [SECURITY.md](SECU
 
 ## Lizenz und Kontakt
 
-Proprietär, <Firmenname>. Kontakt: Maximilian Dumler, maxi.dumler@gmail.com.
+Proprietär, <Firmenname>. Alle Rechte vorbehalten, siehe [LICENSE](LICENSE). Nutzung, Vervielfältigung und Weitergabe nur mit schriftlicher Genehmigung.
+
+Kontakt: Maximilian Dumler, maxi.dumler@gmail.com.
