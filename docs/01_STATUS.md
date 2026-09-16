@@ -7,7 +7,7 @@
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; 47 Tests laufen grün. Tools und GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; das erste Tool im heißen Pfad (`get_service_status`) antwortet in rund 12 ms (p95); 63 Tests laufen grün. Die übrigen Stufe-1-Tools und die GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -32,8 +32,8 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.3** Tool `get_service_status` inkl. Sondertage und Wartezeiten (Session 3 beginnt: erstes Tool im heißen Pfad mit Latenzmessung)
-2. **T-1.4** Tool `check_slot`, dann **T-1.5** `create_reservation`
+1. **T-1.4** Tool `check_slot`: Verfügbarkeit aus `capacity` und `reservations`, bis zu 2 Alternativen
+2. **T-1.5** `create_reservation` als `draft` mit `readback` und Idempotenz, dann **T-1.6** `confirm`
 3. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
@@ -105,11 +105,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | **T-0.6 fertig:** `api/core/` mit `envelope` (Hülle), `errors` (8 Codes aus 04 §1, `AppError` wird zentral übersetzt), `auth` (aus `main.py` gezogen), `logging` (JSON-Zeilen mit `request_id`/`call_id`, Middleware misst Dauer, `X-Request-ID` wird übernommen oder erzeugt), `time` (UTC/Ortszeit, Betriebstag, Sommerzeit-sichere Tagesgrenzen). `main.py` nutzt nur noch `core`. 34 Tests grün |
 | 16.09.2026 | **T-1.1 fertig, T-0.4 fertig:** Alembic unter `db/` (`alembic -c db/alembic.ini`, URL aus `settings`), Migration 001 mit den zehn Stufe-1-Tabellen inkl. `outbox` und `audit_log`, Enums als CHECK-Constraints, `idempotency_key` unique, `deleted_at` auf Reservierungen und Rückrufen. Modelle unter `api/models/` (Base, Mixins für UUID-PK, `tenant_id`, Zeitstempel). Tests gegen eine Wegwerf-DB: up, Modelle ohne Diff zum Schema, down/up, doppelter Schlüssel, fehlende `call_id`, ungültiger `outbox.status`. `make migrate` läuft, Dev-DB auf 001. 42 Tests grün |
 | 16.09.2026 | **T-1.2 fertig:** `scripts/seed.py` mit `seed(session, tenant_name, timezone)` und CLI (`make seed`, JSON-Ausgabe). Idempotent: Mandant und `service_config` nur bei Fehlen, Öffnungszeiten und Kapazität deterministisch ersetzt. Gemeinsame Wegwerf-DB-Fixtures in `api/tests/conftest.py`. Tests: Zähler, zweimal = gleich, Live-Schalter bleibt, zweiter Mandant, CLI. 47 Tests grün |
+| 16.09.2026 | **T-1.3 fertig, T-0.5 fertig:** `domain/status/hours.py` (Fenster je Tag und Service, Sondertag schlägt Wochentag, Fenster über Mitternacht, nächste Öffnung) und `service.py` (`get_service_status`), Schemas `ToolRequest` und `ServiceStatus`, Tool-Router `tools/router.py` mit `tools/service_status.py`. 16 Tests: offen, Ruhetag mit `say`, zwischen den Fenstern, 00:30, Fenster 18–01 Uhr, Sondertag geschlossen, Sonderzeiten am Ruhetag, Sommerzeit Beginn und Ende, Lieferung pausiert, unbekannter Mandant, Hülle, 401, `invalid_input`, `not_found`. **Latenz:** p95 11,3 ms lokal, 12,3 ms im Container (Helfer `p95_ms`, Budget 300 ms), live per curl max 54,9 ms. Uvicorn-Access-Log abgeschaltet, die Middleware-Zeile hat Dauer und `request_id`. 63 Tests grün |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-1.3 und T-0.5 abgeschlossen (erstes Tool, Latenz-Helfer), nächste Schritte T-1.4 bis T-1.6.
 - **16.09.2026:** T-1.2 abgeschlossen (Seed), Session 2 der empfohlenen Reihenfolge komplett, nächste Schritte auf Session 3 (T-1.3 bis T-1.5).
 - **16.09.2026:** T-1.1 und T-0.4 abgeschlossen (Alembic, Migration 001, Modelle), T-1.2 startklar. Regel: Empfehlungen werden direkt abgenommen (`CLAUDE.md` §6).
 - **16.09.2026:** T-0.6 abgeschlossen (`core/`), Annahme Betriebstag 05:00, T-0.8 startklar.

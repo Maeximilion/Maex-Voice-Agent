@@ -1,6 +1,8 @@
 """Gemeinsame Fixtures: Wegwerf-Datenbanken, damit die Entwicklungsdaten unberührt bleiben."""
 
+import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,17 @@ from sqlalchemy.engine import make_url
 from api.config import settings
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "db" / "alembic.ini"
+
+
+def p95_ms(call: Callable[[], object], n: int = 20) -> float:
+    """Latenz-Helfer für Tools im heißen Pfad: p95 über n Aufrufe, Budget 300 ms (docs/04 §1)."""
+    samples = []
+    for _ in range(n):
+        started = time.perf_counter()
+        call()
+        samples.append((time.perf_counter() - started) * 1000)
+    samples.sort()
+    return samples[min(n - 1, int(round(0.95 * n)) - 1)]
 
 
 def alembic_config(url: str) -> Config:

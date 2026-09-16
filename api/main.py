@@ -14,12 +14,14 @@ from api.core import envelope
 from api.core.auth import require_token
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
+from api.tools.router import router as tools_router
 
 configure_logging(settings.log_level)
 logger = get_logger("api")
 
 app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
 app.middleware("http")(request_context_middleware)
+app.include_router(tools_router)
 
 
 @app.get("/health")

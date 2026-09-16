@@ -19,6 +19,7 @@ Was funktioniert:
 - Jede Antwort der Agent-API folgt der Hülle aus `docs/04_API_TOOLS.md`; Fehler kommen als JSON mit Code und Vorlesesatz, nie als Stacktrace
 - Datenbankzugang mit einer Session je Request (`api/db.py`), Logs als JSON-Zeilen mit `request_id` und `call_id`
 - `make migrate` legt die zehn Tabellen der Stufe 1 an (Alembic unter `db/`, Modelle unter `api/models/`), `make seed` füllt sie idempotent mit einer Testkonfiguration
+- Erstes Tool im heißen Pfad: `POST /v1/tools/get_service_status` beantwortet aus der Datenbank, ob und was gerade geht (Öffnungszeiten, Sondertage, Wartezeiten, Modus), mit Latenztest gegen das 300-ms-Budget
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 

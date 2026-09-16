@@ -52,6 +52,8 @@ def configure_logging(level: str = "INFO") -> None:
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
         logging.getLogger(name).handlers[:] = []
         logging.getLogger(name).propagate = True
+    # Die Middleware loggt jede Anfrage mit Dauer und request_id; das Access-Log wäre ein Duplikat ohne Kontext.
+    logging.getLogger("uvicorn.access").propagate = False
 
 
 def get_logger(name: str) -> logging.Logger:

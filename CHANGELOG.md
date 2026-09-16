@@ -10,6 +10,7 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - `api/core/`: Antwort-Hülle, Fehlerklassen mit den acht Codes aus docs/04, Token-Auth, JSON-Logging mit `request_id`/`call_id`, Zeit-Helfer mit Betriebstag
 - Alembic unter `db/` und Migration 001 mit den zehn Stufe-1-Tabellen; SQLAlchemy-Modelle unter `api/models/`; `make migrate` legt das Schema an
 - `scripts/seed.py`: idempotente Testkonfiguration (Mandant, Live-Schalter, Öffnungszeiten, Kapazität), `make seed`
+- Tool `POST /v1/tools/get_service_status`: offen/geschlossen je Service, Sondertage schlagen Wochentage, Fenster über Mitternacht, Wartezeiten und Modus aus `service_config`, Vorlesesatz zur nächsten Öffnung; Latenz-Helfer `p95_ms` mit 300-ms-Budget in den Tests
 - Docker Compose für Postgres, API und n8n
 - Spezifikationen docs/00 bis docs/15
 - Slash-Befehle für Claude Code unter .claude/commands/
@@ -27,4 +28,4 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
 
 ### Offen
-- Stufe-1-Tools `get_service_status`, `check_slot`, `create_reservation`, `confirm` (T-1.3 bis T-1.6)
+- Stufe-1-Tools `check_slot`, `create_reservation`, `confirm` (T-1.4 bis T-1.6)
