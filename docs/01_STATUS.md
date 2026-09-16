@@ -7,7 +7,7 @@
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth und der einheitlichen Antwort-Hülle, drei Tests laufen grün. Datenbank, Tools und GUI fehlen noch komplett.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001; 42 Tests laufen grün. Seed, Tools und GUI fehlen noch.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -32,9 +32,9 @@ Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.1** Alembic einrichten, Migration 001 (jetzt inkl. `outbox`); damit wird auch `make migrate` lauffähig (T-0.4 Rest)
+1. **T-1.2** Seed-Skript `scripts/seed.py`: Mandant, Öffnungszeiten, Kapazität, Testkonfiguration (hängt an T-1.1, jetzt startklar)
 2. **T-0.7** Slash-Befehle einmal durchspielen, CI grün
-3. **T-0.8** Zahlwörter `domain/menu/numberwords.py` (jetzt startklar, hängt nur an T-0.6)
+3. **T-0.8** Zahlwörter `domain/menu/numberwords.py` (startklar, hängt nur an T-0.6)
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
 
@@ -101,11 +101,13 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`
 | 16.09.2026 | **T-0.1 fertig:** `make up` gegen echtes Docker, Postgres + API healthy, n8n erreichbar (nach Fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` und `/v1/tools/ping` geprüft, `make lint` + `make test` im Container grün. Codex-Review (4 Findings) eingearbeitet. `ruff format` erstmals gelaufen (T-0.4: nur `make migrate` offen, wartet auf T-1.1) |
 | 16.09.2026 | **T-0.2 fertig:** `api/db.py` mit Engine (`pool_pre_ping`), `SessionLocal`, `get_db` (Rollback bei Fehler, Close immer). Tests: Session arbeitet, Rollback bei Exception, DB nicht erreichbar liefert `service_unavailable`-Hülle statt Stacktrace. 7 Tests grün, lokal und im Container |
 | 16.09.2026 | **T-0.6 fertig:** `api/core/` mit `envelope` (Hülle), `errors` (8 Codes aus 04 §1, `AppError` wird zentral übersetzt), `auth` (aus `main.py` gezogen), `logging` (JSON-Zeilen mit `request_id`/`call_id`, Middleware misst Dauer, `X-Request-ID` wird übernommen oder erzeugt), `time` (UTC/Ortszeit, Betriebstag, Sommerzeit-sichere Tagesgrenzen). `main.py` nutzt nur noch `core`. 34 Tests grün |
+| 16.09.2026 | **T-1.1 fertig, T-0.4 fertig:** Alembic unter `db/` (`alembic -c db/alembic.ini`, URL aus `settings`), Migration 001 mit den zehn Stufe-1-Tabellen inkl. `outbox` und `audit_log`, Enums als CHECK-Constraints, `idempotency_key` unique, `deleted_at` auf Reservierungen und Rückrufen. Modelle unter `api/models/` (Base, Mixins für UUID-PK, `tenant_id`, Zeitstempel). Tests gegen eine Wegwerf-DB: up, Modelle ohne Diff zum Schema, down/up, doppelter Schlüssel, fehlende `call_id`, ungültiger `outbox.status`. `make migrate` läuft, Dev-DB auf 001. 42 Tests grün |
 
 ---
 
 ## Änderungsprotokoll dieser Datei
 
+- **16.09.2026:** T-1.1 und T-0.4 abgeschlossen (Alembic, Migration 001, Modelle), T-1.2 startklar. Regel: Empfehlungen werden direkt abgenommen (`CLAUDE.md` §6).
 - **16.09.2026:** T-0.6 abgeschlossen (`core/`), Annahme Betriebstag 05:00, T-0.8 startklar.
 - **16.09.2026:** T-0.2 abgeschlossen (`db.py`), nächste Schritte neu nummeriert.
 - **16.09.2026:** T-0.1 abgeschlossen, Codex-Review eingearbeitet, Platzhalter-Regel, nächste Schritte neu nummeriert.

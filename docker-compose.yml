@@ -31,6 +31,7 @@ services:
       - ./prompts:/app/prompts
       - ./scripts:/app/scripts
       - ./evals:/app/evals
+      - ./db:/app/db
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s

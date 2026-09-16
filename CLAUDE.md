@@ -127,6 +127,8 @@ maex-voice-agent/
 ### Rückfragen
 Geschlossen stellen (Ja/Nein oder A/B/C mit markierter Empfehlung), **eine pro Unterbrechung**, und genau dann, wenn die Antwort gebraucht wird. Recherchierbares selbst recherchieren. Was du annimmst, markierst du als Annahme und schreibst es in `docs/01_STATUS.md`.
 
+**Entscheidungen mit Empfehlung nimmst du selbst ab** (Maxi, 16.09.2026): Plan zeigen, Empfehlung nennen, weiterbauen. Warten nur, wenn es um Geld, Recht, Außenwirkung, Produktivdaten oder Irreversibles geht (§10).
+
 ### Session-Ende
 `docs/01_STATUS.md` aktualisieren: erledigte Aufgaben, neue Erkenntnisse, nächster Schritt. Dazu einen Übergabeblock nach `docs/00_PCF.md` Abschnitt 12 ausgeben.
 

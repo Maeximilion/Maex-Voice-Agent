@@ -24,7 +24,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-0.1 | `docker-compose.yml`: Postgres 16 + API. `docker compose up` läuft, `/health` antwortet `{"status":"ok"}` | CLAUDE.md §3 | – | fertig 16.09.2026: Postgres + API healthy, `/health` geprüft, Codex-Findings am Dockerfile behoben |
 | T-0.2 | FastAPI-Grundgerüst: `main.py`, `config.py` (Settings aus `.env`), `db.py`, Fehler-Handler mit der Antwort-Hülle aus 04 §1 | 04 §1 | T-0.1 | fertig 16.09.2026: `db.py` mit Engine, `SessionLocal`, `get_db`; 4 Tests gegen echte Postgres |
 | T-0.3 | Token-Auth als Dependency, greift für alle `/v1/tools/*` | 02 §7 | T-0.2 | fertig, mit Test |
-| T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | in Arbeit: `make test`, `make lint`, `make fmt`, `make up` laufen im Container, ruff format + check sauber; `make migrate` wartet auf Alembic (T-1.1) |
+| T-0.4 | pytest, ruff, Makefile mit `make test`, `make lint`, `make up`, `make migrate` | CLAUDE.md §7 | T-0.2 | fertig 16.09.2026: `make test`, `make lint`, `make fmt`, `make up`, `make migrate` laufen im Container, ruff format + check sauber |
 | T-0.5 | Latenz-Testhelfer: misst p95 je Tool-Endpunkt, schlägt über 300 ms fehl | 04 §1 | T-0.4 | offen |
 | T-0.6 | `core/`: Antwort-Hülle, Fehlerklassen → Hülle, JSON-Logging mit `call_id`/`request_id`, Zeit-Helfer | 11 §core | T-0.2 | fertig 16.09.2026: `envelope`, `errors`, `auth`, `logging`, `time`; `ids.py` folgt mit T-1.5 |
 | T-0.7 | Slash-Befehle in `.claude/commands/` einmal durchspielen, CI-Workflow grün bekommen | 12, 13 §6 | T-0.4 | offen |
@@ -36,7 +36,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 
 | ID | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|
-| T-1.1 | Alembic einrichten, Migration 001 (Stufe-1-Tabellen), `up`/`down` getestet | 03 | T-0.2 | in Arbeit seit 16.09.2026 |
+| T-1.1 | Alembic einrichten, Migration 001 (Stufe-1-Tabellen), `up`/`down` getestet | 03 | T-0.2 | fertig 16.09.2026: `db/alembic.ini`, `env.py`, `versions/001_stufe1.py`, Modelle `api/models/`; up/down/up gegen Wegwerf-DB getestet, Modelle und Schema ohne Diff |
 | T-1.2 | Seed-Skript `scripts/seed.py`: Mandant <Pilotbetrieb>, Öffnungszeiten, Kapazität, Testkonfiguration | 03 | T-1.1 | offen |
 | T-1.3 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | offen |
 | T-1.4 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | offen |
