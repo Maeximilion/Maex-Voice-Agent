@@ -5,9 +5,10 @@ der Gast will einen Menschen, es geht um eine Beschwerde. Die Aufgabe landet in
 der Datenbank, das Team sieht sie in der Oberfläche, n8n bekommt das Ereignis.
 """
 
+import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
@@ -45,6 +46,7 @@ def create_callback(
     # Ein Anruf, ein offener Rückruf: löst der Agent nach einem Zeitüberlauf ein
     # zweites Mal aus, bekommt das Team keinen zweiten Zettel. Deshalb traegt der
     # Zustand die Idempotenz und nicht ein Schlüssel (wie in domain/confirm.py).
+    _lock_call(session, req.tenant_id, req.call_id)
     open_task = _open_for_call(session, req)
     if open_task is not None:
         session.commit()
@@ -89,8 +91,23 @@ def create_callback(
     return _task(callback)
 
 
+def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:
+    """Prüfen und Anlegen laufen je Anruf nacheinander.
+
+    Eine Zeilensperre reicht hier nicht: beim ersten Rückruf gibt es noch keine
+    Zeile, die sie sperren könnte, und zwei gleichzeitige Aufrufe finden beide
+    nichts und legen beide an. Die Advisory-Sperre gilt dagegen für den Anruf als
+    solchen und hält bis zum Ende der Transaktion. Dasselbe Muster wie beim
+    Entwurf einer Reservierung (domain/reservations/create.py).
+    """
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+        {"key": f"callbacks:{tenant_id}:{call_id}"},
+    )
+
+
 def _open_for_call(session: Session, req: CreateCallbackRequest) -> Callback | None:
-    """Offener Rückruf desselben Anrufs, mit Zeilensperre gegen zwei gleichzeitige Aufrufe."""
+    """Offener Rückruf desselben Anrufs. Die Sperre hält bereits, siehe _lock_call."""
     return session.execute(
         select(Callback)
         .where(
@@ -100,8 +117,7 @@ def _open_for_call(session: Session, req: CreateCallbackRequest) -> Callback | N
             Callback.deleted_at.is_(None),
         )
         .order_by(Callback.created_at)
-        .limit(1)
-        .with_for_update(),
+        .limit(1),
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
 

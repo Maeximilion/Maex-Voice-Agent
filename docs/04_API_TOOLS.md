@@ -272,7 +272,7 @@ Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_under
 
 **Wirkung:** Aufgabe mit `status: open` anlegen, `audit_log` schreiben (`callback.created`), Ereignis `callback.created` in die Outbox legen.
 
-**Idempotenz trägt der Zustand, nicht der Schlüssel:** je Anruf gibt es höchstens **einen offenen** Rückruf. Ein zweiter Aufruf im selben Anruf liefert den bestehenden zurück, ohne zweite Aufgabe und ohne zweites Ereignis — sonst bekommt das Team nach einem Zeitüberlauf der Plattform zwei Zettel für denselben Gast. Ist der erste Rückruf erledigt (`done`), entsteht wieder ein neuer.
+**Idempotenz trägt der Zustand, nicht der Schlüssel:** je Anruf gibt es höchstens **einen offenen** Rückruf. Prüfen und Anlegen sind je Anruf durch eine Advisory-Sperre serialisiert (`pg_advisory_xact_lock`), sonst finden zwei gleichzeitige Erstaufrufe beide nichts und legen beide an. Ein zweiter Aufruf im selben Anruf liefert den bestehenden zurück, ohne zweite Aufgabe und ohne zweites Ereignis — sonst bekommt das Team nach einem Zeitüberlauf der Plattform zwei Zettel für denselben Gast. Ist der erste Rückruf erledigt (`done`), entsteht wieder ein neuer.
 
 **Fehler:** unbekannter Anruf oder fremder Mandant → `not_found` mit Störungssatz · unbrauchbare Rufnummer → `invalid_input` mit Nachfrage-Satz · leeres `summary` → `invalid_input` · unbekannter `reason` → `invalid_input`.
 

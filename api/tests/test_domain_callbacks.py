@@ -1,5 +1,6 @@
 """domain/callbacks: Rückruf anlegen, Zustands-Idempotenz, Audit, Outbox, Grenzfälle (T-1.7)."""
 
+import threading
 import uuid
 from datetime import UTC, date, datetime
 
@@ -178,3 +179,62 @@ def test_summary_aus_leerzeichen_ist_invalid_input(session, tenant_id, call_id):
 def test_unbekannter_grund_wird_vom_vertrag_abgelehnt(tenant_id, call_id):
     with pytest.raises(ValueError):
         request(tenant_id, call_id, reason="kaese")
+
+
+def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
+    """Zwei Anrufe gleichzeitig in der Leitung: ohne Sperre findet keiner einen
+    bestehenden Rückruf, beide legen an, und das Team ruft den Gast zweimal an."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        call = Call(
+            tenant_id=tenant,
+            external_session_id="ext",
+            started_at=NOW,
+            delete_after=date(2026, 9, 15),
+        )
+        s.add(call)
+        s.commit()
+        call_id = call.id
+
+    start = threading.Barrier(6)
+    results: list[object] = []
+    lock = threading.Lock()
+
+    def run() -> None:
+        start.wait(timeout=10)
+        with Session(engine) as own:
+            try:
+                outcome: object = create_callback(
+                    own, request(tenant, call_id), now=NOW
+                )
+            except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+                outcome = exc
+        with lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=run) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    with Session(engine) as s:
+        callbacks = s.scalar(select(func.count()).select_from(Callback))
+        events = s.scalar(select(func.count()).select_from(OutboxEvent))
+        audits = s.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action == "callback.created")
+        )
+    engine.dispose()
+
+    fehler = [r for r in results if isinstance(r, Exception)]
+    assert not fehler, f"kein Aufruf darf scheitern, bekam {fehler}"
+    assert callbacks == 1, f"erwartet ein Rückruf, bekam {callbacks}"
+    assert events == 1, f"erwartet ein Ereignis, bekam {events}"
+    assert audits == 1, f"erwartet ein Audit-Eintrag, bekam {audits}"
+    ids = {r.callback_id for r in results}
+    assert len(ids) == 1, f"alle Aufrufe sollen denselben Rückruf liefern, bekam {ids}"
