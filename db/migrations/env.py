@@ -10,7 +10,9 @@ from api.models import Base
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: sonst schaltet eine Migration im Test alle
+    # bereits importierten App-Logger stumm (api.events.dispatcher, api.request).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Tests setzen eine eigene URL (Wegwerf-DB); sonst gilt DATABASE_URL.
 if not config.get_main_option("sqlalchemy.url"):

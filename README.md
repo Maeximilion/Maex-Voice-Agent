@@ -16,15 +16,16 @@ Telefonie, Spracherkennung und Sprachausgabe laufen bei einem EU-gehosteten Anbi
 | Version | 0.0.1 |
 | Stufe | 0, Fundament |
 | Nächstes Gate | G0: Anbieter, Recht, Budget geklärt |
-| Stand | 16.09.2026 |
+| Stand | 17.09.2026 |
 
 Was funktioniert:
 
-- `make up` baut das API-Image und startet Postgres, API und n8n; `/health` antwortet, Token-Auth greift
+- `make up` baut das API-Image und startet Postgres, API, Dispatcher und n8n; `/health` antwortet, Token-Auth greift
 - Jede Antwort der Agent-API folgt der Hülle aus `docs/04_API_TOOLS.md`; Fehler kommen als JSON mit Code und Vorlesesatz, nie als Stacktrace
 - Datenbankzugang mit einer Session je Request (`api/db.py`), Logs als JSON-Zeilen mit `request_id` und `call_id`
 - `make migrate` legt die zehn Tabellen der Stufe 1 an (Alembic unter `db/`, Modelle unter `api/models/`), `make seed` füllt sie idempotent mit einer Testkonfiguration
 - Die Reservierung läuft durch, jedes Tool mit Latenztest gegen das 300-ms-Budget: `POST /v1/tools/get_service_status` beantwortet aus der Datenbank, ob und was gerade geht (Öffnungszeiten, Sondertage, Wartezeiten, Modus); `POST /v1/tools/check_slot` prüft einen Wunsch gegen Kapazität und Öffnungszeit und nennt bis zu zwei Alternativen; `POST /v1/tools/create_reservation` legt den Entwurf mit dem Satz zum Vorlesen an; `POST /v1/tools/confirm` macht ihn gültig, protokolliert ihn und legt das Ereignis für den kalten Pfad in die Outbox
+- Der Dispatcher (`api/events/`) leert die Outbox nach n8n: eigener Prozess (`python -m api.events.dispatcher`), ein POST je Ereignis mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
@@ -32,7 +33,7 @@ Was noch nicht funktioniert:
 
 - Kein Telefonanschluss, kein Anbieter gewählt (Entscheidung D1)
 - Keine Oberfläche, kein Gesprächs-Kern, keine Bestellungen (Stufe 2)
-- Die Outbox sammelt bestätigte Vorgänge, aber noch leert sie niemand: der Dispatcher nach n8n fehlt
+- In n8n liegt noch kein Workflow, der die Ereignisse des Dispatchers entgegennimmt
 - Die Testkonfiguration aus `make seed` (Öffnungszeiten, Kapazität) ist ein Platzhalter, bis die Ist-Aufnahme des Betriebs vorliegt
 
 ## Voraussetzungen

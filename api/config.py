@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     team_phone: str = "+49000000000"
     max_call_seconds: int = 420
 
+    # Kalter Pfad: n8n und Dispatcher (docs/03 §outbox, docs/11 §events)
+    n8n_webhook_url: str = "http://n8n:5678/webhook/maex"
+    n8n_basic_auth_user: str = ""
+    n8n_basic_auth_password: str = ""
+    n8n_timeout_seconds: float = 10.0
+    dispatcher_interval_seconds: float = 5.0
+    dispatcher_batch: int = 20
+
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
 

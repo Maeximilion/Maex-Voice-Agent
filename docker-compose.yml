@@ -32,11 +32,28 @@ services:
       - ./scripts:/app/scripts
       - ./evals:/app/evals
       - ./db:/app/db
+      # Ohne diese Datei findet ruff im Container keine Konfiguration und prueft nach
+      # seiner Standardmenge: make lint wuerde andere Regeln melden als die CI.
+      - ./pyproject.toml:/app/pyproject.toml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
       timeout: 5s
       retries: 5
+
+  dispatcher:
+    # Eigener Prozess, damit der heiße Pfad nie auf n8n wartet (docs/11 §events).
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    command: python -m api.events.dispatcher
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api:/app/api
+      - ./scripts:/app/scripts
+      - ./db:/app/db
 
   n8n:
     image: n8nio/n8n:latest
