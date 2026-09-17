@@ -38,6 +38,20 @@ services:
       timeout: 5s
       retries: 5
 
+  dispatcher:
+    # Eigener Prozess, damit der heiße Pfad nie auf n8n wartet (docs/11 §events).
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    command: python -m api.events.dispatcher
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api:/app/api
+      - ./scripts:/app/scripts
+      - ./db:/app/db
+
   n8n:
     image: n8nio/n8n:latest
     restart: unless-stopped

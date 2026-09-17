@@ -1,13 +1,13 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.4.1
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.5.0
 
 ---
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) antworten in rund 8 bis 15 ms (p95); 149 Tests laufen grün. Die Reservierung ist damit vollständig: `create_reservation` legt den Entwurf mit `readback` an, `confirm` macht ihn gültig, schreibt `audit_log` und legt das Ereignis `reservation.confirmed` in die Outbox. Was noch fehlt: der Dispatcher, der die Outbox leert (T-1.12), Rückrufe und die GUI.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) antworten in rund 8 bis 15 ms (p95); 161 Tests laufen grün. Die Reservierung ist damit vollständig: `create_reservation` legt den Entwurf mit `readback` an, `confirm` macht ihn gültig, schreibt `audit_log` und legt das Ereignis `reservation.confirmed` in die Outbox. Der Dispatcher (`api/events/`) leert die Outbox inzwischen: eigener Prozess, ein POST je Ereignis nach n8n mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log. Was noch fehlt: Rückrufe, das Anruf-Log und die GUI.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -51,9 +51,9 @@ Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. 
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.12** Outbox-Dispatcher mit Backoff und Fake-n8n im Test: die Einträge liegen seit T-1.6 da, es holt sie nur noch niemand ab
-2. **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
-3. **T-1.9** Anruf-Log `POST /v1/calls/start` und `/end`: bis dahin muss die `calls`-Zeile von Hand oder im Test angelegt werden (siehe Annahmen)
+1. **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
+2. **T-1.9** Anruf-Log `POST /v1/calls/start` und `/end`: bis dahin muss die `calls`-Zeile von Hand oder im Test angelegt werden (siehe Annahmen)
+3. Ein n8n-Workflow, der die Ereignisse des Dispatchers entgegennimmt (Export nach `n8n/`); bis dahin läuft der kalte Pfad ins Leere
 4. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
 Reihenfolge der ersten sieben Sessions: `docs/07_ARBEITSPAKETE.md` §Empfohlene Reihenfolge. Jederzeit parallel möglich: **T-0.8** Zahlwörter (reine Funktion).
@@ -104,6 +104,11 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Gleichzeitige `confirm`-Aufrufe werden per Zeilensperre serialisiert** (`SELECT … FOR UPDATE` auf die Reservierung), sonst schreiben zwei Aufrufe zwei Ereignisse in die Outbox und die Küche bekommt den Vorgang doppelt
 - **`entity: "order"` steht im Vertrag, antwortet aber bis Stufe 2 mit `not_found`**: die Verzweigung in `domain/confirm.py` ist der Platz, an dem T-4.x die Bestellung ergänzt. `pickup_code` bleibt bei Reservierungen `null`
 - **`approved` (Überlauf-Betrieb) fehlt noch bewusst:** `RESERVATION_STATUSES` kennt nur `draft`, `confirmed`, `cancelled`. Der Freigabe-Fluss kommt mit T-8.2
+- **Backoff-Reihe und Versuchszahl** (`api/events/dispatcher.py`): 5 s, 30 s, 2 min, 10 min nach docs/03, danach `failed`. Das sind fünf Zustellversuche insgesamt; `attempts` zählt jeden Versuch, auch den erfolgreichen. Annahme vom 17.09.2026, kippbar
+- **Alarm ist vorerst eine ERROR-Zeile im Log** (`dispatcher._on_failure`): ein Kanal zum Team (Telefon, Chat, GUI-Banner) existiert noch nicht. Sobald die GUI steht, gehört der Alarm zusätzlich dorthin. Annahme vom 17.09.2026, kippbar
+- **Ein Ereignis je Transaktion, geholt mit `FOR UPDATE SKIP LOCKED`**: kein Ereignis geht doppelt raus, auch wenn zwei Dispatcher laufen, und ein langsamer HTTP-Aufruf hält keine fremden Zeilen fest. Die Reihenfolge richtet sich nach `next_attempt_at`, nicht nach dem Eingang
+- **n8n wertet die Ereignis-id als Idempotenz-Schlüssel aus** (Kopfzeile `X-Idempotency-Key`, docs/03 §outbox): ein wiederholter Zustellversuch nach Timeout darf in der Küche keinen zweiten Bon erzeugen. Der Workflow, der das einlöst, fehlt noch
+- **Migrationen schalten die App-Logger nicht mehr stumm** (`db/migrations/env.py`): `fileConfig(..., disable_existing_loggers=False)`. Vorher verstummte nach der ersten Migration im selben Prozess jeder bereits importierte Logger, auch im Betrieb nach `alembic upgrade` aus demselben Prozess
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -165,6 +170,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.5.0 · 17.09.2026:** T-1.12 fertig: events/ mit Outbox-Schreiber und Dispatcher nach n8n, Backoff und Alarm, eigener Dienst; Migrationen schalten App-Logger nicht mehr stumm; nächste Schritte T-1.7 bis T-1.9
 - **v1.4.1 · 17.09.2026:** Codex-Review PR #90 (P1) behoben: confirm verlangt denselben Anruf wie der Entwurf, roter Test zuerst
 - **v1.4.0 · 17.09.2026:** T-1.6 fertig: confirm generisch, draft nach confirmed mit Zeilensperre, audit_log und Outbox-Ereignis reservation.confirmed; nächster Schritt T-1.12 Dispatcher
 - **v1.3.3 · 16.09.2026:** Repo-Standards: CONTRIBUTING, SECURITY, PR- und Issue-Vorlagen, Dependabot, README-Badges; Label-Taxonomie auf allen 77 Issues

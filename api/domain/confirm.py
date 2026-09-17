@@ -8,7 +8,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
-from api.models import AuditLog, Call, OutboxEvent, Reservation, Tenant
+from api.events import enqueue
+from api.events.types import RESERVATION_CONFIRMED
+from api.models import AuditLog, Call, Reservation, Tenant
 from api.schemas.confirm import Confirmation, ConfirmRequest
 
 ACTOR_AGENT = "agent"
@@ -79,21 +81,20 @@ def _confirm_reservation(session: Session, req: ConfirmRequest) -> Confirmation:
             },
         )
     )
-    session.add(
-        OutboxEvent(
-            tenant_id=req.tenant_id,
-            event_type="reservation.confirmed",
-            # Vollständig, damit der Versand im kalten Pfad ohne zweite Abfrage auskommt.
-            payload={
-                "reservation_id": str(reservation.id),
-                "call_id": str(reservation.call_id),
-                "guest_name": reservation.guest_name,
-                "phone": reservation.phone,
-                "party_size": reservation.party_size,
-                "reserved_for": reservation.reserved_for.isoformat(),
-                "note": reservation.note,
-            },
-        )
+    enqueue(
+        session,
+        tenant_id=req.tenant_id,
+        event_type=RESERVATION_CONFIRMED,
+        # Vollständig, damit der Versand im kalten Pfad ohne zweite Abfrage auskommt.
+        payload={
+            "reservation_id": str(reservation.id),
+            "call_id": str(reservation.call_id),
+            "guest_name": reservation.guest_name,
+            "phone": reservation.phone,
+            "party_size": reservation.party_size,
+            "reserved_for": reservation.reserved_for.isoformat(),
+            "note": reservation.note,
+        },
     )
     session.commit()
     return CONFIRMED
