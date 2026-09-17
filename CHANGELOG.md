@@ -15,6 +15,8 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Tool `POST /v1/tools/create_reservation`: creates draft (`status: draft`), checks call, phone (E.164), future, slot per same rules as `check_slot`, writes `audit_log`, delivers `readback` for read-aloud; same `idempotency_key` delivers same response without second transaction
 - `api/core/ids.py`: deterministic idempotency keys for callers without own key; `api/domain/customers/phone.py`: E.164 normalization of German formats
 - `create_reservation` locks check and create per tenant and day (`pg_advisory_xact_lock`) so concurrent calls can't overbooking a window; `readback` grounds "today" and "tomorrow" to creation time so replay after midnight delivers same sentence
+- `sim/`: the text phone. `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case.json>` replays a transcript from `evals/cases/`, `sim/noise.py` garbles input reproducibly to exercise the understanding ladder. Both entry points use `api/agent/` directly and write to the database, so a confirmed reservation is visible without telephony (through-cut without phone)
+- `sim/scripted_llm.py`: rule-based stand-in for the model until T-2.4 connects a real one; recognizes party size, date and time, name and phone number, never guesses, and reports an unrecognized turn as a failed attempt to the understanding ladder
 - Docker Compose for Postgres, API, n8n
 - Specs docs/00 through docs/15
 - Slash commands for Claude Code in .claude/commands/
