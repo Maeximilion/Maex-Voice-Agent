@@ -18,14 +18,15 @@ def test_to_local_und_to_utc_sind_umkehrbar():
 
 
 def test_naive_werte_gelten_als_ortszeit_beim_speichern():
-    assert t.to_utc(datetime(2026, 9, 16, 20, 0), "Europe/Berlin") == datetime(
+    # Der naive Wert ist hier der Testgegenstand, deshalb steht DTZ001 still.
+    assert t.to_utc(datetime(2026, 9, 16, 20, 0), "Europe/Berlin") == datetime(  # noqa: DTZ001
         2026, 9, 16, 18, 0, tzinfo=UTC
     )
 
 
 def test_to_local_lehnt_naive_werte_ab():
     with pytest.raises(ValueError):
-        t.to_local(datetime(2026, 9, 16, 20, 0))
+        t.to_local(datetime(2026, 9, 16, 20, 0))  # noqa: DTZ001
 
 
 def test_betriebstag_kurz_nach_mitternacht_ist_der_vortag():
