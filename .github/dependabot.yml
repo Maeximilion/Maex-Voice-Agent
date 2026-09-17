@@ -25,3 +25,14 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # Die Python-Version des Containers wandert nicht allein: sie steht auch in der
+      # CI, in pyproject.toml (target-version), im README und in der Doku. Ein PR, der
+      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen
+      # und wird von der CI nicht geprueft, weil sie das Image nicht baut. Der Sprung
+      # kommt als eigenes Arbeitspaket, wenn es einen Grund gibt.
+      # Bei Python-Tags ist 3.12 auf 3.14 ein Minor-Schritt, deshalb steht der hier mit.
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
