@@ -94,11 +94,20 @@ def create_callback(
 def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:
     """Prüfen und Anlegen laufen je Anruf nacheinander.
 
-    Eine Zeilensperre reicht hier nicht: beim ersten Rückruf gibt es noch keine
-    Zeile, die sie sperren könnte, und zwei gleichzeitige Aufrufe finden beide
-    nichts und legen beide an. Die Advisory-Sperre gilt dagegen für den Anruf als
-    solchen und hält bis zum Ende der Transaktion. Dasselbe Muster wie beim
-    Entwurf einer Reservierung (domain/reservations/create.py).
+    Eine Sperre auf die *Rückruf*-Zeile reicht nicht: beim ersten Rückruf gibt es
+    sie noch nicht, und zwei gleichzeitige Aufrufe finden beide nichts und legen
+    beide an. Die Zeile des Anrufs waere sperrbar (sie existiert), doch die
+    Advisory-Sperre sagt genau das, was gemeint ist — dieser Anruf wird gerade
+    bearbeitet — ohne eine fremde Zeile dafuer zu belegen, und sie ist im Repo
+    bereits etabliert (domain/reservations/create.py).
+
+    Vertrag dieser Sperre, an den sich jeder kuenftige Schreibpfad auf callbacks
+    halten muss:
+    - wer einen Rückruf anlegt, haelt vorher diese Sperre fuer denselben Anruf,
+    - die Datenbank faehrt READ COMMITTED (api/db.py), sonst sieht der Wartende
+      den fremden Commit nicht und legt trotzdem ein zweites Mal an.
+    Ein partieller Unique-Index waere der haertere Riegel; er kommt, sobald es
+    einen zweiten Schreibpfad gibt (siehe docs/01_STATUS.md, Offene Punkte).
     """
     session.execute(
         text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),

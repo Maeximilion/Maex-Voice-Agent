@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.6.1
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.6.2
 
 ---
 
@@ -113,12 +113,19 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Migrationen schalten die App-Logger nicht mehr stumm** (`db/migrations/env.py`): `fileConfig(..., disable_existing_loggers=False)`. Vorher verstummte nach der ersten Migration im selben Prozess jeder bereits importierte Logger, auch im Betrieb nach `alembic upgrade` aus demselben Prozess
 - **Lint-Regeln stehen in `pyproject.toml`, nicht im ruff-Default** (17.09.2026): ohne Konfiguration bestimmt die ruff-Version die Regelmenge, und ein Dependabot-Update fällt rot aus, ohne dass sich Code geändert hat (PR #85, ruff 0.7 auf 0.16: 14 Verstöße). Gesetzt sind `E, W, F, I, B, BLE, C4, UP, SIM, DTZ, RUF` ohne `E501` (die Zeilenlänge bestimmt der Formatter), dazu `extend-immutable-calls` für `Depends` und Geschwister, weil FastAPI den Aufruf im Default-Argument verlangt und B008 dort kein Fehler ist. Geprüft mit ruff 0.7.4 und 0.16.8, beide grün
 - **Python bleibt auf 3.12, Dependabot-Sprünge auf das Image sind stillgelegt** (17.09.2026): die Version steht an sieben Stellen (Dockerfile, CI, `pyproject.toml`, README-Badge und -Text, `CLAUDE.md`, dieses Dokument, `CONTRIBUTING.md`); ein PR, der nur das Dockerfile anhebt (PR #82, 3.12 auf 3.14), bewegt eine davon und wird von der CI nicht geprüft, weil sie das Image nicht baut. 3.12 bekommt Sicherheits-Updates bis Oktober 2028. Der Sprung kommt als eigenes Arbeitspaket, wenn eine Abhängigkeit ihn verlangt oder das Support-Ende näher rückt, und bewegt dann alle Stellen zusammen plus einen `docker build`-Schritt in der CI
-- **`create_callback` ist über den Zustand idempotent** (`domain/callbacks/create.py`): je Anruf gibt es höchstens einen offenen Rückruf, ein zweiter Aufruf liefert ihn zurück. Kein `idempotency_key` im Vertrag und keine zusätzliche Spalte; ein Zeitüberlauf der Plattform darf dem Team keine zwei Zettel für denselben Gast bringen. Ein erledigter Rückruf (`done`) blockiert einen neuen nicht. **Prüfen und Anlegen sind je Anruf gesperrt** (`pg_advisory_xact_lock`, wie beim Entwurf einer Reservierung): eine Zeilensperre greift beim ersten Rückruf ins Leere, weil es noch keine Zeile gibt. Codex-Review PR #95 (P1), roter Test mit sechs gleichzeitigen Aufrufen zuerst. In docs/04 war keine Idempotenz-Regel für dieses Tool festgelegt, Annahme vom 17.09.2026, kippbar
+- **`create_callback` ist über den Zustand idempotent** (`domain/callbacks/create.py`): je Anruf gibt es höchstens einen offenen Rückruf, ein zweiter Aufruf liefert ihn zurück. Kein `idempotency_key` im Vertrag und keine zusätzliche Spalte; ein Zeitüberlauf der Plattform darf dem Team keine zwei Zettel für denselben Gast bringen. Ein erledigter Rückruf (`done`) blockiert einen neuen nicht. **Prüfen und Anlegen sind je Anruf gesperrt** (`pg_advisory_xact_lock`, wie beim Entwurf einer Reservierung): eine Sperre auf die Rückruf-Zeile greift beim ersten Rückruf ins Leere, weil es sie noch nicht gibt. Zum Vertrag gehört: jeder künftige Schreibpfad auf `callbacks` nimmt dieselbe Sperre, und die Datenbank fährt `READ COMMITTED` (seit 17.09.2026 in `api/db.py` festgelegt statt vom Serverdefault übernommen) — unter `REPEATABLE READ` sieht der Wartende den fremden Commit nicht und legt trotzdem ein zweites Mal an. Ein zweiter Aufruf aktualisiert den bestehenden Rückruf **nicht**: abweichende `summary`, `phone` oder `reason` werden verworfen. Codex-Review PR #95 (P1), roter Test zuerst; dazu ein kontrollierter Überlappungstest (A hält die Sperre, B wartet und liest danach A's Rückruf) und ein Rollback-Test. In docs/04 war keine Idempotenz-Regel für dieses Tool festgelegt, Annahme vom 17.09.2026, kippbar
 - **Vorlesesatz nach dem Rückruf** (`SAY_NOTED`): „Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück." Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
 - **Bugfix in `normalize_phone` (17.09.2026):** eine geklammerte `(0)` hinter der Landesvorwahl wurde bisher als Ziffer übernommen, `+49 (0)7221 5551234` ergab `+4907221 5551234` — eine Nummer, die es nicht gibt. Jetzt entfällt sie bei internationaler Schreibweise und bleibt als führende Null bei nationaler. Gefunden beim Bau von T-1.7, roter Test zuerst (`api/tests/test_domain_phone.py`)
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
+
+## Offene Punkte aus Reviews
+
+| Punkt | Warum noch offen | Wann fällig |
+|---|---|---|
+| Partieller Unique-Index auf `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus Behandlung des Eindeutigkeitskonflikts als Replay | Heute schreibt genau ein Pfad auf `callbacks`, und der hält die Advisory-Sperre; der Index wäre der härtere Riegel, kostet aber eine Migration | spätestens bevor ein zweiter Schreibpfad auf `callbacks` entsteht (GUI-Freigabe, Import, Jobs) |
+| Belastbare Latenzaussage unter Sperr-Konkurrenz | Die gemessenen rund 11 ms stammen aus Wiederholungen desselben Requests ohne Nebenläufigkeit; sie sagen nichts über Wartezeiten an der Sperre | mit dem ersten Lasttest, spätestens vor Gate G1 |
 
 ## Blocker
 
@@ -177,6 +184,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.6.2 · 17.09.2026:** Sperr-Vertrag fuer callbacks dokumentiert, READ COMMITTED in api/db.py festgelegt, Ueberlappungs- und Rollback-Test ergaenzt (Codex-Review PR #95)
 - **v1.6.1 · 17.09.2026:** create_callback: Advisory-Sperre je Anruf gegen doppelte Rueckrufe bei gleichzeitigen Erstaufrufen (Codex-Review PR #95, P1)
 - **v1.6.0 · 17.09.2026:** T-1.7 fertig: create_callback mit Zustands-Idempotenz, audit_log und Outbox-Ereignis; Bugfix in normalize_phone (geklammerte Null); naechster Schritt T-1.8
 - **v1.5.2 · 17.09.2026:** Dependabot hebt die Python-Version des Containers nicht mehr allein an (PR #82 geschlossen); 3.12 bleibt gesetzt bis zum bewussten Upgrade

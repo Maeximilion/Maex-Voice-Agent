@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
 from api.domain.callbacks import create_callback
+from api.domain.callbacks.create import _lock_call
 from api.models import AuditLog, Call, Callback, OutboxEvent
 from api.schemas.callbacks import CreateCallbackRequest
 from scripts.seed import seed
@@ -204,14 +205,16 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
     lock = threading.Lock()
 
     def run() -> None:
-        start.wait(timeout=10)
-        with Session(engine) as own:
-            try:
+        # Auch das Warten an der Barriere gehoert in die Fehlererfassung, sonst
+        # verschwindet ein Thread, der gar nicht bis zum Aufruf kommt, spurlos.
+        try:
+            start.wait(timeout=10)
+            with Session(engine) as own:
                 outcome: object = create_callback(
                     own, request(tenant, call_id), now=NOW
                 )
-            except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
-                outcome = exc
+        except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+            outcome = exc
         with lock:
             results.append(outcome)
 
@@ -220,6 +223,10 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
         thread.start()
     for thread in threads:
         thread.join(timeout=30)
+
+    haengende = [t for t in threads if t.is_alive()]
+    assert not haengende, f"{len(haengende)} Aufrufe haengen nach 30 s"
+    assert len(results) == 6, f"erwartet sechs Ergebnisse, bekam {len(results)}"
 
     with Session(engine) as s:
         callbacks = s.scalar(select(func.count()).select_from(Callback))
@@ -238,3 +245,91 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
     assert audits == 1, f"erwartet ein Audit-Eintrag, bekam {audits}"
     ids = {r.callback_id for r in results}
     assert len(ids) == 1, f"alle Aufrufe sollen denselben Rückruf liefern, bekam {ids}"
+
+
+def test_zweiter_aufruf_wartet_auf_die_sperre_und_liest_danach_den_ersten(
+    migrated_db_url,
+):
+    """Kontrollierte Ueberlappung statt Zufall: A haelt die Sperre, B muss warten.
+
+    Die gemeinsame Startbarriere im Test darueber erzwingt keine echte Ueberlappung
+    der Transaktionen. Hier wird sie hergestellt: B laeuft erst weiter, wenn A
+    committet hat, und muss dann A's Rueckruf lesen statt einen zweiten anzulegen.
+    """
+    engine = create_engine(migrated_db_url, isolation_level="READ COMMITTED")
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        call = Call(
+            tenant_id=tenant,
+            external_session_id="ext",
+            started_at=NOW,
+            delete_after=date(2026, 9, 15),
+        )
+        s.add(call)
+        s.commit()
+        call_id = call.id
+
+    ergebnis: list[object] = []
+
+    def spaeter() -> None:
+        try:
+            with Session(engine) as own:
+                ergebnis.append(create_callback(own, request(tenant, call_id), now=NOW))
+        except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+            ergebnis.append(exc)
+
+    with Session(engine) as a:
+        _lock_call(a, tenant, call_id)
+        erster = Callback(
+            tenant_id=tenant,
+            call_id=call_id,
+            phone="+497215551234",
+            reason="not_understood",
+            summary="Erster Rueckruf",
+            status="open",
+            created_at=NOW,
+        )
+        a.add(erster)
+        a.flush()
+        erste_id = erster.id
+
+        b = threading.Thread(target=spaeter)
+        b.start()
+        b.join(timeout=1.0)
+        assert b.is_alive(), "B haette an der Sperre warten muessen"
+        assert not ergebnis, f"B war schon fertig, bevor A committet hat: {ergebnis}"
+
+        a.commit()
+
+    b.join(timeout=30)
+    assert not b.is_alive(), "B haengt nach dem Commit von A"
+    assert len(ergebnis) == 1
+    assert not isinstance(ergebnis[0], Exception), ergebnis[0]
+    assert ergebnis[0].callback_id == erste_id, "B haette A's Rueckruf lesen muessen"
+    assert ergebnis[0].summary == "Erster Rueckruf"
+
+    with Session(engine) as s:
+        assert s.scalar(select(func.count()).select_from(Callback)) == 1
+    engine.dispose()
+
+
+def test_fehler_nach_dem_flush_laesst_keinen_halben_rueckruf_zurueck(
+    session, tenant_id, call_id, monkeypatch
+):
+    """Die Outbox-Zeile scheitert: Rueckruf und Audit duerfen nicht stehenbleiben."""
+    import api.domain.callbacks.create as modul
+
+    def kaputt(*_args, **_kwargs):
+        raise RuntimeError("Outbox nicht schreibbar")
+
+    monkeypatch.setattr(modul, "enqueue", kaputt)
+
+    with pytest.raises(RuntimeError):
+        create_callback(session, request(tenant_id, call_id), now=NOW)
+
+    session.rollback()
+    assert session.scalar(select(func.count()).select_from(Callback)) == 0
+    assert session.scalar(select(func.count()).select_from(AuditLog)) == 0
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
