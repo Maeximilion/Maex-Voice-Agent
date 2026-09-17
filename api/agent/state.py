@@ -40,7 +40,20 @@ class ConversationState(BaseModel):
             data["intent"] = self.intent
         if self.slots:
             data["slots"] = self.slots
+        if self.reservation_id:
+            # Ohne das kann ein zustandsloses LLMClient auf dem "Ja" nach dem
+            # readback kein entity_id für `confirm` liefern (Codex-Review PR #101, P1).
+            data["reservation_id"] = str(self.reservation_id)
         return data
+
+
+def apply_state_patch(state: ConversationState, patch: dict[str, Any]) -> None:
+    """Vom Modell gelieferte Gesprächsdetails in den kompakten Zustand übernehmen
+    (`LLMTurn.state_patch`), bevor sie mit dem nächsten Zug verloren gehen. Reine
+    Gesprächsangaben (Name, Datum, Personenzahl, ...), keine Fachdaten aus der DB
+    (CLAUDE.md §2 Regel 1 betrifft Preise/Zeiten/Verfügbarkeit/Allergene, nicht das,
+    was der Gast gesagt hat)."""
+    state.slots.update(patch)
 
 
 def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -> None:

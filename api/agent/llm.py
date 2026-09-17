@@ -19,10 +19,18 @@ class ToolCall:
 class LLMTurn:
     """Ein Modell-Zug ist genau eins von beidem: ein Satz an den Kunden (`say`)
     oder ein Tool-Aufruf. Nie beides, nie keins — sonst weiß `loop.py` nicht,
-    ob es auf den Kunden wartet oder weitermacht."""
+    ob es auf den Kunden wartet oder weitermacht.
+
+    `state_patch` ist davon unabhängig und darf bei beidem mitkommen: gewöhnliche
+    Gesprächsdetails (Name, Datum, Personenzahl, ...), die das Modell aus dem
+    Kundenzug herausgehört hat. Ohne ihn hat das Modell keine Möglichkeit, so
+    etwas in den kompakten Zustand (docs/05 §5) zu schreiben — es sieht beim
+    nächsten Zug nur `state.to_prompt_json()` und den neuen Zug, nie den Verlauf,
+    und würde sonst verstreute Angaben aus früheren Zügen wieder verlieren."""
 
     say: str | None = None
     tool_call: ToolCall | None = None
+    state_patch: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if (self.say is None) == (self.tool_call is None):

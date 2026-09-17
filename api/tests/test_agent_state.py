@@ -3,7 +3,7 @@
 import uuid
 
 from api.agent.dispatch import ToolResult
-from api.agent.state import ConversationState, apply_tool_result
+from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 
 CALL_ID = uuid.uuid4()
 TENANT_ID = uuid.uuid4()
@@ -36,6 +36,28 @@ def test_erfolgreiche_reservierung_setzt_readback_pending():
     assert state.stage == "readback_pending"
     assert state.reservation_id == reservation_id
     assert state.intent == "reservation"
+
+
+def test_reservation_id_erscheint_im_prompt_json_sobald_bekannt():
+    """Ohne das kann ein zustandsloses LLMClient auf dem "Ja" nach dem readback
+    keine entity_id für `confirm` liefern (Codex-Review PR #101, P1)."""
+    state = make_state()
+    reservation_id = uuid.uuid4()
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": str(reservation_id)}),
+    )
+
+    assert state.to_prompt_json()["reservation_id"] == str(reservation_id)
+
+
+def test_apply_state_patch_schreibt_in_die_slots():
+    state = make_state()
+    apply_state_patch(state, {"guest_name": "Müller"})
+    apply_state_patch(state, {"party_size": 4})
+
+    assert state.slots == {"guest_name": "Müller", "party_size": 4}
 
 
 def test_confirm_setzt_bestaetigt():
