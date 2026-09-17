@@ -28,6 +28,7 @@ Was funktioniert:
 - Der Dispatcher (`api/events/`) leert die Outbox nach n8n: eigener Prozess (`python -m api.events.dispatcher`), ein POST je Ereignis mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log
 - `POST /v1/tools/create_callback` legt einen Rückruf für das Team an, wenn der Agent nicht weiterkommt: Aufgabe in der Datenbank, Eintrag im Protokoll, Ereignis für den kalten Pfad; je Anruf höchstens ein offener Rückruf
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
+- CI baut zusätzlich das API-Image ohne lokales CA-Zertifikat und prüft ohne Bind-Mount den Start, `/health` und Token-Auth (fehlendes, falsches und gültiges Token).
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
 Was noch nicht funktioniert:
