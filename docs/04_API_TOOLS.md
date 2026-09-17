@@ -249,6 +249,8 @@ Der einzige Übergang von `draft` nach `confirmed`.
 
 **Wirkung:** Status setzen, `audit_log` schreiben, Ereignis an n8n legen, GUI aktualisieren. Im Modus `overflow` wird `approved` erst durch das Team gesetzt; die Küche startet dann später.
 
+**Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `entity: "order"` steht im Vertrag, antwortet aber bis Stufe 2 mit `not_found`; `pickup_code` bleibt bei Reservierungen `null`.
+
 ---
 
 ## `create_callback`

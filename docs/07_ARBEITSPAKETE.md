@@ -43,13 +43,13 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.3 | #24 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | fertig 16.09.2026: `domain/status/` + `tools/service_status.py`, 16 Tests, p95 weit unter 300 ms |
 | T-1.4 | #25 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | fertig 16.09.2026: `domain/reservations/{capacity,slots,spoken}.py` + `tools/check_slot.py`, 23 Tests, p95 rund 13 ms |
 | T-1.5 | #26 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | fertig 16.09.2026: `domain/reservations/create.py` + `tools/create_reservation.py`, `core/ids.py`, `domain/customers/phone.py` (E.164), 40 Tests, p95 rund 15 ms |
-| T-1.6 | #27 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | offen |
+| T-1.6 | #27 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | fertig 17.09.2026: `domain/confirm.py` + `tools/confirm.py`, Zeilensperre gegen doppelte Ereignisse, Outbox-Eintrag `reservation.confirmed`, 17 Tests, p95 rund 10 ms. Bestellungen sind im Vertrag vorgesehen, aber bis Stufe 2 `not_found` |
 | T-1.7 | #28 | Tool `create_callback` | 04 | T-1.1 | offen |
 | T-1.8 | #29 | Tool `transfer_to_team` inkl. Schleifenschutz und Erreichbarkeitsprüfung | 04 | T-1.1 | offen |
 | T-1.9 | #30 | Anruf-Log: `POST /v1/calls/start` und `/end`, Tool-Aufrufe mit Dauer | 03 | T-1.1 | offen |
 | T-1.10 | #31 | System-Prompt `prompts/system_v1.md` plus Tool-Beschreibungen für die Plattform | 05 | T-1.3…T-1.8 | offen |
 | T-1.11 | #38 | **Anbieter-Adapter** `telephony/adapters/<anbieter>.py` gegen aufgezeichnete Webhooks | 11 §telephony, 12 S7 | T-1.13, D1 entschieden | blockiert |
-| T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | offen |
+| T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | fertig 17.09.2026: `events/` mit `types.py`, `outbox.py` (enqueue in der Transaktion des Fachvorgangs) und `dispatcher.py`; ein Ereignis je Transaktion mit `FOR UPDATE SKIP LOCKED`, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` plus Alarm als ERROR-Log; eigener Container-Dienst; 12 Tests mit Fake-n8n |
 | T-1.13 | #33 | `telephony/port.py` Interface + `adapters/fake.py`, der Anrufe aus Dateien abspielt | 11 §telephony | T-1.10 | offen |
 
 ---

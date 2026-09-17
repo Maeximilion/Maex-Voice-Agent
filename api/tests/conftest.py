@@ -24,7 +24,7 @@ def p95_ms(call: Callable[[], object], n: int = 20) -> float:
         call()
         samples.append((time.perf_counter() - started) * 1000)
     samples.sort()
-    return samples[min(n - 1, int(round(0.95 * n)) - 1)]
+    return samples[min(n - 1, round(0.95 * n) - 1)]
 
 
 def alembic_config(url: str) -> Config:
