@@ -1,4 +1,4 @@
-"""HTTP-Hülle für create_reservation: Hülle, Validierung, Idempotenz über HTTP, Latenz."""
+"""HTTP-Hülle für confirm: Hülle, Validierung, Idempotenz über HTTP, Latenz."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -55,7 +55,7 @@ def _next_tuesday_1830_berlin() -> datetime:
     ).replace(hour=16, minute=30)
 
 
-def _call(http: TestClient, tenant_id: str, call_id: str, **overrides):
+def _draft(http: TestClient, tenant_id: str, call_id: str, **overrides) -> str:
     body = {
         "call_id": call_id,
         "tenant_id": tenant_id,
@@ -64,80 +64,91 @@ def _call(http: TestClient, tenant_id: str, call_id: str, **overrides):
         "phone": "+4972215551234",
         "party_size": 2,
         "reserved_for": _next_tuesday_1830_berlin().isoformat(),
-        "note": "Kinderstuhl",
         **overrides,
     }
-    return http.post("/v1/tools/create_reservation", json=body, headers=AUTH)
+    r = http.post("/v1/tools/create_reservation", json=body, headers=AUTH)
+    return r.json()["data"]["reservation_id"]
+
+
+def _confirm(http: TestClient, tenant_id: str, call_id: str, entity_id: str, **over):
+    body = {
+        "call_id": call_id,
+        "tenant_id": tenant_id,
+        "entity": "reservation",
+        "entity_id": entity_id,
+        "idempotency_key": uuid.uuid4().hex,
+        **over,
+    }
+    return http.post("/v1/tools/confirm", json=body, headers=AUTH)
 
 
 def test_antwort_folgt_der_huelle(client):
     http, tenant_id, call_id = client
-    r = _call(http, tenant_id, call_id)
+    entity_id = _draft(http, tenant_id, call_id)
+
+    r = _confirm(http, tenant_id, call_id, entity_id)
+
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and body["say"] is None
-    data = body["data"]
-    assert set(data) == {
-        "reservation_id",
-        "status",
-        "reserved_for",
-        "party_size",
-        "guest_name",
-        "phone",
-        "note",
-        "readback",
+    assert body["data"] == {
+        "status": "confirmed",
+        "handover": "queued",
+        "pickup_code": None,
     }
-    assert data["status"] == "draft"
-    assert data["readback"].endswith("Passt das so?")
-    uuid.UUID(data["reservation_id"])
 
 
-def test_gleicher_schluessel_ueber_http_liefert_dieselbe_antwort(client):
+def test_zweiter_aufruf_ueber_http_liefert_dieselbe_antwort(client):
     http, tenant_id, call_id = client
-    key = "http-key-1"
-    first = _call(http, tenant_id, call_id, idempotency_key=key).json()
-    second = _call(http, tenant_id, call_id, idempotency_key=key, party_size=7).json()
+    entity_id = _draft(http, tenant_id, call_id)
+
+    first = _confirm(http, tenant_id, call_id, entity_id).json()
+    second = _confirm(http, tenant_id, call_id, entity_id).json()
+
     assert second == first
 
 
-def test_fehlender_schluessel_ist_invalid_input(client):
+def test_unbekannte_reservierung_ist_not_found_mit_say(client):
     http, tenant_id, call_id = client
-    body = {
-        "call_id": call_id,
-        "tenant_id": tenant_id,
-        "guest_name": "Müller",
-        "phone": "+4972215551234",
-        "party_size": 2,
-        "reserved_for": _next_tuesday_1830_berlin().isoformat(),
-    }
-    r = http.post("/v1/tools/create_reservation", json=body, headers=AUTH)
+    r = _confirm(http, tenant_id, call_id, str(uuid.uuid4()))
     assert r.status_code == 200
-    assert r.json()["error"]["code"] == "invalid_input"
-    assert "idempotency_key" in r.json()["error"]["message"]
-
-
-def test_party_size_null_ist_invalid_input(client):
-    http, tenant_id, call_id = client
-    r = _call(http, tenant_id, call_id, party_size=0)
-    assert r.json()["error"]["code"] == "invalid_input"
-
-
-def test_unbekannter_anruf_ist_not_found_mit_say(client):
-    http, tenant_id, _ = client
-    r = _call(http, tenant_id, str(uuid.uuid4()))
     assert r.json()["ok"] is False
     assert r.json()["error"]["code"] == "not_found"
     assert r.json()["say"]
 
 
+def test_unbekannte_entity_ist_invalid_input(client):
+    http, tenant_id, call_id = client
+    entity_id = _draft(http, tenant_id, call_id)
+    r = _confirm(http, tenant_id, call_id, entity_id, entity="tisch")
+    assert r.json()["error"]["code"] == "invalid_input"
+
+
+def test_fehlender_schluessel_ist_invalid_input(client):
+    http, tenant_id, call_id = client
+    entity_id = _draft(http, tenant_id, call_id)
+    body = {
+        "call_id": call_id,
+        "tenant_id": tenant_id,
+        "entity": "reservation",
+        "entity_id": entity_id,
+    }
+    r = http.post("/v1/tools/confirm", json=body, headers=AUTH)
+    assert r.json()["error"]["code"] == "invalid_input"
+    assert "idempotency_key" in r.json()["error"]["message"]
+
+
 def test_ohne_token_401(client):
-    http, _tenant_id, _call_id = client
-    r = http.post("/v1/tools/create_reservation", json={})
+    http, _, _ = client
+    r = http.post("/v1/tools/confirm", json={})
     assert r.status_code == 401
 
 
 def test_latenz_p95_unter_300_ms(client):
+    """Gemessen wird der Schreibpfad: je Aufruf ein frischer Entwurf, vorher angelegt."""
     http, tenant_id, call_id = client
-    p95 = p95_ms(lambda: _call(http, tenant_id, call_id, party_size=1), n=20)
-    print(f"\ncreate_reservation p95 = {p95:.1f} ms")
+    drafts = iter([_draft(http, tenant_id, call_id, party_size=1) for _ in range(20)])
+
+    p95 = p95_ms(lambda: _confirm(http, tenant_id, call_id, next(drafts)), n=20)
+    print(f"\nconfirm p95 = {p95:.1f} ms")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
