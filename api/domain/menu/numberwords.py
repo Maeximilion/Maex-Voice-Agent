@@ -20,6 +20,7 @@ entscheidet der Aufrufer, nicht dieses Modul.
 """
 
 import re
+from dataclasses import dataclass
 
 # Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
 # ist am Telefon kein Zahlwort mehr, sondern eine Ziffernfolge.
@@ -83,17 +84,31 @@ _QUANTITY_SUFFIX = re.compile(r"^(.+?)mal$")
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _ITEM_NUMBER_MARKERS = frozenset({"nummer", "nr", "no", "position", "pos"})
 
-_TOKEN = re.compile(r"\d+|[a-z]+")
+# Satzzeichen trennen zwei Angaben: "Nummer 20, eine Portion" ist die 20 mit
+# einer Portion, nicht die 21 (Codex-Review PR #105, P1). Der Bindestrich steht
+# bewusst nicht dabei, der verbindet.
+PUNCTUATION = frozenset(".,;:!?")
+
+_TOKEN = re.compile(r"\d+|[a-z]+|[.,;:!?]")
+
+
+@dataclass(frozen=True)
+class _Span:
+    """Eine gefundene Zahl mit ihrer Lage im Satz. Die Lage braucht, wer wissen
+    will, ob diese Zahl schon als Menge vergeben ist."""
+
+    start: int
+    end: int
+    value: int
+
+    def overlaps(self, other: "_Span") -> bool:
+        return self.start < other.end and other.start < self.end
 
 
 def fold(text: str) -> str:
     """Kleinschreibung plus Umlaut-Ersatzschreibung. Am Telefon klingt "fünf" wie
     "fuenf"; welche Schreibweise die Erkennung liefert, ist Zufall."""
     return text.lower().translate(_UMLAUTS)
-
-
-def _tokens(text: str) -> list[str]:
-    return _TOKEN.findall(fold(text))
 
 
 def _below_hundred(word: str) -> int | None:
@@ -127,22 +142,35 @@ def _word_value(word: str) -> int | None:
     return None if rest is None else hundreds * 100 + rest
 
 
-def _scan(tokens: list[str], start: int) -> tuple[int, int] | None:
-    """Längste Zahl ab Position `start`. Gibt Wert und die nächste Position zurück.
+def _tokens(text: str) -> list[str]:
+    return _TOKEN.findall(fold(text))
+
+
+def _scan(tokens: list[str], start: int) -> _Span | None:
+    """Längste Zahl ab Position `start`.
 
     Zusammengesetzt wird nur, was sich am Telefon auch zusammen anhört:
     "vierzig sieben" (Zehner plus Einer), "drei und zwanzig", "zwei hundert".
     "zwei drei" bleibt zwei und drei -- daraus 23 zu machen wäre geraten.
+
+    Zwei harte Grenzen: ein Satzzeichen und ein Artikel. Ohne sie wuchs
+    "Nummer 20, eine Portion" zur 21, weil die Regel für ziffernweise
+    gesprochene Zahlen über das Komma und über das "eine" der Mengenangabe
+    hinweggriff (Codex-Review PR #105, P1).
     """
     i = start
     total: int | None = None
     while i < len(tokens):
         token = tokens[i]
+        if token in PUNCTUATION:
+            break
         if token == "und" and total is not None and total < 10:
             # "ein und zwanzig": der Zehner muss folgen, sonst war es ein normales "und"
             if i + 1 < len(tokens) and _word_value(tokens[i + 1]) in TENS.values():
                 i += 1
                 continue
+            break
+        if total is not None and token in ARTICLES:
             break
 
         value = _word_value(token)
@@ -163,7 +191,56 @@ def _scan(tokens: list[str], start: int) -> tuple[int, int] | None:
         i += 1
     if total is None or total > MAX_VALUE:
         return None
-    return total, i
+    return _Span(start, i, total)
+
+
+def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
+    """Zahl, die unmittelbar **vor** `end` endet ("drei Portionen", "zwei mal")."""
+    for start in range(max(0, end - 3), end + 1):
+        span = _scan(tokens, start)
+        if span is not None and span.end == end + 1:
+            return span
+    return None
+
+
+def _number_spans(tokens: list[str]) -> list[_Span]:
+    """Alle genannten Zahlen mit ihrer Lage.
+
+    Ein bloßer Artikel zählt nicht mit ("ein Tisch"), eine Zahl, die mit einem
+    Artikel **beginnt**, sehr wohl: "die ein und zwanzig" ist die 21 und war
+    vorher die 20, weil das "ein" verworfen wurde, bevor jemand geprüft hat, ob
+    es eine Zahl eröffnet (Codex-Review PR #105, P1).
+    """
+    spans: list[_Span] = []
+    i = 0
+    while i < len(tokens):
+        if tokens[i] in PUNCTUATION:
+            i += 1
+            continue
+        span = _scan(tokens, i)
+        if span is None or (tokens[i] in ARTICLES and span.end == i + 1):
+            i += 1
+            continue
+        spans.append(span)
+        i = max(span.end, i + 1)
+    return spans
+
+
+def _quantity_spans(tokens: list[str]) -> list[_Span]:
+    """Zahlen, die an einem Mengen-Marker hängen: "zweimal", "2 x", "drei Portionen"."""
+    spans: list[_Span] = []
+    for i, token in enumerate(tokens):
+        suffix = _QUANTITY_SUFFIX.match(token)
+        if suffix:
+            value = _word_value(suffix.group(1))
+            if value is not None:
+                spans.append(_Span(i, i + 1, value))
+                continue
+        if token in _QUANTITY_NOUNS and i > 0:
+            span = _scan_ending_at(tokens, i - 1)
+            if span is not None:
+                spans.append(span)
+    return spans
 
 
 def parse_cardinal(text: str) -> int | None:
@@ -171,16 +248,19 @@ def parse_cardinal(text: str) -> int | None:
 
     Anders als `find_item_number` zählt hier auch ein alleinstehendes "eine":
     wer diese Funktion aufruft, hat bereits entschieden, dass an dieser Stelle
-    eine Zahl steht.
+    eine Zahl steht. Satzzeichen am Rand stören nicht.
     """
     tokens = _tokens(text)
+    while tokens and tokens[0] in PUNCTUATION:
+        tokens.pop(0)
+    while tokens and tokens[-1] in PUNCTUATION:
+        tokens.pop()
     if not tokens:
         return None
-    scanned = _scan(tokens, 0)
-    if scanned is None:
+    span = _scan(tokens, 0)
+    if span is None:
         return None
-    value, end = scanned
-    return value if end == len(tokens) else None
+    return span.value if span.end == len(tokens) else None
 
 
 def find_numbers(text: str) -> list[int]:
@@ -190,37 +270,35 @@ def find_numbers(text: str) -> list[int]:
     Mengenadverbien ("zweimal"): das eine ist keine Zahl, das andere eine Menge
     und damit Sache von `find_quantity`.
     """
-    tokens = _tokens(text)
-    found: list[int] = []
-    i = 0
-    while i < len(tokens):
-        if tokens[i] in ARTICLES:
-            i += 1
-            continue
-        scanned = _scan(tokens, i)
-        if scanned is None:
-            i += 1
-            continue
-        value, end = scanned
-        found.append(value)
-        i = max(end, i + 1)
-    return found
+    return [span.value for span in _number_spans(_tokens(text))]
 
 
 def find_item_number(text: str) -> int | None:
     """Die Gerichtnummer im Satz. Ein ausdrückliches "Nummer …" schlägt alles andere.
 
-    Gibt es mehrere Zahlen ohne Marker, ist nicht entscheidbar, welche gemeint
-    war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
+    Eine Zahl, die an einem Mengen-Marker hängt, ist keine Gerichtnummer: "2 x
+    die 23" ist eindeutig, auch wenn zwei Zahlen fallen (Codex-Review PR #105,
+    P2). Bleiben danach mehrere Zahlen übrig, ist nicht entscheidbar, welche
+    gemeint war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
     """
     tokens = _tokens(text)
     for i, token in enumerate(tokens):
-        if token in _ITEM_NUMBER_MARKERS:
-            scanned = _scan(tokens, i + 1)
-            if scanned is not None:
-                return scanned[0]
-    numbers = find_numbers(text)
-    return numbers[0] if len(numbers) == 1 else None
+        if token not in _ITEM_NUMBER_MARKERS:
+            continue
+        nach_marker = i + 1
+        while nach_marker < len(tokens) and tokens[nach_marker] in PUNCTUATION:
+            nach_marker += 1  # "Nr. 23"
+        span = _scan(tokens, nach_marker)
+        if span is not None:
+            return span.value
+
+    mengen = _quantity_spans(tokens)
+    uebrig = [
+        span
+        for span in _number_spans(tokens)
+        if not any(span.overlaps(menge) for menge in mengen)
+    ]
+    return uebrig[0].value if len(uebrig) == 1 else None
 
 
 def find_quantity(text: str) -> int | None:
@@ -230,24 +308,5 @@ def find_quantity(text: str) -> int | None:
     nicht dreiundzwanzig Stück. Ohne Marker `None`, der Aufrufer setzt die
     Voreinstellung.
     """
-    tokens = _tokens(text)
-    for i, token in enumerate(tokens):
-        suffix = _QUANTITY_SUFFIX.match(token)
-        if suffix:
-            value = _word_value(suffix.group(1))
-            if value is not None:
-                return value
-        if token in _QUANTITY_NOUNS and i > 0:
-            scanned = _rscan(tokens, i - 1)
-            if scanned is not None:
-                return scanned
-    return None
-
-
-def _rscan(tokens: list[str], end: int) -> int | None:
-    """Zahl, die unmittelbar **vor** `end` endet ("drei Portionen", "zwei mal")."""
-    for start in range(max(0, end - 3), end + 1):
-        scanned = _scan(tokens, start)
-        if scanned is not None and scanned[1] == end + 1:
-            return scanned[0]
-    return None
+    spans = _quantity_spans(_tokens(text))
+    return spans[0].value if spans else None
