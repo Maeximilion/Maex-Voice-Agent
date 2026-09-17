@@ -1,0 +1,22 @@
+{# Grundgeruest aller Seiten. Farben und Klassen stammen aus dem abgenommenen
+   Mockup gui/mockups/admin-desktop.html (docs/06 §7). Keine CDN-Einbindung:
+   die GUI muss auch ohne Internet laufen (docs/06 §2). #}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ tenant.name if tenant else "Maex Voice-Agent" }}{% endblock %}</title>
+<link rel="stylesheet" href="/gui/static/app.css">
+<script src="/gui/static/htmx.min.js" defer></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<div id="verbindung" class="banner warn" hidden>
+  Keine Verbindung &mdash; Anrufe gehen ans Telefon
+</div>
+{% if problem %}<div class="banner danger">{{ problem }}</div>{% endif %}
+{% block header %}{% endblock %}
+<main>{% block main %}{% endblock %}</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

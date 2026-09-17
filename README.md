@@ -28,6 +28,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
 - Conversation core (`api/agent/`) with understanding ladder and escalation, driven from the text phone (`sim/`): `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case>` replays a transcript; a confirmed reservation lands in the database without any telephony
+- Operations view for the tablet at `/gui/` (`api/gui/`): header with mode, delivery and wait times from the database, three columns per `docs/06_GUI.md`, and the column "Heute" with the confirmed reservations of the business day. It updates itself over Server-Sent-Events, so a call held in `sim/` shows up on the tablet a moment later without reloading
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
@@ -35,7 +36,8 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 **Not yet working:**
 
 - No phone line, no provider chosen (decision D1)
-- No UI, no orders (stage 2)
+- The operations view shows reservations only: the header has no buttons yet (T-3.2), the columns for orders and callbacks stay empty until T-4.7 and T-3.4, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
+- No orders (stage 2)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
@@ -59,7 +61,7 @@ curl http://localhost:8000/health
 make test
 ```
 
-API then runs at `http://localhost:8000`, n8n at `http://localhost:5678`. `/health` responds with `{"status": "ok", "env": "dev"}`.
+API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`. `/health` responds with `{"status": "ok", "env": "dev"}`.
 
 Tests and lint from a local Python environment. Database tests need reachable Postgres, e.g. from `make up`; `DATABASE_URL` then points to `localhost` instead of container name `db`:
 

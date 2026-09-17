@@ -21,12 +21,16 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Specs docs/00 through docs/15
 - Slash commands for Claude Code in .claude/commands/
 - CI workflow (ruff, pytest)
+- `api/gui/`: operations view for the tablet (T-3.1, T-3.3). Jinja2 templates, HTMX and `app.css` built from the approved mockup's variables and classes, served locally without any CDN. Header shows mode, delivery and wait times from `service_config`; the column "Heute" lists the confirmed reservations of the business day and updates itself over Server-Sent-Events, so a reservation talked in from the terminal appears on the tablet within seconds
+- `api/domain/reservations/today.py`: confirmed reservations of the business day plus a cheap change token for the event stream
 - Desktop mockup of admin view in gui/mockups/
 
 ### Changed
 - Pilot operation, company, location, and provider names replaced with placeholders (`<PilotOperation>`, `<CompanyName>`, `<Location>`, `<PointOfSale>`, `<POSProvider>`, `example.com`)
 - README quick start reduced to steps that work today; `make migrate` and `make seed` follow in T-1.1 and T-1.2
 - Compose additionally mounts `scripts/` and `evals/` so `make lint` runs in container
+- Decision D6 settled: the GUI is server-rendered with Jinja2 and HTMX, not React (one container, no Node build, no CORS; rationale in docs/06_GUI.md §2)
+- New dependency `jinja2` in `api/requirements.txt` for the GUI templates
 
 ### Fixed
 - Dockerfile: additional CA cert (`api/ca-bundle.crt`) is optional, not required; build works on clean checkout
