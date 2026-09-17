@@ -45,9 +45,14 @@ def _confirm_reservation(session: Session, req: ConfirmRequest) -> Confirmation:
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
 
+    # Der Anruf muss derselbe sein wie beim Entwurf: das "Ja" gehört dem Gast, der
+    # gerade in der Leitung ist (CLAUDE.md §2 Regel 3). Sonst bestätigt ein Anruf den
+    # Tisch eines anderen Gastes, und Audit-Zeile und Outbox-Payload nennen zwei
+    # verschiedene Anrufe.
     if (
         reservation is None
         or reservation.tenant_id != req.tenant_id
+        or reservation.call_id != req.call_id
         or reservation.deleted_at is not None
     ):
         raise NotFound("Reservierung unbekannt", say=SAY_STOERUNG)

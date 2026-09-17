@@ -176,6 +176,26 @@ def test_reservierung_eines_anderen_mandanten_ist_not_found(
     assert session.get(Reservation, draft_id).status == "draft"
 
 
+def test_entwurf_aus_einem_anderen_anruf_ist_not_found(session, tenant_id, call_id):
+    """Das Ja gehört dem Gast in der Leitung: ein zweiter Anruf darf den Tisch
+    des ersten nicht bestätigen, auch nicht im selben Betrieb."""
+    draft_id = make_draft(session, tenant_id, call_id)
+    zweiter_anruf = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-zweiter",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(zweiter_anruf)
+    session.commit()
+
+    with pytest.raises(NotFound):
+        confirm(session, request(tenant_id, zweiter_anruf.id, draft_id))
+
+    assert session.get(Reservation, draft_id).status == "draft"
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+
+
 def test_unbekannter_anruf_ist_not_found(session, tenant_id, call_id):
     draft_id = make_draft(session, tenant_id, call_id)
     with pytest.raises(NotFound) as exc:

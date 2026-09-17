@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.4.0
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.4.1
 
 ---
 
@@ -100,6 +100,7 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Rufnummern** werden in `domain/customers/phone.py` nach E.164 normalisiert, Default-Land `+49`; `0049…`, `0…`, Leerzeichen, Schrägstriche und Klammern werden aufgelöst. Unterdrückte Nummer ist noch nicht modelliert (kommt mit `find_customer`)
 - Jeder Schreibvorgang schreibt `audit_log` (`actor: agent`, `action: reservation.draft_created` bzw. `reservation.confirmed`), inline im Domain-Code. Zwei Stellen rechtfertigen noch keinen gemeinsamen Helfer; ab der dritten wieder prüfen
 - **`confirm` ist über den Zustand idempotent, nicht über den Schlüssel** (`domain/confirm.py`): ein zweiter Aufruf liest `confirmed` und antwortet gleich, auch mit anderem `idempotency_key`; ein zweites Outbox-Ereignis entsteht nie. Der Schlüssel wandert nur ins `audit_log`. Das spart eine eigene Schlüsseltabelle; wenn später ein Vorgang wieder aus `confirmed` herausgehen kann, kippt diese Annahme. Annahme vom 17.09.2026, kippbar
+- **`confirm` verlangt denselben Anruf wie der Entwurf** (`domain/confirm.py`): `reservation.call_id` muss zur `call_id` des Aufrufs passen, sonst `not_found`. Sonst bestätigt ein Anruf den Tisch eines anderen Gastes, und das „Ja" aus Regel 3 stammt von der falschen Person. Heute verliert das keinen Ablauf, weil die Entwurfs-UUID nur aus `create_reservation` desselben Anrufs kommt. Ein späteres „Gast ruft zurück und bestätigt" wäre ein eigener Weg mit eigener Prüfung. Codex-Review PR #90 (P1), 17.09.2026
 - **Gleichzeitige `confirm`-Aufrufe werden per Zeilensperre serialisiert** (`SELECT … FOR UPDATE` auf die Reservierung), sonst schreiben zwei Aufrufe zwei Ereignisse in die Outbox und die Küche bekommt den Vorgang doppelt
 - **`entity: "order"` steht im Vertrag, antwortet aber bis Stufe 2 mit `not_found`**: die Verzweigung in `domain/confirm.py` ist der Platz, an dem T-4.x die Bestellung ergänzt. `pickup_code` bleibt bei Reservierungen `null`
 - **`approved` (Überlauf-Betrieb) fehlt noch bewusst:** `RESERVATION_STATUSES` kennt nur `draft`, `confirmed`, `cancelled`. Der Freigabe-Fluss kommt mit T-8.2
@@ -164,6 +165,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.4.1 · 17.09.2026:** Codex-Review PR #90 (P1) behoben: confirm verlangt denselben Anruf wie der Entwurf, roter Test zuerst
 - **v1.4.0 · 17.09.2026:** T-1.6 fertig: confirm generisch, draft nach confirmed mit Zeilensperre, audit_log und Outbox-Ereignis reservation.confirmed; nächster Schritt T-1.12 Dispatcher
 - **v1.3.3 · 16.09.2026:** Repo-Standards: CONTRIBUTING, SECURITY, PR- und Issue-Vorlagen, Dependabot, README-Badges; Label-Taxonomie auf allen 77 Issues
 - **v1.3.2 · 16.09.2026:** Roadmap auf GitHub gespiegelt: neun Block-Issues, 68 Arbeitspakete als Sub-Issues, Issue-Nummern in docs/07 eingetragen
