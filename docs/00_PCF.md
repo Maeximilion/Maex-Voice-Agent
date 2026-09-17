@@ -468,6 +468,40 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 17.09.2026 – T-2.1, T-2.2
+Status: agent/ conversation core running: prompt.py, state.py, dispatch.py, loop.py, llm.py+FakeLLM
+       (T-2.1); ladder.py (Verständnis-Leiter) and escalation.py (Sofort-Auslöser) wired into
+       loop.py (T-2.2). 295 tests green, CI green. Not yet running: sim/cli.py (no real terminal
+       conversation), a real LLM (T-2.4, still FakeLLM only), the GUI.
+Artifacts: PR #101 (T-2.1) and #102 (T-2.2) squash-merged to main (main = ea30937). Branch
+       claude/cavemen-ultra-pwysd0 reset to main after each merge, currently == main, no diff yet.
+       api/agent/{prompt,state,dispatch,loop,llm,ladder,escalation}.py, api/core/tool_log.py
+       refactored (append_tool_call shared with the HTTP middleware), db/migrations/env.py bugfix.
+Decisions: agent/dispatch.py re-implements api/tools/* directly against domain/ (docs/11 §agent,
+       no HTTP detour) · idempotency_key for create_reservation/confirm always derived by code,
+       never the model (CLAUDE.md §2 rule 1) · loop.py's self-triggered handoffs (timeout, hop
+       limit, ladder exhaustion) default to reason "not_understood"; create_callback falls back
+       cancellation→human_requested since CallbackReason has no cancellation value · escalation.py's
+       keyword list is a first pass, not linguistically validated — widen it via evals (T-5.1),
+       not by guessing more keywords now · db/migrations/env.py bugfix: alembic.ini's
+       [logger_root]=WARN was silently downgrading the app's log level for the rest of the process
+       whenever a migration ran in-process (every test via migrated_db_url).
+Gate: G0 still open, unchanged (vendor/budget/legal/C1 outstanding). Internal milestone: Block 1b
+       (Gesprächs-Kern und Simulator, docs/07 Sammel-Issue #7) in progress — T-2.1/T-2.2 done,
+       T-2.3 (sim/cli.py) next, then T-2.4 (real LLM) and T-2.5 (GUI sim console). The
+       "Durchstich ohne Telefon" milestone needs T-2.3 + T-3.3, not the whole block.
+Open: T-2.3 sim/cli.py + sim/replay.py (first conversation in the terminal, a reservation lands in
+       the DB) → then T-3.x (GUI) for the same milestone. In parallel: T-0.7, T-0.8.
+Lessons: Codex reviews every PR and found real bugs both times this session (state loss across
+       turns, a timeout that announced a handoff without performing it, the ladder double-counting
+       failures within one turn) — fix same-day, before merging, every time. Merge each PR before
+       stacking the next task on the same branch: keeps diffs small (T-2.2's PR was 10 files/+414,
+       T-2.1's was 15 files/+1156) and keeps review-bot and diff-review token cost down — adopted
+       as a standing rule this session. Docker build needs --network host plus
+       `cp /root/.ccr/ca-bundle.crt api/ca-bundle.crt` to reach the proxy for pip installs.
+```
+
+```text
 ## Handover 16.09.2026 – T-0.1 through T-0.6, T-1.1 through T-1.4
 Status: Stack running (Postgres, API, n8n), schema 001 with ten stage-1 tables, seed idempotent,
        tools get_service_status and check_slot with p95 10–14 ms; 89 tests green, CI green.
