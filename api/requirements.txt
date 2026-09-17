@@ -1,4 +1,4 @@
-fastapi==0.115.*
+fastapi==0.141.*
 uvicorn[standard]==0.52.*
 pydantic==2.*
 pydantic-settings==2.*
@@ -7,5 +7,5 @@ alembic==1.*
 psycopg[binary]==3.*
 httpx==0.28.*
 pytest==8.*
-pytest-asyncio==0.24.*
+pytest-asyncio==1.4.*
 ruff==0.16.*
