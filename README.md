@@ -26,6 +26,7 @@ Was funktioniert:
 - `make migrate` legt die zehn Tabellen der Stufe 1 an (Alembic unter `db/`, Modelle unter `api/models/`), `make seed` füllt sie idempotent mit einer Testkonfiguration
 - Die Reservierung läuft durch, jedes Tool mit Latenztest gegen das 300-ms-Budget: `POST /v1/tools/get_service_status` beantwortet aus der Datenbank, ob und was gerade geht (Öffnungszeiten, Sondertage, Wartezeiten, Modus); `POST /v1/tools/check_slot` prüft einen Wunsch gegen Kapazität und Öffnungszeit und nennt bis zu zwei Alternativen; `POST /v1/tools/create_reservation` legt den Entwurf mit dem Satz zum Vorlesen an; `POST /v1/tools/confirm` macht ihn gültig, protokolliert ihn und legt das Ereignis für den kalten Pfad in die Outbox
 - Der Dispatcher (`api/events/`) leert die Outbox nach n8n: eigener Prozess (`python -m api.events.dispatcher`), ein POST je Ereignis mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log
+- `POST /v1/tools/create_callback` legt einen Rückruf für das Team an, wenn der Agent nicht weiterkommt: Aufgabe in der Datenbank, Eintrag im Protokoll, Ereignis für den kalten Pfad; je Anruf höchstens ein offener Rückruf
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 

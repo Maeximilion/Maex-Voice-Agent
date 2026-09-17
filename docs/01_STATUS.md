@@ -1,13 +1,13 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.5.2
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.6.0
 
 ---
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) antworten in rund 8 bis 15 ms (p95); 161 Tests laufen grün. Die Reservierung ist damit vollständig: `create_reservation` legt den Entwurf mit `readback` an, `confirm` macht ihn gültig, schreibt `audit_log` und legt das Ereignis `reservation.confirmed` in die Outbox. Der Dispatcher (`api/events/`) leert die Outbox inzwischen: eigener Prozess, ein POST je Ereignis nach n8n mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log. Was noch fehlt: Rückrufe, das Anruf-Log und die GUI.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) antworten in rund 8 bis 15 ms (p95); 182 Tests laufen grün. Die Reservierung ist damit vollständig: `create_reservation` legt den Entwurf mit `readback` an, `confirm` macht ihn gültig, schreibt `audit_log` und legt das Ereignis `reservation.confirmed` in die Outbox. Der Dispatcher (`api/events/`) leert die Outbox inzwischen: eigener Prozess, ein POST je Ereignis nach n8n mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log. Rückrufe stehen ebenfalls: `create_callback` legt die Aufgabe für das Team an, protokolliert sie und meldet sie über die Outbox. Was noch fehlt: die Übergabe an einen Menschen, das Anruf-Log und die GUI.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -51,7 +51,7 @@ Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. 
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
+1. **T-1.8** `transfer_to_team` inklusive Schleifenschutz und Erreichbarkeitsprüfung
 2. **T-1.9** Anruf-Log `POST /v1/calls/start` und `/end`: bis dahin muss die `calls`-Zeile von Hand oder im Test angelegt werden (siehe Annahmen)
 3. Ein n8n-Workflow, der die Ereignisse des Dispatchers entgegennimmt (Export nach `n8n/`); bis dahin läuft der kalte Pfad ins Leere
 4. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
@@ -111,6 +111,9 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Migrationen schalten die App-Logger nicht mehr stumm** (`db/migrations/env.py`): `fileConfig(..., disable_existing_loggers=False)`. Vorher verstummte nach der ersten Migration im selben Prozess jeder bereits importierte Logger, auch im Betrieb nach `alembic upgrade` aus demselben Prozess
 - **Lint-Regeln stehen in `pyproject.toml`, nicht im ruff-Default** (17.09.2026): ohne Konfiguration bestimmt die ruff-Version die Regelmenge, und ein Dependabot-Update fällt rot aus, ohne dass sich Code geändert hat (PR #85, ruff 0.7 auf 0.16: 14 Verstöße). Gesetzt sind `E, W, F, I, B, BLE, C4, UP, SIM, DTZ, RUF` ohne `E501` (die Zeilenlänge bestimmt der Formatter), dazu `extend-immutable-calls` für `Depends` und Geschwister, weil FastAPI den Aufruf im Default-Argument verlangt und B008 dort kein Fehler ist. Geprüft mit ruff 0.7.4 und 0.16.8, beide grün
 - **Python bleibt auf 3.12, Dependabot-Sprünge auf das Image sind stillgelegt** (17.09.2026): die Version steht an sieben Stellen (Dockerfile, CI, `pyproject.toml`, README-Badge und -Text, `CLAUDE.md`, dieses Dokument, `CONTRIBUTING.md`); ein PR, der nur das Dockerfile anhebt (PR #82, 3.12 auf 3.14), bewegt eine davon und wird von der CI nicht geprüft, weil sie das Image nicht baut. 3.12 bekommt Sicherheits-Updates bis Oktober 2028. Der Sprung kommt als eigenes Arbeitspaket, wenn eine Abhängigkeit ihn verlangt oder das Support-Ende näher rückt, und bewegt dann alle Stellen zusammen plus einen `docker build`-Schritt in der CI
+- **`create_callback` ist über den Zustand idempotent** (`domain/callbacks/create.py`): je Anruf gibt es höchstens einen offenen Rückruf, ein zweiter Aufruf liefert ihn zurück. Kein `idempotency_key` im Vertrag und keine zusätzliche Spalte; ein Zeitüberlauf der Plattform darf dem Team keine zwei Zettel für denselben Gast bringen. Ein erledigter Rückruf (`done`) blockiert einen neuen nicht. In docs/04 war keine Idempotenz-Regel für dieses Tool festgelegt, Annahme vom 17.09.2026, kippbar
+- **Vorlesesatz nach dem Rückruf** (`SAY_NOTED`): „Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück." Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
+- **Bugfix in `normalize_phone` (17.09.2026):** eine geklammerte `(0)` hinter der Landesvorwahl wurde bisher als Ziffer übernommen, `+49 (0)7221 5551234` ergab `+4907221 5551234` — eine Nummer, die es nicht gibt. Jetzt entfällt sie bei internationaler Schreibweise und bleibt als führende Null bei nationaler. Gefunden beim Bau von T-1.7, roter Test zuerst (`api/tests/test_domain_phone.py`)
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -172,6 +175,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.6.0 · 17.09.2026:** T-1.7 fertig: create_callback mit Zustands-Idempotenz, audit_log und Outbox-Ereignis; Bugfix in normalize_phone (geklammerte Null); naechster Schritt T-1.8
 - **v1.5.2 · 17.09.2026:** Dependabot hebt die Python-Version des Containers nicht mehr allein an (PR #82 geschlossen); 3.12 bleibt gesetzt bis zum bewussten Upgrade
 - **v1.5.1 · 17.09.2026:** Lint-Regeln in pyproject.toml festgeschrieben (select-Liste, extend-immutable-calls fuer FastAPI-Depends); Findings aus ruff 0.16 behoben, damit PR #85 gruen mergen kann
 - **v1.5.0 · 17.09.2026:** T-1.12 fertig: events/ mit Outbox-Schreiber und Dispatcher nach n8n, Backoff und Alarm, eigener Dienst; Migrationen schalten App-Logger nicht mehr stumm; nächste Schritte T-1.7 bis T-1.9
