@@ -66,19 +66,43 @@ def test_erfolgreicher_tool_aufruf_wird_protokolliert(client):
 
 
 def test_fehlgeschlagener_tool_aufruf_traegt_den_fehlercode(client):
-    http, _tenant_id, call_id, engine = client
+    http, tenant_id, call_id, engine = client
 
     http.post(
-        "/v1/tools/get_service_status",
-        json={"call_id": call_id, "tenant_id": str(uuid.uuid4())},
+        "/v1/tools/check_slot",
+        json={
+            "call_id": call_id,
+            "tenant_id": tenant_id,
+            "party_size": 0,
+            "reserved_for": "2026-09-15T18:00:00+02:00",
+        },
         headers=AUTH,
     )
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
         entry = call.tool_calls[0]
+        assert entry["name"] == "check_slot"
         assert entry["ok"] is False
-        assert entry["error_code"] == "not_found"
+        assert entry["error_code"] == "invalid_input"
+
+
+def test_fremde_tenant_id_schreibt_nicht_in_einen_fremden_anruf(client):
+    """Eigene call_id, aber die tenant_id eines anderen Mandanten im Body: das
+    Protokoll darf nicht in den Anruf eines fremden Mandanten schreiben, auch wenn
+    die Fach-Antwort selbst schon `not_found` meldet (Codex-Review PR #99, P1)."""
+    http, _tenant_id, call_id, engine = client
+    fremder_mandant = str(uuid.uuid4())
+
+    http.post(
+        "/v1/tools/get_service_status",
+        json={"call_id": call_id, "tenant_id": fremder_mandant},
+        headers=AUTH,
+    )
+
+    with Session(engine) as s:
+        call = s.get(Call, uuid.UUID(call_id))
+        assert call.tool_calls == []
 
 
 def test_unbekannte_call_id_im_body_scheitert_nicht_still(client):

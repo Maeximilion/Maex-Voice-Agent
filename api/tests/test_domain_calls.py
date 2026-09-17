@@ -1,5 +1,6 @@
 """domain/calls: Anruf-Log start/end, Zustands-Idempotenz, Löschfrist (T-1.9)."""
 
+import threading
 import uuid
 from datetime import UTC, date, datetime
 
@@ -98,6 +99,56 @@ def test_neue_session_nach_ende_bekommt_einen_neuen_anruf(session, tenant_id):
 def test_unbekannter_mandant_ist_not_found(session):
     with pytest.raises(NotFound):
         start_call(session, start_request(uuid.uuid4()), now=NOW)
+
+
+def test_gleichzeitige_starts_derselben_session_erzeugen_nur_einen_anruf(
+    migrated_db_url,
+):
+    """Zwei Plattform-Retries fuer dieselbe Session gleichzeitig: ohne Sperre
+    findet keiner einen offenen Anruf, beide legen einen an (Codex-Review PR #99,
+    P1), und die Folge-Tool-Aufrufe landen auf zwei verschiedenen call_id."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+
+    start = threading.Barrier(6)
+    results: list[object] = []
+    lock = threading.Lock()
+
+    def run() -> None:
+        start.wait(timeout=10)
+        with Session(engine) as own:
+            try:
+                outcome: object = start_call(
+                    own, start_request(tenant, external_session_id="ext-race"), now=NOW
+                )
+            except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+                outcome = exc
+        with lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=run) for _ in range(6)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    haengende = [t for t in threads if t.is_alive()]
+    assert not haengende, f"{len(haengende)} Aufrufe haengen nach 30 s"
+    assert len(results) == 6
+
+    fehler = [r for r in results if isinstance(r, Exception)]
+    assert not fehler, f"kein Aufruf darf scheitern, bekam {fehler}"
+
+    with Session(engine) as s:
+        anzahl = s.scalar(select(func.count()).select_from(Call))
+    engine.dispose()
+
+    assert anzahl == 1, f"erwartet ein Anruf, bekam {anzahl}"
+    ids = {r.call_id for r in results}
+    assert len(ids) == 1, f"alle Aufrufe sollen dieselbe call_id liefern, bekam {ids}"
 
 
 def test_leere_session_id_ist_invalid_input(session, tenant_id):
