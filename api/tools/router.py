@@ -9,6 +9,7 @@ from api.tools import (
     create_callback,
     create_reservation,
     service_status,
+    transfer_to_team,
 )
 
 router = APIRouter(prefix="/v1/tools", dependencies=[Depends(require_token)])
@@ -17,3 +18,4 @@ router.include_router(check_slot.router)
 router.include_router(create_reservation.router)
 router.include_router(confirm.router)
 router.include_router(create_callback.router)
+router.include_router(transfer_to_team.router)
