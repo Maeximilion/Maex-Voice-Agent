@@ -70,9 +70,9 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
-| T-3.1 | #40 | GUI-Gerüst: Jinja2, HTMX, `app.css` aus den Variablen und Klassen von `gui/mockups/admin-desktop.html`, Layout mit Kopfzeile | 06, gui/mockups | T-0.2, D6 | offen |
+| T-3.1 | #40 | GUI-Gerüst: Jinja2, HTMX, `app.css` aus den Variablen und Klassen von `gui/mockups/admin-desktop.html`, Layout mit Kopfzeile | 06, gui/mockups | T-0.2, D6 | fertig |
 | T-3.2 | #41 | Kopfzeile live: KI-Modus, Lieferung an/aus, Wartezeit, Not-Aus-Knopf | 06 §3 | T-3.1, T-1.3 | offen |
-| T-3.3 | #42 | Spalte „Heute": Reservierungen mit Live-Aktualisierung über SSE | 06 §3 | T-3.1, T-1.5 | offen |
+| T-3.3 | #42 | Spalte „Heute": Reservierungen mit Live-Aktualisierung über SSE | 06 §3 | T-3.1, T-1.5 | fertig |
 | T-3.4 | #43 | Spalte „Rückrufe" mit Ton und Erledigt-Knopf | 06 §3 | T-3.1, T-1.7 | offen |
 | T-3.5 | #44 | Bedientest: ein Teammitglied bedient 5 Minuten ohne Erklärung, Protokoll | 06 §1 | T-3.2…T-3.4 | offen |
 

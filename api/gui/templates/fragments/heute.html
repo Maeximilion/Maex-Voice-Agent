@@ -1,0 +1,21 @@
+{# Spalte "Heute": bestaetigte Reservierungen des Betriebstags nach Uhrzeit
+   (docs/06 §3). Wird als Ganzes ersetzt, deshalb ohne aeusseres Geruest. #}
+{% if problem %}
+<p class="empty">{{ problem }}</p>
+{% elif not today %}
+<p class="empty">Noch keine Reservierungen f&uuml;r heute.</p>
+{% else %}
+<ul class="cards">
+  {% for r in today %}
+  <li class="card res" data-id="{{ r.id }}">
+    <div class="res-head">
+      <b class="time">{{ r.time }}</b>
+      <span class="badge accent">{{ r.party_size }} {{ "Person" if r.party_size == 1 else "Personen" }}</span>
+    </div>
+    <div class="name">{{ r.guest_name }}</div>
+    <div class="muted">{{ r.phone }}</div>
+    {% if r.note %}<div class="note">{{ r.note }}</div>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

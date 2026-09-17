@@ -22,15 +22,22 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Specs docs/00 through docs/15
 - Slash commands for Claude Code in .claude/commands/
 - CI workflow (ruff, pytest)
+- `api/gui/`: operations view for the tablet (T-3.1, T-3.3). Jinja2 templates, HTMX and `app.css` built from the approved mockup's variables and classes, served locally without any CDN. Header shows mode, delivery and wait times from `service_config`; the column "Heute" lists the confirmed reservations of the business day and updates itself over Server-Sent-Events, so a reservation talked in from the terminal appears on the tablet within seconds
+- `api/domain/reservations/today.py`: confirmed reservations of the business day plus a cheap change token for the event stream
 - Desktop mockup of admin view in gui/mockups/
 
 ### Changed
 - Pilot operation, company, location, and provider names replaced with placeholders (`<PilotOperation>`, `<CompanyName>`, `<Location>`, `<PointOfSale>`, `<POSProvider>`, `example.com`)
 - README quick start reduced to steps that work today; `make migrate` and `make seed` follow in T-1.1 and T-1.2
 - Compose additionally mounts `scripts/` and `evals/` so `make lint` runs in container
+- Decision D6 settled: the GUI is server-rendered with Jinja2 and HTMX, not React (one container, no Node build, no CORS; rationale in docs/06_GUI.md §2)
+- New dependency `jinja2` in `api/requirements.txt` for the GUI templates
 
 ### Fixed
 - `numberwords`: a number no longer grows across a punctuation mark or across the article of an amount ("Nummer 20, eine Portion" was item 21 with amount 21); an article that begins a number counts ("die ein und zwanzig" was 20); a number attached to an amount marker is not counted as a second dish number ("2 x die 23" asked back for nothing)
+- `deploy/Caddyfile`: `/gui/*` now sits behind basic auth, user and password hash from the environment (`GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH`). Before this the checked-in production stack proxied the operations view straight through, so guest names, phone numbers and notes were open on the internet
+- `api/gui/router.py`: `/gui/events` resolves the tenant in its own short-lived session instead of the request-scoped one. A stream stays open for hours; the request session would have pinned a pooled connection for just as long, and a handful of tablets could have starved the hot path
+- `api/gui/sse.py`: after a database outage the stream sends a `today` event on the first successful poll even when nothing changed, so the yellow connection bar disappears instead of hanging until the next booking
 - Dockerfile: additional CA cert (`api/ca-bundle.crt`) is optional, not required; build works on clean checkout
 - Dockerfile: source code lands under `/app/api` again so `uvicorn api.main:app` starts without bind mount
 - Compose: n8n listens on `0.0.0.0` not `::`, avoids crash loop on Docker hosts without IPv6
