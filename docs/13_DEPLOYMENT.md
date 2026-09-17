@@ -41,12 +41,14 @@ Internet
   ▼
 Caddy (TLS automatisch, Reverse Proxy)
   ├── agent.example.com/v1/tools/*  → api:8000  (Token-Pflicht)
-  ├── agent.example.com/gui/*        → api:8000  (Basic-Auth oder VPN Annahme)
+  ├── agent.example.com/gui/*        → api:8000  (Basic-Auth in deploy/Caddyfile)
   └── n8n.example.com                → n8n:5678  (Basic-Auth)
 Postgres: nur im Docker-Netz, kein offener Port
 ```
 
 Annahme: Domainnamen sind Vorschläge.
+
+**Zugang zur Betriebsansicht:** `/gui/*` liegt hinter Basic-Auth im `deploy/Caddyfile`. Die Anwendung selbst prüft dort keinen Token - ein Browser schickt keinen Bearer-Kopf, und die GUI zeigt Gastnamen, Telefonnummern und Notizen. Benutzer und Passwort-Hash stehen als `GUI_BASIC_AUTH_USER` und `GUI_BASIC_AUTH_HASH` in der `.env` des Servers, nie im Repo. Hash erzeugen: `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<PASSWORT>'`. Wer stattdessen ein VPN vor den Server setzt, kann den Block entfernen - aber nicht beides weglassen.
 
 **Server** Vorschlag: kleiner VPS bei einem Anbieter mit Rechenzentrum in Deutschland, 2 vCPU, 4 GB RAM reichen für Stufe 1–6. Docker, Compose, `ufw` mit 22 und 443. Unattended Upgrades an.
 

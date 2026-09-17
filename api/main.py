@@ -18,6 +18,7 @@ from api.core.logging import configure_logging, get_logger, request_context_midd
 from api.core.tool_log import tool_call_log_middleware
 from api.db import get_db
 from api.domain.calls import end_call, start_call
+from api.gui import mount_gui
 from api.schemas.calls import EndCallRequest, StartCallRequest
 from api.tools.router import router as tools_router
 
@@ -28,6 +29,7 @@ app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.include_router(tools_router)
+mount_gui(app)
 
 
 @app.get("/health")

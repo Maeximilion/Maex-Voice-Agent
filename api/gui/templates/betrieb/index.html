@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}
+{# Kopfzeile nach docs/06 §3. Die Werte kommen aus service_config, nie aus dem
+   Code. Knoepfe (KI pausieren, Lieferung aus, Wartezeit) und Live-Aktualisierung
+   sind T-3.2 und fehlen hier absichtlich. #}
+<header>
+  <div class="top">
+    <div class="mode">
+      <span class="dot {{ mode_tone }}"></span>
+      <b>{{ mode_label|default("KI ist aus") }}</b>
+    </div>
+    {% if config %}
+    <div class="mode">
+      <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
+      <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
+    </div>
+    <div class="mode">
+      <b>Wartezeit {{ config.pickup_wait_minutes }} / {{ config.delivery_wait_minutes }} Min</b>
+    </div>
+    {% endif %}
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endblock %}
+
+{% block main %}
+<div class="board">
+  <section class="col">
+    <h2>Neue Bestellungen</h2>
+    <p class="empty">Noch keine Bestellungen heute.</p>
+  </section>
+
+  <section class="col">
+    <h2>Heute</h2>
+    {# Ziel des Ereignisstroms: app.js holt dieses Fragment neu, sobald sich an
+       den Reservierungen des Tages etwas aendert. #}
+    <div id="heute-liste" hx-get="/gui/fragments/heute" hx-trigger="none">
+      {% include "fragments/heute.html" %}
+    </div>
+  </section>
+
+  <section class="col">
+    <h2>R&uuml;ckrufe</h2>
+    <p class="empty">Keine R&uuml;ckrufe offen.</p>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}<script src="/gui/static/app.js" defer></script>{% endblock %}

@@ -18,7 +18,7 @@
 
 ## 2. Technik
 
-**Vorschlag Annahme:** FastAPI + Jinja2 + HTMX + Server-Sent-Events, Pico.css als Basis.
+**Entschieden (D6, 17.09.2026):** FastAPI + Jinja2 + HTMX + Server-Sent-Events. Statt Pico.css traegt `api/gui/static/app.css` die Variablen und Klassen des abgenommenen Mockups (§7) - eine Quelle fuer die Gestaltung statt zwei, und eine Abhaengigkeit weniger. HTMX liegt lokal in `api/gui/static/`, nichts kommt aus einem CDN.
 
 | Warum | |
 |---|---|
@@ -27,7 +27,7 @@
 | Serverseitige Templates | Logik bleibt an einer Stelle |
 | Offline-tauglicher Kern | keine externen CDN-Abhängigkeiten |
 
-**Alternative:** React + Vite, falls später komplexe Interaktionen dazukommen (Drag-and-Drop im Tourenplan, Kartenansicht für Zonen). Entscheidung D6 in `docs/01_STATUS.md`.
+**Verworfen:** React + Vite. Bleibt der Weg, falls spaeter komplexe Interaktionen dazukommen (Drag-and-Drop im Tourenplan, Kartenansicht fuer Zonen); fuer Listen und grosse Knoepfe auf einem Tablet kostet es einen zweiten Container ohne Gegenwert.
 
 **Endgeräte:** Tablet im Querformat (Betrieb), PC im Büro (Admin). Kein Handy-Layout in Stufe 1.
 
@@ -132,4 +132,5 @@ Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap
 
 - **16.09.2026 – Adminansicht als klickbare Desktop-Seite:** `gui/mockups/admin-desktop.html`, alle sieben Bereiche mit Beispieldaten, abgenommen. Ergänzungen: Zähler an Reitern, Filter „Mit Hinweis"/„Ohne Alias", Feiertags-Vorschläge mit Ansagetext je Sondertag, „Abgelehnte Adressen" unter Lieferung, Kunden-Löschwunsch unter Daten. Mockup ist Vorlage für die Templates.
 - **16.09.2026 – Adminansicht (Menü):** als Bild abgenommen. Änderungen: Kennzahlen-Leiste in jedem Bereich, Preisabweichung als Badge am Gericht, Alias-Vorschläge mit Zähler „nicht erkannt", Reiter statt Seitenleiste, Liste statt Kacheln.
+- **17.09.2026 – Betriebsansicht gebaut (T-3.1, T-3.3):** `api/gui/templates/betrieb/index.html` mit Kopfzeile und drei Spalten, `fragments/heute.html` als HTMX-Fragment der Spalte "Heute", `api/gui/sse.py` als Ereignisstrom. Noch offen: Knoepfe der Kopfzeile (T-3.2), Spalte "Rueckrufe" (T-3.4), Spalte "Neue Bestellungen" (T-4.7).
 - **16.09.2026 – Betriebsansicht:** als Bild im Chat abgenommen. Änderungen gegenüber der ersten Spec: dritter Kopfzeilen-Zustand (Überlauf), Fehlerkarte als eigener Kartenzustand, Abholcode groß, „Wartezeit" als Wort auf den Knöpfen, Kartennummer vor jedem Gerichtnamen.

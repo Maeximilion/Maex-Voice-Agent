@@ -1,6 +1,17 @@
 # Domains sind Vorschläge – in .env/DNS anpassen
 agent.example.com {
     encode gzip
+
+    # Die Betriebsansicht zeigt Gastnamen, Telefonnummern und Notizen. Die
+    # Anwendung selbst kennt keinen Browser-Zugang (docs/06 §6: ein gemeinsamer
+    # Zugang je Gerät), deshalb steht er hier davor. Benutzer und Hash kommen
+    # aus der Umgebung, nie aus dem Repo (CLAUDE.md §8).
+    # Hash erzeugen: docker run --rm caddy:2-alpine caddy hash-password --plaintext '<PASSWORT>'
+    @gui path /gui /gui/*
+    basic_auth @gui {
+        {$GUI_BASIC_AUTH_USER} {$GUI_BASIC_AUTH_HASH}
+    }
+
     reverse_proxy api:8000
 }
 
