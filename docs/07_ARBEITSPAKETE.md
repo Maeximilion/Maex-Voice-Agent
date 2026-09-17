@@ -49,7 +49,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.9 | #30 | Anruf-Log: `POST /v1/calls/start` und `/end`, Tool-Aufrufe mit Dauer | 03 | T-1.1 | offen |
 | T-1.10 | #31 | System-Prompt `prompts/system_v1.md` plus Tool-Beschreibungen für die Plattform | 05 | T-1.3…T-1.8 | offen |
 | T-1.11 | #38 | **Anbieter-Adapter** `telephony/adapters/<anbieter>.py` gegen aufgezeichnete Webhooks | 11 §telephony, 12 S7 | T-1.13, D1 entschieden | blockiert |
-| T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | offen |
+| T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | fertig 17.09.2026: `events/` mit `types.py`, `outbox.py` (enqueue in der Transaktion des Fachvorgangs) und `dispatcher.py`; ein Ereignis je Transaktion mit `FOR UPDATE SKIP LOCKED`, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` plus Alarm als ERROR-Log; eigener Container-Dienst; 12 Tests mit Fake-n8n |
 | T-1.13 | #33 | `telephony/port.py` Interface + `adapters/fake.py`, der Anrufe aus Dateien abspielt | 11 §telephony | T-1.10 | offen |
 
 ---
