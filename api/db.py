@@ -9,7 +9,17 @@ from api.config import settings
 
 # pool_pre_ping: eine vom Server gekappte Verbindung (DB-Neustart, Timeout) wird
 # erkannt und ersetzt, statt als Fehler bis zum Agenten durchzuschlagen.
-engine = create_engine(settings.database_url, pool_pre_ping=True)
+#
+# isolation_level: READ COMMITTED gehoert zum Sperr-Protokoll der schreibenden
+# Vorgaenge (domain/callbacks, domain/reservations). Wer eine Advisory-Sperre
+# bekommt, muss anschliessend sehen, was der Vorgaenger committet hat. Unter
+# REPEATABLE READ liest die Transaktion den Stand ihres Beginns weiter, also den
+# Zustand vor dem fremden Commit, und legt denselben Vorgang ein zweites Mal an.
+# Postgres hat diesen Wert als Default; hier steht er ausdruecklich, damit eine
+# andere Servereinstellung die Fachlogik nicht still aushebelt.
+engine = create_engine(
+    settings.database_url, pool_pre_ping=True, isolation_level="READ COMMITTED"
+)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 

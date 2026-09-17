@@ -17,6 +17,11 @@ from api.domain.customers import normalize_phone
         ("+41 44 123 45 67", "+41441234567"),
         ("0176 12345678", "+4917612345678"),
         ("4972215551234", "+4972215551234"),
+        # Visitenkarten-Schreibweise: die (0) ist die nationale Verkehrsausscheidungs-
+        # ziffer und entfaellt international, sonst waehlt das Team eine Ziffer zu viel.
+        ("+49 (0)7221 5551234", "+4972215551234"),
+        ("0049 (0)7221 5551234", "+4972215551234"),
+        ("+41 (0)44 123 45 67", "+41441234567"),
     ],
 )
 def test_normalisiert(raw: str, expected: str):

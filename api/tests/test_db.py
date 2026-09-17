@@ -61,3 +61,14 @@ def test_db_nicht_erreichbar_liefert_huelle_statt_stacktrace(monkeypatch):
 def test_engine_pingt_verbindungen():
     assert engine.pool._pre_ping is True
     assert SessionLocal.kw["bind"] is engine
+
+
+def test_engine_faehrt_read_committed():
+    """Voraussetzung des Sperr-Protokolls, nicht dem Serverdefault ueberlassen.
+
+    Unter REPEATABLE READ sieht eine Transaktion nach dem Warten auf eine
+    Advisory-Sperre den fremden Commit nicht und legt denselben Vorgang erneut an.
+    """
+    with engine.connect() as conn:
+        stufe = conn.execute(text("SHOW transaction_isolation")).scalar_one()
+    assert stufe == "read committed", f"erwartet read committed, bekam {stufe}"

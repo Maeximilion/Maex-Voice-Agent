@@ -262,6 +262,22 @@ Der einzige Übergang von `draft` nach `confirmed`.
 ```
 Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_understood` · `human_requested` · `out_of_scope`
 
+**Response**
+```json
+{ "ok": true,
+  "data": { "callback_id": "…", "status": "open", "phone": "+497215551234",
+            "reason": "not_understood", "summary": "…" },
+  "say": "Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück." }
+```
+
+**Wirkung:** Aufgabe mit `status: open` anlegen, `audit_log` schreiben (`callback.created`), Ereignis `callback.created` in die Outbox legen.
+
+**Idempotenz trägt der Zustand, nicht der Schlüssel:** je Anruf gibt es höchstens **einen offenen** Rückruf. Prüfen und Anlegen sind je Anruf durch eine Advisory-Sperre serialisiert (`pg_advisory_xact_lock`), sonst finden zwei gleichzeitige Erstaufrufe beide nichts und legen beide an. Zum Vertrag gehören drei Punkte: jeder schreibende Pfad auf `callbacks` nimmt dieselbe Sperre; die Datenbank fährt `READ COMMITTED` (in `api/db.py` festgelegt, nicht dem Serverdefault überlassen), damit der Wartende den fremden Commit auch sieht; und ein zweiter Aufruf **aktualisiert den bestehenden Rückruf nicht** — abweichende `summary`, `phone` oder `reason` werden verworfen, die Antwort trägt die Werte des ersten Aufrufs. Ist der erste Rückruf `done`, entsteht ein neuer. Ein zweiter Aufruf im selben Anruf liefert den bestehenden zurück, ohne zweite Aufgabe und ohne zweites Ereignis — sonst bekommt das Team nach einem Zeitüberlauf der Plattform zwei Zettel für denselben Gast. Ist der erste Rückruf erledigt (`done`), entsteht wieder ein neuer.
+
+**Fehler:** unbekannter Anruf oder fremder Mandant → `not_found` mit Störungssatz · unbrauchbare Rufnummer → `invalid_input` mit Nachfrage-Satz · leeres `summary` → `invalid_input` · unbekannter `reason` → `invalid_input`.
+
+Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der Landesvorwahl entfällt dabei (`+49 (0)7221 5551234` → `+4972215551234`).
+
 ---
 
 ## `transfer_to_team`
