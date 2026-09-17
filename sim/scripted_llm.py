@@ -58,6 +58,9 @@ NUMBER_WORDS = {
     "drei": 3,
     "vier": 4,
     "fünf": 5,
+    # Im Terminal tippt man Umlaute oft als Ersatzschreibung; am Telefon liefert die
+    # Erkennung den Umlaut. Beide Formen gelten.
+    "fuenf": 5,
     "sechs": 6,
     "sieben": 7,
     "acht": 8,
@@ -65,6 +68,7 @@ NUMBER_WORDS = {
     "zehn": 10,
     "elf": 11,
     "zwölf": 12,
+    "zwoelf": 12,
 }
 WEEKDAYS = {
     "montag": 0,
@@ -129,7 +133,7 @@ class ScriptedLLM:
         slots = {**state.get("slots", {}), **patch}
 
         if state.get("stage") == "readback_pending":
-            return self._after_readback(state, text, patch)
+            return self._after_readback(state, text, slots, patch)
 
         if _mentions_stem(text, OUT_OF_SCOPE) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
@@ -149,20 +153,29 @@ class ScriptedLLM:
         return self._next_step(slots, patch=patch, understood=bool(patch))
 
     def _after_readback(
-        self, state: dict[str, Any], text: str, patch: dict[str, Any]
+        self,
+        state: dict[str, Any],
+        text: str,
+        slots: dict[str, Any],
+        patch: dict[str, Any],
     ) -> LLMTurn:
         """Vom Entwurf zur Buchung führt nur ein klares Ja (CLAUDE.md §2 Regel 3)."""
         reservation_id = state.get("reservation_id")
-        if _mentions_word(text, NO) or not _mentions_word(text, YES):
-            return LLMTurn(say=SAY_ASK_AGAIN, state_patch=patch or None)
-        if not reservation_id:
-            return LLMTurn(say=SAY_ASK_AGAIN, state_patch=patch or None)
-        return LLMTurn(
-            tool_call=ToolCall(
-                "confirm", {"entity": "reservation", "entity_id": reservation_id}
-            ),
-            state_patch=patch or None,
-        )
+        zustimmung = _mentions_word(text, YES) and not _mentions_word(text, NO)
+        if zustimmung and reservation_id:
+            return LLMTurn(
+                tool_call=ToolCall(
+                    "confirm", {"entity": "reservation", "entity_id": reservation_id}
+                ),
+                state_patch=patch or None,
+            )
+        if patch:
+            # Korrektur beim Vorlesen ("Nein, wir sind fünf"): der bestehende Entwurf
+            # trägt noch die alte Zahl, und ein späteres Ja bestätigte genau die
+            # (Codex-Review PR #104, P1). Deshalb ein neuer Entwurf mit neuem
+            # Vorlesesatz; der alte bleibt als Entwurf liegen und wird nie bestätigt.
+            return self._next_step(slots, patch=patch)
+        return LLMTurn(say=SAY_ASK_AGAIN, state_patch=patch or None)
 
     def _out_of_scope(self, slots: dict[str, Any], patch: dict[str, Any]) -> LLMTurn:
         phone = slots.get("phone")

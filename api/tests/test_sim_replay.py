@@ -218,3 +218,29 @@ def test_fester_zeitpunkt_bleibt_fuer_die_wiedergabe_fest(session, tenant):
     call = SimCall(session, tenant, now=NOW, external_session_id=f"sim-{uuid.uuid4()}")
 
     assert call.finish().duration_seconds == 0
+
+
+def test_korrektur_beim_vorlesen_bucht_die_neue_zahl(session, tenant):
+    """Codex-Review PR #104 (P1): der bestaetigte Vorgang muss der korrigierte sein."""
+    fall = {
+        "id": "reservierung_0002",
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Nein, wir sind fuenf Personen."},
+            {"role": "customer", "text": "Ja, passt so."},
+        ],
+    }
+
+    call, _ = replay(session, fall, tenant, now=NOW)
+
+    bestaetigt = session.scalars(
+        select(Reservation).where(
+            Reservation.call_id == call.call_id, Reservation.status == "confirmed"
+        )
+    ).all()
+    assert [r.party_size for r in bestaetigt] == [5]

@@ -241,3 +241,26 @@ def test_unmoegliches_datum_beendet_nicht_das_gespraech(llm):
 
     assert "reserved_for" not in (turn.state_patch or {})
     assert turn.state_patch["party_size"] == 2
+
+
+def test_korrektur_beim_vorlesen_baut_einen_neuen_entwurf(llm):
+    """P1: Nennt der Gast beim Vorlesen eine andere Zahl, darf ein spaeteres Ja nicht
+    den alten Entwurf buchen (CLAUDE.md §2 Regel 3). Also erst ein neuer Entwurf."""
+    state = {
+        "stage": "readback_pending",
+        "open": [],
+        "reservation_id": str(uuid.uuid4()),
+        "slots": {
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+            "guest_name": "Mueller",
+            "phone": "0721 5551234",
+        },
+    }
+
+    turn = llm.next_turn("", state, "Nein, wir sind fuenf Personen.")
+
+    assert turn.tool_call is not None
+    assert turn.tool_call.name == "check_slot"
+    assert turn.tool_call.args["party_size"] == 5
+    assert turn.state_patch == {"party_size": 5}
