@@ -14,7 +14,7 @@
 ├──────────────────────────────────────────────────────────────────────┤
 │  GESPRÄCH          agent/   Loop, Prompt-Aufbau, Zustand, Dispatch   │
 ├──────────────────────────────────────────────────────────────────────┤
-│  FACHLOGIK         domain/  menu · ordering · reservations ·         │
+│  FACHLOGIK         domain/  menu · ordering · reservations · calls · │
 │                             delivery · customers · status · callbacks│
 ├──────────────────────────────────────────────────────────────────────┤
 │  AUSGÄNGE          events/  Outbox → n8n · jobs/ Löschen, Berichte   │
@@ -42,6 +42,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `envelope.py` | `ok()` / `fail()`, die Antwort-Hülle aus 04 §1 |
 | `errors.py` | Fehlerklassen mit Code (`NotFound`, `Ambiguous`, `OutOfZone` …) → werden zentral in die Hülle übersetzt |
 | `logging.py` | JSON-Logs, jede Zeile trägt `call_id` und `request_id` |
+| `tool_log.py` | Middleware: jeder `/v1/tools/*`-Aufruf mit Dauer und Ergebnis in `calls.tool_calls`, best-effort |
 | `auth.py` | Token-Prüfung als FastAPI-Dependency |
 | `ids.py` | UUID, Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
@@ -93,6 +94,18 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 ### `domain/callbacks/`
 - `create.py` — Rückruf-Aufgabe mit Zusammenfassung
 - `transfer.py` — Durchwahl, Erreichbarkeit, Schleifenschutz (einmal je Anruf)
+
+### `domain/calls/`
+Anruf-Log, nicht Gesprächsführung — das bleibt `agent/`. Eigenes Modul statt Teil
+von `callbacks/`, weil es kein Eskalationspfad ist, sondern der Rahmen um jeden
+Anruf, ganz gleich wie er ausgeht.
+- `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
+- `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
+
+Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
+Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
+`/v1/tools/*`-Aufruf, damit kein einzelnes Tool-Modul dafür Fachlogik-fremden Code
+braucht.
 
 ### `agent/` – der Gesprächs-Kern
 Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
