@@ -34,6 +34,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - New dependency `jinja2` in `api/requirements.txt` for the GUI templates
 
 ### Fixed
+- `numberwords`: a number no longer grows across a punctuation mark or across the article of an amount ("Nummer 20, eine Portion" was item 21 with amount 21); an article that begins a number counts ("die ein und zwanzig" was 20); a number attached to an amount marker is not counted as a second dish number ("2 x die 23" asked back for nothing)
 - `deploy/Caddyfile`: `/gui/*` now sits behind basic auth, user and password hash from the environment (`GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH`). Before this the checked-in production stack proxied the operations view straight through, so guest names, phone numbers and notes were open on the internet
 - `api/gui/router.py`: `/gui/events` resolves the tenant in its own short-lived session instead of the request-scoped one. A stream stays open for hours; the request session would have pinned a pooled connection for just as long, and a handful of tablets could have starved the hot path
 - `api/gui/sse.py`: after a database outage the stream sends a `today` event on the first successful poll even when nothing changed, so the yellow connection bar disappears instead of hanging until the next booking
