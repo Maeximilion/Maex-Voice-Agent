@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 17.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.6.2
+> Status: 17.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.6.4
 
 ---
 
@@ -9,7 +9,7 @@
 
 CI enhancement (17.09.2026): The `docker-smoke` job builds the API image without local CA certificate and starts it without bind mount. It checks `/health`, rejection of missing/incorrect tokens, and an authenticated ping. This automatically catches earlier Dockerfile errors with certificate and package path. The test checks container startup, not DB integration; that stays in the pytest suite. Local Docker execution was not available in this session; execution via GitHub Actions.
 
-The plan is set (`docs/00_PCF.md`, v1.0, released). The repo is set up and contains a **runnable minimal skeleton**: FastAPI with `/health`, token auth, response envelope, JSON logging, DB session, and the ten stage-1 tables per Alembic migration 001 with an idempotent seed with test configuration; hot-path tools (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) respond in roughly 8–15 ms (p95); 183 tests passing. Reservation is complete: `create_reservation` creates the draft with `readback`, `confirm` makes it valid, writes `audit_log` and places the `reservation.confirmed` event in the outbox. The dispatcher (`api/events/`) empties the outbox: its own process, one POST per event to n8n with event id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log. Callbacks are also done: `create_callback` creates the task for the team, logs it, and reports it via outbox. Still missing: handoff to a human, the call log, and the GUI.
+The plan is set (`docs/00_PCF.md`, v1.0, released). The repo is set up and contains a **runnable minimal skeleton**: FastAPI with `/health`, token auth, response envelope, JSON logging, DB session, and the ten stage-1 tables per Alembic migration 001 with an idempotent seed with test configuration; hot-path tools (`get_service_status`, `check_slot`, `create_reservation`, `confirm`, `transfer_to_team`) respond in roughly 8–15 ms (p95); 203 tests passing. Reservation is complete: `create_reservation` creates the draft with `readback`, `confirm` makes it valid, writes `audit_log` and places the `reservation.confirmed` event in the outbox. The dispatcher (`api/events/`) empties the outbox: its own process, one POST per event to n8n with event id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log. Callbacks are also done: `create_callback` creates the task for the team, logs it, and reports it via outbox. `transfer_to_team` hands escalations to the team: always the extension from `service_config.team_phone`, never a main number, and runs at most once per call (state on `calls.transfer_reason`). Still missing: the call log, and the GUI.
 
 Before the first real call two things are missing, which Maxi supplies in chat: current state of operations (C1) and choice of voice platform (C2). Claude Code can start building immediately: everything not touching the voice platform is specified.
 
@@ -53,8 +53,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **T-1.8** `transfer_to_team` including loop protection and availability check
-2. **T-1.9** Call log `POST /v1/calls/start` and `/end`: until then the `calls` row must be created by hand or in tests (see assumptions)
+1. **T-1.9** Call log `POST /v1/calls/start` and `/end`: until then the `calls` row must be created by hand or in tests (see assumptions)
 3. An n8n workflow that receives events from the dispatcher (export to `n8n/`); until then the cold path runs to nowhere
 4. Anytime in parallel: **T-0.7** slash commands and CI, **T-0.8** number words
 
@@ -117,6 +116,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **Read-back sentence after callback** (`SAY_NOTED`): "I've noted your number. The restaurant will call you back as soon as possible." Wording is suggestion, to be refined in dialog test (D4)
 - **Bugfix in `normalize_phone` (17.09.2026):** a bracketed `(0)` after the country code was kept as digit, `+49 (0)7221 5551234` gave `+4907221 5551234` — a number that doesn't exist. Now it's dropped for international format and kept as leading zero for national. Found building T-1.7, red test first (`api/tests/test_domain_phone.py`)
 - **E9 (set, 16.09.2026):** Everything runs on EU servers or with EU vendors, including transcription and analysis. Maxi's PC is only a development workbench.
+- **`transfer_to_team` availability is derived from opening hours** (`domain/callbacks/transfer.py`): `available` is true whenever any service window (`dinein`/`pickup`/`delivery`) is currently open, false otherwise. There is no real reachability signal (a line ping on the extension) before the telephony adapter exists (T-1.11, after D1); this is the only fact in the DB today that says anything about someone being present. `available: false` doesn't fail the call — the agent falls back to `create_callback` per docs/05. Assumption from 17.09.2026, subject to change once the adapter can report a real answer/no-answer
 
 ---
 
@@ -165,6 +165,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | 16.09.2026 | **Codex review PR #2 (2 findings) fixed, red test first:** `check_slot` considers previous day's slots past midnight (wish 00:30 in slot 18–01 was wrongly booked); `get_service_status` no longer counts paused delivery as open, promises pickup only with open pickup slot. 89 tests green |
 | 17.09.2026 | **T-1.6 done:** `domain/confirm.py` (generic, `draft → confirmed`, row lock `FOR UPDATE`, `audit_log`, outbox event `reservation.confirmed` with full transaction in `payload`), schemas `api/schemas/confirm.py`, tool `tools/confirm.py`. 17 tests: confirm with audit and event, second call no second event, cancelled, soft-deleted, unknown, foreign tenant, unknown call, unknown tenant, `entity: order`, eight parallel calls lay exactly one event, HTTP envelope, idempotency via HTTP, invalid `entity`, missing key, 401. **Latency:** p95 9.9 ms (write path), live via curl 14 ms cold / 5.6 ms replay. 148 tests green |
 | 16.09.2026 | Auto-update for this file: `scripts/status_bump.py` (semver, date, changelog line automatically), hooked into `/done`, `/task`, `/handover`; CI step "status sync check" fires if `docs/07_WORKPACKAGES.md` changes but this file doesn't; `ruff format` legacy in `api/main.py` fixed; `CLAUDE.md`: no Claude Code attribution badge in PRs/repo |
+| 17.09.2026 | **T-1.8 done:** `domain/callbacks/transfer.py` + `tools/transfer_to_team.py`. Target is always `service_config.team_phone`, never a main number (no such concept exists in code); runs at most once per call via row lock on `calls` and state on `calls.transfer_reason` — a second call for the same call_id reads the same target without a second `audit_log` entry. Availability is derived from opening hours (any service window open now); a real reachability signal needs the telephony adapter (T-1.11, after D1) — assumption below. 17 tests: audit set, outside hours available:false with no state/audit written, a later real transfer in the same call still works after an unavailable attempt, second call no second audit, second call of a different call gets its own audit, unknown call/tenant/foreign tenant not_found, invalid reason rejected, `cancellation` accepted, eight parallel calls write exactly one audit. **Latency:** p95 well under 300 ms (write path comparable to confirm/create_callback). 203 tests green. Fixed `scripts/status_bump.py`: its header regex still matched the German originals (`Stand:`/`Status-Version:`) after this file's English translation, so it never matched the current header — updated to `Status:`/`Status version:`. **Codex review PR #98 (P1, P2) fixed:** `TransferReason` is now its own type including `cancellation` instead of aliasing `CallbackReason` (docs/05 names cancellation as a trigger, but it isn't a callback reason in docs/03); an unavailable `transfer_to_team` call no longer sets `transfer_reason` or writes `audit_log` — no transfer happened, so nothing should read as `transferred` later |
 
 ---
 
@@ -184,6 +185,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.6.4 · 17.09.2026:** Codex review PR #98 (P1, P2) fixed: dedicated TransferReason with cancellation, unavailable transfer_to_team no longer marks the call as transferred
+- **v1.6.3 · 17.09.2026:** T-1.8 done: transfer_to_team tool with team_phone, availability check and once-per-call loop protection
 - **v1.6.2 · 17.09.2026:** Documented lock contract for callbacks, READ COMMITTED set in api/db.py, overlap and rollback test added (Codex review PR #95)
 - **v1.6.1 · 17.09.2026:** create_callback: advisory lock per call against double callbacks on concurrent first calls (Codex review PR #95, P1)
 - **v1.6.0 · 17.09.2026:** T-1.7 done: create_callback with state idempotency, audit_log and outbox event; bugfix in normalize_phone (bracketed zero); next step T-1.8

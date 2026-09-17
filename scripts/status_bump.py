@@ -11,7 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 HEADER_RE = re.compile(
-    r"(Stand:\s*)(\d{2}\.\d{2}\.\d{4})(.*?Status-Version:\s*)(\d+)\.(\d+)\.(\d+)"
+    r"(Status:\s*)(\d{2}\.\d{2}\.\d{4})(.*?Status version:\s*)(\d+)\.(\d+)\.(\d+)"
 )
 CHANGELOG_RE = re.compile(r"(## Changelog\n\n)")
 # Das Datum in der Doku ist Ortszeit, nicht UTC (CLAUDE.md §8).
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     header_match = HEADER_RE.search(text)
     if not header_match:
         print(
-            f"Fehler: keine Kopfzeile 'Stand: DD.MM.YYYY … Status-Version: X.Y.Z' in {args.file} gefunden.",
+            f"Fehler: keine Kopfzeile 'Status: DD.MM.YYYY … Status version: X.Y.Z' in {args.file} gefunden.",
             file=sys.stderr,
         )
         return 1
@@ -67,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
 
     text = (
         text[: header_match.start()]
-        + f"Stand: {today}"
+        + f"Status: {today}"
         + header_match.group(3)
         + new_version_str
         + text[header_match.end() :]
