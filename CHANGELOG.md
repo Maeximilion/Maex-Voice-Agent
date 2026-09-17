@@ -34,6 +34,9 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - New dependency `jinja2` in `api/requirements.txt` for the GUI templates
 
 ### Fixed
+- `deploy/Caddyfile`: `/gui/*` now sits behind basic auth, user and password hash from the environment (`GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH`). Before this the checked-in production stack proxied the operations view straight through, so guest names, phone numbers and notes were open on the internet
+- `api/gui/router.py`: `/gui/events` resolves the tenant in its own short-lived session instead of the request-scoped one. A stream stays open for hours; the request session would have pinned a pooled connection for just as long, and a handful of tablets could have starved the hot path
+- `api/gui/sse.py`: after a database outage the stream sends a `today` event on the first successful poll even when nothing changed, so the yellow connection bar disappears instead of hanging until the next booking
 - Dockerfile: additional CA cert (`api/ca-bundle.crt`) is optional, not required; build works on clean checkout
 - Dockerfile: source code lands under `/app/api` again so `uvicorn api.main:app` starts without bind mount
 - Compose: n8n listens on `0.0.0.0` not `::`, avoids crash loop on Docker hosts without IPv6

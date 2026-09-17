@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.time import to_local
-from api.db import get_db
+from api.db import SessionLocal, get_db
 from api.domain.reservations import list_today
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
@@ -45,6 +45,18 @@ MODE_LABELS = {
 def _tenant(session: Session) -> Tenant | None:
     """Stufe 1 fährt einen Mandanten. Der älteste ist er (wie in sim/session.py)."""
     return session.scalars(select(Tenant).order_by(Tenant.created_at)).first()
+
+
+def _tenant_snapshot() -> tuple[uuid.UUID | None, str]:
+    """Mandant und Zeitzone in einer eigenen, sofort geschlossenen Session."""
+    session = SessionLocal()
+    try:
+        tenant = _tenant(session)
+        if tenant is None:
+            return None, "UTC"
+        return tenant.id, tenant.timezone
+    finally:
+        session.close()
 
 
 def _clock(value: datetime, tz_name: str) -> str:
@@ -110,11 +122,17 @@ def heute_fragment(
 
 
 @router.get("/events", include_in_schema=False)
-def events(request: Request, session: Session = Depends(get_db)) -> StreamingResponse:
-    """Ereignisstrom für die Live-Aktualisierung."""
-    tenant = _tenant(session)
-    tenant_id: uuid.UUID | None = tenant.id if tenant else None
-    tz_name = tenant.timezone if tenant else "UTC"
+def events(request: Request) -> StreamingResponse:
+    """Ereignisstrom für die Live-Aktualisierung.
+
+    Bewusst ohne die Session der Anfrage: die wird erst nach dem Ende der
+    Antwort geschlossen, und dieser Strom bleibt stundenlang offen. Jedes
+    Tablet wuerde sonst eine Verbindung aus dem Pool binden und ein paar
+    Geraete den heissen Pfad blockieren. Der Mandant wird einmal in einer
+    kurzlebigen Session aufgeloest, danach holt sich jeder Takt des Stroms
+    seine eigene (gui/sse.py).
+    """
+    tenant_id, tz_name = _tenant_snapshot()
     if tenant_id is None:
         return StreamingResponse(
             iter(["event: problem\ndata: tenant\n\n"]), media_type="text/event-stream"

@@ -53,6 +53,10 @@ async def today_event_stream(
     yield f"retry: {RETRY_MS}\n\n"
     last_token: str | None = None
     last_send = time.monotonic()
+    # Nach einem Aussetzer haengt die gelbe Leiste im Browser fest, bis ein
+    # Ereignis kommt. Ohne dieses Merkmal waere das erst die naechste echte
+    # Aenderung - der Betrieb saehe eine Stoerung, die laengst vorbei ist.
+    failed = False
     ticks = 0
     while max_ticks is None or ticks < max_ticks:
         ticks += 1
@@ -64,11 +68,13 @@ async def today_event_stream(
             # Kein Abbruch: die Seite zeigt die gelbe Leiste (docs/06 §5) und der
             # naechste Durchlauf holt sie wieder weg, ohne Neuverbindung.
             logger.warning("Datenbank fuer den Ereignisstrom nicht erreichbar: %s", exc)
+            failed = True
             last_send = time.monotonic()
             yield "event: problem\ndata: db\n\n"
         else:
-            if token != last_token:
+            if token != last_token or failed:
                 last_token = token
+                failed = False
                 last_send = time.monotonic()
                 # Beim Verbinden einmal senden: was waehrend einer Trennung
                 # gebucht wurde, ist damit sofort auf dem Tablet.

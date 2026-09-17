@@ -91,10 +91,43 @@ def test_endpunkt_liefert_ereignisstrom(monkeypatch):
     """Der Strom haengt am Endpunkt und traegt die Koepfe gegen puffernde Proxies."""
     from fastapi.testclient import TestClient
 
-    from api.db import get_db
+    from api.gui import router as gui_router
     from api.main import app
 
-    class FakeSession:
+    monkeypatch.setattr(gui_router, "_tenant_snapshot", lambda: (None, "UTC"))
+
+    with TestClient(app) as client, client.stream("GET", "/gui/events") as response:
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/event-stream")
+        assert next(response.iter_lines()) == "event: problem"
+
+
+@pytest.mark.parametrize("wert", [sse.POLL_SECONDS, sse.HEARTBEAT_SECONDS])
+def test_takte_sind_gesetzt(wert):
+    assert wert > 0
+
+
+def test_strom_haelt_keine_request_session_fest(monkeypatch):
+    """Befund Codex P2: ein offener Strom darf keine Verbindung aus dem Pool binden.
+
+    Ein Tablet haelt den Strom stundenlang. Haengt die Session an der Anfrage,
+    ist ihre Verbindung genauso lange belegt und ein paar Geraete legen den Pool
+    und damit den heissen Pfad lahm.
+    """
+    import uuid as _uuid
+
+    from fastapi.testclient import TestClient
+
+    from api.gui import router as gui_router
+    from api.main import app
+
+    geschlossen: list[bool] = []
+
+    class Tenant:
+        id = _uuid.uuid4()
+        timezone = "Europe/Berlin"
+
+    class TrackingSession:
         def scalars(self, *_):
             return self
 
@@ -102,21 +135,47 @@ def test_endpunkt_liefert_ereignisstrom(monkeypatch):
             return self
 
         def first(self):
-            return None
+            return Tenant()
 
-    def fake_db():
-        yield FakeSession()
+        def close(self):
+            geschlossen.append(True)
 
-    app.dependency_overrides[get_db] = fake_db
-    try:
-        with TestClient(app) as client, client.stream("GET", "/gui/events") as response:
-            assert response.status_code == 200
-            assert response.headers["content-type"].startswith("text/event-stream")
-            assert next(response.iter_lines()) == "event: problem"
-    finally:
-        app.dependency_overrides.pop(get_db, None)
+    monkeypatch.setattr(gui_router, "SessionLocal", TrackingSession)
+    monkeypatch.setattr(sse, "_token", lambda *_: "0:-")
+    # Der echte Strom laeuft endlos; hier genuegt ein Takt. Geprueft wird die
+    # Session des Endpunkts, nicht die Schleife.
+    monkeypatch.setattr(
+        gui_router,
+        "today_event_stream",
+        lambda request, tenant_id, tz_name: sse.today_event_stream(
+            request, tenant_id, tz_name, poll_seconds=0, max_ticks=1
+        ),
+    )
+
+    with TestClient(app) as client, client.stream("GET", "/gui/events") as response:
+        assert response.status_code == 200
+        next(response.iter_lines())
+        # Der Strom laeuft noch, die Session ist trotzdem schon zurueckgegeben.
+        assert geschlossen == [True]
 
 
-@pytest.mark.parametrize("wert", [sse.POLL_SECONDS, sse.HEARTBEAT_SECONDS])
-def test_takte_sind_gesetzt(wert):
-    assert wert > 0
+def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
+    """Befund Codex P2: nach einem DB-Aussetzer muss ein Signal kommen, auch ohne Aenderung.
+
+    Sonst bleibt die gelbe Leiste stehen, bis zufaellig jemand reserviert.
+    """
+    zustand = iter(["0:-", "fehler", "0:-"])
+
+    def token(*_):
+        wert = next(zustand)
+        if wert == "fehler":
+            raise OperationalError("select", {}, Exception("keine Verbindung"))
+        return wert
+
+    monkeypatch.setattr(sse, "_token", token)
+
+    chunks = drain(stream(FakeRequest(), max_ticks=3))
+
+    assert chunks[1] == "event: today\ndata: 0:-\n\n"
+    assert chunks[2] == "event: problem\ndata: db\n\n"
+    assert chunks[3] == "event: today\ndata: 0:-\n\n"

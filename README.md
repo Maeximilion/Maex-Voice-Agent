@@ -83,6 +83,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `AGENT_API_TOKEN` | Bearer token for voice platform to call tools |
 | `TEAM_PHONE` | Extension for forwarding to team |
 | `MAX_CALL_SECONDS` | Maximum call duration |
+| `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'` |
 
 ## Project Structure
 

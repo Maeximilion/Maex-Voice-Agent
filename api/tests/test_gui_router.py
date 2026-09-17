@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime, time
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -142,3 +143,19 @@ def test_fragment_bleibt_schnell(client, engine, tenant_id):
         reservierung(engine, tenant_id, name=f"Gast {i}", hh=17 + i % 5)
 
     assert p95_ms(lambda: client.get("/gui/fragments/heute")) < 300
+
+
+def test_caddy_schuetzt_die_gui():
+    """Befund Codex P1: `/gui/*` zeigt Gastnamen und Telefonnummern.
+
+    Die Anwendung selbst kennt keinen Browser-Zugang (docs/13 §Caddy), also muss
+    der Reverse-Proxy im eingecheckten Produktionsstapel wirklich davorstehen -
+    sonst liegen personenbezogene Daten offen im Netz.
+    """
+    caddyfile = Path(__file__).resolve().parents[2] / "deploy" / "Caddyfile"
+    text = caddyfile.read_text()
+
+    assert "basic_auth" in text
+    assert "/gui" in text
+    # Kein Zugang im Repo: Benutzer und Hash kommen aus der Umgebung (CLAUDE.md §8).
+    assert "{$GUI_BASIC_AUTH_USER}" in text and "{$GUI_BASIC_AUTH_HASH}" in text

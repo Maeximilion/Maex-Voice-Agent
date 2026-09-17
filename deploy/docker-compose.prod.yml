@@ -19,6 +19,11 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
+    environment:
+      # Zugang zur Betriebsansicht. Ohne diese Werte startet Caddy zwar,
+      # lässt aber niemanden auf /gui/* durch - das ist die sichere Seite.
+      GUI_BASIC_AUTH_USER: ${GUI_BASIC_AUTH_USER}
+      GUI_BASIC_AUTH_HASH: ${GUI_BASIC_AUTH_HASH}
     ports:
       - "80:80"
       - "443:443"
