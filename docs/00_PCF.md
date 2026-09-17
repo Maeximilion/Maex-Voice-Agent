@@ -487,7 +487,9 @@ Decisions: agent/dispatch.py re-implements api/tools/* directly against domain/ 
        [logger_root]=WARN was silently downgrading the app's log level for the rest of the process
        whenever a migration ran in-process (every test via migrated_db_url).
 Gate: G0 still open, unchanged (vendor/budget/legal/C1 outstanding). Internal milestone: Block 1b
-       (Gesprächs-Kern) done; next is "Durchstich ohne Telefon" after T-2.3 + T-3.3.
+       (Gesprächs-Kern und Simulator, docs/07 Sammel-Issue #7) in progress — T-2.1/T-2.2 done,
+       T-2.3 (sim/cli.py) next, then T-2.4 (real LLM) and T-2.5 (GUI sim console). The
+       "Durchstich ohne Telefon" milestone needs T-2.3 + T-3.3, not the whole block.
 Open: T-2.3 sim/cli.py + sim/replay.py (first conversation in the terminal, a reservation lands in
        the DB) → then T-3.x (GUI) for the same milestone. In parallel: T-0.7, T-0.8.
 Lessons: Codex reviews every PR and found real bugs both times this session (state loss across
