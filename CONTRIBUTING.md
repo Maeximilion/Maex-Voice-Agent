@@ -1,72 +1,72 @@
-# Mitarbeiten
+# Contributing
 
-Kurzfassung für alle, die an diesem Repository arbeiten. Die fachlichen Regeln stehen in `CLAUDE.md`, der Projektstand in `docs/01_STATUS.md`, die Aufgabenliste in `docs/07_ARBEITSPAKETE.md`.
+Quick guide for everyone working on this repository. Domain rules are in `CLAUDE.md`, project status in `docs/01_STATUS.md`, task list in `docs/07_WORKPACKAGES.md`.
 
-## Entwicklungsumgebung
+## Development Environment
 
 ```bash
 git clone https://github.com/Maeximilion/Maex-Voice-Agent.git
 cd Maex-Voice-Agent
-cp .env.example .env        # Zugangsdaten eintragen, Datei bleibt lokal
-make up                     # Postgres, API und n8n starten
-make migrate && make seed   # Schema anlegen, Testkonfiguration einspielen
-make test                   # Suite gegen die echte Datenbank
+cp .env.example .env        # Enter credentials, file stays local
+make up                     # Start Postgres, API, n8n
+make migrate && make seed   # Create schema, load test config
+make test                   # Run suite against real database
 ```
 
-Voraussetzungen: Docker mit Compose, Python 3.12 für Läufe außerhalb der Container.
+Requirements: Docker with Compose, Python 3.12 for runs outside containers.
 
-## Ablauf einer Änderung
+## Workflow for a Change
 
-1. Aufgabe in `docs/07_ARBEITSPAKETE.md` wählen, deren Abhängigkeiten erledigt sind. Jede Aufgabe hat ein Issue (Spalte „Issue").
-2. Branch vom aktuellen `main` abzweigen, Issue-Nummer im Namen: `feature/27-confirm-tool`, `fix/31-readback-datum`, `docs/44-bedientest`.
-3. Bauen, dabei die Definition of Done in `CLAUDE.md` §7 einhalten. Fehler bekommen zuerst einen roten Test, dann den Fix.
-4. `make lint` und `make test` lokal grün bekommen, bevor gepusht wird.
-5. Pull Request öffnen, Issue verknüpfen (`Closes #27`), CI abwarten.
-6. Review einarbeiten, dann Squash-Merge.
+1. Choose a task from `docs/07_WORKPACKAGES.md` whose dependencies are done. Each task has an issue (column "Issue").
+2. Branch off current `main`, include issue number in name: `feature/27-confirm-tool`, `fix/31-readback-date`, `docs/44-ui-test`.
+3. Build while following Definition of Done in `CLAUDE.md` §7. Errors get a red test first, then the fix.
+4. Get `make lint` and `make test` green locally before pushing.
+5. Open pull request, link issue (`Closes #27`), wait for CI.
+6. Incorporate review, then squash-merge.
 
 ## Commits
 
-Conventional Commits, deutsche Beschreibung, ein Commit je abgeschlossener Aufgabe:
+Conventional Commits, English description, one commit per completed task:
 
 ```
-feat(tools): confirm mit Outbox-Eintrag und audit_log
-fix(reservations): Ueberbuchung bei parallelen Anrufen
-docs(status): T-1.6 abgeschlossen
-test(evals): Adressfaelle fuer Zonen ausserhalb des Gebiets
+feat(tools): confirm with outbox entry and audit_log
+fix(reservations): overbooking on concurrent calls
+docs(status): T-1.6 complete
+test(evals): edge cases for zones outside service area
 ```
 
-Verwendete Typen: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Der Geltungsbereich in Klammern ist das betroffene Modul (`tools`, `domain`, `gui`, `db`, `events`).
+Types used: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope in brackets is the affected module (`tools`, `domain`, `gui`, `db`, `events`).
 
 ## Pull Requests
 
-- Ein Pull Request behandelt ein Thema. Kein Sammel-PR über mehrere Aufgaben.
-- Titel im Conventional-Commits-Format, denn beim Squash-Merge wird er zur Commit-Nachricht auf `main`.
-- Beschreibung nach der Vorlage in `.github/PULL_REQUEST_TEMPLATE.md`: was geändert wurde, warum, wie geprüft, welches Issue geschlossen wird.
-- `main` bleibt immer lauffähig. Direkt auf `main` wird nicht gepusht.
-- Vor dem Merge laufen `ruff check`, `ruff format --check` und die Testsuite in der CI. Bei Änderungen an Dialogverhalten zusätzlich die Evals (`docs/08_EVALS.md`).
-- Welche Lint-Regeln gelten, steht in `pyproject.toml` unter `[tool.ruff.lint]`, nicht in der Standardmenge der jeweiligen ruff-Version. Eine neue Regel wird dort bewusst aufgenommen, eine unpassende bewusst ausgenommen; ein Versions-Update allein ändert die Regelmenge nicht.
+- One PR covers one topic. No catch-all PRs across multiple tasks.
+- Title in Conventional Commits format, since squash-merge makes it the commit message on `main`.
+- Description per template in `.github/PULL_REQUEST_TEMPLATE.md`: what changed, why, how tested, which issue closes.
+- `main` always stays runnable. Never push directly to `main`.
+- Before merge: `ruff check`, `ruff format --check`, and test suite run in CI. For dialog changes, also evals (`docs/08_EVALS.md`).
+- Which lint rules apply is in `pyproject.toml` under `[tool.ruff.lint]`, not the default set of the ruff version. A new rule is intentionally added, an unsuitable one intentionally excluded; a version update alone doesn't change the rule set.
 
 ## Labels
 
-| Kategorie | Labels |
+| Category | Labels |
 |---|---|
-| Typ | `feature`, `enhancement`, `bug`, `docs`, `refactor`, `chore`, `test` |
-| Priorität | `priority: high`, `priority: medium`, `priority: low` |
+| Type | `feature`, `enhancement`, `bug`, `docs`, `refactor`, `chore`, `test` |
+| Priority | `priority: high`, `priority: medium`, `priority: low` |
 | Status | `status: blocked`, `status: in-progress`, `status: needs-review` |
-| Einordnung | `block` (Sammel-Issue), `stufe-0` bis `stufe-5`, `deployment` |
+| Classification | `block` (collection issue), `stage-0` through `stage-5`, `deployment` |
 
-Jedes Issue trägt genau ein Typ-Label. Priorität und Status nur, wenn sie den Zustand wirklich ändern.
+Each issue carries exactly one type label. Priority and status only when they actually change the state.
 
-## Code-Stil
+## Code Style
 
-- `ruff` entscheidet über Format und Linting, Konfiguration im Repository.
-- Englische Bezeichner, deutsche Kommentare und Fehlermeldungen.
-- Kommentare erklären das Warum, nicht das Was. Keine Emojis in Code, Dokumentation, Commits oder Oberfläche.
-- Geldbeträge immer als Integer in Cent, Telefonnummern in E.164, Zeiten in UTC gespeichert und in Ortszeit angezeigt.
-- Fachlogik gehört nach `api/domain/`, niemals in `api/tools/` oder `api/gui/`. Die Abhängigkeitsrichtung steht in `docs/11_MODULE.md`.
+- `ruff` decides on format and linting, config in repository.
+- English identifiers, German comments and error messages.
+- Comments explain the why, not the what. No emojis in code, docs, commits, or UI.
+- Money always as integer cents, phone numbers in E.164, times stored UTC and displayed in local time.
+- Domain logic belongs in `api/domain/`, never in `api/tools/` or `api/gui/`. Dependency direction is in `docs/11_MODULES.md`.
 
-## Was nie ins Repository gehört
+## What Never Goes in the Repository
 
-`.env`, Zugangsdaten, echte Anrufaufnahmen, Transkripte und Kundendaten. Betriebs-, Orts- und Anbieternamen stehen als Platzhalter in spitzen Klammern; die echten Werte kommen aus der Umgebung und der Datenbank.
+`.env`, credentials, real call recordings, transcripts, and customer data. Pilot operation, location, and provider names appear as placeholders in angle brackets; real values come from environment and database.
 
-Sicherheitslücken bitte nicht als Issue melden, sondern nach `SECURITY.md`.
+Please don't report security issues as issues; see `SECURITY.md` instead.

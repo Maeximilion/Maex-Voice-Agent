@@ -1,14 +1,14 @@
-# sim – das Text-Telefon
+# sim – the text phone
 
-Gespräche mit dem Agenten ohne Telefon und ohne Voice-Plattform.
+Conversations with the agent without phone and without voice platform.
 
 ```bash
-python -m sim.cli                          # interaktiv: du bist der Kunde
-python -m sim.replay evals/cases/menu_0042_*.json   # Transkript abspielen
-python -m sim.cli --noise 0.2              # 20 % der Eingaben absichtlich verrauscht
+python -m sim.cli                          # interactive: you are the customer
+python -m sim.replay evals/cases/menu_0042_*.json   # replay transcript
+python -m sim.cli --noise 0.2              # 20% of inputs intentionally noised
 ```
 
-Zeigt je Zug: Kundensatz → Tool-Aufrufe mit Dauer → Agentenantwort → Gesprächszustand.
-Nutzt `api/agent/` direkt und schreibt in die lokale DB, sodass die Bestellung sofort in der GUI erscheint.
+Shows per turn: customer sentence → tool calls with duration → agent response → conversation state.
+Uses `api/agent/` directly and writes to local DB so the order appears immediately in the UI.
 
-Aufgaben: T-2.1 bis T-2.3 in `docs/07_ARBEITSPAKETE.md`. Aufbau: `docs/11_MODULE.md` §sim.
+Tasks: T-2.1 through T-2.3 in `docs/07_WORKPACKAGES.md`. Structure: `docs/11_MODULES.md` §sim.

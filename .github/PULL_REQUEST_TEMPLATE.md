@@ -1,21 +1,21 @@
-## Was geändert wurde
+## What Changed
 
-<!-- Kurz und sachlich, ein bis drei Punkte. -->
+<!-- Brief and factual, one to three points. -->
 
-## Warum
+## Why
 
-<!-- Welches Problem loest das, oder welches Arbeitspaket setzt es um. -->
+<!-- Which problem does this solve, or which work package does it implement. -->
 
-## Wie geprüft
+## How Tested
 
-<!-- Tests, Latenzmessung, manueller Durchlauf. Was wirklich gelaufen ist, nicht was laufen sollte. -->
+<!-- Tests, latency measurement, manual run. What actually ran, not what should run. -->
 
-- [ ] `make lint` sauber
-- [ ] `make test` grün
-- [ ] Bei Tools im heißen Pfad: Antwortzeit gemessen, unter 300 ms bei lokaler Datenbank
-- [ ] Bei Schema-Änderung: Migration up und down getestet
-- [ ] Betroffene Dokumentation und `docs/01_STATUS.md` nachgezogen
-- [ ] Keine Zugangsdaten, keine echten Betriebs- oder Kundendaten im Diff
+- [ ] `make lint` clean
+- [ ] `make test` green
+- [ ] For hot-path tools: response time measured, under 300 ms with local database
+- [ ] For schema changes: migration up and down tested
+- [ ] Affected documentation and `docs/01_STATUS.md` synced
+- [ ] No credentials, no real operations or customer data in diff
 
 ## Issue
 

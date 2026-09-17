@@ -1,525 +1,525 @@
 # PCF – Maex Voice-Agent
 
-> **KI-Telefonannahme für Lieferung, Abholung und Reservierung**
-> Version 1.0 · 11.09.2026 · Status: freigegeben (Gate P bestanden)
-> Diese Datei ist die Single Source of Truth für alle Chats des Projekts. Jeder Chat liest sie zu Beginn und endet mit einem Übergabeblock (Abschnitt 12).
+> **AI Call Intake for Delivery, Pickup, and Reservations**
+> Version 1.0 · 11.09.2026 · Status: released (Gate P passed)
+> This file is the Single Source of Truth for all project chats. Each chat reads it at the start and ends with a handover block (section 12).
 
 ---
 
-## 1. Ziel
+## 1. Objective
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer von <Pilotbetrieb> an. Er erledigt Reservierung, Abholung und Lieferung korrekt, übergibt an Küche, Kasse und Team und leitet Beschwerden an Menschen weiter. Die Oberfläche ist so einfach, dass das Team sie im Stress ohne Erklärung bedient.
+An AI agent answers calls on the landline of <Pilot Operation>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, and escalates complaints to humans. The interface is simple enough that the team operates it under stress without explanation.
 
-### Leitregeln (First Principles)
+### Guiding Principles (First Principles)
 
-Jeder Anruf durchläuft 5 Glieder: **Hören → Verstehen → Prüfen → Bestätigen → Übergeben.** Ein Fehler in einem Glied pflanzt sich bis in die Küche fort. Daraus folgen 6 Regeln:
+Every call goes through 5 links: **Listen → Understand → Verify → Confirm → Hand off.** An error in one link propagates all the way to the kitchen. From this flow six rules follow:
 
-1. **KI versteht, Code entscheidet.** Preise, Zonen, Zeiten, Verfügbarkeit und Allergene kommen nur aus der Datenbank.
-2. **Nie raten.** Ohne eindeutige Menü-ID kommt keine Position in die Bestellung. Bei Unsicherheit greift die Verständnis-Leiter, am Ende der Mensch.
-3. **Nichts ohne Bestätigung.** Vorlesen, „Ja" einholen, erst dann abschicken.
-4. **Fehler werden gemessen.** Weiter geht es nur über Gates mit Zahlen.
-5. **Jeder Ausfall endet beim Team.** Kein Anruf geht verloren.
-6. **Token-sparsam by design.** Kleinster Kontext, kleinstes Modell, das die Evals besteht.
+1. **AI understands, code decides.** Prices, zones, hours, availability, and allergens come only from the database.
+2. **Never guess.** Without a definitive menu item ID, no item goes in the order. On uncertainty, follow the understanding ladder; at the end, escalate to a human.
+3. **Nothing without confirmation.** Read it back, get a "yes", only then send.
+4. **Errors are measured.** Progress only via gates with numbers.
+5. **Every outage ends with the team.** No call is lost.
+6. **Token-efficient by design.** Smallest context, smallest model that passes evals.
 
 ### KPIs
 
-> Hinweis: Alle Zahlen in dieser PCF sind Richtwerte. Sie werden in G0 mit der Team-Baseline kalibriert.
+> Note: All numbers in this PCF are targets. They will be calibrated in G0 with the team baseline.
 
-| KPI | Definition | Richtwert |
+| KPI | Definition | Target |
 |---|---|---|
-| Genauigkeit | Vorgänge ohne nachträgliche Korrektur | ≥ Team-Baseline, Ziel ≥ 99 % |
-| Unbestätigte Vorgänge | an Küche oder Reservierungsbuch ohne „Ja" | 0 |
-| Geratene Positionen | Position ohne eindeutige Menü-ID | 0 |
-| Eskalationsquote | Anrufe, die beim Team landen | sinkt von Stufe zu Stufe |
-| Abbruchquote | Kunde legt vor dem Abschluss auf | ≤ Baseline |
-| Antwortlatenz | Stille nach dem Kundensatz, bis die KI spricht | < 1,5 s |
-| Kosten | € pro Anruf und pro Bestellung | ≤ Budget aus G0 |
-| Verpasste Anrufe | Anrufe ohne Annahme | → 0 |
+| Accuracy | Transactions without later correction | ≥ Team Baseline, Goal ≥ 99% |
+| Unconfirmed transactions | to kitchen or reservation book without "yes" | 0 |
+| Guessed items | item without definitive menu ID | 0 |
+| Escalation rate | calls that reach the team | decreases stage to stage |
+| Abandonment rate | customer hangs up before completion | ≤ Baseline |
+| Response latency | silence after customer speaks until AI responds | < 1.5 s |
+| Cost | € per call and per order | ≤ Budget from G0 |
+| Missed calls | calls not answered | → 0 |
 
 ---
 
 ## 2. Scope
 
-**Drin**
-- Reservierung, Abholung, Lieferung (Zone, Pauschale, Mindestbestellwert)
-- Auskünfte aus der Konfiguration: Öffnungszeiten, Liefergebiet, Wartezeit, Allergene
-- Beschwerde oder Wunsch nach einem Menschen → Weiterleitung oder Rückruf-Aufgabe
-- GUI für Betrieb (Tablet) und Admin
-- Einlernphase (Offline-Schattenmodus) und Eval-Suite
+**In scope**
+- Reservations, pickups, deliveries (zone, flat fee, minimum order value)
+- Inquiries from configuration: hours, delivery area, wait time, allergens
+- Complaint or request for human → handoff or callback task
+- GUI for operations (tablet) and admin
+- Learning phase (offline shadow mode) and eval suite
 
-**Bewusst draußen (später prüfbar)**
-- Zahlung am Telefon: Bezahlt wird bei Abholung oder Lieferung
-- Änderung oder Storno laufender Bestellungen → Team
-- Weitere Sprachen: Deutsch zuerst
-- Weitere Betriebe: Die Architektur hält es offen
-- Anrufe, die die KI selbst startet
+**Deliberately out of scope (to be revisited later)**
+- Payment over the phone: paid on pickup or delivery
+- Changes or cancellations to active orders → team
+- Additional languages: German first
+- Additional locations: architecture allows for it
+- Outbound calls initiated by the AI
 
 ---
 
-## 3. Entscheidungen
+## 3. Decisions
 
-| # | Entscheidung | Grund | Status |
+| # | Decision | Rationale | Status |
 |---|---|---|---|
-| E1 | **Hybrid:** Telefonie und Sprachverarbeitung über einen EU-gehosteten Spezialdienst; Logik, DB und GUI in eigener Hand | Schwerste Technik (Echtzeit-Audio, Latenz) wird eingekauft, die fehlerkritische Logik selbst gebaut, Bausteine bleiben austauschbar | gesetzt 11.09.2026 |
-| E2 | Stufen: Reservierung → Abholung → Lieferung | Jede Stufe bringt genau eine neue Schwierigkeit | Annahme, in G0 per Anruf-Mix bestätigen |
-| E3 | Rollout: Schatten → Überlauf → Hauptannahme | Das Risiko wächst nur mit Belegen | Annahme, gilt bis Veto |
-| E4 | Kasse bleibt Buchungs-Master (TSE); Agent-DB nur für Agent-Daten | Rechtssicherheit, eine einzige Wahrheit für Umsätze | Annahme, gilt bis Veto |
-| E5 | Pilot <Pilotbetrieb>, Nummer bleibt; Menü, Zeiten, Zonen aus der DB | Später auf andere Betriebe übertragbar | Annahme, gilt bis Veto |
-| E6 | Einlernen = Wissensbasis + Eval-Suite + Offline-Schattenmodus, kein Modelltraining | Billiger, messbar, rechtlich schlanker | Annahme, gilt bis Veto |
-| E7 | KI gibt sich zu Gesprächsbeginn als KI zu erkennen | AI Act Art. 50, gilt seit 02.08.2026 | Pflicht |
-| E8 | Beschwerde, Mensch-Wunsch, Storno → sofort Team, sonst Rückruf-Aufgabe | Vertrauen, Fehlerbegrenzung | Annahme, gilt bis Veto |
+| E1 | **Hybrid:** Telephony and speech processing via an EU-hosted specialist service; logic, DB, and GUI in-house | Heavy lifting (real-time audio, latency) is outsourced, error-critical logic built in-house, components remain swappable | set 11.09.2026 |
+| E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | Assumption, confirm in G0 via call mix |
+| E3 | Rollout: Shadow → Overflow → Primary | Risk grows only with evidence | Assumption, holds until veto |
+| E4 | Register stays booking master (TSE); agent DB for agent data only | Legal certainty, single source of truth for revenue | Assumption, holds until veto |
+| E5 | Pilot <Pilot Operation>, number stays; menu, hours, zones from DB | Transferable to other locations later | Assumption, holds until veto |
+| E6 | Training = knowledge base + eval suite + offline shadow mode, no model fine-tuning | Cheaper, measurable, legally simpler | Assumption, holds until veto |
+| E7 | AI discloses itself as AI at the start of the call | EU AI Act Art. 50, in effect since 02.08.2026 | Mandatory |
+| E8 | Complaint, human request, cancellation → team immediately, else callback task | Trust, error containment | Assumption, holds until veto |
 
 ---
 
-## 4. Architektur (Hybrid)
+## 4. Architecture (Hybrid)
 
 ```text
-Anrufer
+Caller
   │
   ▼
-Festnetz <Pilotbetrieb> (bestehender Anbieter)
-  │  Umleitung / SIP
-  │  Modus: Schatten · Überlauf · Primär
+Landline <Pilot Operation> (existing provider)
+  │  Redirect / SIP
+  │  Mode: Shadow · Overflow · Primary
   ▼
-Voice-Plattform (EU)
-  │  Spracherkennung → Modell → Stimme
-  │  Tastentöne · Unterbrechen · Weiterleitung
+Voice Platform (EU)
+  │  Speech recognition → Model → Voice synthesis
+  │  Touch tones · Interruption · Transfer
   │
-  │  Tools über HTTPS (heißer Pfad)
+  │  Tools via HTTPS (hot path)
   ▼
-Agent-API ─────────► Agent-DB (EU)
+Agent API ─────────► Agent DB (EU)
   │                      ▲
-  │  Ereignisse          │
-  │  (kalter Pfad)       │
+  │  Events              │
+  │  (cold path)         │
   ▼                      │
-n8n ── Küche / Kasse     │
-    ── SMS, Logs, Alarme │
+n8n ── Kitchen / Register    │
+    ── SMS, Logs, Alarms     │
                          │
 GUI (Browser) ───────────┘
-  Betrieb-Tablet · Admin
+  Operations Tablet · Admin
 
-Team-Durchwahl ◄── Weiterleitung, Rückrufe
-EU-Server ────────  Transkription der Einlern-Aufnahmen (nachts)
+Team Extension ◄── Transfer, Callbacks
+EU Server ────────  Transcription of training recordings (nights)
 ```
 
-### Heißer und kalter Pfad
+### Hot and Cold Path
 
-- **Heiß** heißt: Der Kunde wartet am Telefon. Dazu gehören Menüsuche, Kunde per Nummer, Zonen-Check, Slot-Check und Bestellprüfung. Das muss schnell sein (Richtwert < 300 ms je Tool) und darf nie hängen → direkte Abfragen über eine kleine Agent-API.
-- **Kalt** heißt: Alles nach dem „Ja". Dazu gehören Bon oder Kasse, SMS, Logs und Statistik. Das darf Sekunden dauern, braucht aber Wiederholung bei Fehlern → n8n.
-- n8n-Webhooks kommen nur dann in den heißen Pfad, wenn der PoC die Latenz belegt. Erst messen, dann entscheiden.
+- **Hot** means: The customer is waiting on the phone. This includes menu search, customer by number, zone check, slot check, and order verification. This must be fast (target < 300 ms per tool) and must never hang → direct queries via a small agent API.
+- **Cold** means: Everything after the "yes". This includes receipt/register, SMS, logs, and stats. Can take seconds but needs retry on error → n8n.
+- n8n webhooks enter the hot path only if the PoC proves the latency. Measure first, decide later.
 
-### Tools des Agenten (Entwurf)
+### Agent Tools (Draft)
 
-| Tool | Zweck | Deterministische Prüfung |
+| Tool | Purpose | Deterministic Check |
 |---|---|---|
-| `get_service_status` | offen/zu, Lieferung an/aus, Wartezeit, ausverkaufte Gerichte | Konfiguration |
-| `find_customer` | Name und gespeicherte Adressen zur Anrufernummer | nur bei übermittelter Nummer |
-| `search_menu` | Top-3-Treffer mit ID, Preis, Optionen | Nummer exakt, sonst Alias-Tabelle |
-| `get_item_details` | Optionen, Extras, Allergene | nur DB-Werte |
-| `check_delivery` | Zone, Pauschale, Mindestbestellwert, Lieferzeit | PLZ oder Polygon |
-| `check_slot` | Tisch frei, sonst Alternativen | Kapazität je Zeitfenster |
-| `create_reservation` | Reservierung als Entwurf | Pflichtfelder vollständig |
-| `draft_order` | Bestellung prüfen, Summe rechnen, Vorlesetext liefern | Preise, Zone, Mindestbestellwert, Öffnungszeit |
-| `confirm` | nach dem „Ja" final → kalter Pfad | Idempotenz: genau einmal |
-| `create_callback` | Rückruf-Aufgabe mit Zusammenfassung | – |
-| `transfer_to_team` | Weiterleitung an die Team-Durchwahl | Schleifenschutz |
+| `get_service_status` | open/closed, delivery on/off, wait time, sold-out dishes | Configuration |
+| `find_customer` | name and saved addresses for caller number | only if number provided |
+| `search_menu` | top-3 results with ID, price, options | exact number match, else alias table |
+| `get_item_details` | options, extras, allergens | DB values only |
+| `check_delivery` | zone, flat fee, minimum order value, delivery time | postal code or polygon |
+| `check_slot` | table available, else alternatives | capacity per time slot |
+| `create_reservation` | reservation as draft | required fields complete |
+| `draft_order` | check order, calculate sum, provide read-back text | prices, zone, minimum order, hours |
+| `confirm` | after "yes" final → cold path | idempotency: exactly once |
+| `create_callback` | callback task with summary | – |
+| `transfer_to_team` | transfer to team extension | loop protection |
 
 ---
 
-## 5. Stufen & Gates
+## 5. Stages & Gates
 
-Stufen sind die Zeitachse, Chats die Arbeitspakete (Abschnitt 10). Jede Stufe liefert einen echten, testbaren Durchstich.
+Stages are the timeline, chats are work packages (section 10). Each stage delivers a real, testable end-to-end run.
 
-| Stufe | Ziel | Gate | Größe |
+| Stage | Goal | Gate | Size |
 |---|---|---|---|
-| 0 Fundament | Fakten, Recht, Budget, Anbieter | G0 Go/No-Go | M |
-| 1 Durchstich Reservierung | ganze Kette einmal echt | G1 | M |
-| 2 Abholung | Menü sicher bis in die Küche | G2 | L |
-| 3 Lieferung | Adresse und Zone ohne Fehler | G3 | L |
-| 4 Einlernen & Schattenmessung | echte Fehlerquote ohne Kundenrisiko | G4 | M |
-| 5 Überlauf-Betrieb | KI nur, wenn niemand abnimmt | G5 | M |
-| 6 Hauptannahme & Betrieb | KI zuerst, laufende Pflege | Monats-Review | laufend |
+| 0 Foundation | Facts, rights, budget, vendors | G0 Go/No-Go | M |
+| 1 Reservation through-cut | full chain once real | G1 | M |
+| 2 Pickup | menu safe to the kitchen | G2 | L |
+| 3 Delivery | address and zone without error | G3 | L |
+| 4 Learning & shadow measurement | real error rate under conditions, no customer risk | G4 | M |
+| 5 Overflow operation | AI only when no one picks up | G5 | M |
+| 6 Primary operation & ongoing | AI first, ongoing maintenance | Monthly review | Ongoing |
 
-### Stufe 0 – Fundament
-**Ziel:** Fakten, Rechtsrahmen, Budget und Anbieter klären, bevor Code entsteht.
-- **C1** Ist-Aufnahme: Kasse und Schnittstelle, Bondrucker, Telefonanbieter und Router, Anrufvolumen und Stoßzeiten, verpasste Anrufe, Anruf-Mix, Menüformat, Reservierungsablauf, Team-Abläufe
-- **C1** Baseline messen: Fehler und Reklamationen je 100 Telefonbestellungen (2 Wochen Strichliste), verpasste Anrufe
-- **C1** Rechts-Check (Abschnitt 8) vorbereiten, Ansagetexte entwerfen
-- **C2** Anbieter-Shortlist nach Abschnitt 6, Kostenmodell, Telefonie-Weg skizzieren
-- **Hypothese Business Case:** Der größte Hebel sind verpasste Anrufe in Stoßzeiten. Das wird mit der Anrufliste belegt.
+### Stage 0 – Foundation
+**Goal:** Clarify facts, legal framework, budget, and vendors before code begins.
+- **C1** Current state capture: register and interface, receipt printer, phone provider and router, call volume and peak times, missed calls, call mix, menu format, reservation workflow, team workflows
+- **C1** Measure baseline: errors and complaints per 100 phone orders (2-week tally), missed calls
+- **C1** Prepare legal check (section 8), draft announcement texts
+- **C2** Vendor shortlist per section 6, cost model, phone path sketch
+- **Business case hypothesis:** The biggest lever is missed calls during peak times. Prove it with the call log.
 
-**Gate G0 – Go/No-Go:** Budget freigegeben · Rechtsrahmen geklärt · Telefonie-Weg machbar · Anbieter für den PoC gewählt · Stufenreihenfolge per Anruf-Mix bestätigt
+**Gate G0 – Go/No-Go:** Budget approved · Legal framework clarified · Telephony path feasible · Vendor selected for PoC · Stage order confirmed per call mix
 
-### Stufe 1 – Durchstich Reservierung
-**Ziel:** Die Kette Testnummer → KI → Tool → DB → GUI läuft einmal komplett echt. Die Reservierung ist dafür das Vehikel, weil sie wenige Daten braucht und kein Geld berührt.
-- **C2** PoC auf Testnummer: Latenz, Anrufer-ID bei Umleitung, Tastentöne, Weiterleitung, Unterbrechen
-- **C3** Minimal-Schema: Konfiguration, Öffnungszeiten, Kapazität, Reservierungen, Anrufe, Rückrufe
-- **C4** Dialog Reservierung, KI-Hinweis, Mensch-Wunsch, Rückruf, System-Prompt v1
-- **C5** Tools `get_service_status`, `check_slot`, `create_reservation`, `create_callback`; Anruf-Log; Fehler-Workflow mit Benachrichtigung
-- **C6** GUI Betrieb v0: Reservierungen heute, Rückrufe, Schalter „KI pausieren"
-- **C7 parallel** (nach Rechtsfreigabe und Test): Aufzeichnung echter Team-Anrufe mit Einwilligung starten. Ab jetzt sammeln sich Daten im Hintergrund.
+### Stage 1 – Reservation Through-cut
+**Goal:** The chain test number → AI → tool → DB → GUI runs once completely real. Reservation is the vehicle because it needs few data points and touches no money.
+- **C2** PoC on test number: latency, caller ID on redirect, touch tones, transfer, interruption
+- **C3** Minimal schema: configuration, hours, capacity, reservations, calls, callbacks
+- **C4** Reservation dialog, AI disclosure, human request, callback, system prompt v1
+- **C5** Tools `get_service_status`, `check_slot`, `create_reservation`, `create_callback`; call log; error workflow with notification
+- **C6** Operations GUI v0: reservations today, callbacks, switch "AI pause"
+- **C7 parallel** (after legal approval and testing): Begin recording real team calls with consent. Data collection in background from now on.
 
-**Gate G1:** 20 Rollenspiel-Anrufe (Lärm, Dialekt, Unterbrechen, Mensch-Wunsch) → 100 % korrekt gebucht oder sauber eskaliert · Latenz im Richtwert · Kosten je Anruf gemessen · Ausfalltest: Plattform weg → Anruf landet beim Team
+**Gate G1:** 20 role-play calls (noise, dialect, interruption, human request) → 100% booked correctly or escalated cleanly · latency on target · cost per call measured · outage test: platform gone → call lands with team
 
-### Stufe 2 – Abholung
-**Ziel:** Das Menü wird sicher verstanden, die Bestellung kommt korrekt in der Küche an.
-- **C3** Menü-Import (Nummern, Varianten, Extras, Preise, Allergene), Alias-Tabelle, Suche
-- **C4** Bestelldialog, Verständnis-Leiter, Allergie-Regel, Vorlesen + „Ja"
-- **C4** Eval-Suite v1 (≥ 100 Fälle aus Aufnahmen und Rollenspielen), Modellwahl per Eval
-- **C5** `draft_order`, `confirm`, Übergabe an Küche/Kasse (Schnittstelle oder Netzwerk-Bon), Idempotenz, Wiederholung bei Fehlern
-- **C6** GUI: neue Bestellungen mit „OK/Korrigieren", „Gericht aus", Wartezeit-Regler
+### Stage 2 – Pickup
+**Goal:** Menu understood reliably, order reaches kitchen correctly.
+- **C3** Menu import (numbers, variants, extras, prices, allergens), alias table, search
+- **C4** Order dialog, understanding ladder, allergy rule, read-back + "yes"
+- **C4** Eval suite v1 (≥ 100 cases from recordings and role-plays), model choice per eval
+- **C5** `draft_order`, `confirm`, handoff to kitchen/register (interface or network receipt), idempotency, retry on error
+- **C6** GUI: new orders with "OK/Correct", "dish sold out", wait time slider
 
-**Gate G2:** Eval v1 ≥ Zielgenauigkeit · 0 geratene Positionen · 0 unbestätigte Bestellungen · Preise identisch mit der Kasse (Abgleich-Test) · 30 Rollenspiel-Bestellungen fehlerfrei in der Küche
+**Gate G2:** Eval v1 ≥ target accuracy · 0 guessed items · 0 unconfirmed orders · prices identical to register (reconciliation test) · 30 role-play orders error-free to kitchen
 
-### Stufe 3 – Lieferung
-**Ziel:** Adresse und Zone ohne Fehler.
-- **C3** Kunden, Adressen, Zonen (PLZ oder Polygone aus der neuen Liefergebiets-Kalkulation), Pauschalen, Mindestbestellwert
-- **C4** Adressdialog: „Wieder an …?" per Anrufer-ID, Straßennamen buchstabieren, Hausnummer per Tastatur, außerhalb der Zone → Abholung anbieten
-- **C5** `check_delivery`, `find_customer`; SMS-Zusammenfassung optional (eigenes Gate wegen Kosten und Außenwirkung)
-- **C6** GUI: Lieferaufträge, Schalter „Lieferung pausieren"
-- **C4** Eval-Suite v2 mit Adressfällen
+### Stage 3 – Delivery
+**Goal:** Address and zone without error.
+- **C3** Customers, addresses, zones (postal code or polygons from new delivery area calculation), flat fees, minimum order value
+- **C4** Address dialog: "Again at …?" per caller ID, spell street names, house number via keyboard, outside zone → offer pickup
+- **C5** `check_delivery`, `find_customer`; SMS summary optional (own gate due to cost and brand impact)
+- **C6** GUI: delivery orders, switch "delivery pause"
+- **C4** Eval suite v2 with address cases
 
-**Gate G3:** Eval v2 ≥ Ziel · Zonen-Check an Grenzfällen 100 % korrekt · 20 Rollenspiel-Lieferungen korrekt · Löschkonzept für die Kunden-DB umgesetzt
+**Gate G3:** Eval v2 ≥ target · Zone check on boundary cases 100% correct · 20 role-play deliveries correct · deletion concept for customer DB implemented
 
-### Stufe 4 – Einlernen & Schattenmessung
-**Ziel:** Die echte Fehlerquote unter Realbedingungen messen, ohne dass ein Kunde mit der KI spricht.
-- **C7** Aufnahmen (seit Stufe 1) auf dem EU-Server transkribieren (Whisper-Container oder EU-Dienst mit AVV) → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon
-- **C7** Fehler-Taxonomie: Hören · Verstehen · Menü · Adresse · Regel · Dialog → Fixes in C3/C4
-- **C4** Jeder echte Fehler wird ein neuer Eval-Fall; Aliase und FAQ aus echten Anrufen ergänzen
+### Stage 4 – Learning & Shadow Measurement
+**Goal:** Measure real error rate under live conditions without customer risk.
+- **C7** Transcribe recordings (since stage 1) on EU server (Whisper container or EU service with DPA) → AI extracts transaction as JSON → reconcile with register/receipt
+- **C7** Error taxonomy: listening · understanding · menu · address · rule · dialog → fixes in C3/C4
+- **C4** Each real error becomes a new eval case; aliases and FAQs enriched from live calls
 
-**Gate G4:** ≥ 200 echte Anrufe ausgewertet · KI-Extraktion ≥ Team-Baseline · keine offene kritische Fehlerklasse (Allergene, Adresse, Preis) · Rechts-Check bestätigt
+**Gate G4:** ≥ 200 real calls analyzed · AI extraction ≥ team baseline · no open critical error class (allergens, address, price) · legal check approved
 
-> Der Offline-Schattenmodus misst das **Verstehen** mit einem Bruchteil der Technik, die Live-Mithören bräuchte. Die **Gesprächsführung** messen die Rollenspiele (G1–G3) und der Überlauf-Betrieb (G5).
+> Offline shadow mode measures **understanding** with a fraction of the tech that live monitoring would need. **Conversation management** is measured by role-plays (G1–G3) and overflow operation (G5).
 
-### Stufe 5 – Überlauf-Betrieb
-**Ziel:** Die KI nimmt echte Anrufe an, aber nur, wenn das Team nicht abnimmt. Das Team gibt jede KI-Bestellung frei.
-- **C8** Telefonie-Modus Überlauf (nach X Sekunden Klingeln oder zu Stoßzeiten), Team-Schulung (15 Minuten, 1 Seite), Notfall-Runbook
-- **C6** Freigabe-Knopf je Bestellung, Ton-Alarm bei Rückrufen
-- **C5** Kosten-Alarm, Tagesbericht
+### Stage 5 – Overflow Operation
+**Goal:** AI answers real calls, but only when the team doesn't pick up. Team approves each AI order.
+- **C8** Phone mode Overflow (after X seconds ringing or during peak times), team training (15 minutes, 1 page), emergency runbook
+- **C6** Approval button per order, tone alarm for callbacks
+- **C5** Cost alarm, daily report
 
-**Gate G5:** ≥ 2 Wochen und ≥ 100 KI-Bestellungen · Genauigkeit ≥ Ziel · Beschwerden ≤ Baseline · Kosten ≤ Budget · Team-Feedback positiv → der Freigabe-Knopf darf weg
+**Gate G5:** ≥ 2 weeks and ≥ 100 AI orders · Accuracy ≥ target · Complaints ≤ baseline · Cost ≤ budget · Team feedback positive → approval button can come off
 
-### Stufe 6 – Hauptannahme & Betrieb
-- Die KI nimmt zuerst an, das Team bleibt über die Durchwahl erreichbar
-- Vor jeder Änderung an Prompt, Menü-Logik oder Modell läuft die Eval-Suite als Regressionstest
-- Monats-Review: KPIs, Kosten, neue Fehlerklassen, Anbieterpreise
-
----
-
-## 6. Anbieter-Kriterien (C2)
-
-**Muss**
-- Datenverarbeitung in der EU, AVV verfügbar
-- Gute deutsche Spracherkennung und Stimmen
-- Tool-Aufrufe per HTTPS an eigene Logik
-- Deutsche Nummer oder SIP-Anbindung · Weiterleitung · Tastentöne · Anrufernummer an die Tools
-- Kunde kann die KI unterbrechen, Latenz im Richtwert
-- Aufzeichnung steuerbar (nur mit Einwilligung)
-
-**Soll**
-- Eigenes Vokabular für Gerichtnamen (Keyword-Boost)
-- Modell frei wählbar, Prompt-Caching
-- Transparente Kosten pro Minute, geringe Grundgebühr
-- Genug gleichzeitige Anrufe für die Sonntagsspitze
-- Export von Transkripten und Anruf-Metadaten per API
-- Test- oder Simulationsmodus
-
-**Methode:** Punkte-Matrix → Top 2 → gleicher PoC mit denselben 20 Testanrufen → Entscheidung per Messung.
+### Stage 6 – Primary Operation & Ongoing
+- AI picks up first, team stays reachable via extension
+- Before each change to prompt, menu logic, or model, eval suite runs as regression test
+- Monthly review: KPIs, costs, new error classes, vendor pricing
 
 ---
 
-## 7. Datenmodell (Entwurf für C3)
+## 6. Vendor Criteria (C2)
 
-| Bereich | Tabellen |
+**Must**
+- Data processing in the EU, DPA available
+- Good German speech recognition and voices
+- Tool calls via HTTPS to own logic
+- German number or SIP attachment · transfer · touch tones · caller ID to tools
+- Customer can interrupt the AI, latency on target
+- Recording controllable (consent only)
+
+**Should**
+- Custom vocabulary for dish names (keyword boost)
+- Model choice flexible, prompt caching
+- Transparent cost per minute, low fixed fee
+- Enough concurrent calls for Sunday peak
+- Export transcripts and call metadata via API
+- Test or simulation mode
+
+**Method:** Points matrix → Top 2 → same PoC with same 20 test calls → decision per measurement.
+
+---
+
+## 7. Data Model (Draft for C3)
+
+| Area | Tables |
 |---|---|
-| Betrieb | `service_config`, `opening_hours`, `special_days`, `capacity` |
-| Menü | `menu_items`, `item_options`, `item_allergens`, `item_aliases` |
-| Kunden | `customers`, `addresses` |
-| Lieferung | `delivery_zones` |
-| Vorgänge | `reservations`, `orders`, `order_items`, `callbacks` |
-| Qualität | `calls`, `eval_cases`, `eval_runs` |
-| Nachvollziehbarkeit | `audit_log` |
+| Operations | `service_config`, `opening_hours`, `special_days`, `capacity` |
+| Menu | `menu_items`, `item_options`, `item_allergens`, `item_aliases` |
+| Customers | `customers`, `addresses` |
+| Delivery | `delivery_zones` |
+| Transactions | `reservations`, `orders`, `order_items`, `callbacks` |
+| Quality | `calls`, `eval_cases`, `eval_runs` |
+| Audit | `audit_log` |
 
-**Regeln**
-- Preise in Cent als Integer, Telefonnummern im Format E.164
-- Jeder Vorgang trägt eine `call_id`
-- Aufnahmen und Transkripte bekommen ein Löschdatum
-- Menü-Master ist die Kasse, falls exportierbar; sonst die Agent-DB plus wöchentlicher Abgleich-Check
-- Empfehlung DB-Technik: PostgreSQL in der EU (Entscheidung in C3)
-
----
-
-## 8. Rechts-Check (C1, vor dem ersten echten Anruf)
-
-> Hinweis: Keine Rechtsberatung. Vor Go-live durch Anwalt oder Datenschutzberater prüfen lassen.
-
-- [ ] **AI Act Art. 50:** KI-Hinweis zu Gesprächsbeginn, gilt seit 02.08.2026 ([Quelle](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
-- [ ] **Aufzeichnung:** Einwilligung von Kunde und Team (§201 StGB); Ansage und Weg zum Widersprechen
-- [ ] **DSGVO:** Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung) · Informationspflicht (kurze Ansage + Datenschutzerklärung auf example.com) · AVV mit allen Dienstleistern · Drittlandtransfer prüfen · Löschkonzept · Verzeichnis der Verarbeitungstätigkeiten · Datenschutz-Folgenabschätzung prüfen
-- [ ] **Team:** informieren, Einwilligung oder Vereinbarung zu Aufnahmen
-- [ ] **Allergene (LMIV):** Auskunft nur aus gepflegten DB-Werten, sonst Rückruf durch das Team
-- [ ] **Kasse (TSE):** KI-Bestellungen werden ordnungsgemäß in der Kasse gebucht
+**Rules**
+- Prices in cents as integer, phone numbers in E.164 format
+- Each transaction carries a `call_id`
+- Recordings and transcripts get a deletion date
+- Menu master is the register if exportable; else agent DB plus weekly reconciliation check
+- Recommended DB tech: PostgreSQL in the EU (decision in C3)
 
 ---
 
-## 9. Risiken (Pre-Mortem)
+## 8. Legal Check (C1, before first real call)
 
-| # | Risiko | Gegenmaßnahme | Stufe |
+> Note: Not legal advice. Have a lawyer or data protection consultant review before go-live.
+
+- [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
+- [ ] **Recording:** Consent from customer and team (§201 StGB); announcement and way to object
+- [ ] **GDPR:** Legal basis per use case (order · recording · analysis) · information requirement (brief announcement + privacy policy on example.com) · DPA with all processors · third-country transfer check · deletion concept · processing activity register · data protection impact assessment review
+- [ ] **Team:** inform, consent or agreement to recordings
+- [ ] **Allergens (LMIV):** Information from maintained DB values only, else team callback
+- [ ] **Register (TSE):** AI orders booked properly in register
+
+---
+
+## 9. Risks (Pre-Mortem)
+
+| # | Risk | Mitigation | Stage |
 |---|---|---|---|
-| R1 | Latenz oder unnatürliche Stimme → Kunden legen auf | Latenz im PoC messen, Anbieter danach wählen | 1 |
-| R2 | Gerichtnamen oder Dialekt falsch verstanden | Vokabular, Nummern, Tastatur, Evals mit echten Aufnahmen | 2 |
-| R3 | Internet oder Plattform fällt zur Stoßzeit aus | Fallback aufs Team, Alarm, „KI pausieren" | 1 |
-| R4 | Aufnahme oder KI-Hinweis rechtlich angreifbar | Rechts-Check vor G0, geprüfte Ansagetexte | 0 |
-| R5 | Menü oder Preise weichen von der Kasse ab | ein Master, Abgleich-Test, „Gericht aus" | 2 |
-| R6 | Falsche Allergen-Auskunft | nur DB-Werte, sonst Rückruf durch das Team | 2 |
-| R7 | Kosten laufen weg (Spam, Schleifen, lange Anrufe) | Maximaldauer, Schleifenschutz, Kosten-Alarm | 1 |
-| R8 | Anrufer-ID geht bei der Umleitung verloren | im PoC testen; Fallback: Nummer abfragen | 1 |
-| R9 | Eine Änderung verschlechtert unbemerkt die Qualität | Regression-Evals, Versionierung | 2 |
-| R10 | Team nutzt die GUI nicht | 2-Tap-Regel, Team in Rollenspiele einbinden | 1 |
-| R11 | Anbieter-Lock-in oder Preiserhöhung | Logik, Prompts und Evals bei dir, Tools per Webhook | 0 |
-| R12 | Doppelbestellung durch Wiederholung oder Netzfehler | Idempotenz-Schlüssel je Bestellung | 2 |
+| R1 | Latency or unnatural voice → customers hang up | Measure latency in PoC, select vendor accordingly | 1 |
+| R2 | Dish names or dialect misunderstood | Vocabulary, numbers, keyboard, evals with real recordings | 2 |
+| R3 | Internet or platform down during peak | Fallback to team, alarm, "AI pause" | 1 |
+| R4 | Recording or AI disclosure legally challenged | Legal check before G0, vetted announcement text | 0 |
+| R5 | Menu or prices differ from register | one master, reconciliation test, "dish sold out" | 2 |
+| R6 | Wrong allergen information | DB values only, else team callback | 2 |
+| R7 | Costs spiral (spam, loops, long calls) | Max duration, loop protection, cost alarm | 1 |
+| R8 | Caller ID lost on redirect | Test in PoC; fallback: ask for number | 1 |
+| R9 | A change silently degrades quality | Regression evals, versioning | 2 |
+| R10 | Team doesn't use the GUI | 2-tap rule, team in role-plays | 1 |
+| R11 | Vendor lock-in or price increase | Logic, prompts, evals in-house, tools via webhook | 0 |
+| R12 | Double order from retry or network error | Idempotency key per order | 2 |
 
 ---
 
-## 10. Chats & Start-Prompts
+## 10. Chats & Start Prompts
 
-| Chat | Arbeitspaket | Stufen | Liefert |
+| Chat | Work Package | Stages | Delivers |
 |---|---|---|---|
-| C0 | Steuerung | alle | Plan, Gates, Entscheidungen, PCF-Updates |
-| C1 | Ist-Aufnahme & Recht | 0 | Fakten, Baseline, Rechts-To-dos, Ansagetexte |
-| C2 | Architektur, Telefonie & Anbieter | 0–1, 5 | Anbieterwahl, Kostenmodell, Routing, PoC |
-| C3 | Datenmodell & Agent-API | 1–3 | Schema, Import, Tools im heißen Pfad |
-| C4 | Dialog, Prompts & Evals | 1–4 | Gesprächsflüsse, System-Prompt, Eval-Suite |
-| C5 | Integration mit n8n | 1–5 | Küche/Kasse, Rückrufe, Logs, Alarme |
-| C6 | GUI | 1–5 | Betrieb-Tablet, Admin |
-| C7 | Einlernen & Qualität | 1–4 | Aufnahmen, lokale Transkription, Schattenmessung |
-| C8 | Rollout & Betrieb | 5–6 | Runbook, Schulung, Monitoring, Review |
+| C0 | Steering | all | Plan, gates, decisions, PCF updates |
+| C1 | Current state & legal | 0 | Facts, baseline, legal to-dos, announcement texts |
+| C2 | Architecture, telephony & vendors | 0–1, 5 | Vendor choice, cost model, routing, PoC |
+| C3 | Data model & agent API | 1–3 | Schema, import, hot-path tools |
+| C4 | Dialog, prompts & evals | 1–4 | Conversation flows, system prompt, eval suite |
+| C5 | n8n integration | 1–5 | Kitchen/register, callbacks, logs, alarms |
+| C6 | GUI | 1–5 | Operations tablet, admin |
+| C7 | Learning & quality | 1–4 | Recordings, local transcription, shadow measurement |
+| C8 | Rollout & operations | 5–6 | Runbook, training, monitoring, review |
 
-**Reihenfolge:** C1 + C2 parallel → G0 → je Stufe C3 → C4 → C5 → C6 · C7 läuft ab Stufe 1 im Hintergrund · C8 ab Stufe 5
+**Sequence:** C1 + C2 parallel → G0 → per stage C3 → C4 → C5 → C6 · C7 runs in background from stage 1 · C8 from stage 5
 
-### So arbeitest du mit den Chats
-1. Neuer Chat in diesem Claude-Projekt → Start-Prompt des Pakets einfügen
-2. Der Chat liest die aktuelle PCF aus Google Drive, oder du hängst sie an
-3. Am Ende liefert der Chat einen Übergabeblock → in Abschnitt 13 einfügen, Version +0.1
-4. Gates und neue Entscheidungen meldest du in C0 → C0 aktualisiert die Abschnitte 3 und 5
-5. Wird ein Chat lang: Übergabeblock erzeugen und im frischen Chat weitermachen
+### How to Work with the Chats
+1. New chat in this Claude project → insert start prompt for the package
+2. Chat reads the current PCF from Google Drive, or you attach it
+3. At the end, chat delivers a handover block → insert into section 13, version +0.1
+4. Gates and new decisions go to C0 → C0 updates sections 3 and 5
+5. If a chat gets long: Generate handover block and continue in fresh chat
 
-### C1 – Ist-Aufnahme & Recht
+### C1 – Current State & Legal
 ```text
-Projekt Maex Voice-Agent · Chat C1 – Ist-Aufnahme & Recht (Stufe 0)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). E1 und E7 sind gesetzt, alle anderen Entscheidungen gelten bis Veto.
-Arbeitsweise: code-autopilot · Rückfragen geschlossen mit markierter Empfehlung, eine pro Unterbrechung · Recherchierbares selbst recherchieren.
+Project Maex Voice-Agent · Chat C1 – Current State & Legal (Stage 0)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). E1 and E7 are set, all other decisions hold until veto.
+Workflow: code-autopilot · closed questions with marked recommendation, one per interrupt · researchable items researched by you.
 
-Ziel: alle Fakten und rechtlichen Grundlagen für Gate G0.
-1. Kasse: Hersteller, Schnittstelle oder Export, Bondrucker im Netzwerk?
-2. Telefonie: Anbieter, Router oder Anlage, Leitungen, Rufumleitung möglich?
-3. Anrufe: pro Tag, Stoßzeiten, verpasste Anrufe, Mix aus Bestellung, Reservierung, Frage, Beschwerde
-4. Menü: Quelle und Format, Nummerierung, Varianten, Allergene gepflegt?
-5. Reservierung: heutiger Ablauf, Kapazität
-6. Team: Wer nimmt ab? Durchwahl oder Handy für Weiterleitungen?
-7. Baseline: Messplan für Fehler je 100 Telefonbestellungen (2 Wochen)
-8. Recht: PCF-Abschnitt 8 abarbeiten, Ansagetexte entwerfen (KI-Hinweis, Aufnahme-Einwilligung), offene Punkte für Anwalt oder Datenschutzberater sammeln
-9. Budget: Obergrenze laufend pro Monat und einmalig
+Goal: all facts and legal foundations for gate G0.
+1. Register: manufacturer, interface or export, network receipt printer?
+2. Telephony: provider, PBX or system, lines, redirect possible?
+3. Calls: per day, peak times, missed calls, mix of order, reservation, question, complaint
+4. Menu: source and format, numbering, variants, allergens maintained?
+5. Reservation: current workflow, capacity
+6. Team: who picks up? Extension or mobile for transfers?
+7. Baseline: measurement plan for errors per 100 phone orders (2 weeks)
+8. Legal: work through PCF section 8, draft announcement texts (AI disclosure, recording consent), collect open items for lawyer or data protection consultant
+9. Budget: ceiling per month ongoing and one-time
 
-Output: Faktenliste · Baseline-Messplan · Ansagetexte · Rechts-To-dos
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Output: Facts list · baseline measurement plan · announcement texts · legal to-dos
+End: handover block per PCF section 12.
 ```
 
-### C2 – Architektur, Telefonie & Anbieter
+### C2 – Architecture, Telephony & Vendors
 ```text
-Projekt Maex Voice-Agent · Chat C2 – Architektur, Telefonie & Anbieter (Stufe 0–1)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). E1 Hybrid ist gesetzt.
-Arbeitsweise: code-autopilot · Rückfragen geschlossen mit markierter Empfehlung · Verträge, Kosten und API-Schlüssel nur nach Freigabe.
+Project Maex Voice-Agent · Chat C2 – Architecture, Telephony & Vendors (Stage 0–1)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). E1 Hybrid is set.
+Workflow: code-autopilot · closed questions with marked recommendation · contracts, costs, and API keys only after approval.
 
-Ziel: Voice-Plattform wählen und den ersten Testanruf durchstechen.
-1. Aktuelle Anbieter recherchieren und nach PCF-Abschnitt 6 bewerten → Top 2
-2. Kostenmodell: Anrufe pro Tag × Ø Minuten × € pro Minute + Fixkosten (Zahlen aus C1)
-3. Telefonie-Routing: Modi Schatten/Überlauf/Primär, Team-Durchwahl, Schleifenschutz, Fallback bei Ausfall, Aufzeichnungsweg
-4. Hosting in der EU für Agent-API, DB und n8n
-5. PoC auf Testnummer: Latenz, Anrufer-ID bei Umleitung, Tastentöne, Weiterleitung, Unterbrechen
+Goal: choose voice platform and get first test call through.
+1. Research current vendors and score per PCF section 6 → Top 2
+2. Cost model: calls per day × avg minutes × € per minute + fixed costs (numbers from C1)
+3. Phone routing: modes shadow/overflow/primary, team extension, loop protection, outage fallback, recording path
+4. Hosting in EU for agent API, DB, and n8n
+5. PoC on test number: latency, caller ID on redirect, touch tones, transfer, interruption
 
-Output: Bewertungsmatrix · Kostenmodell · Routing-Skizze · PoC-Protokoll
-Gate: Anbieter und Hosting freigegeben (Teil von G0)
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Output: Scoring matrix · cost model · routing sketch · PoC log
+Gate: Vendor and hosting approved (part of G0)
+End: handover block per PCF section 12.
 ```
 
-### C3 – Datenmodell & Agent-API
+### C3 – Data Model & Agent API
 ```text
-Projekt Maex Voice-Agent · Chat C3 – Datenmodell & Agent-API (Stufe 1–3)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4 und 7.
-Arbeitsweise: code-autopilot Build-Loop · Umsetzung idealerweise in Claude Code, damit alles echt ausgeführt wird.
+Project Maex Voice-Agent · Chat C3 – Data Model & Agent API (Stage 1–3)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment), especially sections 4 and 7.
+Workflow: code-autopilot build loop · ideally implementation in Claude Code so everything runs real.
 
-Ziel: Agent-DB und schnelle Tools für den heißen Pfad, Stufe für Stufe.
-Stufe 1: Konfiguration, Öffnungszeiten, Kapazität, Reservierungen, Anrufe, Rückrufe · Entscheidung DB-Technik
-Stufe 2: Menü, Optionen, Allergene, Aliase · Import aus Kasse oder Menü · Suche
-Stufe 3: Kunden, Adressen, Lieferzonen · Zonen-Check (PLZ oder Polygon)
-Regeln: Preise in Cent · E.164 · audit_log · Löschdaten · versionierte Migrationen · Backup vor jeder Änderung
+Goal: agent DB and fast tools for hot path, stage by stage.
+Stage 1: configuration, hours, capacity, reservations, calls, callbacks · decision on DB tech
+Stage 2: menu, options, allergens, aliases · import from register or menu · search
+Stage 3: customers, addresses, delivery zones · zone check (postal code or polygon)
+Rules: prices in cents · E.164 · audit_log · deletion dates · versioned migrations · backup before each change
 
-Gate je Stufe: Tool-Antwort < 300 ms · Tests für Grenzfälle grün
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Gate per stage: tool response < 300 ms · tests for boundary cases green
+End: handover block per PCF section 12.
 ```
 
 ### C4 – Dialog, Prompts & Evals
 ```text
-Projekt Maex Voice-Agent · Chat C4 – Dialog, Prompts & Evals (Stufe 1–4)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Die Leitregeln in Abschnitt 1 sind bindend.
-Arbeitsweise: code-autopilot Prompt-Werkstatt · eine Variable pro Iteration · jede Prompt-Version mit Eval-Lauf.
+Project Maex Voice-Agent · Chat C4 – Dialog, Prompts & Evals (Stage 1–4)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). The guiding principles in section 1 are binding.
+Workflow: code-autopilot prompt workshop · one variable per iteration · each prompt version with eval run.
 
-Ziel: Gesprächsflüsse, System-Prompt, Tool-Beschreibungen und Eval-Suite, die G1 bis G3 bestehen.
-Dialog: Begrüßung mit KI-Hinweis · Absicht erkennen · Pflichtangaben je Vorgang · Verständnis-Leiter (nachfragen → buchstabieren → Tastatur → SMS → Rückruf) · Vorlesen + „Ja" · Allergene nur aus der DB · Beschwerde, Mensch-Wunsch, Storno → Team · Maximaldauer
-Token: kurzer System-Prompt · Menü-Index statt ganzem Menü · Details per Tool · kompakter Bestellstatus statt Verlauf · kleinstes Modell, das die Evals besteht
-Evals: Fall = Transkript → erwartetes JSON · Metriken aus PCF-Abschnitt 1 · Regression vor jeder Änderung
-Entscheidung in Stufe 1: Stimme natürlich oder synthetisch
+Goal: conversation flows, system prompt, tool descriptions, and eval suite that pass G1 through G3.
+Dialog: greeting with AI disclosure · intent recognition · required info per transaction · understanding ladder (ask → spell → keyboard → SMS → callback) · read-back + "yes" · allergens from DB only · complaint, human request, cancellation → team · max duration
+Tokens: short system prompt · menu index not full menu · details per tool · compact order status not history · smallest model that passes evals
+Evals: case = transcript → expected JSON · metrics from PCF section 1 · regression before each change
+Decision in stage 1: voice natural or synthetic
 
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+End: handover block per PCF section 12.
 ```
 
-### C5 – Integration mit n8n
+### C5 – n8n Integration
 ```text
-Projekt Maex Voice-Agent · Chat C5 – Integration mit n8n (Stufe 1–5)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang), besonders Abschnitt 4.
-Arbeitsweise: code-autopilot · n8n self-hosted per Docker · Python nur, wo n8n nicht reicht.
+Project Maex Voice-Agent · Chat C5 – n8n Integration (Stage 1–5)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment), especially section 4.
+Workflow: code-autopilot · n8n self-hosted via Docker · Python only where n8n doesn't reach.
 
-Ziel: Der kalte Pfad läuft zuverlässig. Bestätigte Vorgänge landen in Küche und Kasse, Rückrufe beim Team.
-Inhalte: Webhooks der Plattform · Küche/Kasse (Schnittstelle oder Netzwerk-Bon) · Idempotenz · Retry und Fehler-Workflow mit Benachrichtigung · Kosten- und Ausfall-Alarm · Tagesbericht · SMS optional (eigenes Gate)
+Goal: cold path runs reliably. Confirmed transactions land in kitchen and register, callbacks with team.
+Contents: platform webhooks · kitchen/register (interface or network receipt) · idempotency · retry and error workflow with notification · cost and outage alarm · daily report · SMS optional (own gate)
 
-Gate je Stufe: Ende-zu-Ende-Test · Ausfalltest (Plattform, DB oder n8n weg)
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Gate per stage: end-to-end test · outage test (platform, DB, or n8n gone)
+End: handover block per PCF section 12.
 ```
 
 ### C6 – GUI
 ```text
-Projekt Maex Voice-Agent · Chat C6 – GUI (Stufe 1–5)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang).
-Arbeitsweise: code-autopilot · Umsetzung idealerweise in Claude Code.
+Project Maex Voice-Agent · Chat C6 – GUI (Stage 1–5)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment).
+Workflow: code-autopilot · ideally implementation in Claude Code.
 
-Ziel: eine Oberfläche, die das Team im Stress ohne Erklärung bedient.
-Betrieb (Tablet): neue Bestellungen mit OK/Korrigieren · Reservierungen heute · Rückrufe mit Ton · Schalter: KI pausieren, Lieferung pausieren, Wartezeit +15/+30, Gericht aus
-Admin (PC): Menü und Aliase · Zeiten und Sondertage · Zonen · Anruf-Log · KPIs und Kosten · Eval-Ergebnisse · Daten löschen
-Regeln: jede Aktion ≤ 2 Taps · große Schrift · keine Fachbegriffe · Live-Aktualisierung
+Goal: one surface the team operates under stress without explanation.
+Operations (tablet): new orders with OK/Correct · reservations today · callbacks with tone · switches: AI pause, delivery pause, wait +15/+30, dish sold out
+Admin (PC): menu and aliases · hours and special days · zones · call log · KPIs and costs · eval results · delete data
+Rules: each action ≤ 2 taps · large font · no jargon · live updates
 
-Gate: Technik-Entscheidung in Stufe 1 · ein Teammitglied bedient die Betrieb-Ansicht 5 Minuten ohne Erklärung
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Gate: tech decision in stage 1 · one team member operates the operations view 5 minutes without explanation
+End: handover block per PCF section 12.
 ```
 
-### C7 – Einlernen & Qualität
+### C7 – Learning & Quality
 ```text
-Projekt Maex Voice-Agent · Chat C7 – Einlernen & Qualität (ab Stufe 1, Messung in Stufe 4)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Start erst nach der Rechtsfreigabe (Abschnitt 8).
-Arbeitsweise: code-autopilot · Verarbeitung ausschließlich auf dem EU-Server, nichts auf Maxis PC.
+Project Maex Voice-Agent · Chat C7 – Learning & Quality (from stage 1, measurement in stage 4)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). Start only after legal approval (section 8).
+Workflow: code-autopilot · processing only on EU server, nothing on Maxi's PC.
 
-Ziel: aus echten Anrufen lernen und die echte Fehlerquote messen, ohne Kundenrisiko.
-Pipeline: Aufnahme mit Einwilligung → Transkription auf dem EU-Server → KI extrahiert den Vorgang als JSON → Abgleich mit Kasse/Bon → Fehler-Taxonomie → neue Aliase, FAQ und Eval-Fälle → Löschen nach Frist
+Goal: learn from real calls and measure real error rate without customer risk.
+Pipeline: recording with consent → transcription on EU server → AI extracts transaction as JSON → reconcile with register/receipt → error taxonomy → new aliases, FAQs, and eval cases → delete after period
 
-Gate G4: ≥ 200 Anrufe · KI ≥ Team-Baseline · keine kritische Fehlerklasse offen
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Gate G4: ≥ 200 calls · AI ≥ team baseline · no open critical error class
+End: handover block per PCF section 12.
 ```
 
-### C8 – Rollout & Betrieb
+### C8 – Rollout & Operations
 ```text
-Projekt Maex Voice-Agent · Chat C8 – Rollout & Betrieb (Stufe 5–6)
-Lies zuerst die aktuelle „PCF – Maex Voice-Agent" (Google Drive oder Anhang). Voraussetzung: G1 bis G4 bestanden.
-Arbeitsweise: code-autopilot · jede Umschaltung mit Rückweg.
+Project Maex Voice-Agent · Chat C8 – Rollout & Operations (Stage 5–6)
+Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). Prerequisite: G1 through G4 passed.
+Workflow: code-autopilot · each switch with a way back.
 
-Ziel: sicherer Wechsel vom Überlauf zur Hauptannahme und stabiler Betrieb.
-Inhalte: Modus-Umschaltung und Zeitfenster · Team-Schulung (15 Minuten, 1 Seite) · Notfall-Runbook (Plattform, Internet, DB weg) · Monitoring und KPIs · Freigabe-Knopf nach G5 abschalten · Monats-Review
+Goal: safe transition from overflow to primary and stable operations.
+Contents: mode switch and time windows · team training (15 minutes, 1 page) · emergency runbook (platform, internet, DB gone) · monitoring and KPIs · remove approval button after G5 · monthly review
 
-Gate: G5, danach monatlicher Review
-Ende: Übergabeblock nach PCF-Abschnitt 12.
+Gate: G5, then monthly review
+End: handover block per PCF section 12.
 ```
 
 ---
 
-## 11. Repo & Versionierung
+## 11. Repo & Versioning
 
 ```text
 maex-voice-agent/
-├── api/             Tools im heißen Pfad
-├── db/migrations/   versionierte Schema-Änderungen
-├── n8n/             Workflow-Exporte mit Datum und Version
-├── prompts/         System-Prompt je Version
-├── evals/           Testfälle und Auswertung
+├── api/             tools in hot path
+├── db/migrations/   versioned schema changes
+├── n8n/             workflow exports with date and version
+├── prompts/         system prompt per version
+├── evals/           test cases and scoring
 ├── gui/
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
 ```
 
-- Conventional Commits, `main` bleibt lauffähig
-- `.env`, echte Aufnahmen und Kundendaten kommen nie ins Repo
-- Jede Prompt-Version bekommt einen Eval-Lauf, das Ergebnis steht im Commit
+- Conventional commits, `main` stays runnable
+- `.env`, real recordings, and customer data never go in repo
+- Each prompt version gets an eval run, result in commit
 
 ---
 
-## 12. Übergabeblock (Vorlage für jedes Chat-Ende)
+## 12. Handover Block (Template for Each Chat End)
 
 ```text
-## Übergabe <Datum> – C<Nr> <Thema>
-Stand: <was läuft, was nicht>
-Artefakte: <Dateien, Links>
-Entscheidungen: <E-Nr · Entscheidung · Grund>
-Gate: <bestanden | offen + was fehlt>
-Offen: <nächster konkreter Schritt zuerst>
-Stolpersteine: <Lernpunkte>
+## Handover <Date> – C<Nr> <Topic>
+Status: <what runs, what doesn't>
+Artifacts: <files, links>
+Decisions: <E-Nr · decision · rationale>
+Gate: <passed | open + what's missing>
+Open: <next concrete step first>
+Lessons: <learnings>
 ```
 
 ---
 
-## 13. Übergaben (neueste oben)
+## 13. Handovers (newest first)
 
 ```text
-## Übergabe 16.09.2026 – T-0.1 bis T-0.6, T-1.1 bis T-1.4
-Stand: Stack läuft (Postgres, API, n8n), Schema 001 mit zehn Stufe-1-Tabellen, Seed idempotent,
-       Tools get_service_status und check_slot mit p95 10 bis 14 ms; 89 Tests grün, CI grün.
-       Schreibende Tools (create_reservation, confirm, create_callback, transfer_to_team), Anruf-Log,
-       Prompt, Agent-Kern und GUI fehlen.
-Artefakte: PR #1 und #2 auf main gemerged (main = df7c071). Branch claude/new-session-c3waic = main.
+## Handover 16.09.2026 – T-0.1 through T-0.6, T-1.1 through T-1.4
+Status: Stack running (Postgres, API, n8n), schema 001 with ten stage-1 tables, seed idempotent,
+       tools get_service_status and check_slot with p95 10–14 ms; 89 tests green, CI green.
+       Write tools (create_reservation, confirm, create_callback, transfer_to_team), call log,
+       prompt, agent core, and GUI still missing.
+Artifacts: PR #1 and #2 merged to main (main = df7c071). Branch claude/new-session-c3waic = main.
        api/core, api/db.py, api/models, api/domain/{status,reservations}, api/tools, db/, scripts/seed.py.
-Entscheidungen: Platzhalter statt Namen (CLAUDE.md §1) · Empfehlungen werden direkt abgenommen (§6) ·
-       Betriebstag ab 05:00 · Fachfehler HTTP 200 in der Hülle, nur Auth 401 · Kapazität ohne Verweildauer,
-       Fenster = Sitz-Turns, Entwürfe zählen · Seed-Werte Platzhalter bis C1 · Seed überschreibt Live-Schalter nie.
-Gate: G0 offen. Fehlt: Anbieter (C2), Rechts-Check, Budget, Ist-Aufnahme (C1).
-Offen: T-1.5 create_reservation (Entwurf, readback, Idempotenz, core/ids.py) → T-1.6 confirm mit audit_log
-       und Outbox → T-1.7 create_callback → T-1.8 transfer_to_team → T-1.9 Anruf-Log. Parallel: T-0.7, T-0.8.
-Stolpersteine: Claude-Code-Web-Sandbox: Docker-Daemon läuft nicht automatisch und stirbt mit der Shell;
-       Start mit setsid nohup dockerd. Lokale .env ist nicht im Repo, Zugangsdaten maex/maex/maex_agent.
-       Lokale Tests brauchen DATABASE_URL auf localhost. Docker-Hub-Rate-Limit möglich (docker login).
-       str(URL) in SQLAlchemy maskiert das Passwort. Codex reviewt jeden PR automatisch, Findings sind gut.
+Decisions: placeholders instead of names (CLAUDE.md §1) · recommendations adopted directly (§6) ·
+       operations day starts at 05:00 · domain errors HTTP 200 in envelope, auth only 401 · capacity without dwell,
+       slots = seat turns, drafts count · seed values placeholders until C1 · seed never overwrites live switch.
+Gate: G0 open. Missing: vendor (C2), legal check, budget, current state (C1).
+Open: T-1.5 create_reservation (draft, readback, idempotency, core/ids.py) → T-1.6 confirm with audit_log
+       and outbox → T-1.7 create_callback → T-1.8 transfer_to_team → T-1.9 call log. In parallel: T-0.7, T-0.8.
+Lessons: Claude Code web sandbox: Docker daemon doesn't start automatically and dies with shell;
+       start with setsid nohup dockerd. Local .env not in repo, credentials maex/maex/maex_agent.
+       Local tests need DATABASE_URL on localhost. Docker Hub rate limit possible (docker login).
+       str(URL) in SQLAlchemy masks the password. Codex reviews every PR automatically, findings good.
 ```
 
 ---
 
-## 14. Offene Fragen (werden gestellt, wenn sie gebraucht werden)
+## 14. Open Questions (asked when needed)
 
-| Frage | Wann | Chat |
+| Question | When | Chat |
 |---|---|---|
-| Kassensystem und Schnittstelle | Stufe 0 | C1 |
-| Telefonanbieter, Router, Rufumleitung | Stufe 0 | C1 |
-| Budget laufend und einmalig | vor G0 | C1 |
-| Stufenreihenfolge final (Anruf-Mix) | G0 | C0 |
-| Anbieter und Hosting | G0 | C2 |
-| DB-Technik | Stufe 1 | C3 |
-| GUI-Technik | Stufe 1 | C6 |
-| Stimme: natürlich oder synthetisch | Stufe 1 | C4 |
-| SMS-Zusammenfassung ja/nein | Stufe 3 | C5 |
+| POS system and interface | Stage 0 | C1 |
+| Phone provider, PBX, redirect | Stage 0 | C1 |
+| Budget monthly and one-time | before G0 | C1 |
+| Stage order final (call mix) | G0 | C0 |
+| Vendor and hosting | G0 | C2 |
+| DB tech | Stage 1 | C3 |
+| GUI tech | Stage 1 | C6 |
+| Voice: natural or synthetic | Stage 1 | C4 |
+| SMS summary yes/no | Stage 3 | C5 |
 
 ---
 
-## 15. Glossar
+## 15. Glossary
 
-- **Durchstich:** kleinste Version, die einmal durch alle Schichten läuft, vom Telefon bis in die GUI
-- **Gate:** Prüfpunkt mit messbaren Kriterien; ohne Bestehen keine nächste Stufe
-- **Eval-Suite:** Testfälle mit erwartetem Ergebnis, die die Genauigkeit automatisch messen
-- **Regressionstest:** Evals nach jeder Änderung erneut laufen lassen, damit nichts unbemerkt schlechter wird
-- **Heißer / kalter Pfad:** Arbeit, während der Kunde wartet, gegenüber Arbeit nach dem Gespräch
-- **Tastentöne (DTMF):** Zahleneingabe über die Telefontastatur, robust bei schlechtem Empfang
-- **Unterbrechen (Barge-in):** Der Kunde kann in die Ansage der KI hineinsprechen
-- **Idempotenz:** doppelt gesendet, einmal ausgeführt; verhindert Doppelbestellungen
-- **AVV:** Auftragsverarbeitungsvertrag nach DSGVO mit jedem Dienstleister, der Kundendaten verarbeitet
-- **PoC:** Proof of Concept, technischer Machbarkeitstest
+- **Through-cut:** smallest version that runs once through all layers, from phone to GUI
+- **Gate:** checkpoint with measurable criteria; can't proceed to next stage without passing
+- **Eval suite:** test cases with expected results that automatically measure accuracy
+- **Regression test:** run evals again after each change to prevent silent quality degradation
+- **Hot / cold path:** work while customer waits, versus work after the call
+- **Touch tones (DTMF):** number entry via phone keypad, robust with poor reception
+- **Interruption (barge-in):** customer can speak over the AI's message
+- **Idempotency:** sent twice, executed once; prevents double orders
+- **DPA:** Data Processing Agreement per GDPR with each processor of customer data
+- **PoC:** Proof of Concept, technical feasibility test
 
 ---
 
 ## 16. Changelog
 
-- **v1.0 · 11.09.2026:** Erstfassung aus C0 (Loops 1–8). Enthält Ziel, Leitregeln, KPIs, Architektur Hybrid, Stufen 0–6 mit Gates, Anbieter-Kriterien, Datenmodell, Rechts-Check, Risiken und 8 Arbeitspakete mit Start-Prompts.
+- **v1.0 · 11.09.2026:** First version from C0 (loops 1–8). Contains objective, guiding principles, KPIs, hybrid architecture, stages 0–6 with gates, vendor criteria, data model, legal check, risks, and 8 work packages with start prompts.
