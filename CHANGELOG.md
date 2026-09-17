@@ -30,6 +30,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Compose additionally mounts `scripts/` and `evals/` so `make lint` runs in container
 
 ### Fixed
+- `numberwords`: a number no longer grows across a punctuation mark or across the article of an amount ("Nummer 20, eine Portion" was item 21 with amount 21); an article that begins a number counts ("die ein und zwanzig" was 20); a number attached to an amount marker is not counted as a second dish number ("2 x die 23" asked back for nothing)
 - Dockerfile: additional CA cert (`api/ca-bundle.crt`) is optional, not required; build works on clean checkout
 - Dockerfile: source code lands under `/app/api` again so `uvicorn api.main:app` starts without bind mount
 - Compose: n8n listens on `0.0.0.0` not `::`, avoids crash loop on Docker hosts without IPv6

@@ -211,3 +211,51 @@ def test_alle_zahlen_im_satz(text, erwartet):
     """Der bloße Artikel zaehlt nicht mit, sonst faende sich in fast jedem Satz
     eine Eins."""
     assert find_numbers(text) == erwartet
+
+
+# --- Codex-Review PR #105 ------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 20, eine Portion", "Nummer 20 eine Portion", "die 40, zwei Portionen"],
+)
+def test_zahl_waechst_nicht_ueber_die_menge_hinweg(text):
+    """P1: "Nummer 20, eine Portion" ergab 21 - die Regel fuer ziffernweise
+    gesprochene Zahlen ("vierzig sieben") griff ueber das Komma und ueber den
+    Artikel der Mengenangabe hinweg. Falsches Gericht und absurde Menge."""
+    nummer = find_item_number(text)
+    menge = find_quantity(text)
+
+    assert nummer in (20, 40)
+    assert menge in (1, 2)
+    assert nummer != menge
+
+
+@pytest.mark.parametrize(
+    ("text", "erwartet"),
+    [
+        ("die ein und zwanzig", 21),
+        ("ich haette gern die ein und dreissig", 31),
+    ],
+)
+def test_artikel_der_eine_zahl_beginnt_zaehlt_mit(text, erwartet):
+    """P1: "ein" wurde als Artikel verworfen, bevor jemand geprueft hat, ob es
+    eine Zahl beginnt - "die ein und zwanzig" wurde so zur 20."""
+    assert find_item_number(text) == erwartet
+    assert find_numbers(text) == [erwartet]
+
+
+@pytest.mark.parametrize(
+    ("text", "nummer", "menge"),
+    [
+        ("2 x die 23", 23, 2),
+        ("drei Portionen von der 23", 23, 3),
+        ("zweimal die dreiundzwanzig", 23, 2),
+    ],
+)
+def test_eine_menge_macht_die_bestellung_nicht_mehrdeutig(text, nummer, menge):
+    """P2: die Menge zaehlte als zweite Zahl, also galt die Bestellung als
+    mehrdeutig und der Gast wurde ohne Not zurueckgefragt."""
+    assert find_item_number(text) == nummer
+    assert find_quantity(text) == menge
