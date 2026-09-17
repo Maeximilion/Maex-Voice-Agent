@@ -32,6 +32,9 @@ services:
       - ./scripts:/app/scripts
       - ./evals:/app/evals
       - ./db:/app/db
+      # Ohne diese Datei findet ruff im Container keine Konfiguration und prueft nach
+      # seiner Standardmenge: make lint wuerde andere Regeln melden als die CI.
+      - ./pyproject.toml:/app/pyproject.toml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
