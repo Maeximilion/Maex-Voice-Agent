@@ -1,6 +1,6 @@
 """Stufe 1: tenants, service_config, opening_hours, special_days, capacity, reservations, calls, callbacks, outbox, audit_log.
 
-Quelle: docs/03_DATENMODELL.md §Migrationsreihenfolge. Per autogenerate erzeugt und durchgesehen.
+Quelle: docs/03_DATA_MODEL.md §Migrationsreihenfolge. Per autogenerate erzeugt und durchgesehen.
 
 Revision: 001
 Vorgänger:

@@ -20,7 +20,7 @@
 ## S1 – Session-Start
 ```text
 /start
-→ liest CLAUDE.md, docs/01_STATUS.md, docs/07_ARBEITSPAKETE.md
+→ liest CLAUDE.md, docs/01_STATUS.md, docs/07_WORKPACKAGES.md
 → nennt Stufe, Gate, Blocker
 → schlägt 1–3 startklare Aufgaben vor, mit Empfehlung
 → wartet auf Wahl
