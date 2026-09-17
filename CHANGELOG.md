@@ -12,6 +12,9 @@ Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_S
 - `scripts/seed.py`: idempotente Testkonfiguration (Mandant, Live-Schalter, Öffnungszeiten, Kapazität), `make seed`
 - Tool `POST /v1/tools/get_service_status`: offen/geschlossen je Service, Sondertage schlagen Wochentage, Fenster über Mitternacht, Wartezeiten und Modus aus `service_config`, Vorlesesatz zur nächsten Öffnung; Latenz-Helfer `p95_ms` mit 300-ms-Budget in den Tests
 - Tool `POST /v1/tools/check_slot`: Verfügbarkeit aus `capacity` und aktiven Reservierungen innerhalb der `dinein`-Öffnungszeit, bis zu zwei Alternativen im Raster, Vorlesesatz mit gesprochenen Uhrzeiten
+- Tool `POST /v1/tools/create_reservation`: legt einen Entwurf an (`status: draft`), prüft Anruf, Rufnummer (E.164), Zukunft und Slot nach denselben Regeln wie `check_slot`, schreibt `audit_log`, liefert `readback` zum Vorlesen; gleicher `idempotency_key` liefert dieselbe Antwort ohne zweiten Vorgang
+- `api/core/ids.py`: deterministische Idempotenz-Schlüssel für Aufrufer ohne eigenen Schlüssel; `api/domain/customers/phone.py`: E.164-Normalisierung deutscher Schreibweisen
+- `create_reservation` sperrt Prüfen und Anlegen je Mandant und Tag (`pg_advisory_xact_lock`), damit gleichzeitige Anrufe ein Fenster nicht überbuchen; der `readback` bezieht „heute" und „morgen" auf den Anlagezeitpunkt, damit ein Replay nach Mitternacht denselben Satz liefert
 - Docker Compose für Postgres, API und n8n
 - Spezifikationen docs/00 bis docs/15
 - Slash-Befehle für Claude Code unter .claude/commands/

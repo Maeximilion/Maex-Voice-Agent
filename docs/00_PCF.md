@@ -467,7 +467,25 @@ Stolpersteine: <Lernpunkte>
 
 ## 13. Übergaben (neueste oben)
 
-_noch keine_
+```text
+## Übergabe 16.09.2026 – T-0.1 bis T-0.6, T-1.1 bis T-1.4
+Stand: Stack läuft (Postgres, API, n8n), Schema 001 mit zehn Stufe-1-Tabellen, Seed idempotent,
+       Tools get_service_status und check_slot mit p95 10 bis 14 ms; 89 Tests grün, CI grün.
+       Schreibende Tools (create_reservation, confirm, create_callback, transfer_to_team), Anruf-Log,
+       Prompt, Agent-Kern und GUI fehlen.
+Artefakte: PR #1 und #2 auf main gemerged (main = df7c071). Branch claude/new-session-c3waic = main.
+       api/core, api/db.py, api/models, api/domain/{status,reservations}, api/tools, db/, scripts/seed.py.
+Entscheidungen: Platzhalter statt Namen (CLAUDE.md §1) · Empfehlungen werden direkt abgenommen (§6) ·
+       Betriebstag ab 05:00 · Fachfehler HTTP 200 in der Hülle, nur Auth 401 · Kapazität ohne Verweildauer,
+       Fenster = Sitz-Turns, Entwürfe zählen · Seed-Werte Platzhalter bis C1 · Seed überschreibt Live-Schalter nie.
+Gate: G0 offen. Fehlt: Anbieter (C2), Rechts-Check, Budget, Ist-Aufnahme (C1).
+Offen: T-1.5 create_reservation (Entwurf, readback, Idempotenz, core/ids.py) → T-1.6 confirm mit audit_log
+       und Outbox → T-1.7 create_callback → T-1.8 transfer_to_team → T-1.9 Anruf-Log. Parallel: T-0.7, T-0.8.
+Stolpersteine: Claude-Code-Web-Sandbox: Docker-Daemon läuft nicht automatisch und stirbt mit der Shell;
+       Start mit setsid nohup dockerd. Lokale .env ist nicht im Repo, Zugangsdaten maex/maex/maex_agent.
+       Lokale Tests brauchen DATABASE_URL auf localhost. Docker-Hub-Rate-Limit möglich (docker login).
+       str(URL) in SQLAlchemy maskiert das Passwort. Codex reviewt jeden PR automatisch, Findings sind gut.
+```
 
 ---
 
