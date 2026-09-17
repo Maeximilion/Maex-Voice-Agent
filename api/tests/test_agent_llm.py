@@ -12,6 +12,11 @@ def test_turn_braucht_genau_eins_von_say_oder_tool_call():
         LLMTurn(say="Hallo", tool_call=ToolCall(name="get_service_status"))
 
 
+def test_understanding_failure_ist_unabhaengig_von_say_oder_tool_call():
+    turn = LLMTurn(say="Wie bitte?", understanding_failure="party_size")
+    assert turn.understanding_failure == "party_size"
+
+
 def test_state_patch_ist_unabhaengig_von_say_oder_tool_call():
     with_say = LLMTurn(say="Hallo", state_patch={"guest_name": "Müller"})
     with_tool = LLMTurn(

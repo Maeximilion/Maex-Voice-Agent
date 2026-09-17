@@ -1,12 +1,13 @@
 """Kundenzug → Modell → Tool-Aufrufe → Antwort; Abbruch bei `max_call_seconds` (docs/11 §agent).
 
-Die eigentliche Verständnis-Leiter (Nachfragen, Buchstabieren, Eskalation vor dem
-Modell) kommt erst mit T-2.2 (`ladder.py`, `escalation.py`). Hier steht nur der
-Antrieb: das Modell bekommt den Kundenzug und den kompakten Zustand, ruft null
-oder mehrere Tools auf, und irgendwann einen Satz für den Kunden — und wenn der
-Loop selbst nicht mehr weiterkommt (Zeitlimit, zu viele Tool-Hops), übernimmt er
-die Übergabe an das Team wirklich, statt sie dem Kunden nur anzukündigen
-(CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
+Zwei Prüfungen laufen vor jedem Modell-Aufruf, nicht danach (docs/11 §agent:
+"escalation.py prüft vor dem Modell"): `escalation.check()` auf dem rohen
+Kundentext (Beschwerde, Mensch-Wunsch, Storno — docs/05 §4) und die
+Verständnis-Leiter (`ladder.py`, docs/05 §2), die Fehlversuche je Information
+zählt und nach drei Stufenwechseln ohne Erfolg selbst eskaliert. Bricht der
+Loop aus eigenem Antrieb ab (Zeitlimit, zu viele Tool-Hops, Leiter erschöpft),
+übernimmt er die Übergabe an das Team wirklich, statt sie dem Kunden nur
+anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 """
 
 import json
@@ -14,13 +15,17 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any, get_args
 
 from sqlalchemy.orm import Session
 
+from api.agent import escalation
 from api.agent.dispatch import ToolResult, dispatch
+from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 from api.config import settings
+from api.schemas.callbacks import CallbackReason
 
 # Schutz gegen ein Modell, das sich zwischen Tool-Aufrufen verheddert und nie zu
 # einem Satz für den Kunden kommt: lieber sauber abbrechen als den Anruf endlos
@@ -28,14 +33,24 @@ from api.config import settings
 MAX_TOOL_HOPS = 6
 SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter."
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
+SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
+SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
 
-# Weder TransferReason noch CallbackReason kennen einen eigenen Grund für "der
-# Loop selbst ist abgebrochen" (docs/03 §Enums) - das eigene Erfinden eines neuen
-# Werts wäre eine Schema-Änderung außerhalb von T-2.1. "human_requested" trifft
-# die Absicht am ehesten: es braucht jetzt einen Menschen. Assumption, docs/01.
-HANDOFF_REASON = "human_requested"
+_CALLBACK_REASONS = frozenset(get_args(CallbackReason))
+# Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
+# in CallbackReason gar nicht existiert (docs/03: Storno ist nur ein
+# Transfer-Grund, kein Rückruf-Grund — siehe api/schemas/transfer.py).
+_CALLBACK_REASON_FALLBACK: CallbackReason = "human_requested"
+
+_HANDOFF_SUMMARIES = {
+    "complaint": "Kunde hat sich beschwert.",
+    "human_requested": "Kunde wollte mit einem Menschen sprechen.",
+    "cancellation": "Kunde wollte etwas stornieren.",
+    "not_understood": "Anliegen konnte automatisch nicht geklärt werden.",
+}
+_DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
 
 
 @dataclass
@@ -65,18 +80,32 @@ class ConversationLoop:
         self._now = now
         self._clock = clock
         self._started = clock()
+        self._ladder = UnderstandingLadder()
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        reason = escalation.check(user_text)
+        if reason is not None:
+            return self._handoff(state, SAY_ESCALATION, reason=reason)
+
         pending_input = user_text
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT)
 
             turn = self._llm.next_turn(
-                self._system_prompt, state.to_prompt_json(), pending_input
+                self._system_prompt, self._prompt_state(state), pending_input
             )
             if turn.state_patch:
                 apply_state_patch(state, turn.state_patch)
+                for field_name in turn.state_patch:
+                    self._ladder.record_success(field_name)
+
+            if turn.understanding_failure:
+                self._ladder.record_failure(turn.understanding_failure)
+                if self._ladder.should_end_call(turn.understanding_failure):
+                    return self._handoff(
+                        state, SAY_NOT_UNDERSTOOD, reason="not_understood"
+                    )
 
             if turn.tool_call is None:
                 say = turn.say
@@ -91,17 +120,31 @@ class ConversationLoop:
 
         return self._handoff(state, SAY_STUCK)
 
+    def _prompt_state(self, state: ConversationState) -> dict[str, Any]:
+        data = state.to_prompt_json()
+        hints = self._ladder.active_levels()
+        if hints:
+            # Sagt dem Modell, auf welcher Verständnis-Stufe eine Information
+            # gerade steht (docs/05 §2), ohne den Verlauf mitzuschicken.
+            data["ladder"] = hints
+        return data
+
     def _dispatch(self, state: ConversationState, name: str, args: dict) -> ToolResult:
         return dispatch(
             self._session, state.call_id, state.tenant_id, name, args, now=self._now
         )
 
-    def _handoff(self, state: ConversationState, fallback_say: str) -> TurnResult:
+    def _handoff(
+        self,
+        state: ConversationState,
+        fallback_say: str,
+        reason: str = "not_understood",
+    ) -> TurnResult:
         """Übergabe wirklich ausführen statt nur anzukündigen: erst versuchen, live zu
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
         einen Rückruf anlegen. Ohne bekannte Rufnummer bleibt nur der ehrliche
         Fallback-Satz — raten (CLAUDE.md §2 Regel 2) ist keine Option."""
-        transfer = self._dispatch(state, "transfer_to_team", {"reason": HANDOFF_REASON})
+        transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
             return TurnResult(
@@ -110,13 +153,16 @@ class ConversationLoop:
 
         phone = state.slots.get("phone")
         if phone:
+            callback_reason = (
+                reason if reason in _CALLBACK_REASONS else _CALLBACK_REASON_FALLBACK
+            )
             callback = self._dispatch(
                 state,
                 "create_callback",
                 {
                     "phone": phone,
-                    "reason": HANDOFF_REASON,
-                    "summary": "Anruf konnte nicht automatisch abgeschlossen werden.",
+                    "reason": callback_reason,
+                    "summary": _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY),
                 },
             )
             apply_tool_result(state, "create_callback", callback)

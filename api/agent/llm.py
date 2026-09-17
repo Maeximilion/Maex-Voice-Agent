@@ -26,11 +26,18 @@ class LLMTurn:
     Kundenzug herausgehört hat. Ohne ihn hat das Modell keine Möglichkeit, so
     etwas in den kompakten Zustand (docs/05 §5) zu schreiben — es sieht beim
     nächsten Zug nur `state.to_prompt_json()` und den neuen Zug, nie den Verlauf,
-    und würde sonst verstreute Angaben aus früheren Zügen wieder verlieren."""
+    und würde sonst verstreute Angaben aus früheren Zügen wieder verlieren.
+
+    `understanding_failure` ist ebenfalls unabhängig: der Feldname (z. B.
+    `party_size`, `reserved_for`), an dem der Kunde gerade nicht verstanden
+    wurde. `loop.py` zählt das über `agent/ladder.py` (docs/05 §2) und eskaliert
+    selbst, wenn dieselbe Information dreimal die Stufe wechselt, ohne dass das
+    Modell das selbst nachhalten müsste."""
 
     say: str | None = None
     tool_call: ToolCall | None = None
     state_patch: dict[str, Any] | None = None
+    understanding_failure: str | None = None
 
     def __post_init__(self) -> None:
         if (self.say is None) == (self.tool_call is None):
