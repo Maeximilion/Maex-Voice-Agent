@@ -8,18 +8,24 @@ deshalb darf nie ein Stacktrace nach außen gelangen.
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core import envelope
 from api.core.auth import require_token
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
+from api.core.tool_log import tool_call_log_middleware
+from api.db import get_db
+from api.domain.calls import end_call, start_call
+from api.schemas.calls import EndCallRequest, StartCallRequest
 from api.tools.router import router as tools_router
 
 configure_logging(settings.log_level)
 logger = get_logger("api")
 
 app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
+app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.include_router(tools_router)
 
@@ -33,6 +39,23 @@ def health() -> dict:
 def ping() -> JSONResponse:
     """Beweist, dass Auth und Antwort-Hülle stehen. Wird später entfernt."""
     return envelope.ok({"pong": True})
+
+
+@app.post("/v1/calls/start", dependencies=[Depends(require_token)])
+def calls_start(
+    body: StartCallRequest, session: Session = Depends(get_db)
+) -> JSONResponse:
+    """Anruf-Log beginnt (docs/04 §Endpunkte). Liefert die call_id für alle
+    folgenden Tool-Aufrufe der Plattform."""
+    result = start_call(session, body)
+    return envelope.ok(result.model_dump(mode="json"))
+
+
+@app.post("/v1/calls/end", dependencies=[Depends(require_token)])
+def calls_end(body: EndCallRequest, session: Session = Depends(get_db)) -> JSONResponse:
+    """Anruf-Log schließt (docs/04 §Endpunkte)."""
+    result = end_call(session, body)
+    return envelope.ok(result.model_dump(mode="json"))
 
 
 @app.exception_handler(AppError)
