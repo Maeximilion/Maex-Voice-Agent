@@ -27,6 +27,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
+- Conversation core (`api/agent/`) with understanding ladder and escalation, driven from the text phone (`sim/`): `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case>` replays a transcript; a confirmed reservation lands in the database without any telephony
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
@@ -34,7 +35,8 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 **Not yet working:**
 
 - No phone line, no provider chosen (decision D1)
-- No UI, no conversation core, no orders (stage 2)
+- No UI, no orders (stage 2)
+- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
 
@@ -102,6 +104,9 @@ make test        # pytest
 make lint        # ruff check
 make fmt         # ruff format
 make eval        # eval suite, optional TAGS=menu,noise
+
+python -m sim.cli                                   # conversation in the terminal
+python -m sim.replay evals/cases/<case>.json        # replay a transcript
 ```
 
 The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `.claude/commands/` holds `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, and `/handover` commands. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.

@@ -157,6 +157,8 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 ### `sim/` – das Text-Telefon
 - `cli.py` — Gespräch im Terminal: du tippst den Kunden, der Agent antwortet, Tool-Aufrufe werden angezeigt
 - `replay.py` — spielt ein Transkript aus `evals/cases/` ab
+- `session.py` — die gemeinsame Mechanik beider Eingänge: Anruf-Zeile öffnen und schließen, Zustand halten, Tool-Protokoll und Ausgabe
+- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt den Reservierungsablauf aus `prompts/system_v1.md`, rät nie, meldet Unverstandenes an die Leiter
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 
 Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Alles vor der Anbieterentscheidung testbar.
