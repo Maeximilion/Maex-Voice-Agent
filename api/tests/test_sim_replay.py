@@ -194,3 +194,27 @@ def test_sim_call_ohne_transkript_endet_als_abbruch(session, tenant):
     call = SimCall(session, tenant, now=NOW, external_session_id=f"sim-{uuid.uuid4()}")
 
     assert call.finish().outcome == "abandoned"
+
+
+def test_dauer_wird_beim_abschluss_gemessen(session, tenant, monkeypatch):
+    """Codex-Review PR #104 (P2): ein Gespraech im Terminal dauert so lange, wie es
+    dauert. Mit dem Startzeitpunkt auch am Ende stuende in jedem Anruf 0 Sekunden
+    und die Gespraechsdauer waere als Kennzahl wertlos."""
+    zeiten = iter(
+        [
+            datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN),
+            datetime(2026, 9, 15, 18, 2, tzinfo=BERLIN),
+        ]
+    )
+    monkeypatch.setattr("sim.session.utcnow", lambda: next(zeiten))
+
+    call = SimCall(session, tenant, external_session_id=f"sim-{uuid.uuid4()}")
+
+    assert call.finish().duration_seconds == 120
+
+
+def test_fester_zeitpunkt_bleibt_fuer_die_wiedergabe_fest(session, tenant):
+    """Mit `--now` bleibt der Lauf reproduzierbar: derselbe Fall ergibt dieselbe Dauer."""
+    call = SimCall(session, tenant, now=NOW, external_session_id=f"sim-{uuid.uuid4()}")
+
+    assert call.finish().duration_seconds == 0

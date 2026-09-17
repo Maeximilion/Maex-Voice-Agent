@@ -90,6 +90,9 @@ class SimCall:
         caller_id: str | None = None,
     ):
         self._session = session
+        # Fester Zeitpunkt (`--now`) haelt einen Lauf reproduzierbar; ohne ihn laeuft
+        # das Gespraech auf der echten Uhr und dauert so lange, wie es dauert.
+        self._fixed_now = now
         self._now = now or utcnow()
         self._tenant = tenant
         started = start_call(
@@ -123,6 +126,9 @@ class SimCall:
         )
 
     def finish(self) -> CallEnded:
+        """Ende ist jetzt, nicht der Gespraechsbeginn: mit dem Startzeitpunkt stuenden
+        in jedem Anruf aus dem Terminal 0 Sekunden und die Gespraechsdauer waere als
+        Kennzahl wertlos (Codex-Review PR #104, P2)."""
         outcome = OUTCOME_BY_STAGE.get(self.state.stage, DEFAULT_OUTCOME)
         intent = self.state.intent if self.state.intent in INTENTS else None
         return end_call(
@@ -133,7 +139,7 @@ class SimCall:
                 outcome=outcome,
                 intent=intent,
             ),
-            now=self._now,
+            now=self._fixed_now or utcnow(),
         )
 
     def _new_tool_calls(self) -> list[dict[str, Any]]:

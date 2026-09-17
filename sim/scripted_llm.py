@@ -110,6 +110,9 @@ class ScriptedLLM:
         self._zone = ZoneInfo(timezone)
         self._status_checked = False
         self._greeted = False
+        # Das zuletzt gehoerte Anliegen ausserhalb von Version 1, bis der Rueckruf
+        # steht (Codex-Review PR #104, P1).
+        self._out_of_scope_request: str | None = None
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -122,11 +125,18 @@ class ScriptedLLM:
     # -- Kundenzug ---------------------------------------------------------
 
     def _after_customer(self, state: dict[str, Any], text: str) -> LLMTurn:
-        patch = self._extract(text)
+        patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
         if state.get("stage") == "readback_pending":
             return self._after_readback(state, text, patch)
+
+        if _mentions_stem(text, OUT_OF_SCOPE) or self._out_of_scope_request:
+            # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
+            # Und gemerkt, bis der Rückruf steht: der nächste Zug enthält oft nur noch
+            # die Rufnummer und träfe kein Stichwort mehr (Codex-Review PR #104, P1).
+            self._out_of_scope_request = self._out_of_scope_request or text
+            return self._out_of_scope(slots, patch)
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -136,9 +146,6 @@ class ScriptedLLM:
                 tool_call=ToolCall("get_service_status"), state_patch=patch or None
             )
 
-        if _mentions(text, OUT_OF_SCOPE):
-            return self._out_of_scope(slots, text, patch)
-
         return self._next_step(slots, patch=patch, understood=bool(patch))
 
     def _after_readback(
@@ -146,7 +153,7 @@ class ScriptedLLM:
     ) -> LLMTurn:
         """Vom Entwurf zur Buchung führt nur ein klares Ja (CLAUDE.md §2 Regel 3)."""
         reservation_id = state.get("reservation_id")
-        if _mentions(text, NO) or not _mentions(text, YES):
+        if _mentions_word(text, NO) or not _mentions_word(text, YES):
             return LLMTurn(say=SAY_ASK_AGAIN, state_patch=patch or None)
         if not reservation_id:
             return LLMTurn(say=SAY_ASK_AGAIN, state_patch=patch or None)
@@ -157,9 +164,7 @@ class ScriptedLLM:
             state_patch=patch or None,
         )
 
-    def _out_of_scope(
-        self, slots: dict[str, Any], text: str, patch: dict[str, Any]
-    ) -> LLMTurn:
+    def _out_of_scope(self, slots: dict[str, Any], patch: dict[str, Any]) -> LLMTurn:
         phone = slots.get("phone")
         if not phone:
             return LLMTurn(say=QUESTIONS["phone"], state_patch=patch or None)
@@ -169,7 +174,10 @@ class ScriptedLLM:
                 {
                     "phone": phone,
                     "reason": "out_of_scope",
-                    "summary": f"{SUMMARY_OUT_OF_SCOPE} Kunde sagte: {text}",
+                    "summary": (
+                        f"{SUMMARY_OUT_OF_SCOPE} "
+                        f"Kunde sagte: {self._out_of_scope_request}"
+                    ),
                 },
             ),
             state_patch=patch or None,
@@ -185,7 +193,12 @@ class ScriptedLLM:
 
         if not result.get("ok"):
             return self._after_failure(name, say)
+        if name == "create_callback":
+            self._out_of_scope_request = None
+            return LLMTurn(say=say or SAY_HANDOVER)
         if name == "get_service_status":
+            if self._out_of_scope_request:
+                return self._out_of_scope(slots, {})
             return self._next_step(slots, prefix=self._greeting_once(), extra=say)
         if name == "check_slot":
             if data.get("available"):
@@ -252,12 +265,12 @@ class ScriptedLLM:
 
     # -- Erkennung ---------------------------------------------------------
 
-    def _extract(self, text: str) -> dict[str, Any]:
+    def _extract(self, text: str, slots: dict[str, Any]) -> dict[str, Any]:
         patch: dict[str, Any] = {}
         party = _party_size(text)
         if party:
             patch["party_size"] = party
-        when = self._reserved_for(text)
+        when = self._reserved_for(text, slots)
         if when:
             patch["reserved_for"] = when
         name = _NAME.search(text)
@@ -268,9 +281,12 @@ class ScriptedLLM:
             patch["phone"] = phone
         return patch
 
-    def _reserved_for(self, text: str) -> str | None:
+    def _reserved_for(self, text: str, slots: dict[str, Any]) -> str | None:
         """Nur mit Uhrzeit: ein Tag allein reicht für keine Reservierung, und geraten
-        wird nicht (CLAUDE.md §2 Regel 2). Ohne Tagesangabe gilt heute, sofern die
+        wird nicht (CLAUDE.md §2 Regel 2). Ohne Tagesangabe gilt der schon genannte
+        Tag - auf eine Alternative antwortet der Gast nur mit der Uhrzeit ("dann
+        halb acht"), und ohne den gemerkten Tag buchte das den Abend auf heute um
+        (Codex-Review PR #104, P1). Ist noch kein Tag genannt, gilt heute, sofern die
         Zeit noch kommt, sonst morgen."""
         clock = _clock(text)
         if clock is None:
@@ -278,6 +294,12 @@ class ScriptedLLM:
         hour, minute = clock
         local_now = self._now.astimezone(self._zone)
         day = _day(text, local_now)
+        if day is None and _DATE.search(text):
+            # Ein genanntes, aber unmoegliches Datum ("am 31.02.") ist nicht
+            # verstanden. Es stillschweigend durch den heutigen Tag zu ersetzen waere
+            # geraten (CLAUDE.md §2 Regel 2), also gilt die Zeit als unverstanden.
+            return None
+        day = day or self._known_day(slots.get("reserved_for"))
         if day is None:
             candidate = local_now.replace(
                 hour=hour, minute=minute, second=0, microsecond=0
@@ -288,6 +310,15 @@ class ScriptedLLM:
         return datetime(
             day.year, day.month, day.day, hour, minute, tzinfo=self._zone
         ).isoformat()
+
+    def _known_day(self, reserved_for: Any) -> date | None:
+        """Der Tag aus einer bereits genannten Wunschzeit, in der Zeitzone des Betriebs."""
+        if not isinstance(reserved_for, str):
+            return None
+        try:
+            return datetime.fromisoformat(reserved_for).astimezone(self._zone).date()
+        except ValueError:
+            return None
 
 
 def _draft(slots: dict[str, Any]) -> dict[str, Any]:
@@ -305,9 +336,17 @@ def _as_tool_result(text: str) -> dict[str, Any] | None:
     return None
 
 
-def _mentions(text: str, needles: tuple[str, ...]) -> bool:
+def _mentions_stem(text: str, stems: tuple[str, ...]) -> bool:
+    """Teilstueck-Treffer, gewollt: "liefer" deckt Lieferung, liefern, geliefert ab."""
     lowered = text.lower()
-    return any(needle in lowered for needle in needles)
+    return any(stem in lowered for stem in stems)
+
+
+def _mentions_word(text: str, words: tuple[str, ...]) -> bool:
+    """Ganze Woerter: "ja" darf nicht in "Januar" oder "Jana" treffen, sonst gilt ein
+    Nachdenken als Zustimmung und bucht den Entwurf (Codex-Review PR #104, P1)."""
+    lowered = text.lower()
+    return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in words)
 
 
 def _number(raw: str) -> int | None:
@@ -364,7 +403,12 @@ def _day(text: str, local_now: datetime) -> date | None:
     match = _DATE.search(text)
     if match:
         year = int(match.group(3)) if match.group(3) else local_now.year
-        return date(year, int(match.group(2)), int(match.group(1)))
+        try:
+            return date(year, int(match.group(2)), int(match.group(1)))
+        except ValueError:
+            # "am 31.02." ist ein zu erwartender Erkennungsfehler: nicht verstanden,
+            # kein Absturz mitten im Gespräch (Codex-Review PR #104, P2).
+            return None
     if "übermorgen" in lowered:
         return (local_now + timedelta(days=2)).date()
     if "morgen" in lowered:

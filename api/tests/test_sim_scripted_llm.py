@@ -166,3 +166,78 @@ def test_zeitangaben(llm, text, erwartet):
     turn = llm.next_turn("", state, text)
 
     assert turn.state_patch["reserved_for"] == erwartet
+
+
+# --- Codex-Review PR #104 ------------------------------------------------
+
+
+def test_anliegen_ausser_reichweite_ueberlebt_die_nummernfrage(llm):
+    """P1: Ohne bekannte Nummer wird erst danach gefragt. Der naechste Zug enthaelt
+    dann nur die Nummer und traefe kein Stichwort mehr - ohne gemerktes Anliegen
+    liefe der Kunde in die Reservierungsfragen statt in den Rueckruf."""
+    state = {**START, "slots": {}}
+    nach_status(llm, state)
+
+    frage = llm.next_turn("", state, "Haben Sie eine Speisekarte?")
+    assert frage.say == QUESTIONS["phone"]
+
+    state["slots"]["phone"] = "0721 5551234"
+    turn = llm.next_turn("", state, "0721 5551234")
+
+    assert turn.tool_call is not None
+    assert turn.tool_call.name == "create_callback"
+    assert turn.tool_call.args["reason"] == "out_of_scope"
+    assert "Speisekarte" in turn.tool_call.args["summary"]
+
+
+def test_ausser_reichweite_im_ersten_zug_fragt_nicht_nach_der_personenzahl(llm):
+    """P1: Die Statusabfrage im ersten Zug darf den Sonderfall nicht verschlucken."""
+    state = {**START, "slots": {"phone": "0721 5551234"}}
+
+    turn = llm.next_turn("", state, "Haben Sie eine Speisekarte?")
+
+    assert turn.tool_call is not None
+    assert turn.tool_call.name == "create_callback"
+
+
+def test_neue_uhrzeit_behaelt_den_schon_genannten_tag(llm):
+    """P1: Auf eine Alternative antwortet der Kunde nur mit der Uhrzeit. Ohne den
+    gemerkten Tag buchte der Simulator denselben Abend auf heute um."""
+    state = {
+        **START,
+        "slots": {"party_size": 4, "reserved_for": "2026-09-16T19:00:00+02:00"},
+    }
+    nach_status(llm, state)
+
+    turn = llm.next_turn("", state, "Dann 19:30 Uhr.")
+
+    assert turn.state_patch["reserved_for"] == "2026-09-16T19:30:00+02:00"
+
+
+@pytest.mark.parametrize(
+    "text", ["Im Januar muss ich erst nachsehen.", "Ich muss Jana fragen."]
+)
+def test_ja_in_einem_anderen_wort_ist_kein_ja(llm, text):
+    """P1: CLAUDE.md §2 Regel 3 verlangt ein ausdrueckliches Ja. Teilstueck-Treffer
+    ("Januar", "Jana") haetten den Entwurf ohne Zustimmung gebucht."""
+    state = {
+        "stage": "readback_pending",
+        "open": [],
+        "reservation_id": str(uuid.uuid4()),
+    }
+
+    turn = llm.next_turn("", state, text)
+
+    assert turn.tool_call is None
+    assert turn.say == SAY_ASK_AGAIN
+
+
+def test_unmoegliches_datum_beendet_nicht_das_gespraech(llm):
+    """P2: "am 31.02." ist ein zu erwartender Erkennungsfehler, kein Programmfehler."""
+    state = {**START, "slots": {}}
+    nach_status(llm, state)
+
+    turn = llm.next_turn("", state, "Am 31.02. um 19 Uhr fuer zwei Personen.")
+
+    assert "reserved_for" not in (turn.state_patch or {})
+    assert turn.state_patch["party_size"] == 2
