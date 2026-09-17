@@ -5,7 +5,10 @@ Ziel ist immer die Durchwahl aus service_config, nie eine Hauptnummer — die ko
 im Code gar nicht vor. Der Übergang läuft je Anruf höchstens einmal: erst der
 Zustand auf calls.transfer_reason macht ihn wahr, ein zweiter Aufruf (Modell-Loop,
 Plattform-Retry) liest nur den bereits gesetzten Grund, ohne ein zweites Mal ins
-audit_log zu schreiben.
+audit_log zu schreiben. Ist niemand erreichbar, findet kein Übergang statt: der
+Agent legt stattdessen einen Rückruf an (create_callback), und dieser Aufruf darf
+weder den Zustand noch das Audit belegen, sonst zählt ein Anruf als "transferred",
+obwohl das Team ihn nie bekommen hat (Codex-Review PR #98, P2).
 """
 
 import uuid
@@ -46,7 +49,10 @@ def transfer_to_team(
 
     available = _team_reachable(session, req.tenant_id, tenant.timezone, now)
 
-    if call.transfer_reason is None:
+    # Nur ein tatsächlicher Übergang belegt den Zustand und das Audit. Ist niemand
+    # erreichbar, ist dieser Aufruf folgenlos: der Agent legt stattdessen einen
+    # Rückruf an, und ein späterer echter Übergang im selben Anruf muss noch möglich sein.
+    if available and call.transfer_reason is None:
         call.transfer_reason = req.reason
         session.add(
             AuditLog(

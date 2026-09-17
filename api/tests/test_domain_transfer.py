@@ -90,6 +90,37 @@ def test_ausserhalb_der_oeffnungszeit_ist_niemand_erreichbar(
     # Ziel bleibt die Durchwahl; der Agent legt stattdessen einen Rückruf an.
     assert result.transfer_to
 
+    # Kein Übergang fand statt: weder Zustand noch Audit dürfen davon ausgehen,
+    # dass das Team den Anruf schon bekommen hat (Codex-Review PR #98, P2).
+    call = session.get(Call, call_id)
+    assert call.transfer_reason is None
+    audits = session.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.action == "call.transferred")
+    )
+    assert audits == 0
+
+
+def test_spaeterer_echter_uebergang_ist_nach_nicht_erreichbar_noch_moeglich(
+    session, tenant_id, call_id
+):
+    """Ein folgenloser Versuch außerhalb der Öffnungszeit darf einen späteren
+    echten Übergang im selben Anruf nicht blockieren."""
+    transfer_to_team(session, request(tenant_id, call_id), now=GESCHLOSSEN)
+
+    result = transfer_to_team(session, request(tenant_id, call_id), now=OFFEN)
+
+    assert result.available is True
+    call = session.get(Call, call_id)
+    assert call.transfer_reason == "human_requested"
+    audits = session.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.action == "call.transferred")
+    )
+    assert audits == 1
+
 
 def test_zweiter_aufruf_im_selben_anruf_schreibt_kein_zweites_audit(
     session, tenant_id, call_id
@@ -150,6 +181,18 @@ def test_unbekannter_mandant_ist_not_found(session, call_id):
 def test_unbekannter_grund_wird_vom_vertrag_abgelehnt(tenant_id, call_id):
     with pytest.raises(ValueError):
         request(tenant_id, call_id, reason="kaese")
+
+
+def test_storno_ist_ein_gueltiger_grund(session, tenant_id, call_id):
+    """docs/05 §Harte Regeln: Storno löst transfer_to_team aus wie Beschwerde
+    oder Mensch-Wunsch, ist aber kein Rückruf-Grund aus docs/03 (Codex PR #98, P1)."""
+    result = transfer_to_team(
+        session, request(tenant_id, call_id, reason="cancellation"), now=OFFEN
+    )
+
+    assert result.available is True
+    call = session.get(Call, call_id)
+    assert call.transfer_reason == "cancellation"
 
 
 def test_parallele_uebergabe_desselben_anrufs_legt_nur_ein_audit_an(migrated_db_url):
