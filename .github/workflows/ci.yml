@@ -39,7 +39,7 @@ jobs:
             echo "::error::docs/07_ARBEITSPAKETE.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
             exit 1
           fi
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
