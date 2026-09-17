@@ -1,13 +1,13 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 16.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.3.3
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.4.0
 
 ---
 
 ## Kurzfassung
 
-Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`) antworten in rund 8 bis 15 ms (p95); 131 Tests laufen grün. Der erste Schreibvorgang steht (`create_reservation` als `draft` mit `readback`, Idempotenz und `audit_log`); `confirm`, Outbox, Rückrufe und die GUI fehlen noch.
+Der Plan steht (`docs/00_PCF.md`, v1.0, freigegeben). Das Repo ist angelegt und enthält ein **lauffähiges Minimalgerüst**: FastAPI mit `/health`, Token-Auth, Antwort-Hülle, JSON-Logging, DB-Session und den zehn Stufe-1-Tabellen per Alembic-Migration 001 und einem idempotenten Seed mit Testkonfiguration; die Tools im heißen Pfad (`get_service_status`, `check_slot`, `create_reservation`, `confirm`) antworten in rund 8 bis 15 ms (p95); 148 Tests laufen grün. Die Reservierung ist damit vollständig: `create_reservation` legt den Entwurf mit `readback` an, `confirm` macht ihn gültig, schreibt `audit_log` und legt das Ereignis `reservation.confirmed` in die Outbox. Was noch fehlt: der Dispatcher, der die Outbox leert (T-1.12), Rückrufe und die GUI.
 
 Vor dem ersten echten Anruf fehlen zwei Dinge, die Maxi im Chat liefert: die Ist-Aufnahme des Betriebs (C1) und die Wahl der Voice-Plattform (C2). Claude Code kann trotzdem sofort weiterbauen: alles, was die Voice-Plattform nicht berührt, ist spezifiziert.
 
@@ -51,8 +51,8 @@ Kompletter Fahrplan von hier bis zum Zielzustand: Abschnitt „Fahrplan" unten. 
 ## Was als Nächstes dran ist
 
 ### In Claude Code (sofort startbar, ohne Anbieter)
-1. **T-1.6** `confirm` generisch (Reservierung, später Bestellung): `draft → confirmed`, Idempotenz, `audit_log`, Outbox-Eintrag `reservation.confirmed`
-2. **T-1.12** Outbox-Dispatcher mit Backoff und Fake-n8n im Test, dann **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
+1. **T-1.12** Outbox-Dispatcher mit Backoff und Fake-n8n im Test: die Einträge liegen seit T-1.6 da, es holt sie nur noch niemand ab
+2. **T-1.7** `create_callback`, **T-1.8** `transfer_to_team`
 3. **T-1.9** Anruf-Log `POST /v1/calls/start` und `/end`: bis dahin muss die `calls`-Zeile von Hand oder im Test angelegt werden (siehe Annahmen)
 4. Jederzeit parallel: **T-0.7** Slash-Befehle und CI, **T-0.8** Zahlwörter
 
@@ -98,7 +98,11 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Prüfen und Anlegen sind gesperrt** (`_lock_business_day`): eine Advisory-Sperre je Mandant und Tag (`pg_advisory_xact_lock`) hält bis zum Ende der Transaktion, sonst lesen zwei gleichzeitige Anrufe dieselbe freie Kapazität und überbuchen das Fenster. Grob genug für Telefonlast, fein genug, dass verschiedene Tage sich nicht behindern. Mit dem gleichen Muster arbeitet später `confirm`
 - **Readback-Format** (`domain/reservations/spoken.py`): „Ein Tisch für vier Personen heute / morgen / am Dienstag, den 22. September um halb sieben, auf den Namen Müller[, mit dem Hinweis: …]. Passt das so?" Personenzahl bis zwölf als Wort, darüber Ziffer. Bezugspunkt für „heute" und „morgen" ist `created_at` des Entwurfs, nicht die aktuelle Uhrzeit, damit ein Replay nach Mitternacht denselben Satz liefert. Wortlaut ist Vorschlag, wird im Dialogtest (D4) geschärft
 - **Rufnummern** werden in `domain/customers/phone.py` nach E.164 normalisiert, Default-Land `+49`; `0049…`, `0…`, Leerzeichen, Schrägstriche und Klammern werden aufgelöst. Unterdrückte Nummer ist noch nicht modelliert (kommt mit `find_customer`)
-- Jeder Schreibvorgang schreibt `audit_log` (`actor: agent`, `action: reservation.draft_created`), inline im Domain-Code; ein gemeinsamer Helfer folgt, sobald `confirm` die zweite Stelle ist
+- Jeder Schreibvorgang schreibt `audit_log` (`actor: agent`, `action: reservation.draft_created` bzw. `reservation.confirmed`), inline im Domain-Code. Zwei Stellen rechtfertigen noch keinen gemeinsamen Helfer; ab der dritten wieder prüfen
+- **`confirm` ist über den Zustand idempotent, nicht über den Schlüssel** (`domain/confirm.py`): ein zweiter Aufruf liest `confirmed` und antwortet gleich, auch mit anderem `idempotency_key`; ein zweites Outbox-Ereignis entsteht nie. Der Schlüssel wandert nur ins `audit_log`. Das spart eine eigene Schlüsseltabelle; wenn später ein Vorgang wieder aus `confirmed` herausgehen kann, kippt diese Annahme. Annahme vom 17.09.2026, kippbar
+- **Gleichzeitige `confirm`-Aufrufe werden per Zeilensperre serialisiert** (`SELECT … FOR UPDATE` auf die Reservierung), sonst schreiben zwei Aufrufe zwei Ereignisse in die Outbox und die Küche bekommt den Vorgang doppelt
+- **`entity: "order"` steht im Vertrag, antwortet aber bis Stufe 2 mit `not_found`**: die Verzweigung in `domain/confirm.py` ist der Platz, an dem T-4.x die Bestellung ergänzt. `pickup_code` bleibt bei Reservierungen `null`
+- **`approved` (Überlauf-Betrieb) fehlt noch bewusst:** `RESERVATION_STATUSES` kennt nur `draft`, `confirmed`, `cancelled`. Der Freigabe-Fluss kommt mit T-8.2
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -139,6 +143,7 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 | 16.09.2026 | **Übergabe Session 1 bis 3:** PR #2 gemerged (`main` = `df7c071`), Übergabeblock in `docs/00_PCF.md` §13. Nächster Schritt T-1.5. Stolpersteine für die Sandbox stehen dort (Docker-Daemon von Hand starten, lokale `.env`, `DATABASE_URL` auf localhost) |
 | 16.09.2026 | **T-1.5 fertig:** `domain/reservations/create.py` (`create_reservation`: Mandant und Anruf prüfen, Rufnummer normalisieren, Slot erneut prüfen, Entwurf + `audit_log`, Idempotenz-Replay auch bei gleichzeitigem Doppelaufruf über den Unique-Index), `spoken.py` um Datum („heute", „morgen", Wochentag) und Personenzahl ergänzt, `core/ids.py` (`new_id`, deterministischer `idempotency_key`), `domain/customers/phone.py` (E.164), Schemas `CreateReservationRequest`/`ReservationDraft`, Tool `tools/create_reservation.py`. 40 Tests: Entwurf mit Audit, Replay ohne zweiten Vorgang, fremder Mandant, voller Slot mit Alternativen, Ruhetag, Vergangenheit, unbekannter Anruf, fremder Anruf, unbekannter Mandant, Rufnummer normalisiert/ungültig, leerer Name, drei Readback-Varianten, Entwurf zählt gegen Kapazität, HTTP-Hülle, Idempotenz über HTTP, fehlender Schlüssel, 401, 18 Rufnummern-Fälle, Schlüssel-Helfer. **Latenz:** p95 15,2 ms lokal, live per curl 3 bis 4 ms warm. 129 Tests grün |
 | 16.09.2026 | **Codex-Review PR #2 (2 Findings) behoben, roter Test zuerst:** `check_slot` berücksichtigt Fenster des Vortags über Mitternacht (Wunsch 00:30 in einem Fenster 18–01 Uhr war fälschlich belegt); `get_service_status` zählt pausierte Lieferung nicht mehr als offen und verspricht Abholung nur bei offenem Abholfenster. 89 Tests grün |
+| 17.09.2026 | **T-1.6 fertig:** `domain/confirm.py` (generisch, `draft → confirmed`, Zeilensperre `FOR UPDATE`, `audit_log`, Outbox-Ereignis `reservation.confirmed` mit vollständigem Vorgang im `payload`), Schemas `api/schemas/confirm.py`, Tool `tools/confirm.py`. 17 Tests: Bestätigung mit Audit und Ereignis, zweiter Aufruf ohne zweites Ereignis, storniert, weich gelöscht, unbekannt, fremder Mandant, unbekannter Anruf, unbekannter Mandant, `entity: order`, acht parallele Aufrufe legen genau ein Ereignis an, HTTP-Hülle, Idempotenz über HTTP, ungültige `entity`, fehlender Schlüssel, 401. **Latenz:** p95 9,9 ms (Schreibpfad), live per curl 14 ms kalt / 5,6 ms Replay. 148 Tests grün |
 | 16.09.2026 | Auto-Update für diese Datei: `scripts/status_bump.py` (Semver, Datum, Changelog-Zeile automatisch), eingebunden in `/done`, `/task`, `/handover`; CI-Schritt „Status-Sync prüfen" schlägt an, wenn `docs/07_ARBEITSPAKETE.md` sich ändert, diese Datei aber nicht; `ruff format`-Altlast in `api/main.py` behoben; `CLAUDE.md`: kein Claude-Code-Attribution-Badge in PRs/Repo |
 
 ---
@@ -159,6 +164,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.4.0 · 17.09.2026:** T-1.6 fertig: confirm generisch, draft nach confirmed mit Zeilensperre, audit_log und Outbox-Ereignis reservation.confirmed; nächster Schritt T-1.12 Dispatcher
 - **v1.3.3 · 16.09.2026:** Repo-Standards: CONTRIBUTING, SECURITY, PR- und Issue-Vorlagen, Dependabot, README-Badges; Label-Taxonomie auf allen 77 Issues
 - **v1.3.2 · 16.09.2026:** Roadmap auf GitHub gespiegelt: neun Block-Issues, 68 Arbeitspakete als Sub-Issues, Issue-Nummern in docs/07 eingetragen
 - **v1.3.1 · 16.09.2026:** Codex-Review PR #4 (P1, P2) behoben: Sperre gegen Überbuchung bei parallelen Anrufen, readback stabil über Mitternacht
