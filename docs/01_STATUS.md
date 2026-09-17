@@ -86,7 +86,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
 - GUI as FastAPI + Jinja2 + HTMX + SSE, one container, no Node build
-- One location (<Pilot Operation>), but multi-tenant schema: each location-related table carries `tenant_id`
+- One location (<Pilotbetrieb>), but multi-tenant schema: each location-related table carries `tenant_id`
 - German as the only language in stages 1–6
 - Payment at pickup or delivery, no phone payment
 - **Operations day begins at 05:00 local time** (`api/core/time.py`, `DAY_STARTS_AT`): an order at 00:30 counts toward yesterday. Not defined in any document, assumption from 16.09.2026, subject to change
@@ -147,12 +147,12 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | 15.09.2026 | Repo skeleton and specs exported for Claude Code |
 | 15.09.2026 | API minimal skeleton: `/health`, token auth, response envelope, 3 tests green (T-0.3 done) |
 | 16.09.2026 | README maintenance introduced: `docs/15_README_STRATEGY.md`, `/gate`, `CHANGELOG.md`, versions per gate; all emojis removed from bundle |
-| 16.09.2026 | Rebranded as Maex Voice-Agent (product), pilot location maintained as placeholder `<Pilot Operation>`; locations in `docs/13` § 0 locked down: **nothing runs on Maxi's PC, not even transcription** (E9) |
+| 16.09.2026 | Rebranded as Maex Voice-Agent (product), pilot location maintained as placeholder `<Pilotbetrieb>`; locations in `docs/13` § 0 locked down: **nothing runs on Maxi's PC, not even transcription** (E9) |
 | 16.09.2026 | Admin view as clickable desktop mockup in `gui/mockups/`, template for T-3.1 |
 | 16.09.2026 | GUI round complete: operations and admin view as mockup approved, changes in `docs/06_GUI.md` § 7 |
 | 16.09.2026 | Bundle v1.1: module architecture (11), playbooks + slash commands (12), deployment (13), menu import format (14), outbox, agent core + simulator, CI, prod compose; 18 new tasks |
 | 16.09.2026 | README status synced to actual state |
-| 16.09.2026 | Placeholders instead of names: `<Pilot Operation>`, `<Company Name>`, `<Location>`, `<POS System>`, `<POS Provider>`, example.com in code, docs, mockup, and Caddyfile; rule in `CLAUDE.md` § 1 |
+| 16.09.2026 | Placeholders instead of names: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, example.com in code, docs, mockup, and Caddyfile; rule in `CLAUDE.md` § 1 |
 | 16.09.2026 | **T-0.1 done:** `make up` against real Docker, Postgres + API healthy, n8n reachable (after fix `N8N_LISTEN_ADDRESS=0.0.0.0`), `/health` and `/v1/tools/ping` verified, `make lint` + `make test` in container green. Codex review (4 findings) incorporated. `ruff format` run first time (T-0.4: only `make migrate` left, waiting on T-1.1) |
 | 16.09.2026 | **T-0.2 done:** `api/db.py` with engine (`pool_pre_ping`), `SessionLocal`, `get_db` (rollback on error, close always). Tests: session works, rollback on exception, DB unreachable returns `service_unavailable` envelope not stack trace. 7 tests green, local and in container |
 | 16.09.2026 | **T-0.6 done:** `api/core/` with `envelope` (wrapper), `errors` (8 codes from 04 §1, `AppError` translates centrally), `auth` (extracted from `main.py`), `logging` (JSON lines with `request_id`/`call_id`, middleware measures duration, `X-Request-ID` taken or generated), `time` (UTC/local, operations day, DST-safe day boundaries). `main.py` uses only `core`. 34 tests green |

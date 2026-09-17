@@ -23,7 +23,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - `make up` builds the API image and starts Postgres, API, dispatcher, and n8n; `/health` responds, token auth works
 - Every agent API response follows the envelope from `docs/04_API_TOOLS.md`; errors return JSON with code and read-aloud text, never stacktrace
 - Database access with one session per request (`api/db.py`), logs as JSON lines with `request_id` and `call_id`
-- `make migrate` creates the ten stage-0 tables (Alembic in `db/`, models in `api/models/`), `make seed` fills them idempotently with test config
+- `make migrate` creates the ten stage-1 tables (Alembic in `db/`, models in `api/models/`), `make seed` fills them idempotently with test config
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
@@ -93,7 +93,7 @@ deploy/      Production compose and Caddyfile
 docs/        Specs and status
 ```
 
-Layers and dependency rules: `docs/11_MODULES.md`.
+Layers and dependency rules: `docs/11_MODULE.md`.
 
 ## Development
 
@@ -122,7 +122,7 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/08_EVALS.md` | Test cases and metrics |
 | `docs/09_OPERATIONS_LEGAL.md` | Runbook and legal checklist |
 | `docs/10_GLOSSARY.md` | Terms |
-| `docs/11_MODULES.md` | Layers, dependency rules, build plan per module |
+| `docs/11_MODULE.md` | Layers, dependency rules, build plan per module |
 | `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Session workflows and slash commands |
 | `docs/13_DEPLOYMENT.md` | Operating locations, tunnel, EU server, backups, CI |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV format for menu digitization |
@@ -141,6 +141,6 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 
 ## License and Contact
 
-Proprietary, <Company Name>. All rights reserved, see [LICENSE](LICENSE). Use, reproduction, and distribution only with written permission.
+Proprietary, <Firmenname>. All rights reserved, see [LICENSE](LICENSE). Use, reproduction, and distribution only with written permission.
 
 Contact: Maximilian Dumler, maxi.dumler@gmail.com.

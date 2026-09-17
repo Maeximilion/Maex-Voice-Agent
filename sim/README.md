@@ -11,4 +11,4 @@ python -m sim.cli --noise 0.2              # 20% of inputs intentionally noised
 Shows per turn: customer sentence → tool calls with duration → agent response → conversation state.
 Uses `api/agent/` directly and writes to local DB so the order appears immediately in the UI.
 
-Tasks: T-2.1 through T-2.3 in `docs/07_WORKPACKAGES.md`. Structure: `docs/11_MODULES.md` §sim.
+Tasks: T-2.1 through T-2.3 in `docs/07_WORKPACKAGES.md`. Structure: `docs/11_MODULE.md` §sim.

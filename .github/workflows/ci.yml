@@ -35,8 +35,8 @@ jobs:
             exit 0
           fi
           CHANGED=$(git diff --name-only "$BASE" "${{ github.sha }}")
-          if echo "$CHANGED" | grep -q '^docs/07_ARBEITSPAKETE\.md$' && ! echo "$CHANGED" | grep -q '^docs/01_STATUS\.md$'; then
-            echo "::error::docs/07_ARBEITSPAKETE.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
+          if echo "$CHANGED" | grep -q '^docs/07_WORKPACKAGES\.md$' && ! echo "$CHANGED" | grep -q '^docs/01_STATUS\.md$'; then
+            echo "::error::docs/07_WORKPACKAGES.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
             exit 1
           fi
       - uses: actions/setup-python@v7

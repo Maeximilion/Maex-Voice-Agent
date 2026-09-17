@@ -1,7 +1,7 @@
 Work on task $ARGUMENTS from `docs/07_WORKPACKAGES.md`.
 
 1. Check whether all dependencies are complete. If not: name the missing one and stop.
-2. Read the spec from the "Spec" column and check in `docs/11_MODULES.md` which modules the files belong to.
+2. Read the spec from the "Spec" column and check in `docs/11_MODULE.md` which modules the files belong to.
 3. Create branch `task/<id-with-hyphens>-<shortname>`.
 4. Show a plan with max 5 lines: files, tests, migration needs. Build directly; wait only if plan touches money, law, external impact, production data, or irreversibility.
 5. Write tests first (normal case + at least two edge cases), then code until green. Actually run them.

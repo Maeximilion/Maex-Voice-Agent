@@ -8,7 +8,7 @@
 
 ## 1. Objective
 
-An AI agent answers calls on the landline of <Pilot Operation>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, and escalates complaints to humans. The interface is simple enough that the team operates it under stress without explanation.
+An AI agent answers calls on the landline of <Pilotbetrieb>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, and escalates complaints to humans. The interface is simple enough that the team operates it under stress without explanation.
 
 ### Guiding Principles (First Principles)
 
@@ -64,7 +64,7 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 | E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | Assumption, confirm in G0 via call mix |
 | E3 | Rollout: Shadow → Overflow → Primary | Risk grows only with evidence | Assumption, holds until veto |
 | E4 | Register stays booking master (TSE); agent DB for agent data only | Legal certainty, single source of truth for revenue | Assumption, holds until veto |
-| E5 | Pilot <Pilot Operation>, number stays; menu, hours, zones from DB | Transferable to other locations later | Assumption, holds until veto |
+| E5 | Pilot <Pilotbetrieb>, number stays; menu, hours, zones from DB | Transferable to other locations later | Assumption, holds until veto |
 | E6 | Training = knowledge base + eval suite + offline shadow mode, no model fine-tuning | Cheaper, measurable, legally simpler | Assumption, holds until veto |
 | E7 | AI discloses itself as AI at the start of the call | EU AI Act Art. 50, in effect since 02.08.2026 | Mandatory |
 | E8 | Complaint, human request, cancellation → team immediately, else callback task | Trust, error containment | Assumption, holds until veto |
@@ -77,7 +77,7 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 Caller
   │
   ▼
-Landline <Pilot Operation> (existing provider)
+Landline <Pilotbetrieb> (existing provider)
   │  Redirect / SIP
   │  Mode: Shadow · Overflow · Primary
   ▼

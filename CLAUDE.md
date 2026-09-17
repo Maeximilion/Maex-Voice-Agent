@@ -7,11 +7,11 @@
 
 ## 1. What We're Building
 
-An AI agent answers calls on the restaurant **<Pilot Operation>** (<Location>)'s landline and handles **reservations, pickups, and deliveries**. Complaints and edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
+An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints and edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
 
 **Division of Labor:** An external voice platform handles telephony, speech recognition, and voice synthesis. We build the **logic, database, and interface**. The agent calls our tools via HTTPS.
 
-**Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilot Operation>`, `<Company Name>`, `<Location>`, `<POS System>`, `<POS Provider>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
+**Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
 
 ---
 
@@ -102,7 +102,7 @@ maex-voice-agent/
 | `docs/07_WORKPACKAGES.md` | **Task list T-x.y with dependencies and definition of done** | for task selection |
 | `docs/08_EVALS.md` | Test case format, metrics, regression run | before every merge |
 | `docs/09_OPERATIONS_LEGAL.md` | Runbook, emergencies, legal checklist | before every go-live step |
-| `docs/11_MODULES.md` | **Layers, dependency rules, build plan per module, tests per module** | before any new file |
+| `docs/11_MODULE.md` | **Layers, dependency rules, build plan per module, tests per module** | before any new file |
 | `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Nine session workflows (feature, bug, migration, prompt, import, adapter, deploy …) | at session start, per situation |
 | `docs/13_DEPLOYMENT.md` | Tunnel for test calls, EU server, Caddy, backups, CI | before first test call |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV contract between chat (digitization) and import | before T-4.2 |

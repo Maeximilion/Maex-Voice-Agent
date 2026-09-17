@@ -13,7 +13,7 @@
 - [ ] **DSGVO** — Informationspflicht: kurze Ansage plus Datenschutzerklärung auf example.com
 - [ ] **DSGVO** — AVV mit Voice-Plattform, Hosting und jedem weiteren Dienstleister
 - [ ] **DSGVO** — Drittlandtransfer prüfen, falls ein Anbieter außerhalb der EU verarbeitet
-- [ ] **DSGVO** — Löschkonzept umgesetzt und getestet (`docs/03_DATENMODELL.md`)
+- [ ] **DSGVO** — Löschkonzept umgesetzt und getestet (`docs/03_DATA_MODEL.md`)
 - [ ] **DSGVO** — Verzeichnis der Verarbeitungstätigkeiten ergänzt
 - [ ] **DSGVO** — Datenschutz-Folgenabschätzung prüfen
 - [ ] **Team** — informiert, Einwilligung oder Vereinbarung zu Aufnahmen liegt vor

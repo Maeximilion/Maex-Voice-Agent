@@ -8,7 +8,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Project skeleton: FastAPI app with /health, token auth, uniform response envelope
 - `api/db.py`: engine with connection ping, session per request via `get_db`, tests against real Postgres
 - `api/core/`: response envelope, error classes with eight codes from docs/04, token auth, JSON logging with `request_id`/`call_id`, time helpers with business day
-- Alembic in `db/` and migration 001 with ten stage-0 tables; SQLAlchemy models in `api/models/`; `make migrate` creates schema
+- Alembic in `db/` and migration 001 with ten stage-1 tables; SQLAlchemy models in `api/models/`; `make migrate` creates schema
 - `scripts/seed.py`: idempotent test config (tenant, live switch, hours, capacity), `make seed`
 - Tool `POST /v1/tools/get_service_status`: open/closed per service, special days override weekdays, windows crossing midnight, wait times and mode from `service_config`, read-aloud text to next opening; latency helper `p95_ms` with 300 ms budget in tests
 - Tool `POST /v1/tools/check_slot`: availability from `capacity` and active reservations within `dinein` hours, up to two alternatives on grid, read-aloud text with spoken times
@@ -34,4 +34,4 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - `get_service_status`: paused delivery doesn't count as open; "Pickup available" only with open pickup window
 
 ### Open
-- Writable stage-0 tools `create_reservation`, `confirm`, `create_callback`, `transfer_to_team` (T-1.5 through T-1.8)
+- Writable stage-1 tools `create_reservation`, `confirm`, `create_callback`, `transfer_to_team` (T-1.5 through T-1.8)
