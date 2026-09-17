@@ -43,7 +43,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.3 | #24 | Tool `get_service_status` inkl. Sondertage und Wartezeiten | 04 | T-1.2 | fertig 16.09.2026: `domain/status/` + `tools/service_status.py`, 16 Tests, p95 weit unter 300 ms |
 | T-1.4 | #25 | Tool `check_slot`: Verfügbarkeit plus bis zu 2 Alternativen | 04 | T-1.2 | fertig 16.09.2026: `domain/reservations/{capacity,slots,spoken}.py` + `tools/check_slot.py`, 23 Tests, p95 rund 13 ms |
 | T-1.5 | #26 | Tool `create_reservation` als `draft`, mit `readback` und Idempotenz | 04 | T-1.4 | fertig 16.09.2026: `domain/reservations/create.py` + `tools/create_reservation.py`, `core/ids.py`, `domain/customers/phone.py` (E.164), 40 Tests, p95 rund 15 ms |
-| T-1.6 | #27 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | offen |
+| T-1.6 | #27 | Tool `confirm` generisch (Reservierung und Bestellung), `audit_log`, Ereignis-Warteschlange | 04 | T-1.5 | fertig 17.09.2026: `domain/confirm.py` + `tools/confirm.py`, Zeilensperre gegen doppelte Ereignisse, Outbox-Eintrag `reservation.confirmed`, 17 Tests, p95 rund 10 ms. Bestellungen sind im Vertrag vorgesehen, aber bis Stufe 2 `not_found` |
 | T-1.7 | #28 | Tool `create_callback` | 04 | T-1.1 | offen |
 | T-1.8 | #29 | Tool `transfer_to_team` inkl. Schleifenschutz und Erreichbarkeitsprüfung | 04 | T-1.1 | offen |
 | T-1.9 | #30 | Anruf-Log: `POST /v1/calls/start` und `/end`, Tool-Aufrufe mit Dauer | 03 | T-1.1 | offen |
