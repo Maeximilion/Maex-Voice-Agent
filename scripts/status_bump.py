@@ -6,13 +6,16 @@ from __future__ import annotations
 import argparse
 import re
 import sys
-from datetime import date
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 HEADER_RE = re.compile(
     r"(Stand:\s*)(\d{2}\.\d{2}\.\d{4})(.*?Status-Version:\s*)(\d+)\.(\d+)\.(\d+)"
 )
 CHANGELOG_RE = re.compile(r"(## Changelog\n\n)")
+# Das Datum in der Doku ist Ortszeit, nicht UTC (CLAUDE.md §8).
+BERLIN = ZoneInfo("Europe/Berlin")
 
 
 def bump(version: tuple[int, int, int], level: str) -> tuple[int, int, int]:
@@ -60,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
     old_version = tuple(int(g) for g in header_match.groups()[3:6])
     new_version = bump(old_version, args.level)
     new_version_str = ".".join(str(part) for part in new_version)
-    today = date.today().strftime("%d.%m.%Y")
+    today = datetime.now(BERLIN).strftime("%d.%m.%Y")
 
     text = (
         text[: header_match.start()]

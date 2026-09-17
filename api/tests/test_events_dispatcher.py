@@ -216,8 +216,10 @@ def test_send_to_n8n_setzt_idempotenz_kopf_und_wirft_bei_5xx(session, tenant_id)
     assert gesehen[0].headers["X-Idempotency-Key"] == str(event.id)
     assert b'"event_type":"reservation.confirmed"' in gesehen[0].content
 
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _r: httpx.Response(502))
-    ) as client:
-        with pytest.raises(httpx.HTTPStatusError):
-            send_to_n8n(event, client=client)
+    with (
+        httpx.Client(
+            transport=httpx.MockTransport(lambda _r: httpx.Response(502))
+        ) as client,
+        pytest.raises(httpx.HTTPStatusError),
+    ):
+        send_to_n8n(event, client=client)

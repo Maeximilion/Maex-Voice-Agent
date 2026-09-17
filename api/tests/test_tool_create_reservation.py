@@ -131,7 +131,7 @@ def test_unbekannter_anruf_ist_not_found_mit_say(client):
 
 
 def test_ohne_token_401(client):
-    http, tenant_id, call_id = client
+    http, _tenant_id, _call_id = client
     r = http.post("/v1/tools/create_reservation", json={})
     assert r.status_code == 401
 

@@ -1,7 +1,7 @@
 # 01 – Projektstatus
 
 > **Dieses Dokument wird bei jeder Session aktualisiert.** Es ist die einzige Stelle, an der steht, wo das Projekt gerade wirklich steht.
-> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.5.0
+> Stand: 17.09.2026 · Stufe 0 (Fundament) · Nächstes Gate: **G0 Go/No-Go** · Status-Version: 1.5.1
 
 ---
 
@@ -109,6 +109,7 @@ Details und vollständige Liste: `docs/07_ARBEITSPAKETE.md`. Auf GitHub gespiege
 - **Ein Ereignis je Transaktion, geholt mit `FOR UPDATE SKIP LOCKED`**: kein Ereignis geht doppelt raus, auch wenn zwei Dispatcher laufen, und ein langsamer HTTP-Aufruf hält keine fremden Zeilen fest. Die Reihenfolge richtet sich nach `next_attempt_at`, nicht nach dem Eingang
 - **n8n wertet die Ereignis-id als Idempotenz-Schlüssel aus** (Kopfzeile `X-Idempotency-Key`, docs/03 §outbox): ein wiederholter Zustellversuch nach Timeout darf in der Küche keinen zweiten Bon erzeugen. Der Workflow, der das einlöst, fehlt noch
 - **Migrationen schalten die App-Logger nicht mehr stumm** (`db/migrations/env.py`): `fileConfig(..., disable_existing_loggers=False)`. Vorher verstummte nach der ersten Migration im selben Prozess jeder bereits importierte Logger, auch im Betrieb nach `alembic upgrade` aus demselben Prozess
+- **Lint-Regeln stehen in `pyproject.toml`, nicht im ruff-Default** (17.09.2026): ohne Konfiguration bestimmt die ruff-Version die Regelmenge, und ein Dependabot-Update fällt rot aus, ohne dass sich Code geändert hat (PR #85, ruff 0.7 auf 0.16: 14 Verstöße). Gesetzt sind `E, W, F, I, B, BLE, C4, UP, SIM, DTZ, RUF` ohne `E501` (die Zeilenlänge bestimmt der Formatter), dazu `extend-immutable-calls` für `Depends` und Geschwister, weil FastAPI den Aufruf im Default-Argument verlangt und B008 dort kein Fehler ist. Geprüft mit ruff 0.7.4 und 0.16.8, beide grün
 - **E9 (gesetzt, 16.09.2026):** Alles läuft auf EU-Servern oder bei EU-Anbietern, auch Transkription und Auswertung. Maxis PC ist nur Werkbank zum Entwickeln.
 
 ---
@@ -170,6 +171,7 @@ Eigene, semantische Version `MAJOR.MINOR.PATCH`, unabhängig von der CLAUDE.md-B
 
 ## Changelog
 
+- **v1.5.1 · 17.09.2026:** Lint-Regeln in pyproject.toml festgeschrieben (select-Liste, extend-immutable-calls fuer FastAPI-Depends); Findings aus ruff 0.16 behoben, damit PR #85 gruen mergen kann
 - **v1.5.0 · 17.09.2026:** T-1.12 fertig: events/ mit Outbox-Schreiber und Dispatcher nach n8n, Backoff und Alarm, eigener Dienst; Migrationen schalten App-Logger nicht mehr stumm; nächste Schritte T-1.7 bis T-1.9
 - **v1.4.1 · 17.09.2026:** Codex-Review PR #90 (P1) behoben: confirm verlangt denselben Anruf wie der Entwurf, roter Test zuerst
 - **v1.4.0 · 17.09.2026:** T-1.6 fertig: confirm generisch, draft nach confirmed mit Zeilensperre, audit_log und Outbox-Ereignis reservation.confirmed; nächster Schritt T-1.12 Dispatcher

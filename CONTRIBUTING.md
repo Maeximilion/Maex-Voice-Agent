@@ -44,6 +44,7 @@ Verwendete Typen: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Der Geltun
 - Beschreibung nach der Vorlage in `.github/PULL_REQUEST_TEMPLATE.md`: was geändert wurde, warum, wie geprüft, welches Issue geschlossen wird.
 - `main` bleibt immer lauffähig. Direkt auf `main` wird nicht gepusht.
 - Vor dem Merge laufen `ruff check`, `ruff format --check` und die Testsuite in der CI. Bei Änderungen an Dialogverhalten zusätzlich die Evals (`docs/08_EVALS.md`).
+- Welche Lint-Regeln gelten, steht in `pyproject.toml` unter `[tool.ruff.lint]`, nicht in der Standardmenge der jeweiligen ruff-Version. Eine neue Regel wird dort bewusst aufgenommen, eine unpassende bewusst ausgenommen; ein Versions-Update allein ändert die Regelmenge nicht.
 
 ## Labels
 
