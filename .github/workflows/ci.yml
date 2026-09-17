@@ -47,3 +47,67 @@ jobs:
       - run: ruff check api scripts evals
       - run: ruff format --check api scripts evals
       - run: pytest -q
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: API-Image ohne lokales Zertifikat bauen
+        run: |
+          test ! -e api/ca-bundle.crt
+          docker build --tag maex-api:ci ./api
+      - name: API ohne Bind-Mount starten
+        run: |
+          docker run --detach --name maex-api-smoke \
+            --env ENV=test --env AGENT_API_TOKEN=ci-smoke-token \
+            maex-api:ci
+      - name: Health und Token-Auth prüfen
+        run: |
+          docker exec -i maex-api-smoke python - <<'PY'
+          import json
+          import time
+          from urllib.error import HTTPError, URLError
+          from urllib.request import Request, urlopen
+
+          base = "http://127.0.0.1:8000"
+
+          def request(path, token=None):
+              headers = {} if token is None else {"Authorization": f"Bearer {token}"}
+              method = "GET" if path == "/health" else "POST"
+              req = Request(base + path, headers=headers, method=method)
+              try:
+                  response = urlopen(req, timeout=2)
+              except HTTPError as exc:
+                  response = exc
+              with response:
+                  return response.status, json.load(response)
+
+          # Uvicorn braucht nach dem Containerstart kurz Zeit zum Importieren.
+          deadline = time.monotonic() + 60
+          while True:
+              try:
+                  status, body = request("/health")
+                  assert status == 200 and body == {"status": "ok", "env": "test"}, body
+                  break
+              except (URLError, TimeoutError):
+                  if time.monotonic() >= deadline:
+                      raise
+                  time.sleep(1)
+
+          for token in (None, "wrong-token"):
+              status, body = request("/v1/tools/ping", token)
+              assert status == 401, (status, body)
+              assert body["ok"] is False, body
+
+          status, body = request("/v1/tools/ping", "ci-smoke-token")
+          assert status == 200 and body["ok"] is True, (status, body)
+          assert body["data"]["pong"] is True, body
+          print("Docker smoke: health, missing/wrong token, authenticated ping passed")
+          PY
+      - name: Container-Logs bei Fehler anzeigen
+        if: failure()
+        run: docker logs maex-api-smoke
+      - name: Container entfernen
+        if: always()
+        run: docker rm --force maex-api-smoke || true
