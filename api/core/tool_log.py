@@ -17,6 +17,7 @@ from collections.abc import Awaitable, Callable
 
 from fastapi import Request, Response
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
 from api.core.logging import get_logger, log
@@ -100,25 +101,40 @@ def _outcome(body: bytes) -> dict:
 
 
 def _append(request: Request, call_id: str, tenant_id: str, entry: dict) -> None:
-    """Atomarer Anhang per jsonb `||`: kein Lesen-vor-Schreiben, also kein Wettlauf
-    zwischen zwei Tool-Aufrufen desselben Anrufs. tenant_id steht mit im WHERE,
-    sonst schreibt eine Anfrage mit fremder call_id aber eigener tenant_id in den
-    Anruf eines anderen Mandanten (Codex-Review PR #99, P1). Die Session kommt über
-    dieselbe get_db-Factory wie der Request, damit Tests mit eigener Wegwerf-DB
-    (dependency override) auch hier landen statt in einer unbeteiligten Datenbank."""
+    """Session über dieselbe get_db-Factory wie der Request, damit Tests mit eigener
+    Wegwerf-DB (dependency override) auch hier landen statt in einer unbeteiligten
+    Datenbank."""
     factory = request.app.dependency_overrides.get(get_db, get_db)
     gen = factory()
     session = next(gen)
     try:
-        session.execute(
-            text(
-                "UPDATE calls SET tool_calls = tool_calls || CAST(:entry AS jsonb) "
-                "WHERE id = CAST(:call_id AS uuid) "
-                "AND tenant_id = CAST(:tenant_id AS uuid)"
-            ),
-            {"entry": json.dumps(entry), "call_id": call_id, "tenant_id": tenant_id},
-        )
-        session.commit()
+        append_tool_call(session, call_id, tenant_id, entry)
     finally:
         with contextlib.suppress(StopIteration):
             next(gen)
+
+
+def append_tool_call(
+    session: Session, call_id: str, tenant_id: str, entry: dict
+) -> None:
+    """Atomarer Anhang per jsonb `||`: kein Lesen-vor-Schreiben, also kein Wettlauf
+    zwischen zwei Tool-Aufrufen desselben Anrufs. tenant_id steht mit im WHERE,
+    sonst schreibt eine Anfrage mit fremder call_id aber eigener tenant_id in den
+    Anruf eines anderen Mandanten (Codex-Review PR #99, P1).
+
+    Eigenständig aufrufbar, nicht nur aus der HTTP-Middleware: `agent/dispatch.py`
+    ruft `domain` direkt ohne HTTP-Umweg (docs/11 §agent) und braucht denselben
+    Eintrag in `calls.tool_calls` (docs/04 §Gemeinsame Regeln)."""
+    session.execute(
+        text(
+            "UPDATE calls SET tool_calls = tool_calls || CAST(:entry AS jsonb) "
+            "WHERE id = CAST(:call_id AS uuid) "
+            "AND tenant_id = CAST(:tenant_id AS uuid)"
+        ),
+        {
+            "entry": json.dumps(entry),
+            "call_id": str(call_id),
+            "tenant_id": str(tenant_id),
+        },
+    )
+    session.commit()
