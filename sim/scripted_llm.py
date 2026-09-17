@@ -20,6 +20,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from api.agent.llm import LLMTurn, ToolCall
+from api.domain.menu.numberwords import parse_cardinal
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -47,29 +48,6 @@ SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb von Version 1."
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
 NO = ("nein", "nicht", "falsch", "doch nicht", "anders")
 
-# Zahlwörter bis zwölf, wie der Vorlesesatz sie ausgibt (domain/reservations/spoken.py).
-# T-0.8 bringt die vollständige Umwandlung als eigene Funktion; bis dahin reicht hier
-# die kleine Tabelle, weil eine Personenzahl darüber am Telefon ohnehin selten ist.
-NUMBER_WORDS = {
-    "ein": 1,
-    "eine": 1,
-    "einen": 1,
-    "zwei": 2,
-    "drei": 3,
-    "vier": 4,
-    "fünf": 5,
-    # Im Terminal tippt man Umlaute oft als Ersatzschreibung; am Telefon liefert die
-    # Erkennung den Umlaut. Beide Formen gelten.
-    "fuenf": 5,
-    "sechs": 6,
-    "sieben": 7,
-    "acht": 8,
-    "neun": 9,
-    "zehn": 10,
-    "elf": 11,
-    "zwölf": 12,
-    "zwoelf": 12,
-}
 WEEKDAYS = {
     "montag": 0,
     "dienstag": 1,
@@ -80,12 +58,10 @@ WEEKDAYS = {
     "sonntag": 6,
 }
 
-_NUMBER = r"\d{1,2}|" + "|".join(NUMBER_WORDS)
-_PARTY = re.compile(
-    rf"(?:für\s+)?({_NUMBER})\s*(?:personen|person|leute|gäste|gast|mann)\b",
-    re.IGNORECASE,
+_PARTY_NOUN = re.compile(
+    r"\b(?:personen|person|leute|gäste|gast|mann)\b", re.IGNORECASE
 )
-_PARTY_TABLE = re.compile(rf"tisch\s+für\s+({_NUMBER})\b", re.IGNORECASE)
+_PARTY_TABLE = re.compile(r"tisch\s+für\s+([\wäöüß]+)", re.IGNORECASE)
 # Gross- und Kleinschreibung nur fuer die Einleitung ignorieren: der Name selbst
 # muss gross anfangen, sonst wuerde "auf morgen" den Namen "morgen" ergeben.
 _NAME = re.compile(
@@ -98,7 +74,7 @@ _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
 _TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _TIME_DOT = re.compile(r"\b(\d{1,2})\.(\d{2})\s*uhr\b", re.IGNORECASE)
 _TIME_HOUR = re.compile(r"\b(\d{1,2})\s*uhr(?:\s+(\d{1,2}))?\b", re.IGNORECASE)
-_TIME_HALF = re.compile(rf"\bhalb\s+({_NUMBER})\b", re.IGNORECASE)
+_TIME_HALF = re.compile(r"\bhalb\s+([\wäöüß]+)", re.IGNORECASE)
 _DATE = re.compile(r"\b(\d{1,2})\.\s*(\d{1,2})\.(\d{4})?")
 
 
@@ -362,16 +338,30 @@ def _mentions_word(text: str, words: tuple[str, ...]) -> bool:
     return any(re.search(rf"\b{re.escape(word)}\b", lowered) for word in words)
 
 
-def _number(raw: str) -> int | None:
-    lowered = raw.lower()
-    if lowered in NUMBER_WORDS:
-        return NUMBER_WORDS[lowered]
-    return int(raw) if raw.isdigit() else None
+def _number_before(text: str, noun: re.Pattern[str]) -> int | None:
+    """Die Zahl unmittelbar vor einem Wort wie "Personen". Geprüft werden die
+    letzten drei Wörter davor, weil eine Zahl auch auseinandergeschrieben kommt
+    ("drei und zwanzig"); `parse_cardinal` verlangt, dass der ganze Ausschnitt
+    eine Zahl ist, und lehnt "wir sind" von selbst ab."""
+    match = noun.search(text)
+    if match is None:
+        return None
+    davor = text[: match.start()].split()
+    for anzahl in (3, 2, 1):
+        if len(davor) >= anzahl:
+            value = parse_cardinal(" ".join(davor[-anzahl:]))
+            if value is not None:
+                return value
+    return None
 
 
 def _party_size(text: str) -> int | None:
-    match = _PARTY.search(text) or _PARTY_TABLE.search(text)
-    return _number(match.group(1)) if match else None
+    match = _PARTY_TABLE.search(text)
+    if match:
+        value = parse_cardinal(match.group(1))
+        if value is not None:
+            return value
+    return _number_before(text, _PARTY_NOUN)
 
 
 def _phone(text: str) -> str | None:
@@ -393,7 +383,7 @@ def _clock(text: str) -> tuple[int, int] | None:
         return _valid_clock(int(match.group(1)), int(match.group(2) or 0))
     match = _TIME_HALF.search(text)
     if match:
-        hour = _number(match.group(1))
+        hour = parse_cardinal(match.group(1))
         # "halb acht" ist 19:30, nicht 20:30 - und am Telefon abends gemeint.
         return _valid_clock((hour - 1) % 24, 30) if hour else None
     return None
