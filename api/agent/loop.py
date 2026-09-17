@@ -51,6 +51,10 @@ _HANDOFF_SUMMARIES = {
     "not_understood": "Anliegen konnte automatisch nicht geklärt werden.",
 }
 _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
+# Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
+# erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
+# eine harte Grenze statt eines ungeprüften Anhängens.
+_SUMMARY_DETAIL_MAX = 400
 
 
 @dataclass
@@ -85,12 +89,18 @@ class ConversationLoop:
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
         reason = escalation.check(user_text)
         if reason is not None:
-            return self._handoff(state, SAY_ESCALATION, reason=reason)
+            return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
         pending_input = user_text
+        # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
+        # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal
+        # meldet (erst beim Tool-Aufruf, dann noch einmal in der Antwort), die
+        # Leiter mit weniger als den vorgesehenen zwei echten Kundenversuchen je
+        # Stufe hochtreiben (Codex-Review PR #102, P2).
+        reported_failures: set[str] = set()
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
-                return self._handoff(state, SAY_TIMEOUT)
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
 
             turn = self._llm.next_turn(
                 self._system_prompt, self._prompt_state(state), pending_input
@@ -100,11 +110,18 @@ class ConversationLoop:
                 for field_name in turn.state_patch:
                     self._ladder.record_success(field_name)
 
-            if turn.understanding_failure:
+            if (
+                turn.understanding_failure
+                and turn.understanding_failure not in reported_failures
+            ):
+                reported_failures.add(turn.understanding_failure)
                 self._ladder.record_failure(turn.understanding_failure)
                 if self._ladder.should_end_call(turn.understanding_failure):
                     return self._handoff(
-                        state, SAY_NOT_UNDERSTOOD, reason="not_understood"
+                        state,
+                        SAY_NOT_UNDERSTOOD,
+                        reason="not_understood",
+                        detail=user_text,
                     )
 
             if turn.tool_call is None:
@@ -118,7 +135,7 @@ class ConversationLoop:
             apply_tool_result(state, turn.tool_call.name, result)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
-        return self._handoff(state, SAY_STUCK)
+        return self._handoff(state, SAY_STUCK, detail=user_text)
 
     def _prompt_state(self, state: ConversationState) -> dict[str, Any]:
         data = state.to_prompt_json()
@@ -139,11 +156,18 @@ class ConversationLoop:
         state: ConversationState,
         fallback_say: str,
         reason: str = "not_understood",
+        detail: str | None = None,
     ) -> TurnResult:
         """Übergabe wirklich ausführen statt nur anzukündigen: erst versuchen, live zu
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
         einen Rückruf anlegen. Ohne bekannte Rufnummer bleibt nur der ehrliche
-        Fallback-Satz — raten (CLAUDE.md §2 Regel 2) ist keine Option."""
+        Fallback-Satz — raten (CLAUDE.md §2 Regel 2) ist keine Option.
+
+        `detail` ist der auslösende Kundenzug: ohne ihn bekäme das Team bei einer
+        Vorab-Eskalation (kein Modell-Aufruf) nur eine feste Floskel statt der
+        eigentlichen Bitte ("Reservierung morgen 18 Uhr auf Müller stornieren"),
+        obwohl sonst nirgends ein Transkript gespeichert ist (Codex-Review
+        PR #102, P2)."""
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
@@ -162,7 +186,7 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": callback_reason,
-                    "summary": _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY),
+                    "summary": _handoff_summary(reason, detail),
                 },
             )
             apply_tool_result(state, "create_callback", callback)
@@ -173,6 +197,13 @@ class ConversationLoop:
 
         state.stage = "ended"
         return TurnResult(state=state, say=[fallback_say], ended=True)
+
+
+def _handoff_summary(reason: str, detail: str | None) -> str:
+    base = _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
+    if not detail:
+        return base
+    return f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
 
 
 def _tool_result_as_input(name: str, result: ToolResult) -> str:

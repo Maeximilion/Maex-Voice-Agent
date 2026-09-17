@@ -15,6 +15,13 @@ def test_storno_wird_erkannt():
     assert check("Ich möchte meine Reservierung stornieren") == "cancellation"
 
 
+def test_storno_als_substantiv_wird_erkannt():
+    """Die kanonische Kundenformulierung aus docs/05 §4 ("Storno meiner
+    Reservierung") traf bisher kein Stichwort, nur die Verbformen (Codex-Review
+    PR #102, P2)."""
+    assert check("Storno meiner Reservierung, bitte") == "cancellation"
+
+
 def test_unauffaelliger_text_loest_nichts_aus():
     assert check("Ich hätte gerne einen Tisch für vier Personen") is None
 

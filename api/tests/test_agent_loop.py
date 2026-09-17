@@ -10,13 +10,13 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, SAY_STUCK, SAY_TIMEOUT, ConversationLoop
 from api.agent.state import ConversationState
-from api.models import Call
+from api.models import Call, Callback
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -300,6 +300,48 @@ def test_erfolg_loescht_den_ladder_stand_des_feldes(session, state):
     loop.run_turn(state, "vier Personen")
 
     assert loop._ladder.level_for("party_size") == 1
+
+
+def test_understanding_failure_zaehlt_nur_einmal_pro_kundenzug(session, state):
+    """Zwei Meldungen desselben Felds innerhalb eines Zugs (erst beim Tool-Hop,
+    dann in der Antwort) sind ein Kundenversuch, keine zwei -- sonst könnte die
+    Leiter schneller hochklettern, als der Kunde tatsächlich etwas gesagt hat
+    (Codex-Review PR #102, P2)."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(name="get_service_status"),
+                understanding_failure="party_size",
+            ),
+            LLMTurn(
+                say="Wie viele Personen sind Sie?", understanding_failure="party_size"
+            ),
+        ]
+    )
+    loop = ConversationLoop(
+        session, llm, "system", now=NOW, clock=clock_from([0, 0, 0])
+    )
+
+    loop.run_turn(state, "hm, weiß nicht genau")
+
+    assert loop._ladder.level_for("party_size") == 1
+
+
+def test_eskalations_rueckruf_enthaelt_den_kundentext(session, state):
+    """Bei einer Vorab-Eskalation läuft nie das Modell, also gibt es sonst
+    keine Aufzeichnung dessen, was der Kunde eigentlich wollte -- eine feste
+    Floskel allein lässt das Team ohne die nötigen Angaben zurück (Codex-Review
+    PR #102, P2)."""
+    state.slots["phone"] = "+4972215551234"
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Reservierung morgen um 18 Uhr auf Müller stornieren")
+
+    assert result.ended is True
+    assert state.stage == "callback"
+    callback = session.scalars(select(Callback)).one()
+    assert "Reservierung morgen um 18 Uhr auf Müller stornieren" in callback.summary
 
 
 def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):

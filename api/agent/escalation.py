@@ -44,8 +44,11 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
     (
         "cancellation",
         (
-            "stornieren",
-            "stornierung",
+            # "storn" statt einzelner Formen: deckt "Storno", "stornieren",
+            # "Stornierung", "storniert" in einem Wort ab, sie teilen sich nur
+            # die ersten fünf Buchstaben, nicht mehr (Codex-Review PR #102, P2:
+            # "Storno meiner Reservierung" traf bisher kein Stichwort).
+            "storn",
             "rückgängig machen",
             "absagen",
             "abbestellen",
