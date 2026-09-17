@@ -165,4 +165,4 @@ Sofort und ohne Diskussion:
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
 
-Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
+Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).

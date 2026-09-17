@@ -1,29 +1,29 @@
-# Sicherheit
+# Security
 
-## Lücken melden
+## Reporting Issues
 
-Sicherheitslücken bitte **nicht** als öffentliches Issue anlegen. Stattdessen über „Report a vulnerability" im Reiter Security dieses Repositories melden (GitHub Private Vulnerability Reporting).
+Please **do not** create security issues as public issues. Instead report via "Report a vulnerability" in the Security tab of this repository (GitHub Private Vulnerability Reporting).
 
-Hilfreich in der Meldung: betroffene Komponente, Schritte zum Nachstellen, mögliche Auswirkung. Eine Rückmeldung erfolgt innerhalb von sieben Tagen.
+Helpful in your report: affected component, steps to reproduce, possible impact. You'll receive a response within seven days.
 
-## Geltungsbereich
+## Scope
 
-Der Agent nimmt Telefonate entgegen und verarbeitet dabei Namen, Rufnummern, Adressen und Bestelldaten. Besonders relevant sind deshalb:
+The agent answers phone calls and processes names, phone numbers, addresses, and order data. Especially relevant:
 
-- die Agent-API unter `/v1/tools/*`, erreichbar nur mit Bearer-Token (`AGENT_API_TOKEN`)
-- die Team-Oberfläche und deren Sitzungen
-- die Ereignis-Warteschlange zur Automatisierung und deren Ziele
-- Datenbankzugriff, Backups und deren Ablageorte
+- The agent API at `/v1/tools/*`, accessible only with Bearer token (`AGENT_API_TOKEN`)
+- Team UI and its sessions
+- Event queue for automation and its targets
+- Database access, backups, and their storage locations
 
-## Grundregeln im Betrieb
+## Operating Principles
 
-- Zugangsdaten ausschließlich über Umgebungsvariablen, nie im Repository. `.env` ist in `.gitignore`.
-- Jeder Schreibvorgang trägt eine `call_id` und landet im `audit_log`.
-- Personenbezogene Daten tragen eine Löschfrist, ein täglicher Job wendet sie an.
-- Die gesamte Verarbeitung läuft auf Servern in der EU, einschließlich Transkription und Auswertung.
-- Echte Anrufaufnahmen werden erst verarbeitet, wenn die Rechts-Checkliste in `docs/09_BETRIEB_RECHT.md` abgeschlossen ist.
-- Vor jeder Migration auf Echtdaten wird ein Backup gezogen.
+- Credentials exclusively via environment variables, never in repository. `.env` is in `.gitignore`.
+- Every write transaction carries a `call_id` and lands in `audit_log`.
+- Personal data carries a deletion deadline; a daily job applies it.
+- All processing runs on EU servers, including transcription and analysis.
+- Real call recordings are processed only after the legal checklist in `docs/09_OPERATIONS_LEGAL.md` is complete.
+- Before any production migration, a backup is taken.
 
-## Unterstützte Version
+## Supported Version
 
-Das Projekt ist im Aufbau. Sicherheitsmeldungen beziehen sich auf den aktuellen Stand von `main`.
+The project is in development. Security reports refer to the current state of `main`.

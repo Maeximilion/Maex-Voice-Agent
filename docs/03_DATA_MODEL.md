@@ -310,7 +310,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | Kunden ohne Bestellung | 24 Monate (Vorschlag) | `delete_after`, täglicher Job |
 | Bestellungen | nach steuerlicher Aufbewahrungspflicht | Master ist ohnehin die Kasse |
 
-Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_BETRIEB_RECHT.md`).
+Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).
 
 ---
 

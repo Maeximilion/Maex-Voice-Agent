@@ -1,8 +1,8 @@
-Schließe die aktuelle Aufgabe ab.
+Close out the current task.
 
-1. Führe `make lint` und `make test` aus. Zeige die Ergebnisse. Bei Rot: erst beheben, dann weiter.
-2. Prüfe die Definition of Done aus `CLAUDE.md` §7 Punkt für Punkt und zeige die Liste mit erledigt/offen.
-3. Aktualisiere `docs/07_ARBEITSPAKETE.md` (Status fertig) und `docs/01_STATUS.md` (Erledigt-Tabelle, nächste Schritte, neue Annahmen, neue Blocker). Danach `python scripts/status_bump.py patch "<eine Zeile>"` (bei neuer Entscheidung oder geändertem „Was als Nächstes dran ist": `minor`; bei bestandenem Gate/Stufenwechsel: `major`).
-4. Prüfe nach `docs/15_README_STRATEGY.md`, ob die README betroffen ist (Schnellstart, Voraussetzungen, Konfiguration, bekannte Probleme, neue Doku-Datei). Wenn ja: aktualisieren, Ist-Zustand, keine Emojis.
-5. Ziehe betroffene Spec-Dokumente in `docs/` nach, falls die Umsetzung von der Spec abweicht. Nenne die Abweichung ausdrücklich.
-6. Schlage eine Commit-Nachricht nach Conventional Commits vor und committe nach Bestätigung.
+1. Run `make lint` and `make test`. Show results. If red: fix first, then continue.
+2. Check the Definition of Done from `CLAUDE.md` §7 point by point and show the list as complete/open.
+3. Update `docs/07_WORKPACKAGES.md` (status done) and `docs/01_STATUS.md` (completion table, next steps, new assumptions, new blockers). Then `python scripts/status_bump.py patch "<one line>"` (for new decision or changed "what's next": `minor`; for passed gate/stage change: `major`).
+4. Check per `docs/15_README_STRATEGY.md` whether README is affected (quick start, requirements, config, known issues, new doc file). If yes: update it, current state, no emojis.
+5. Sync affected spec docs in `docs/` if implementation differs from spec. Name the deviation explicitly.
+6. Suggest a commit message per Conventional Commits and commit after confirmation.

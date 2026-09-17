@@ -1,205 +1,205 @@
-# CLAUDE.md – Arbeitsanweisung für Claude Code
+# CLAUDE.md – Working Instructions for Claude Code
 
-> Lies diese Datei zuerst, dann `docs/01_STATUS.md`. Danach weißt du, wo das Projekt steht und was als Nächstes dran ist.
+> Read this file first, then `docs/01_STATUS.md`. After that, you'll know where the project stands and what's next.
 > Version 1.1 · 16.09.2026
 
 ---
 
-## 1. Was wir bauen
+## 1. What We're Building
 
-Ein KI-Agent nimmt Anrufe auf der Festnetznummer des Restaurants **<Pilotbetrieb>** (<Ort>) an und erledigt **Reservierung, Abholung und Lieferung**. Beschwerden und Sonderfälle gehen an einen Menschen. Das Team steuert alles über eine Browser-GUI auf dem Tablet.
+An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints and edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
 
-**Aufgabenteilung:** Eine externe Voice-Plattform macht Telefonie, Spracherkennung und Stimme. Wir bauen die **Logik, die Datenbank und die Oberfläche**. Der Agent ruft unsere Tools per HTTPS auf.
+**Division of Labor:** An external voice platform handles telephony, speech recognition, and voice synthesis. We build the **logic, database, and interface**. The agent calls our tools via HTTPS.
 
-**Platzhalter:** Betriebs-, Firmen-, Orts- und Anbieternamen stehen in Code und Doku als `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>` und `example.com`. Die echten Werte kommen aus `.env` und der Datenbank, nie ins Repo. Im Code keine Emojis.
+**Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
 
 ---
 
-## 2. Harte Regeln (nicht verhandelbar)
+## 2. Hard Rules (Non-Negotiable)
 
-Diese sechs Regeln stehen über jeder Bequemlichkeit. Wenn eine Aufgabe sie verletzen würde: **stoppen und fragen**.
+These six rules override any convenience. If a task violates them: **stop and ask**.
 
-1. **KI versteht, Code entscheidet.** Preise, Zonen, Öffnungszeiten, Verfügbarkeit und Allergene kommen **ausschließlich** aus der Datenbank. Nie aus dem Modell, nie hartkodiert, nie geschätzt.
-2. **Nie raten.** Ohne eindeutige `menu_item_id` kommt keine Position in die Bestellung. Bei Unsicherheit greift die Verständnis-Leiter (`docs/05_DIALOG_PROMPTS.md`), am Ende der Mensch.
-3. **Nichts ohne Bestätigung.** Kein Vorgang verlässt den Entwurfsstatus ohne explizites „Ja" des Kunden. `confirm` ist der einzige Weg von `draft` nach `confirmed`.
-4. **Fehler werden gemessen.** Vor jedem Merge laufen die Evals (`docs/08_EVALS.md`). Kein Gate ohne Zahlen.
-5. **Jeder Ausfall endet beim Team.** Fällt irgendetwas aus, klingelt das Telefon beim Menschen. Kein Anruf geht verloren.
-6. **Token-sparsam by design.** Kleinster Kontext, kleinstes Modell, das die Evals besteht. Das ganze Menü gehört nie in den Prompt.
+1. **AI understands, code decides.** Prices, zones, hours, availability, and allergens come **only** from the database. Never from the model, never hardcoded, never estimated.
+2. **Never guess.** Without a definitive `menu_item_id`, no item enters the order. On uncertainty, follow the understanding ladder (`docs/05_DIALOG_PROMPTS.md`); escalate to human at the end.
+3. **Nothing without confirmation.** No transaction leaves draft status without explicit customer "yes". `confirm` is the only path from `draft` to `confirmed`.
+4. **Errors are measured.** Before every merge, evals run (`docs/08_EVALS.md`). No gate without numbers.
+5. **Every outage ends with the team.** If anything breaks, the phone rings. No call is lost.
+6. **Token-efficient by design.** Smallest context, smallest model that passes evals. Full menu never in the prompt.
 
 ---
 
 ## 3. Stack
 
-| Ebene | Technik | Status |
+| Layer | Technology | Status |
 |---|---|---|
-| Sprache | Python 3.12 | Default |
-| API (heißer Pfad) | FastAPI + Uvicorn, Pydantic v2 | Default |
+| Language | Python 3.12 | Default |
+| API (hot path) | FastAPI + Uvicorn, Pydantic v2 | Default |
 | DB | PostgreSQL 16, SQLAlchemy 2 + Alembic | Default |
 | GUI | FastAPI + Jinja2 + HTMX + SSE, Pico.css | Default, Alternative: React + Vite |
-| Automation (kalter Pfad) | n8n, self-hosted per Docker | gesetzt |
+| Automation (cold path) | n8n, self-hosted via Docker | Set |
 | Tests | pytest, pytest-asyncio, httpx | Default |
-| Lint/Format | ruff (Format + Lint), mypy im Nicht-Strict-Modus | Default |
-| Betrieb | Docker Compose, Hosting in der EU | gesetzt |
-| Voice-Plattform | offen → wird in Arbeitspaket C2 entschieden | offen |
+| Lint/Format | ruff (Format + Lint), mypy non-strict mode | Default |
+| Operations | Docker Compose, Hosting in EU | Set |
+| Voice Platform | Open → decided in workpackage C2 | Open |
 
-„Default" = Vorschlag, kippbar. Wenn Maxi widerspricht, wird hier und in `docs/01_STATUS.md` nachgezogen.
+"Default" = suggestion, can change. If Maxi disagrees, this and `docs/01_STATUS.md` get updated.
 
-**Warum HTMX statt React:** ein Container statt zwei, kein Node-Build, kein CORS, Live-Updates über Server-Sent-Events. Für eine Tablet-Oberfläche mit Listen und großen Knöpfen reicht das vollständig. Begründung in `docs/06_GUI.md`.
+**Why HTMX over React:** one container instead of two, no Node build, no CORS, live updates via Server-Sent-Events. Sufficient for a tablet UI with lists and large buttons. Rationale in `docs/06_GUI.md`.
 
 ---
 
-## 4. Ordnerstruktur
+## 4. Folder Structure
 
-Der Aufbau ist modular, nach Schichten mit fester Abhängigkeitsrichtung. Vollständig mit Begründung und Bauplan: `docs/11_MODULE.md`. **Vor jeder neuen Datei dort nachsehen, wohin sie gehört.**
+The layout is modular, organized by layers with fixed dependency direction. Fully documented with rationale and blueprint: `docs/11_MODULE.md`. **Before creating any new file, check there to see where it belongs.**
 
 ```text
 maex-voice-agent/
-├── CLAUDE.md              ← diese Datei
+├── CLAUDE.md              ← this file
 ├── README.md
 ├── docker-compose.yml     Postgres · API · n8n (dev)
-├── deploy/                Prod-Compose, Caddyfile
+├── deploy/                Prod Compose, Caddyfile
 ├── .claude/commands/      /start /task /done /bug /eval /handover
 ├── .github/workflows/     CI: ruff + pytest
-├── docs/                  Planung, Specs, Status  →  Abschnitt 5
+├── docs/                  Planning, specs, status  →  Section 5
 ├── api/
-│   ├── main.py            App-Einstieg, Router
-│   ├── config.py          Settings aus .env
-│   ├── db.py              Engine, Session
-│   ├── core/              Antwort-Hülle, Fehler, Logging, Auth, IDs, Zeit
-│   ├── domain/            Fachlogik ohne HTTP: menu · ordering · reservations
+│   ├── main.py            App entry, router
+│   ├── config.py          Settings from .env
+│   ├── db.py              Engine, session
+│   ├── core/              Response envelope, errors, logging, auth, IDs, time
+│   ├── domain/            Business logic without HTTP: menu · ordering · reservations
 │   │                      · delivery · customers · status · callbacks
-│   ├── agent/             eigener Gesprächs-Loop, Zustand, Leiter, Eskalation
-│   ├── telephony/         Port + Adapter je Anbieter – der EINZIGE Ort, der ihn kennt
-│   ├── tools/             dünne HTTP-Hülle /v1/tools/* um domain
-│   ├── events/            Outbox + Dispatcher → n8n
-│   ├── jobs/              Löschjob, Abgleich, Tagesbericht, Feiertage
-│   ├── gui/               Router, SSE, Templates, Statisches
+│   ├── agent/             Conversation loop, state, ladder, escalation
+│   ├── telephony/         Port + adapter per provider – ONLY place that knows it
+│   ├── tools/             Thin HTTP wrapper /v1/tools/* around domain
+│   ├── events/            Outbox + dispatcher → n8n
+│   ├── jobs/              Cleanup, sync, daily report, holidays
+│   ├── gui/               Router, SSE, templates, static
 │   ├── models/  schemas/  SQLAlchemy · Pydantic
 │   └── tests/
-├── sim/                   Text-Telefon: Gespräche ohne Telefon
-├── db/migrations/         Alembic, versioniert
-├── prompts/               System-Prompt je Version
-├── evals/                 cases/ · runner.py · reports/ (ignoriert)
-├── n8n/                   Workflow-Exporte
+├── sim/                   Text telephone: conversations without phone
+├── db/migrations/         Alembic, versioned
+├── prompts/               System prompt per version
+├── evals/                 cases/ · runner.py · reports/ (ignored)
+├── n8n/                   Workflow exports
 └── scripts/               seed · import_menu · backup · restore
 ```
 
-**Abhängigkeitsrichtung, kurz:** `tools`/`gui`/`sim`/`telephony` → `agent` → `domain` → `models`/`core`. Nie umgekehrt. `domain/` importiert kein FastAPI, kein HTTP, keinen Anbieter.
+**Dependency direction, short:** `tools`/`gui`/`sim`/`telephony` → `agent` → `domain` → `models`/`core`. Never reversed. `domain/` imports no FastAPI, no HTTP, no provider.
 
 ---
 
-## 5. Die Dokumente
+## 5. The Documents
 
-| Datei | Inhalt | Wann lesen |
+| File | Content | When to Read |
 |---|---|---|
-| `docs/00_PCF.md` | Projekt-Gesamtplan, Stufen, Gates, Risiken | einmal zum Einstieg |
-| `docs/01_STATUS.md` | **Wo stehen wir, was ist als Nächstes dran** | zu Beginn jeder Session |
-| `docs/02_ARCHITEKTUR.md` | Komponenten, heißer/kalter Pfad, Anrufablauf, Ausfallverhalten | vor Arbeit an API oder n8n |
-| `docs/03_DATENMODELL.md` | Tabellen, Felder, DDL je Stufe | vor jeder Migration |
-| `docs/04_API_TOOLS.md` | Vertrag je Tool: Request, Response, Fehler, Latenzbudget | vor Arbeit an `api/tools/` |
-| `docs/05_DIALOG_PROMPTS.md` | Gesprächsflüsse, System-Prompt, Verständnis-Leiter, Eskalation | vor Arbeit an `prompts/` |
-| `docs/06_GUI.md` | Screens, Komponenten, Zustände, Bedienregeln | vor Arbeit an `gui/` |
-| `docs/07_ARBEITSPAKETE.md` | **Aufgabenliste T-x.y mit Abhängigkeiten und Definition of Done** | zur Aufgabenwahl |
-| `docs/08_EVALS.md` | Testfall-Format, Metriken, Regressionslauf | vor jedem Merge |
-| `docs/09_BETRIEB_RECHT.md` | Runbook, Notfälle, Rechts-Checkliste | vor jedem Go-live-Schritt |
-| `docs/11_MODULE.md` | **Schichten, Abhängigkeitsregeln, Bauplan je Modul, Tests je Modul** | vor jeder neuen Datei |
-| `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | neun Session-Abläufe (Feature, Bug, Migration, Prompt, Import, Adapter, Deploy …) | zu Session-Beginn, je nach Situation |
-| `docs/13_DEPLOYMENT.md` | Tunnel für Testanrufe, EU-Server, Caddy, Backups, CI | vor dem ersten Testanruf |
-| `docs/14_MENU_IMPORTFORMAT.md` | CSV-Vertrag zwischen Chat (Digitalisierung) und Import | vor T-4.2 |
-| `docs/15_README_STRATEGY.md` | Wann und wie README und CHANGELOG gepflegt werden, Versionierung je Gate | bei jedem Gate, bei neuen Abhängigkeiten |
+| `docs/00_PCF.md` | Project master plan, stages, gates, risks | once at startup |
+| `docs/01_STATUS.md` | **Where we stand, what's next** | at start of every session |
+| `docs/02_ARCHITECTURE.md` | Components, hot/cold path, call flow, failure behavior | before work on API or n8n |
+| `docs/03_DATA_MODEL.md` | Tables, fields, DDL per stage | before any migration |
+| `docs/04_API_TOOLS.md` | Contract per tool: request, response, errors, latency budget | before work on `api/tools/` |
+| `docs/05_DIALOG_PROMPTS.md` | Conversation flows, system prompt, understanding ladder, escalation | before work on `prompts/` |
+| `docs/06_GUI.md` | Screens, components, states, interaction rules | before work on `gui/` |
+| `docs/07_WORKPACKAGES.md` | **Task list T-x.y with dependencies and definition of done** | for task selection |
+| `docs/08_EVALS.md` | Test case format, metrics, regression run | before every merge |
+| `docs/09_OPERATIONS_LEGAL.md` | Runbook, emergencies, legal checklist | before every go-live step |
+| `docs/11_MODULE.md` | **Layers, dependency rules, build plan per module, tests per module** | before any new file |
+| `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Nine session workflows (feature, bug, migration, prompt, import, adapter, deploy …) | at session start, per situation |
+| `docs/13_DEPLOYMENT.md` | Tunnel for test calls, EU server, Caddy, backups, CI | before first test call |
+| `docs/14_MENU_IMPORT_FORMAT.md` | CSV contract between chat (digitization) and import | before T-4.2 |
+| `docs/15_README_STRATEGY.md` | When and how to maintain README and CHANGELOG, versioning per gate | at every gate, with new dependencies |
 
 ---
 
-## 6. So arbeitest du
+## 6. How You Work
 
-### Slash-Befehle (`.claude/commands/`)
-`/start` Session beginnen · `/task T-x.y` Aufgabe bauen · `/done` abschließen · `/bug "…"` Fehler mit rotem Eval-Fall zuerst · `/eval` Suite laufen und bewerten · `/gate Gx` Gate abschließen, README und Version nachziehen · `/handover` Übergabeblock. Abläufe im Detail: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+### Slash Commands (`.claude/commands/`)
+`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
-### Session-Start
-1. `docs/01_STATUS.md` lesen → aktuelle Stufe und offene Aufgaben
-2. `docs/07_ARBEITSPAKETE.md` → nächste Aufgabe mit erfüllten Abhängigkeiten wählen
-3. Die Spec zur Aufgabe lesen (Spalte „Spec" in der Aufgabenliste)
-4. Kurzen Plan zeigen (max. 5 Zeilen), dann bauen
+### Session Start
+1. Read `docs/01_STATUS.md` → current stage and open tasks
+2. `docs/07_WORKPACKAGES.md` → choose next task with satisfied dependencies
+3. Read the spec for the task (column "Spec" in task list)
+4. Show brief plan (max 5 lines), then build
 
-### Der Loop
-**Plan → Bauen → Ausführen → Bewerten → Weiterdenken.** Nach jeder Aufgabe selbstständig bis zu **3 Folgeschritte** in Richtung Ziel machen (Tests ergänzen, offensichtliche Lücke schließen, Doku nachziehen), dann Ergebnis melden. Größere Scope-Erweiterungen nur als Vorschlag.
+### The Loop
+**Plan → Build → Execute → Assess → Iterate.** After each task, independently take up to **3 follow-up steps** toward the goal (add tests, close obvious gaps, sync docs), then report results. Larger scope expansions only as a proposal.
 
-### Rückfragen
-Geschlossen stellen (Ja/Nein oder A/B/C mit markierter Empfehlung), **eine pro Unterbrechung**, und genau dann, wenn die Antwort gebraucht wird. Recherchierbares selbst recherchieren. Was du annimmst, markierst du als Annahme und schreibst es in `docs/01_STATUS.md`.
+### Questions
+Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
 
-**Entscheidungen mit Empfehlung nimmst du selbst ab** (Maxi, 16.09.2026): Plan zeigen, Empfehlung nennen, weiterbauen. Warten nur, wenn es um Geld, Recht, Außenwirkung, Produktivdaten oder Irreversibles geht (§10).
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10).
 
-### Session-Ende
-`docs/01_STATUS.md` aktualisieren: erledigte Aufgaben, neue Erkenntnisse, nächster Schritt. Dazu einen Übergabeblock nach `docs/00_PCF.md` Abschnitt 12 ausgeben.
+### Session End
+Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
 
 ---
 
 ## 7. Definition of Done
 
-Eine Aufgabe ist fertig, wenn **alle** Punkte stimmen:
+A task is complete when **all** of these are true:
 
-- [ ] Code läuft, wurde **wirklich ausgeführt**, nicht nur geschrieben
-- [ ] Tests für Normalfall **und** mindestens zwei Grenzfälle, grün
-- [ ] `ruff format` und `ruff check` sauber
-- [ ] Für Tools im heißen Pfad: Antwortzeit gemessen, < 300 ms bei lokaler DB
-- [ ] Schema-Änderung als Alembic-Migration, up **und** down getestet
-- [ ] Betroffene Doku in `docs/` nachgezogen
-- [ ] README aktualisiert, falls sich Schnellstart, Voraussetzungen, Konfiguration oder bekannte Probleme geändert haben (`docs/15_README_STRATEGY.md`)
-- [ ] `docs/01_STATUS.md` aktualisiert
-- [ ] Commit nach Conventional Commits, `main` bleibt lauffähig
+- [ ] Code runs, was **actually executed**, not just written
+- [ ] Tests for normal case **and** at least two edge cases, green
+- [ ] `ruff format` and `ruff check` clean
+- [ ] For tools in hot path: response time measured, < 300 ms with local DB
+- [ ] Schema change as Alembic migration, up **and** down tested
+- [ ] Affected docs in `docs/` synced
+- [ ] README updated if quickstart, requirements, config, or known issues changed (`docs/15_README_STRATEGY.md`)
+- [ ] `docs/01_STATUS.md` updated
+- [ ] Commit follows Conventional Commits, `main` stays runnable
 
 ---
 
-## 8. Konventionen
+## 8. Conventions
 
 **Code**
-- Preise **immer** als Integer in Cent. Kein Float für Geld, nirgends.
-- Telefonnummern im Format E.164 (`+4972215551234`), normalisiert beim Eingang.
-- Zeiten in UTC speichern, in `Europe/Berlin` anzeigen.
-- Jeder Vorgang trägt eine `call_id`. Ohne `call_id` kein Schreibvorgang.
-- Schreibende Tools sind idempotent: gleicher `idempotency_key` → gleiches Ergebnis, kein zweiter Vorgang.
-- Fehler geben strukturiertes JSON zurück, nie einen Stacktrace an den Agenten.
-- Deutsche Kommentare und Fehlermeldungen, englische Bezeichner im Code.
-- Keine Emojis in Code, Doku, Commits oder Oberfläche. Status wird mit Wörtern ausgedrückt.
+- Prices **always** as integer cents. No float for money, anywhere.
+- Phone numbers in E.164 format (`+4972215551234`), normalized at entry.
+- Store times in UTC, display in `Europe/Berlin`.
+- Every transaction carries a `call_id`. No write without `call_id`.
+- Write tools are idempotent: same `idempotency_key` → same result, no duplicate transaction.
+- Errors return structured JSON, never stack trace to the agent.
+- German comments and error messages, English identifiers in code.
+- No emojis in code, docs, commits, or UI. Status expressed in words.
 
 **Git**
-- Conventional Commits: `feat(tools): check_delivery mit Polygon-Prüfung`
-- Ein Commit = eine abgeschlossene Aufgabe
-- `main` bleibt immer lauffähig
-- Kein „🤖 Generated with Claude Code"-Badge/-Footer in PR-Beschreibungen oder sonst im Repo (README, Docs, Dateien)
+- Conventional Commits: `feat(tools): check_delivery with polygon validation`
+- One commit = one completed task
+- `main` always stays runnable
+- No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
 
-**Sicherheit**
-- `.env`, echte Aufnahmen, Transkripte und Kundendaten kommen **nie** ins Repo
-- API-Schlüssel nur über Umgebungsvariablen
-- Die Agent-API ist nur über Token erreichbar (`AGENT_API_TOKEN`)
-- Vor jeder Migration auf Echtdaten: Backup (`scripts/backup.sh`)
-
----
-
-## 9. Was du nie tust
-
-- Preise, Öffnungszeiten, Lieferzonen oder Allergene im Code oder Prompt hartkodieren
-- Einen Vorgang ohne Kundenbestätigung final buchen
-- Eine Allergen-Auskunft geben, die nicht als gepflegter DB-Wert vorliegt
-- Echte Anrufaufnahmen verarbeiten, bevor der Rechts-Check in `docs/09_BETRIEB_RECHT.md` abgehakt ist
-- Auf Produktivdaten ohne Backup migrieren
-- Tests als „geht schon" überspringen oder grün behaupten, ohne sie laufen zu lassen
-- Das komplette Menü in den System-Prompt schreiben
-- Fachlogik in `tools/` oder `gui/` ablegen statt in `domain/`
-- Einen Anbieternamen außerhalb von `telephony/` verwenden
-- n8n oder eine externe API direkt aus `domain/` aufrufen (immer über die Outbox)
-- Einen Fehler beheben, ohne vorher einen roten Eval- oder Unit-Test dafür zu haben
+**Security**
+- `.env`, real recordings, transcripts, and customer data **never** go in repo
+- API keys only via environment variables
+- Agent API accessible only with token (`AGENT_API_TOKEN`)
+- Before any production migration: backup (`scripts/backup.sh`)
 
 ---
 
-## 10. Was in Claude Code läuft und was im Chat bleibt
+## 9. Never Do This
 
-| Hier in Claude Code | In den Claude-Chats (siehe `docs/00_PCF.md` Abschnitt 10) |
+- Hard-code prices, hours, delivery zones, or allergens in code or prompt
+- Book a transaction final without explicit customer confirmation
+- Give allergen information not maintained as a DB value
+- Process real call recordings before legal check in `docs/09_OPERATIONS_LEGAL.md` is ticked
+- Migrate production data without backup
+- Skip tests as "already works" or claim green without running them
+- Write the entire menu into the system prompt
+- Put domain logic in `tools/` or `gui/` instead of `domain/`
+- Use a provider name outside `telephony/`
+- Call n8n or external API directly from `domain/` (always via outbox)
+- Fix a bug without first having a red eval or unit test for it
+
+---
+
+## 10. What Runs in Claude Code and What Stays in Chat
+
+| In Claude Code | In Claude Chats (see `docs/00_PCF.md` section 10) |
 |---|---|
-| API, Tools, Datenmodell, Migrationen | C1 Ist-Aufnahme, Baseline, Rechts-Check |
-| GUI | C2 Anbieter-Recherche und Auswahl |
-| Eval-Runner und Testfälle | Verhandlungen, Verträge, Budgetentscheidungen |
-| n8n-Workflows als Code-Export | Gate-Entscheidungen mit Maxi |
-| Import- und Betriebsskripte | Entscheidungen, die Geld oder Recht berühren |
+| API, tools, data model, migrations | C1 current state capture, baseline, legal check |
+| GUI | C2 provider research and selection |
+| Eval runner and test cases | Negotiations, contracts, budget decisions |
+| n8n workflows as code export | Gate decisions with Maxi |
+| Import and ops scripts | Decisions involving money or law |
 
-Alles, was Geld kostet, einen Vertrag auslöst oder rechtlich bindet, entscheidet Maxi im Chat. Du baust.
+Anything that costs money, triggers a contract, or binds us legally → Maxi decides in chat. You build.

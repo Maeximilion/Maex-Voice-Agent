@@ -1,11 +1,11 @@
-Erzeuge den Übergabeblock für diese Session nach `docs/00_PCF.md` Abschnitt 12:
+Generate the handover block for this session per `docs/00_PCF.md` section 12:
 
-## Übergabe <heutiges Datum> – <Aufgaben-IDs>
-Stand: was läuft, was nicht
-Artefakte: geänderte Dateien, Branch, Commits
-Entscheidungen: getroffene Annahmen mit Begründung
-Gate: Stand des nächsten Gates
-Offen: nächster konkreter Schritt zuerst
-Stolpersteine: was die nächste Session wissen muss
+## Handover <today's date> – <task IDs>
+Status: what's running, what's not
+Artifacts: changed files, branch, commits
+Decisions: assumptions made with rationale
+Gate: next gate status
+Open: next concrete step first
+Pitfalls: what the next session must know
 
-Trage den Block zusätzlich oben in den Abschnitt „Erledigt" von `docs/01_STATUS.md` ein (Kurzform, eine Zeile) und prüfe, dass „Was als Nächstes dran ist" stimmt. Rufe danach `python scripts/status_bump.py patch "Übergabe: <Kurzfassung>"` auf, falls seit dem letzten Bump dieser Session keiner erfolgte.
+Also add the block at the top of the "Completed" section in `docs/01_STATUS.md` (short form, one line) and check that "What's next" is correct. Then run `python scripts/status_bump.py patch "Handover: <summary>"` if no bump has happened in this session since the last one.

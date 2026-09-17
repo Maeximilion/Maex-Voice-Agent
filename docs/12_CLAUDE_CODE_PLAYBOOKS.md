@@ -20,7 +20,7 @@
 ## S1 – Session-Start
 ```text
 /start
-→ liest CLAUDE.md, docs/01_STATUS.md, docs/07_ARBEITSPAKETE.md
+→ liest CLAUDE.md, docs/01_STATUS.md, docs/07_WORKPACKAGES.md
 → nennt Stufe, Gate, Blocker
 → schlägt 1–3 startklare Aufgaben vor, mit Empfehlung
 → wartet auf Wahl
@@ -53,7 +53,7 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 
 ## S4 – Schema-Änderung
 ```text
-1. docs/03_DATENMODELL.md zuerst ändern (die Spec ist der Vertrag)
+1. docs/03_DATA_MODEL.md zuerst ändern (die Spec ist der Vertrag)
 2. alembic revision --autogenerate -m "…", Migration durchlesen und korrigieren
 3. alembic upgrade head → downgrade -1 → upgrade head, alle drei müssen laufen
 4. Modelle, Schemas, betroffene domain-Funktionen
@@ -72,7 +72,7 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 
 ## S6 – Menü-Import
 ```text
-1. CSV-Dateien nach docs/14_MENU_IMPORTFORMAT.md liegen in imports/ (nicht im Repo)
+1. CSV-Dateien nach docs/14_MENU_IMPORT_FORMAT.md liegen in imports/ (nicht im Repo)
 2. python -m scripts.import_menu --dry-run → Bericht: neu, geändert, Fehler
 3. Fehler in der CSV beheben (nicht im Code umgehen)
 4. python -m scripts.import_menu → einspielen

@@ -1,37 +1,37 @@
 # Changelog
 
-Format nach Keep a Changelog. Versionen folgen den Gates, siehe docs/15_README_STRATEGY.md.
+Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.md.
 
 ## [Unreleased]
 
-### Hinzugefügt
-- Projektgerüst: FastAPI-App mit /health, Token-Auth, einheitlicher Antwort-Hülle
-- `api/db.py`: Engine mit Verbindungs-Ping, Session je Request über `get_db`, Tests gegen echte Postgres
-- `api/core/`: Antwort-Hülle, Fehlerklassen mit den acht Codes aus docs/04, Token-Auth, JSON-Logging mit `request_id`/`call_id`, Zeit-Helfer mit Betriebstag
-- Alembic unter `db/` und Migration 001 mit den zehn Stufe-1-Tabellen; SQLAlchemy-Modelle unter `api/models/`; `make migrate` legt das Schema an
-- `scripts/seed.py`: idempotente Testkonfiguration (Mandant, Live-Schalter, Öffnungszeiten, Kapazität), `make seed`
-- Tool `POST /v1/tools/get_service_status`: offen/geschlossen je Service, Sondertage schlagen Wochentage, Fenster über Mitternacht, Wartezeiten und Modus aus `service_config`, Vorlesesatz zur nächsten Öffnung; Latenz-Helfer `p95_ms` mit 300-ms-Budget in den Tests
-- Tool `POST /v1/tools/check_slot`: Verfügbarkeit aus `capacity` und aktiven Reservierungen innerhalb der `dinein`-Öffnungszeit, bis zu zwei Alternativen im Raster, Vorlesesatz mit gesprochenen Uhrzeiten
-- Tool `POST /v1/tools/create_reservation`: legt einen Entwurf an (`status: draft`), prüft Anruf, Rufnummer (E.164), Zukunft und Slot nach denselben Regeln wie `check_slot`, schreibt `audit_log`, liefert `readback` zum Vorlesen; gleicher `idempotency_key` liefert dieselbe Antwort ohne zweiten Vorgang
-- `api/core/ids.py`: deterministische Idempotenz-Schlüssel für Aufrufer ohne eigenen Schlüssel; `api/domain/customers/phone.py`: E.164-Normalisierung deutscher Schreibweisen
-- `create_reservation` sperrt Prüfen und Anlegen je Mandant und Tag (`pg_advisory_xact_lock`), damit gleichzeitige Anrufe ein Fenster nicht überbuchen; der `readback` bezieht „heute" und „morgen" auf den Anlagezeitpunkt, damit ein Replay nach Mitternacht denselben Satz liefert
-- Docker Compose für Postgres, API und n8n
-- Spezifikationen docs/00 bis docs/15
-- Slash-Befehle für Claude Code unter .claude/commands/
-- CI-Workflow (ruff, pytest)
-- Desktop-Mockup der Adminansicht unter gui/mockups/
+### Added
+- Project skeleton: FastAPI app with /health, token auth, uniform response envelope
+- `api/db.py`: engine with connection ping, session per request via `get_db`, tests against real Postgres
+- `api/core/`: response envelope, error classes with eight codes from docs/04, token auth, JSON logging with `request_id`/`call_id`, time helpers with business day
+- Alembic in `db/` and migration 001 with ten stage-1 tables; SQLAlchemy models in `api/models/`; `make migrate` creates schema
+- `scripts/seed.py`: idempotent test config (tenant, live switch, hours, capacity), `make seed`
+- Tool `POST /v1/tools/get_service_status`: open/closed per service, special days override weekdays, windows crossing midnight, wait times and mode from `service_config`, read-aloud text to next opening; latency helper `p95_ms` with 300 ms budget in tests
+- Tool `POST /v1/tools/check_slot`: availability from `capacity` and active reservations within `dinein` hours, up to two alternatives on grid, read-aloud text with spoken times
+- Tool `POST /v1/tools/create_reservation`: creates draft (`status: draft`), checks call, phone (E.164), future, slot per same rules as `check_slot`, writes `audit_log`, delivers `readback` for read-aloud; same `idempotency_key` delivers same response without second transaction
+- `api/core/ids.py`: deterministic idempotency keys for callers without own key; `api/domain/customers/phone.py`: E.164 normalization of German formats
+- `create_reservation` locks check and create per tenant and day (`pg_advisory_xact_lock`) so concurrent calls can't overbooking a window; `readback` grounds "today" and "tomorrow" to creation time so replay after midnight delivers same sentence
+- Docker Compose for Postgres, API, n8n
+- Specs docs/00 through docs/15
+- Slash commands for Claude Code in .claude/commands/
+- CI workflow (ruff, pytest)
+- Desktop mockup of admin view in gui/mockups/
 
-### Geändert
-- Betriebs-, Firmen-, Orts- und Anbieternamen durch Platzhalter ersetzt (`<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, `example.com`)
-- README-Schnellstart auf die heute lauffähigen Schritte reduziert; `make migrate` und `make seed` folgen mit T-1.1 und T-1.2
-- Compose mountet zusätzlich `scripts/` und `evals/`, damit `make lint` im Container läuft
+### Changed
+- Pilot operation, company, location, and provider names replaced with placeholders (`<PilotOperation>`, `<CompanyName>`, `<Location>`, `<PointOfSale>`, `<POSProvider>`, `example.com`)
+- README quick start reduced to steps that work today; `make migrate` and `make seed` follow in T-1.1 and T-1.2
+- Compose additionally mounts `scripts/` and `evals/` so `make lint` runs in container
 
-### Behoben
-- Dockerfile: Zusatz-CA-Zertifikat (`api/ca-bundle.crt`) ist optional statt Pflicht, Build läuft auf sauberem Checkout
-- Dockerfile: Quellcode landet wieder unter `/app/api`, damit `uvicorn api.main:app` auch ohne Bind-Mount startet
-- Compose: n8n lauscht auf `0.0.0.0` statt `::`, sonst Crash-Schleife auf Docker-Hosts ohne IPv6
-- `check_slot`: Fenster des Vortags, die über Mitternacht reichen, gelten auch für Wünsche nach Mitternacht
-- `get_service_status`: pausierte Lieferung zählt nicht als offen; „Abholung ist möglich" nur bei offenem Abholfenster
+### Fixed
+- Dockerfile: additional CA cert (`api/ca-bundle.crt`) is optional, not required; build works on clean checkout
+- Dockerfile: source code lands under `/app/api` again so `uvicorn api.main:app` starts without bind mount
+- Compose: n8n listens on `0.0.0.0` not `::`, avoids crash loop on Docker hosts without IPv6
+- `check_slot`: previous day's windows crossing midnight also apply to requests after midnight
+- `get_service_status`: paused delivery doesn't count as open; "Pickup available" only with open pickup window
 
-### Offen
-- Schreibende Stufe-1-Tools `create_reservation`, `confirm`, `create_callback`, `transfer_to_team` (T-1.5 bis T-1.8)
+### Open
+- Writable stage-1 tools `create_reservation`, `confirm`, `create_callback`, `transfer_to_team` (T-1.5 through T-1.8)

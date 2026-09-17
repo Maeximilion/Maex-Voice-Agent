@@ -1,11 +1,11 @@
 # gui/mockups
 
-Abgenommene Entwürfe. Sie sind die Vorlage für die Jinja2-Templates: Aufbau, Farben, Abstände und Wortlaut sind entschieden, nur die Daten sind erfunden.
+Approved designs. They are the template for Jinja2 templates: layout, colors, spacing, and wording are decided; only the data are invented.
 
-| Datei | Ansicht | Abgenommen |
+| File | View | Approved |
 |---|---|---|
-| `admin-desktop.html` | Adminansicht am PC, alle sieben Bereiche, klickbar | 16.09.2026 |
+| `admin-desktop.html` | Admin view on desktop, all seven areas, clickable | 2026-09-16 |
 
-Die Betriebsansicht fürs Tablet ist als Skizze in `docs/06_GUI.md` §3 beschrieben und abgenommen; ein HTML-Entwurf entsteht mit T-3.1.
+The operations view for tablet is sketched and approved in `docs/06_GUI.md` §3; HTML design arrives with T-3.1.
 
-**Für Claude Code:** Die CSS-Variablen in `:root` (inkl. Dunkelmodus) und die Klassen `.list`, `.row`, `.detail`, `.badge`, `.card`, `.tbl` werden 1:1 in `gui/static/app.css` übernommen. Der Reiterwechsel und das Aufklappen werden mit HTMX gelöst, nicht mit dem Skript aus dem Mockup.
+**For Claude Code:** CSS variables in `:root` (including dark mode) and classes `.list`, `.row`, `.detail`, `.badge`, `.card`, `.tbl` transfer 1:1 to `gui/static/app.css`. Tab switching and expand/collapse are solved with HTMX, not the script from the mockup.
