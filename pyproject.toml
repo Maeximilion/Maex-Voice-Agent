@@ -1,0 +1,37 @@
+# Werkzeug-Konfiguration. Kein Paket-Build: die API laeuft aus dem Repo (api/ als Paket).
+
+[tool.ruff]
+# Einzige Quelle der Wahrheit fuer Lint und Format. Ohne sie haengt die Regelmenge an
+# der ruff-Version: 0.16 bringt Standardregeln mit, die 0.7 nicht kennt, und jedes
+# Versions-Update der CI faellt rot aus, ohne dass sich eine Zeile Code geaendert hat.
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "B",    # bugbear: haeufige Fallen
+    "BLE",  # blindes except: nur mit Begruendung per noqa
+    "C4",   # comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # simplify
+    "DTZ",  # naive datetime - wir speichern UTC (CLAUDE.md §8)
+    "RUF",  # ruff-eigene Regeln
+]
+ignore = [
+    # Die Zeilenlaenge bestimmt der Formatter; lange Vorlesesaetze bricht er nicht um.
+    "E501",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI-Idiom: Depends() gehoert in den Default-Wert, das ist kein B008.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Body",
+    "fastapi.Path",
+    "fastapi.Header",
+]
