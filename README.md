@@ -27,6 +27,7 @@ Was funktioniert:
 - Die Reservierung läuft durch, jedes Tool mit Latenztest gegen das 300-ms-Budget: `POST /v1/tools/get_service_status` beantwortet aus der Datenbank, ob und was gerade geht (Öffnungszeiten, Sondertage, Wartezeiten, Modus); `POST /v1/tools/check_slot` prüft einen Wunsch gegen Kapazität und Öffnungszeit und nennt bis zu zwei Alternativen; `POST /v1/tools/create_reservation` legt den Entwurf mit dem Satz zum Vorlesen an; `POST /v1/tools/confirm` macht ihn gültig, protokolliert ihn und legt das Ereignis für den kalten Pfad in die Outbox
 - Der Dispatcher (`api/events/`) leert die Outbox nach n8n: eigener Prozess (`python -m api.events.dispatcher`), ein POST je Ereignis mit der Ereignis-id als Idempotenz-Schlüssel, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` mit Alarm im Log
 - `make test` und `make lint` laufen im Container gegen die echte Postgres, ruff sauber
+- CI baut zusätzlich das API-Image ohne lokales CA-Zertifikat und prüft ohne Bind-Mount den Start, `/health` und Token-Auth (fehlendes, falsches und gültiges Token).
 - Spezifikationen für Architektur, Datenmodell, Tools, Dialog, GUI und Evals liegen unter `docs/`
 
 Was noch nicht funktioniert:
