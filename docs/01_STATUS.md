@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.14
+> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.15
 
 ---
 
@@ -240,6 +240,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.19.15 · 18.09.2026:** Codex review PR #117 (P1) fixed: hesitation between two numbers asks back
 - **v1.19.14 · 18.09.2026:** Codex review PR #117 (P2) fixed: filler words allowed between number marker and number
 - **v1.19.13 · 18.09.2026:** Codex review PR #117 (P1, P2) fixed: out-of-range marked number stays invalid, import dedupes 7 and 07
 - **v1.19.12 · 18.09.2026:** Codex review PR #117 (P1) fixed: und and comma-separated second numbers ask back

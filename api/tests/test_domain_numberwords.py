@@ -469,3 +469,12 @@ def test_fuellwort_zwischen_marker_und_zahl(text):
     """Codex PR #117: natuerliche Saetze mit "ist"/"die" hinter "Nummer"."""
     ref = find_item_number_ref(text)
     assert ref is not None and ref.text == "23" and ref.marked
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23, äh, 24", "Nummer 23 ähm 24", "Nummer 23 hm 24"]
+)
+def test_zoegerlaut_zwischen_zwei_nummern(text):
+    """Codex PR #117: eine Pause waehlt nicht still die erste Nummer."""
+    assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]
+    assert find_item_number_ref(text) is None

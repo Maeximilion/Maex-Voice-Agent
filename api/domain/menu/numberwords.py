@@ -352,6 +352,8 @@ def _canonical(card: str) -> str:
     return card.lstrip("0") or "0"
 
 
+# Zögerlaute der Spracherkennung, nach fold() (ä -> ae).
+_HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
 # Wörter, die eine zweite Zahl zur Alternative oder Korrektur machen.
 _ALTERNATIVE_WORDS = frozenset(
     {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
@@ -367,7 +369,8 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     ist davon nicht betroffen, das fasst _scan vorher zu einer Zahl zusammen.
     """
     between = tokens[after:before]
-    if between and all(t in PUNCTUATION for t in between):
+    # Zögerlaute sind durchsichtig: "Nummer 23, äh, 24" ist wie "23, 24".
+    if all(t in PUNCTUATION or t in _HESITATIONS for t in between):
         return True
     return any(t in _ALTERNATIVE_WORDS or t == "und" for t in between)
 
