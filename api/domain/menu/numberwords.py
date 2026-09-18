@@ -357,8 +357,17 @@ _ALTERNATIVE_WORDS = frozenset(
 
 
 def _connected(tokens: list[str], after: int, before: int) -> bool:
-    """Steht zwischen zwei Zahlen ein Wort für Alternative oder Korrektur?"""
-    return any(t in _ALTERNATIVE_WORDS for t in tokens[after:before])
+    """Verbindet, was zwischen zwei Zahlen steht, sie zu Kandidaten?
+
+    Ja bei einem Wort für Alternative, Korrektur oder Aufzählung ("oder",
+    "nein", "und") und bei bloßen Satzzeichen ("Nummer 23, 24"): eine zweite
+    genannte Nummer wird nie verschluckt (Codex PR #117). "drei und zwanzig"
+    ist davon nicht betroffen, das fasst _scan vorher zu einer Zahl zusammen.
+    """
+    between = tokens[after:before]
+    if between and all(t in PUNCTUATION for t in between):
+        return True
+    return any(t in _ALTERNATIVE_WORDS or t == "und" for t in between)
 
 
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:

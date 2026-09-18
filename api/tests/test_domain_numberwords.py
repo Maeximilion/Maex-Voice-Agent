@@ -436,3 +436,18 @@ def test_korrekturwort_zwischen_anderen_zahlen_verbindet_nicht(text):
     """Codex PR #117: das "oder" gehoert zu den Sossen, nicht zur 23."""
     ref = find_item_number_ref(text)
     assert ref is not None and ref.text == "23"
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [("Nummer 23 und 24", ["23", "24"]), ("Nummer 23, 24", ["23", "24"])],
+)
+def test_aufzaehlung_hinter_einem_marker(text, cards):
+    """Codex PR #117: eine zweite Nummer per "und" oder Komma nie verschlucken."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+def test_zusammengesetzte_zahl_bleibt_eine():
+    ref = find_item_number_ref("Nummer drei und zwanzig")
+    assert ref is not None and ref.text == "23"
