@@ -21,6 +21,7 @@ entscheidet der Aufrufer, nicht dieses Modul.
 
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 
 # Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
 # ist am Telefon kein Zahlwort mehr, sondern eine Ziffernfolge.
@@ -300,20 +301,49 @@ class ItemNumber:
     value: int
     text: str
     marked: bool
+    # False, wenn eine Endung dranhängt, die keine Karte hat ("23g", "23ab"):
+    # die Nummer gilt dann als nicht vorhanden, statt still zur 23 gekürzt zu
+    # werden (Codex PR #117, P1).
+    valid: bool = True
 
 
 _SUFFIXES = frozenset("abcdef")
+# Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
+# mehr vom Leerzeichen-Fall ("23 bitte") zu unterscheiden. Deshalb je Token
+# merken, ob der nächste ohne Lücke folgt - nach Position, nicht nach
+# Ziffernfolge, sonst leiht sich "23a, nein, Nummer 23" das a der ersten 23.
 
 
-def _ref(tokens: list[str], span: _Span, marked: bool) -> ItemNumber:
+def _glued(text: str) -> set[int]:
+    """Indizes der Ziffern-Tokens, an denen ohne Lücke Buchstaben hängen."""
+    matches = list(_TOKEN.finditer(fold(text)))
+    return {
+        i
+        for i, (m, nxt) in enumerate(pairwise(matches))
+        if m.group().isdigit() and nxt.group().isalpha() and m.end() == nxt.start()
+    }
+
+
+def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
     digits = span.end - span.start == 1 and tokens[span.start].isdigit()
     card = tokens[span.start] if digits else str(span.value)
-    if span.end < len(tokens) and tokens[span.end] in _SUFFIXES:
-        card += tokens[span.end]
+    nxt = tokens[span.end] if span.end < len(tokens) else ""
+    if digits and span.start in glued:
+        suffix = nxt
+        if suffix == "x":
+            # "2x": Mengenzeichen, keine Endung.
+            return ItemNumber(value=span.value, text=card, marked=marked)
+        valid = suffix in _SUFFIXES
+        return ItemNumber(span.value, card + suffix, marked, valid)
+    if nxt in _SUFFIXES:
+        return ItemNumber(span.value, card + nxt, marked)
+    if len(nxt) == 1 and nxt.isalpha() and nxt != "x":
+        # "Nummer 23 g": einzelner Buchstabe ohne Karte - ungültig, nicht 23.
+        return ItemNumber(span.value, card + nxt, marked, valid=False)
     return ItemNumber(value=span.value, text=card, marked=marked)
 
 
-def _marked(tokens: list[str]) -> list[ItemNumber]:
+def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
     found: list[ItemNumber] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
@@ -323,7 +353,7 @@ def _marked(tokens: list[str]) -> list[ItemNumber]:
             nach_marker += 1  # "Nr. 23"
         span = _scan(tokens, nach_marker)
         if span is not None:
-            ref = _ref(tokens, span, marked=True)
+            ref = _ref(tokens, span, marked=True, glued=glued)
             if all(r.text != ref.text for r in found):
                 found.append(ref)
     return found
@@ -336,7 +366,7 @@ def find_marked_item_numbers(text: str) -> list[ItemNumber]:
     24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
     nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
     """
-    return _marked(_tokens(text))
+    return _marked(_tokens(text), _glued(text))
 
 
 def find_item_number_ref(text: str) -> ItemNumber | None:
@@ -346,7 +376,8 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
     zu nehmen wäre geraten (CLAUDE.md §2 Regel 2).
     """
     tokens = _tokens(text)
-    marked = _marked(tokens)
+    glued = _glued(text)
+    marked = _marked(tokens, glued)
     if marked:
         return marked[0] if len(marked) == 1 else None
 
@@ -356,7 +387,9 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
         for span in _number_spans(tokens)
         if not any(span.overlaps(menge) for menge in mengen)
     ]
-    return _ref(tokens, uebrig[0], marked=False) if len(uebrig) == 1 else None
+    if len(uebrig) != 1:
+        return None
+    return _ref(tokens, uebrig[0], marked=False, glued=glued)
 
 
 def has_item_number_marker(text: str) -> bool:

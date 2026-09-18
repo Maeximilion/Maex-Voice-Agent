@@ -161,7 +161,12 @@ def search_menu(
     if len(marked) > 1:
         # "Nummer 23, nein, Nummer 24" oder "Nummer 23 oder Nummer 24": beide
         # zur Wahl stellen statt die erste zu nehmen (Befund Codex PR #117).
-        items = [i for ref in marked for i in _by_number(session, tenant_id, ref.text)]
+        items = [
+            i
+            for ref in marked
+            if ref.valid
+            for i in _by_number(session, tenant_id, ref.text)
+        ]
         if not items:
             spoken = " und ".join(ref.text for ref in marked)
             raise NotFound(
@@ -172,7 +177,8 @@ def search_menu(
 
     ref = find_item_number_ref(query)
     if ref is not None and (ref.marked or not text):
-        items = _by_number(session, tenant_id, ref.text)
+        # "23g": eine Endung, die es auf keiner Karte gibt, ist nicht die 23.
+        items = _by_number(session, tenant_id, ref.text) if ref.valid else []
         if not items:
             raise NotFound(
                 f"Nummer {ref.text} nicht auf der Karte",

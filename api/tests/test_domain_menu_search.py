@@ -451,4 +451,19 @@ def test_zwei_genannte_nummern_fragen_nach(session, tenant_id, gesagt):
 def test_zwei_genannte_nummern_die_es_nicht_gibt(session, tenant_id):
     with pytest.raises(NotFound) as err:
         suche(session, tenant_id, "Nummer 98 oder Nummer 99")
-    assert "Nummer 98" in err.value.say and "Nummer 99" in err.value.say
+    assert "Nummern 98 und 99" in err.value.say
+
+
+@pytest.mark.parametrize(
+    "gesagt", ["Nummer 23g", "Nummer 23ab", "Nummer 23 g", "die 23g"]
+)
+def test_ungueltiger_buchstabe_wird_nicht_abgeschnitten(session, tenant_id, gesagt):
+    """Befund Codex PR #117: "23g" ist nicht die 23 - nicht gefunden statt still 23."""
+    with pytest.raises(NotFound) as err:
+        suche(session, tenant_id, gesagt)
+    assert "Nummer 23" in err.value.say and err.value.say != ""
+    assert "23 habe" not in err.value.say
+
+
+def test_zwei_x_bleibt_eine_menge(session, tenant_id):
+    assert nummern(suche(session, tenant_id, "2x Pho")) == ["13"]

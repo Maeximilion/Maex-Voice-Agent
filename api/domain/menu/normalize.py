@@ -14,7 +14,7 @@ import re
 import unicodedata
 
 _SPACE = re.compile(r"\s+")
-_CARD_NUMBER = re.compile(r"\d+[a-f]?")
+_CARD_NUMBER = re.compile(r"\d+[a-zäöüß]*")
 # Satzzeichen am Rand tragen am Telefon nichts; im Wort ("Wan-Tan") bleiben sie.
 # Dazu die typografischen Anfuehrungszeichen, als Escape geschrieben, damit sie
 # im Quelltext nicht mit Komma oder Apostroph zu verwechseln sind.

@@ -314,3 +314,26 @@ def test_zwei_markierte_nummern_werden_beide_gemeldet():
 def test_dieselbe_nummer_zweimal_ist_eindeutig():
     ref = find_item_number_ref("Nummer 23, ja genau, Nummer 23")
     assert ref is not None and ref.text == "23" and ref.marked
+
+
+@pytest.mark.parametrize(
+    ("text", "card"),
+    [
+        ("Nummer 23g", "23g"),
+        ("Nummer 23ab", "23ab"),
+        ("Nummer 23 g", "23g"),
+        ("die 23g", "23g"),
+    ],
+)
+def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
+    """Codex PR #117: eine unbekannte Endung wird nie abgeschnitten."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == card and ref.valid is False
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23a", "Nummer 23", "Nummer 23 bitte", "2x die 23"]
+)
+def test_gueltige_nummern_bleiben_gueltig(text):
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.valid is True
