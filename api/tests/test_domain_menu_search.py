@@ -55,6 +55,20 @@ def build_menu(session: Session, tenant_id: uuid.UUID) -> dict[str, MenuItem]:
             price_cents=450,
             sold_out_until=NOW + timedelta(hours=6),
         ),
+        "23a": MenuItem(
+            tenant_id=tenant_id,
+            number="23a",
+            name="Frühlingsrollen mit Garnelen",
+            category="Vorspeisen",
+            price_cents=790,
+        ),
+        "01": MenuItem(
+            tenant_id=tenant_id,
+            number="01",
+            name="Gemischter Salat",
+            category="Salate",
+            price_cents=490,
+        ),
         "99": MenuItem(
             tenant_id=tenant_id,
             number="99",
@@ -178,7 +192,7 @@ def test_mehrere_aehnliche_namen_sind_ambiguous(menu):
     result = search(menu, "Frühlingsrollen")
     assert result.match_type == "ambiguous"
     assert 2 <= len(result.results) <= 3
-    assert {hit.number for hit in result.results} == {"23", "24"}
+    assert {hit.number for hit in result.results} <= {"23", "23a", "24"}
 
 
 def test_hoehere_schwelle_macht_aus_ambiguous_noch_kein_raten(menu):
@@ -215,3 +229,49 @@ def test_fremder_mandant_sieht_die_karte_nicht(menu):
 def test_hoechstens_drei_vorschlaege(menu):
     result = search(menu, "Gebratene Nudeln", max_results=3)
     assert len(result.results) <= 3
+
+
+def test_alias_an_zwei_gerichten_bleibt_ambiguous_auch_bei_einem_vorschlag(menu):
+    """Codex-Review PR #118 (P1): die Obergrenze darf die Mehrdeutigkeit nicht verstecken."""
+    result = search(menu, "einmal Bami bitte", max_results=1)
+    assert result.match_type == "ambiguous"
+    assert len(result.results) == 1
+
+
+def test_kartennummer_mit_buchstabe_trifft_nicht_die_nackte_zahl(menu):
+    """Codex-Review PR #118 (P1): "23a" ist nicht 23."""
+    _, _, items = menu
+    result = search(menu, "einmal die Nummer 23a")
+    assert result.match_type == "exact_number"
+    assert result.results[0].menu_item_id == items["23a"].id
+
+
+def test_buchstabe_getrennt_gesprochen_gehoert_zur_nummer(menu):
+    _, _, items = menu
+    result = search(menu, "Nummer 23 a bitte")
+    assert result.results[0].menu_item_id == items["23a"].id
+
+
+def test_nackte_zahl_bleibt_beim_gericht_ohne_buchstabe(menu):
+    _, _, items = menu
+    result = search(menu, "die Nummer dreiundzwanzig")
+    assert result.results[0].menu_item_id == items["23"].id
+
+
+def test_fuehrende_null_in_der_kartennummer_wird_gefunden(menu):
+    _, _, items = menu
+    result = search(menu, "Nummer eins")
+    assert result.match_type == "exact_number"
+    assert result.results[0].menu_item_id == items["01"].id
+
+
+def test_menge_wird_auch_als_ziffer_nicht_zur_kartennummer(menu):
+    """ "2 x die 23": die 2 ist die Menge, nicht das Gericht (CLAUDE.md §2 Regel 2)."""
+    _, _, items = menu
+    result = search(menu, "2 x die 23")
+    assert result.results[0].menu_item_id == items["23"].id
+
+
+def test_zwei_genannte_zahlen_werden_nicht_geraten(menu):
+    with pytest.raises(NotFound):
+        search(menu, "23 und 40")

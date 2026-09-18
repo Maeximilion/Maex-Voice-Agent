@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.0
+> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.1
 
 ---
 
@@ -239,6 +239,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.19.1 · 18.09.2026:** Codex review PR #118 (P1 x2) fixed: card numbers like 23a and 01 compared as whole text, alias ambiguity survives max_results=1
 - **v1.19.0 · 18.09.2026:** T-4.3 and T-4.4 done: search_menu with resolution order number, alias, trigram (thresholds configurable) and get_item_details with allergen rule unknown is not none
 - **v1.18.1 · 18.09.2026:** Codex review PR #115 (P2 x2) fixed: allergen confirmer re-stamped on change, dry-run price report says would be applied
 - **v1.18.0 · 18.09.2026:** T-4.2 done as code: menu import with all docs/14 check rules, dry-run, idempotent; real CSVs pending from chat

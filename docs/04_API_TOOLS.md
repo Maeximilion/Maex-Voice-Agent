@@ -115,7 +115,7 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 ```
 
 **Auflösungsreihenfolge**
-1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`
+1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`. Die Kartennummer ist Text: „23a" und „01" sind eigene Nummern und werden als Ganzes verglichen, auch getrennt gesprochen („23 a"). Eine nackte Ziffernfolge zählt nur, wenn sie als Gerichtnummer erkannt ist - die 2 in „2 x die 23" ist eine Menge, und bei zwei genannten Zahlen wird nicht geraten
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
@@ -124,7 +124,7 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 
 Vor Schritt 2 und 3 fallen Füllwörter des Bestellsatzes weg („einmal … bitte"), damit der Trigram-Vergleich am Gericht hängt und nicht am Satz. Die beiden Schwellen stehen in der Konfiguration (`MENU_FUZZY_THRESHOLD_HIGH`, `MENU_FUZZY_THRESHOLD_LOW`): sie stellen sich erst am echten Gespräch ein.
 
-**Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
+**Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt. `max_results` begrenzt die Vorschläge, nie die Entscheidung: hängt derselbe Alias an mehreren Gerichten, bleibt es `ambiguous`, auch wenn nur ein Vorschlag vorgelesen wird.
 
 ---
 

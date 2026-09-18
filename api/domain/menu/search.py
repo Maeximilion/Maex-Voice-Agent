@@ -18,6 +18,7 @@ Inaktive Gerichte tauchen nie auf. Ausverkaufte schon: der Agent muss sagen
 koennen, dass es das Gericht gibt, es heute aber aus ist.
 """
 
+import re
 import uuid
 from datetime import datetime
 
@@ -113,7 +114,7 @@ def search_menu(
     if len(items) == 1:
         return _answer("alias", items, session, now)
     if items:
-        return _answer("ambiguous", items, session, now)
+        return _answer("ambiguous", items[:max_results], session, now)
 
     scored = _by_similarity(session, tenant_id, text, max_results, low)
     if not scored:
@@ -141,19 +142,72 @@ def _active(tenant_id: uuid.UUID):
     return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
 
 
-def _by_number(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:
+def card_numbers(text: str) -> list[str]:
+    """Kandidaten fuer die Kartennummer, vom genauesten zum allgemeinsten.
+
+    Die Kartennummer ist Text, nicht Zahl (docs/14): "23a" und "01" kommen vor.
+    Ueber die Zahl allein waere "die Nummer 23a" die 23 - ein falsches Gericht,
+    und das waere geraten (Codex-Review PR #118, P1). Deshalb zaehlt zuerst die
+    Nummer mit Buchstabe, auch getrennt gesprochen ("23 a"), danach die Zahl aus
+    `find_item_number` und ihre Formen mit fuehrender Null. Welcher Kandidat
+    gilt, entscheidet die Karte: was es nicht gibt, trifft auch nicht.
+
+    Eine nackte Ziffernfolge ohne Buchstabe kommt **nur** ueber
+    `find_item_number` herein. Sonst wuerde die Menge in "2 x die 23" zur
+    Kartennummer, und bei zwei genannten Zahlen waere die erste eine Vermutung.
+    """
+    tokens = normalize_alias(text).split(" ")
+    lettered: list[str] = []
+    for i, token in enumerate(tokens):
+        match = re.fullmatch(r"(\d{1,3})([a-z])?", token)
+        if match is None:
+            continue
+        if match.group(2) is not None:
+            lettered.append(token)
+            continue
+        following = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if re.fullmatch(r"[a-z]", following):
+            lettered.append(token + following)
+    # Zwei verschiedene Nummern mit Buchstabe: nicht entscheidbar, also keine.
+    if len(set(lettered)) > 1:
+        lettered = []
+
+    spoken: list[str] = []
     number = find_item_number(text)
-    if number is None:
+    if number is not None:
+        # "dreiundzwanzig a": der Buchstabe steht allein im Satz.
+        letters = {t for t in tokens if re.fullmatch(r"[a-z]", t)}
+        spoken += [f"{number}{letter}" for letter in sorted(letters)]
+        spoken.append(str(number))
+        spoken += [str(number).zfill(width) for width in (2, 3)]
+
+    seen: set[str] = set()
+    return [c for c in lettered + spoken if not (c in seen or seen.add(c))]
+
+
+def _by_number(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:
+    candidates = card_numbers(text)
+    if not candidates:
         return None
-    return session.scalar(
-        select(MenuItem).where(*_active(tenant_id), MenuItem.number == str(number))
-    )
+    rows = session.scalars(
+        select(MenuItem).where(
+            *_active(tenant_id), func.lower(MenuItem.number).in_(candidates)
+        )
+    ).all()
+    found = {row.number.lower(): row for row in rows}
+    return next((found[c] for c in candidates if c in found), None)
 
 
 def _by_alias(
     session: Session, tenant_id: uuid.UUID, text: str, max_results: int
 ) -> list[MenuItem]:
-    """Exakter Alias-Treffer. Haengt derselbe Alias an mehreren Gerichten, wird gefragt."""
+    """Exakter Alias-Treffer. Haengt derselbe Alias an mehreren Gerichten, wird gefragt.
+
+    Geholt wird ein Gericht mehr als gefragt: sonst versteckt die Obergrenze die
+    Mehrdeutigkeit, und aus zwei Gerichten am selben Alias wuerde bei
+    `max_results=1` ein sicherer Treffer - also ein Raten (Codex-Review PR #118,
+    P1). Der Aufrufer kuerzt erst, nachdem er die Mehrdeutigkeit gesehen hat.
+    """
     candidates = {normalize_alias(text), needle(text)}
     items = session.scalars(
         select(MenuItem)
@@ -161,7 +215,7 @@ def _by_alias(
         .where(*_active(tenant_id), ItemAlias.alias.in_(candidates))
         .order_by(MenuItem.number)
         .distinct()
-        .limit(max_results)
+        .limit(max_results + 1)
     ).all()
     return list(items)
 
