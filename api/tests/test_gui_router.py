@@ -1,7 +1,7 @@
 """gui/router: Betriebsansicht, HTMX-Fragment, eigene Dateien, Zustand ohne Mandant."""
 
 import uuid
-from datetime import datetime, time, timedelta
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -33,6 +33,22 @@ def heute(hh: int, mm: int = 0) -> datetime:
     if time(hh, mm) < DAY_STARTS_AT:
         tag += timedelta(days=1)
     return datetime.combine(tag, time(hh, mm), tzinfo=BERLIN)
+
+
+@pytest.fixture(autouse=True)
+def feste_uhr(monkeypatch):
+    """Anlage und Abfrage sehen denselben Zeitpunkt.
+
+    Ohne das holen sich Testhelfer und Endpunkt den Betriebstag zu zwei
+    verschiedenen Augenblicken: ein Lauf, der um 04:59 anlegt und um 05:00
+    abfragt, legt auf den einen Betriebstag und fragt den naechsten ab. Die
+    Uhr steht deshalb fest auf 12:00 Ortszeit des laufenden Betriebstags -
+    weit genug von der Grenze, dass kein Lauf sie zufaellig ueberschreitet.
+    """
+    mittag = datetime.combine(
+        business_day(tz_name="Europe/Berlin"), time(12, 0), tzinfo=BERLIN
+    ).astimezone(UTC)
+    monkeypatch.setattr("api.core.time.utcnow", lambda: mittag)
 
 
 @pytest.fixture
