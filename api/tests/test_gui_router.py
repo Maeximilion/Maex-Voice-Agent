@@ -423,3 +423,20 @@ def test_rueckrufe_bleiben_schnell(client, engine, tenant_id):
         rueckruf(engine, tenant_id, summary=f"Gast {i}")
 
     assert p95_ms(lambda: client.get("/gui/fragments/rueckrufe")) < 300
+
+
+def test_ton_wird_im_tap_freigeschaltet():
+    """Befund Codex P1 (PR #112): Safari schaltet Web Audio nur innerhalb einer Geste frei.
+
+    Entsteht der AudioContext erst beim ersten Rueckruf, bleibt er auf dem Tablet
+    stumm. Der Tap-Handler muss ihn anlegen. Kein JS-Testlauf im Projekt, deshalb
+    der Vertrag als Textpruefung.
+    """
+    js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    handler = js.split("function freischalten()")[1].split("\n  }\n")[0]
+
+    assert "new Ctx()" in handler and "resume()" in handler
+    assert 'addEventListener("touchstart", freischalten' in js
+    assert 'addEventListener("click", freischalten' in js

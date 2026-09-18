@@ -65,10 +65,27 @@
   // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
   // ist das nach dem ersten Handgriff der Fall.
   var audio = null;
-  function ton(folge) {
-    var Ctx = window.AudioContext || window.webkitAudioContext;
+  var Ctx = window.AudioContext || window.webkitAudioContext;
+  // Safari auf dem Tablet schaltet Web Audio nur innerhalb einer Geste frei:
+  // der Kontext entsteht deshalb im Tap, nicht erst beim ersten Rueckruf, und
+  // ein stiller Puffer spielt einmal an. Ohne das bliebe das Tablet stumm.
+  function freischalten() {
     if (!Ctx) return;
-    if (!audio) audio = new Ctx();
+    if (!audio) {
+      audio = new Ctx();
+      var still = audio.createBufferSource();
+      still.buffer = audio.createBuffer(1, 1, 22050);
+      still.connect(audio.destination);
+      still.start(0);
+    }
+    if (audio.state === "suspended") audio.resume();
+  }
+  document.addEventListener("touchstart", freischalten, { passive: true });
+  document.addEventListener("click", freischalten);
+
+  function ton(folge) {
+    // Noch kein Tap auf die Seite: kein Kontext, kein Ton (Browserregel).
+    if (!audio) return;
     var t = audio.currentTime;
     folge.forEach(function (hz, i) {
       var osc = audio.createOscillator();
@@ -81,10 +98,6 @@
       osc.stop(t + i * 0.25 + 0.23);
     });
   }
-  document.addEventListener("click", function () {
-    if (audio && audio.state === "suspended") audio.resume();
-  });
-
   function karten() {
     var ids = {};
     document.querySelectorAll("#rueckrufe-liste [data-id]").forEach(function (el) {
