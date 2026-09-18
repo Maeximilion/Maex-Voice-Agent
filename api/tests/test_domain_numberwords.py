@@ -460,3 +460,12 @@ def test_markierte_nummer_ausserhalb_des_bereichs_bleibt_ungueltig(text):
     assert (
         ref is not None and ref.valid is False and ref.text.startswith(("1000", "5000"))
     )
+
+
+@pytest.mark.parametrize(
+    "text", ["die Nummer ist 23", "ich meine Nummer die 23", "Nummer war 23"]
+)
+def test_fuellwort_zwischen_marker_und_zahl(text):
+    """Codex PR #117: natuerliche Saetze mit "ist"/"die" hinter "Nummer"."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23" and ref.marked

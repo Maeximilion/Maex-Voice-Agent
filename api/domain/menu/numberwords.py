@@ -84,6 +84,8 @@ ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 _QUANTITY_SUFFIX = re.compile(r"^(.+?)mal$")
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _ITEM_NUMBER_MARKERS = frozenset({"nummer", "nr", "no", "position", "pos"})
+# Zwischen Marker und Zahl erlaubt: "die Nummer ist 23", "Nummer die 23".
+_MARKER_FILLER = frozenset({"ist", "war", "waere", "die", "der", "das", "den"})
 
 # Satzzeichen trennen zwei Angaben: "Nummer 20, eine Portion" ist die 20 mit
 # einer Portion, nicht die 21 (Codex-Review PR #105, P1). Der Bindestrich steht
@@ -380,8 +382,13 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
         if token not in _ITEM_NUMBER_MARKERS:
             continue
         nach_marker = i + 1
-        while nach_marker < len(tokens) and tokens[nach_marker] in PUNCTUATION:
-            nach_marker += 1  # "Nr. 23"
+        # "Nr. 23", "die Nummer ist 23", "Nummer die 23": Satzzeichen und ein
+        # paar feste Füllwörter überspringen. Bewusst kurz - "Nummer weiß ich
+        # nicht" bleibt ohne Nummer (Codex PR #117).
+        while nach_marker < len(tokens) and (
+            tokens[nach_marker] in PUNCTUATION or tokens[nach_marker] in _MARKER_FILLER
+        ):
+            nach_marker += 1
         span = _scan(tokens, nach_marker)
         if span is not None:
             spans.append(span)

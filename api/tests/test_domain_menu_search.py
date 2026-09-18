@@ -493,3 +493,9 @@ def test_ein_marker_mit_alternative_fragt_nach(session, tenant_id, gesagt):
     result = suche(session, tenant_id, gesagt)
 
     assert result.match_type == "ambiguous" and nummern(result) == ["23", "24"]
+
+
+def test_nummer_ist_23(session, tenant_id):
+    result = suche(session, tenant_id, "die Nummer ist 23")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
