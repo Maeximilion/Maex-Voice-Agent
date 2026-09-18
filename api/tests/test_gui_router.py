@@ -1,7 +1,7 @@
 """gui/router: Betriebsansicht, HTMX-Fragment, eigene Dateien, Zustand ohne Mandant."""
 
 import uuid
-from datetime import datetime, time
+from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
 from api.main import app
 from api.models import Call, Reservation, ServiceConfig
@@ -20,8 +21,34 @@ BERLIN = ZoneInfo("Europe/Berlin")
 
 
 def heute(hh: int, mm: int = 0) -> datetime:
-    """Immer der laufende Betriebstag - die Ansicht zeigt nur ihn."""
-    return datetime.combine(datetime.now(BERLIN).date(), time(hh, mm), tzinfo=BERLIN)
+    """Immer der laufende Betriebstag - die Ansicht zeigt nur ihn.
+
+    Betriebstag, nicht Kalendertag: zwischen 00:00 und 05:00 Uhr laeuft noch der
+    Tag davor (core/time.py), eine Uhrzeit vor 05:00 gehoert also schon auf das
+    Kalenderdatum danach. Mit dem Kalenderdatum lief der Test in diesen fuenf
+    Stunden ins Leere - die Reservierung fiel aus dem Fenster, das die Ansicht
+    abfragt, und die Spalte Heute war leer.
+    """
+    tag = business_day(tz_name="Europe/Berlin")
+    if time(hh, mm) < DAY_STARTS_AT:
+        tag += timedelta(days=1)
+    return datetime.combine(tag, time(hh, mm), tzinfo=BERLIN)
+
+
+@pytest.fixture(autouse=True)
+def feste_uhr(monkeypatch):
+    """Anlage und Abfrage sehen denselben Zeitpunkt.
+
+    Ohne das holen sich Testhelfer und Endpunkt den Betriebstag zu zwei
+    verschiedenen Augenblicken: ein Lauf, der um 04:59 anlegt und um 05:00
+    abfragt, legt auf den einen Betriebstag und fragt den naechsten ab. Die
+    Uhr steht deshalb fest auf 12:00 Ortszeit des laufenden Betriebstags -
+    weit genug von der Grenze, dass kein Lauf sie zufaellig ueberschreitet.
+    """
+    mittag = datetime.combine(
+        business_day(tz_name="Europe/Berlin"), time(12, 0), tzinfo=BERLIN
+    ).astimezone(UTC)
+    monkeypatch.setattr("api.core.time.utcnow", lambda: mittag)
 
 
 @pytest.fixture
