@@ -26,6 +26,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Header of the operations view is operable (T-3.2): "KI pausieren" as one-tap emergency stop, "KI einschalten" with confirmation restores the mode from before the pause, "Lieferung aus/an", "Wartezeit +15/+30" (capped at 180 min). Writes in `api/domain/status/config.py` with row lock and `audit_log`; the event stream sends `header` so every tablet shows the same state
 - Callbacks column of the operations view (T-3.4): open callbacks with complaints on top, "Anrufen" as tel: link, "Erledigt" with row lock and `audit_log`; event stream signal `callbacks`, tone on new cards with a distinct tone for complaints
 - Migration 002 (T-4.1): `menu_items`, `item_options`, `item_allergens`, `item_aliases`, `orders`, `order_items` with `pg_trgm` trigram indexes on dish names and aliases; the database enforces amounts in cents, matching totals, positive quantities and mandatory `menu_item_id`
+- Menu import (T-4.2): `python -m scripts.import_menu <folder> [--dry-run] [--apply-price-changes]` loads the four CSVs from `docs/14_MENU_IMPORT_FORMAT.md` with all check rules, idempotent, one transaction, report with price changes and warnings
 - `api/domain/reservations/today.py`: confirmed reservations of the business day plus a cheap change token for the event stream
 - Desktop mockup of admin view in gui/mockups/
 
