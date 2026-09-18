@@ -313,9 +313,8 @@ def _ref(tokens: list[str], span: _Span, marked: bool) -> ItemNumber:
     return ItemNumber(value=span.value, text=card, marked=marked)
 
 
-def find_item_number_ref(text: str) -> ItemNumber | None:
-    """Wie `find_item_number`, aber mit Kartenschreibweise und Marker."""
-    tokens = _tokens(text)
+def _marked(tokens: list[str]) -> list[ItemNumber]:
+    found: list[ItemNumber] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
@@ -324,7 +323,32 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
             nach_marker += 1  # "Nr. 23"
         span = _scan(tokens, nach_marker)
         if span is not None:
-            return _ref(tokens, span, marked=True)
+            ref = _ref(tokens, span, marked=True)
+            if all(r.text != ref.text for r in found):
+                found.append(ref)
+    return found
+
+
+def find_marked_item_numbers(text: str) -> list[ItemNumber]:
+    """Alle verschiedenen Nummern direkt hinter "Nummer"/"Nr.", in Satzfolge.
+
+    Mehr als eine heisst: der Gast korrigiert sich ("Nummer 23, nein, Nummer
+    24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
+    nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
+    """
+    return _marked(_tokens(text))
+
+
+def find_item_number_ref(text: str) -> ItemNumber | None:
+    """Wie `find_item_number`, aber mit Kartenschreibweise und Marker.
+
+    Zwei verschiedene ausdrücklich genannte Nummern ergeben `None`: die erste
+    zu nehmen wäre geraten (CLAUDE.md §2 Regel 2).
+    """
+    tokens = _tokens(text)
+    marked = _marked(tokens)
+    if marked:
+        return marked[0] if len(marked) == 1 else None
 
     mengen = _quantity_spans(tokens)
     uebrig = [

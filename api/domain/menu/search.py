@@ -31,7 +31,10 @@ from api.config import settings
 from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import find_item_number_ref
+from api.domain.menu.numberwords import (
+    find_item_number_ref,
+    find_marked_item_numbers,
+)
 from api.models import ItemAlias, ItemOption, MenuItem
 from api.schemas.menu import MenuHit, OptionGroup, OptionOut, SearchResult
 
@@ -42,12 +45,36 @@ SAY_NO_SUCH_NUMBER = (
     "Die Nummer {number} habe ich nicht auf der Karte. Können Sie das noch "
     "einmal sagen?"
 )
+SAY_NO_SUCH_NUMBERS = (
+    "Die Nummern {numbers} habe ich nicht auf der Karte. Können Sie das noch "
+    "einmal sagen?"
+)
 SAY_SOLD_OUT = "{name} ist heute leider aus."
 AMBIGUOUS_LIMIT = 3
 
 
 def _active(tenant_id: uuid.UUID) -> tuple:
     return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
+
+
+def _by_number(session: Session, tenant_id: uuid.UUID, spoken: str) -> list[MenuItem]:
+    """Aktive Gerichte zu einer gesagten Kartennummer.
+
+    Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht" findet
+    08. Die Kartennummer ist Text (docs/14), eine Umwandlung über int verlöre
+    "23a" (Befund Codex PR #116); Zahl, Buchstabe und Marker stammen aus
+    derselben Stelle im Satz (Befund Codex PR #117).
+    """
+    stored = func.lower(
+        func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
+    )
+    return list(
+        session.scalars(
+            select(MenuItem)
+            .where(*_active(tenant_id), stored == (spoken.lstrip("0") or "0"))
+            .order_by(MenuItem.number)
+        )
+    )
 
 
 def _sold_out(item: MenuItem, now: datetime) -> bool:
@@ -130,29 +157,30 @@ def search_menu(
     # 1. Nummer. Ohne "Nummer" im Satz zählt eine Zahl nur, wenn sonst nichts
     # vom Gericht gesagt wurde ("die 23"); neben einem Namen ist sie eine Menge
     # ("zwei Frühlingsrollen" ist nicht Gericht 2).
+    marked = find_marked_item_numbers(query)
+    if len(marked) > 1:
+        # "Nummer 23, nein, Nummer 24" oder "Nummer 23 oder Nummer 24": beide
+        # zur Wahl stellen statt die erste zu nehmen (Befund Codex PR #117).
+        items = [i for ref in marked for i in _by_number(session, tenant_id, ref.text)]
+        if not items:
+            spoken = " und ".join(ref.text for ref in marked)
+            raise NotFound(
+                f"Nummern {spoken} nicht auf der Karte",
+                say=SAY_NO_SUCH_NUMBERS.format(numbers=spoken),
+            )
+        return _ambiguous(session, items[:limit], now)
+
     ref = find_item_number_ref(query)
     if ref is not None and (ref.marked or not text):
-        spoken = ref.text
-        # Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht"
-        # findet 08. Die Kartennummer ist Text (docs/14), eine Umwandlung über
-        # int verlöre "23a" (Befund Codex PR #116). Zahl, Buchstabe und Marker
-        # stammen aus derselben Stelle im Satz (Befund Codex PR #117).
-        stored = func.lower(
-            func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
-        )
-        items = session.scalars(
-            select(MenuItem)
-            .where(*_active(tenant_id), stored == (spoken.lstrip("0") or "0"))
-            .order_by(MenuItem.number)
-        ).all()
+        items = _by_number(session, tenant_id, ref.text)
         if not items:
             raise NotFound(
-                f"Nummer {spoken} nicht auf der Karte",
-                say=SAY_NO_SUCH_NUMBER.format(number=spoken),
+                f"Nummer {ref.text} nicht auf der Karte",
+                say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
         if len(items) > 1:
             # "7" und "07" auf derselben Karte: nachfragen statt wählen.
-            return _ambiguous(session, list(items)[:limit], now)
+            return _ambiguous(session, items[:limit], now)
         return _single(session, "exact_number", items[0], now)
 
     if not text:

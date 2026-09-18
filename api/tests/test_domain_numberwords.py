@@ -291,3 +291,26 @@ def test_item_number_ref(text, value, card, marked):
 def test_item_number_ref_ohne_eindeutige_nummer(text):
     ref = find_item_number_ref(text)
     assert ref is None or not ref.marked
+
+
+# --- Zwei ausdrueckliche Nummern: keine waehlen (Codex PR #117, P1) ---------------
+
+from api.domain.menu.numberwords import find_marked_item_numbers  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23, nein, Nummer 24", "Nummer 23 oder Nummer 24", "Nr. 5 und Nr. 6"],
+)
+def test_zwei_markierte_nummern_ergeben_keine(text):
+    assert find_item_number_ref(text) is None
+
+
+def test_zwei_markierte_nummern_werden_beide_gemeldet():
+    refs = find_marked_item_numbers("Nummer 23, nein, Nummer 24a")
+    assert [r.text for r in refs] == ["23", "24a"]
+
+
+def test_dieselbe_nummer_zweimal_ist_eindeutig():
+    ref = find_item_number_ref("Nummer 23, ja genau, Nummer 23")
+    assert ref is not None and ref.text == "23" and ref.marked

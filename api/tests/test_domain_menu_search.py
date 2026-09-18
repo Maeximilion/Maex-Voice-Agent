@@ -435,3 +435,20 @@ def test_marker_ohne_zahl_dahinter_macht_menge_nicht_zur_nummer(session, tenant_
 
     assert result.match_type != "exact_number"
     assert nummern(result)[0] == "23"
+
+
+@pytest.mark.parametrize(
+    "gesagt", ["Nummer 23, nein, Nummer 24", "Nummer 23 oder Nummer 24"]
+)
+def test_zwei_genannte_nummern_fragen_nach(session, tenant_id, gesagt):
+    """Korrektur oder Auswahl im selben Satz: nachfragen, nicht die erste nehmen."""
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["23", "24"]
+    assert "Nummer 23" in result.say and "Nummer 24" in result.say
+
+
+def test_zwei_genannte_nummern_die_es_nicht_gibt(session, tenant_id):
+    with pytest.raises(NotFound) as err:
+        suche(session, tenant_id, "Nummer 98 oder Nummer 99")
+    assert "Nummer 98" in err.value.say and "Nummer 99" in err.value.say
