@@ -259,3 +259,35 @@ def test_eine_menge_macht_die_bestellung_nicht_mehrdeutig(text, nummer, menge):
     mehrdeutig und der Gast wurde ohne Not zurueckgefragt."""
     assert find_item_number(text) == nummer
     assert find_quantity(text) == menge
+
+
+# --- find_item_number_ref: Wert, Kartenschreibweise und Marker aus einer Stelle ---
+
+from api.domain.menu.numberwords import find_item_number_ref  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("text", "value", "card", "marked"),
+    [
+        ("Nummer 23a", 23, "23a", True),
+        ("Nummer 23 a", 23, "23a", True),
+        ("die 23A bitte", 23, "23a", False),
+        ("Nummer 07", 7, "07", True),
+        ("Nummer acht", 8, "8", True),
+        ("Nr. 31b", 31, "31b", True),
+        ("23a, nein, Nummer 23", 23, "23", True),
+        ("die 23 aber scharf", 23, "23", False),
+        ("2 x die 23", 23, "23", False),
+    ],
+)
+def test_item_number_ref(text, value, card, marked):
+    ref = find_item_number_ref(text)
+    assert (ref.value, ref.text, ref.marked) == (value, card, marked)
+
+
+@pytest.mark.parametrize(
+    "text", ["zwei Frühlingsrollen, Nummer weiß ich nicht", "Nummer", "23 und 47"]
+)
+def test_item_number_ref_ohne_eindeutige_nummer(text):
+    ref = find_item_number_ref(text)
+    assert ref is None or not ref.marked

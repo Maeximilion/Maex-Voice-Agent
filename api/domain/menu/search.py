@@ -21,7 +21,6 @@ aus. Bei einer Karte von ein paar hundert Zeilen ist das schneller als jede
 Vorfilterung; der GIN-Index trägt die Suche, sobald die Karte wächst.
 """
 
-import re
 import uuid
 from datetime import datetime
 
@@ -32,7 +31,7 @@ from api.config import settings
 from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import find_item_number, has_item_number_marker
+from api.domain.menu.numberwords import find_item_number_ref
 from api.models import ItemAlias, ItemOption, MenuItem
 from api.schemas.menu import MenuHit, OptionGroup, OptionOut, SearchResult
 
@@ -45,25 +44,6 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_SOLD_OUT = "{name} ist heute leider aus."
 AMBIGUOUS_LIMIT = 3
-
-
-# Ziffern, optional ein Buchstabe direkt oder nach einem Leerzeichen: "23a",
-# "23 a", "023". Nur a bis f: Karten zählen Varianten mit a, b, c; ein "x"
-# dahinter ist die Menge ("2 x die 23").
-_TEXT_NUMBER = re.compile(r"(?<!\w)(\d+)(?:\s?([a-f]))?(?!\w)", re.IGNORECASE)
-
-
-def _spoken_number(query: str, number: int) -> str:
-    """Die genannte Nummer als Text, so wie sie auf der Karte stehen kann.
-
-    Ziffern im Satz behalten Buchstaben und führende Nullen ("23a", "07");
-    ein Zahlwort ("dreiundzwanzig") hat keine, dann gilt die Zahl selbst.
-    """
-    for match in _TEXT_NUMBER.finditer(query):
-        digits, letter = match.groups()
-        if int(digits) == number:
-            return (digits + (letter or "")).lower()
-    return str(number)
 
 
 def _active(tenant_id: uuid.UUID) -> tuple:
@@ -150,12 +130,13 @@ def search_menu(
     # 1. Nummer. Ohne "Nummer" im Satz zählt eine Zahl nur, wenn sonst nichts
     # vom Gericht gesagt wurde ("die 23"); neben einem Namen ist sie eine Menge
     # ("zwei Frühlingsrollen" ist nicht Gericht 2).
-    number = find_item_number(query)
-    if number is not None and (has_item_number_marker(query) or not text):
-        spoken = _spoken_number(query, number)
+    ref = find_item_number_ref(query)
+    if ref is not None and (ref.marked or not text):
+        spoken = ref.text
         # Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht"
         # findet 08. Die Kartennummer ist Text (docs/14), eine Umwandlung über
-        # int verlöre "23a" (Befund Codex PR #116).
+        # int verlöre "23a" (Befund Codex PR #116). Zahl, Buchstabe und Marker
+        # stammen aus derselben Stelle im Satz (Befund Codex PR #117).
         stored = func.lower(
             func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
         )

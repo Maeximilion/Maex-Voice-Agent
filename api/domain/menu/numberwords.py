@@ -281,6 +281,40 @@ def find_item_number(text: str) -> int | None:
     P2). Bleiben danach mehrere Zahlen übrig, ist nicht entscheidbar, welche
     gemeint war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
     """
+    ref = find_item_number_ref(text)
+    return ref.value if ref is not None else None
+
+
+@dataclass(frozen=True)
+class ItemNumber:
+    """Eine Gerichtnummer mit allem, was aus derselben Stelle im Satz stammt.
+
+    `text` ist die Schreibweise, wie sie auf der Karte stehen kann: Ziffern
+    behalten führende Nullen ("07"), ein direkt folgender Buchstabe a bis f
+    gehört dazu ("23a", auch "23 a"). Bei einem Zahlwort ist es die Zahl.
+    `marked` heisst: direkt hinter "Nummer"/"Nr." - nicht irgendwo im Satz.
+    Alles aus einer Fundstelle, sonst mischt "23a, nein, Nummer 23" den
+    Buchstaben der ersten mit der Zahl der zweiten Angabe (Codex PR #117, P1).
+    """
+
+    value: int
+    text: str
+    marked: bool
+
+
+_SUFFIXES = frozenset("abcdef")
+
+
+def _ref(tokens: list[str], span: _Span, marked: bool) -> ItemNumber:
+    digits = span.end - span.start == 1 and tokens[span.start].isdigit()
+    card = tokens[span.start] if digits else str(span.value)
+    if span.end < len(tokens) and tokens[span.end] in _SUFFIXES:
+        card += tokens[span.end]
+    return ItemNumber(value=span.value, text=card, marked=marked)
+
+
+def find_item_number_ref(text: str) -> ItemNumber | None:
+    """Wie `find_item_number`, aber mit Kartenschreibweise und Marker."""
     tokens = _tokens(text)
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
@@ -290,7 +324,7 @@ def find_item_number(text: str) -> int | None:
             nach_marker += 1  # "Nr. 23"
         span = _scan(tokens, nach_marker)
         if span is not None:
-            return span.value
+            return _ref(tokens, span, marked=True)
 
     mengen = _quantity_spans(tokens)
     uebrig = [
@@ -298,7 +332,7 @@ def find_item_number(text: str) -> int | None:
         for span in _number_spans(tokens)
         if not any(span.overlaps(menge) for menge in mengen)
     ]
-    return uebrig[0].value if len(uebrig) == 1 else None
+    return _ref(tokens, uebrig[0], marked=False) if len(uebrig) == 1 else None
 
 
 def has_item_number_marker(text: str) -> bool:

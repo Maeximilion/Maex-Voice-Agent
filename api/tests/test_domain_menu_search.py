@@ -409,3 +409,21 @@ def test_unbekannte_buchstabennummer(session, buchstaben):
     with pytest.raises(NotFound) as err:
         suche(session, buchstaben, "Nummer 23c")
     assert "Nummer 23c" in err.value.say
+
+
+# --- Eine Fundstelle fuer Nummer, Buchstabe und Marker (Codex PR #117, P1) --------
+
+
+def test_korrektur_im_satz_nimmt_die_markierte_nummer(session, buchstaben):
+    """ "23a, nein, Nummer 23": gemeint ist die 23, nicht der Buchstabe von vorher."""
+    result = suche(session, buchstaben, "23a, nein, Nummer 23")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
+
+
+def test_marker_ohne_zahl_dahinter_macht_menge_nicht_zur_nummer(session, tenant_id):
+    """ "Nummer weiß ich nicht": das Wort Nummer gehoert nicht zur zwei."""
+    result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
+
+    assert result.match_type != "exact_number"
+    assert nummern(result)[0] == "23"
