@@ -478,3 +478,20 @@ def test_zoegerlaut_zwischen_zwei_nummern(text):
     """Codex PR #117: eine Pause waehlt nicht still die erste Nummer."""
     assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]
     assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23 mit Reis oder Nudeln um 18 Uhr", "Nummer 23, und zwar mit 2 Dips"],
+)
+def test_verbindungswort_muss_direkt_zwischen_den_zahlen_stehen(text):
+    """Codex PR #117: ein "oder" irgendwo im Satz verbindet keine spaete Uhrzeit."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"
+
+
+def test_artikel_zwischen_verbindungswort_und_zahl():
+    assert [r.text for r in find_marked_item_numbers("Nummer 23 oder die 24")] == [
+        "23",
+        "24",
+    ]

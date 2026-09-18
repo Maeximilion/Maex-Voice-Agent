@@ -454,9 +454,7 @@ def test_zwei_genannte_nummern_die_es_nicht_gibt(session, tenant_id):
     assert "Nummern 98 und 99" in err.value.say
 
 
-@pytest.mark.parametrize(
-    "gesagt", ["Nummer 23g", "Nummer 23ab", "Nummer 23 g", "die 23g"]
-)
+@pytest.mark.parametrize("gesagt", ["Nummer 23g", "Nummer 23ab", "Nummer 23 g"])
 def test_ungueltiger_buchstabe_wird_nicht_abgeschnitten(session, tenant_id, gesagt):
     """Befund Codex PR #117: "23g" ist nicht die 23 - nicht gefunden statt still 23."""
     with pytest.raises(NotFound) as err:
@@ -499,3 +497,25 @@ def test_nummer_ist_23(session, tenant_id):
     result = suche(session, tenant_id, "die Nummer ist 23")
 
     assert result.match_type == "exact_number" and nummern(result) == ["23"]
+
+
+def test_unmarkierte_ungueltige_nummer_liefert_nie_die_23(session, tenant_id):
+    """ "die 23g" ohne Marker: nicht gefunden, aber nie still Gericht 23."""
+    with pytest.raises(NotFound):
+        suche(session, tenant_id, "die 23g")
+
+
+def test_alias_mit_ziffer_vorn(session, tenant_id):
+    """Codex PR #117: ein Alias wie "7up" darf nicht als Kartennummer verschwinden."""
+    getraenk = "90;Seven Up;Getränke;2,50;;ja"
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE] + getraenk + "\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE] + "90;7up" + "\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    for gesagt in ("7up", "ein 7up bitte"):
+        assert nummern(suche(session, tenant_id, gesagt)) == ["90"], gesagt

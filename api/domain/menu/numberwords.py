@@ -352,6 +352,7 @@ def _canonical(card: str) -> str:
     return card.lstrip("0") or "0"
 
 
+_LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
 # Zögerlaute der Spracherkennung, nach fold() (ä -> ae).
 _HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
 # Wörter, die eine zweite Zahl zur Alternative oder Korrektur machen.
@@ -368,11 +369,12 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     genannte Nummer wird nie verschluckt (Codex PR #117). "drei und zwanzig"
     ist davon nicht betroffen, das fasst _scan vorher zu einer Zahl zusammen.
     """
-    between = tokens[after:before]
-    # Zögerlaute sind durchsichtig: "Nummer 23, äh, 24" ist wie "23, 24".
-    if all(t in PUNCTUATION or t in _HESITATIONS for t in between):
-        return True
-    return any(t in _ALTERNATIVE_WORDS or t == "und" for t in between)
+    between = [t for t in tokens[after:before] if t not in PUNCTUATION]
+    # Zögerlaute und Artikel sind durchsichtig ("Nummer 23, äh, 24", "Nummer 23
+    # oder die 24"). Alles andere muss ein Verbindungswort sein - ein "oder"
+    # zwischen Reis und Nudeln verbindet keine spätere Uhrzeit (Codex PR #117).
+    words = [t for t in between if t not in _HESITATIONS and t not in _LINK_ARTICLES]
+    return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
 
 
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:

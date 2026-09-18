@@ -14,7 +14,9 @@ import re
 import unicodedata
 
 _SPACE = re.compile(r"\s+")
-_CARD_NUMBER = re.compile(r"\d+[a-zäöüß]*")
+# Nur echte Kartenformen (wie importer._CARD_NUMBER): "23", "23a", "07". Ein Alias
+# wie "7up" ist keine Nummer und bleibt stehen (Codex PR #117).
+_CARD_NUMBER = re.compile(r"\d+[a-f]?")
 # Satzzeichen am Rand tragen am Telefon nichts; im Wort ("Wan-Tan") bleiben sie.
 # Dazu die typografischen Anfuehrungszeichen, als Escape geschrieben, damit sie
 # im Quelltext nicht mit Komma oder Apostroph zu verwechseln sind.
