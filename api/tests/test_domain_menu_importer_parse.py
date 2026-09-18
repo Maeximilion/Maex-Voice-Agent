@@ -317,3 +317,27 @@ def test_optionen_finden_die_nummer_unabhaengig_von_der_schreibweise():
         }
     )
     assert plan.ok, plan.errors and "23a" in plan.options
+
+
+@pytest.mark.parametrize(("a", "b"), [("7", "07"), ("7a", "07a"), ("007", "7")])
+def test_fuehrende_null_ist_dieselbe_nummer(a, b):
+    """Codex PR #117: so vergleicht auch die Suche - sonst dauerhaft mehrdeutig."""
+    plan = parse(
+        {
+            MENU_FILE: f"number;name;category;price_eur\n{a};Eins;Test;1,00\n{b};Zwei;Test;1,00\n"
+        }
+    )
+    assert not plan.ok and "doppelt" in plan.errors[0]
+
+
+def test_optionen_finden_die_nummer_auch_ohne_null():
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n07;Misosuppe;Suppen;4,50\n",
+            OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n"
+            "7;Größe;groß;1,00;nein;nein\n",
+            ALIASES_FILE: "number;alias\n7;miso\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    assert set(plan.items) == {"07"} and "07" in plan.options and "07" in plan.aliases

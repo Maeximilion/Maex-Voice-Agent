@@ -372,6 +372,10 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
 
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
     spans: list[_Span] = []
+    # Ziffern hinter dem Marker, die ausserhalb des Zahlbereichs liegen
+    # ("Nummer 1000"): ungültig, und keine spätere Zahl darf nachrücken
+    # ("Nummer 1000 und 23" ist nicht die 23, Codex PR #117).
+    invalid: list[ItemNumber] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
@@ -381,8 +385,11 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
         span = _scan(tokens, nach_marker)
         if span is not None:
             spans.append(span)
+        elif nach_marker < len(tokens) and tokens[nach_marker].isdigit():
+            digits = tokens[nach_marker]
+            invalid.append(ItemNumber(int(digits), digits, marked=True, valid=False))
     if not spans:
-        return []
+        return invalid
     # Weitere Zahlen hinter der ersten markierten Nummer sind Alternative oder
     # Korrektur, aber nur mit einem Wort, das das sagt: "Nummer 23 oder 24",
     # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" oder
@@ -427,7 +434,7 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
         else:
             prev = (span, True)
     spans.sort(key=lambda s: s.start)
-    found: list[ItemNumber] = []
+    found: list[ItemNumber] = list(invalid)
     for span in spans:
         ref = _ref(tokens, span, marked=True, glued=glued)
         # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.

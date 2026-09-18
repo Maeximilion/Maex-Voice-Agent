@@ -451,3 +451,12 @@ def test_aufzaehlung_hinter_einem_marker(text, cards):
 def test_zusammengesetzte_zahl_bleibt_eine():
     ref = find_item_number_ref("Nummer drei und zwanzig")
     assert ref is not None and ref.text == "23"
+
+
+@pytest.mark.parametrize("text", ["Nummer 1000 und 23", "Nummer 1000", "Nr. 5000, 23"])
+def test_markierte_nummer_ausserhalb_des_bereichs_bleibt_ungueltig(text):
+    """Codex PR #117: keine spaetere Zahl rueckt nach, wenn die markierte ungueltig ist."""
+    ref = find_item_number_ref(text)
+    assert (
+        ref is not None and ref.valid is False and ref.text.startswith(("1000", "5000"))
+    )
