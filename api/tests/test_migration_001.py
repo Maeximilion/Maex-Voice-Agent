@@ -1,15 +1,16 @@
-"""Migration 001 gegen eine Wegwerf-Datenbank: up, down, Modelle ohne Diff, Constraints greifen."""
+"""Migration 001 gegen eine Wegwerf-Datenbank: up, down, Constraints greifen.
+
+Gegen Revision 001, nicht head: seit 002 liegen weitere Tabellen darueber.
+Den Vergleich Modelle gegen Schema macht test_migration_002 auf head.
+"""
 
 import uuid
 
 import pytest
 from alembic import command
-from alembic.autogenerate import compare_metadata
-from alembic.runtime.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
-from api.models import Base
 from api.tests.conftest import alembic_config as _config
 
 STUFE_1_TABELLEN = {
@@ -35,25 +36,14 @@ def _table_names(url: str) -> set[str]:
 
 
 def test_upgrade_erzeugt_alle_stufe1_tabellen(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "head")
+    command.upgrade(_config(scratch_db_url), "001")
     assert _table_names(scratch_db_url) == STUFE_1_TABELLEN | {"alembic_version"}
-
-
-def test_modelle_und_migration_beschreiben_dasselbe_schema(scratch_db_url):
-    engine = create_engine(scratch_db_url)
-    try:
-        with engine.connect() as conn:
-            ctx = MigrationContext.configure(conn, opts={"compare_type": True})
-            diff = compare_metadata(ctx, Base.metadata)
-    finally:
-        engine.dispose()
-    assert diff == [], f"Modelle und Schema weichen ab: {diff}"
 
 
 def test_downgrade_entfernt_alles_und_upgrade_geht_erneut(scratch_db_url):
     command.downgrade(_config(scratch_db_url), "base")
     assert _table_names(scratch_db_url) <= {"alembic_version"}
-    command.upgrade(_config(scratch_db_url), "head")
+    command.upgrade(_config(scratch_db_url), "001")
     assert _table_names(scratch_db_url) == STUFE_1_TABELLEN | {"alembic_version"}
 
 

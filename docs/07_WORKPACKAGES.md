@@ -84,7 +84,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
-| T-4.1 | #45 | Migration 002 (Menü, Bestellungen) | 03 | T-1.1 | offen |
+| T-4.1 | #45 | Migration 002 (Menü, Bestellungen) | 03 | T-1.1 | fertig 18.09.2026: `db/migrations/versions/002_stufe2.py` + `api/models/menu.py`, `orders.py`; `pg_trgm` mit GIN-Index auf `name` und `alias`, CHECKs (Cent ≥ 0, Summe geht auf, Menge > 0, Statuswerte), `orders.pickup_code` ergänzt; up/down und Modell-Diff getestet |
 | T-4.2 | #46 | Menü-Import `scripts/import_menu.py` nach Format 14, `--dry-run`, Prüfregeln, idempotent | 14, 11 §menu | T-4.1, CSV aus dem Chat | offen |
 | T-4.3 | #47 | Tool `search_menu` mit der Auflösungsreihenfolge aus 04, Trigram-Index, Schwellen konfigurierbar | 04 | T-4.2 | offen |
 | T-4.4 | #48 | Tool `get_item_details` inkl. Allergen-Regel „unbekannt ≠ keine" | 04 | T-4.2 | offen |

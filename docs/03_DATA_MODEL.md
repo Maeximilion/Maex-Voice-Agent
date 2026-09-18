@@ -204,7 +204,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | tenant_id / call_id | UUID FK | |
 | type | TEXT | `pickup` / `delivery` |
 | status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
-| customer_id | UUID NULL FK | |
+| customer_id | UUID NULL FK | Fremdschlüssel erst mit 003 (`customers`), bis dahin nur das Feld |
 | phone | TEXT | |
 | customer_name | TEXT | |
 | address_id | UUID NULL FK | nur bei Lieferung |
@@ -214,7 +214,10 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | ready_at | TIMESTAMPTZ | zugesagte Zeit |
 | note | TEXT | |
 | idempotency_key | TEXT UNIQUE | |
-| handover_state | TEXT | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse |
+| pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
+| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf |
+
+**Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
 `approved` existiert nur im Überlauf-Betrieb (Stufe 5): Das Team gibt frei, bevor die Küche loslegt.
 
