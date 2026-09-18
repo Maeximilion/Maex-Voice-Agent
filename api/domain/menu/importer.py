@@ -61,6 +61,9 @@ _COLUMNS = {
 # "6,90", "6,9", "6" - nur Ziffern und Komma (docs/14). Punkt als Dezimal- oder
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
+# Kartennummern, die search_menu eindeutig auflöst: Ziffern (führende Nullen
+# erlaubt), optional ein Buchstabe a bis f. Muss zu numberwords._SUFFIXES passen.
+_CARD_NUMBER = re.compile(r"\d+[a-fA-F]?")
 
 
 @dataclass(frozen=True)
@@ -227,6 +230,14 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         number = row["number"]
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
+            continue
+        if not _CARD_NUMBER.fullmatch(number):
+            # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
+            # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
+            plan.errors.append(
+                f"{where}: Kartennummer „{number}“ versteht die Suche nicht "
+                "(erlaubt: Ziffern, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
+            )
             continue
         if number in first_line:
             plan.errors.append(

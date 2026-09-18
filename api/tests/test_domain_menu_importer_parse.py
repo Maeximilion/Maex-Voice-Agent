@@ -253,3 +253,24 @@ def test_alias_doppelt_im_gleichen_gericht_zaehlt_einmal():
     plan = parse(files(**{ALIASES_FILE: ALIASES + "23;frühlingsrollen\n"}))
 
     assert plan.ok and len(plan.aliases["23"]) == 2
+
+
+# --- Kartennummern, die die Suche eindeutig aufloesen kann (Codex PR #117, P1) ----
+
+
+@pytest.mark.parametrize("nummer", ["23", "23a", "23F", "007", "12c"])
+def test_kartennummer_im_suchformat(nummer):
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert plan.ok, plan.errors
+
+
+@pytest.mark.parametrize("nummer", ["23g", "A12", "23x", "23ab", "12-3", "Nr. 5", "V2"])
+def test_kartennummer_ausserhalb_des_suchformats(nummer):
+    """Sonst sucht "Nummer 23g" still die 23: lieber beim Import scheitern."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok
+    assert "Kartennummer" in plan.errors[0] and nummer in plan.errors[0]

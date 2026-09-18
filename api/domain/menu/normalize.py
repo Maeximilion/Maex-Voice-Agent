@@ -34,12 +34,25 @@ FILLER = frozenset(
 )  # fmt: skip
 
 
+# Mengenwörter, die nach einer Zahl stehen ("2 Stück", "2 stk", "3 x") - wie
+# numberwords._QUANTITY_NOUNS, hier mit Umlaut, weil normalize_alias die
+# Umlaute behält. Nur direkt nach einer Zahl entfernt: "Stück" allein kann
+# Teil eines Namens sein.
+_QUANTITY_NOUNS = frozenset(
+    {"x", "portion", "portionen", "stück", "stueck", "stk", "st"}
+)
+# "2x": Zahl und Mengenzeichen in einem Wort.
+_COMPACT_QUANTITY = re.compile(r"\d+x")
+
+
 def _is_number_word(token: str) -> bool:
     # Import hier, weil numberwords normalize nicht kennt und nicht kennen soll.
     from api.domain.menu.numberwords import parse_cardinal
 
     # "23a": Kartennummer mit Buchstabe, kein Teil des Gerichtnamens.
-    if _CARD_NUMBER.fullmatch(token) or parse_cardinal(token) is not None:
+    if _CARD_NUMBER.fullmatch(token) or _COMPACT_QUANTITY.fullmatch(token):
+        return True
+    if parse_cardinal(token) is not None:
         return True
     # "zweimal", "dreimal": Menge, kein Teil des Gerichtnamens.
     return token.endswith("mal") and parse_cardinal(token[:-3]) is not None
@@ -47,19 +60,27 @@ def _is_number_word(token: str) -> bool:
 
 def normalize_query(text: str) -> str:
     """Das Gesprochene auf den Gerichtnamen verkürzen: wie ein Alias, ohne
-    Füllwörter und ohne Zahl- und Mengenwörter.
+    Füllwörter und ohne Zahl- und Mengenangaben.
 
-    "Ich hätte gern zweimal die knusprige Ente, bitte" -> "knusprige ente".
+    "Ich hätte gern zweimal die knusprige Ente, bitte" -> "knusprige ente",
+    "2 Stück Pho" -> "pho". Mengenformen wie in numberwords (Codex PR #117).
     Die Zahl selbst wertet search_menu vorher aus (Nummer oder Menge).
     """
-    tokens = normalize_alias(text).split(" ")
-    kept = [
-        t.strip(_EDGE_PUNCT)
-        for t in tokens
-        if t.strip(_EDGE_PUNCT) not in FILLER
-        and not _is_number_word(t.strip(_EDGE_PUNCT))
-    ]
-    return " ".join(t for t in kept if t)
+    kept: list[str] = []
+    after_number = False
+    for raw in normalize_alias(text).split(" "):
+        token = raw.strip(_EDGE_PUNCT)
+        if not token:
+            continue
+        if _is_number_word(token):
+            after_number = True
+            continue
+        if after_number and token in _QUANTITY_NOUNS:
+            continue
+        after_number = False
+        if token not in FILLER:
+            kept.append(token)
+    return " ".join(kept)
 
 
 def normalize_alias(text: str) -> str:

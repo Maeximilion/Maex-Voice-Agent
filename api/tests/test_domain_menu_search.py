@@ -75,6 +75,12 @@ KARTE = {
         ("die 23", ""),
         ("2 x Pho Bo", "pho bo"),
         ("Wan-Tan-Suppe", "wan-tan-suppe"),
+        # Kompakte Mengen wie in numberwords (Codex PR #117, P2)
+        ("2x Pho", "pho"),
+        ("2 Stück Pho", "pho"),
+        ("2 stk Pho", "pho"),
+        ("2 st Pho", "pho"),
+        ("Frühlingsrollen (4 Stück)", "frühlingsrollen"),
     ],
 )
 def test_normalize_query(gesagt, rest):
@@ -170,6 +176,8 @@ def test_nummer_mit_marker_schlaegt_namen(session, tenant_id):
         ("Pho", "13"),
         # Fuellwoerter auf beiden Seiten egal: Alias "die knusprige ente".
         ("knusprige Ente bitte", "47"),
+        ("2x Pho", "13"),
+        ("zwei Stück Sommerrollen", "24"),
     ],
 )
 def test_alias_exakt(session, tenant_id, gesagt, nummer):
