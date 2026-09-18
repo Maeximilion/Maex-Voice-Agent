@@ -286,3 +286,63 @@ def test_cli_liest_excel_bom(cli, ordner, session):
 
     assert cli(ordner) == 0
     assert count(session, MenuItem) == 3
+
+
+def test_neuer_pruefer_bei_gleichen_codes_wird_uebernommen(session, tenant_id):
+    """Befund Codex PR #115: gleiche Codes, anderer Pruefer - der Nachweis muss stimmen."""
+    run(session, tenant_id)
+    spaeter = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    allergene = "number;allergen_codes;confirmed_by\n23;A,F;Küchenchef\n"
+
+    plan = parse(files(**{ALLERGENS_FILE: allergene}))
+    report = apply(session, tenant_id, plan, now=spaeter)
+
+    assert report.allergens_changed == ["23"]
+    session.expire_all()
+    rows = session.scalars(select(ItemAllergen)).all()
+    assert {(r.confirmed_by, r.confirmed_at) for r in rows} == {("Küchenchef", spaeter)}
+
+
+def test_behaltener_code_bekommt_den_neuen_nachweis(session, tenant_id):
+    """Code A bleibt, G kommt dazu: beide tragen den Pruefer und Zeitpunkt der Datei."""
+    run(session, tenant_id)
+    spaeter = datetime(2026, 10, 1, 9, 0, tzinfo=UTC)
+    allergene = "number;allergen_codes;confirmed_by\n23;A,G;Küchenchef\n"
+
+    plan = parse(files(**{ALLERGENS_FILE: allergene}))
+    apply(session, tenant_id, plan, now=spaeter)
+
+    session.expire_all()
+    rows = {r.allergen_code: r for r in session.scalars(select(ItemAllergen))}
+    assert set(rows) == {"A", "G"}
+    assert {(r.confirmed_by, r.confirmed_at) for r in rows.values()} == {
+        ("Küchenchef", spaeter)
+    }
+
+
+def test_gleicher_pruefer_gleiche_codes_laesst_zeitpunkt_stehen(session, tenant_id):
+    """Idempotenz: unveraenderter Nachweis behaelt seinen urspruenglichen Zeitpunkt."""
+    run(session, tenant_id)
+    plan = parse(files())
+
+    report = apply(session, tenant_id, plan, now=datetime(2026, 10, 1, tzinfo=UTC))
+
+    assert report.allergens_changed == []
+    session.expire_all()
+    assert {r.confirmed_at for r in session.scalars(select(ItemAllergen))} == {NOW}
+
+
+def test_probelauf_mit_preisschalter_sagt_wuerde(session, tenant_id):
+    """Befund Codex PR #115: Probelauf speichert nichts, also auch keinen Preis."""
+    run(session, tenant_id)
+    teurer = {MENU_FILE: files()[MENU_FILE].replace("6,90", "7,20")}
+
+    report = run(
+        session, tenant_id, files=teurer, apply_price_changes=True, dry_run=True
+    )
+
+    text = report.as_text()
+    assert "Probelauf, nichts gespeichert." in text
+    assert "würde übernommen" in text
+    assert "(übernommen)" not in text
+    assert item(session, tenant_id, "23").price_cents == 690

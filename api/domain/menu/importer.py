@@ -148,7 +148,13 @@ class Report:
         if self.allergens_changed:
             lines.append("Allergene geändert bei: " + ", ".join(self.allergens_changed))
         for number, old, new in self.price_changes:
-            state = "übernommen" if self.price_changes_applied else "NICHT übernommen"
+            if not self.price_changes_applied:
+                state = "NICHT übernommen"
+            elif self.dry_run:
+                # Probelauf rollt zurück: "übernommen" wäre gelogen (Codex PR #115).
+                state = "würde übernommen"
+            else:
+                state = "übernommen"
             lines.append(
                 f"Preisänderung {number}: {_eur(old)} -> {_eur(new)} ({state})"
             )
@@ -506,11 +512,20 @@ def _sync_allergens(
         )
     }
     desired = set(row.codes)
-    if set(current) == desired:
+    same_codes = set(current) == desired
+    same_confirmer = all(a.confirmed_by == row.confirmed_by for a in current.values())
+    if same_codes and same_confirmer:
+        # Unveränderter Nachweis behält seinen ursprünglichen Zeitpunkt.
         return
+    # Die Zeile der Datei ist ein neuer Nachweis für das ganze Gericht: auch
+    # behaltene Codes tragen danach Prüfer und Zeitpunkt dieses Imports, sonst
+    # widerspräche die Datenbank der Datei, aus der sie stammt (Codex PR #115).
     for code, allergen in current.items():
         if code not in desired:
             session.delete(allergen)
+        else:
+            allergen.confirmed_by = row.confirmed_by
+            allergen.confirmed_at = now
     for code in sorted(desired - set(current)):
         session.add(
             ItemAllergen(
