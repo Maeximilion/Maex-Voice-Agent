@@ -13,7 +13,6 @@
   </section>
 
   <section class="col">
-    <h2>Heute</h2>
     {# Ziel des Ereignisstroms: app.js holt dieses Fragment neu, sobald sich an
        den Reservierungen des Tages etwas aendert. #}
     <div id="heute-liste" hx-get="/gui/fragments/heute" hx-trigger="none">
@@ -22,7 +21,6 @@
   </section>
 
   <section class="col">
-    <h2>R&uuml;ckrufe</h2>
     <div id="rueckrufe-liste">
       {% include "fragments/rueckrufe.html" %}
     </div>

@@ -440,3 +440,35 @@ def test_ton_wird_im_tap_freigeschaltet():
     assert "new Ctx()" in handler and "resume()" in handler
     assert 'addEventListener("touchstart", freischalten' in js
     assert 'addEventListener("click", freischalten' in js
+
+
+def test_spalten_zeigen_ihre_anzahl(client, engine, tenant_id):
+    """Ein Blick genuegt (docs/06 §1 Regel 7): die Zahl steht in der Ueberschrift."""
+    rueckruf(engine, tenant_id)
+    rueckruf(engine, tenant_id)
+    reservierung(engine, tenant_id)
+
+    rueck = client.get("/gui/fragments/rueckrufe").text
+    heute_ = client.get("/gui/fragments/heute").text
+
+    assert '<span class="count">2</span>' in rueck
+    assert '<span class="count">1</span>' in heute_
+
+
+def test_tablet_schrift_mindestens_18px():
+    """docs/06 §1 Regel 3: Notiz, Abzeichen und Zusammenfassung nicht kleiner als 18 px.
+
+    Die Klassen stammen aus dem Desktop-Mockup (13/12 px); die Betriebsansicht
+    muss sie ueberschreiben. Und dunkles "Erledigt" braucht dunkle Schrift auf
+    hellem Gruen, sonst ist es kaum lesbar.
+    """
+    css = (
+        Path(__file__).resolve().parents[1] / "gui" / "static" / "app.css"
+    ).read_text(encoding="utf-8")
+
+    assert ".betrieb .note{font-size:18px}" in css
+    assert ".betrieb .badge{font-size:18px" in css
+    assert (
+        "button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}"
+        in css
+    )
