@@ -23,12 +23,13 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - `make up` builds the API image and starts Postgres, API, dispatcher, and n8n; `/health` responds, token auth works
 - Every agent API response follows the envelope from `docs/04_API_TOOLS.md`; errors return JSON with code and read-aloud text, never stacktrace
 - Database access with one session per request (`api/db.py`), logs as JSON lines with `request_id` and `call_id`
-- `make migrate` creates the ten stage-1 tables (Alembic in `db/`, models in `api/models/`), `make seed` fills them idempotently with test config
+- `make migrate` creates the stage-1 tables and the stage-2 tables for menu and orders (Alembic in `db/`, models in `api/models/`), `make seed` fills stage 1 idempotently with test config
+- Menu import from CSV per `docs/14_MENU_IMPORT_FORMAT.md`: `python -m scripts.import_menu imports/ --dry-run` checks and reports, without `--dry-run` it loads; idempotent, price changes only with `--apply-price-changes`. The CSVs live in `imports/`, which is git-ignored
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
 - Conversation core (`api/agent/`) with understanding ladder and escalation, driven from the text phone (`sim/`): `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case>` replays a transcript; a confirmed reservation lands in the database without any telephony
-- Operations view for the tablet at `/gui/` (`api/gui/`): header with mode, delivery and wait times from the database, three columns per `docs/06_GUI.md`, and the column "Heute" with the confirmed reservations of the business day. It updates itself over Server-Sent-Events, so a call held in `sim/` shows up on the tablet a moment later without reloading
+- Operations view for the tablet at `/gui/` (`api/gui/`): header with mode, delivery and wait times and the buttons to pause the AI, switch delivery and raise the wait time; the column "Heute" with the confirmed reservations of the business day and the column "Rückrufe" with open callbacks, a tone for new ones and a done button. It updates itself over Server-Sent-Events, so a call held in `sim/` shows up on every tablet a moment later without reloading
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
@@ -36,8 +37,9 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 **Not yet working:**
 
 - No phone line, no provider chosen (decision D1)
-- The operations view shows reservations only: the header has no buttons yet (T-3.2), the columns for orders and callbacks stay empty until T-4.7 and T-3.4, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
-- No orders (stage 2)
+- The column "Neue Bestellungen" stays empty until T-4.7, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
+- No orders yet: the schema is in place (migration 002) and the menu can be imported, but `search_menu`, `draft_order` and the order confirmation follow in T-4.3 to T-4.5
+- No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
