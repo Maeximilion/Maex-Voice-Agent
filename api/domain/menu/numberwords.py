@@ -343,6 +343,11 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     return ItemNumber(value=span.value, text=card, marked=marked)
 
 
+def _canonical(card: str) -> str:
+    """Kartennummer ohne führende Nullen, so wie search_menu sie vergleicht."""
+    return card.lstrip("0") or "0"
+
+
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
     found: list[ItemNumber] = []
     for i, token in enumerate(tokens):
@@ -354,7 +359,8 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
         span = _scan(tokens, nach_marker)
         if span is not None:
             ref = _ref(tokens, span, marked=True, glued=glued)
-            if all(r.text != ref.text for r in found):
+            # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
+            if all(_canonical(r.text) != _canonical(ref.text) for r in found):
                 found.append(ref)
     return found
 

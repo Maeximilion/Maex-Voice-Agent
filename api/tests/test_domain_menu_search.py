@@ -467,3 +467,22 @@ def test_ungueltiger_buchstabe_wird_nicht_abgeschnitten(session, tenant_id, gesa
 
 def test_zwei_x_bleibt_eine_menge(session, tenant_id):
     assert nummern(suche(session, tenant_id, "2x Pho")) == ["13"]
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [("drei Portionen von der 23", "23"), ("die 23 a", "23a")],
+)
+def test_verbindungswoerter_und_abgesetzter_buchstabe(
+    session, buchstaben, gesagt, nummer
+):
+    """Codex PR #117: "von" und ein abgesetztes "a" sind kein Gerichtname."""
+    result = suche(session, buchstaben, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == [nummer]
+
+
+def test_gleiche_nummer_zweimal_ist_eindeutig(session, buchstaben):
+    result = suche(session, buchstaben, "Nummer 07 oder Nummer 7")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["7"]

@@ -337,3 +337,10 @@ def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
 def test_gueltige_nummern_bleiben_gueltig(text):
     ref = find_item_number_ref(text)
     assert ref is not None and ref.valid is True
+
+
+def test_gleiche_nummer_in_zwei_schreibweisen_ist_eine():
+    """Codex PR #117: "Nummer 07 oder Nummer 7" ist dieselbe Nummer."""
+    refs = find_marked_item_numbers("Nummer 07 oder Nummer 7")
+    assert len(refs) == 1
+    assert find_item_number_ref("Nummer 07 oder Nummer 7") is not None

@@ -29,7 +29,7 @@ FILLER = frozenset(
         "gern", "gerne", "bitte", "dann", "noch", "und", "also", "ja", "äh", "ähm",
         "hm", "mal", "einmal", "die", "der", "das", "den", "dem", "des", "ein",
         "eine", "einen", "einem", "einer", "nummer", "nr", "x", "portion",
-        "portionen",
+        "portionen", "von", "vom",
     }
 )  # fmt: skip
 
@@ -42,6 +42,8 @@ _QUANTITY_NOUNS = frozenset(
     {"x", "portion", "portionen", "stück", "stueck", "stk", "st"}
 )
 # "2x": Zahl und Mengenzeichen in einem Wort.
+# Abgesetzter Kartenbuchstabe ("23 a"), wie numberwords._SUFFIXES.
+_SUFFIX_LETTERS = frozenset("abcdef")
 _COMPACT_QUANTITY = re.compile(r"\d+x")
 
 
@@ -75,7 +77,8 @@ def normalize_query(text: str) -> str:
         if _is_number_word(token):
             after_number = True
             continue
-        if after_number and token in _QUANTITY_NOUNS:
+        if after_number and (token in _QUANTITY_NOUNS or token in _SUFFIX_LETTERS):
+            # "2 Stück", "die 23 a": gehört zur Zahl, nicht zum Gerichtnamen.
             continue
         after_number = False
         if token not in FILLER:

@@ -406,8 +406,10 @@ def apply(
         warnings=list(plan.warnings),
         price_changes_applied=apply_price_changes,
     )
+    # Klein geschrieben wie der Plan: ein früher als "23A" importiertes Gericht
+    # ist dasselbe wie "23a" und wird angeglichen, nicht verdoppelt (Codex #117).
     existing = {
-        item.number: item
+        item.number.lower(): item
         for item in session.scalars(
             select(MenuItem).where(MenuItem.tenant_id == tenant_id).with_for_update()
         )
@@ -431,6 +433,7 @@ def apply(
             report.items_new.append(number)
         else:
             fields = {
+                "number": row.number,
                 "name": row.name,
                 "category": row.category,
                 "description": row.description,

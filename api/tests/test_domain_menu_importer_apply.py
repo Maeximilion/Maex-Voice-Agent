@@ -346,3 +346,31 @@ def test_probelauf_mit_preisschalter_sagt_wuerde(session, tenant_id):
     assert "würde übernommen" in text
     assert "(übernommen)" not in text
     assert item(session, tenant_id, "23").price_cents == 690
+
+
+def test_alte_grossschreibung_wird_angeglichen_statt_verdoppelt(session, tenant_id):
+    """Codex PR #117: ein frueher als "23A" importiertes Gericht bleibt ein Gericht."""
+    session.add(
+        MenuItem(
+            tenant_id=tenant_id,
+            number="23A",
+            name="Alt",
+            category="Test",
+            price_cents=100,
+        )
+    )
+    session.commit()
+    karte = "number;name;category;price_eur\n23a;Neu;Test;1,00\n"
+
+    leer = {
+        OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n",
+        ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
+        ALIASES_FILE: "number;alias\n23a;neu\n",
+    }
+
+    report = run(session, tenant_id, files={MENU_FILE: karte, **leer})
+
+    assert report.items_new == [] and "23a" in report.items_updated
+    assert count(session, MenuItem) == 1
+    neu = item(session, tenant_id, "23a")
+    assert neu is not None and neu.name == "Neu"
