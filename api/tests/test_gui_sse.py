@@ -29,6 +29,7 @@ class FakeRequest:
 def feste_kopfzeile(monkeypatch):
     """Die meisten Tests hier pruefen die Spalte Heute; die Kopfzeile steht still."""
     monkeypatch.setattr(sse, "_header_token", lambda *_: "h0")
+    monkeypatch.setattr(sse, "_callbacks_token", lambda *_: "c0")
 
 
 def drain(stream: AsyncIterator[str]) -> list[str]:
@@ -186,10 +187,12 @@ def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
     assert chunks[1:] == [
         "event: header\ndata: h0\n\n",
         "event: today\ndata: 0:-\n\n",
+        "event: callbacks\ndata: c0\n\n",
         "event: problem\ndata: db\n\n",
-        # Nach der Erholung beide Signale, damit Liste und Kopfzeile frisch sind.
+        # Nach der Erholung alle Signale, damit jeder Bereich frisch ist.
         "event: header\ndata: h0\n\n",
         "event: today\ndata: 0:-\n\n",
+        "event: callbacks\ndata: c0\n\n",
     ]
 
 
@@ -204,8 +207,23 @@ def test_umgeschaltete_kopfzeile_sendet_nur_header(monkeypatch):
     assert [c for c in chunks if c.startswith("event:")] == [
         "event: header\ndata: h0\n\n",
         "event: today\ndata: 0:-\n\n",
+        "event: callbacks\ndata: c0\n\n",
         "event: header\ndata: h1\n\n",
     ]
+
+
+def test_neuer_rueckruf_sendet_nur_callbacks(monkeypatch):
+    """Ein neuer Rückruf lädt nur seine Spalte nach, nicht Kopfzeile und Liste."""
+    monkeypatch.setattr(sse, "_token", lambda *_: "0:-")
+    rueck = iter(["0:x", "1:y"])
+    monkeypatch.setattr(sse, "_callbacks_token", lambda *_: next(rueck))
+
+    chunks = drain(stream(FakeRequest(), max_ticks=2))
+
+    assert [c for c in chunks if c.startswith("event:")][-1] == (
+        "event: callbacks\ndata: 1:y\n\n"
+    )
+    assert len([c for c in chunks if c.startswith("event:")]) == 4
 
 
 def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):

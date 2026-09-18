@@ -328,3 +328,98 @@ def test_fremder_status_kommt_als_json(client, tenant_id):
     response = client.post("/gui/kopfzeile/wartezeit/20", headers=HX)
 
     assert response.headers["content-type"].startswith("application/json")
+
+
+# --- Spalte Rueckrufe (T-3.4) -------------------------------------------------
+
+
+def rueckruf(
+    engine, tenant_id, *, reason="not_understood", summary="Bitte zurueckrufen"
+):
+    from api.models import Callback
+
+    with Session(engine) as s:
+        call = Call(
+            tenant_id=tenant_id,
+            external_session_id=uuid.uuid4().hex,
+            started_at=datetime.now(BERLIN),
+            delete_after=datetime.now(BERLIN).date(),
+        )
+        s.add(call)
+        s.flush()
+        cb = Callback(
+            tenant_id=tenant_id,
+            call_id=call.id,
+            phone="+4917612345678",
+            reason=reason,
+            summary=summary,
+        )
+        s.add(cb)
+        s.commit()
+        return cb.id
+
+
+def test_spalte_rueckrufe_zeigt_karte(client, engine, tenant_id):
+    rueckruf(engine, tenant_id, reason="complaint", summary="Letzte Lieferung war kalt")
+
+    body = client.get("/gui/").text
+
+    assert 'id="rueckrufe-liste"' in body
+    assert "Beschwerde" in body and "Letzte Lieferung war kalt" in body
+    assert 'href="tel:+4917612345678"' in body and "Erledigt" in body
+    # Code-Werte bleiben im Attribut fuer app.js, nie im sichtbaren Text.
+    assert 'data-reason="complaint"' in body and ">complaint<" not in body
+
+
+def test_rueckrufe_leerzustand(client, tenant_id):
+    body = client.get("/gui/fragments/rueckrufe").text
+
+    assert "Keine R&uuml;ckrufe offen." in body and "<html" not in body
+
+
+def test_beschwerde_steht_oben(client, engine, tenant_id):
+    rueckruf(engine, tenant_id, summary="Erster normaler")
+    rueckruf(engine, tenant_id, reason="complaint", summary="Spaete Beschwerde")
+
+    body = client.get("/gui/fragments/rueckrufe").text
+
+    assert body.index("Spaete Beschwerde") < body.index("Erster normaler")
+
+
+def test_erledigt_nimmt_die_karte_weg(client, engine, tenant_id):
+    cb_id = rueckruf(engine, tenant_id, summary="Weg damit")
+
+    response = client.post(f"/gui/rueckrufe/{cb_id}/erledigt", headers=HX)
+
+    assert response.status_code == 200
+    assert "Weg damit" not in response.text
+    assert "Keine R&uuml;ckrufe offen." in response.text
+
+
+def test_erledigt_ohne_hx_request_verboten(client, engine, tenant_id):
+    cb_id = rueckruf(engine, tenant_id, summary="Bleibt stehen")
+
+    assert client.post(f"/gui/rueckrufe/{cb_id}/erledigt").status_code == 403
+    assert "Bleibt stehen" in client.get("/gui/fragments/rueckrufe").text
+
+
+def test_unbekannter_rueckruf_liefert_frische_liste(client, engine, tenant_id):
+    """Anderes Tablet war schneller: kein Fehler, die aktuelle Liste ist die Antwort."""
+    rueckruf(engine, tenant_id, summary="Noch offen")
+
+    response = client.post(f"/gui/rueckrufe/{uuid.uuid4()}/erledigt", headers=HX)
+
+    assert response.status_code == 200 and "Noch offen" in response.text
+
+
+def test_rueckrufe_ohne_mandant_klartext(client):
+    response = client.get("/gui/fragments/rueckrufe")
+
+    assert response.status_code == 503 and "Keine Betriebsdaten" in response.text
+
+
+def test_rueckrufe_bleiben_schnell(client, engine, tenant_id):
+    for i in range(20):
+        rueckruf(engine, tenant_id, summary=f"Gast {i}")
+
+    assert p95_ms(lambda: client.get("/gui/fragments/rueckrufe")) < 300
