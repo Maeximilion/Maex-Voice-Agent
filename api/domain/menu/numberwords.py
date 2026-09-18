@@ -301,6 +301,15 @@ def find_item_number(text: str) -> int | None:
     return uebrig[0].value if len(uebrig) == 1 else None
 
 
+def has_item_number_marker(text: str) -> bool:
+    """Steht ein ausdrückliches "Nummer"/"Nr." im Satz?
+
+    Ohne Marker ist eine nackte Zahl neben einem Gerichtnamen eher eine Menge:
+    "zwei Frühlingsrollen" meint nicht Gericht 2 (search_menu, T-4.3).
+    """
+    return any(token in _ITEM_NUMBER_MARKERS for token in _tokens(text))
+
+
 def find_quantity(text: str) -> int | None:
     """Die Menge, aber nur mit Marker: "zweimal", "2 x", "drei Portionen".
 
