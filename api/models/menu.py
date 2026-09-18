@@ -6,7 +6,8 @@ durch eine schlechte Leitung.
 
 Die Kindtabellen (Optionen, Allergene, Aliase) tragen kein eigenes tenant_id:
 sie hängen an genau einem Gericht und erreichen den Mandanten über dessen
-Zeile, wie es docs/03 je Tabelle festlegt.
+Zeile, wie es docs/03 je Tabelle festlegt. Anders order_items (orders.py): die
+Position hat zwei Eltern und muss beide im selben Mandanten halten.
 """
 
 import uuid
@@ -41,6 +42,9 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     __tablename__ = "menu_items"
     __table_args__ = (
         UniqueConstraint("tenant_id", "number", name="uq_menu_items_tenant_number"),
+        # Ziel des zusammengesetzten Fremdschluessels aus order_items: eine
+        # Position darf nur auf ein Gericht desselben Mandanten zeigen.
+        UniqueConstraint("id", "tenant_id", name="uq_menu_items_id_tenant"),
         CheckConstraint("price_cents >= 0", name="ck_menu_items_price_cents"),
         # Trigram-Suche fuer search_menu (docs/04): "Fruehlingsrolle" findet
         # "Frühlingsrollen (4 Stück)" auch bei Tippfehlern der Erkennung.

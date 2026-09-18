@@ -39,6 +39,9 @@ def test_upgrade_erzeugt_stufe2_tabellen(scratch_db_url):
 
 
 def test_modelle_und_migration_beschreiben_dasselbe_schema(scratch_db_url):
+    # Selbst migrieren: einzeln oder in anderer Reihenfolge laeuft der Test sonst
+    # gegen eine leere Datenbank (Befund Codex PR #114).
+    command.upgrade(_config(scratch_db_url), "head")
     engine = create_engine(scratch_db_url)
     try:
         with engine.connect() as conn:
@@ -51,6 +54,7 @@ def test_modelle_und_migration_beschreiben_dasselbe_schema(scratch_db_url):
 
 def test_downgrade_auf_001_laesst_stufe1_samt_daten_stehen(scratch_db_url):
     """Zurueck auf 001 nimmt nur Stufe 2 weg; Reservierungen und Anrufe bleiben."""
+    command.upgrade(_config(scratch_db_url), "head")
     engine = create_engine(scratch_db_url)
     with engine.begin() as conn:
         conn.execute(text("INSERT INTO tenants (name) VALUES ('Bleibt')"))
@@ -274,10 +278,10 @@ def test_position_ohne_gericht_scheitert(conn):
     with pytest.raises(IntegrityError):
         conn.execute(
             text(
-                "INSERT INTO order_items (order_id, quantity, unit_price_cents) "
-                "VALUES (:o, 1, 690)"
+                "INSERT INTO order_items (tenant_id, order_id, quantity, unit_price_cents) "
+                "VALUES (:t, :o, 1, 690)"
             ),
-            {"o": order},
+            {"t": t, "o": order},
         )
 
 
@@ -288,10 +292,10 @@ def test_menge_muss_positiv_sein(conn, menge):
     with pytest.raises(IntegrityError):
         conn.execute(
             text(
-                "INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) "
-                "VALUES (:o, :i, :q, 690)"
+                "INSERT INTO order_items (tenant_id, order_id, menu_item_id, quantity, unit_price_cents) "
+                "VALUES (:t, :o, :i, :q, 690)"
             ),
-            {"o": order, "i": item, "q": menge},
+            {"t": t, "o": order, "i": item, "q": menge},
         )
 
 
@@ -301,10 +305,10 @@ def test_bestelltes_gericht_laesst_sich_nicht_loeschen(conn):
     order, item = _order(conn, t, _call(conn, t)), _item(conn, t)
     conn.execute(
         text(
-            "INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) "
-            "VALUES (:o, :i, 2, 690)"
+            "INSERT INTO order_items (tenant_id, order_id, menu_item_id, quantity, unit_price_cents) "
+            "VALUES (:t, :o, :i, 2, 690)"
         ),
-        {"o": order, "i": item},
+        {"t": t, "o": order, "i": item},
     )
     with pytest.raises(IntegrityError):
         conn.execute(text("DELETE FROM menu_items WHERE id = :i"), {"i": item})
@@ -315,10 +319,10 @@ def test_optionen_standardmaessig_leere_liste(conn):
     order, item = _order(conn, t, _call(conn, t)), _item(conn, t)
     options = conn.execute(
         text(
-            "INSERT INTO order_items (order_id, menu_item_id, quantity, unit_price_cents) "
-            "VALUES (:o, :i, 1, 690) RETURNING options"
+            "INSERT INTO order_items (tenant_id, order_id, menu_item_id, quantity, unit_price_cents) "
+            "VALUES (:t, :o, :i, 1, 690) RETURNING options"
         ),
-        {"o": order, "i": item},
+        {"t": t, "o": order, "i": item},
     ).scalar_one()
     assert options == []
 
@@ -348,3 +352,36 @@ def test_ungueltiger_lmiv_code_scheitert(conn, code):
             ),
             {"i": item, "c": code},
         )
+
+
+def _position(conn, tenant_id, order_id, item_id):
+    conn.execute(
+        text(
+            "INSERT INTO order_items (tenant_id, order_id, menu_item_id, quantity, unit_price_cents) "
+            "VALUES (:t, :o, :i, 1, 690)"
+        ),
+        {"t": tenant_id, "o": order_id, "i": item_id},
+    )
+
+
+def test_gericht_eines_fremden_mandanten_scheitert(conn):
+    """Befund Codex PR #114: Bestellung von A darf kein Gericht von B enthalten."""
+    a, b = _tenant(conn, "A"), _tenant(conn, "B")
+    order_a = _order(conn, a, _call(conn, a))
+    item_b = _item(conn, b)
+    with pytest.raises(IntegrityError):
+        _position(conn, a, order_a, item_b)
+
+
+def test_position_mit_fremdem_mandanten_zur_bestellung_scheitert(conn):
+    """Auch die Position selbst kann sich nicht in einen anderen Mandanten schreiben."""
+    a, b = _tenant(conn, "A"), _tenant(conn, "B")
+    order_a = _order(conn, a, _call(conn, a))
+    item_b = _item(conn, b)
+    with pytest.raises(IntegrityError):
+        _position(conn, b, order_a, item_b)
+
+
+def test_position_im_selben_mandanten_geht(conn):
+    t = _tenant(conn)
+    _position(conn, t, _order(conn, t, _call(conn, t)), _item(conn, t))

@@ -12,7 +12,17 @@ gibt es erst in Stufe 3. `address_id` kommt mit 003 (docs/03
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,6 +50,8 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
         ),
         # Spalte "Neue Bestellungen" und Tagesbericht lesen je Mandant nach Zeit.
         Index("ix_orders_tenant_created", "tenant_id", "created_at"),
+        # Ziel des zusammengesetzten Fremdschluessels aus order_items.
+        UniqueConstraint("id", "tenant_id", name="uq_orders_id_tenant"),
     )
 
     call_id: Mapped[uuid.UUID] = mapped_column(
@@ -66,21 +78,37 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     handover_state: Mapped[str | None] = mapped_column(Text)
 
 
-class OrderItem(UUIDPrimaryKey, Timestamps, Base):
-    """Eine Position. Ohne menu_item_id keine Position (CLAUDE.md §2 Regel 2)."""
+class OrderItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """Eine Position. Ohne menu_item_id keine Position (CLAUDE.md §2 Regel 2).
+
+    Zwei Eltern, ein Mandant: Bestellung und Gericht werden je über (id,
+    tenant_id) referenziert, sonst prüft die Datenbank beide Schlüssel einzeln
+    und nimmt ein Gericht von Mandant B in eine Bestellung von Mandant A
+    (Befund Codex PR #114).
+    """
 
     __tablename__ = "order_items"
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_order_items_quantity"),
         CheckConstraint("unit_price_cents >= 0", name="ck_order_items_unit_price"),
+        ForeignKeyConstraint(
+            ["order_id", "tenant_id"],
+            ["orders.id", "orders.tenant_id"],
+            ondelete="CASCADE",
+            name="fk_order_items_order_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["menu_item_id", "tenant_id"],
+            ["menu_items.id", "menu_items.tenant_id"],
+            ondelete="RESTRICT",
+            name="fk_order_items_menu_item_tenant",
+        ),
     )
 
     order_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("orders.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
-    menu_item_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("menu_items.id", ondelete="RESTRICT"), nullable=False
-    )
+    menu_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     # Preis zum Bestellzeitpunkt, eingefroren: eine spätere Preisänderung auf der
     # Karte ändert keine bestätigte Bestellung.

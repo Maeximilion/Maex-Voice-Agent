@@ -67,6 +67,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("tenant_id", "number", name="uq_menu_items_tenant_number"),
+        sa.UniqueConstraint("id", "tenant_id", name="uq_menu_items_id_tenant"),
     )
     op.create_index(
         op.f("ix_menu_items_tenant_id"), "menu_items", ["tenant_id"], unique=False
@@ -204,6 +205,7 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("idempotency_key"),
+        sa.UniqueConstraint("id", "tenant_id", name="uq_orders_id_tenant"),
     )
     op.create_index(op.f("ix_orders_tenant_id"), "orders", ["tenant_id"], unique=False)
     op.create_index(
@@ -224,21 +226,36 @@ def upgrade() -> None:
         ),
         sa.Column("note", sa.Text(), nullable=True),
         _id(),
+        sa.Column("tenant_id", sa.UUID(), nullable=False),
         *_timestamps(),
         sa.CheckConstraint("quantity > 0", name="ck_order_items_quantity"),
         sa.CheckConstraint("unit_price_cents >= 0", name="ck_order_items_unit_price"),
-        sa.ForeignKeyConstraint(["order_id"], ["orders.id"], ondelete="CASCADE"),
+        # Bestellung und Gericht im selben Mandanten (Befund Codex PR #114).
         sa.ForeignKeyConstraint(
-            ["menu_item_id"], ["menu_items.id"], ondelete="RESTRICT"
+            ["order_id", "tenant_id"],
+            ["orders.id", "orders.tenant_id"],
+            ondelete="CASCADE",
+            name="fk_order_items_order_tenant",
         ),
+        sa.ForeignKeyConstraint(
+            ["menu_item_id", "tenant_id"],
+            ["menu_items.id", "menu_items.tenant_id"],
+            ondelete="RESTRICT",
+            name="fk_order_items_menu_item_tenant",
+        ),
+        sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"], ondelete="RESTRICT"),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
         op.f("ix_order_items_order_id"), "order_items", ["order_id"], unique=False
     )
+    op.create_index(
+        op.f("ix_order_items_tenant_id"), "order_items", ["tenant_id"], unique=False
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(op.f("ix_order_items_tenant_id"), table_name="order_items")
     op.drop_index(op.f("ix_order_items_order_id"), table_name="order_items")
     op.drop_table("order_items")
     op.drop_index("ix_orders_tenant_created", table_name="orders")

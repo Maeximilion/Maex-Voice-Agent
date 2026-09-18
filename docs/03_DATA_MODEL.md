@@ -225,6 +225,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | id | UUID PK | |
+| tenant_id | UUID FK | Mandant der Position; Bestellung und Gericht werden je über `(id, tenant_id)` referenziert, damit beide im selben Mandanten liegen |
 | order_id | UUID FK | |
 | menu_item_id | UUID FK | **Pflicht.** Ohne ID keine Position. |
 | quantity | INT | |
