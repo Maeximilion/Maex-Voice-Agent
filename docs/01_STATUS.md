@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 17.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.13.0
+> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.13.1
 
 ---
 
@@ -212,6 +212,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.13.1 · 18.09.2026:** Latenztests: p95_ms misst bis zu 3 Reihen und wertet die beste, Budget bleibt 300 ms lokal und in CI (docs/04 §1)
 - **v1.10.1 · 17.09.2026:** Codex review PR #102 (P2 x3) fixed: understanding_failure deduped per customer turn, storno as a noun recognized, escalation callbacks carry the triggering customer text
 - **v1.10.0 · 17.09.2026:** T-2.2 done: agent/ladder.py + escalation.py, wired into loop.py; leads to T-2.3 first terminal conversation
 - **v1.9.1 · 17.09.2026:** Codex review PR #101 (P1 x3, P2 x2) fixed: state_patch on LLMTurn so extracted slot values survive to the next turn, reservation_id exposed in prompt state for confirm, max_call_seconds/hop-limit abort now really hands off to transfer_to_team/create_callback instead of only announcing it, deadline rechecked every tool hop, tool say forwarded to the model
