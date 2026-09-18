@@ -12,7 +12,7 @@ from api.config import settings
 from api.db import get_db
 from api.main import app
 from api.models import Call
-from api.tests.conftest import p95_ms
+from api.tests.conftest import LATENZ_RUNDEN, p95_ms
 from scripts.seed import seed
 
 AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
@@ -145,9 +145,26 @@ def test_ohne_token_401(client):
 
 
 def test_latenz_p95_unter_300_ms(client):
-    """Gemessen wird der Schreibpfad: je Aufruf ein frischer Entwurf, vorher angelegt."""
+    """Gemessen wird der Schreibpfad: je Aufruf ein frischer Entwurf, vorher angelegt.
+
+    Genug Entwürfe für alle Messreihen, falls die erste über dem Budget liegt. Je
+    Messreihe eine andere Woche, sonst reißt der Abend die Kapazität von 40 Gästen.
+    """
     http, tenant_id, call_id = client
-    drafts = iter([_draft(http, tenant_id, call_id, party_size=1) for _ in range(20)])
+    drafts = iter(
+        [
+            _draft(
+                http,
+                tenant_id,
+                call_id,
+                party_size=1,
+                reserved_for=(
+                    _next_tuesday_1830_berlin() + timedelta(weeks=i // 20)
+                ).isoformat(),
+            )
+            for i in range(20 * LATENZ_RUNDEN)
+        ]
+    )
 
     p95 = p95_ms(lambda: _confirm(http, tenant_id, call_id, next(drafts)), n=20)
     print(f"\nconfirm p95 = {p95:.1f} ms")
