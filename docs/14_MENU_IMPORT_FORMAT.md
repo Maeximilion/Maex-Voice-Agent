@@ -8,7 +8,7 @@
 ## `menu_items.csv`
 | Spalte | Typ | Beispiel | Regel |
 |---|---|---|---|
-| number | Text | `23` | Pflicht, eindeutig. Text, weil „23a" vorkommen kann. **Nur Ziffern (führende Nullen erlaubt), optional ein Buchstabe a bis f**: `23`, `23a`, `007`. Alles andere (`23g`, `A12`, `12-3`) lehnt der Import ab - die Suche könnte es nicht eindeutig auflösen und fände sonst still ein anderes Gericht. Braucht eine Karte ein anderes Format, wird es bewusst erweitert. |
+| number | Text | `23` | Pflicht, eindeutig. Text, weil „23a" vorkommen kann. **Nur Zahlen bis 999 (führende Nullen erlaubt), optional ein Buchstabe a bis f**: `23`, `23a`, `007`. Der Buchstabe wird klein gespeichert, `23A` und `23a` sind dieselbe Nummer. Alles andere (`23g`, `A12`, `12-3`) lehnt der Import ab - die Suche könnte es nicht eindeutig auflösen und fände sonst still ein anderes Gericht. Braucht eine Karte ein anderes Format, wird es bewusst erweitert. |
 | name | Text | `Frühlingsrollen (4 Stück)` | Pflicht |
 | category | Text | `Vorspeisen` | Pflicht, freie Gruppierung |
 | price_eur | Dezimal | `6,90` | Pflicht, wird zu `690` Cent. Nur Ziffern und Komma. |

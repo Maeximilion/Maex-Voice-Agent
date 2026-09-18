@@ -274,3 +274,46 @@ def test_kartennummer_ausserhalb_des_suchformats(nummer):
     )
     assert not plan.ok
     assert "Kartennummer" in plan.errors[0] and nummer in plan.errors[0]
+
+
+@pytest.mark.parametrize("nummer", ["1000", "1000a", "12345"])
+def test_kartennummer_ueber_dem_zahlbereich_der_suche(nummer):
+    """numberwords liest bis 999: groessere Nummern waeren per Nummer nie findbar."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok and "Kartennummer" in plan.errors[0]
+
+
+@pytest.mark.parametrize("nummer", ["999", "0999", "0007"])
+def test_kartennummer_bis_999_auch_mit_nullen(nummer):
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert plan.ok, plan.errors
+
+
+def test_buchstabe_wird_klein_gespeichert():
+    plan = parse({MENU_FILE: "number;name;category;price_eur\n23A;Gericht;Test;1,00\n"})
+    assert plan.ok and set(plan.items) == {"23a"}
+
+
+def test_gross_und_klein_sind_dieselbe_nummer():
+    """Sonst entstehen 23a und 23A, und jede Suche nach "Nummer 23a" fragt nach."""
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n23a;Eins;Test;1,00\n23A;Zwei;Test;1,00\n"
+        }
+    )
+    assert not plan.ok and "Nummer 23a doppelt" in plan.errors[0]
+
+
+def test_optionen_finden_die_nummer_unabhaengig_von_der_schreibweise():
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n23A;Gericht;Test;1,00\n",
+            OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n"
+            "23a;Größe;groß;1,00;nein;nein\n",
+        }
+    )
+    assert plan.ok, plan.errors and "23a" in plan.options

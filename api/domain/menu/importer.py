@@ -61,9 +61,11 @@ _COLUMNS = {
 # "6,90", "6,9", "6" - nur Ziffern und Komma (docs/14). Punkt als Dezimal- oder
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
-# Kartennummern, die search_menu eindeutig auflöst: Ziffern (führende Nullen
-# erlaubt), optional ein Buchstabe a bis f. Muss zu numberwords._SUFFIXES passen.
-_CARD_NUMBER = re.compile(r"\d+[a-fA-F]?")
+# Kartennummern, die search_menu eindeutig auflöst: höchstens drei Stellen ohne
+# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis f
+# (numberwords._SUFFIXES). Geprüft wird die klein geschriebene Nummer: 23a und
+# 23A wären sonst zwei Gerichte, die die Suche nie auseinanderhält.
+_CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
 
 
 @dataclass(frozen=True)
@@ -227,7 +229,7 @@ def parse(files: Mapping[str, str | None]) -> Plan:
     first_line: dict[str, int] = {}
     for line, row in _rows(plan, MENU_FILE, files[MENU_FILE]):
         where = f"{MENU_FILE} Zeile {line}"
-        number = row["number"]
+        number = row["number"].lower()
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
@@ -235,8 +237,8 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
             # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
             plan.errors.append(
-                f"{where}: Kartennummer „{number}“ versteht die Suche nicht "
-                "(erlaubt: Ziffern, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
+                f"{where}: Kartennummer „{row['number']}“ versteht die Suche nicht "
+                "(erlaubt: bis 999, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
             )
             continue
         if number in first_line:
@@ -289,7 +291,7 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, int]) -> No
     seen: set[tuple[str, str, str]] = set()
     for line, row in _rows(plan, OPTIONS_FILE, text):
         where = f"{OPTIONS_FILE} Zeile {line}"
-        number = row["number"]
+        number = row["number"].lower()
         if not _known(plan, where, number, known):
             continue
         delta = parse_eur(row["price_delta_eur"] or "0")
@@ -337,7 +339,7 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, int]) -> No
 def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, int]) -> None:
     for line, row in _rows(plan, ALLERGENS_FILE, text):
         where = f"{ALLERGENS_FILE} Zeile {line}"
-        number = row["number"]
+        number = row["number"].lower()
         if not _known(plan, where, number, known):
             continue
         if number in plan.allergens:
@@ -363,7 +365,7 @@ def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, int]) -> 
 def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, int]) -> None:
     for line, row in _rows(plan, ALIASES_FILE, text):
         where = f"{ALIASES_FILE} Zeile {line}"
-        number = row["number"]
+        number = row["number"].lower()
         if not _known(plan, where, number, known):
             continue
         alias = normalize_alias(row["alias"])
