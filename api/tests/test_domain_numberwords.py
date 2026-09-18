@@ -388,3 +388,32 @@ def test_x_ohne_marker_ist_menge_und_keine_nummer():
 def test_x_als_menge_bleibt_menge():
     ref = find_item_number_ref("2x die 23")
     assert ref is not None and ref.text == "23" and ref.valid is True
+
+
+def test_abgesetztes_x_nach_markierter_nummer_ist_ungueltig():
+    """Codex PR #117: "Nummer 23 x" ist nicht die 23."""
+    ref = find_item_number_ref("Nummer 23 x")
+    assert ref is not None and ref.text == "23x" and ref.valid is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23 mit 2 Soßen", "Nummer 23 um 12 Uhr", "Nummer 23 für 4 Personen"],
+)
+def test_zahl_ohne_korrekturwort_ist_keine_alternative(text):
+    """Codex PR #117: nur "oder", "nein" & Co. machen eine zweite Zahl zur Wahl."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23" and ref.valid is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nummer 23 oder 24",
+        "Nummer 23, nein 24",
+        "Nummer 23 bzw. 24",
+        "Nummer 23, lieber 24",
+    ],
+)
+def test_korrekturwort_macht_die_zweite_zahl_zur_alternative(text):
+    assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]

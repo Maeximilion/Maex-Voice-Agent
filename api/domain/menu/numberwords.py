@@ -337,8 +337,10 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
         return ItemNumber(span.value, card + suffix, marked, valid)
     if nxt in _SUFFIXES:
         return ItemNumber(span.value, card + nxt, marked)
-    if len(nxt) == 1 and nxt.isalpha() and nxt != "x":
-        # "Nummer 23 g": einzelner Buchstabe ohne Karte - ungültig, nicht 23.
+    if len(nxt) == 1 and nxt.isalpha() and (nxt != "x" or marked):
+        # "Nummer 23 g", "Nummer 23 x": einzelner Buchstabe ohne Karte -
+        # ungültig, nicht 23 (Codex PR #117). Ohne Marker ist "23 x" eine Menge
+        # und kommt hier gar nicht an.
         return ItemNumber(span.value, card + nxt, marked, valid=False)
     return ItemNumber(value=span.value, text=card, marked=marked)
 
@@ -346,6 +348,17 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
 def _canonical(card: str) -> str:
     """Kartennummer ohne führende Nullen, so wie search_menu sie vergleicht."""
     return card.lstrip("0") or "0"
+
+
+# Wörter, die eine zweite Zahl zur Alternative oder Korrektur machen.
+_ALTERNATIVE_WORDS = frozenset(
+    {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
+)
+
+
+def _connected(tokens: list[str], after: int, before: int) -> bool:
+    """Steht zwischen zwei Zahlen ein Wort für Alternative oder Korrektur?"""
+    return any(t in _ALTERNATIVE_WORDS for t in tokens[after:before])
 
 
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
@@ -361,17 +374,22 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
             spans.append(span)
     if not spans:
         return []
-    # Weitere Zahlen **hinter** der ersten markierten Nummer, die keine Menge
-    # sind, sind Alternative oder Korrektur: "Nummer 23 oder 24", "Nummer 23,
-    # nein 24" (Codex PR #117, P1). Zahlen davor bleiben Mengen: "zwei Nummer 23".
+    # Weitere Zahlen hinter der ersten markierten Nummer sind Alternative oder
+    # Korrektur, aber nur mit einem Wort, das das sagt: "Nummer 23 oder 24",
+    # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" oder
+    # "um 12 Uhr" ist ein Detail, keine zweite Nummer (P2). Zahlen vor dem
+    # Marker bleiben Mengen: "zwei Nummer 23".
     mengen = _quantity_spans(tokens)
-    spans += [
-        span
-        for span in _number_spans(tokens)
-        if span.start > spans[0].start
-        and not any(span.overlaps(m) for m in mengen)
-        and not any(span.overlaps(s) for s in spans)
-    ]
+    for span in _number_spans(tokens):
+        if (
+            span.start > spans[0].start
+            and not any(span.overlaps(m) for m in mengen)
+            and not any(span.overlaps(s) for s in spans)
+            and _connected(
+                tokens, max(s.end for s in spans if s.start < span.start), span.start
+            )
+        ):
+            spans.append(span)
     spans.sort(key=lambda s: s.start)
     found: list[ItemNumber] = []
     for span in spans:
