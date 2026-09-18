@@ -305,3 +305,26 @@ def test_fehlende_konfiguration_rote_leiste(client, engine, tenant_id):
 def test_schalten_bleibt_schnell(client, tenant_id):
     assert p95_ms(lambda: client.post("/gui/kopfzeile/lieferung/aus", headers=HX)) < 300
     assert p95_ms(lambda: client.get("/gui/fragments/kopfzeile")) < 300
+
+
+def test_nur_html_fehler_ersetzen_die_kopfzeile():
+    """Befund Codex P2 (PR #111): Fehler ausserhalb von AppError kommen als JSON.
+
+    main.py uebersetzt HTTPException und unbehandelte Fehler in die JSON-Huelle.
+    Tauscht app.js die ungeprueft ein, steht JSON statt Knoepfen in der Kopfzeile.
+    Kein JS-Testlauf im Projekt, deshalb der Vertrag als Textpruefung.
+    """
+    gui = Path(__file__).resolve().parents[1] / "gui"
+    js = (gui / "static" / "app.js").read_text(encoding="utf-8")
+    base = (gui / "templates" / "base.html").read_text(encoding="utf-8")
+
+    assert 'getResponseHeader("Content-Type")' in js and "text/html" in js
+    # Alles andere zeigt die rote Leiste mit "Nochmal versuchen" (docs/06 §5).
+    assert 'id="stoerung"' in base and "Nochmal versuchen" in base
+
+
+def test_fremder_status_kommt_als_json(client, tenant_id):
+    """Warum der Test oben noetig ist: ein 404 aus dem Router ist JSON, kein HTML."""
+    response = client.post("/gui/kopfzeile/wartezeit/20", headers=HX)
+
+    assert response.headers["content-type"].startswith("application/json")

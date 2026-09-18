@@ -161,10 +161,21 @@ def raise_wait(
 def config_change_token(session: Session, tenant_id: uuid.UUID) -> str:
     """Fingerabdruck der Kopfzeile für den Ereignisstrom (gui/sse.py).
 
-    updated_at reicht: jede Änderung an der Zeile setzt es neu, auch die aus
-    einem anderen Prozess oder direkt in der Datenbank.
+    Die angezeigten Werte selbst, nicht nur updated_at: das setzt allein das ORM
+    (onupdate), ein rohes UPDATE in der Datenbank laesst es stehen und die Tablets
+    blieben auf dem alten Stand. updated_at bleibt dabei, damit auch eine
+    Aenderung hin und wieder zurueck innerhalb eines Takts ein Signal gibt.
     """
-    updated = session.scalars(
-        select(ServiceConfig.updated_at).where(ServiceConfig.tenant_id == tenant_id)
+    row = session.execute(
+        select(
+            ServiceConfig.call_mode,
+            ServiceConfig.delivery_enabled,
+            ServiceConfig.pickup_wait_minutes,
+            ServiceConfig.delivery_wait_minutes,
+            ServiceConfig.updated_at,
+        ).where(ServiceConfig.tenant_id == tenant_id)
     ).first()
-    return updated.isoformat() if updated else "-"
+    if row is None:
+        return "-"
+    mode, delivery, pickup, delivery_wait, updated = row
+    return f"{mode}:{int(delivery)}:{pickup}:{delivery_wait}:{updated.isoformat()}"

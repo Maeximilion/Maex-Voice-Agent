@@ -182,3 +182,22 @@ def test_token_aendert_sich_mit_jedem_schalter(session, tenant_id):
 
     assert switches.config_change_token(session, tenant_id) != vorher
     assert switches.config_change_token(session, uuid.uuid4()) == "-"
+
+
+def test_token_sieht_auch_direkte_aenderungen_in_der_db(session, tenant_id):
+    """Befund Codex P2 (PR #111): updated_at setzt nur das ORM.
+
+    Ein rohes UPDATE laesst updated_at stehen; haengt der Fingerabdruck nur daran,
+    zeigen alle Tablets den alten Stand, bis jemand am Tablet schaltet.
+    """
+    from sqlalchemy import text
+
+    vorher = switches.config_change_token(session, tenant_id)
+
+    session.execute(
+        text("UPDATE service_config SET call_mode = 'paused' WHERE tenant_id = :t"),
+        {"t": tenant_id},
+    )
+    session.commit()
+
+    assert switches.config_change_token(session, tenant_id) != vorher

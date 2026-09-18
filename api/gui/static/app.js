@@ -6,13 +6,28 @@
   var banner = document.getElementById("verbindung");
   var liste = document.getElementById("heute-liste");
 
+  var stoerung = document.getElementById("stoerung");
+
   // Ein Tap, der am Server scheitert, liefert trotzdem die Kopfzeile mit der
   // roten Leiste. htmx tauscht bei 4xx/5xx sonst nichts aus, und der Knopf
-  // saehe aus, als haette er nichts getan.
+  // saehe aus, als haette er nichts getan. Getauscht wird aber nur HTML: andere
+  // Fehler (HTTPException, unbehandelte Ausnahmen) kommen aus main.py als
+  // JSON-Huelle, die an die Stelle der Knoepfe oder der Liste zu setzen waere
+  // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
+  // rote Leiste oben meldet es (docs/06 §5).
   document.body.addEventListener("htmx:beforeSwap", function (e) {
-    if (e.detail.xhr.status >= 400 && e.detail.xhr.responseText) {
+    var xhr = e.detail.xhr;
+    if (xhr.status < 400) {
+      if (stoerung) stoerung.hidden = true;
+      return;
+    }
+    var typ = xhr.getResponseHeader("Content-Type") || "";
+    if (typ.indexOf("text/html") === 0 && xhr.responseText) {
       e.detail.shouldSwap = true;
       e.detail.isError = false;
+    } else {
+      e.detail.shouldSwap = false;
+      if (stoerung) stoerung.hidden = false;
     }
   });
   // Server nicht erreichbar: gelbe Leiste statt stiller Knopf (docs/06 §5).
