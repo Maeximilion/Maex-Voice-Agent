@@ -14,6 +14,7 @@ import re
 import unicodedata
 
 _SPACE = re.compile(r"\s+")
+_CARD_NUMBER = re.compile(r"\d+[a-f]?")
 # Satzzeichen am Rand tragen am Telefon nichts; im Wort ("Wan-Tan") bleiben sie.
 # Dazu die typografischen Anfuehrungszeichen, als Escape geschrieben, damit sie
 # im Quelltext nicht mit Komma oder Apostroph zu verwechseln sind.
@@ -37,7 +38,8 @@ def _is_number_word(token: str) -> bool:
     # Import hier, weil numberwords normalize nicht kennt und nicht kennen soll.
     from api.domain.menu.numberwords import parse_cardinal
 
-    if token.isdigit() or parse_cardinal(token) is not None:
+    # "23a": Kartennummer mit Buchstabe, kein Teil des Gerichtnamens.
+    if _CARD_NUMBER.fullmatch(token) or parse_cardinal(token) is not None:
         return True
     # "zweimal", "dreimal": Menge, kein Teil des Gerichtnamens.
     return token.endswith("mal") and parse_cardinal(token[:-3]) is not None

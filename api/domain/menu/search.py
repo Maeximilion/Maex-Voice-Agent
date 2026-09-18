@@ -21,6 +21,7 @@ aus. Bei einer Karte von ein paar hundert Zeilen ist das schneller als jede
 Vorfilterung; der GIN-Index trägt die Suche, sobald die Karte wächst.
 """
 
+import re
 import uuid
 from datetime import datetime
 
@@ -44,6 +45,25 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_SOLD_OUT = "{name} ist heute leider aus."
 AMBIGUOUS_LIMIT = 3
+
+
+# Ziffern, optional ein Buchstabe direkt oder nach einem Leerzeichen: "23a",
+# "23 a", "023". Nur a bis f: Karten zählen Varianten mit a, b, c; ein "x"
+# dahinter ist die Menge ("2 x die 23").
+_TEXT_NUMBER = re.compile(r"(?<!\w)(\d+)(?:\s?([a-f]))?(?!\w)", re.IGNORECASE)
+
+
+def _spoken_number(query: str, number: int) -> str:
+    """Die genannte Nummer als Text, so wie sie auf der Karte stehen kann.
+
+    Ziffern im Satz behalten Buchstaben und führende Nullen ("23a", "07");
+    ein Zahlwort ("dreiundzwanzig") hat keine, dann gilt die Zahl selbst.
+    """
+    for match in _TEXT_NUMBER.finditer(query):
+        digits, letter = match.groups()
+        if int(digits) == number:
+            return (digits + (letter or "")).lower()
+    return str(number)
 
 
 def _active(tenant_id: uuid.UUID) -> tuple:
@@ -132,15 +152,27 @@ def search_menu(
     # ("zwei Frühlingsrollen" ist nicht Gericht 2).
     number = find_item_number(query)
     if number is not None and (has_item_number_marker(query) or not text):
-        item = session.scalar(
-            select(MenuItem).where(*_active(tenant_id), MenuItem.number == str(number))
+        spoken = _spoken_number(query, number)
+        # Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht"
+        # findet 08. Die Kartennummer ist Text (docs/14), eine Umwandlung über
+        # int verlöre "23a" (Befund Codex PR #116).
+        stored = func.lower(
+            func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
         )
-        if item is None:
+        items = session.scalars(
+            select(MenuItem)
+            .where(*_active(tenant_id), stored == (spoken.lstrip("0") or "0"))
+            .order_by(MenuItem.number)
+        ).all()
+        if not items:
             raise NotFound(
-                f"Nummer {number} nicht auf der Karte",
-                say=SAY_NO_SUCH_NUMBER.format(number=number),
+                f"Nummer {spoken} nicht auf der Karte",
+                say=SAY_NO_SUCH_NUMBER.format(number=spoken),
             )
-        return _single(session, "exact_number", item, now)
+        if len(items) > 1:
+            # "7" und "07" auf derselben Karte: nachfragen statt wählen.
+            return _ambiguous(session, list(items)[:limit], now)
+        return _single(session, "exact_number", items[0], now)
 
     if not text:
         raise NotFound("Anfrage ohne Inhalt", say=SAY_NOT_FOUND)
@@ -150,7 +182,7 @@ def search_menu(
     # Seiten werden deshalb ohne Füllwörter verglichen. In Python statt SQL:
     # normalize_query gibt es nur hier, und eine Karte hat ein paar hundert
     # Aliase - das ist ein Index-Scan und eine Schleife, keine Last.
-    spoken = {normalize_alias(query), text}
+    said = {normalize_alias(query), text}
     matched_ids = {
         item_id
         for item_id, alias in session.execute(
@@ -158,7 +190,7 @@ def search_menu(
             .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
             .where(*_active(tenant_id))
         )
-        if alias in spoken or normalize_query(alias) == text
+        if alias in said or normalize_query(alias) == text
     }
     by_alias = (
         session.scalars(

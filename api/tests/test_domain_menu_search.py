@@ -356,3 +356,56 @@ def test_tool_bleibt_schnell_mit_grosser_karte(client, session, tenant_id):
 
     assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300
     assert p95_ms(lambda: post(client, tenant_id, "Frülingsrolle")) < 300
+
+
+# --- Kartennummern als Text (Befund Codex PR #116, P1) ---------------------------
+
+
+@pytest.fixture
+def buchstaben(session, tenant_id):
+    """Karte mit 23 und 23a, 31a ohne 31, 7 und 08 (fuehrende Null)."""
+    zeilen = (
+        "23a;Frühlingsrollen vegan;Vorspeisen;6,90;;ja\n"
+        "31a;Glasnudelsalat;Vorspeisen;7,90;;ja\n"
+        "7;Misosuppe;Suppen;4,50;;ja\n"
+        "08;Edamame;Vorspeisen;4,90;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + zeilen, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [
+        ("Nummer 23a", "23a"),
+        ("Nummer 23 a", "23a"),
+        ("die 23A bitte", "23a"),
+        ("Nummer 23", "23"),
+        ("Nummer 31a", "31a"),
+        ("Nummer 07", "7"),
+        ("Nummer 7", "7"),
+        ("Nummer acht", "08"),
+        ("Nummer 08", "08"),
+    ],
+)
+def test_nummer_als_text(session, buchstaben, gesagt, nummer):
+    result = suche(session, buchstaben, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == [nummer]
+
+
+def test_zahl_ohne_buchstabe_trifft_nicht_die_variante(session, buchstaben):
+    """Es gibt 31a, aber keine 31: "Nummer 31" ist nicht gefunden, nicht 31a."""
+    with pytest.raises(NotFound) as err:
+        suche(session, buchstaben, "Nummer 31")
+    assert "Nummer 31 " in err.value.say
+
+
+def test_unbekannte_buchstabennummer(session, buchstaben):
+    with pytest.raises(NotFound) as err:
+        suche(session, buchstaben, "Nummer 23c")
+    assert "Nummer 23c" in err.value.say
