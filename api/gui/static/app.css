@@ -32,7 +32,7 @@ a{color:var(--accent)}
 button{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 12px;cursor:pointer}
 button:hover{background:var(--surface-2)}
 button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
 button.primary:hover{filter:brightness(1.08)}
 input[type=text],select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 10px;height:36px}
 .wrap{max-width:1200px;margin:0 auto;padding:0 24px}
@@ -86,18 +86,29 @@ header.aus{background:var(--surface-2)}
 header.aus .top > .mode ~ .mode{opacity:.6}
 /* Spalte Rueckrufe: Beschwerde mit rotem Rand, Text im Abzeichen daneben
    (docs/06 §1 Regel 4). "Anrufen" ist ein tel:-Link im Knopfkleid. */
-.cb.complaint{border-color:var(--danger);border-width:2px}
-.cb-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.cb .res-head{flex-wrap:wrap;gap:8px 12px;margin-bottom:6px}
+.cb .when{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
+.cb .time{font-size:24px;font-weight:600;line-height:1.1}
+.cb .phone{font-weight:500;letter-spacing:.02em}
+.cb .summary{margin:6px 0 0;color:var(--text)}
+/* Beschwerde: breiter roter Rand links statt duennem Rahmen - aus zwei Metern
+   sichtbar, und das Wort "Beschwerde" steht trotzdem daneben. */
+.cb.complaint{border-left:6px solid var(--danger);padding-left:15px}
+.cb-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:60px;min-width:60px;padding:12px 18px;font-size:18px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text);text-decoration:none}
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
 .col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
-.col h2{margin:0 0 12px;font-size:18px;font-weight:600}
+.col h2{margin:0 0 12px;font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px}
+.count{font-size:18px;font-weight:600;min-width:32px;height:32px;padding:0 8px;border-radius:16px;background:var(--surface);border:1px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center}
+/* Schrift ab 18 px auch fuer Notiz und Abzeichen (docs/06 §1 Regel 3): die
+   Klassen stammen aus dem Desktop-Mockup und sind dort kleiner. */
+.betrieb .note{font-size:18px}
+.betrieb .badge{font-size:18px;padding:3px 10px}
 .empty{color:var(--muted);margin:0;padding:8px 2px}
 .cards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .res-head{display:flex;align-items:center;gap:12px;margin-bottom:4px}
 .res .time{font-size:24px;font-weight:600;line-height:1.1}
 .res .name{font-weight:500}
-.res .badge{font-size:15px;padding:3px 10px}
 
 @media (max-width:900px){
   .board{grid-template-columns:1fr}

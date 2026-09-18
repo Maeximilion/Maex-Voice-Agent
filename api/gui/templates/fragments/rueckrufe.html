@@ -1,6 +1,8 @@
 {# Spalte "Rückrufe" (docs/06 §3): offene Rückrufe, Beschwerden oben. Wird als
-   Ganzes ersetzt - nach "Erledigt" und nach jedem Ereignis "callbacks". data-id
-   und data-reason nutzt app.js, um bei neuen Karten den Ton zu spielen. #}
+   Ganzes ersetzt - nach "Erledigt" und nach jedem Ereignis "callbacks". Die
+   Überschrift gehört dazu, damit die Zahl mitwandert. data-id und data-reason
+   nutzt app.js, um bei neuen Karten den Ton zu spielen. #}
+<h2>R&uuml;ckrufe{% if callbacks %} <span class="count">{{ callbacks|length }}</span>{% endif %}</h2>
 {% if problem %}
 <p class="empty">{{ problem }}</p>
 {% elif not callbacks %}
@@ -10,11 +12,12 @@
   {% for c in callbacks %}
   <li class="card cb{{ ' complaint' if c.reason == 'complaint' }}" data-id="{{ c.id }}" data-reason="{{ c.reason }}">
     <div class="res-head">
-      <span class="muted">Annahme: {{ c.time }}</span>
+      {# Wie die Karten in "Heute": Uhrzeit vorn, Anlass daneben. #}
+      <span class="when"><span class="muted">Annahme</span> <b class="time">{{ c.time }}</b></span>
       <span class="badge {{ c.tone }}">{{ c.label }}</span>
     </div>
-    <div class="name">{{ c.phone }}</div>
-    <div class="note">&bdquo;{{ c.summary }}&ldquo;</div>
+    <div class="phone">{{ c.phone }}</div>
+    <p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>
     <div class="cb-actions">
       <a class="button" href="tel:{{ c.phone }}">Anrufen</a>
       {# Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6). #}
