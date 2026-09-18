@@ -168,6 +168,8 @@ def test_nummer_mit_marker_schlaegt_namen(session, tenant_id):
         ("Die knusprigen Rollen, bitte", "23"),
         ("Sommerrollen", "24"),
         ("Pho", "13"),
+        # Fuellwoerter auf beiden Seiten egal: Alias "die knusprige ente".
+        ("knusprige Ente bitte", "47"),
     ],
 )
 def test_alias_exakt(session, tenant_id, gesagt, nummer):
@@ -194,7 +196,8 @@ def test_zwei_starke_treffer_fragen_nach(session, tenant_id):
 
 
 def test_eindeutig_unscharf(session, tenant_id):
-    result = suche(session, tenant_id, "knusprige Ente bitte")
+    """Kein Alias passt ("Ente knusprig" steht so nur als Name da): Trigram entscheidet."""
+    result = suche(session, tenant_id, "Ente knusprig, bitte")
 
     assert result.match_type == "fuzzy_single" and nummern(result) == ["47"]
 
