@@ -54,7 +54,78 @@
     });
   }
 
+  function rueckrufe() {
+    window.htmx.ajax("GET", "/gui/fragments/rueckrufe", {
+      target: "#rueckrufe-liste",
+    });
+  }
+
+  // Ton bei neuen Rueckrufen (docs/06 §1 Regel 5), Beschwerden mit eigenem Ton
+  // (§3). Erzeugt statt Audiodatei: nichts nachzuladen, laeuft ohne Internet.
+  // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
+  // ist das nach dem ersten Handgriff der Fall.
+  var audio = null;
+  var Ctx = window.AudioContext || window.webkitAudioContext;
+  // Safari auf dem Tablet schaltet Web Audio nur innerhalb einer Geste frei:
+  // der Kontext entsteht deshalb im Tap, nicht erst beim ersten Rueckruf, und
+  // ein stiller Puffer spielt einmal an. Ohne das bliebe das Tablet stumm.
+  function freischalten() {
+    if (!Ctx) return;
+    if (!audio) {
+      audio = new Ctx();
+      var still = audio.createBufferSource();
+      still.buffer = audio.createBuffer(1, 1, 22050);
+      still.connect(audio.destination);
+      still.start(0);
+    }
+    if (audio.state === "suspended") audio.resume();
+  }
+  document.addEventListener("touchstart", freischalten, { passive: true });
+  document.addEventListener("click", freischalten);
+
+  function ton(folge) {
+    // Noch kein Tap auf die Seite: kein Kontext, kein Ton (Browserregel).
+    if (!audio) return;
+    var t = audio.currentTime;
+    folge.forEach(function (hz, i) {
+      var osc = audio.createOscillator();
+      var gain = audio.createGain();
+      osc.frequency.value = hz;
+      gain.gain.setValueAtTime(0.3, t + i * 0.25);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.25 + 0.22);
+      osc.connect(gain).connect(audio.destination);
+      osc.start(t + i * 0.25);
+      osc.stop(t + i * 0.25 + 0.23);
+    });
+  }
+  function karten() {
+    var ids = {};
+    document.querySelectorAll("#rueckrufe-liste [data-id]").forEach(function (el) {
+      ids[el.getAttribute("data-id")] = el.getAttribute("data-reason");
+    });
+    return ids;
+  }
+  // Was beim Laden schon da war, klingelt nicht.
+  var bekannt = karten();
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    if (!e.detail.target || e.detail.target.id !== "rueckrufe-liste") return;
+    var jetzt = karten();
+    var neu = Object.keys(jetzt).filter(function (id) {
+      return !(id in bekannt);
+    });
+    bekannt = jetzt;
+    if (!neu.length) return;
+    var beschwerde = neu.some(function (id) {
+      return jetzt[id] === "complaint";
+    });
+    ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
+  });
+
   var strom = new EventSource("/gui/events");
+  strom.addEventListener("callbacks", function () {
+    offline(false);
+    rueckrufe();
+  });
   // Umgeschaltet an einem anderen Tablet oder direkt in der Datenbank: jedes
   // Geraet zeigt denselben Stand.
   strom.addEventListener("header", function () {

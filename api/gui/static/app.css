@@ -84,6 +84,11 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .betrieb button.stop:hover{filter:brightness(1.08)}
 header.aus{background:var(--surface-2)}
 header.aus .top > .mode ~ .mode{opacity:.6}
+/* Spalte Rueckrufe: Beschwerde mit rotem Rand, Text im Abzeichen daneben
+   (docs/06 §1 Regel 4). "Anrufen" ist ein tel:-Link im Knopfkleid. */
+.cb.complaint{border-color:var(--danger);border-width:2px}
+.cb-actions{display:flex;gap:10px;margin-top:10px;flex-wrap:wrap}
+.betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:60px;min-width:60px;padding:12px 18px;font-size:18px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text);text-decoration:none}
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
 .col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
 .col h2{margin:0 0 12px;font-size:18px;font-weight:600}

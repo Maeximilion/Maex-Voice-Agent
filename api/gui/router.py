@@ -23,6 +23,7 @@ from api.core.errors import AppError
 from api.core.logging import get_logger
 from api.core.time import to_local
 from api.db import SessionLocal, get_db
+from api.domain.callbacks import list_open, mark_done
 from api.domain.reservations import list_today
 from api.domain.status import config as switches
 from api.gui.sse import today_event_stream
@@ -83,6 +84,33 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict]:
         }
         for row in list_today(session, tenant.id, tenant.timezone)
     ]
+
+
+# Anlass des Rückrufs in Worten des Teams (docs/06 §1 Regel 2), nie der Code-Wert.
+CALLBACK_LABELS = {
+    "complaint": ("danger", "Beschwerde"),
+    "not_understood": ("warn", "Nicht verstanden"),
+    "human_requested": ("accent", "Will Mitarbeiter sprechen"),
+    "out_of_scope": ("accent", "Anderes Anliegen"),
+}
+
+
+def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
+    rows = []
+    for cb in list_open(session, tenant.id):
+        tone, label = CALLBACK_LABELS.get(cb.reason, ("accent", "Rückruf"))
+        rows.append(
+            {
+                "id": str(cb.callback_id),
+                "time": _clock(cb.created_at, tenant.timezone),
+                "phone": cb.phone,
+                "reason": cb.reason,
+                "summary": cb.summary,
+                "tone": tone,
+                "label": label,
+            }
+        )
+    return rows
 
 
 def _header(session: Session, tenant: Tenant) -> dict:
@@ -152,6 +180,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
         {
             "tenant": tenant,
             "today": _today_rows(session, tenant),
+            "callbacks": _callback_rows(session, tenant),
             **_header(session, tenant),
         },
     )
@@ -242,6 +271,57 @@ def wartezeit(
     if step not in WAIT_STEPS:
         raise HTTPException(status_code=404)
     return _switch(request, session, lambda t: switches.raise_wait(session, t, step))
+
+
+@router.get(
+    "/fragments/rueckrufe", response_class=HTMLResponse, include_in_schema=False
+)
+def rueckrufe_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Nur die Liste der Spalte "Rückrufe". Holt die Seite nach jedem Ereignis."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/rueckrufe.html", {"problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request,
+        "fragments/rueckrufe.html",
+        {"callbacks": _callback_rows(session, tenant)},
+    )
+
+
+@router.post(
+    "/rueckrufe/{callback_id}/erledigt",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def rueckruf_erledigt(
+    request: Request, callback_id: uuid.UUID, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Erledigt: die Karte verschwindet, die Spalte kommt neu zurueck.
+
+    Ein Rueckruf, den es nicht (mehr) gibt, ist kein Fehler fuer das Team - ein
+    anderes Tablet war schneller oder die Seite ist alt. Die frische Liste ist
+    dann genau die richtige Antwort.
+    """
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/rueckrufe.html", {"problem": NO_TENANT}, 503
+        )
+    try:
+        mark_done(session, tenant.id, callback_id)
+    except AppError as exc:
+        session.rollback()
+        logger.info("Rueckruf nicht erledigt: %s", exc.message)
+    return templates.TemplateResponse(
+        request,
+        "fragments/rueckrufe.html",
+        {"callbacks": _callback_rows(session, tenant)},
+    )
 
 
 @router.get("/events", include_in_schema=False)
