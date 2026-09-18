@@ -379,17 +379,44 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
     # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" oder
     # "um 12 Uhr" ist ein Detail, keine zweite Nummer (P2). Zahlen vor dem
     # Marker bleiben Mengen: "zwei Nummer 23".
+    # Kette: eine spätere Zahl ist Alternative, wenn ihr direkter Vorgänger
+    # schon Kandidat ist und sie entweder unmittelbar folgt ("Nummer zwei drei",
+    # "Nummer 23 24") oder ein Korrekturwort dazwischen steht - ohne eine
+    # andere Zahl dazwischen. "Nummer 23 mit 2 oder 3 Soßen": das "oder"
+    # verbindet die Soßen, nicht die 23 (Codex PR #117, P1, P2). Mengen sind
+    # nie Kandidat und unterbrechen die Kette.
     mengen = _quantity_spans(tokens)
-    for span in _number_spans(tokens):
-        if (
-            span.start > spans[0].start
-            and not any(span.overlaps(m) for m in mengen)
-            and not any(span.overlaps(s) for s in spans)
-            and _connected(
-                tokens, max(s.end for s in spans if s.start < span.start), span.start
+    later = sorted(
+        (
+            span
+            for span in _number_spans(tokens)
+            if span.start > spans[0].start and not any(span.overlaps(s) for s in spans)
+        ),
+        key=lambda s: s.start,
+    )
+    chain = sorted(
+        [(s, True) for s in spans] + [(s, False) for s in later],
+        key=lambda e: e[0].start,
+    )
+    prev: tuple[_Span, bool] | None = None
+    for span, is_marked in chain:
+        if span.start < spans[0].start:
+            continue
+        if not is_marked:
+            candidate = (
+                prev is not None
+                and prev[1]
+                and not any(span.overlaps(m) for m in mengen)
+                and (
+                    span.start == prev[0].end
+                    or _connected(tokens, prev[0].end, span.start)
+                )
             )
-        ):
-            spans.append(span)
+            if candidate:
+                spans.append(span)
+            prev = (span, candidate)
+        else:
+            prev = (span, True)
     spans.sort(key=lambda s: s.start)
     found: list[ItemNumber] = []
     for span in spans:

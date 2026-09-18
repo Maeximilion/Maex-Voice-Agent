@@ -417,3 +417,22 @@ def test_zahl_ohne_korrekturwort_ist_keine_alternative(text):
 )
 def test_korrekturwort_macht_die_zweite_zahl_zur_alternative(text):
     assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [("Nummer zwei drei", ["2", "3"]), ("Nummer 23 24", ["23", "24"])],
+)
+def test_direkt_folgende_zahl_ist_alternative(text, cards):
+    """Codex PR #117: zwei Zahlen direkt hintereinander - nicht die erste nehmen."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23 mit 2 oder 3 Soßen", "Nummer 23 mit 2 Soßen oder 3 Dips"]
+)
+def test_korrekturwort_zwischen_anderen_zahlen_verbindet_nicht(text):
+    """Codex PR #117: das "oder" gehoert zu den Sossen, nicht zur 23."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"
