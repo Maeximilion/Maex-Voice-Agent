@@ -1,13 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.18.1
+> Status: 18.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.0
 
 ---
 
 ## Summary
 
 CI enhancement (17.09.2026): The `docker-smoke` job builds the API image without local CA certificate and starts it without bind mount. It checks `/health`, rejection of missing/incorrect tokens, and an authenticated ping. This automatically catches earlier Dockerfile errors with certificate and package path. The test checks container startup, not DB integration; that stays in the pytest suite. Local Docker execution was not available in this session; execution via GitHub Actions.
+
+Menu tools (18.09.2026): `search_menu` maps the spoken order onto the menu in the fixed order number, alias, trigram over name and alias; the thresholds sit in the configuration, filler words drop out before the comparison, several candidates mean a question back (max. three), never a pick. `get_item_details` answers options and allergens; without a maintained row there is no allergen statement, only the sentence for the team. Both p95 around 15 ms with a local DB, 950 tests passing.
 
 The plan is set (`docs/00_PCF.md`, v1.0, released). The repo is set up and contains a **runnable minimal skeleton**: FastAPI with `/health`, token auth, response envelope, JSON logging, DB session, and the ten stage-1 tables per Alembic migration 001 with an idempotent seed with test configuration; hot-path tools (`get_service_status`, `check_slot`, `create_reservation`, `confirm`, `transfer_to_team`) respond in roughly 8–15 ms (p95); 295 tests passing. Reservation is complete: `create_reservation` creates the draft with `readback`, `confirm` makes it valid, writes `audit_log` and places the `reservation.confirmed` event in the outbox. The dispatcher (`api/events/`) empties the outbox: its own process, one POST per event to n8n with event id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log. Callbacks are also done: `create_callback` creates the task for the team, logs it, and reports it via outbox. `transfer_to_team` hands escalations to the team: always the extension from `service_config.team_phone`, never a main number, and runs at most once per call (state on `calls.transfer_reason`). The call log is done: `POST /v1/calls/start`/`/end` open and close the `calls` row the rest of Stage 1 depends on, and every `/v1/tools/*` call now lands in `calls.tool_calls` with duration and result, written generically by `core/tool_log.py` so no individual tool needed to change. `prompts/system_v1.md` and `tools_v1.md` are also done, scoped to the six tools that actually exist today.
 
@@ -75,11 +77,12 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. Meanwhile **T-4.3** `search_menu` and **T-4.4** `get_item_details` can be built against test data
-2. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
-3. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
-4. An n8n workflow that receives events from the dispatcher (export to `n8n/`); until then the cold path runs to nowhere
-5. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
+1. **T-4.5** `draft_order` with all checks and `readback` - the dependency T-4.3 is met, test data suffices until the real menu arrives
+2. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) are done and run against test data
+3. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
+4. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
+5. An n8n workflow that receives events from the dispatcher (export to `n8n/`); until then the cold path runs to nowhere
+6. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -188,6 +191,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 18.09.2026 | T-4.3 and T-4.4 done: `search_menu` resolves number, alias and trigram in that order and asks back when ambiguous; `get_item_details` gives allergens only from `item_allergens`, otherwise the team calls back |
 | 11.09.2026 | PCF v1.0 created and released, hybrid architecture decided (E1) |
 | 15.09.2026 | Repo skeleton and specs exported for Claude Code |
 | 15.09.2026 | API minimal skeleton: `/health`, token auth, response envelope, 3 tests green (T-0.3 done) |
@@ -235,6 +239,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.19.0 · 18.09.2026:** T-4.3 and T-4.4 done: search_menu with resolution order number, alias, trigram (thresholds configurable) and get_item_details with allergen rule unknown is not none
 - **v1.18.1 · 18.09.2026:** Codex review PR #115 (P2 x2) fixed: allergen confirmer re-stamped on change, dry-run price report says would be applied
 - **v1.18.0 · 18.09.2026:** T-4.2 done as code: menu import with all docs/14 check rules, dry-run, idempotent; real CSVs pending from chat
 - **v1.17.2 · 18.09.2026:** Codex review PR #114 (P2 x2) fixed: order_items tenant-scoped via composite FKs, migration tests self-contained

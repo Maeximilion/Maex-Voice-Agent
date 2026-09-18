@@ -122,6 +122,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
 
+Vor Schritt 2 und 3 fallen Füllwörter des Bestellsatzes weg („einmal … bitte"), damit der Trigram-Vergleich am Gericht hängt und nicht am Satz. Die beiden Schwellen stehen in der Konfiguration (`MENU_FUZZY_THRESHOLD_HIGH`, `MENU_FUZZY_THRESHOLD_LOW`): sie stellen sich erst am echten Gespräch ein.
+
 **Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
 
 ---
@@ -136,7 +138,8 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
 {
   "ok": true,
   "data": {
-    "number": "23", "name": "Frühlingsrollen (4 Stück)", "price_cents": 690,
+    "menu_item_id": "…", "number": "23", "name": "Frühlingsrollen (4 Stück)",
+    "price_cents": 690, "sold_out": false,
     "description": "mit Gemüsefüllung, dazu süßsaure Sauce",
     "allergens": { "known": true, "codes": ["A", "F"], "confirmed_at": "2026-08-01" },
     "option_groups": [ ]
@@ -144,7 +147,9 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
   "say": null
 }
 ```
-**Allergene:** Ist `known: false`, lautet `say`: das Team ruft zurück und klärt es. Der Agent formuliert hier **nichts** selbst.
+**Allergene:** Ist `known: false`, lautet `say` wörtlich „Das lasse ich Ihnen vom Team bestätigen." (aus dem Code, `domain/menu/details.py`), und der Agent legt einen Rückruf an. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Die Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört.
+
+Inaktive Gerichte liefert weder `search_menu` noch `get_item_details`; ausverkaufte liefern beide, mit `sold_out: true`.
 
 ---
 
