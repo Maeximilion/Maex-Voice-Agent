@@ -50,8 +50,19 @@ def test_echtes_ueberschreiten_bleibt_ueber_dem_budget():
     assert fake.calls == 60
 
 
-def test_liefert_das_beste_p95_aller_reihen():
-    reihen = [[500.0] * 20, [350.0] * 20, [450.0] * 20]
-    fake = FakeClock([d for reihe in reihen for d in reihe])
+def test_zeitweises_ueberschreiten_bleibt_rot():
+    """Codex-Review PR #110: 40 langsame, dann 20 schnelle Aufrufe dürfen nicht durch."""
+    fake = FakeClock([400.0] * 40 + [10.0] * 20)
 
-    assert p95_ms(fake.call, n=20, clock=fake.clock) == pytest.approx(350.0)
+    p95 = p95_ms(fake.call, n=20, clock=fake.clock)
+
+    assert p95 == pytest.approx(400.0)
+    assert fake.calls == 60
+
+
+def test_p95_gilt_ueber_alle_reihen():
+    """Vier Ausreißer in 60 Aufrufen sind mehr als 5 Prozent: rot."""
+    fake = FakeClock([10.0] * 16 + [560.0] * 4 + [10.0] * 40)
+
+    assert p95_ms(fake.call, n=20, clock=fake.clock) == pytest.approx(560.0)
+    assert fake.calls == 60

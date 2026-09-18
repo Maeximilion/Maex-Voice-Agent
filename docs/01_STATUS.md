@@ -214,7 +214,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.14.1 · 18.09.2026:** Latenztests: p95_ms misst bis zu 3 Reihen und wertet die beste, Budget bleibt 300 ms lokal und in CI (docs/04 §1)
+- **v1.14.1 · 18.09.2026:** Latenztests: p95_ms misst bis zu 3 Reihen, p95 über alle bisherigen Aufrufe (keine Reihe verworfen), Budget bleibt 300 ms lokal und in CI (docs/04 §1)
 - **v1.14.0 · 17.09.2026:** T-0.7 done: slash commands played through, CI steps green, gate.md reference and CI branch filter fixed, test_commands.py added
 - **v1.13.0 · 17.09.2026:** T-3.1 and T-3.3 done (#108): operations view with column Heute and live updates, milestone "Durchstich ohne Telefon" closed
 - **v1.10.1 · 17.09.2026:** Codex review PR #102 (P2 x3) fixed: understanding_failure deduped per customer turn, storno as a noun recognized, escalation callbacks carry the triggering customer text

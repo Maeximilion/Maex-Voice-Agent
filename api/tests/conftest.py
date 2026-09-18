@@ -29,23 +29,23 @@ def p95_ms(
 ) -> float:
     """Latenz-Helfer für Tools im heißen Pfad: p95 über n Aufrufe, Budget 300 ms (docs/04 §1).
 
-    Bis zu `rounds` Messreihen, zurück kommt das beste p95. Sobald eine Reihe unter
-    dem Budget liegt, ist Schluss. Ein Ausreißer durch Last auf einem geteilten
-    CI-Runner kippt den Test so nicht; ein echtes Überschreiten macht jede Reihe
-    langsam und bleibt rot. Das Budget selbst wird nicht gelockert.
+    Bis zu `rounds` Messreihen. p95 gilt immer über alle bisher gemessenen Aufrufe,
+    keine Reihe wird verworfen; liegt es unter dem Budget, ist Schluss. Wenige
+    Ausreißer durch Last auf einem geteilten CI-Runner verteilen sich so auf mehr
+    Stichproben (bei 60 Aufrufen bis zu 3), ein Überschreiten auch nur in jedem
+    dritten Aufruf bleibt rot. Das Budget selbst wird nicht gelockert.
     """
-    best = float("inf")
+    samples: list[float] = []
     for _ in range(rounds):
-        samples = []
         for _ in range(n):
             started = clock()
             call()
             samples.append((clock() - started) * 1000)
-        samples.sort()
-        best = min(best, samples[min(n - 1, round(0.95 * n) - 1)])
-        if best < budget_ms:
+        ordered = sorted(samples)
+        p95 = ordered[min(len(ordered) - 1, round(0.95 * len(ordered)) - 1)]
+        if p95 < budget_ms:
             break
-    return best
+    return p95
 
 
 def alembic_config(url: str) -> Config:
