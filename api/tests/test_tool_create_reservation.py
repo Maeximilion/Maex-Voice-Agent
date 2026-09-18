@@ -1,5 +1,6 @@
 """HTTP-Hülle für create_reservation: Hülle, Validierung, Idempotenz über HTTP, Latenz."""
 
+import itertools
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -137,7 +138,17 @@ def test_ohne_token_401(client):
 
 
 def test_latenz_p95_unter_300_ms(client):
+    """Je Messreihe eine andere Woche: sonst misst eine Wiederholung ab Gast 41 nur
+    die Absage wegen voller Kapazität statt des Schreibpfads."""
     http, tenant_id, call_id = client
-    p95 = p95_ms(lambda: _call(http, tenant_id, call_id, party_size=1), n=20)
+    calls = itertools.count()
+
+    def call():
+        week = timedelta(weeks=next(calls) // 20)
+        at = (_next_tuesday_1830_berlin() + week).isoformat()
+        r = _call(http, tenant_id, call_id, party_size=1, reserved_for=at)
+        assert r.json()["ok"] is True, r.json()
+
+    p95 = p95_ms(call, n=20)
     print(f"\ncreate_reservation p95 = {p95:.1f} ms")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
