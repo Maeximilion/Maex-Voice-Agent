@@ -25,6 +25,12 @@ class FakeRequest:
         return self.disconnect_at is not None and self.calls > self.disconnect_at
 
 
+@pytest.fixture(autouse=True)
+def feste_kopfzeile(monkeypatch):
+    """Die meisten Tests hier pruefen die Spalte Heute; die Kopfzeile steht still."""
+    monkeypatch.setattr(sse, "_header_token", lambda *_: "h0")
+
+
 def drain(stream: AsyncIterator[str]) -> list[str]:
     async def run() -> list[str]:
         return [chunk async for chunk in stream]
@@ -44,7 +50,8 @@ def test_erstes_ereignis_direkt_nach_dem_verbinden(monkeypatch):
     chunks = drain(stream(FakeRequest(), max_ticks=1))
 
     assert chunks[0].startswith("retry: ")
-    assert chunks[1] == "event: today\ndata: 1:2026-09-15T18:00:00+00:00\n\n"
+    assert chunks[1] == "event: header\ndata: h0\n\n"
+    assert chunks[2] == "event: today\ndata: 1:2026-09-15T18:00:00+00:00\n\n"
 
 
 def test_nur_bei_aenderung_ein_ereignis(monkeypatch):
@@ -176,6 +183,39 @@ def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
 
     chunks = drain(stream(FakeRequest(), max_ticks=3))
 
-    assert chunks[1] == "event: today\ndata: 0:-\n\n"
-    assert chunks[2] == "event: problem\ndata: db\n\n"
-    assert chunks[3] == "event: today\ndata: 0:-\n\n"
+    assert chunks[1:] == [
+        "event: header\ndata: h0\n\n",
+        "event: today\ndata: 0:-\n\n",
+        "event: problem\ndata: db\n\n",
+        # Nach der Erholung beide Signale, damit Liste und Kopfzeile frisch sind.
+        "event: header\ndata: h0\n\n",
+        "event: today\ndata: 0:-\n\n",
+    ]
+
+
+def test_umgeschaltete_kopfzeile_sendet_nur_header(monkeypatch):
+    """Pausiert ein Tablet die KI, sehen es alle - ohne die Liste neu zu laden."""
+    monkeypatch.setattr(sse, "_token", lambda *_: "0:-")
+    kopf = iter(["h0", "h0", "h1"])
+    monkeypatch.setattr(sse, "_header_token", lambda *_: next(kopf))
+
+    chunks = drain(stream(FakeRequest(), max_ticks=3))
+
+    assert [c for c in chunks if c.startswith("event:")] == [
+        "event: header\ndata: h0\n\n",
+        "event: today\ndata: 0:-\n\n",
+        "event: header\ndata: h1\n\n",
+    ]
+
+
+def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):
+    monkeypatch.setattr(sse, "_token", lambda *_: "0:-")
+
+    def kaputt(*_):
+        raise OperationalError("select", {}, Exception("keine Verbindung"))
+
+    monkeypatch.setattr(sse, "_header_token", kaputt)
+
+    chunks = drain(stream(FakeRequest(), max_ticks=1))
+
+    assert chunks[1:] == ["event: problem\ndata: db\n\n"]

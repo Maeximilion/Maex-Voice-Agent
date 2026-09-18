@@ -77,6 +77,13 @@ header{background:var(--surface);border-bottom:1px solid var(--line)}
 .betrieb .mode{font-size:18px;padding:10px 16px}
 .betrieb .dot{width:14px;height:14px}
 .betrieb main{padding:16px 20px 40px}
+/* Kopfzeile: Knoepfe unter den Anzeigen. Pausiert wird sie grau (docs/06 §5),
+   der rote Punkt und der Text "KI ist aus" bleiben kraeftig. */
+.actions{border-top:1px solid var(--line)}
+.betrieb button.stop{background:var(--danger);border-color:var(--danger);color:var(--surface)}
+.betrieb button.stop:hover{filter:brightness(1.08)}
+header.aus{background:var(--surface-2)}
+header.aus .top > .mode ~ .mode{opacity:.6}
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
 .col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
 .col h2{margin:0 0 12px;font-size:18px;font-weight:600}

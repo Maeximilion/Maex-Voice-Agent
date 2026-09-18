@@ -23,6 +23,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Slash commands for Claude Code in .claude/commands/
 - CI workflow (ruff, pytest)
 - `api/gui/`: operations view for the tablet (T-3.1, T-3.3). Jinja2 templates, HTMX and `app.css` built from the approved mockup's variables and classes, served locally without any CDN. Header shows mode, delivery and wait times from `service_config`; the column "Heute" lists the confirmed reservations of the business day and updates itself over Server-Sent-Events, so a reservation talked in from the terminal appears on the tablet within seconds
+- Header of the operations view is operable (T-3.2): "KI pausieren" as one-tap emergency stop, "KI einschalten" with confirmation restores the mode from before the pause, "Lieferung aus/an", "Wartezeit +15/+30" (capped at 180 min). Writes in `api/domain/status/config.py` with row lock and `audit_log`; the event stream sends `header` so every tablet shows the same state
 - `api/domain/reservations/today.py`: confirmed reservations of the business day plus a cheap change token for the event stream
 - Desktop mockup of admin view in gui/mockups/
 

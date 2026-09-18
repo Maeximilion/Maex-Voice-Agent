@@ -14,6 +14,10 @@
 <div id="verbindung" class="banner warn" hidden>
   Keine Verbindung &mdash; Anrufe gehen ans Telefon
 </div>
+<div id="stoerung" class="banner danger" hidden>
+  Das hat nicht geklappt.
+  <button type="button" onclick="location.reload()">Nochmal versuchen</button>
+</div>
 {% if problem %}<div class="banner danger">{{ problem }}</div>{% endif %}
 {% block header %}{% endblock %}
 <main>{% block main %}{% endblock %}</main>

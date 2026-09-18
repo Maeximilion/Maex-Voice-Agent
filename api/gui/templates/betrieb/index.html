@@ -2,27 +2,7 @@
 {% block body_class %}betrieb{% endblock %}
 
 {% block header %}
-{# Kopfzeile nach docs/06 §3. Die Werte kommen aus service_config, nie aus dem
-   Code. Knoepfe (KI pausieren, Lieferung aus, Wartezeit) und Live-Aktualisierung
-   sind T-3.2 und fehlen hier absichtlich. #}
-<header>
-  <div class="top">
-    <div class="mode">
-      <span class="dot {{ mode_tone }}"></span>
-      <b>{{ mode_label|default("KI ist aus") }}</b>
-    </div>
-    {% if config %}
-    <div class="mode">
-      <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
-      <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
-    </div>
-    <div class="mode">
-      <b>Wartezeit {{ config.pickup_wait_minutes }} / {{ config.delivery_wait_minutes }} Min</b>
-    </div>
-    {% endif %}
-    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
-  </div>
-</header>
+{% include "fragments/kopfzeile.html" %}
 {% endblock %}
 
 {% block main %}

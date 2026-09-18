@@ -9,18 +9,22 @@ Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.core.errors import AppError
+from api.core.logging import get_logger
 from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.reservations import list_today
+from api.domain.status import config as switches
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
 
@@ -29,8 +33,12 @@ STATIC = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES))
 router = APIRouter(prefix="/gui", tags=["gui"])
+logger = get_logger("api.gui.router")
 
 NO_TENANT = "Keine Betriebsdaten gefunden. Bitte das Team benachrichtigen."
+SWITCH_FAILED = "Umschalten hat nicht geklappt. Bitte nochmal tippen."
+# Die Knoepfe der Kopfzeile (docs/06 §3). Nur diese Schritte kommen vom Tablet.
+WAIT_STEPS = (15, 30)
 
 # Der Punkt der Kopfzeile: Farbe allein reicht nie, der Text steht daneben
 # (docs/06 §1 Regel 4, §3 Kopfzeile).
@@ -78,12 +86,55 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict]:
 
 
 def _header(session: Session, tenant: Tenant) -> dict:
-    """Werte der Kopfzeile. Knöpfe und Live-Aktualisierung kommen mit T-3.2."""
+    """Werte der Kopfzeile, immer frisch aus service_config."""
     config = session.get(ServiceConfig, tenant.id)
+    base = {"tenant": tenant, "wait_steps": WAIT_STEPS}
     if config is None:
-        return {"mode_tone": "danger", "mode_label": "KI ist aus", "config": None}
+        return {
+            **base,
+            "mode_tone": "danger",
+            "mode_label": "KI ist aus",
+            "config": None,
+        }
     tone, label = MODE_LABELS.get(config.call_mode, ("danger", "KI ist aus"))
-    return {"mode_tone": tone, "mode_label": label, "config": config}
+    return {**base, "mode_tone": tone, "mode_label": label, "config": config}
+
+
+def _require_htmx(hx_request: str | None = Header(default=None)) -> None:
+    """Schreibende Taps nur von der eigenen Seite.
+
+    Der Proxy schuetzt /gui/* mit Basic-Auth, und die schickt der Browser auch bei
+    einem Formular von einer fremden Seite mit. Einen eigenen Kopf wie HX-Request
+    darf eine fremde Seite ohne CORS-Freigabe nicht setzen - das genuegt hier als
+    Schutz gegen untergeschobene Klicks, ohne Token im Formular.
+    """
+    if hx_request != "true":
+        raise HTTPException(status_code=403, detail="Nur aus der Betriebsansicht")
+
+
+def _switch(
+    request: Request, session: Session, change: Callable[[uuid.UUID], object]
+) -> HTMLResponse:
+    """Einen Schalter umlegen und die neue Kopfzeile zurueckgeben."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/kopfzeile.html", {"header_problem": NO_TENANT}, 503
+        )
+    status = 200
+    problem = None
+    try:
+        change(tenant.id)
+    except AppError as exc:
+        session.rollback()
+        logger.warning("Kopfzeile nicht umgeschaltet: %s", exc.message)
+        status, problem = 409, SWITCH_FAILED
+    return templates.TemplateResponse(
+        request,
+        "fragments/kopfzeile.html",
+        {**_header(session, tenant), "header_problem": problem},
+        status,
+    )
 
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
@@ -119,6 +170,78 @@ def heute_fragment(
     return templates.TemplateResponse(
         request, "fragments/heute.html", {"today": _today_rows(session, tenant)}
     )
+
+
+@router.get(
+    "/fragments/kopfzeile", response_class=HTMLResponse, include_in_schema=False
+)
+def kopfzeile_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Nur die Kopfzeile. Holt die Seite nach jedem Ereignis "header"."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/kopfzeile.html", {"header_problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request, "fragments/kopfzeile.html", _header(session, tenant)
+    )
+
+
+@router.post(
+    "/kopfzeile/ki-pausieren",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def ki_pausieren(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """Not-Aus: ein Tap, keine Rueckfrage (docs/06 §3)."""
+    return _switch(request, session, lambda t: switches.pause_ai(session, t))
+
+
+@router.post(
+    "/kopfzeile/ki-einschalten",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def ki_einschalten(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Rueckfrage stellt der Knopf selbst (hx-confirm), hier wird nur geschaltet."""
+    return _switch(request, session, lambda t: switches.resume_ai(session, t))
+
+
+@router.post(
+    "/kopfzeile/lieferung/{state}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def lieferung(
+    request: Request, state: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    if state not in ("an", "aus"):
+        raise HTTPException(status_code=404)
+    enabled = state == "an"
+    return _switch(
+        request, session, lambda t: switches.set_delivery(session, t, enabled)
+    )
+
+
+@router.post(
+    "/kopfzeile/wartezeit/{step}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def wartezeit(
+    request: Request, step: int, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    if step not in WAIT_STEPS:
+        raise HTTPException(status_code=404)
+    return _switch(request, session, lambda t: switches.raise_wait(session, t, step))
 
 
 @router.get("/events", include_in_schema=False)
