@@ -406,14 +406,29 @@ def apply(
         warnings=list(plan.warnings),
         price_changes_applied=apply_price_changes,
     )
-    # Klein geschrieben wie der Plan: ein früher als "23A" importiertes Gericht
-    # ist dasselbe wie "23a" und wird angeglichen, nicht verdoppelt (Codex #117).
-    existing = {
-        item.number.lower(): item
-        for item in session.scalars(
+    rows = list(
+        session.scalars(
             select(MenuItem).where(MenuItem.tenant_id == tenant_id).with_for_update()
         )
-    }
+    )
+    # Klein geschrieben wie der Plan: ein früher als "23A" importiertes Gericht
+    # ist dasselbe wie "23a" und wird angeglichen, nicht verdoppelt (Codex #117).
+    # Stehen beide Schreibweisen schon im Bestand, entscheidet ein Mensch, welche
+    # gilt - still eine zu verdecken hiesse, die andere nie wieder zu finden.
+    by_key: dict[str, list[MenuItem]] = {}
+    for row in rows:
+        by_key.setdefault(row.number.lower(), []).append(row)
+    clashes = [
+        sorted(r.number for r in group) for group in by_key.values() if len(group) > 1
+    ]
+    if clashes:
+        session.rollback()
+        listed = "; ".join(" und ".join(c) for c in sorted(clashes))
+        raise ValueError(
+            f"Kartennummer doppelt im Bestand (nur Groß-/Kleinschreibung verschieden): "
+            f"{listed}. Eine davon von Hand zusammenführen, dann erneut importieren."
+        )
+    existing = {key: group[0] for key, group in by_key.items()}
     report.items_not_in_file = sorted(n for n in existing if n not in plan.items)
 
     items: dict[str, MenuItem] = {}

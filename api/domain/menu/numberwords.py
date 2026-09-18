@@ -330,9 +330,9 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     nxt = tokens[span.end] if span.end < len(tokens) else ""
     if digits and span.start in glued:
         suffix = nxt
-        if suffix == "x":
-            # "2x": Mengenzeichen, keine Endung.
-            return ItemNumber(value=span.value, text=card, marked=marked)
+        # "23x" ist keine Kartennummer und auch keine Endung: ungültig, nicht
+        # die 23 (Codex PR #117). Echte Mengen ("2x Pho") hat _quantity_spans
+        # vorher schon aussortiert, sie kommen hier nicht an.
         valid = suffix in _SUFFIXES
         return ItemNumber(span.value, card + suffix, marked, valid)
     if nxt in _SUFFIXES:

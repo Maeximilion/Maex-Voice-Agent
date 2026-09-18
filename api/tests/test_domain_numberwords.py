@@ -372,3 +372,19 @@ def test_ein_marker_mit_alternative_ergibt_beide(text, cards):
 def test_menge_neben_markierter_nummer_bleibt_eindeutig(text):
     ref = find_item_number_ref(text)
     assert ref is not None and ref.text == "23"
+
+
+def test_x_an_der_markierten_nummer_ist_keine_endung():
+    """Codex PR #117: "Nummer 23x" ist keine Kartennummer - ungueltig statt still 23."""
+    ref = find_item_number_ref("Nummer 23x")
+    assert ref is not None and ref.text == "23x" and ref.valid is False
+
+
+def test_x_ohne_marker_ist_menge_und_keine_nummer():
+    """ "die 23x" ohne Marker: 23 mal - aber welches Gericht? Keine Nummer."""
+    assert find_item_number_ref("die 23x") is None
+
+
+def test_x_als_menge_bleibt_menge():
+    ref = find_item_number_ref("2x die 23")
+    assert ref is not None and ref.text == "23" and ref.valid is True

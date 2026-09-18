@@ -374,3 +374,40 @@ def test_alte_grossschreibung_wird_angeglichen_statt_verdoppelt(session, tenant_
     assert count(session, MenuItem) == 1
     neu = item(session, tenant_id, "23a")
     assert neu is not None and neu.name == "Neu"
+
+
+def test_zwei_altzeilen_mit_gleicher_nummer_brechen_ab(session, tenant_id):
+    """Codex PR #117: "23A" und "23a" im Bestand - nicht still eine verdecken."""
+    for nummer in ("23A", "23a"):
+        session.add(
+            MenuItem(
+                tenant_id=tenant_id,
+                number=nummer,
+                name=nummer,
+                category="T",
+                price_cents=1,
+            )
+        )
+    session.commit()
+
+    with pytest.raises(ValueError, match=r"23A und 23a"):
+        run(session, tenant_id)
+    session.rollback()
+    assert count(session, MenuItem) == 2
+
+
+def test_cli_meldet_altzeilen_konflikt(cli, ordner, session, tenant_id, capsys):
+    for nummer in ("23A", "23a"):
+        session.add(
+            MenuItem(
+                tenant_id=tenant_id,
+                number=nummer,
+                name=nummer,
+                category="T",
+                price_cents=1,
+            )
+        )
+    session.commit()
+
+    assert cli(ordner) == 1
+    assert "doppelt" in capsys.readouterr().err
