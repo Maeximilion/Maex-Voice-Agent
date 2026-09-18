@@ -1,0 +1,48 @@
+{# Kopfzeile nach docs/06 §3, immer sichtbar. Wird als Ganzes ersetzt: nach
+   jedem Tap (Antwort des POST) und nach jedem Ereignis "header" im Strom, damit
+   alle Tablets denselben Stand zeigen. Werte kommen aus service_config, nie aus
+   dem Code. Farbe ist nie allein: der Text steht immer daneben (§1 Regel 4). #}
+<header id="kopfzeile" class="{{ 'aus' if config and config.call_mode == 'paused' }}">
+  {% if header_problem %}<div class="banner danger">{{ header_problem }}</div>{% endif %}
+  <div class="top">
+    <div class="mode">
+      <span class="dot {{ mode_tone }}"></span>
+      <b>{{ mode_label|default("KI ist aus") }}</b>
+    </div>
+    {% if config %}
+    <div class="mode">
+      <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
+      <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
+    </div>
+    <div class="mode">
+      <b>Wartezeit {{ config.pickup_wait_minutes }} / {{ config.delivery_wait_minutes }} Min</b>
+    </div>
+    {% endif %}
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+  {% if config %}
+  <div class="top actions">
+    {% if config.call_mode == "paused" %}
+    {# Wieder einschalten fragt nach, pausieren nie: der Not-Aus darf keine
+       Sekunde kosten (docs/06 §3). #}
+    <button class="primary" hx-post="/gui/kopfzeile/ki-einschalten"
+            hx-target="#kopfzeile" hx-swap="outerHTML"
+            hx-confirm="KI wieder einschalten? Danach nimmt sie wieder Anrufe an.">KI einschalten</button>
+    {% else %}
+    <button class="stop" hx-post="/gui/kopfzeile/ki-pausieren"
+            hx-target="#kopfzeile" hx-swap="outerHTML">KI pausieren</button>
+    {% endif %}
+    {% if config.delivery_enabled %}
+    <button hx-post="/gui/kopfzeile/lieferung/aus"
+            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung aus</button>
+    {% else %}
+    <button hx-post="/gui/kopfzeile/lieferung/an"
+            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
+    {% endif %}
+    {% for step in wait_steps %}
+    <button hx-post="/gui/kopfzeile/wartezeit/{{ step }}"
+            hx-target="#kopfzeile" hx-swap="outerHTML">Wartezeit +{{ step }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
+</header>

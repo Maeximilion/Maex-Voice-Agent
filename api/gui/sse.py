@@ -1,8 +1,9 @@
 """Ereignisstrom der Betriebsansicht (docs/11 §gui, docs/06 §1 Regel 5: live, ohne Nachladen).
 
 Der Strom schickt keine Daten, nur ein Signal: "an der Spalte Heute hat sich etwas
-geändert". Die Seite holt das Fragment danach selbst. Das hält die Nutzlast klein
-und die Darstellung an genau einer Stelle - im Jinja2-Template.
+geändert" (`today`) oder "die Kopfzeile ist umgeschaltet" (`header`). Die Seite
+holt das Fragment danach selbst. Das hält die Nutzlast klein und die Darstellung
+an genau einer Stelle - im Jinja2-Template.
 
 Warum abfragen statt LISTEN/NOTIFY: Reservierungen entstehen nicht nur in diesem
 Prozess. sim/ schreibt aus dem Terminal, der Dispatcher läuft eigenständig, später
@@ -22,6 +23,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.domain.reservations import today_change_token
+from api.domain.status.config import config_change_token
 
 logger = get_logger("api.gui.sse")
 
@@ -41,6 +43,18 @@ def _token(tenant_id: uuid.UUID, tz_name: str) -> str:
         session.close()
 
 
+def _header_token(tenant_id: uuid.UUID) -> str:
+    session = SessionLocal()
+    try:
+        return config_change_token(session, tenant_id)
+    finally:
+        session.close()
+
+
+def _tokens(tenant_id: uuid.UUID, tz_name: str) -> tuple[str, str]:
+    return _token(tenant_id, tz_name), _header_token(tenant_id)
+
+
 async def today_event_stream(
     request: Request,
     tenant_id: uuid.UUID,
@@ -52,6 +66,7 @@ async def today_event_stream(
     """Server-Sent-Events. `max_ticks` begrenzt die Schleife in Tests."""
     yield f"retry: {RETRY_MS}\n\n"
     last_token: str | None = None
+    last_header: str | None = None
     last_send = time.monotonic()
     # Nach einem Aussetzer haengt die gelbe Leiste im Browser fest, bis ein
     # Ereignis kommt. Ohne dieses Merkmal waere das erst die naechste echte
@@ -63,7 +78,7 @@ async def today_event_stream(
         if await request.is_disconnected():
             return
         try:
-            token = await asyncio.to_thread(_token, tenant_id, tz_name)
+            token, header = await asyncio.to_thread(_tokens, tenant_id, tz_name)
         except SQLAlchemyError as exc:
             # Kein Abbruch: die Seite zeigt die gelbe Leiste (docs/06 §5) und der
             # naechste Durchlauf holt sie wieder weg, ohne Neuverbindung.
@@ -72,13 +87,21 @@ async def today_event_stream(
             last_send = time.monotonic()
             yield "event: problem\ndata: db\n\n"
         else:
-            if token != last_token or failed:
+            recovered = failed
+            failed = False
+            sent = False
+            # Beim Verbinden einmal senden: was waehrend einer Trennung
+            # gebucht oder umgeschaltet wurde, ist damit sofort auf dem Tablet.
+            if header != last_header or recovered:
+                last_header = header
+                sent = True
+                yield f"event: header\ndata: {header}\n\n"
+            if token != last_token or recovered:
                 last_token = token
-                failed = False
-                last_send = time.monotonic()
-                # Beim Verbinden einmal senden: was waehrend einer Trennung
-                # gebucht wurde, ist damit sofort auf dem Tablet.
+                sent = True
                 yield f"event: today\ndata: {token}\n\n"
+            if sent:
+                last_send = time.monotonic()
             elif time.monotonic() - last_send >= heartbeat_seconds:
                 last_send = time.monotonic()
                 yield ": keepalive\n\n"

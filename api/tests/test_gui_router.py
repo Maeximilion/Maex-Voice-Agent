@@ -186,3 +186,122 @@ def test_caddy_schuetzt_die_gui():
     assert "/gui" in text
     # Kein Zugang im Repo: Benutzer und Hash kommen aus der Umgebung (CLAUDE.md §8).
     assert "{$GUI_BASIC_AUTH_USER}" in text and "{$GUI_BASIC_AUTH_HASH}" in text
+
+
+# --- Kopfzeile: Knoepfe (T-3.2) ---------------------------------------------
+
+HX = {"HX-Request": "true"}
+
+
+def config_von(engine, tenant_id) -> ServiceConfig:
+    with Session(engine) as s:
+        config = s.get(ServiceConfig, tenant_id)
+        s.expunge(config)
+        return config
+
+
+def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
+    body = client.get("/gui/").text
+
+    assert 'id="kopfzeile"' in body
+    for knopf in ("KI pausieren", "Lieferung aus", "Wartezeit +15", "Wartezeit +30"):
+        assert knopf in body
+
+
+def test_not_aus_ein_tap_ohne_rueckfrage(client, engine, tenant_id):
+    response = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+
+    assert response.status_code == 200
+    assert config_von(engine, tenant_id).call_mode == "paused"
+    body = response.text
+    # Nur die Kopfzeile, grau, roter Punkt mit Text, Einschalten fragt nach.
+    assert "<html" not in body and 'class="aus"' in body
+    assert "KI ist aus" in body and "KI einschalten" in body and "hx-confirm" in body
+    assert 'hx-post="/gui/kopfzeile/ki-pausieren"' not in body
+
+
+def test_pausieren_fragt_nie_nach(client, tenant_id):
+    """Der Not-Aus darf keine Sekunde kosten (docs/06 §3)."""
+    body = client.get("/gui/fragments/kopfzeile").text
+    knopf = body.split('hx-post="/gui/kopfzeile/ki-pausieren"')[1].split(">")[0]
+
+    assert "hx-confirm" not in knopf
+
+
+def test_einschalten_stellt_den_modus_wieder_her(client, engine, tenant_id):
+    client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+
+    body = client.post("/gui/kopfzeile/ki-einschalten", headers=HX).text
+
+    # Seed steht auf shadow; genau dahin geht es zurueck.
+    assert config_von(engine, tenant_id).call_mode == "shadow"
+    assert "KI hört mit" in body and "KI pausieren" in body
+
+
+def test_lieferung_aus_und_an(client, engine, tenant_id):
+    body = client.post("/gui/kopfzeile/lieferung/aus", headers=HX).text
+    assert config_von(engine, tenant_id).delivery_enabled is False
+    assert 'hx-post="/gui/kopfzeile/lieferung/an"' in body
+
+    client.post("/gui/kopfzeile/lieferung/an", headers=HX)
+    assert config_von(engine, tenant_id).delivery_enabled is True
+
+
+def test_wartezeit_plus_15(client, engine, tenant_id):
+    vorher = config_von(engine, tenant_id)
+
+    body = client.post("/gui/kopfzeile/wartezeit/15", headers=HX).text
+
+    nachher = config_von(engine, tenant_id)
+    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes + 15
+    assert nachher.delivery_wait_minutes == vorher.delivery_wait_minutes + 15
+    assert (
+        f"Wartezeit {nachher.pickup_wait_minutes} / {nachher.delivery_wait_minutes} Min"
+        in body
+    )
+
+
+@pytest.mark.parametrize(
+    "pfad", ["/gui/kopfzeile/wartezeit/20", "/gui/kopfzeile/lieferung/vielleicht"]
+)
+def test_unbekannter_knopf_aendert_nichts(client, engine, tenant_id, pfad):
+    vorher = config_von(engine, tenant_id)
+
+    assert client.post(pfad, headers=HX).status_code == 404
+
+    nachher = config_von(engine, tenant_id)
+    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes
+    assert nachher.delivery_enabled == vorher.delivery_enabled
+
+
+def test_fremde_seite_kann_nicht_schalten(client, engine, tenant_id):
+    """Ohne HX-Request kein Schalten: Basic-Auth allein haelt fremde Formulare nicht auf."""
+    response = client.post("/gui/kopfzeile/ki-pausieren")
+
+    assert response.status_code == 403
+    assert config_von(engine, tenant_id).call_mode == "shadow"
+
+
+def test_schalten_ohne_mandant_klartext(client):
+    response = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+
+    assert response.status_code == 503
+    assert "Keine Betriebsdaten" in response.text
+
+
+def test_fehlende_konfiguration_rote_leiste(client, engine, tenant_id):
+    """Mandant da, service_config weg: rote Leiste in der Kopfzeile, kein Stacktrace."""
+    with Session(engine) as s:
+        s.delete(s.get(ServiceConfig, tenant_id))
+        s.commit()
+
+    response = client.post("/gui/kopfzeile/wartezeit/15", headers=HX)
+
+    assert response.status_code == 409
+    assert "Bitte nochmal tippen" in response.text
+    assert "Traceback" not in response.text
+
+
+def test_schalten_bleibt_schnell(client, tenant_id):
+    assert p95_ms(lambda: client.post("/gui/kopfzeile/lieferung/aus", headers=HX)) < 300
+    assert p95_ms(lambda: client.get("/gui/fragments/kopfzeile")) < 300
