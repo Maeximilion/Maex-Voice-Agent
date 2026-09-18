@@ -321,3 +321,30 @@ def test_optionen_standardmaessig_leere_liste(conn):
         {"o": order, "i": item},
     ).scalar_one()
     assert options == []
+
+
+@pytest.mark.parametrize("code", ["A", "H", "L", "N", "O", "P", "R"])
+def test_gueltige_lmiv_codes_gehen_durch(conn, code):
+    """Befund Review PR #114: O (Sulfite), P (Lupinen), R (Weichtiere) gehoeren dazu."""
+    item = _item(conn, _tenant(conn))
+    conn.execute(
+        text(
+            "INSERT INTO item_allergens (menu_item_id, allergen_code, confirmed_by, confirmed_at) "
+            "VALUES (:i, :c, 'Maxi', now())"
+        ),
+        {"i": item, "c": code},
+    )
+
+
+@pytest.mark.parametrize("code", ["a", "I", "J", "K", "Q", "X", "AB", ""])
+def test_ungueltiger_lmiv_code_scheitert(conn, code):
+    """Ein Tippfehler aus dem Import darf nie als bestaetigtes Allergen vorgelesen werden."""
+    item = _item(conn, _tenant(conn))
+    with pytest.raises(IntegrityError):
+        conn.execute(
+            text(
+                "INSERT INTO item_allergens (menu_item_id, allergen_code, confirmed_by, confirmed_at) "
+                "VALUES (:i, :c, 'Maxi', now())"
+            ),
+            {"i": item, "c": code},
+        )

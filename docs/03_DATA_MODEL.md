@@ -180,7 +180,7 @@ Varianten und Extras mit Preisdifferenz.
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | menu_item_id | UUID FK | |
-| allergen_code | TEXT | LMIV-Code |
+| allergen_code | TEXT | LMIV-Kennbuchstabe, nur `A`–`H`, `L`–`P`, `R` (14 Hauptallergene; kein I, J, K, Q). Die DB lehnt alles andere ab. |
 | confirmed_by | TEXT | wer den Wert gepflegt hat |
 | confirmed_at | TIMESTAMPTZ | |
 

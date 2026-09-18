@@ -29,6 +29,12 @@ from api.models.base import Base, TenantScoped, Timestamps, UUIDPrimaryKey
 from api.models.tenants import _in
 
 ALIAS_SOURCES = ("manual", "call", "import")
+# Die 14 Hauptallergene der LMIV (Anhang II) mit den in Deutschland üblichen
+# Kennbuchstaben. Kein I, J, K, Q: die Lücken sind Absicht, nicht Versehen.
+# A Gluten, B Krebstiere, C Eier, D Fisch, E Erdnüsse, F Soja, G Milch,
+# H Schalenfrüchte, L Sellerie, M Senf, N Sesam, O Sulfite, P Lupinen,
+# R Weichtiere.
+ALLERGEN_CODES = ("A", "B", "C", "D", "E", "F", "G", "H", "L", "M", "N", "O", "P", "R")
 
 
 class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
@@ -90,13 +96,14 @@ class ItemAllergen(Timestamps, Base):
     """Ein gepflegter Allergen-Wert. Keine Zeile heisst "keine Auskunft", nie "frei davon"."""
 
     __tablename__ = "item_allergens"
+    __table_args__ = (_in("allergen_code", ALLERGEN_CODES, "ck_item_allergens_code"),)
 
     menu_item_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("menu_items.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    # LMIV-Buchstabe (A bis N).
+    # LMIV-Kennbuchstabe, nur aus ALLERGEN_CODES.
     allergen_code: Mapped[str] = mapped_column(Text, primary_key=True)
     # Pflicht: ein Allergen-Wert ohne Namen dahinter ist keine Auskunft.
     confirmed_by: Mapped[str] = mapped_column(Text, nullable=False)

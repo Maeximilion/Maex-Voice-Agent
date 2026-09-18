@@ -117,6 +117,11 @@ def upgrade() -> None:
         sa.Column("confirmed_by", sa.Text(), nullable=False),
         sa.Column("confirmed_at", sa.DateTime(timezone=True), nullable=False),
         *_timestamps(),
+        # LMIV-Kennbuchstaben, siehe api/models/menu.py ALLERGEN_CODES.
+        sa.CheckConstraint(
+            "allergen_code IN ('A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'L', 'M', 'N', 'O', 'P', 'R')",
+            name="ck_item_allergens_code",
+        ),
         sa.ForeignKeyConstraint(
             ["menu_item_id"], ["menu_items.id"], ondelete="CASCADE"
         ),
