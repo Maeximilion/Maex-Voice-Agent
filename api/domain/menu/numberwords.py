@@ -349,7 +349,7 @@ def _canonical(card: str) -> str:
 
 
 def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
-    found: list[ItemNumber] = []
+    spans: list[_Span] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
@@ -358,15 +358,33 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
             nach_marker += 1  # "Nr. 23"
         span = _scan(tokens, nach_marker)
         if span is not None:
-            ref = _ref(tokens, span, marked=True, glued=glued)
-            # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
-            if all(_canonical(r.text) != _canonical(ref.text) for r in found):
-                found.append(ref)
+            spans.append(span)
+    if not spans:
+        return []
+    # Weitere Zahlen **hinter** der ersten markierten Nummer, die keine Menge
+    # sind, sind Alternative oder Korrektur: "Nummer 23 oder 24", "Nummer 23,
+    # nein 24" (Codex PR #117, P1). Zahlen davor bleiben Mengen: "zwei Nummer 23".
+    mengen = _quantity_spans(tokens)
+    spans += [
+        span
+        for span in _number_spans(tokens)
+        if span.start > spans[0].start
+        and not any(span.overlaps(m) for m in mengen)
+        and not any(span.overlaps(s) for s in spans)
+    ]
+    spans.sort(key=lambda s: s.start)
+    found: list[ItemNumber] = []
+    for span in spans:
+        ref = _ref(tokens, span, marked=True, glued=glued)
+        # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
+        if all(_canonical(r.text) != _canonical(ref.text) for r in found):
+            found.append(ref)
     return found
 
 
 def find_marked_item_numbers(text: str) -> list[ItemNumber]:
-    """Alle verschiedenen Nummern direkt hinter "Nummer"/"Nr.", in Satzfolge.
+    """Alle verschiedenen Nummern hinter "Nummer"/"Nr.", in Satzfolge - auch
+    eine zweite Zahl ohne eigenen Marker ("Nummer 23 oder 24").
 
     Mehr als eine heisst: der Gast korrigiert sich ("Nummer 23, nein, Nummer
     24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist

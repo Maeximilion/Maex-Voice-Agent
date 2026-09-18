@@ -344,3 +344,31 @@ def test_gleiche_nummer_in_zwei_schreibweisen_ist_eine():
     refs = find_marked_item_numbers("Nummer 07 oder Nummer 7")
     assert len(refs) == 1
     assert find_item_number_ref("Nummer 07 oder Nummer 7") is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Nummer 23 oder 24", ["23", "24"]),
+        ("Nummer 23, nein 24", ["23", "24"]),
+        ("Nummer 23, nein, vierundzwanzig", ["23", "24"]),
+    ],
+)
+def test_ein_marker_mit_alternative_ergibt_beide(text, cards):
+    """Codex PR #117: die zweite Zahl hinter einem einzigen "Nummer" nicht verlieren."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "zwei Nummer 23",
+        "Nummer 23 zweimal",
+        "Nummer 23, zwei Portionen",
+        "Nummer 23 bitte",
+    ],
+)
+def test_menge_neben_markierter_nummer_bleibt_eindeutig(text):
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"

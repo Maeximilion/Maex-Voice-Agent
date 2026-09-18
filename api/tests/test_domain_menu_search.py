@@ -486,3 +486,10 @@ def test_gleiche_nummer_zweimal_ist_eindeutig(session, buchstaben):
     result = suche(session, buchstaben, "Nummer 07 oder Nummer 7")
 
     assert result.match_type == "exact_number" and nummern(result) == ["7"]
+
+
+@pytest.mark.parametrize("gesagt", ["Nummer 23 oder 24", "Nummer 23, nein 24"])
+def test_ein_marker_mit_alternative_fragt_nach(session, tenant_id, gesagt):
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["23", "24"]
