@@ -27,6 +27,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Callbacks column of the operations view (T-3.4): open callbacks with complaints on top, "Anrufen" as tel: link, "Erledigt" with row lock and `audit_log`; event stream signal `callbacks`, tone on new cards with a distinct tone for complaints
 - Migration 002 (T-4.1): `menu_items`, `item_options`, `item_allergens`, `item_aliases`, `orders`, `order_items` with `pg_trgm` trigram indexes on dish names and aliases; the database enforces amounts in cents, matching totals, positive quantities and mandatory `menu_item_id`
 - Menu import (T-4.2): `python -m scripts.import_menu <folder> [--dry-run] [--apply-price-changes]` loads the four CSVs from `docs/14_MENU_IMPORT_FORMAT.md` with all check rules, idempotent, one transaction, report with price changes and warnings
+- Tool `POST /v1/tools/search_menu` (T-4.3): number, exact alias, then trigram over name and aliases with configurable thresholds; `ambiguous` returns up to three suggestions and a question, an unknown number is `not_found`, sold-out dishes come back flagged with a sentence
 - `api/domain/reservations/today.py`: confirmed reservations of the business day plus a cheap change token for the event stream
 - Desktop mockup of admin view in gui/mockups/
 

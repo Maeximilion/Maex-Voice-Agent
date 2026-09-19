@@ -259,3 +259,239 @@ def test_eine_menge_macht_die_bestellung_nicht_mehrdeutig(text, nummer, menge):
     mehrdeutig und der Gast wurde ohne Not zurueckgefragt."""
     assert find_item_number(text) == nummer
     assert find_quantity(text) == menge
+
+
+# --- find_item_number_ref: Wert, Kartenschreibweise und Marker aus einer Stelle ---
+
+from api.domain.menu.numberwords import find_item_number_ref  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("text", "value", "card", "marked"),
+    [
+        ("Nummer 23a", 23, "23a", True),
+        ("Nummer 23 a", 23, "23a", True),
+        ("die 23A bitte", 23, "23a", False),
+        ("Nummer 07", 7, "07", True),
+        ("Nummer acht", 8, "8", True),
+        ("Nr. 31b", 31, "31b", True),
+        ("23a, nein, Nummer 23", 23, "23", True),
+        ("die 23 aber scharf", 23, "23", False),
+        ("2 x die 23", 23, "23", False),
+    ],
+)
+def test_item_number_ref(text, value, card, marked):
+    ref = find_item_number_ref(text)
+    assert (ref.value, ref.text, ref.marked) == (value, card, marked)
+
+
+@pytest.mark.parametrize(
+    "text", ["zwei Frühlingsrollen, Nummer weiß ich nicht", "Nummer", "23 und 47"]
+)
+def test_item_number_ref_ohne_eindeutige_nummer(text):
+    ref = find_item_number_ref(text)
+    assert ref is None or not ref.marked
+
+
+# --- Zwei ausdrueckliche Nummern: keine waehlen (Codex PR #117, P1) ---------------
+
+from api.domain.menu.numberwords import find_marked_item_numbers  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23, nein, Nummer 24", "Nummer 23 oder Nummer 24", "Nr. 5 und Nr. 6"],
+)
+def test_zwei_markierte_nummern_ergeben_keine(text):
+    assert find_item_number_ref(text) is None
+
+
+def test_zwei_markierte_nummern_werden_beide_gemeldet():
+    refs = find_marked_item_numbers("Nummer 23, nein, Nummer 24a")
+    assert [r.text for r in refs] == ["23", "24a"]
+
+
+def test_dieselbe_nummer_zweimal_ist_eindeutig():
+    ref = find_item_number_ref("Nummer 23, ja genau, Nummer 23")
+    assert ref is not None and ref.text == "23" and ref.marked
+
+
+@pytest.mark.parametrize(
+    ("text", "card"),
+    [
+        ("Nummer 23g", "23g"),
+        ("Nummer 23ab", "23ab"),
+        ("Nummer 23 g", "23g"),
+        ("die 23g", "23g"),
+    ],
+)
+def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
+    """Codex PR #117: eine unbekannte Endung wird nie abgeschnitten."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == card and ref.valid is False
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23a", "Nummer 23", "Nummer 23 bitte", "2x die 23"]
+)
+def test_gueltige_nummern_bleiben_gueltig(text):
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.valid is True
+
+
+def test_gleiche_nummer_in_zwei_schreibweisen_ist_eine():
+    """Codex PR #117: "Nummer 07 oder Nummer 7" ist dieselbe Nummer."""
+    refs = find_marked_item_numbers("Nummer 07 oder Nummer 7")
+    assert len(refs) == 1
+    assert find_item_number_ref("Nummer 07 oder Nummer 7") is not None
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Nummer 23 oder 24", ["23", "24"]),
+        ("Nummer 23, nein 24", ["23", "24"]),
+        ("Nummer 23, nein, vierundzwanzig", ["23", "24"]),
+    ],
+)
+def test_ein_marker_mit_alternative_ergibt_beide(text, cards):
+    """Codex PR #117: die zweite Zahl hinter einem einzigen "Nummer" nicht verlieren."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "zwei Nummer 23",
+        "Nummer 23 zweimal",
+        "Nummer 23, zwei Portionen",
+        "Nummer 23 bitte",
+    ],
+)
+def test_menge_neben_markierter_nummer_bleibt_eindeutig(text):
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"
+
+
+def test_x_an_der_markierten_nummer_ist_keine_endung():
+    """Codex PR #117: "Nummer 23x" ist keine Kartennummer - ungueltig statt still 23."""
+    ref = find_item_number_ref("Nummer 23x")
+    assert ref is not None and ref.text == "23x" and ref.valid is False
+
+
+def test_x_ohne_marker_ist_menge_und_keine_nummer():
+    """ "die 23x" ohne Marker: 23 mal - aber welches Gericht? Keine Nummer."""
+    assert find_item_number_ref("die 23x") is None
+
+
+def test_x_als_menge_bleibt_menge():
+    ref = find_item_number_ref("2x die 23")
+    assert ref is not None and ref.text == "23" and ref.valid is True
+
+
+def test_abgesetztes_x_nach_markierter_nummer_ist_ungueltig():
+    """Codex PR #117: "Nummer 23 x" ist nicht die 23."""
+    ref = find_item_number_ref("Nummer 23 x")
+    assert ref is not None and ref.text == "23x" and ref.valid is False
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23 mit 2 Soßen", "Nummer 23 um 12 Uhr", "Nummer 23 für 4 Personen"],
+)
+def test_zahl_ohne_korrekturwort_ist_keine_alternative(text):
+    """Codex PR #117: nur "oder", "nein" & Co. machen eine zweite Zahl zur Wahl."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23" and ref.valid is True
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nummer 23 oder 24",
+        "Nummer 23, nein 24",
+        "Nummer 23 bzw. 24",
+        "Nummer 23, lieber 24",
+    ],
+)
+def test_korrekturwort_macht_die_zweite_zahl_zur_alternative(text):
+    assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [("Nummer zwei drei", ["2", "3"]), ("Nummer 23 24", ["23", "24"])],
+)
+def test_direkt_folgende_zahl_ist_alternative(text, cards):
+    """Codex PR #117: zwei Zahlen direkt hintereinander - nicht die erste nehmen."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23 mit 2 oder 3 Soßen", "Nummer 23 mit 2 Soßen oder 3 Dips"]
+)
+def test_korrekturwort_zwischen_anderen_zahlen_verbindet_nicht(text):
+    """Codex PR #117: das "oder" gehoert zu den Sossen, nicht zur 23."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [("Nummer 23 und 24", ["23", "24"]), ("Nummer 23, 24", ["23", "24"])],
+)
+def test_aufzaehlung_hinter_einem_marker(text, cards):
+    """Codex PR #117: eine zweite Nummer per "und" oder Komma nie verschlucken."""
+    assert [r.text for r in find_marked_item_numbers(text)] == cards
+    assert find_item_number_ref(text) is None
+
+
+def test_zusammengesetzte_zahl_bleibt_eine():
+    ref = find_item_number_ref("Nummer drei und zwanzig")
+    assert ref is not None and ref.text == "23"
+
+
+@pytest.mark.parametrize("text", ["Nummer 1000 und 23", "Nummer 1000", "Nr. 5000, 23"])
+def test_markierte_nummer_ausserhalb_des_bereichs_bleibt_ungueltig(text):
+    """Codex PR #117: keine spaetere Zahl rueckt nach, wenn die markierte ungueltig ist."""
+    ref = find_item_number_ref(text)
+    assert (
+        ref is not None and ref.valid is False and ref.text.startswith(("1000", "5000"))
+    )
+
+
+@pytest.mark.parametrize(
+    "text", ["die Nummer ist 23", "ich meine Nummer die 23", "Nummer war 23"]
+)
+def test_fuellwort_zwischen_marker_und_zahl(text):
+    """Codex PR #117: natuerliche Saetze mit "ist"/"die" hinter "Nummer"."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23" and ref.marked
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 23, äh, 24", "Nummer 23 ähm 24", "Nummer 23 hm 24"]
+)
+def test_zoegerlaut_zwischen_zwei_nummern(text):
+    """Codex PR #117: eine Pause waehlt nicht still die erste Nummer."""
+    assert [r.text for r in find_marked_item_numbers(text)] == ["23", "24"]
+    assert find_item_number_ref(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23 mit Reis oder Nudeln um 18 Uhr", "Nummer 23, und zwar mit 2 Dips"],
+)
+def test_verbindungswort_muss_direkt_zwischen_den_zahlen_stehen(text):
+    """Codex PR #117: ein "oder" irgendwo im Satz verbindet keine spaete Uhrzeit."""
+    ref = find_item_number_ref(text)
+    assert ref is not None and ref.text == "23"
+
+
+def test_artikel_zwischen_verbindungswort_und_zahl():
+    assert [r.text for r in find_marked_item_numbers("Nummer 23 oder die 24")] == [
+        "23",
+        "24",
+    ]

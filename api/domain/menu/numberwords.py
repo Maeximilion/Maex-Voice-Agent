@@ -21,6 +21,7 @@ entscheidet der Aufrufer, nicht dieses Modul.
 
 import re
 from dataclasses import dataclass
+from itertools import pairwise
 
 # Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
 # ist am Telefon kein Zahlwort mehr, sondern eine Ziffernfolge.
@@ -83,6 +84,8 @@ ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 _QUANTITY_SUFFIX = re.compile(r"^(.+?)mal$")
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _ITEM_NUMBER_MARKERS = frozenset({"nummer", "nr", "no", "position", "pos"})
+# Zwischen Marker und Zahl erlaubt: "die Nummer ist 23", "Nummer die 23".
+_MARKER_FILLER = frozenset({"ist", "war", "waere", "die", "der", "das", "den"})
 
 # Satzzeichen trennen zwei Angaben: "Nummer 20, eine Portion" ist die 20 mit
 # einer Portion, nicht die 21 (Codex-Review PR #105, P1). Der Bindestrich steht
@@ -281,16 +284,199 @@ def find_item_number(text: str) -> int | None:
     P2). Bleiben danach mehrere Zahlen übrig, ist nicht entscheidbar, welche
     gemeint war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
     """
-    tokens = _tokens(text)
+    ref = find_item_number_ref(text)
+    return ref.value if ref is not None else None
+
+
+@dataclass(frozen=True)
+class ItemNumber:
+    """Eine Gerichtnummer mit allem, was aus derselben Stelle im Satz stammt.
+
+    `text` ist die Schreibweise, wie sie auf der Karte stehen kann: Ziffern
+    behalten führende Nullen ("07"), ein direkt folgender Buchstabe a bis f
+    gehört dazu ("23a", auch "23 a"). Bei einem Zahlwort ist es die Zahl.
+    `marked` heisst: direkt hinter "Nummer"/"Nr." - nicht irgendwo im Satz.
+    Alles aus einer Fundstelle, sonst mischt "23a, nein, Nummer 23" den
+    Buchstaben der ersten mit der Zahl der zweiten Angabe (Codex PR #117, P1).
+    """
+
+    value: int
+    text: str
+    marked: bool
+    # False, wenn eine Endung dranhängt, die keine Karte hat ("23g", "23ab"):
+    # die Nummer gilt dann als nicht vorhanden, statt still zur 23 gekürzt zu
+    # werden (Codex PR #117, P1).
+    valid: bool = True
+
+
+_SUFFIXES = frozenset("abcdef")
+# Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
+# mehr vom Leerzeichen-Fall ("23 bitte") zu unterscheiden. Deshalb je Token
+# merken, ob der nächste ohne Lücke folgt - nach Position, nicht nach
+# Ziffernfolge, sonst leiht sich "23a, nein, Nummer 23" das a der ersten 23.
+
+
+def _glued(text: str) -> set[int]:
+    """Indizes der Ziffern-Tokens, an denen ohne Lücke Buchstaben hängen."""
+    matches = list(_TOKEN.finditer(fold(text)))
+    return {
+        i
+        for i, (m, nxt) in enumerate(pairwise(matches))
+        if m.group().isdigit() and nxt.group().isalpha() and m.end() == nxt.start()
+    }
+
+
+def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
+    digits = span.end - span.start == 1 and tokens[span.start].isdigit()
+    card = tokens[span.start] if digits else str(span.value)
+    nxt = tokens[span.end] if span.end < len(tokens) else ""
+    if digits and span.start in glued:
+        suffix = nxt
+        # "23x" ist keine Kartennummer und auch keine Endung: ungültig, nicht
+        # die 23 (Codex PR #117). Echte Mengen ("2x Pho") hat _quantity_spans
+        # vorher schon aussortiert, sie kommen hier nicht an.
+        valid = suffix in _SUFFIXES
+        return ItemNumber(span.value, card + suffix, marked, valid)
+    if nxt in _SUFFIXES:
+        return ItemNumber(span.value, card + nxt, marked)
+    if len(nxt) == 1 and nxt.isalpha() and (nxt != "x" or marked):
+        # "Nummer 23 g", "Nummer 23 x": einzelner Buchstabe ohne Karte -
+        # ungültig, nicht 23 (Codex PR #117). Ohne Marker ist "23 x" eine Menge
+        # und kommt hier gar nicht an.
+        return ItemNumber(span.value, card + nxt, marked, valid=False)
+    return ItemNumber(value=span.value, text=card, marked=marked)
+
+
+def _canonical(card: str) -> str:
+    """Kartennummer ohne führende Nullen, so wie search_menu sie vergleicht."""
+    return card.lstrip("0") or "0"
+
+
+_LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
+# Zögerlaute der Spracherkennung, nach fold() (ä -> ae).
+_HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
+# Wörter, die eine zweite Zahl zur Alternative oder Korrektur machen.
+_ALTERNATIVE_WORDS = frozenset(
+    {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
+)
+
+
+def _connected(tokens: list[str], after: int, before: int) -> bool:
+    """Verbindet, was zwischen zwei Zahlen steht, sie zu Kandidaten?
+
+    Ja bei einem Wort für Alternative, Korrektur oder Aufzählung ("oder",
+    "nein", "und") und bei bloßen Satzzeichen ("Nummer 23, 24"): eine zweite
+    genannte Nummer wird nie verschluckt (Codex PR #117). "drei und zwanzig"
+    ist davon nicht betroffen, das fasst _scan vorher zu einer Zahl zusammen.
+    """
+    between = [t for t in tokens[after:before] if t not in PUNCTUATION]
+    # Zögerlaute und Artikel sind durchsichtig ("Nummer 23, äh, 24", "Nummer 23
+    # oder die 24"). Alles andere muss ein Verbindungswort sein - ein "oder"
+    # zwischen Reis und Nudeln verbindet keine spätere Uhrzeit (Codex PR #117).
+    words = [t for t in between if t not in _HESITATIONS and t not in _LINK_ARTICLES]
+    return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
+
+
+def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
+    spans: list[_Span] = []
+    # Ziffern hinter dem Marker, die ausserhalb des Zahlbereichs liegen
+    # ("Nummer 1000"): ungültig, und keine spätere Zahl darf nachrücken
+    # ("Nummer 1000 und 23" ist nicht die 23, Codex PR #117).
+    invalid: list[ItemNumber] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
         nach_marker = i + 1
-        while nach_marker < len(tokens) and tokens[nach_marker] in PUNCTUATION:
-            nach_marker += 1  # "Nr. 23"
+        # "Nr. 23", "die Nummer ist 23", "Nummer die 23": Satzzeichen und ein
+        # paar feste Füllwörter überspringen. Bewusst kurz - "Nummer weiß ich
+        # nicht" bleibt ohne Nummer (Codex PR #117).
+        while nach_marker < len(tokens) and (
+            tokens[nach_marker] in PUNCTUATION or tokens[nach_marker] in _MARKER_FILLER
+        ):
+            nach_marker += 1
         span = _scan(tokens, nach_marker)
         if span is not None:
-            return span.value
+            spans.append(span)
+        elif nach_marker < len(tokens) and tokens[nach_marker].isdigit():
+            digits = tokens[nach_marker]
+            invalid.append(ItemNumber(int(digits), digits, marked=True, valid=False))
+    if not spans:
+        return invalid
+    # Weitere Zahlen hinter der ersten markierten Nummer sind Alternative oder
+    # Korrektur, aber nur mit einem Wort, das das sagt: "Nummer 23 oder 24",
+    # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" oder
+    # "um 12 Uhr" ist ein Detail, keine zweite Nummer (P2). Zahlen vor dem
+    # Marker bleiben Mengen: "zwei Nummer 23".
+    # Kette: eine spätere Zahl ist Alternative, wenn ihr direkter Vorgänger
+    # schon Kandidat ist und sie entweder unmittelbar folgt ("Nummer zwei drei",
+    # "Nummer 23 24") oder ein Korrekturwort dazwischen steht - ohne eine
+    # andere Zahl dazwischen. "Nummer 23 mit 2 oder 3 Soßen": das "oder"
+    # verbindet die Soßen, nicht die 23 (Codex PR #117, P1, P2). Mengen sind
+    # nie Kandidat und unterbrechen die Kette.
+    mengen = _quantity_spans(tokens)
+    later = sorted(
+        (
+            span
+            for span in _number_spans(tokens)
+            if span.start > spans[0].start and not any(span.overlaps(s) for s in spans)
+        ),
+        key=lambda s: s.start,
+    )
+    chain = sorted(
+        [(s, True) for s in spans] + [(s, False) for s in later],
+        key=lambda e: e[0].start,
+    )
+    prev: tuple[_Span, bool] | None = None
+    for span, is_marked in chain:
+        if span.start < spans[0].start:
+            continue
+        if not is_marked:
+            candidate = (
+                prev is not None
+                and prev[1]
+                and not any(span.overlaps(m) for m in mengen)
+                and (
+                    span.start == prev[0].end
+                    or _connected(tokens, prev[0].end, span.start)
+                )
+            )
+            if candidate:
+                spans.append(span)
+            prev = (span, candidate)
+        else:
+            prev = (span, True)
+    spans.sort(key=lambda s: s.start)
+    found: list[ItemNumber] = list(invalid)
+    for span in spans:
+        ref = _ref(tokens, span, marked=True, glued=glued)
+        # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
+        if all(_canonical(r.text) != _canonical(ref.text) for r in found):
+            found.append(ref)
+    return found
+
+
+def find_marked_item_numbers(text: str) -> list[ItemNumber]:
+    """Alle verschiedenen Nummern hinter "Nummer"/"Nr.", in Satzfolge - auch
+    eine zweite Zahl ohne eigenen Marker ("Nummer 23 oder 24").
+
+    Mehr als eine heisst: der Gast korrigiert sich ("Nummer 23, nein, Nummer
+    24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
+    nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
+    """
+    return _marked(_tokens(text), _glued(text))
+
+
+def find_item_number_ref(text: str) -> ItemNumber | None:
+    """Wie `find_item_number`, aber mit Kartenschreibweise und Marker.
+
+    Zwei verschiedene ausdrücklich genannte Nummern ergeben `None`: die erste
+    zu nehmen wäre geraten (CLAUDE.md §2 Regel 2).
+    """
+    tokens = _tokens(text)
+    glued = _glued(text)
+    marked = _marked(tokens, glued)
+    if marked:
+        return marked[0] if len(marked) == 1 else None
 
     mengen = _quantity_spans(tokens)
     uebrig = [
@@ -298,7 +484,18 @@ def find_item_number(text: str) -> int | None:
         for span in _number_spans(tokens)
         if not any(span.overlaps(menge) for menge in mengen)
     ]
-    return uebrig[0].value if len(uebrig) == 1 else None
+    if len(uebrig) != 1:
+        return None
+    return _ref(tokens, uebrig[0], marked=False, glued=glued)
+
+
+def has_item_number_marker(text: str) -> bool:
+    """Steht ein ausdrückliches "Nummer"/"Nr." im Satz?
+
+    Ohne Marker ist eine nackte Zahl neben einem Gerichtnamen eher eine Menge:
+    "zwei Frühlingsrollen" meint nicht Gericht 2 (search_menu, T-4.3).
+    """
+    return any(token in _ITEM_NUMBER_MARKERS for token in _tokens(text))
 
 
 def find_quantity(text: str) -> int | None:

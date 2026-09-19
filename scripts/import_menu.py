@@ -65,13 +65,18 @@ def main(argv: list[str] | None = None) -> int:
         if tenant is None:
             print(f"Mandant nicht gefunden: {args.tenant_name}", file=sys.stderr)
             return 2
-        report = apply(
-            session,
-            tenant.id,
-            plan,
-            apply_price_changes=args.apply_price_changes,
-            dry_run=args.dry_run,
-        )
+        try:
+            report = apply(
+                session,
+                tenant.id,
+                plan,
+                apply_price_changes=args.apply_price_changes,
+                dry_run=args.dry_run,
+            )
+        except ValueError as exc:
+            # Bestand passt nicht zum Plan (z. B. 23A und 23a): nichts eingespielt.
+            print(f"Fehler: {exc}", file=sys.stderr)
+            return 1
     print(report.as_text())
     return 0
 

@@ -253,3 +253,91 @@ def test_alias_doppelt_im_gleichen_gericht_zaehlt_einmal():
     plan = parse(files(**{ALIASES_FILE: ALIASES + "23;frühlingsrollen\n"}))
 
     assert plan.ok and len(plan.aliases["23"]) == 2
+
+
+# --- Kartennummern, die die Suche eindeutig aufloesen kann (Codex PR #117, P1) ----
+
+
+@pytest.mark.parametrize("nummer", ["23", "23a", "23F", "007", "12c"])
+def test_kartennummer_im_suchformat(nummer):
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert plan.ok, plan.errors
+
+
+@pytest.mark.parametrize("nummer", ["23g", "A12", "23x", "23ab", "12-3", "Nr. 5", "V2"])
+def test_kartennummer_ausserhalb_des_suchformats(nummer):
+    """Sonst sucht "Nummer 23g" still die 23: lieber beim Import scheitern."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok
+    assert "Kartennummer" in plan.errors[0] and nummer in plan.errors[0]
+
+
+@pytest.mark.parametrize("nummer", ["1000", "1000a", "12345"])
+def test_kartennummer_ueber_dem_zahlbereich_der_suche(nummer):
+    """numberwords liest bis 999: groessere Nummern waeren per Nummer nie findbar."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok and "Kartennummer" in plan.errors[0]
+
+
+@pytest.mark.parametrize("nummer", ["999", "0999", "0007"])
+def test_kartennummer_bis_999_auch_mit_nullen(nummer):
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
+    )
+    assert plan.ok, plan.errors
+
+
+def test_buchstabe_wird_klein_gespeichert():
+    plan = parse({MENU_FILE: "number;name;category;price_eur\n23A;Gericht;Test;1,00\n"})
+    assert plan.ok and set(plan.items) == {"23a"}
+
+
+def test_gross_und_klein_sind_dieselbe_nummer():
+    """Sonst entstehen 23a und 23A, und jede Suche nach "Nummer 23a" fragt nach."""
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n23a;Eins;Test;1,00\n23A;Zwei;Test;1,00\n"
+        }
+    )
+    assert not plan.ok and "Nummer 23a doppelt" in plan.errors[0]
+
+
+def test_optionen_finden_die_nummer_unabhaengig_von_der_schreibweise():
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n23A;Gericht;Test;1,00\n",
+            OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n"
+            "23a;Größe;groß;1,00;nein;nein\n",
+        }
+    )
+    assert plan.ok, plan.errors and "23a" in plan.options
+
+
+@pytest.mark.parametrize(("a", "b"), [("7", "07"), ("7a", "07a"), ("007", "7")])
+def test_fuehrende_null_ist_dieselbe_nummer(a, b):
+    """Codex PR #117: so vergleicht auch die Suche - sonst dauerhaft mehrdeutig."""
+    plan = parse(
+        {
+            MENU_FILE: f"number;name;category;price_eur\n{a};Eins;Test;1,00\n{b};Zwei;Test;1,00\n"
+        }
+    )
+    assert not plan.ok and "doppelt" in plan.errors[0]
+
+
+def test_optionen_finden_die_nummer_auch_ohne_null():
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n07;Misosuppe;Suppen;4,50\n",
+            OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n"
+            "7;Größe;groß;1,00;nein;nein\n",
+            ALIASES_FILE: "number;alias\n7;miso\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    assert set(plan.items) == {"07"} and "07" in plan.options and "07" in plan.aliases
