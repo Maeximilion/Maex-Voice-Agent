@@ -14,7 +14,7 @@ Saetze zeigt das sofort, einzelne Testfunktionen nicht.
 
 import pytest
 
-from evals.number_eval import load, resolve
+from evals.number_eval import disagreement, load, resolve
 
 CASES = load()
 
@@ -27,3 +27,9 @@ def test_faelle_vorhanden():
 @pytest.mark.parametrize("case", CASES, ids=lambda c: c.say)
 def test_nummernerkennung(case):
     assert resolve(case.say) == case.expect, case.why
+
+
+@pytest.mark.parametrize("case", CASES, ids=lambda c: c.say)
+def test_beide_ausgaenge_einig(case):
+    """Was als Nummer genannt wurde und keine ist, wird auf keinem Weg zur Zahl."""
+    assert disagreement(case.say) is None

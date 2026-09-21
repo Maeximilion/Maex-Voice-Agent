@@ -287,9 +287,14 @@ def find_item_number(text: str) -> int | None:
     die 23" ist eindeutig, auch wenn zwei Zahlen fallen (Codex-Review PR #105,
     P2). Bleiben danach mehrere Zahlen übrig, ist nicht entscheidbar, welche
     gemeint war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
+
+    Eine genannte Nummer, die keine Kartenform hat ("Nummer 23g", "Nummer A12",
+    "Nummer tausend"), ergibt ebenfalls `None`: sie trägt keine Zahl, mit der
+    sich weiterarbeiten liesse. Wer die Schreibweise braucht, um danach zu
+    fragen, nimmt `find_item_number_ref` (Codex PR #117, P2).
     """
     ref = find_item_number_ref(text)
-    return ref.value if ref is not None else None
+    return ref.value if ref is not None and ref.valid else None
 
 
 @dataclass(frozen=True)
@@ -401,7 +406,59 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
 
 
-def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
+def _marker_target(
+    tokens: list[str], i: int, prefixed: set[int]
+) -> tuple[int, int, _Span | None, ItemNumber | None]:
+    """Was hinter dem Marker an Stelle `i` steht.
+
+    Rückgabe `(start, end, span, bad)`: `span` ist eine gelesene Zahl, `bad`
+    eine genannte, die keine Kartennummer sein kann. `start` bis `end` sind die
+    Token, die zu `bad` gehören. Höchstens eines von beiden ist gesetzt.
+
+    Eine Stelle für beide Ausgänge - `_marked` für die Verständnisleiter und
+    `sole_item_number` für die Suche. Vorher stand die Logik zweimal da, und
+    der Prefix-Fall wurde nur in einer der beiden Kopien ungültig: "Nummer A12"
+    war in der Suche `not_found`, über `find_item_number` aber Gericht 12
+    (Codex PR #117, P2).
+
+    Erst scannen, dann überspringen: "Nummer ein und zwanzig" ist 21, das "ein"
+    eröffnet die Zahl und ist an dieser Stelle kein Füllwort.
+    """
+    j = i + 1
+    while j < len(tokens):
+        span = _scan(tokens, j)
+        if span is not None:
+            return j, j, span, None
+        if (
+            tokens[j] in PUNCTUATION
+            or tokens[j] in _MARKER_FILLER
+            or tokens[j] in _SENTENCE_FILLER
+            or tokens[j] in _HESITATIONS
+        ):
+            j += 1
+            continue
+        break
+    if j >= len(tokens):
+        return j, j, None, None
+    word = tokens[j]
+    # Ziffern ausserhalb des Kartenbereichs ("Nummer 1000") tragen ihren Wert;
+    # ein Zahlwort darüber ("tausend", "eintausend") hat keinen im erlaubten
+    # Bereich, `value` bleibt dann 0 und wird nie gelesen, weil `valid=False`
+    # den Aufrufer vorher abbiegen lässt.
+    if word.isdigit():
+        return j, j + 1, None, ItemNumber(int(word), word, True, valid=False)
+    if _too_large(word):
+        return j, j + 1, None, ItemNumber(0, word, True, valid=False)
+    # "Nummer A12", "Nummer A 12", "Nummer AB 12": Buchstaben vor der Ziffer.
+    # Keine Kartenform - eine Endung steht hinter der Zahl, nie davor.
+    if j in prefixed or (
+        j + 1 < len(tokens) and word.isalpha() and tokens[j + 1].isdigit()
+    ):
+        return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
+    return j, j, None, None
+
+
+def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[ItemNumber]:
     spans: list[_Span] = []
     # Ziffern hinter dem Marker, die ausserhalb des Zahlbereichs liegen
     # ("Nummer 1000"): ungültig, und keine spätere Zahl darf nachrücken
@@ -410,20 +467,11 @@ def _marked(tokens: list[str], glued: set[int]) -> list[ItemNumber]:
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        nach_marker = i + 1
-        # "Nr. 23", "die Nummer ist 23", "Nummer die 23": Satzzeichen und ein
-        # paar feste Füllwörter überspringen. Bewusst kurz - "Nummer weiß ich
-        # nicht" bleibt ohne Nummer (Codex PR #117).
-        while nach_marker < len(tokens) and (
-            tokens[nach_marker] in PUNCTUATION or tokens[nach_marker] in _MARKER_FILLER
-        ):
-            nach_marker += 1
-        span = _scan(tokens, nach_marker)
+        _, _, span, bad = _marker_target(tokens, i, prefixed)
         if span is not None:
             spans.append(span)
-        elif nach_marker < len(tokens) and tokens[nach_marker].isdigit():
-            digits = tokens[nach_marker]
-            invalid.append(ItemNumber(int(digits), digits, marked=True, valid=False))
+        elif bad is not None:
+            invalid.append(bad)
     if not spans:
         return invalid
     # Weitere Zahlen hinter der ersten markierten Nummer sind Alternative oder
@@ -487,7 +535,7 @@ def find_marked_item_numbers(text: str) -> list[ItemNumber]:
     24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
     nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
     """
-    return _marked(_tokens(text), _glued(text))
+    return _marked(_tokens(text), _glued(text), _prefixed(text))
 
 
 def find_item_number_ref(text: str) -> ItemNumber | None:
@@ -498,7 +546,7 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
     """
     tokens = _tokens(text)
     glued = _glued(text)
-    marked = _marked(tokens, glued)
+    marked = _marked(tokens, glued, _prefixed(text))
     if marked:
         return marked[0] if len(marked) == 1 else None
 
@@ -574,55 +622,15 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        # Erst scannen, dann erst überspringen: "Nummer ein und zwanzig" ist 21,
-        # das "ein" eröffnet die Zahl und ist hier kein Füllwort. Scheitert der
-        # Scan, darf jedes erlaubte Füllwort und jeder Zögerlaut dazwischen
-        # stehen - "Nummer bitte 23" und "Nummer äh 23" sind die 23, sonst
-        # verlöre der Satz seinen Marker und liefe in die Namenssuche
-        # (Codex PR #117, P1).
-        j = i + 1
-        span = None
-        while j < len(tokens):
-            span = _scan(tokens, j)
-            if span is not None:
-                break
-            if (
-                tokens[j] in PUNCTUATION
-                or tokens[j] in _MARKER_FILLER
-                or tokens[j] in _SENTENCE_FILLER
-                or tokens[j] in _HESITATIONS
-            ):
-                j += 1
-                continue
-            break
+        start, end, span, bad = _marker_target(tokens, i, prefixed)
         if span is not None:
             marked.append(span)
             marker_at.add(i)
-        elif j < len(tokens) and (tokens[j].isdigit() or _too_large(tokens[j])):
-            # Ziffern tragen ihren Wert, ein Wort wie "tausend" hat keinen im
-            # erlaubten Bereich - `value` bleibt 0 und wird nie gelesen, weil
-            # `valid=False` den Aufrufer vorher abbiegen lässt.
-            word = tokens[j]
-            value = int(word) if word.isdigit() else 0
-            invalid.append(ItemNumber(value, word, True, valid=False))
+        elif bad is not None:
+            invalid.append(bad)
             marker_at.add(i)
-            consumed.add(j)
-            invalid_at.add(j)
-        elif j in prefixed or (
-            # "Nummer A 12", "Nummer AB 12": dieselbe Form, nur mit Leerzeichen
-            # aus der Erkennung, und ohne Laengengrenze wie die
-            # zusammengeschriebene. Buchstaben vor einer Ziffer sind nie eine
-            # Endung - die steht hinter der Zahl (Codex PR #117, P2).
-            # _scan ist hier schon gescheitert, ein Zahlwort ist es also nicht.
-            j + 1 < len(tokens) and tokens[j].isalpha() and tokens[j + 1].isdigit()
-        ):
-            # "Nummer A12": Buchstabe vor der Ziffer. Keine Kartenform, also
-            # ungueltig statt Namenssuche - ein Alias "a12" darf die genannte
-            # Nummer nicht stillschweigend ersetzen (Codex PR #117, P1).
-            invalid.append(ItemNumber(0, tokens[j] + tokens[j + 1], True, valid=False))
-            marker_at.add(i)
-            consumed.update((j, j + 1))
-            invalid_at.update((j, j + 1))
+            consumed.update(range(start, end))
+            invalid_at.update(range(start, end))
     numbers = list(marked)
     for span in _number_spans(tokens):
         if any(span.overlaps(m) for m in marked) or any(

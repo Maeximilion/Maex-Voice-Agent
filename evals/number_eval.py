@@ -39,7 +39,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from api.domain.menu.numberwords import sole_item_number
+from api.domain.menu.numberwords import find_item_number, sole_item_number
 
 CASES = Path(__file__).parent / "cases" / "nummern.jsonl"
 
@@ -73,9 +73,31 @@ def resolve(say: str) -> str:
     return ref.text if ref.valid else f"!{ref.text}"
 
 
+def disagreement(say: str) -> str | None:
+    """Sagen beide Ausgaenge dasselbe ueber eine genannte, ungueltige Nummer?
+
+    `sole_item_number` treibt die Suche, `find_item_number` die
+    Verstaendnisleiter. Wer als Nummer genannt wurde, aber keine Kartenform
+    hat, darf auf keinem der beiden Wege zu einer Zahl werden - sonst antwortet
+    die Suche `not_found`, waehrend die Leiter dasselbe Wort als Gericht nimmt.
+    Genau so war "Nummer A12" in der Suche richtig und ueber `find_item_number`
+    Gericht 12 (Codex PR #117, P2).
+    """
+    ref, unclear = sole_item_number(say)
+    if unclear or ref is None or ref.valid:
+        return None
+    other = find_item_number(say)
+    if other is None:
+        return None
+    return f"ungueltig als {ref.text!r}, aber find_item_number gibt {other}"
+
+
 def run(cases: list[Case]) -> list[tuple[Case, str]]:
     """Alle Faelle, Rueckgabe nur der Abweichungen."""
-    return [(c, got) for c in cases if (got := resolve(c.say)) != c.expect]
+    failures = [(c, got) for c in cases if (got := resolve(c.say)) != c.expect]
+    return failures + [
+        (c, bad) for c in cases if (bad := disagreement(c.say)) is not None
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
