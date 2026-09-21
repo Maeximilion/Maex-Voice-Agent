@@ -560,6 +560,24 @@ def test_verbindungswort_im_namen_bleibt_namenssuche(text):
     assert sole_item_number(text) == (None, False)
 
 
+@pytest.mark.parametrize("text", ["Nummer A12", "Nummer a12", "Nr. C3 bitte"])
+def test_buchstabe_vor_der_ziffer_nach_marker_ist_ungueltig(text):
+    """ "Nummer A12" ist keine Kartenform (docs/14: Ziffern, dahinter a-f).
+
+    Ohne das liefe die Suche auf den Namen "a12" und ein importierter Alias
+    "a12" könnte die genannte Nummer stillschweigend ersetzen, obwohl der
+    Importer "A12" als Kartennummer ablehnt (Codex PR #117, P1).
+    """
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid
+
+
+@pytest.mark.parametrize("text", ["die A12", "A12", "7up"])
+def test_buchstabe_vor_der_ziffer_ohne_marker_bleibt_name(text):
+    """Ohne "Nummer" ist "7up" ein Alias, kein Nummernversuch."""
+    assert sole_item_number(text) == (None, False)
+
+
 @pytest.mark.parametrize("text", ["Nummer tausend", "Nummer tausendzwei"])
 def test_zu_grosses_zahlwort_nach_marker_ist_ungueltig(text):
     """ "Nummer tausend" ist eine Nummer, die es nicht gibt - kein Gerichtname.

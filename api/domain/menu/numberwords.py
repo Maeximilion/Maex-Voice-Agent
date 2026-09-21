@@ -330,6 +330,22 @@ def _glued(text: str) -> set[int]:
     }
 
 
+def _prefixed(text: str) -> set[int]:
+    """Indizes der Buchstaben-Tokens, an denen ohne Lücke Ziffern hängen.
+
+    Gegenstück zu `_glued`: dort folgt der Buchstabe auf die Ziffer ("23a"),
+    hier geht er ihr voran ("A12"). Eine Kartennummer sieht so nie aus (docs/14
+    lässt nur Ziffern mit optionalem a-f dahinter zu), deshalb ist "Nummer A12"
+    eine Nummer, die es nicht gibt - und kein Gerichtname (Codex PR #117).
+    """
+    matches = list(_TOKEN.finditer(fold(text)))
+    return {
+        i
+        for i, (m, nxt) in enumerate(pairwise(matches))
+        if m.group().isalpha() and nxt.group().isdigit() and m.end() == nxt.start()
+    }
+
+
 def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
     digits = span.end - span.start == 1 and tokens[span.start].isdigit()
     card = tokens[span.start] if digits else str(span.value)
@@ -535,10 +551,15 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     """
     tokens = _tokens(text)
     glued = _glued(text)
+    prefixed = _prefixed(text)
     mengen = _quantity_spans(tokens)
     consumed: set[int] = set()
     marked: list[_Span] = []
     invalid: list[ItemNumber] = []
+    # Token, die schon zu einer ungueltigen Nummer gehoeren. Die Ziffer aus
+    # "Nummer A12" darf nicht noch einmal als eigene Zahl zaehlen, sonst waere
+    # der Satz "unklar" statt einer Nummer, die es nicht gibt.
+    invalid_at: set[int] = set()
     marker_at: set[int] = set()
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
@@ -561,11 +582,22 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
             invalid.append(ItemNumber(value, word, True, valid=False))
             marker_at.add(i)
             consumed.add(j)
+            invalid_at.add(j)
+        elif j in prefixed:
+            # "Nummer A12": Buchstabe vor der Ziffer. Keine Kartenform, also
+            # ungueltig statt Namenssuche - ein Alias "a12" darf die genannte
+            # Nummer nicht stillschweigend ersetzen (Codex PR #117, P1).
+            invalid.append(ItemNumber(0, tokens[j] + tokens[j + 1], True, valid=False))
+            marker_at.add(i)
+            consumed.update((j, j + 1))
+            invalid_at.update((j, j + 1))
     numbers = list(marked)
     for span in _number_spans(tokens):
         if any(span.overlaps(m) for m in marked) or any(
             span.overlaps(q) for q in mengen
         ):
+            continue
+        if any(k in invalid_at for k in range(span.start, span.end)):
             continue
         if span.end in marker_at:
             # "zwei Nummer 23": Menge vor dem Marker, gehört nicht zum Rest.

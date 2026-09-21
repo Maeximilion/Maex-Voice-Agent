@@ -526,6 +526,7 @@ def test_eindeutiger_nummernsatz_trifft(session, tenant_id, gesagt):
         "Nummer 07 oder Nummer 7",
         # Ohne Marker: sonst suchte die Namenssuche nach "oder" (Codex PR #117).
         "23 oder 24",
+        "Nummer A12 oder 24",
     ],
 )
 def test_nummer_mit_mehr_im_satz_fragt_nach(session, tenant_id, gesagt):
