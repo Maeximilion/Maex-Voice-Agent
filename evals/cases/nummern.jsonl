@@ -62,3 +62,9 @@
 {"say": "Pizza 4 Jahreszeiten", "expect": "name", "why": "Ziffer gehoert zum Gerichtnamen"}
 {"say": "ich hätte gern Pho", "expect": "name", "why": "nur Fuellwoerter und ein Name"}
 {"say": "ich haette gern Pho", "expect": "name", "why": "Erkennung ohne Umlaut"}
+{"say": "Nummer A zwölf", "expect": "!a12", "why": "Buchstabe davor, Zahl als Wort"}
+{"say": "Nummer A zwoelf", "expect": "!a12", "why": "dasselbe ohne Umlaut aus der Erkennung"}
+{"say": "Nummer 23 ab", "expect": "!23ab", "why": "abgesetzte Endung aus mehreren Buchstaben, wie 23ab"}
+{"say": "Nummer 23ab", "expect": "!23ab", "why": "zusammengeschrieben, war schon ungueltig"}
+{"say": "Nummer 23 mit Reis", "expect": "?", "why": "mit ist keine Endung, sondern ein Wort daneben"}
+{"say": "Nummer 23 bitte", "expect": "23", "why": "Hoeflichkeitsfloskel hinter der Nummer"}

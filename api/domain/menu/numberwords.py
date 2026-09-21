@@ -351,6 +351,17 @@ def _prefixed(text: str) -> set[int]:
     }
 
 
+def _long_suffix(token: str) -> bool:
+    """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
+
+    Begrenzt auf a bis f, die einzigen Buchstaben, die eine Kartennummer
+    tragen kann (docs/14). Damit bleibt "Nummer 23 mit Reis" die 23 mit einem
+    Wort daneben, waehrend "Nummer 23 ab" wie "Nummer 23ab" ungueltig ist -
+    die Erkennung setzt das Leerzeichen, nicht der Gast (Codex PR #117, P2).
+    """
+    return len(token) > 1 and all(c in _SUFFIXES for c in token)
+
+
 def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
     digits = span.end - span.start == 1 and tokens[span.start].isdigit()
     card = tokens[span.start] if digits else str(span.value)
@@ -362,6 +373,14 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
         # vorher schon aussortiert, sie kommen hier nicht an.
         valid = suffix in _SUFFIXES
         return ItemNumber(span.value, card + suffix, marked, valid)
+    # "Nummer 23 ab": abgesetzte Endung aus mehreren Buchstaben. Zusammen
+    # geschrieben ("23ab") war das laengst ungueltig, getrennt kam bisher die
+    # blanke 23 heraus - und zwar nur ueber find_item_number_ref, waehrend die
+    # Suche nachfragte. Begrenzt auf Buchstaben, die eine Kartenendung
+    # ueberhaupt tragen kann (a bis f): "Nummer 23 mit Reis" bleibt die 23 mit
+    # einem Wort daneben (Codex PR #117, P2).
+    if marked and _long_suffix(nxt):
+        return ItemNumber(span.value, card + nxt, marked, valid=False)
     if nxt in _SUFFIXES:
         return ItemNumber(span.value, card + nxt, marked)
     if len(nxt) == 1 and nxt.isalpha() and (nxt != "x" or marked):
@@ -449,11 +468,20 @@ def _marker_target(
         return j, j + 1, None, ItemNumber(int(word), word, True, valid=False)
     if _too_large(word):
         return j, j + 1, None, ItemNumber(0, word, True, valid=False)
-    # "Nummer A12", "Nummer A 12", "Nummer AB 12": Buchstaben vor der Ziffer.
-    # Keine Kartenform - eine Endung steht hinter der Zahl, nie davor.
-    if j in prefixed or (
-        j + 1 < len(tokens) and word.isalpha() and tokens[j + 1].isdigit()
-    ):
+    # "Nummer A12", "Nummer A 12", "Nummer AB 12", "Nummer A zwölf": Buchstaben
+    # vor der Zahl. Keine Kartenform - eine Endung steht hinter der Zahl, nie
+    # davor. Die Zahl darf dabei auch als Wort kommen, die Erkennung liefert
+    # beides (Codex PR #117, P1).
+    if word.isalpha():
+        dahinter = _scan(tokens, j + 1)
+        if dahinter is not None:
+            return (
+                j,
+                dahinter.end,
+                None,
+                ItemNumber(0, word + str(dahinter.value), True, valid=False),
+            )
+    if j in prefixed:
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None
 
@@ -660,6 +688,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         if (
             after in _QUANTITY_NOUNS
             or after in _SUFFIXES
+            or (span in marked and _long_suffix(after))
             or (
                 span in marked
                 and after.isalpha()
