@@ -570,12 +570,27 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
+        # Erst scannen, dann erst überspringen: "Nummer ein und zwanzig" ist 21,
+        # das "ein" eröffnet die Zahl und ist hier kein Füllwort. Scheitert der
+        # Scan, darf jedes erlaubte Füllwort und jeder Zögerlaut dazwischen
+        # stehen - "Nummer bitte 23" und "Nummer äh 23" sind die 23, sonst
+        # verlöre der Satz seinen Marker und liefe in die Namenssuche
+        # (Codex PR #117, P1).
         j = i + 1
-        while j < len(tokens) and (
-            tokens[j] in PUNCTUATION or tokens[j] in _MARKER_FILLER
-        ):
-            j += 1
-        span = _scan(tokens, j)
+        span = None
+        while j < len(tokens):
+            span = _scan(tokens, j)
+            if span is not None:
+                break
+            if (
+                tokens[j] in PUNCTUATION
+                or tokens[j] in _MARKER_FILLER
+                or tokens[j] in _SENTENCE_FILLER
+                or tokens[j] in _HESITATIONS
+            ):
+                j += 1
+                continue
+            break
         if span is not None:
             marked.append(span)
             marker_at.add(i)
@@ -589,7 +604,15 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
             marker_at.add(i)
             consumed.add(j)
             invalid_at.add(j)
-        elif j in prefixed:
+        elif j in prefixed or (
+            # "Nummer A 12": dieselbe Form, nur mit Leerzeichen aus der
+            # Erkennung. Ein einzelner Buchstabe vor einer Ziffer ist nie eine
+            # Endung - die steht hinter der Zahl (Codex PR #117, P2).
+            j + 1 < len(tokens)
+            and len(tokens[j]) == 1
+            and tokens[j].isalpha()
+            and tokens[j + 1].isdigit()
+        ):
             # "Nummer A12": Buchstabe vor der Ziffer. Keine Kartenform, also
             # ungueltig statt Namenssuche - ein Alias "a12" darf die genannte
             # Nummer nicht stillschweigend ersetzen (Codex PR #117, P1).

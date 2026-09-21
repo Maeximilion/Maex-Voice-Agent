@@ -560,7 +560,27 @@ def test_verbindungswort_im_namen_bleibt_namenssuche(text):
     assert sole_item_number(text) == (None, False)
 
 
-@pytest.mark.parametrize("text", ["Nummer A12", "Nummer a12", "Nr. C3 bitte"])
+def test_marker_ueberlebt_fuellwort_und_zoegerlaut():
+    """ "Nummer bitte 23, Pho" darf den Marker nicht verlieren.
+
+    Sonst bliebe nach der Normalisierung nur "pho" stehen und der exakte Alias
+    könnte stillschweigend ein anderes Gericht liefern, obwohl der Gast eine
+    Nummer genannt hat (Codex PR #117, P1).
+    """
+    for text in ("Nummer bitte 23, Pho", "Nummer äh 23, Pho"):
+        assert sole_item_number(text) == (None, True)
+
+
+def test_fuellwort_verschluckt_die_zahl_nicht():
+    """ "ein" eröffnet hier die Zahl und ist kein Füllwort: 21, nicht None."""
+    ref, unclear = sole_item_number("Nummer ein und zwanzig")
+    assert not unclear and ref is not None and ref.value == 21
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer A12", "Nummer a12", "Nr. C3 bitte", "Nummer A 12", "Nummer a 12"],
+)
 def test_buchstabe_vor_der_ziffer_nach_marker_ist_ungueltig(text):
     """ "Nummer A12" ist keine Kartenform (docs/14: Ziffern, dahinter a-f).
 
