@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.17
+> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.18
 
 ---
 
@@ -240,6 +240,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.19.18 · 21.09.2026:** Codex review PR #117 (P1) fixed: two numbers without a marker ask back instead of searching for the connector word
 - **v1.19.17 · 21.09.2026:** Rule A (Maxi): search_menu takes a number only when the whole sentence is that one number, otherwise it asks back
 - **v1.19.16 · 18.09.2026:** Codex review PR #117 (P2 x2) fixed: connector must sit directly between numbers, alias like 7up kept
 - **v1.19.15 · 18.09.2026:** Codex review PR #117 (P1) fixed: hesitation between two numbers asks back

@@ -522,11 +522,48 @@ def test_sole_item_number_eindeutig(text, card):
 
 @pytest.mark.parametrize(
     "text",
-    ["Nummer 23 oder 24", "Nummer 47, die Ente", "23 und 24", "Nummer 1000 und 23"],
+    [
+        "Nummer 23 oder 24",
+        "Nummer 47, die Ente",
+        "23 und 24",
+        "Nummer 1000 und 23",
+        # Ohne Marker: "oder" ist ein Verbindungswort, kein Gerichtname. Sonst
+        # liefe die Namenssuche auf "oder" und fände ein Gericht wie "Reis oder
+        # Nudeln" (Codex PR #117, P1).
+        "23 oder 24",
+        "23 oder 24 bitte",
+        "nein 23 oder 24",
+        "23, äh, 24",
+    ],
 )
 def test_sole_item_number_unklar(text):
     ref, unclear = sole_item_number(text)
     assert unclear and ref is None
+
+
+def test_zwei_zahlen_ohne_marker_fragen_nach_statt_namen_zu_suchen():
+    """ "23 oder 24" darf nicht als Name "oder" in der Suche landen."""
+    assert sole_item_number("23 oder 24") == (None, True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Ein Gerichtname darf "oder" enthalten - ohne Zahl bleibt es ein Name.
+        "Reis oder Nudeln",
+        # Mit Name daneben entscheidet weiter die Namenssuche, nicht die Zahl.
+        "die 23 oder Reis",
+        "zwei Cola 0,5",
+    ],
+)
+def test_verbindungswort_im_namen_bleibt_namenssuche(text):
+    assert sole_item_number(text) == (None, False)
+
+
+def test_korrektur_vor_der_nummer_bleibt_eindeutig():
+    """ "Nein, Nummer 23" ist eine Korrektur auf genau eine Nummer."""
+    ref, unclear = sole_item_number("Nein, Nummer 23")
+    assert not unclear and ref is not None and ref.text == "23"
 
 
 @pytest.mark.parametrize(

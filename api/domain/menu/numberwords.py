@@ -577,6 +577,11 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         ):
             consumed.add(nxt)
     consumed |= marker_at
+    # Was neben den Zahlen übrig bleibt und ein Gerichtname sein könnte.
+    # Verbindungswörter zählen nicht dazu: "23 oder 24" ist eine Rückfrage nach
+    # der Nummer, kein Satz über ein Gericht namens "oder" (Codex PR #117, P1).
+    # "und" stand schon in _SENTENCE_FILLER, "oder" und "nein" fehlten - genau
+    # diese Unwucht ließ die zweite Nummer in die Namenssuche laufen.
     residue = [
         t
         for k, t in enumerate(tokens)
@@ -584,6 +589,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         and t not in PUNCTUATION
         and t not in _SENTENCE_FILLER
         and t not in _HESITATIONS
+        and t not in _ALTERNATIVE_WORDS
         and t not in _ITEM_NUMBER_MARKERS
         and not _QUANTITY_SUFFIX.match(t)
     ]
