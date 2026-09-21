@@ -735,13 +735,18 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         and not _QUANTITY_SUFFIX.match(t)
     ]
     has_marker = bool(marked or invalid)
-    # Ein Marker, der selbst keine Zahl gefasst hat, zaehlt trotzdem, sobald
-    # sonst eine Zahl im Satz steht: "Nummer Ente 23" ist eine Nummer neben
-    # einem Namen, also eine Rueckfrage - nicht die Namenssuche nach "ente"
-    # (Codex PR #117, P2). Ohne Zahl bleibt es die Namenssuche, sonst wuerde
-    # "Nummer weiss ich nicht" nachfragen statt zu suchen.
-    nummer_gemeint = has_marker or (
-        bool(numbers) and any(tok in _ITEM_NUMBER_MARKERS for tok in tokens)
+    # Ein Marker, der selbst keine Zahl gefasst hat, zaehlt trotzdem - aber nur
+    # fuer eine Zahl, die nach ihm kommt: "Nummer Ente 23" ist eine Nummer
+    # neben einem Namen, also eine Rueckfrage statt der Namenssuche nach
+    # "ente" (Codex PR #117, P2). Steht die Zahl davor, gehoert sie nicht zum
+    # Marker: in "zwei Fruehlingsrollen, Nummer weiss ich nicht" ist die zwei
+    # eine Menge und der Gast sagt gerade, dass er die Nummer nicht kennt -
+    # dann entscheidet die Namenssuche.
+    nummer_gemeint = has_marker or any(
+        span.start > i
+        for i, tok in enumerate(tokens)
+        if tok in _ITEM_NUMBER_MARKERS
+        for span in numbers
     )
     # Ein frei hängendes Verbindungswort ist nur dann eine zurückgenommene
     # Nummer, wenn überhaupt von einer Nummer die Rede war: mit Marker, oder

@@ -72,3 +72,5 @@
 {"say": "Nummer Pho zwoelf", "expect": "?", "why": "Name zwischen Marker und Zahlwort"}
 {"say": "Nummer 23 Beef", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}
 {"say": "Nummer 23 Cafe", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}
+{"say": "zwei Frühlingsrollen, Nummer weiß ich nicht", "expect": "name", "why": "Menge vor dem Marker, Marker faengt nichts - der Gast kennt die Nummer nicht"}
+{"say": "zwei Fruehlingsrollen, Nummer weiss ich nicht", "expect": "name", "why": "dasselbe ohne Umlaute aus der Erkennung"}
