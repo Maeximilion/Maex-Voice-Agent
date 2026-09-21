@@ -120,3 +120,46 @@ Die Suite ist unvollständig, solange einer dieser Fälle fehlt:
 - Starkes Rauschen → Verständnis-Leiter statt Raten
 - Bestellung während der Schließzeit
 - Doppelter `confirm` → nur ein Vorgang (Idempotenz)
+
+---
+
+## 7. Der Nummern-Eval-Satz
+
+Neben der Gespraechs-Suite steht ein zweiter, viel kleinerer Satz:
+`evals/cases/nummern.jsonl` mit `evals/number_eval.py`. Er prueft nicht, was ein
+Modell entscheidet, sondern was der Code entscheidet - `sole_item_number` aus
+`domain/menu/numberwords.py` -, und er laeuft deshalb ohne Datenbank, ohne HTTP
+und ohne Modell in Millisekunden.
+
+```bash
+make eval-nummern            # Tabelle der Abweichungen, Exit 1 bei rot
+python -m evals.number_eval  # dasselbe ohne Docker
+```
+
+Ein Fall ist eine Zeile:
+
+```json
+{"say": "Nummer 23 oder 24", "expect": "?", "why": "zwei genannte Nummern"}
+```
+
+Vier Erwartungswerte, mehr gibt es nicht:
+
+| Wert | Bedeutung |
+|---|---|
+| `"23"` | genau diese Kartennummer, die Suche darf sie direkt nehmen |
+| `"!23g"` | als Nummer genannt, aber keine gueltige Kartenform → `not_found`; nie Ausweichen auf aehnliche Namen (CLAUDE.md §2 Regel 2) |
+| `"?"` | nicht eindeutig → `ambiguous` mit der Frage nach der einen Nummer |
+| `"name"` | kein Nummernsatz → Alias- und Trigram-Suche entscheiden |
+
+**Warum eigenstaendig.** Die Regeln fuer Marker, Kartenendung, Menge und
+Verbindungswort greifen ineinander. Auf PR #117 haben acht Korrekturrunden
+nacheinander je eine Form repariert, und zwei davon haben eine frueher richtige
+Form wieder kaputt gemacht - jede Korrektur stimmte fuer sich. Einzelne
+Testfunktionen zeigen das nicht, eine Tabelle aller bekannten Saetze sofort:
+gegen die Staende vor den letzten Korrekturen faellt der Satz mit 3 bis 11
+Abweichungen durch.
+
+Derselbe Satz laeuft in CI ueber `api/tests/test_evals_nummern.py`, damit ein
+Fall an genau einer Stelle gepflegt wird. Fuer neue Faelle gilt die Regel aus
+Abschnitt 5: jeder Satz vom Telefon, der falsch aufgeloest wurde, kommt mit der
+richtigen Erwartung hinein - der Satz ist dann rot, bis der Code stimmt.
