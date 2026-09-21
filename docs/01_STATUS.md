@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.20.1
+> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.20.2
 
 ---
 
@@ -240,6 +240,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.20.2 · 21.09.2026:** Codex review PR #117 (P2 x2) fixed: alias collisions warned by search identity, fuzzy search prefiltered through the GIN index
 - **v1.20.1 · 21.09.2026:** Codex review PR #117 (P2) fixed: both number exits share one marker rule, eval set guards the agreement
 - **v1.20.0 · 21.09.2026:** Eval set for number recognition: 64 cases without DB or model, in CI, catches the regressions of the last eight review rounds
 - **v1.19.24 · 21.09.2026:** Codex review PR #117 (P2 x2) fixed: quantity plus name with a connector stays name search, separated multi-letter prefix stays a number

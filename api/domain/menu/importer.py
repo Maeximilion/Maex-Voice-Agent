@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.time import utcnow
-from api.domain.menu.normalize import normalize_alias
+from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
 
@@ -386,15 +386,29 @@ def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
             continue
         plan.aliases.setdefault(number, set()).add(alias)
 
-    owners: dict[str, list[str]] = {}
+    # Gewarnt wird nach derselben Kennung, mit der search_menu spaeter vergleicht:
+    # dort faellt vor dem Alias-Vergleich das Fuellwort weg. "Ente" und "die
+    # Ente" an zwei Gerichten sind deshalb eine Kollision, auch wenn die beiden
+    # Zeichenketten verschieden sind - ohne das meldet der Import "keine
+    # Kollision" und jede Anfrage nach beiden Schreibweisen wird ambiguous
+    # (Codex PR #117, P2).
+    owners: dict[str, dict[str, set[str]]] = {}
     for number, aliases in plan.aliases.items():
         for alias in aliases:
-            owners.setdefault(alias, []).append(number)
-    for alias, numbers in sorted(owners.items()):
-        if len(numbers) > 1:
-            plan.warnings.append(
-                f"Alias „{alias}“ führt zu mehreren Gerichten: {', '.join(sorted(numbers))}"
-            )
+            key = normalize_query(alias) or alias
+            spellings = owners.setdefault(key, {})
+            spellings.setdefault(number, set()).add(alias)
+    for key, by_number in sorted(owners.items()):
+        if len(by_number) < 2:
+            continue
+        # Die Schreibweisen nur nennen, wenn sie sich unterscheiden - sonst
+        # stuende dreimal dasselbe Wort in der Meldung.
+        abweichend = any(s != key for ss in by_number.values() for s in ss)
+        genannt = ", ".join(
+            f"{number} ({', '.join(sorted(spellings))})" if abweichend else number
+            for number, spellings in sorted(by_number.items())
+        )
+        plan.warnings.append(f"Alias „{key}“ führt zu mehreren Gerichten: {genannt}")
     without = sorted(n for n in plan.items if n not in plan.aliases)
     if without:
         plan.warnings.append("Gericht ohne Alias: " + ", ".join(without))

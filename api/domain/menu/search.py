@@ -18,15 +18,19 @@ Gesucht wird nur in aktiven Gerichten. Ausverkaufte kommen mit `sold_out: true`
 und einem Satz zurück: der Agent soll sagen, dass es heute aus ist, statt so zu
 tun, als gäbe es das Gericht nicht.
 
-Die Trigram-Werte rechnet die Datenbank über alle aktiven Gerichte des Mandanten
-aus. Bei einer Karte von ein paar hundert Zeilen ist das schneller als jede
-Vorfilterung; der GIN-Index trägt die Suche, sobald die Karte wächst.
+Die unscharfe Suche läuft in zwei Schritten: erst ein Vorfilter mit den
+Operatoren `%` und `<%`, der die GIN-Indizes auf `menu_items.name` und
+`item_aliases.alias` benutzt, dann die genauen Werte nur auf den Treffern. Der
+Vorfilter vergleicht gegen die Schwellen der Sitzung, die dafür auf dieselbe
+niedrige Schwelle gesetzt werden - er ist damit deckungsgleich mit der
+Bedingung und schneidet nichts weg. Bei ein paar hundert Zeilen ist der
+Unterschied klein, mit wachsender Karte trägt der Index die Suche.
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -204,23 +208,55 @@ def search_menu(
         return _ambiguous(session, list(by_alias)[:limit], now)
 
     # 3. Unscharf: das bessere von Name und bestem Alias, je Gericht.
+    #
+    # Zwei Schritte, weil nur der erste den GIN-Index benutzen kann: die
+    # Operatoren % und <% schlagen im Index nach, ein greatest(similarity(...))
+    # im WHERE muss jede aktive Zeile anfassen (Codex PR #117, P2). Beide
+    # Operatoren vergleichen gegen die Schwellen der Sitzung, die hier auf
+    # `low` gesetzt werden - damit ist der Vorfilter genau die Bedingung
+    # `total >= low` und schneidet nichts weg, was sonst getroffen haette.
+    # `SET LOCAL` ueber set_config(..., true): die Werte gelten nur fuer diese
+    # Transaktion und bleiben nicht an der Verbindung aus dem Pool haengen.
+    session.execute(
+        select(
+            func.set_config("pg_trgm.similarity_threshold", str(low), True),
+            func.set_config("pg_trgm.word_similarity_threshold", str(low), True),
+        )
+    )
+
     def score(column):
         return func.greatest(
             func.similarity(column, text), func.word_similarity(text, column)
         )
 
+    def candidate(column):
+        # Dieselbe Bedingung wie score(column) >= low, nur indexgestuetzt.
+        return or_(column.op("%")(text), literal(text).op("<%")(column))
+
+    # Ohne lower(): pg_trgm bildet seine Trigramme selbst in Kleinschreibung,
+    # und ein lower(name) im Ausdruck passt nicht mehr zum Index auf name.
     alias_score = (
         select(func.max(score(ItemAlias.alias)))
         .where(ItemAlias.menu_item_id == MenuItem.id)
         .correlate(MenuItem)
         .scalar_subquery()
     )
-    total = func.greatest(
-        score(func.lower(MenuItem.name)), func.coalesce(alias_score, 0)
+    alias_candidate = (
+        select(1)
+        .where(ItemAlias.menu_item_id == MenuItem.id, candidate(ItemAlias.alias))
+        .correlate(MenuItem)
+        .exists()
     )
+    total = func.greatest(score(MenuItem.name), func.coalesce(alias_score, 0))
     rows = session.execute(
         select(MenuItem, total.label("score"))
-        .where(*_active(tenant_id), total >= low)
+        .where(
+            *_active(tenant_id),
+            or_(candidate(MenuItem.name), alias_candidate),
+            # Bleibt stehen: der Vorfilter ist deckungsgleich, aber die Schwelle
+            # gehoert in die Abfrage und nicht nur in eine Sitzungsvariable.
+            total >= low,
+        )
         .order_by(total.desc(), MenuItem.number)
         .limit(AMBIGUOUS_LIMIT + 1)
     ).all()

@@ -242,6 +242,23 @@ def test_alias_zu_zwei_gerichten_warnt():
     assert "Alias „suppe“ führt zu mehreren Gerichten: 12, 47" in plan.warnings
 
 
+def test_alias_kollision_nur_ueber_fuellwort_warnt():
+    """"Suppe" und "die Suppe" sind fuer search_menu derselbe Alias.
+
+    Gewarnt wird nach der Kennung, mit der die Suche vergleicht - sonst meldet
+    der Import "keine Kollision" und jede Anfrage nach beiden Schreibweisen
+    wird ambiguous (Codex PR #117, P2). Die Meldung nennt dann beide
+    Schreibweisen, damit klar ist, wo im CSV zu suchen ist.
+    """
+    plan = parse(files(**{ALIASES_FILE: ALIASES + "47;die Suppe\n"}))
+
+    assert plan.ok
+    assert (
+        "Alias „suppe“ führt zu mehreren Gerichten: "
+        "12 (suppe), 47 (die suppe)" in plan.warnings
+    )
+
+
 def test_gericht_ohne_alias_warnt():
     plan = parse(files(**{ALIASES_FILE: "number;alias\n23;Rollen\n"}))
 
