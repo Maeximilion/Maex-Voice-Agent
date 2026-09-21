@@ -51,6 +51,10 @@ SAY_NO_SUCH_NUMBER = (
 SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
 AMBIGUOUS_LIMIT = 3
+# Abstand der Sitzungsschwelle zur eigentlichen Schwelle, damit der Vorfilter
+# sicher eine Obermenge bleibt. Klein genug, um keine echte Zeile zusaetzlich
+# zu holen, gross genug fuer den Vergleich in float4.
+PREFILTER_EPSILON = 1e-4
 
 
 def _active(tenant_id: uuid.UUID) -> tuple:
@@ -211,16 +215,22 @@ def search_menu(
     #
     # Zwei Schritte, weil nur der erste den GIN-Index benutzen kann: die
     # Operatoren % und <% schlagen im Index nach, ein greatest(similarity(...))
-    # im WHERE muss jede aktive Zeile anfassen (Codex PR #117, P2). Beide
-    # Operatoren vergleichen gegen die Schwellen der Sitzung, die hier auf
-    # `low` gesetzt werden - damit ist der Vorfilter genau die Bedingung
-    # `total >= low` und schneidet nichts weg, was sonst getroffen haette.
+    # im WHERE muss jede aktive Zeile anfassen (Codex PR #117, P2).
+    #
+    # Der Vorfilter ist bewusst eine Obermenge, nicht die genaue Bedingung: die
+    # Sitzungsschwelle liegt eine Winzigkeit unter `low`. Ob die Operatoren auf
+    # ">" oder ">=" gegen ihre Schwelle pruefen, haengt an der Version; ein
+    # Treffer genau auf der Schwelle waere sonst schon hier weg, obwohl
+    # `total >= low` ihn behalten wuerde (Codex PR #117, P2). Entschieden wird
+    # ohnehin unten in der Abfrage, der Vorfilter spart nur Zeilen.
+    #
     # `SET LOCAL` ueber set_config(..., true): die Werte gelten nur fuer diese
     # Transaktion und bleiben nicht an der Verbindung aus dem Pool haengen.
+    grenze = max(0.0, low - PREFILTER_EPSILON)
     session.execute(
         select(
-            func.set_config("pg_trgm.similarity_threshold", str(low), True),
-            func.set_config("pg_trgm.word_similarity_threshold", str(low), True),
+            func.set_config("pg_trgm.similarity_threshold", str(grenze), True),
+            func.set_config("pg_trgm.word_similarity_threshold", str(grenze), True),
         )
     )
 
@@ -230,7 +240,7 @@ def search_menu(
         )
 
     def candidate(column):
-        # Dieselbe Bedingung wie score(column) >= low, nur indexgestuetzt.
+        # Obermenge von score(column) >= low, indexgestuetzt.
         return or_(column.op("%")(text), literal(text).op("<%")(column))
 
     # Ohne lower(): pg_trgm bildet seine Trigramme selbst in Kleinschreibung,
@@ -252,9 +262,10 @@ def search_menu(
         select(MenuItem, total.label("score"))
         .where(
             *_active(tenant_id),
-            or_(candidate(MenuItem.name), alias_candidate),
-            # Bleibt stehen: der Vorfilter ist deckungsgleich, aber die Schwelle
-            # gehoert in die Abfrage und nicht nur in eine Sitzungsvariable.
+            # Bei `low <= 0` faellt der Vorfilter weg: er koennte dann nur noch
+            # Zeilen mit Wert genau 0 verlieren, die `total >= low` behaelt.
+            *((or_(candidate(MenuItem.name), alias_candidate),) if grenze > 0 else ()),
+            # Die Schwelle entscheidet hier, nicht die Sitzungsvariable.
             total >= low,
         )
         .order_by(total.desc(), MenuItem.number)
