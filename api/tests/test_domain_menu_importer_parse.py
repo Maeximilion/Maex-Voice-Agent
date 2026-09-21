@@ -243,7 +243,7 @@ def test_alias_zu_zwei_gerichten_warnt():
 
 
 def test_alias_kollision_nur_ueber_fuellwort_warnt():
-    """"Suppe" und "die Suppe" sind fuer search_menu derselbe Alias.
+    """ "Suppe" und "die Suppe" sind fuer search_menu derselbe Alias.
 
     Gewarnt wird nach der Kennung, mit der die Suche vergleicht - sonst meldet
     der Import "keine Kollision" und jede Anfrage nach beiden Schreibweisen
