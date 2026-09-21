@@ -551,10 +551,14 @@ def test_zwei_zahlen_ohne_marker_fragen_nach_statt_namen_zu_suchen():
     [
         # Ein Gerichtname darf "oder" enthalten - ohne Zahl bleibt es ein Name.
         "Reis oder Nudeln",
-        # Zahl neben einem Namen, ohne Verbindungswort: Menge, die Namenssuche
-        # entscheidet.
+        # Zahl neben einem Namen: Menge, die Namenssuche entscheidet. Auch mit
+        # Verbindungswort - "zwei Cola oder Fanta" ist keine Frage nach einer
+        # Nummer, und der Alias "cola oder fanta" muss erreichbar bleiben
+        # (Codex PR #117, P2).
         "zwei Cola 0,5",
         "Pizza 4 Jahreszeiten",
+        "zwei Cola oder Fanta",
+        "die 23 oder Reis",
     ],
 )
 def test_verbindungswort_im_namen_bleibt_namenssuche(text):
@@ -580,7 +584,16 @@ def test_fuellwort_verschluckt_die_zahl_nicht():
 
 @pytest.mark.parametrize(
     "text",
-    ["Nummer A12", "Nummer a12", "Nr. C3 bitte", "Nummer A 12", "Nummer a 12"],
+    [
+        "Nummer A12",
+        "Nummer a12",
+        "Nr. C3 bitte",
+        "Nummer A 12",
+        "Nummer a 12",
+        # Mehrere Buchstaben, getrennt wie zusammen (Codex PR #117, P2).
+        "Nummer AB12",
+        "Nummer AB 12",
+    ],
 )
 def test_buchstabe_vor_der_ziffer_nach_marker_ist_ungueltig(text):
     """ "Nummer A12" ist keine Kartenform (docs/14: Ziffern, dahinter a-f).
@@ -629,9 +642,6 @@ def test_zu_grosses_zahlwort_nach_marker_ist_ungueltig(text):
         "Nummer 23 oder",
         "Nummer 23 und",
         "Nein, Nummer 23",
-        # Zahl und Name mit "oder" verbunden: genau die Mischung, nach der
-        # Regel A fragt.
-        "die 23 oder Reis",
     ],
 )
 def test_freihaengendes_verbindungswort_fragt_nach(text):

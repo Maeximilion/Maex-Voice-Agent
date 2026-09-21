@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.23
+> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.19.24
 
 ---
 
@@ -240,6 +240,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.19.24 · 21.09.2026:** Codex review PR #117 (P2 x2) fixed: quantity plus name with a connector stays name search, separated multi-letter prefix stays a number
 - **v1.19.23 · 21.09.2026:** Codex review PR #117 (P1) fixed: a connector word without a second number makes the sentence a question, not an order
 - **v1.19.22 · 21.09.2026:** Codex review PR #117 (P1, P2) fixed: marker survives filler and hesitation, separated letter before digits stays a number
 - **v1.19.21 · 21.09.2026:** Codex review PR #117 (P2) fixed: compound number words like eintausend are recognized as out of range

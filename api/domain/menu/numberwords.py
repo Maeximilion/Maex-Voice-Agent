@@ -609,13 +609,12 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
             consumed.add(j)
             invalid_at.add(j)
         elif j in prefixed or (
-            # "Nummer A 12": dieselbe Form, nur mit Leerzeichen aus der
-            # Erkennung. Ein einzelner Buchstabe vor einer Ziffer ist nie eine
+            # "Nummer A 12", "Nummer AB 12": dieselbe Form, nur mit Leerzeichen
+            # aus der Erkennung, und ohne Laengengrenze wie die
+            # zusammengeschriebene. Buchstaben vor einer Ziffer sind nie eine
             # Endung - die steht hinter der Zahl (Codex PR #117, P2).
-            j + 1 < len(tokens)
-            and len(tokens[j]) == 1
-            and tokens[j].isalpha()
-            and tokens[j + 1].isdigit()
+            # _scan ist hier schon gescheitert, ein Zahlwort ist es also nicht.
+            j + 1 < len(tokens) and tokens[j].isalpha() and tokens[j + 1].isdigit()
         ):
             # "Nummer A12": Buchstabe vor der Ziffer. Keine Kartenform, also
             # ungueltig statt Namenssuche - ein Alias "a12" darf die genannte
@@ -674,7 +673,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     # der Gast zurückgenommen oder nicht zu Ende gesprochen. Es ist dann kein
     # Gerichtname - es gehört also nicht in den Rest, sondern macht den Satz
     # für sich unklar (Codex PR #117, P1).
-    dangling = any(
+    loose = any(
         t in _CONNECTORS and not _connects(k)
         for k, t in enumerate(tokens)
         if k not in consumed
@@ -692,6 +691,12 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         and not _QUANTITY_SUFFIX.match(t)
     ]
     has_marker = bool(marked or invalid)
+    # Ein frei hängendes Verbindungswort ist nur dann eine zurückgenommene
+    # Nummer, wenn überhaupt von einer Nummer die Rede war: mit Marker, oder
+    # wenn kein Gerichtname daneben steht. Sonst gehört das "oder" zum Namen -
+    # "zwei Cola oder Fanta" ist eine Menge neben einem Namen, und der Alias
+    # "cola oder fanta" muss erreichbar bleiben (Codex PR #117, P2).
+    dangling = loose and (has_marker or not residue)
     if len(numbers) + len(invalid) == 1 and not residue and not dangling:
         if invalid:
             return invalid[0], False
