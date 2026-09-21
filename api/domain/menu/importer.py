@@ -384,6 +384,17 @@ def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
         if not alias:
             plan.errors.append(f"{where}: Alias leer")
             continue
+        # Bleibt nach der Such-Normalisierung nichts übrig ("bitte", "die",
+        # "x", "23"), wäre der Alias gespeichert, aber nie zu finden:
+        # search_menu bricht vorher mit not_found ab. Fehler statt Warnung -
+        # das ist für die Suche dasselbe wie ein leerer Alias
+        # (Codex PR #117, P2).
+        if not normalize_query(alias):
+            plan.errors.append(
+                f"{where}: Alias „{alias}“ besteht nur aus Füll- oder "
+                "Zahlwörtern und wäre nie zu finden"
+            )
+            continue
         plan.aliases.setdefault(number, set()).add(alias)
 
     # Gewarnt wird nach derselben Kennung, mit der search_menu spaeter vergleicht:

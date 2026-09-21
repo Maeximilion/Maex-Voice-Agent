@@ -259,6 +259,29 @@ def test_alias_kollision_nur_ueber_fuellwort_warnt():
     )
 
 
+def test_alias_nur_aus_fuellwoertern_ist_ein_fehler():
+    """Ein Alias, der nach der Such-Normalisierung leer ist, waere nie zu finden.
+
+    search_menu bricht bei leerem Suchtext mit not_found ab, bevor es die
+    Aliase vergleicht. Ein solcher Alias ist fuer die Suche dasselbe wie ein
+    leerer, also ein Fehler und keine Warnung (Codex PR #117, P2).
+    """
+    plan = parse(files(**{ALIASES_FILE: ALIASES + "47;bitte\n"}))
+
+    assert not plan.ok
+    assert any("besteht nur aus Füll- oder Zahlwörtern" in e for e in plan.errors), (
+        plan.errors
+    )
+
+
+def test_alias_mit_ziffer_bleibt_erlaubt():
+    """ "7up" ist ein Alias, keine Kartennummer - er muss durchkommen."""
+    plan = parse(files(**{ALIASES_FILE: ALIASES + "47;7up\n"}))
+
+    assert plan.ok, plan.errors
+    assert "7up" in plan.aliases["47"]
+
+
 def test_gericht_ohne_alias_warnt():
     plan = parse(files(**{ALIASES_FILE: "number;alias\n23;Rollen\n"}))
 
