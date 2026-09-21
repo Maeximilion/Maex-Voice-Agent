@@ -351,6 +351,13 @@ def _prefixed(text: str) -> set[int]:
     }
 
 
+# Wie lang ein Buchstabenteil einer Kartennummer hoechstens ist. Die Karte
+# kennt eine Ziffernfolge mit einem Buchstaben a bis f (docs/14); zwei ist
+# schon grosszuegig. Alles darueber ist ein Wort: "Ente", "Pho", "Beef",
+# "Cafe" sind Gerichtnamen, keine Kartenteile (Codex PR #117, P2).
+_MAX_CARD_LETTERS = 2
+
+
 def _long_suffix(token: str) -> bool:
     """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
 
@@ -359,7 +366,7 @@ def _long_suffix(token: str) -> bool:
     Wort daneben, waehrend "Nummer 23 ab" wie "Nummer 23ab" ungueltig ist -
     die Erkennung setzt das Leerzeichen, nicht der Gast (Codex PR #117, P2).
     """
-    return len(token) > 1 and all(c in _SUFFIXES for c in token)
+    return len(token) == _MAX_CARD_LETTERS and all(c in _SUFFIXES for c in token)
 
 
 def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
@@ -472,7 +479,7 @@ def _marker_target(
     # vor der Zahl. Keine Kartenform - eine Endung steht hinter der Zahl, nie
     # davor. Die Zahl darf dabei auch als Wort kommen, die Erkennung liefert
     # beides (Codex PR #117, P1).
-    if word.isalpha():
+    if word.isalpha() and len(word) <= _MAX_CARD_LETTERS:
         dahinter = _scan(tokens, j + 1)
         if dahinter is not None:
             return (
@@ -728,6 +735,14 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         and not _QUANTITY_SUFFIX.match(t)
     ]
     has_marker = bool(marked or invalid)
+    # Ein Marker, der selbst keine Zahl gefasst hat, zaehlt trotzdem, sobald
+    # sonst eine Zahl im Satz steht: "Nummer Ente 23" ist eine Nummer neben
+    # einem Namen, also eine Rueckfrage - nicht die Namenssuche nach "ente"
+    # (Codex PR #117, P2). Ohne Zahl bleibt es die Namenssuche, sonst wuerde
+    # "Nummer weiss ich nicht" nachfragen statt zu suchen.
+    nummer_gemeint = has_marker or (
+        bool(numbers) and any(tok in _ITEM_NUMBER_MARKERS for tok in tokens)
+    )
     # Ein frei hängendes Verbindungswort ist nur dann eine zurückgenommene
     # Nummer, wenn überhaupt von einer Nummer die Rede war: mit Marker, oder
     # wenn kein Gerichtname daneben steht. Sonst gehört das "oder" zum Namen -
@@ -738,7 +753,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         if invalid:
             return invalid[0], False
         return _ref(tokens, numbers[0], marked=has_marker, glued=glued), False
-    if has_marker or dangling or not residue:
+    if nummer_gemeint or dangling or not residue:
         return None, True
     return None, False
 

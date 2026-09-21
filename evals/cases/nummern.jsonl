@@ -68,3 +68,7 @@
 {"say": "Nummer 23ab", "expect": "!23ab", "why": "zusammengeschrieben, war schon ungueltig"}
 {"say": "Nummer 23 mit Reis", "expect": "?", "why": "mit ist keine Endung, sondern ein Wort daneben"}
 {"say": "Nummer 23 bitte", "expect": "23", "why": "Hoeflichkeitsfloskel hinter der Nummer"}
+{"say": "Nummer Ente 23", "expect": "?", "why": "Name zwischen Marker und Zahl, kein Praefix"}
+{"say": "Nummer Pho zwoelf", "expect": "?", "why": "Name zwischen Marker und Zahlwort"}
+{"say": "Nummer 23 Beef", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}
+{"say": "Nummer 23 Cafe", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}

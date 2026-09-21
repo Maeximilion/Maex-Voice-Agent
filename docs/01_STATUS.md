@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.20.4
+> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.20.5
 
 ---
 
@@ -240,6 +240,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.20.5 · 21.09.2026:** Codex review PR #117 (P2 x2) fixed: card letters bounded to two, a marker with a number beside a name asks back
 - **v1.20.4 · 21.09.2026:** Codex review PR #117 (P1, P2) fixed: letter before a spoken number word, separated multi-letter card suffix
 - **v1.20.3 · 21.09.2026:** Codex review PR #117 (P2) fixed: an alias made only of filler words is an import error, it could never be found
 - **v1.20.2 · 21.09.2026:** Codex review PR #117 (P2 x2) fixed: alias collisions warned by search identity, fuzzy search prefiltered through the GIN index
