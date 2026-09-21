@@ -578,7 +578,18 @@ def test_buchstabe_vor_der_ziffer_ohne_marker_bleibt_name(text):
     assert sole_item_number(text) == (None, False)
 
 
-@pytest.mark.parametrize("text", ["Nummer tausend", "Nummer tausendzwei"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nummer tausend",
+        "Nummer tausendzwei",
+        # Im Deutschen steht der Faktor davor, "tausend" auch mittendrin
+        # (Codex PR #117, P2).
+        "Nummer eintausend",
+        "Nummer zweitausend",
+        "Nummer dreitausendzwei",
+    ],
+)
 def test_zu_grosses_zahlwort_nach_marker_ist_ungueltig(text):
     """ "Nummer tausend" ist eine Nummer, die es nicht gibt - kein Gerichtname.
 

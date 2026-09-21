@@ -524,11 +524,17 @@ _SENTENCE_FILLER = frozenset(
 def _too_large(token: str) -> bool:
     """Ein Zahlwort oberhalb von MAX_VALUE, auch zusammengesetzt.
 
-    "tausend", "tausendzwei", "eine Million": als Zahl gemeint, aber keine
-    Kartennummer. Der Aufrufer macht daraus `valid=False`, nicht `None` - sonst
-    würde aus einer genannten Nummer eine Namenssuche (CLAUDE.md §2 Regel 2).
+    "tausend", "eintausend", "zweitausend", "dreitausendzwei", "Million": als
+    Zahl gemeint, aber keine Kartennummer. Der Aufrufer macht daraus
+    `valid=False`, nicht `None` - sonst würde aus einer genannten Nummer eine
+    Namenssuche (CLAUDE.md §2 Regel 2).
+
+    Gesucht wird an jeder Stelle im Wort, nicht nur am Anfang: im Deutschen
+    steht der Faktor davor ("zweitausend"), und "tausend" kann in der Mitte
+    sitzen ("dreitausendzwei"). Ein Gerichtname trägt keines dieser Wörter,
+    und geprüft wird ohnehin nur direkt hinter einem Marker (Codex PR #117).
     """
-    return any(token.startswith(word) for word in _TOO_LARGE)
+    return any(word in token for word in _TOO_LARGE)
 
 
 def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
