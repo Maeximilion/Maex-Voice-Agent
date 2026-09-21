@@ -39,7 +39,11 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from api.domain.menu.numberwords import find_item_number, sole_item_number
+from api.domain.menu.numberwords import (
+    find_item_number,
+    find_item_number_ref,
+    sole_item_number,
+)
 
 CASES = Path(__file__).parent / "cases" / "nummern.jsonl"
 
@@ -84,12 +88,25 @@ def disagreement(say: str) -> str | None:
     Gericht 12 (Codex PR #117, P2).
     """
     ref, unclear = sole_item_number(say)
-    if unclear or ref is None or ref.valid:
+    other = find_item_number_ref(say)
+    if ref is not None and not ref.valid:
+        # Die Suche kennt die Nummer nicht. Dann darf sie auf dem anderen Weg
+        # auch keine Zahl werden.
+        wert = find_item_number(say)
+        if wert is not None:
+            return f"ungueltig als {ref.text!r}, aber find_item_number gibt {wert}"
         return None
-    other = find_item_number(say)
-    if other is None:
-        return None
-    return f"ungueltig als {ref.text!r}, aber find_item_number gibt {other}"
+    # Andersherum: meldet die Leiter eine genannte, ungueltige Nummer, darf die
+    # Suche den Satz nicht fuer einen reinen Namenssatz halten. Sonst sagt die
+    # Leiter "die Nummer 7up gibt es nicht", waehrend die Suche den Alias
+    # findet. Eine Rueckfrage der Suche ist dagegen kein Widerspruch - dann ist
+    # auf beiden Seiten von einer Nummer die Rede ("Nummer 1000 und 23").
+    if other is not None and not other.valid and ref is None and not unclear:
+        return (
+            f"find_item_number_ref meldet ungueltig {other.text!r}, "
+            "sole_item_number sieht gar keine Nummer"
+        )
+    return None
 
 
 def run(cases: list[Case]) -> list[tuple[Case, str]]:

@@ -115,12 +115,28 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 ```
 
 **Auflösungsreihenfolge**
-1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`
+1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`.
+   Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
+   genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
+   Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
+
+**Zwei Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
+vorzuschlagen gibt:
+
+| Lage | Antwort |
+|---|---|
+| Mehrere Gerichte passen (Alias oder Trigram) | `ok: true`, `match_type: "ambiguous"`, bis zu 3 Vorschläge in `results` |
+| Der Satz nennt keine eine Nummer („23 oder 24", „Nummer 23, nein", „Nummer 47, die Ente") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` fragt nach der einen Nummer |
+
+Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
+könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent
+liest `say` vor und fragt nach. Eine Nummer, die es nicht gibt, bleibt
+`not_found` — die Suche weicht nie auf ähnliche Namen aus.
 
 **Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
 

@@ -237,3 +237,30 @@ def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):
     chunks = drain(stream(FakeRequest(), max_ticks=1))
 
     assert chunks[1:] == ["event: problem\ndata: db\n\n"]
+
+
+def test_ein_takt_braucht_eine_sitzung(monkeypatch):
+    """Drei Fingerabdruecke, eine Sitzung.
+
+    Je Takt und Tablet eine Entnahme aus dem Pool, nicht drei - bei zwei
+    Sekunden Takt summiert sich das allein fuers Nachsehen (Review PR #117).
+    """
+    geoeffnet: list[object] = []
+    geschlossen: list[object] = []
+
+    class ZaehlendeSitzung:
+        def __init__(self):
+            geoeffnet.append(self)
+
+        def close(self):
+            geschlossen.append(self)
+
+    monkeypatch.setattr(sse, "SessionLocal", ZaehlendeSitzung)
+    monkeypatch.setattr(sse, "_header_token", lambda *_: "h")
+    monkeypatch.setattr(sse, "_token", lambda *_: "t")
+    monkeypatch.setattr(sse, "_callbacks_token", lambda *_: "c")
+
+    tokens = sse._tokens(uuid.uuid4(), "Europe/Berlin")
+
+    assert tokens == {"header": "h", "today": "t", "callbacks": "c"}
+    assert len(geoeffnet) == 1 and len(geschlossen) == 1

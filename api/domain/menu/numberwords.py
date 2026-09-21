@@ -488,7 +488,7 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(dahinter.value), True, valid=False),
             )
-    if j in prefixed:
+    if j in prefixed and len(word) <= _MAX_CARD_LETTERS:
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None
 
@@ -593,7 +593,12 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
     ]
     if len(uebrig) != 1:
         return None
-    return _ref(tokens, uebrig[0], marked=False, glued=glued)
+    ref = _ref(tokens, uebrig[0], marked=False, glued=glued)
+    # Ohne "Nummer" ist eine Zahl, die keine saubere Kartenform ergibt, keine
+    # genannte Nummer, sondern Text: "einmal 7up bitte", "das ist 5g Zucker".
+    # Sonst meldete die Leiter "die Nummer 7up gibt es nicht", waehrend
+    # search_menu den Alias findet (Review PR #117).
+    return ref if ref.valid else None
 
 
 # Wörter, die in einem reinen Nummernsatz stehen dürfen, nach fold(). Alles

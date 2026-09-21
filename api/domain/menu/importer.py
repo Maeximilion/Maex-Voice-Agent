@@ -406,7 +406,8 @@ def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
     owners: dict[str, dict[str, set[str]]] = {}
     for number, aliases in plan.aliases.items():
         for alias in aliases:
-            key = normalize_query(alias) or alias
+            # Nie leer: die Pruefung oben hat solche Aliase abgelehnt.
+            key = normalize_query(alias)
             spellings = owners.setdefault(key, {})
             spellings.setdefault(number, set()).add(alias)
     for key, by_number in sorted(owners.items()):

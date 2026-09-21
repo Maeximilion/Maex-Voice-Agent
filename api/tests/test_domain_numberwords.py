@@ -322,13 +322,24 @@ def test_dieselbe_nummer_zweimal_ist_eindeutig():
         ("Nummer 23g", "23g"),
         ("Nummer 23ab", "23ab"),
         ("Nummer 23 g", "23g"),
-        ("die 23g", "23g"),
     ],
 )
 def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
     """Codex PR #117: eine unbekannte Endung wird nie abgeschnitten."""
     ref = find_item_number_ref(text)
     assert ref is not None and ref.text == card and ref.valid is False
+
+
+@pytest.mark.parametrize("text", ["die 23g", "einmal 7up bitte", "das ist 5g Zucker"])
+def test_ohne_marker_ist_eine_unsaubere_form_keine_nummer(text):
+    """Ohne "Nummer" ist "23g" oder "7up" Text, keine genannte Kartennummer.
+
+    Die 23 darf daraus nie werden - aber die Leiter soll auch nicht nach einer
+    Nummer fragen, die der Gast gar nicht genannt hat: search_menu findet den
+    Alias "7up" ueber den Namen (Review PR #117).
+    """
+    assert find_item_number_ref(text) is None
+    assert find_item_number(text) is None
 
 
 @pytest.mark.parametrize(
