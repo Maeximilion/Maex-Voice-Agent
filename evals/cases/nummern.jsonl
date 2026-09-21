@@ -78,3 +78,7 @@
 {"say": "Nummer Pho12", "expect": "?", "why": "Name an Ziffern geklebt"}
 {"say": "einmal 7up bitte", "expect": "name", "why": "Alias mit Ziffer im Satz"}
 {"say": "das ist 5g Zucker", "expect": "name", "why": "Einheit hinter einer Zahl, keine Kartennummer"}
+{"say": "Nummer so 23", "expect": "?", "why": "kurzes Alltagswort, kein Kartenbuchstabe"}
+{"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
+{"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
+{"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}

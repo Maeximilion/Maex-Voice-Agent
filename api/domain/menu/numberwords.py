@@ -358,6 +358,21 @@ def _prefixed(text: str) -> set[int]:
 _MAX_CARD_LETTERS = 2
 
 
+def _card_letters(token: str) -> bool:
+    """Buchstaben, die zu einer Kartennummer gehoeren koennten.
+
+    Nur a bis f (docs/14) und hoechstens zwei davon. Die Laenge allein reicht
+    nicht: "so" und "ab" sind beide zwei Zeichen, aber nur eines davon kann
+    Teil einer Kartennummer sein. Sonst wuerde "Nummer so 23" zur nicht
+    vorhandenen Nummer "so23", statt nach Regel A nachzufragen (Codex PR #117).
+    """
+    return (
+        token.isalpha()
+        and len(token) <= _MAX_CARD_LETTERS
+        and all(c in _SUFFIXES for c in token)
+    )
+
+
 def _long_suffix(token: str) -> bool:
     """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
 
@@ -366,7 +381,7 @@ def _long_suffix(token: str) -> bool:
     Wort daneben, waehrend "Nummer 23 ab" wie "Nummer 23ab" ungueltig ist -
     die Erkennung setzt das Leerzeichen, nicht der Gast (Codex PR #117, P2).
     """
-    return len(token) == _MAX_CARD_LETTERS and all(c in _SUFFIXES for c in token)
+    return len(token) == _MAX_CARD_LETTERS and _card_letters(token)
 
 
 def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
@@ -478,8 +493,10 @@ def _marker_target(
     # "Nummer A12", "Nummer A 12", "Nummer AB 12", "Nummer A zwölf": Buchstaben
     # vor der Zahl. Keine Kartenform - eine Endung steht hinter der Zahl, nie
     # davor. Die Zahl darf dabei auch als Wort kommen, die Erkennung liefert
-    # beides (Codex PR #117, P1).
-    if word.isalpha() and len(word) <= _MAX_CARD_LETTERS:
+    # beides (Codex PR #117, P1). Nur Kartenbuchstaben zählen: "Nummer so 23"
+    # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
+    # vorhandene Nummer "so23" (Codex PR #117, P2).
+    if _card_letters(word):
         dahinter = _scan(tokens, j + 1)
         if dahinter is not None:
             return (
@@ -488,7 +505,7 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(dahinter.value), True, valid=False),
             )
-    if j in prefixed and len(word) <= _MAX_CARD_LETTERS:
+    if j in prefixed and _card_letters(word):
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None
 
