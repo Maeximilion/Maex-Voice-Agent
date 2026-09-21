@@ -1,0 +1,84 @@
+{"say": "Nummer 23", "expect": "23", "why": "Grundfall: Marker und Ziffern"}
+{"say": "die 23", "expect": "23", "why": "ohne Marker, aber sonst nichts im Satz"}
+{"say": "Nummer dreiundzwanzig", "expect": "23", "why": "Zahlwort statt Ziffern"}
+{"say": "Nummer drei und zwanzig", "expect": "23", "why": "Zahlwort auseinander gesprochen"}
+{"say": "Nummer ein und zwanzig", "expect": "21", "why": "das ein eroeffnet die Zahl, ist kein Fuellwort"}
+{"say": "Nummer acht", "expect": "8", "why": "einstelliges Zahlwort"}
+{"say": "Nummer 07", "expect": "07", "why": "fuehrende Null bleibt im Text"}
+{"say": "Nummer 23a", "expect": "23a", "why": "Kartenbuchstabe angehaengt"}
+{"say": "die 23 a", "expect": "23a", "why": "Kartenbuchstabe abgesetzt gesprochen"}
+{"say": "Nr. 5", "expect": "5", "why": "Kurzform des Markers"}
+{"say": "die Nummer ist 23", "expect": "23", "why": "Fuellwoerter zwischen Marker und Zahl"}
+{"say": "Nummer die 23", "expect": "23", "why": "Artikel zwischen Marker und Zahl"}
+{"say": "Nummer bitte 23", "expect": "23", "why": "Hoeflichkeitsfloskel zwischen Marker und Zahl"}
+{"say": "Nummer äh 23", "expect": "23", "why": "Zoegerlaut zwischen Marker und Zahl"}
+{"say": "zweimal die 23", "expect": "23", "why": "Menge vor der Nummer"}
+{"say": "2x die 23", "expect": "23", "why": "kompakte Menge vor der Nummer"}
+{"say": "zwei Nummer 23", "expect": "23", "why": "Menge vor dem Marker"}
+{"say": "drei Portionen von der 23", "expect": "23", "why": "Mengenwort und Praeposition"}
+{"say": "einmal die Nummer dreiundzwanzig", "expect": "23", "why": "voller Satz, eine Nummer"}
+{"say": "Ich hätte gern die 23, bitte", "expect": "23", "why": "Fuellwoerter rundherum"}
+{"say": "Nummer 23g", "expect": "!23g", "why": "Endung, die es auf keiner Karte gibt"}
+{"say": "Nummer 23x", "expect": "!23x", "why": "x ist hier keine Menge, sondern eine falsche Endung"}
+{"say": "Nummer 23 x", "expect": "!23x", "why": "dasselbe abgesetzt gesprochen"}
+{"say": "Nummer 1000", "expect": "!1000", "why": "ueber dem Kartenbereich"}
+{"say": "Nummer tausend", "expect": "!tausend", "why": "Zahlwort ueber dem Bereich"}
+{"say": "Nummer eintausend", "expect": "!eintausend", "why": "Faktor steht davor"}
+{"say": "Nummer zweitausend", "expect": "!zweitausend", "why": "Faktor steht davor"}
+{"say": "Nummer dreitausendzwei", "expect": "!dreitausendzwei", "why": "Tausender mitten im Wort"}
+{"say": "Nummer A12", "expect": "!a12", "why": "Buchstabe vor der Ziffer, keine Kartenform"}
+{"say": "Nummer A 12", "expect": "!a12", "why": "dasselbe mit Leerzeichen aus der Erkennung"}
+{"say": "Nummer AB12", "expect": "!ab12", "why": "mehrere Buchstaben davor"}
+{"say": "Nummer AB 12", "expect": "!ab12", "why": "mehrere Buchstaben davor, abgesetzt"}
+{"say": "Nr. C3 bitte", "expect": "!c3", "why": "Kurzmarker und Buchstabe davor"}
+{"say": "Nummer 23 oder 24", "expect": "?", "why": "zwei genannte Nummern"}
+{"say": "23 oder 24", "expect": "?", "why": "zwei Nummern ohne Marker, oder ist kein Gerichtname"}
+{"say": "23 und 24", "expect": "?", "why": "Aufzaehlung"}
+{"say": "23, 24", "expect": "?", "why": "nur durch Komma getrennt"}
+{"say": "23, äh, 24", "expect": "?", "why": "Zoegerlaut zwischen zwei Nummern"}
+{"say": "nein 23 oder 24", "expect": "?", "why": "Korrekturwort vorweg, zwei Nummern"}
+{"say": "Nummer 23, nein", "expect": "?", "why": "zurueckgenommen, ohne Ersatz"}
+{"say": "Nummer 23 oder", "expect": "?", "why": "nicht zu Ende gesprochen"}
+{"say": "Nummer 23 und", "expect": "?", "why": "nicht zu Ende gesprochen"}
+{"say": "Nein, Nummer 23", "expect": "?", "why": "Korrektur ohne erkennbaren Bezug"}
+{"say": "23a, nein, Nummer 23", "expect": "?", "why": "Korrektur zwischen zwei Kartenformen"}
+{"say": "Nummer 07 oder Nummer 7", "expect": "?", "why": "gleiche Nummer zweimal, aber zwei Marker"}
+{"say": "Nummer A12 oder 24", "expect": "?", "why": "ungueltige Form neben einer zweiten Nummer"}
+{"say": "Nummer 1000 und 23", "expect": "?", "why": "ungueltige Nummer neben einer gueltigen"}
+{"say": "Nummer 47, die Ente", "expect": "?", "why": "Nummer und Name widersprechen sich"}
+{"say": "Nummer bitte 23, Pho", "expect": "?", "why": "Marker ueberlebt die Floskel, Name daneben"}
+{"say": "Nummer äh 23, Pho", "expect": "?", "why": "Marker ueberlebt den Zoegerlaut, Name daneben"}
+{"say": "zwei Frühlingsrollen", "expect": "name", "why": "Zahl neben Name ist eine Menge"}
+{"say": "die knusprige Ente", "expect": "name", "why": "gar keine Zahl"}
+{"say": "Nummer weiß ich nicht", "expect": "name", "why": "Marker ohne Zahl dahinter"}
+{"say": "7up", "expect": "name", "why": "Alias mit Ziffer, keine Kartenform"}
+{"say": "die 23g", "expect": "name", "why": "ohne Marker bleibt die falsche Endung Text"}
+{"say": "A12", "expect": "name", "why": "ohne Marker ein moeglicher Alias"}
+{"say": "die A12", "expect": "name", "why": "ohne Marker ein moeglicher Alias"}
+{"say": "Reis oder Nudeln", "expect": "name", "why": "Gerichtname darf ein oder enthalten"}
+{"say": "zwei Cola oder Fanta", "expect": "name", "why": "Menge und Auswahl zwischen zwei Namen"}
+{"say": "die 23 oder Reis", "expect": "name", "why": "ohne Marker entscheidet der Name"}
+{"say": "zwei Cola 0,5", "expect": "name", "why": "Mengenangabe im Namen"}
+{"say": "Pizza 4 Jahreszeiten", "expect": "name", "why": "Ziffer gehoert zum Gerichtnamen"}
+{"say": "ich hätte gern Pho", "expect": "name", "why": "nur Fuellwoerter und ein Name"}
+{"say": "ich haette gern Pho", "expect": "name", "why": "Erkennung ohne Umlaut"}
+{"say": "Nummer A zwölf", "expect": "!a12", "why": "Buchstabe davor, Zahl als Wort"}
+{"say": "Nummer A zwoelf", "expect": "!a12", "why": "dasselbe ohne Umlaut aus der Erkennung"}
+{"say": "Nummer 23 ab", "expect": "!23ab", "why": "abgesetzte Endung aus mehreren Buchstaben, wie 23ab"}
+{"say": "Nummer 23ab", "expect": "!23ab", "why": "zusammengeschrieben, war schon ungueltig"}
+{"say": "Nummer 23 mit Reis", "expect": "?", "why": "mit ist keine Endung, sondern ein Wort daneben"}
+{"say": "Nummer 23 bitte", "expect": "23", "why": "Hoeflichkeitsfloskel hinter der Nummer"}
+{"say": "Nummer Ente 23", "expect": "?", "why": "Name zwischen Marker und Zahl, kein Praefix"}
+{"say": "Nummer Pho zwoelf", "expect": "?", "why": "Name zwischen Marker und Zahlwort"}
+{"say": "Nummer 23 Beef", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}
+{"say": "Nummer 23 Cafe", "expect": "?", "why": "Wort aus a-f-Buchstaben, trotzdem ein Name"}
+{"say": "zwei Frühlingsrollen, Nummer weiß ich nicht", "expect": "name", "why": "Menge vor dem Marker, Marker faengt nichts - der Gast kennt die Nummer nicht"}
+{"say": "zwei Fruehlingsrollen, Nummer weiss ich nicht", "expect": "name", "why": "dasselbe ohne Umlaute aus der Erkennung"}
+{"say": "Nummer Ente23", "expect": "?", "why": "Name an Ziffern geklebt, wie Nummer Ente 23"}
+{"say": "Nummer Pho12", "expect": "?", "why": "Name an Ziffern geklebt"}
+{"say": "einmal 7up bitte", "expect": "name", "why": "Alias mit Ziffer im Satz"}
+{"say": "das ist 5g Zucker", "expect": "name", "why": "Einheit hinter einer Zahl, keine Kartennummer"}
+{"say": "Nummer so 23", "expect": "?", "why": "kurzes Alltagswort, kein Kartenbuchstabe"}
+{"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
+{"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
+{"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}

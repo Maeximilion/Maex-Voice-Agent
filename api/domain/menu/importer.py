@@ -31,7 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.time import utcnow
-from api.domain.menu.normalize import normalize_alias
+from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
 
@@ -61,6 +61,11 @@ _COLUMNS = {
 # "6,90", "6,9", "6" - nur Ziffern und Komma (docs/14). Punkt als Dezimal- oder
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
+# Kartennummern, die search_menu eindeutig auflöst: höchstens drei Stellen ohne
+# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis f
+# (numberwords._SUFFIXES). Geprüft wird die klein geschriebene Nummer: 23a und
+# 23A wären sonst zwei Gerichte, die die Suche nie auseinanderhält.
+_CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
 
 
 @dataclass(frozen=True)
@@ -222,18 +227,31 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         return plan
 
     first_line: dict[str, int] = {}
+    spelled: dict[str, str] = {}
     for line, row in _rows(plan, MENU_FILE, files[MENU_FILE]):
         where = f"{MENU_FILE} Zeile {line}"
-        number = row["number"]
+        number = row["number"].lower()
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
-        if number in first_line:
+        if not _CARD_NUMBER.fullmatch(number):
+            # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
+            # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
             plan.errors.append(
-                f"{where}: Nummer {number} doppelt (zuerst in Zeile {first_line[number]})"
+                f"{where}: Kartennummer „{row['number']}“ versteht die Suche nicht "
+                "(erlaubt: bis 999, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
             )
             continue
-        first_line[number] = line
+        # Dublette nach der Form, in der die Suche vergleicht: "7" und "07" sind
+        # eine Nummer (Codex PR #117). Die Schreibweise aus der Datei bleibt.
+        key = _canonical(number)
+        if key in first_line:
+            plan.errors.append(
+                f"{where}: Nummer {number} doppelt (zuerst in Zeile {first_line[key]})"
+            )
+            continue
+        first_line[key] = line
+        spelled[key] = number
         price = parse_eur(row["price_eur"])
         active = _bool(row.get("active", ""), default=True)
         problems = []
@@ -259,27 +277,34 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             active=active,
         )
 
-    _parse_options(plan, files.get(OPTIONS_FILE), first_line)
-    _parse_allergens(plan, files.get(ALLERGENS_FILE), first_line)
-    _parse_aliases(plan, files.get(ALIASES_FILE), first_line)
+    _parse_options(plan, files.get(OPTIONS_FILE), spelled)
+    _parse_allergens(plan, files.get(ALLERGENS_FILE), spelled)
+    _parse_aliases(plan, files.get(ALIASES_FILE), spelled)
     return plan
 
 
-def _known(plan: Plan, where: str, number: str, known: Mapping[str, int]) -> bool:
-    if number in known:
-        return True
+def _canonical(number: str) -> str:
+    """Kartennummer so, wie search_menu sie vergleicht: klein, ohne führende Nullen."""
+    return number.lower().lstrip("0") or "0"
+
+
+def _known(plan: Plan, where: str, number: str, known: Mapping[str, str]) -> str | None:
+    """Die Schreibweise aus menu_items.csv zu einer Nummer, auch als "7" für "07"."""
+    spelled = known.get(_canonical(number)) if number else None
+    if spelled is not None:
+        return spelled
     plan.errors.append(
         f"{where}: Nummer {number or '(leer)'} gibt es nicht in {MENU_FILE}"
     )
-    return False
+    return None
 
 
-def _parse_options(plan: Plan, text: str | None, known: Mapping[str, int]) -> None:
+def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> None:
     seen: set[tuple[str, str, str]] = set()
     for line, row in _rows(plan, OPTIONS_FILE, text):
         where = f"{OPTIONS_FILE} Zeile {line}"
-        number = row["number"]
-        if not _known(plan, where, number, known):
+        number = _known(plan, where, row["number"].lower(), known)
+        if number is None:
             continue
         delta = parse_eur(row["price_delta_eur"] or "0")
         is_default = _bool(row["is_default"], default=False)
@@ -323,11 +348,11 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, int]) -> No
                 )
 
 
-def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, int]) -> None:
+def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, str]) -> None:
     for line, row in _rows(plan, ALLERGENS_FILE, text):
         where = f"{ALLERGENS_FILE} Zeile {line}"
-        number = row["number"]
-        if not _known(plan, where, number, known):
+        number = _known(plan, where, row["number"].lower(), known)
+        if number is None:
             continue
         if number in plan.allergens:
             plan.errors.append(f"{where}: Nummer {number} doppelt")
@@ -349,27 +374,53 @@ def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, int]) -> 
         )
 
 
-def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, int]) -> None:
+def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> None:
     for line, row in _rows(plan, ALIASES_FILE, text):
         where = f"{ALIASES_FILE} Zeile {line}"
-        number = row["number"]
-        if not _known(plan, where, number, known):
+        number = _known(plan, where, row["number"].lower(), known)
+        if number is None:
             continue
         alias = normalize_alias(row["alias"])
         if not alias:
             plan.errors.append(f"{where}: Alias leer")
             continue
+        # Bleibt nach der Such-Normalisierung nichts übrig ("bitte", "die",
+        # "x", "23"), wäre der Alias gespeichert, aber nie zu finden:
+        # search_menu bricht vorher mit not_found ab. Fehler statt Warnung -
+        # das ist für die Suche dasselbe wie ein leerer Alias
+        # (Codex PR #117, P2).
+        if not normalize_query(alias):
+            plan.errors.append(
+                f"{where}: Alias „{alias}“ besteht nur aus Füll- oder "
+                "Zahlwörtern und wäre nie zu finden"
+            )
+            continue
         plan.aliases.setdefault(number, set()).add(alias)
 
-    owners: dict[str, list[str]] = {}
+    # Gewarnt wird nach derselben Kennung, mit der search_menu spaeter vergleicht:
+    # dort faellt vor dem Alias-Vergleich das Fuellwort weg. "Ente" und "die
+    # Ente" an zwei Gerichten sind deshalb eine Kollision, auch wenn die beiden
+    # Zeichenketten verschieden sind - ohne das meldet der Import "keine
+    # Kollision" und jede Anfrage nach beiden Schreibweisen wird ambiguous
+    # (Codex PR #117, P2).
+    owners: dict[str, dict[str, set[str]]] = {}
     for number, aliases in plan.aliases.items():
         for alias in aliases:
-            owners.setdefault(alias, []).append(number)
-    for alias, numbers in sorted(owners.items()):
-        if len(numbers) > 1:
-            plan.warnings.append(
-                f"Alias „{alias}“ führt zu mehreren Gerichten: {', '.join(sorted(numbers))}"
-            )
+            # Nie leer: die Pruefung oben hat solche Aliase abgelehnt.
+            key = normalize_query(alias)
+            spellings = owners.setdefault(key, {})
+            spellings.setdefault(number, set()).add(alias)
+    for key, by_number in sorted(owners.items()):
+        if len(by_number) < 2:
+            continue
+        # Die Schreibweisen nur nennen, wenn sie sich unterscheiden - sonst
+        # stuende dreimal dasselbe Wort in der Meldung.
+        abweichend = any(s != key for ss in by_number.values() for s in ss)
+        genannt = ", ".join(
+            f"{number} ({', '.join(sorted(spellings))})" if abweichend else number
+            for number, spellings in sorted(by_number.items())
+        )
+        plan.warnings.append(f"Alias „{key}“ führt zu mehreren Gerichten: {genannt}")
     without = sorted(n for n in plan.items if n not in plan.aliases)
     if without:
         plan.warnings.append("Gericht ohne Alias: " + ", ".join(without))
@@ -393,17 +444,38 @@ def apply(
         warnings=list(plan.warnings),
         price_changes_applied=apply_price_changes,
     )
-    existing = {
-        item.number: item
-        for item in session.scalars(
+    rows = list(
+        session.scalars(
             select(MenuItem).where(MenuItem.tenant_id == tenant_id).with_for_update()
         )
-    }
-    report.items_not_in_file = sorted(n for n in existing if n not in plan.items)
+    )
+    # In der Form der Suche (klein, ohne führende Nullen): ein früher als "23A"
+    # oder "07" importiertes Gericht ist dasselbe wie "23a" oder "7" und wird
+    # angeglichen, nicht verdoppelt (Codex #117).
+    # Stehen beide Schreibweisen schon im Bestand, entscheidet ein Mensch, welche
+    # gilt - still eine zu verdecken hiesse, die andere nie wieder zu finden.
+    by_key: dict[str, list[MenuItem]] = {}
+    for row in rows:
+        by_key.setdefault(_canonical(row.number), []).append(row)
+    clashes = [
+        sorted(r.number for r in group) for group in by_key.values() if len(group) > 1
+    ]
+    if clashes:
+        session.rollback()
+        listed = "; ".join(" und ".join(c) for c in sorted(clashes))
+        raise ValueError(
+            f"Kartennummer doppelt im Bestand (nur Schreibweise verschieden): "
+            f"{listed}. Eine davon von Hand zusammenführen, dann erneut importieren."
+        )
+    existing = {key: group[0] for key, group in by_key.items()}
+    in_plan = {_canonical(n) for n in plan.items}
+    report.items_not_in_file = sorted(
+        item.number for key, item in existing.items() if key not in in_plan
+    )
 
     items: dict[str, MenuItem] = {}
     for number, row in plan.items.items():
-        item = existing.get(number)
+        item = existing.get(_canonical(number))
         if item is None:
             item = MenuItem(
                 tenant_id=tenant_id,
@@ -418,6 +490,7 @@ def apply(
             report.items_new.append(number)
         else:
             fields = {
+                "number": row.number,
                 "name": row.name,
                 "category": row.category,
                 "description": row.description,
