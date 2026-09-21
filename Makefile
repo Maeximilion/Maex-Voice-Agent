@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval backup
+.PHONY: up down logs migrate seed test lint fmt eval eval-nummern backup
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -26,6 +26,9 @@ fmt:
 
 eval:     ## Eval-Suite, optional TAGS=menu,noise
 	docker compose exec api python -m evals.runner $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
+
+eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
+	python -m evals.number_eval
 
 backup:
 	bash scripts/backup.sh

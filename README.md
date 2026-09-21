@@ -28,7 +28,6 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
-- Menu lookups, latency-tested as well: `POST /v1/tools/search_menu` maps what was said onto the menu - card number first, then exact alias, then trigram over name and alias with configurable thresholds; ambiguous means up to three suggestions and a question back, never a pick. `POST /v1/tools/get_item_details` delivers description, options and allergens, and says without a maintained allergen row that the team confirms it
 - Conversation core (`api/agent/`) with understanding ladder and escalation, driven from the text phone (`sim/`): `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case>` replays a transcript; a confirmed reservation lands in the database without any telephony
 - Operations view for the tablet at `/gui/` (`api/gui/`): header with mode, delivery and wait times and the buttons to pause the AI, switch delivery and raise the wait time; the column "Heute" with the confirmed reservations of the business day and the column "Rückrufe" with open callbacks, a tone for new ones and a done button. It updates itself over Server-Sent-Events, so a call held in `sim/` shows up on every tablet a moment later without reloading
 - `make test` and `make lint` run in container against real Postgres, ruff clean
@@ -39,7 +38,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 - No phone line, no provider chosen (decision D1)
 - The column "Neue Bestellungen" stays empty until T-4.7, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
-- No orders yet: the schema is in place (migration 002), the menu can be imported and is searchable, but `draft_order` and the order confirmation follow in T-4.5
+- No orders yet: the schema is in place (migration 002), the menu can be imported, searched (`POST /v1/tools/search_menu`) and asked about (`POST /v1/tools/get_item_details`), but `draft_order` and the order confirmation follow in T-4.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events

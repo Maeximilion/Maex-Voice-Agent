@@ -115,16 +115,30 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 ```
 
 **Auflösungsreihenfolge**
-1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`. Die Kartennummer ist Text: „23a" und „01" sind eigene Nummern und werden als Ganzes verglichen, auch getrennt gesprochen („23 a"). Eine nackte Ziffernfolge zählt nur, wenn sie als Gerichtnummer erkannt ist - die 2 in „2 x die 23" ist eine Menge, und bei zwei genannten Zahlen wird nicht geraten
+1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`.
+   Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
+   genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
+   Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
 
-Vor Schritt 2 und 3 fallen Füllwörter des Bestellsatzes weg („einmal … bitte"), damit der Trigram-Vergleich am Gericht hängt und nicht am Satz. Die beiden Schwellen stehen in der Konfiguration (`MENU_FUZZY_THRESHOLD_HIGH`, `MENU_FUZZY_THRESHOLD_LOW`): sie stellen sich erst am echten Gespräch ein.
+**Zwei Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
+vorzuschlagen gibt:
 
-**Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt. `max_results` begrenzt die Vorschläge, nie die Entscheidung: hängt derselbe Alias an mehreren Gerichten, bleibt es `ambiguous`, auch wenn nur ein Vorschlag vorgelesen wird.
+| Lage | Antwort |
+|---|---|
+| Mehrere Gerichte passen (Alias oder Trigram) | `ok: true`, `match_type: "ambiguous"`, bis zu 3 Vorschläge in `results` |
+| Der Satz nennt keine eine Nummer („23 oder 24", „Nummer 23, nein", „Nummer 47, die Ente") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` fragt nach der einen Nummer |
+
+Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
+könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent
+liest `say` vor und fragt nach. Eine Nummer, die es nicht gibt, bleibt
+`not_found` — die Suche weicht nie auf ähnliche Namen aus.
+
+**Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
 
 ---
 
@@ -147,9 +161,9 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
   "say": null
 }
 ```
-**Allergene:** Ist `known: false`, lautet `say` wörtlich „Das lasse ich Ihnen vom Team bestätigen." (aus dem Code, `domain/menu/details.py`), und der Agent legt einen Rückruf an. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Die Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört.
+**Allergene:** Ist `known: false`, lautet `say` wörtlich „Das kann ich Ihnen nicht sicher sagen. Das Team ruft Sie dazu zurück." (aus dem Code, `domain/menu/details.py`), und der Agent legt einen Rückruf an. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Gepflegte Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört; `confirmed_at` ist der jüngste Nachweis.
 
-Inaktive Gerichte liefert weder `search_menu` noch `get_item_details`; ausverkaufte liefern beide, mit `sold_out: true`.
+Die `menu_item_id` kommt aus `search_menu`, ein anderer Weg in die Karte existiert nicht. Inaktive Gerichte liefert das Tool nicht (`not_found`), ausverkaufte schon, mit `sold_out: true` und demselben Satz wie die Suche - es sei denn, die Allergen-Auskunft fehlt, die wiegt schwerer.
 
 ---
 

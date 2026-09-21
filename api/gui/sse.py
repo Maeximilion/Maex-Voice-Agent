@@ -20,6 +20,7 @@ from collections.abc import AsyncIterator
 
 from fastapi import Request
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from api.core.logging import get_logger
 from api.db import SessionLocal
@@ -37,37 +38,36 @@ HEARTBEAT_SECONDS = 15.0
 RETRY_MS = 3000
 
 
-def _token(tenant_id: uuid.UUID, tz_name: str) -> str:
-    session = SessionLocal()
-    try:
-        return today_change_token(session, tenant_id, tz_name)
-    finally:
-        session.close()
+def _token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
+    return today_change_token(session, tenant_id, tz_name)
 
 
-def _header_token(tenant_id: uuid.UUID) -> str:
-    session = SessionLocal()
-    try:
-        return config_change_token(session, tenant_id)
-    finally:
-        session.close()
+def _header_token(session: Session, tenant_id: uuid.UUID) -> str:
+    return config_change_token(session, tenant_id)
 
 
-def _callbacks_token(tenant_id: uuid.UUID) -> str:
-    session = SessionLocal()
-    try:
-        return open_change_token(session, tenant_id)
-    finally:
-        session.close()
+def _callbacks_token(session: Session, tenant_id: uuid.UUID) -> str:
+    return open_change_token(session, tenant_id)
 
 
 def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
-    """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse."""
-    return {
-        "header": _header_token(tenant_id),
-        "today": _token(tenant_id, tz_name),
-        "callbacks": _callbacks_token(tenant_id),
-    }
+    """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse.
+
+    Alle drei in einer Sitzung: die Abfragen lesen denselben Mandanten und
+    haengen nicht voneinander ab. Drei eigene Sitzungen waeren drei Entnahmen
+    aus dem Pool je Takt und Tablet - bei vier Tablets und zwei Sekunden Takt
+    sechs pro Sekunde, nur um festzustellen, dass sich nichts geaendert hat
+    (Review PR #117).
+    """
+    session = SessionLocal()
+    try:
+        return {
+            "header": _header_token(session, tenant_id),
+            "today": _token(session, tenant_id, tz_name),
+            "callbacks": _callbacks_token(session, tenant_id),
+        }
+    finally:
+        session.close()
 
 
 async def today_event_stream(

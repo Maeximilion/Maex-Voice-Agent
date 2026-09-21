@@ -1,4 +1,4 @@
-"""POST /v1/tools/search_menu. Dünne Hülle um domain.menu."""
+"""POST /v1/tools/search_menu. Dünne Hülle um domain.menu.search (docs/04)."""
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from api.core import envelope
 from api.core.logging import bind_call_id
 from api.db import get_db
-from api.domain.menu import search_menu
+from api.domain.menu.search import search_menu
 from api.schemas.menu import SearchMenuRequest
 
 router = APIRouter()

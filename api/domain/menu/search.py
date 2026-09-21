@@ -1,269 +1,255 @@
-"""search_menu: gesprochene Bestellung auf die Karte abbilden (T-4.3, docs/04).
+"""search_menu: vom Gesagten zur menu_item_id (docs/04 §search_menu, T-4.3).
 
-Das wichtigste Tool und die groesste Fehlerquelle, deshalb eine feste
-Reihenfolge von sicher nach unsicher:
+Die Auflösungsreihenfolge aus docs/04, streng in dieser Reihenfolge:
 
-1. Zahl im Satz -> exakter Treffer auf `menu_items.number` (`exact_number`)
-2. Alias, exakt und normalisiert (`alias`)
-3. Unscharfe Suche ueber Name und Alias per Trigram
-   - genau ein Treffer ueber der hohen Schwelle -> `fuzzy_single`
-   - mehrere Treffer ueber der niedrigen Schwelle -> `ambiguous`, der Agent fragt nach
-   - keiner -> `not_found`
+1. Nummer -> exakter Treffer auf die Kartennummer (`exact_number`), aber nur,
+   wenn der ganze Satz genau eine Nummer ist (Regel A, numberwords.
+   sole_item_number). Steht mehr daneben - eine zweite Zahl, ein Name, "oder" -
+   ist das `ambiguous` mit der Frage nach der einen Nummer. Nennt der Gast eine
+   Nummer, die es nicht gibt, ist das `not_found`; die Suche weicht dann nicht
+   auf ähnliche Namen aus (CLAUDE.md §2 Regel 2).
+2. Alias exakt (`alias`). Hängt derselbe Alias an mehreren Gerichten, ist das
+   `ambiguous` - der Importer hat davor gewarnt, die Suche fragt nach.
+3. Unscharf über Name und Aliase (pg_trgm): genau ein Treffer über der hohen
+   Schwelle -> `fuzzy_single`; sonst alle über der niedrigen -> `ambiguous`
+   mit höchstens drei Vorschlägen; keiner -> `not_found`.
 
-Geraten wird nie (CLAUDE.md §2 Regel 2): `ambiguous` ist eine Rueckfrage, keine
-Auswahl. Die Schwellen stehen in der Konfiguration, weil sie sich erst am
-echten Gespraech einstellen lassen (`MENU_FUZZY_THRESHOLD_HIGH`/`_LOW`).
+Gesucht wird nur in aktiven Gerichten. Ausverkaufte kommen mit `sold_out: true`
+und einem Satz zurück: der Agent soll sagen, dass es heute aus ist, statt so zu
+tun, als gäbe es das Gericht nicht.
 
-Inaktive Gerichte tauchen nie auf. Ausverkaufte schon: der Agent muss sagen
-koennen, dass es das Gericht gibt, es heute aber aus ist.
+Die unscharfe Suche läuft in zwei Schritten: erst ein Vorfilter mit den
+Operatoren `%` und `<%`, der die GIN-Indizes auf `menu_items.name` und
+`item_aliases.alias` benutzt, dann die genauen Werte nur auf den Treffern. Der
+Vorfilter vergleicht gegen die Schwellen der Sitzung, die dafür auf dieselbe
+niedrige Schwelle gesetzt werden - er ist damit deckungsgleich mit der
+Bedingung und schneidet nichts weg. Bei ein paar hundert Zeilen ist der
+Unterschied klein, mit wachsender Karte trägt der Index die Suche.
 """
 
-import re
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Float, func, select
+from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import InvalidInput, NotFound
+from api.core.errors import Ambiguous, NotFound
 from api.core.time import utcnow
-from api.domain.menu.items import is_sold_out, option_groups
-from api.domain.menu.normalize import normalize_alias
-from api.domain.menu.numberwords import find_item_number
+from api.domain.menu.items import is_sold_out as _sold_out
+from api.domain.menu.items import option_groups
+from api.domain.menu.normalize import normalize_alias, normalize_query
+from api.domain.menu.numberwords import sole_item_number
 from api.models import ItemAlias, MenuItem
-from api.schemas.menu import MAX_RESULTS, MenuHit, MenuSearch
+from api.schemas.menu import MenuHit, SearchResult
 
-# Fuellwoerter des Bestellsatzes. Sie stehen nie in einem Alias der Karte
-# (docs/14), verwaessern aber jeden Trigram-Vergleich: "einmal die
-# Fruehlingsrollen bitte" gegen "Fruehlingsrollen" verliert sonst die Haelfte
-# der Aehnlichkeit an Text, der nichts bezeichnet.
-_FILLER = frozenset(
-    {
-        "ich",
-        "wir",
-        "haette",
-        "hätte",
-        "hatte",
-        "will",
-        "wollte",
-        "moechte",
-        "möchte",
-        "nehme",
-        "nehmen",
-        "bekomme",
-        "bekommen",
-        "kriege",
-        "gern",
-        "gerne",
-        "bitte",
-        "danke",
-        "einmal",
-        "zweimal",
-        "dreimal",
-        "mal",
-        "eine",
-        "einen",
-        "einem",
-        "ein",
-        "der",
-        "die",
-        "das",
-        "den",
-        "dem",
-        "nummer",
-        "nr",
-        "und",
-        "noch",
-        "dazu",
-        "auch",
-        "bestellen",
-        "bestellung",
-        "also",
-        "ja",
-        "dann",
-        "so",
-    }
+SAY_NOT_FOUND = (
+    "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?"
 )
+SAY_NO_SUCH_NUMBER = (
+    "Die Nummer {number} habe ich nicht auf der Karte. Können Sie das noch "
+    "einmal sagen?"
+)
+SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
+SAY_SOLD_OUT = "{name} ist heute leider aus."
+AMBIGUOUS_LIMIT = 3
+# Abstand der Sitzungsschwelle zur eigentlichen Schwelle, damit der Vorfilter
+# sicher eine Obermenge bleibt. Klein genug, um keine echte Zeile zusaetzlich
+# zu holen, gross genug fuer den Vergleich in float4.
+PREFILTER_EPSILON = 1e-4
+
+
+def _active(tenant_id: uuid.UUID) -> tuple:
+    return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
+
+
+def _by_number(session: Session, tenant_id: uuid.UUID, spoken: str) -> list[MenuItem]:
+    """Aktive Gerichte zu einer gesagten Kartennummer.
+
+    Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht" findet
+    08. Die Kartennummer ist Text (docs/14), eine Umwandlung über int verlöre
+    "23a" (Befund Codex PR #116); Zahl, Buchstabe und Marker stammen aus
+    derselben Stelle im Satz (Befund Codex PR #117).
+    """
+    stored = func.lower(
+        func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
+    )
+    return list(
+        session.scalars(
+            select(MenuItem)
+            .where(*_active(tenant_id), stored == (spoken.lstrip("0") or "0"))
+            .order_by(MenuItem.number)
+        )
+    )
+
+
+def _hits(session: Session, items: list[MenuItem], now: datetime) -> list[MenuHit]:
+    groups = option_groups(session, [i.id for i in items])
+    return [
+        MenuHit(
+            menu_item_id=item.id,
+            number=item.number,
+            name=item.name,
+            price_cents=item.price_cents,
+            sold_out=_sold_out(item, now),
+            option_groups=groups.get(item.id, []),
+        )
+        for item in items
+    ]
+
+
+def _single(
+    session: Session, match_type: str, item: MenuItem, now: datetime
+) -> SearchResult:
+    say = SAY_SOLD_OUT.format(name=item.name) if _sold_out(item, now) else None
+    return SearchResult(
+        match_type=match_type, results=_hits(session, [item], now), say=say
+    )
+
+
+def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> SearchResult:
+    names = [f"Nummer {i.number}, {i.name}" for i in items]
+    if len(names) == 1:
+        question = f"Meinen Sie {names[0]}?"
+    else:
+        question = f"Meinen Sie {', '.join(names[:-1])} oder {names[-1]}?"
+    return SearchResult(
+        match_type="ambiguous", results=_hits(session, items, now), say=question
+    )
 
 
 def search_menu(
     session: Session,
     tenant_id: uuid.UUID,
     query: str,
-    max_results: int = MAX_RESULTS,
+    max_results: int = AMBIGUOUS_LIMIT,
     now: datetime | None = None,
-    threshold_high: float | None = None,
-    threshold_low: float | None = None,
-) -> MenuSearch:
-    text = query.strip()
-    if not text:
-        raise InvalidInput("query ist leer")
+    high: float | None = None,
+    low: float | None = None,
+) -> SearchResult:
     now = now or utcnow()
-    max_results = max(1, min(max_results, MAX_RESULTS))
-    high = (
-        settings.menu_fuzzy_threshold_high if threshold_high is None else threshold_high
-    )
-    low = settings.menu_fuzzy_threshold_low if threshold_low is None else threshold_low
+    high = settings.menu_fuzzy_threshold_high if high is None else high
+    low = settings.menu_fuzzy_threshold_low if low is None else low
+    limit = min(max_results, AMBIGUOUS_LIMIT)
 
-    hit = _by_number(session, tenant_id, text)
-    if hit is not None:
-        return _answer("exact_number", [hit], session, now)
+    text = normalize_query(query)
 
-    items = _by_alias(session, tenant_id, text, max_results)
-    if len(items) == 1:
-        return _answer("alias", items, session, now)
-    if items:
-        return _answer("ambiguous", items[:max_results], session, now)
-
-    scored = _by_similarity(session, tenant_id, text, max_results, low)
-    if not scored:
-        raise NotFound("Kein Gericht zu dieser Nennung gefunden")
-    above_high = [item for item, score in scored if score >= high]
-    if len(above_high) == 1:
-        return _answer("fuzzy_single", above_high, session, now)
-    return _answer(
-        "ambiguous", [item for item, _ in scored[:max_results]], session, now
-    )
-
-
-def needle(text: str) -> str:
-    """Der Suchtext ohne Fuellwoerter, normalisiert wie ein Alias beim Import.
-
-    Bleibt nichts uebrig ("einmal bitte"), zaehlt der ganze Satz: lieber ein
-    schwacher Vergleich als gar keiner.
-    """
-    normalized = normalize_alias(text)
-    words = [w for w in normalized.split(" ") if w and w not in _FILLER]
-    return " ".join(words) or normalized
-
-
-def _active(tenant_id: uuid.UUID):
-    return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
-
-
-def card_numbers(text: str) -> list[str]:
-    """Kandidaten fuer die Kartennummer, vom genauesten zum allgemeinsten.
-
-    Die Kartennummer ist Text, nicht Zahl (docs/14): "23a" und "01" kommen vor.
-    Ueber die Zahl allein waere "die Nummer 23a" die 23 - ein falsches Gericht,
-    und das waere geraten (Codex-Review PR #118, P1). Deshalb zaehlt zuerst die
-    Nummer mit Buchstabe, auch getrennt gesprochen ("23 a"), danach die Zahl aus
-    `find_item_number` und ihre Formen mit fuehrender Null. Welcher Kandidat
-    gilt, entscheidet die Karte: was es nicht gibt, trifft auch nicht.
-
-    Eine nackte Ziffernfolge ohne Buchstabe kommt **nur** ueber
-    `find_item_number` herein. Sonst wuerde die Menge in "2 x die 23" zur
-    Kartennummer, und bei zwei genannten Zahlen waere die erste eine Vermutung.
-    """
-    tokens = normalize_alias(text).split(" ")
-    lettered: list[str] = []
-    for i, token in enumerate(tokens):
-        match = re.fullmatch(r"(\d{1,3})([a-z])?", token)
-        if match is None:
-            continue
-        if match.group(2) is not None:
-            lettered.append(token)
-            continue
-        following = tokens[i + 1] if i + 1 < len(tokens) else ""
-        if re.fullmatch(r"[a-z]", following):
-            lettered.append(token + following)
-    # Zwei verschiedene Nummern mit Buchstabe: nicht entscheidbar, also keine.
-    if len(set(lettered)) > 1:
-        lettered = []
-
-    spoken: list[str] = []
-    number = find_item_number(text)
-    if number is not None:
-        # "dreiundzwanzig a": der Buchstabe steht allein im Satz.
-        letters = {t for t in tokens if re.fullmatch(r"[a-z]", t)}
-        spoken += [f"{number}{letter}" for letter in sorted(letters)]
-        spoken.append(str(number))
-        spoken += [str(number).zfill(width) for width in (2, 3)]
-
-    seen: set[str] = set()
-    return [c for c in lettered + spoken if not (c in seen or seen.add(c))]
-
-
-def _by_number(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:
-    candidates = card_numbers(text)
-    if not candidates:
-        return None
-    rows = session.scalars(
-        select(MenuItem).where(
-            *_active(tenant_id), func.lower(MenuItem.number).in_(candidates)
-        )
-    ).all()
-    found = {row.number.lower(): row for row in rows}
-    return next((found[c] for c in candidates if c in found), None)
-
-
-def _by_alias(
-    session: Session, tenant_id: uuid.UUID, text: str, max_results: int
-) -> list[MenuItem]:
-    """Exakter Alias-Treffer. Haengt derselbe Alias an mehreren Gerichten, wird gefragt.
-
-    Geholt wird ein Gericht mehr als gefragt: sonst versteckt die Obergrenze die
-    Mehrdeutigkeit, und aus zwei Gerichten am selben Alias wuerde bei
-    `max_results=1` ein sicherer Treffer - also ein Raten (Codex-Review PR #118,
-    P1). Der Aufrufer kuerzt erst, nachdem er die Mehrdeutigkeit gesehen hat.
-    """
-    candidates = {normalize_alias(text), needle(text)}
-    items = session.scalars(
-        select(MenuItem)
-        .join(ItemAlias, ItemAlias.menu_item_id == MenuItem.id)
-        .where(*_active(tenant_id), ItemAlias.alias.in_(candidates))
-        .order_by(MenuItem.number)
-        .distinct()
-        .limit(max_results + 1)
-    ).all()
-    return list(items)
-
-
-def _by_similarity(
-    session: Session,
-    tenant_id: uuid.UUID,
-    text: str,
-    max_results: int,
-    low: float,
-) -> list[tuple[MenuItem, float]]:
-    """Trigram ueber Name und Alias, der bessere der beiden zaehlt je Gericht.
-
-    Es wird ein Treffer mehr geholt als gefragt: erst daran laesst sich sehen,
-    ob ueber der hohen Schwelle wirklich nur einer steht.
-    """
-    probe = needle(text)
-    score = func.greatest(
-        func.similarity(MenuItem.name, probe),
-        func.coalesce(func.max(func.similarity(ItemAlias.alias, probe)), 0.0),
-    )
-    rows = session.execute(
-        select(MenuItem, score.cast(Float).label("score"))
-        .outerjoin(ItemAlias, ItemAlias.menu_item_id == MenuItem.id)
-        .where(*_active(tenant_id))
-        .group_by(MenuItem.id)
-        .having(score >= low)
-        .order_by(score.desc(), MenuItem.number)
-        .limit(max_results + 1)
-    ).all()
-    return [(row[0], float(row[1])) for row in rows]
-
-
-def _answer(
-    match_type: str, items: list[MenuItem], session: Session, now: datetime
-) -> MenuSearch:
-    groups = option_groups(session, [item.id for item in items])
-    return MenuSearch(
-        match_type=match_type,
-        results=[
-            MenuHit(
-                menu_item_id=item.id,
-                number=item.number,
-                name=item.name,
-                price_cents=item.price_cents,
-                sold_out=is_sold_out(item, now),
-                option_groups=groups.get(item.id, []),
+    # 1. Nummer - Regel A: direkt nur, wenn der ganze Satz genau eine Nummer
+    # ist ("Nummer 23", "die 23", "zweimal die 23"). Steht mehr daneben (eine
+    # zweite Zahl, ein Name, "oder"), fragt die Suche nach, statt eine Zahl zu
+    # wählen. Ohne "Nummer" ist eine Zahl neben einem Namen eine Menge ("zwei
+    # Frühlingsrollen") und die Namenssuche entscheidet.
+    ref, unclear = sole_item_number(query)
+    if unclear:
+        raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
+    if ref is not None:
+        # "23g": eine Endung, die es auf keiner Karte gibt, ist nicht die 23.
+        items = _by_number(session, tenant_id, ref.text) if ref.valid else []
+        if not items:
+            raise NotFound(
+                f"Nummer {ref.text} nicht auf der Karte",
+                say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
-            for item in items
-        ],
+        if len(items) > 1:
+            # "7" und "07" auf derselben Karte: nachfragen statt wählen.
+            return _ambiguous(session, items[:limit], now)
+        return _single(session, "exact_number", items[0], now)
+
+    if not text:
+        raise NotFound("Anfrage ohne Inhalt", say=SAY_NOT_FOUND)
+
+    # 2. Alias exakt. Aliase stehen wie aus der Karte da, oft mit Artikel ("die
+    # knusprigen rollen"), der Gast sagt "die knusprigen Rollen, bitte". Beide
+    # Seiten werden deshalb ohne Füllwörter verglichen. In Python statt SQL:
+    # normalize_query gibt es nur hier, und eine Karte hat ein paar hundert
+    # Aliase - das ist ein Index-Scan und eine Schleife, keine Last.
+    said = {normalize_alias(query), text}
+    matched_ids = {
+        item_id
+        for item_id, alias in session.execute(
+            select(ItemAlias.menu_item_id, ItemAlias.alias)
+            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+            .where(*_active(tenant_id))
+        )
+        if alias in said or normalize_query(alias) == text
+    }
+    by_alias = (
+        session.scalars(
+            select(MenuItem)
+            .where(MenuItem.id.in_(matched_ids))
+            .order_by(MenuItem.number)
+        ).all()
+        if matched_ids
+        else []
     )
+    if len(by_alias) == 1:
+        return _single(session, "alias", by_alias[0], now)
+    if by_alias:
+        return _ambiguous(session, list(by_alias)[:limit], now)
+
+    # 3. Unscharf: das bessere von Name und bestem Alias, je Gericht.
+    #
+    # Zwei Schritte, weil nur der erste den GIN-Index benutzen kann: die
+    # Operatoren % und <% schlagen im Index nach, ein greatest(similarity(...))
+    # im WHERE muss jede aktive Zeile anfassen (Codex PR #117, P2).
+    #
+    # Der Vorfilter ist bewusst eine Obermenge, nicht die genaue Bedingung: die
+    # Sitzungsschwelle liegt eine Winzigkeit unter `low`. Ob die Operatoren auf
+    # ">" oder ">=" gegen ihre Schwelle pruefen, haengt an der Version; ein
+    # Treffer genau auf der Schwelle waere sonst schon hier weg, obwohl
+    # `total >= low` ihn behalten wuerde (Codex PR #117, P2). Entschieden wird
+    # ohnehin unten in der Abfrage, der Vorfilter spart nur Zeilen.
+    #
+    # `SET LOCAL` ueber set_config(..., true): die Werte gelten nur fuer diese
+    # Transaktion und bleiben nicht an der Verbindung aus dem Pool haengen.
+    grenze = max(0.0, low - PREFILTER_EPSILON)
+    session.execute(
+        select(
+            func.set_config("pg_trgm.similarity_threshold", str(grenze), True),
+            func.set_config("pg_trgm.word_similarity_threshold", str(grenze), True),
+        )
+    )
+
+    def score(column):
+        return func.greatest(
+            func.similarity(column, text), func.word_similarity(text, column)
+        )
+
+    def candidate(column):
+        # Obermenge von score(column) >= low, indexgestuetzt.
+        return or_(column.op("%")(text), literal(text).op("<%")(column))
+
+    # Ohne lower(): pg_trgm bildet seine Trigramme selbst in Kleinschreibung,
+    # und ein lower(name) im Ausdruck passt nicht mehr zum Index auf name.
+    alias_score = (
+        select(func.max(score(ItemAlias.alias)))
+        .where(ItemAlias.menu_item_id == MenuItem.id)
+        .correlate(MenuItem)
+        .scalar_subquery()
+    )
+    alias_candidate = (
+        select(1)
+        .where(ItemAlias.menu_item_id == MenuItem.id, candidate(ItemAlias.alias))
+        .correlate(MenuItem)
+        .exists()
+    )
+    total = func.greatest(score(MenuItem.name), func.coalesce(alias_score, 0))
+    rows = session.execute(
+        select(MenuItem, total.label("score"))
+        .where(
+            *_active(tenant_id),
+            # Bei `low <= 0` faellt der Vorfilter weg: er koennte dann nur noch
+            # Zeilen mit Wert genau 0 verlieren, die `total >= low` behaelt.
+            *((or_(candidate(MenuItem.name), alias_candidate),) if grenze > 0 else ()),
+            # Die Schwelle entscheidet hier, nicht die Sitzungsvariable.
+            total >= low,
+        )
+        .order_by(total.desc(), MenuItem.number)
+        .limit(AMBIGUOUS_LIMIT + 1)
+    ).all()
+    if not rows:
+        raise NotFound(f"Kein Treffer für „{text}“", say=SAY_NOT_FOUND)
+    strong = [item for item, value in rows if value >= high]
+    if len(strong) == 1:
+        return _single(session, "fuzzy_single", strong[0], now)
+    return _ambiguous(session, [item for item, _ in rows][:limit], now)

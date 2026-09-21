@@ -1,9 +1,4 @@
-"""Verträge der Karten-Tools search_menu und get_item_details (docs/04).
-
-Die Suche liefert nie Text, den der Agent frei ausschmücken darf: jede Position
-trägt ihre `menu_item_id`, und nur damit darf der Agent weiterarbeiten
-(CLAUDE.md §2 Regel 2).
-"""
+"""Verträge der Menü-Tools (docs/04 §search_menu, §get_item_details)."""
 
 import uuid
 from datetime import date
@@ -13,20 +8,15 @@ from pydantic import BaseModel, Field
 
 from api.schemas.common import ToolRequest
 
-MATCH_TYPES = ("exact_number", "alias", "fuzzy_single", "ambiguous")
-MAX_RESULTS = 3
+MatchType = Literal["exact_number", "alias", "fuzzy_single", "ambiguous"]
 
 
 class SearchMenuRequest(ToolRequest):
     query: str = Field(min_length=1, max_length=300)
-    max_results: int = Field(default=MAX_RESULTS, ge=1, le=MAX_RESULTS)
+    max_results: int = Field(default=3, ge=1, le=5)
 
 
-class ItemDetailsRequest(ToolRequest):
-    menu_item_id: uuid.UUID
-
-
-class OptionChoice(BaseModel):
+class OptionOut(BaseModel):
     name: str
     price_delta_cents: int
     default: bool
@@ -35,7 +25,7 @@ class OptionChoice(BaseModel):
 class OptionGroup(BaseModel):
     group: str
     required: bool
-    options: list[OptionChoice] = Field(default_factory=list)
+    options: list[OptionOut]
 
 
 class MenuHit(BaseModel):
@@ -47,10 +37,14 @@ class MenuHit(BaseModel):
     option_groups: list[OptionGroup] = Field(default_factory=list)
 
 
-class MenuSearch(BaseModel):
-    match_type: Literal["exact_number", "alias", "fuzzy_single", "ambiguous"]
-    results: list[MenuHit] = Field(default_factory=list)
+class SearchResult(BaseModel):
+    match_type: MatchType
+    results: list[MenuHit]
     say: str | None = Field(default=None, exclude=True)
+
+
+class ItemDetailsRequest(ToolRequest):
+    menu_item_id: uuid.UUID
 
 
 class Allergens(BaseModel):

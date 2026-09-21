@@ -8,7 +8,7 @@
 ## `menu_items.csv`
 | Spalte | Typ | Beispiel | Regel |
 |---|---|---|---|
-| number | Text | `23` | Pflicht, eindeutig. Text, weil „23a" vorkommen kann. |
+| number | Text | `23` | Pflicht, eindeutig. Text, weil „23a" vorkommen kann. **Nur Zahlen bis 999 (führende Nullen erlaubt), optional ein Buchstabe a bis f**: `23`, `23a`, `007`. Der Buchstabe wird klein gespeichert, `23A` und `23a` sind dieselbe Nummer. Alles andere (`23g`, `A12`, `12-3`) lehnt der Import ab - die Suche könnte es nicht eindeutig auflösen und fände sonst still ein anderes Gericht. Braucht eine Karte ein anderes Format, wird es bewusst erweitert. |
 | name | Text | `Frühlingsrollen (4 Stück)` | Pflicht |
 | category | Text | `Vorspeisen` | Pflicht, freie Gruppierung |
 | price_eur | Dezimal | `6,90` | Pflicht, wird zu `690` Cent. Nur Ziffern und Komma. |
@@ -47,7 +47,12 @@
 - Option zu unbekannter Nummer → Fehler
 - Pflichtgruppe ohne Default → Fehler
 - Gericht ohne Alias → Warnung, Liste für den Chat
-- Alias, der zu zwei Gerichten führt → Warnung, im Bericht sichtbar
+- Alias, der zu zwei Gerichten führt → Warnung, im Bericht sichtbar. Verglichen
+  wird wie in der Suche, also ohne Füllwörter: „Ente“ und „die Ente“ an zwei
+  Gerichten sind eine Kollision, auch wenn die Zeilen verschieden aussehen
+- Alias nur aus Füll- oder Zahlwörtern („bitte“, „die“, „x“, „23“) → Fehler: die
+  Suche fiele darauf nie zurück, der Alias wäre gespeichert und unerreichbar.
+  Eine Ziffer im Wort ist erlaubt, solange etwas übrig bleibt („7up“)
 - Bestehendes Gericht mit anderem Preis → im Bericht als „Preisänderung", erst mit `--apply-price-changes` übernommen
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.

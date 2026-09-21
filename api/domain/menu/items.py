@@ -1,7 +1,8 @@
 """Gemeinsame Bausteine der Karten-Tools: Optionen und der Zustand "aus" (docs/04).
 
-Beide Tools lesen dieselben Kindtabellen. Sie liegen deshalb hier und nicht
-zweimal nebeneinander in search.py und details.py.
+`search_menu` und `get_item_details` lesen dieselben Kindtabellen und muessen
+dasselbe antworten - ein Gericht, das in der Suche Optionen hat, hat sie in den
+Details auch. Deshalb liegt die Logik hier und nicht zweimal nebeneinander.
 """
 
 import uuid
@@ -12,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.models import ItemOption, MenuItem
-from api.schemas.menu import OptionChoice, OptionGroup
+from api.schemas.menu import OptionGroup, OptionOut
 
 
 def is_sold_out(item: MenuItem, now: datetime) -> bool:
@@ -25,36 +26,32 @@ def option_groups(
 ) -> dict[uuid.UUID, list[OptionGroup]]:
     """Optionen aller genannten Gerichte in einer Abfrage, nach Gruppe gebuendelt.
 
-    Eine Gruppe ist Pflicht, sobald eine ihrer Optionen Pflicht ist: die Frage
-    "mit welcher Sauce?" haengt an der Gruppe, nicht an der einzelnen Sauce.
+    Voreinstellung zuerst, damit der Agent sie als erste vorliest.
     """
     if not item_ids:
         return {}
-    rows = session.scalars(
+    options = session.scalars(
         select(ItemOption)
         .where(ItemOption.menu_item_id.in_(item_ids))
         .order_by(
-            ItemOption.menu_item_id,
             ItemOption.group_name,
             ItemOption.is_default.desc(),
-            ItemOption.price_delta_cents,
             ItemOption.option_name,
         )
     ).all()
 
-    groups: dict[uuid.UUID, dict[str, OptionGroup]] = {}
-    for row in rows:
-        per_item = groups.setdefault(row.menu_item_id, {})
-        group = per_item.get(row.group_name)
-        if group is None:
-            group = OptionGroup(group=row.group_name, required=False)
-            per_item[row.group_name] = group
-        group.required = group.required or row.required
+    by_item: dict[uuid.UUID, dict[str, OptionGroup]] = {}
+    for option in options:
+        groups = by_item.setdefault(option.menu_item_id, {})
+        group = groups.setdefault(
+            option.group_name,
+            OptionGroup(group=option.group_name, required=option.required, options=[]),
+        )
         group.options.append(
-            OptionChoice(
-                name=row.option_name,
-                price_delta_cents=row.price_delta_cents,
-                default=row.is_default,
+            OptionOut(
+                name=option.option_name,
+                price_delta_cents=option.price_delta_cents,
+                default=option.is_default,
             )
         )
-    return {item_id: list(per_item.values()) for item_id, per_item in groups.items()}
+    return {item_id: list(groups.values()) for item_id, groups in by_item.items()}
