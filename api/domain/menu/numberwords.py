@@ -489,6 +489,114 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
     return _ref(tokens, uebrig[0], marked=False, glued=glued)
 
 
+# Wörter, die in einem reinen Nummernsatz stehen dürfen, nach fold(). Alles
+# andere daneben macht den Satz unklar (Regel A, docs/01_STATUS.md).
+_SENTENCE_FILLER = frozenset(
+    {
+        "ich", "wir", "haette", "haetten", "moechte", "moechten", "nehme", "nehmen",
+        "meine", "meinte", "gern", "gerne", "bitte", "dann", "noch", "und", "also",
+        "ja", "genau", "mal", "die", "der", "das", "den", "dem", "des", "ein",
+        "eine", "einen", "einem", "einer", "von", "vom", "ist", "war", "waere",
+    }
+)  # fmt: skip
+
+
+def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
+    """Regel A: eine Kartennummer nur, wenn der ganze Satz genau eine Nummer ist.
+
+    Erlaubt neben der Nummer: "Nummer"/"Nr.", Füllwörter, Zögerlaute,
+    Satzzeichen und eine Menge ("zweimal", "2x", "drei Portionen", "zwei
+    Nummer 23"). Ergebnis:
+
+    - `(ref, False)`: genau eine Nummer, sonst nichts - der Aufrufer nimmt sie
+      (ungültige wie "23g" oder "Nummer 1000" als `valid=False`).
+    - `(None, True)`: Nummer plus mehr (zweite Zahl, Text) - nachfragen.
+    - `(None, False)`: kein Nummernsatz. Ohne "Nummer" ist eine Zahl neben
+      einem Namen eine Menge ("zwei Frühlingsrollen"), die Namenssuche
+      entscheidet.
+
+    Eine Regel statt vieler Sonderfälle: jede Satzform, die nicht eindeutig
+    eine Nummer ist, wird zur Rückfrage statt zum stillen Fehlgriff
+    (Codex-Reviews PR #117, 15 Runden).
+    """
+    tokens = _tokens(text)
+    glued = _glued(text)
+    mengen = _quantity_spans(tokens)
+    consumed: set[int] = set()
+    marked: list[_Span] = []
+    invalid: list[ItemNumber] = []
+    marker_at: set[int] = set()
+    for i, token in enumerate(tokens):
+        if token not in _ITEM_NUMBER_MARKERS:
+            continue
+        j = i + 1
+        while j < len(tokens) and (
+            tokens[j] in PUNCTUATION or tokens[j] in _MARKER_FILLER
+        ):
+            j += 1
+        span = _scan(tokens, j)
+        if span is not None:
+            marked.append(span)
+            marker_at.add(i)
+        elif j < len(tokens) and tokens[j].isdigit():
+            invalid.append(ItemNumber(int(tokens[j]), tokens[j], True, valid=False))
+            marker_at.add(i)
+            consumed.add(j)
+    numbers = list(marked)
+    for span in _number_spans(tokens):
+        if any(span.overlaps(m) for m in marked) or any(
+            span.overlaps(q) for q in mengen
+        ):
+            continue
+        if span.end in marker_at:
+            # "zwei Nummer 23": Menge vor dem Marker, gehört nicht zum Rest.
+            consumed.update(range(span.start, span.end))
+            continue
+        numbers.append(span)
+    if not numbers and not invalid:
+        return None, False
+
+    for span in [*numbers, *mengen]:
+        consumed.update(range(span.start, span.end))
+        nxt = span.end
+        if nxt >= len(tokens):
+            continue
+        after = tokens[nxt]
+        # Zur Zahl gehören: ein Mengenwort ("2 x", "drei Portionen"), eine
+        # Kartenendung a bis f ("23a", "23 a") und - nur hinter "Nummer" - jede
+        # andere Endung, die die Nummer dann ungültig macht ("Nummer 23g").
+        # Ohne Marker bleibt "7up" oder "23g" Text für die Namenssuche.
+        if (
+            after in _QUANTITY_NOUNS
+            or after in _SUFFIXES
+            or (
+                span in marked
+                and after.isalpha()
+                and (span.start in glued or len(after) == 1)
+            )
+        ):
+            consumed.add(nxt)
+    consumed |= marker_at
+    residue = [
+        t
+        for k, t in enumerate(tokens)
+        if k not in consumed
+        and t not in PUNCTUATION
+        and t not in _SENTENCE_FILLER
+        and t not in _HESITATIONS
+        and t not in _ITEM_NUMBER_MARKERS
+        and not _QUANTITY_SUFFIX.match(t)
+    ]
+    has_marker = bool(marked or invalid)
+    if len(numbers) + len(invalid) == 1 and not residue:
+        if invalid:
+            return invalid[0], False
+        return _ref(tokens, numbers[0], marked=has_marker, glued=glued), False
+    if has_marker or not residue:
+        return None, True
+    return None, False
+
+
 def has_item_number_marker(text: str) -> bool:
     """Steht ein ausdrückliches "Nummer"/"Nr." im Satz?
 

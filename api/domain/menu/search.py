@@ -2,10 +2,12 @@
 
 Die Auflösungsreihenfolge aus docs/04, streng in dieser Reihenfolge:
 
-1. Zahl im Satz -> exakter Treffer auf die Kartennummer (`exact_number`).
-   Nennt der Gast eine Nummer, die es nicht gibt, ist das `not_found` - die
-   Suche weicht dann nicht auf ähnliche Namen aus. Wer "Nummer 99" sagt, meint
-   kein Gericht, das zufällig ähnlich heisst (CLAUDE.md §2 Regel 2).
+1. Nummer -> exakter Treffer auf die Kartennummer (`exact_number`), aber nur,
+   wenn der ganze Satz genau eine Nummer ist (Regel A, numberwords.
+   sole_item_number). Steht mehr daneben - eine zweite Zahl, ein Name, "oder" -
+   ist das `ambiguous` mit der Frage nach der einen Nummer. Nennt der Gast eine
+   Nummer, die es nicht gibt, ist das `not_found`; die Suche weicht dann nicht
+   auf ähnliche Namen aus (CLAUDE.md §2 Regel 2).
 2. Alias exakt (`alias`). Hängt derselbe Alias an mehreren Gerichten, ist das
    `ambiguous` - der Importer hat davor gewarnt, die Suche fragt nach.
 3. Unscharf über Name und Aliase (pg_trgm): genau ein Treffer über der hohen
@@ -28,13 +30,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import NotFound
+from api.core.errors import Ambiguous, NotFound
 from api.core.time import utcnow
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import (
-    find_item_number_ref,
-    find_marked_item_numbers,
-)
+from api.domain.menu.numberwords import sole_item_number
 from api.models import ItemAlias, ItemOption, MenuItem
 from api.schemas.menu import MenuHit, OptionGroup, OptionOut, SearchResult
 
@@ -45,10 +44,7 @@ SAY_NO_SUCH_NUMBER = (
     "Die Nummer {number} habe ich nicht auf der Karte. Können Sie das noch "
     "einmal sagen?"
 )
-SAY_NO_SUCH_NUMBERS = (
-    "Die Nummern {numbers} habe ich nicht auf der Karte. Können Sie das noch "
-    "einmal sagen?"
-)
+SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
 AMBIGUOUS_LIMIT = 3
 
@@ -154,29 +150,15 @@ def search_menu(
 
     text = normalize_query(query)
 
-    # 1. Nummer. Ohne "Nummer" im Satz zählt eine Zahl nur, wenn sonst nichts
-    # vom Gericht gesagt wurde ("die 23"); neben einem Namen ist sie eine Menge
-    # ("zwei Frühlingsrollen" ist nicht Gericht 2).
-    marked = find_marked_item_numbers(query)
-    if len(marked) > 1:
-        # "Nummer 23, nein, Nummer 24" oder "Nummer 23 oder Nummer 24": beide
-        # zur Wahl stellen statt die erste zu nehmen (Befund Codex PR #117).
-        items = [
-            i
-            for ref in marked
-            if ref.valid
-            for i in _by_number(session, tenant_id, ref.text)
-        ]
-        if not items:
-            spoken = " und ".join(ref.text for ref in marked)
-            raise NotFound(
-                f"Nummern {spoken} nicht auf der Karte",
-                say=SAY_NO_SUCH_NUMBERS.format(numbers=spoken),
-            )
-        return _ambiguous(session, items[:limit], now)
-
-    ref = find_item_number_ref(query)
-    if ref is not None and (ref.marked or not text):
+    # 1. Nummer - Regel A: direkt nur, wenn der ganze Satz genau eine Nummer
+    # ist ("Nummer 23", "die 23", "zweimal die 23"). Steht mehr daneben (eine
+    # zweite Zahl, ein Name, "oder"), fragt die Suche nach, statt eine Zahl zu
+    # wählen. Ohne "Nummer" ist eine Zahl neben einem Namen eine Menge ("zwei
+    # Frühlingsrollen") und die Namenssuche entscheidet.
+    ref, unclear = sole_item_number(query)
+    if unclear:
+        raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
+    if ref is not None:
         # "23g": eine Endung, die es auf keiner Karte gibt, ist nicht die 23.
         items = _by_number(session, tenant_id, ref.text) if ref.valid else []
         if not items:

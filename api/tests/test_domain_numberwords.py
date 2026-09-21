@@ -495,3 +495,42 @@ def test_artikel_zwischen_verbindungswort_und_zahl():
         "23",
         "24",
     ]
+
+
+# --- Regel A: sole_item_number ----------------------------------------------------
+
+from api.domain.menu.numberwords import sole_item_number  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("text", "card"),
+    [
+        ("Nummer 23", "23"),
+        ("die 23", "23"),
+        ("Nummer 23a", "23a"),
+        ("die 23 a", "23a"),
+        ("Nummer 07", "07"),
+        ("drei Portionen von der 23", "23"),
+        ("zwei Nummer 23", "23"),
+        ("Nummer 23g", "23g"),
+    ],
+)
+def test_sole_item_number_eindeutig(text, card):
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and ref.text == card
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Nummer 23 oder 24", "Nummer 47, die Ente", "23 und 24", "Nummer 1000 und 23"],
+)
+def test_sole_item_number_unklar(text):
+    ref, unclear = sole_item_number(text)
+    assert unclear and ref is None
+
+
+@pytest.mark.parametrize(
+    "text", ["zwei Frühlingsrollen", "die knusprige Ente", "Nummer weiß ich nicht"]
+)
+def test_sole_item_number_kein_nummernsatz(text):
+    assert sole_item_number(text) == (None, False)

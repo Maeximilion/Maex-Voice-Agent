@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import NotFound
+from api.core.errors import Ambiguous, NotFound
 from api.db import get_db
 from api.domain.menu import has_item_number_marker
 from api.domain.menu.importer import (
@@ -159,12 +159,6 @@ def test_menge_ist_keine_nummer(session, tenant_id):
     result = suche(session, tenant_id, "zwei Frühlingsrollen")
 
     assert result.match_type == "alias" and nummern(result) == ["23"]
-
-
-def test_nummer_mit_marker_schlaegt_namen(session, tenant_id):
-    result = suche(session, tenant_id, "Nummer 47, die Ente")
-
-    assert result.match_type == "exact_number" and nummern(result) == ["47"]
 
 
 @pytest.mark.parametrize(
@@ -422,36 +416,12 @@ def test_unbekannte_buchstabennummer(session, buchstaben):
 # --- Eine Fundstelle fuer Nummer, Buchstabe und Marker (Codex PR #117, P1) --------
 
 
-def test_korrektur_im_satz_nimmt_die_markierte_nummer(session, buchstaben):
-    """ "23a, nein, Nummer 23": gemeint ist die 23, nicht der Buchstabe von vorher."""
-    result = suche(session, buchstaben, "23a, nein, Nummer 23")
-
-    assert result.match_type == "exact_number" and nummern(result) == ["23"]
-
-
 def test_marker_ohne_zahl_dahinter_macht_menge_nicht_zur_nummer(session, tenant_id):
     """ "Nummer weiß ich nicht": das Wort Nummer gehoert nicht zur zwei."""
     result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
 
     assert result.match_type != "exact_number"
     assert nummern(result)[0] == "23"
-
-
-@pytest.mark.parametrize(
-    "gesagt", ["Nummer 23, nein, Nummer 24", "Nummer 23 oder Nummer 24"]
-)
-def test_zwei_genannte_nummern_fragen_nach(session, tenant_id, gesagt):
-    """Korrektur oder Auswahl im selben Satz: nachfragen, nicht die erste nehmen."""
-    result = suche(session, tenant_id, gesagt)
-
-    assert result.match_type == "ambiguous" and nummern(result) == ["23", "24"]
-    assert "Nummer 23" in result.say and "Nummer 24" in result.say
-
-
-def test_zwei_genannte_nummern_die_es_nicht_gibt(session, tenant_id):
-    with pytest.raises(NotFound) as err:
-        suche(session, tenant_id, "Nummer 98 oder Nummer 99")
-    assert "Nummern 98 und 99" in err.value.say
 
 
 @pytest.mark.parametrize("gesagt", ["Nummer 23g", "Nummer 23ab", "Nummer 23 g"])
@@ -480,19 +450,6 @@ def test_verbindungswoerter_und_abgesetzter_buchstabe(
     assert result.match_type == "exact_number" and nummern(result) == [nummer]
 
 
-def test_gleiche_nummer_zweimal_ist_eindeutig(session, buchstaben):
-    result = suche(session, buchstaben, "Nummer 07 oder Nummer 7")
-
-    assert result.match_type == "exact_number" and nummern(result) == ["7"]
-
-
-@pytest.mark.parametrize("gesagt", ["Nummer 23 oder 24", "Nummer 23, nein 24"])
-def test_ein_marker_mit_alternative_fragt_nach(session, tenant_id, gesagt):
-    result = suche(session, tenant_id, gesagt)
-
-    assert result.match_type == "ambiguous" and nummern(result) == ["23", "24"]
-
-
 def test_nummer_ist_23(session, tenant_id):
     result = suche(session, tenant_id, "die Nummer ist 23")
 
@@ -519,3 +476,58 @@ def test_alias_mit_ziffer_vorn(session, tenant_id):
 
     for gesagt in ("7up", "ein 7up bitte"):
         assert nummern(suche(session, tenant_id, gesagt)) == ["90"], gesagt
+
+
+# --- Regel A: Nummer nur direkt, wenn der Satz eindeutig ist ----------------------
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "Nummer 23",
+        "die 23",
+        "dreiundzwanzig",
+        "einmal die Nummer dreiundzwanzig",
+        "drei Portionen von der 23",
+        "die Nummer ist 23",
+        "Nummer 23 zweimal",
+        "zwei Nummer 23",
+        "2x die 23",
+        "Nummer 23 bitte",
+        "Nummer 23, äh, bitte",
+    ],
+)
+def test_eindeutiger_nummernsatz_trifft(session, tenant_id, gesagt):
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "Nummer 23 oder 24",
+        "Nummer 23, nein 24",
+        "Nummer 23 oder Nummer 24",
+        "Nummer 23, äh, 24",
+        "Nummer 23 und 24",
+        "Nummer 47, die Ente",
+        "Nummer 23 mit 2 Soßen",
+        "Nummer 1000 und 23",
+        "23a, nein, Nummer 23",
+        "23 und 24",
+        "Nummer 07 oder Nummer 7",
+    ],
+)
+def test_nummer_mit_mehr_im_satz_fragt_nach(session, tenant_id, gesagt):
+    """Regel A: eine zweite Zahl oder Text neben der Nummer - nie selbst waehlen."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, gesagt)
+    assert "Welche Nummer" in err.value.say
+
+
+def test_ohne_nummer_im_satz_bleibt_die_namenssuche(session, tenant_id):
+    """ "Nummer weiß ich nicht" ist kein Nummernsatz: die Namenssuche entscheidet."""
+    result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
+
+    assert nummern(result)[0] == "23" and result.match_type != "exact_number"
