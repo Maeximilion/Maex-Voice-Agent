@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.21.2
+> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.21.3
 
 ---
 
@@ -176,6 +176,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
 | Lower the wait time from the tablet | docs/06 §3 only specifies +15/+30; base values belong to the admin view (§4), not yet built | at T-3.5 operating test, latest with the admin view |
 | Reliable latency statement under lock contention | Measured ~11 ms is from same request repeated without concurrency; says nothing about lock wait times | with first load test, latest before gate G1 |
+| **PR #120 (Google Jules, "CodeGuardian") on T-4.3** — decide and close | Opened 19.09.2026 against the pre-Rule-A branch. Its finding, an N+1 where `_by_number` ran once per parsed number, **no longer exists**: since Rule A (9d345a7) a sentence with more than one number raises `Ambiguous` before any query, and `_by_number` is called exactly once (verified on `main`, `search.py:171`). Merging the branch as it stands would reintroduce the multi-number path that Rule A removed. What is still worth a decision is the second half of that PR: a `.Jules/reviewer.md` journal of recurring bug patterns | after the gates, together with the deferred P2 polish |
 
 ## Blockers
 
@@ -240,6 +241,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.21.3 · 22.09.2026:** PR #120 (Jules review of T-4.3) recorded as an open point: its N+1 finding is obsolete since Rule A, the reviewer journal is still to decide
 - **v1.21.2 · 21.09.2026:** Codex review PR #117 (P2) fixed: trigram prefilter is a provable superset of the score cutoff
 - **v1.21.1 · 21.09.2026:** Codex review PR #117 (P2) fixed: only card letters a-f count as a number prefix, so a short everyday word asks back
 - **v1.21.0 · 21.09.2026:** Code review PR #117: both number exits agree, card letters bounded on both spellings, ambiguous contract documented, one session per SSE tick
