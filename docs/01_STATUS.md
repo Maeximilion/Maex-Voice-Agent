@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.22.0
+> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.22.1
 
 ---
 
@@ -179,6 +179,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
 | Lower the wait time from the tablet | docs/06 §3 only specifies +15/+30; base values belong to the admin view (§4), not yet built | at T-3.5 operating test, latest with the admin view |
 | Reliable latency statement under lock contention | Measured ~11 ms is from same request repeated without concurrency; says nothing about lock wait times | with first load test, latest before gate G1 |
+| **A sentence with two positions loses one of them - silently when no number marker is spoken** (`domain/menu/numberwords.py` `sole_item_number`, `domain/menu/search.py`) | Measured 21.09.2026 against the merged code, against the test menu of `test_domain_menu_search.py`. A number with markers, filler words and **one** quantity next to it is fine: `"einmal die Nummer 23 bitte"`, `"zweimal die 23"`, `"die Nummer 23a"` all resolve to `exact_number`. Two cases part ways when **content** stands next to the number. **With** a marker (`"die Nummer 23 und einmal Pho Bo"`, `"Nummer 23 mit Erdnusssauce"`) the answer is `ambiguous` and the agent asks for the one number - loud and safe, though a sauce is an option, not a second dish. **Without** a marker it is not a number sentence at all, so the name search runs over the whole sentence: `"die 23 und einmal Pho Bo"` comes back as `fuzzy_single` on Pho Bo (number 13) and the spoken 23 is gone without a word, `"einmal die 23 und zweimal Frühlingsrollen"` as `alias` on 23. Nothing is guessed, but one position is dropped in silence, and the agent has no signal that it happened. Fix belongs **before** the search: split the sentence per position, then ask `search_menu` once per position - that is order-flow work, not a change to Rule A | with **T-4.5** `draft_order`, where several positions per sentence actually arrive |
 
 ## Blockers
 
@@ -243,6 +244,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.22.1 · 22.09.2026:** Rule A measured and recorded: with a number marker a second position is a question, without one the name search takes over and drops the spoken number - one sentence, one position until T-4.5 splits it
 - **v1.22.0 · 22.09.2026:** T-4.4 done: get_item_details with allergen rule unknown is not none, shared option building block with search_menu
 - **v1.21.2 · 21.09.2026:** Codex review PR #117 (P2) fixed: trigram prefilter is a provable superset of the score cutoff
 - **v1.21.1 · 21.09.2026:** Codex review PR #117 (P2) fixed: only card letters a-f count as a number prefix, so a short everyday word asks back

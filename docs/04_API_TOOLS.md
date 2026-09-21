@@ -119,6 +119,17 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
+   „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`.
+   Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
+   und einmal Pho Bo", „Nummer 23 mit Erdnusssauce") ist es `ambiguous` mit der
+   Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
+   die Namenssuche läuft über den ganzen Satz - „die 23 und einmal Pho Bo" kommt
+   als `fuzzy_single` auf Pho Bo zurück, die genannte 23 fällt still weg.
+   Geraten wird dabei nichts, aber eine Position verschwindet ohne Signal.
+   **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
+   will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
+   Zerlegung gehört zum Bestellfluss (T-4.5), nicht in `search_menu`
+   (`docs/01_STATUS.md` § Open Points from Reviews).
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
