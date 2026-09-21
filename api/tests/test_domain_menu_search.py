@@ -529,6 +529,9 @@ def test_eindeutiger_nummernsatz_trifft(session, tenant_id, gesagt):
         "Nummer A12 oder 24",
         # Der Marker ueberlebt Fuellwort und Zoegerlaut (Codex PR #117, P1).
         "Nummer bitte 23, Pho",
+        # Zurueckgenommen oder nicht zu Ende gesprochen (Codex PR #117, P1).
+        "Nummer 23, nein",
+        "Nummer 23 oder",
     ],
 )
 def test_nummer_mit_mehr_im_satz_fragt_nach(session, tenant_id, gesagt):

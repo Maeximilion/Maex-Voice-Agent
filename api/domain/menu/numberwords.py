@@ -379,6 +379,10 @@ _HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
 _ALTERNATIVE_WORDS = frozenset(
     {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
 )
+# Wörter, die zwei Zahlen verbinden können. Sie sind nur dann durchsichtig,
+# wenn links und rechts wirklich eine Zahl steht - "Nummer 23, nein" ist eine
+# zurückgenommene Bestellung, keine 23 (Codex PR #117, P1).
+_CONNECTORS = _ALTERNATIVE_WORDS | {"und"}
 
 
 def _connected(tokens: list[str], after: int, before: int) -> bool:
@@ -657,28 +661,42 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         ):
             consumed.add(nxt)
     consumed |= marker_at
-    # Was neben den Zahlen übrig bleibt und ein Gerichtname sein könnte.
-    # Verbindungswörter zählen nicht dazu: "23 oder 24" ist eine Rückfrage nach
-    # der Nummer, kein Satz über ein Gericht namens "oder" (Codex PR #117, P1).
-    # "und" stand schon in _SENTENCE_FILLER, "oder" und "nein" fehlten - genau
-    # diese Unwucht ließ die zweite Nummer in die Namenssuche laufen.
+    # Token, die zu einer Zahl gehören - gültig oder nicht.
+    number_at = {k for s in numbers for k in range(s.start, s.end)} | invalid_at
+
+    def _connects(k: int) -> bool:
+        """Steht links und rechts von Position k eine Zahl?"""
+        return any(x < k for x in number_at) and any(x > k for x in number_at)
+
+    # Ein Verbindungswort zwischen zwei Zahlen ist durchsichtig: "23 oder 24"
+    # ist eine Rückfrage nach der Nummer, kein Satz über ein Gericht namens
+    # "oder". Hängt es dagegen frei ("Nummer 23, nein", "Nummer 23 oder"), hat
+    # der Gast zurückgenommen oder nicht zu Ende gesprochen. Es ist dann kein
+    # Gerichtname - es gehört also nicht in den Rest, sondern macht den Satz
+    # für sich unklar (Codex PR #117, P1).
+    dangling = any(
+        t in _CONNECTORS and not _connects(k)
+        for k, t in enumerate(tokens)
+        if k not in consumed
+    )
+    # Was daneben übrig bleibt und ein Gerichtname sein könnte.
     residue = [
         t
         for k, t in enumerate(tokens)
         if k not in consumed
         and t not in PUNCTUATION
+        and t not in _CONNECTORS
         and t not in _SENTENCE_FILLER
         and t not in _HESITATIONS
-        and t not in _ALTERNATIVE_WORDS
         and t not in _ITEM_NUMBER_MARKERS
         and not _QUANTITY_SUFFIX.match(t)
     ]
     has_marker = bool(marked or invalid)
-    if len(numbers) + len(invalid) == 1 and not residue:
+    if len(numbers) + len(invalid) == 1 and not residue and not dangling:
         if invalid:
             return invalid[0], False
         return _ref(tokens, numbers[0], marked=has_marker, glued=glued), False
-    if has_marker or not residue:
+    if has_marker or dangling or not residue:
         return None, True
     return None, False
 

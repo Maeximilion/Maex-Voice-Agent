@@ -551,9 +551,10 @@ def test_zwei_zahlen_ohne_marker_fragen_nach_statt_namen_zu_suchen():
     [
         # Ein Gerichtname darf "oder" enthalten - ohne Zahl bleibt es ein Name.
         "Reis oder Nudeln",
-        # Mit Name daneben entscheidet weiter die Namenssuche, nicht die Zahl.
-        "die 23 oder Reis",
+        # Zahl neben einem Namen, ohne Verbindungswort: Menge, die Namenssuche
+        # entscheidet.
         "zwei Cola 0,5",
+        "Pizza 4 Jahreszeiten",
     ],
 )
 def test_verbindungswort_im_namen_bleibt_namenssuche(text):
@@ -620,10 +621,27 @@ def test_zu_grosses_zahlwort_nach_marker_ist_ungueltig(text):
     assert not unclear and ref is not None and not ref.valid
 
 
-def test_korrektur_vor_der_nummer_bleibt_eindeutig():
-    """ "Nein, Nummer 23" ist eine Korrektur auf genau eine Nummer."""
-    ref, unclear = sole_item_number("Nein, Nummer 23")
-    assert not unclear and ref is not None and ref.text == "23"
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Zurueckgenommen oder nicht zu Ende gesprochen.
+        "Nummer 23, nein",
+        "Nummer 23 oder",
+        "Nummer 23 und",
+        "Nein, Nummer 23",
+        # Zahl und Name mit "oder" verbunden: genau die Mischung, nach der
+        # Regel A fragt.
+        "die 23 oder Reis",
+    ],
+)
+def test_freihaengendes_verbindungswort_fragt_nach(text):
+    """Ein Verbindungswort ohne zweite Zahl ist kein Gerichtname.
+
+    "Nummer 23, nein" hat der Gast zurueckgenommen, "Nummer 23 oder" nicht zu
+    Ende gesprochen. Durchsichtig ist ein Verbindungswort nur zwischen zwei
+    Zahlen (Codex PR #117, P1).
+    """
+    assert sole_item_number(text) == (None, True)
 
 
 @pytest.mark.parametrize(
