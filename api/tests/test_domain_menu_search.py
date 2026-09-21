@@ -81,6 +81,13 @@ KARTE = {
         ("2 stk Pho", "pho"),
         ("2 st Pho", "pho"),
         ("Frühlingsrollen (4 Stück)", "frühlingsrollen"),
+        # Erkennung ohne Umlaut: "haette" darf nicht als Name stehen bleiben,
+        # sonst trifft der exakte Alias "pho" nicht mehr (Codex PR #117, P2).
+        ("ich haette gern Pho", "pho"),
+        ("ich moechte Pho", "pho"),
+        ("aeh Pho", "pho"),
+        # Der Gerichtname selbst wird nie umgeschrieben.
+        ("Frühlingsrollen", "frühlingsrollen"),
     ],
 )
 def test_normalize_query(gesagt, rest):

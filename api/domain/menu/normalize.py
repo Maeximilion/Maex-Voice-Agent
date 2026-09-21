@@ -25,6 +25,13 @@ _EDGE_PUNCT = " \t\"'.,;:!?()[]{}\u201e\u201c\u201d\u201a\u2018\u2019\u00ab\u00b
 
 # Was am Telefon um den Gerichtnamen herum gesagt wird und nichts über das
 # Gericht sagt. Bewusst kurz: jedes Wort hier kann nie Teil eines Treffers sein.
+#
+# Jedes Wort mit Umlaut steht zweimal drin, einmal mit und einmal in der
+# ae/oe/ue-Schreibweise: manche Spracherkennung liefert "ich haette gern Pho"
+# statt "hätte". Ohne die zweite Form bliebe "haette pho" stehen, der exakte
+# Alias "pho" träfe nicht mehr und der Trigram-Wert könnte unter die Schwelle
+# fallen (Codex PR #117, P2). Umgeschrieben wird nur diese feste Liste, nie der
+# Gerichtname selbst - "Frühling" gegen "Fruehling" bleibt ein Fehlertreffer.
 FILLER = frozenset(
     {
         "ich", "wir", "hätte", "hätten", "möchte", "möchten", "nehme", "nehmen",
@@ -32,6 +39,10 @@ FILLER = frozenset(
         "hm", "mal", "einmal", "die", "der", "das", "den", "dem", "des", "ein",
         "eine", "einen", "einem", "einer", "nummer", "nr", "x", "portion",
         "portionen", "von", "vom",
+        # dieselben Wörter, wie die Erkennung sie ohne Umlaut schreibt,
+        # dazu die übrigen Zögerlaute aus numberwords._HESITATIONS
+        "haette", "haetten", "moechte", "moechten", "aeh", "aehm", "aehh",
+        "hmm", "ehm", "oehm",
     }
 )  # fmt: skip
 

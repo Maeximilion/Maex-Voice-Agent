@@ -560,6 +560,17 @@ def test_verbindungswort_im_namen_bleibt_namenssuche(text):
     assert sole_item_number(text) == (None, False)
 
 
+@pytest.mark.parametrize("text", ["Nummer tausend", "Nummer tausendzwei"])
+def test_zu_grosses_zahlwort_nach_marker_ist_ungueltig(text):
+    """ "Nummer tausend" ist eine Nummer, die es nicht gibt - kein Gerichtname.
+
+    Ohne das liefe die Suche auf den Namen "tausend" und könnte ein fremdes
+    Gericht liefern (Codex PR #117, P2).
+    """
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid
+
+
 def test_korrektur_vor_der_nummer_bleibt_eindeutig():
     """ "Nein, Nummer 23" ist eine Korrektur auf genau eine Nummer."""
     ref, unclear = sole_item_number("Nein, Nummer 23")

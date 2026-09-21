@@ -84,6 +84,10 @@ ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 _QUANTITY_SUFFIX = re.compile(r"^(.+?)mal$")
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _ITEM_NUMBER_MARKERS = frozenset({"nummer", "nr", "no", "position", "pos"})
+# Zahlwörter oberhalb von MAX_VALUE. _scan kennt sie nicht, sie sind aber
+# erkennbar als Zahl gemeint: "Nummer tausend" ist eine Nummer, die es nicht
+# gibt, und darf nicht als Name "tausend" in der Suche landen (Codex PR #117).
+_TOO_LARGE = frozenset({"tausend", "million", "millionen", "milliarde", "milliarden"})
 # Zwischen Marker und Zahl erlaubt: "die Nummer ist 23", "Nummer die 23".
 _MARKER_FILLER = frozenset({"ist", "war", "waere", "die", "der", "das", "den"})
 
@@ -501,6 +505,16 @@ _SENTENCE_FILLER = frozenset(
 )  # fmt: skip
 
 
+def _too_large(token: str) -> bool:
+    """Ein Zahlwort oberhalb von MAX_VALUE, auch zusammengesetzt.
+
+    "tausend", "tausendzwei", "eine Million": als Zahl gemeint, aber keine
+    Kartennummer. Der Aufrufer macht daraus `valid=False`, nicht `None` - sonst
+    würde aus einer genannten Nummer eine Namenssuche (CLAUDE.md §2 Regel 2).
+    """
+    return any(token.startswith(word) for word in _TOO_LARGE)
+
+
 def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     """Regel A: eine Kartennummer nur, wenn der ganze Satz genau eine Nummer ist.
 
@@ -538,8 +552,13 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         if span is not None:
             marked.append(span)
             marker_at.add(i)
-        elif j < len(tokens) and tokens[j].isdigit():
-            invalid.append(ItemNumber(int(tokens[j]), tokens[j], True, valid=False))
+        elif j < len(tokens) and (tokens[j].isdigit() or _too_large(tokens[j])):
+            # Ziffern tragen ihren Wert, ein Wort wie "tausend" hat keinen im
+            # erlaubten Bereich - `value` bleibt 0 und wird nie gelesen, weil
+            # `valid=False` den Aufrufer vorher abbiegen lässt.
+            word = tokens[j]
+            value = int(word) if word.isdigit() else 0
+            invalid.append(ItemNumber(value, word, True, valid=False))
             marker_at.add(i)
             consumed.add(j)
     numbers = list(marked)
