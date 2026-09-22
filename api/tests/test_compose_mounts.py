@@ -11,6 +11,7 @@ jeden Dateiverweis aus den Slash-Befehlen und jeden Pfad, den ein Test ueber
 `parents[2]` oder `REPO_ROOT` oeffnet. Jeder davon muss in einem Mount liegen.
 """
 
+import posixpath
 import re
 from pathlib import PurePosixPath
 
@@ -35,12 +36,18 @@ SEGMENT_RE = re.compile(r'"([^"]+)"')
 
 
 def _api_mounts() -> set[str]:
+    """Die Quellpfade der api-Mounts, repo-relativ und normalisiert.
+
+    Normalisiert, weil Docker den Pfad aufloest und jede Pruefung darunter sonst rein
+    lexikalisch waere: `./.claude/commands/../../.env` sieht wie ein Nachfahre von
+    `commands/` aus und ist in Wahrheit die `.env` im Repo-Wurzelverzeichnis.
+    """
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
     mounts = set()
     for entry in compose["services"]["api"]["volumes"]:
         host = entry.split(":", 1)[0]
         if host.startswith("./"):
-            mounts.add(host[2:].rstrip("/"))
+            mounts.add(posixpath.normpath(host).rstrip("/"))
     return mounts
 
 
@@ -107,8 +114,13 @@ def _traegt_geheimnisse(mount: str) -> bool:
     Haupt-Checkout die Worktrees mit eigenen `.env`-Dateien, und ein Mount von
     `.claude/worktrees` oder einem einzelnen Worktree darunter waere genauso
     falsch wie `.claude` selbst - nur faellt er einer Verbotsliste nicht auf.
+
+    Die Pfade kommen normalisiert aus `_api_mounts()`. Was danach noch aus dem
+    Repo herauszeigt (`..`), ist erst recht tabu: dort liegen die Nachbar-Checkouts.
     """
     teile = PurePosixPath(mount).parts
+    if teile[:1] == ("..",):
+        return True
     if teile[:1] == (".claude",):
         return teile[:2] != (".claude", "commands")
     return PurePosixPath(mount).name == ".env"
