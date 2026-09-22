@@ -54,6 +54,9 @@ services:
       - ./CLAUDE.md:/app/CLAUDE.md:ro
       - ./README.md:/app/README.md:ro
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro
+      # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
+      # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
