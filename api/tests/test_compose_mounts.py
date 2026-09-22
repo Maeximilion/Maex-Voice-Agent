@@ -205,10 +205,10 @@ def _traegt_geheimnisse(mount: str) -> bool:
     """
     if _zeigt_aus_dem_repo(mount) or _nicht_aufloesbar(mount):
         return True
-    if _ist_unter(mount, ".claude/commands"):
-        return False
     if PurePosixPath(mount).name == ".env":  # auch tiefer liegende .env
         return True
+    if _ist_unter(mount, ".claude/commands"):  # nach der .env-Pruefung, nicht davor
+        return False
     return any(_beruehrt(mount, pfad) for pfad in GESCHUETZT)
 
 
