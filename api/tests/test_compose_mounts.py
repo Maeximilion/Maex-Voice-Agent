@@ -212,7 +212,27 @@ def _traegt_geheimnisse(mount: str) -> bool:
     return any(_beruehrt(mount, pfad) for pfad in GESCHUETZT)
 
 
+def _versteckte_env(quelle: str) -> list[str]:
+    """Jede `.env`, die in einem gemounteten Verzeichnis tatsaechlich liegt.
+
+    Der Pfadvergleich allein reicht hier nicht: `.gitignore` faengt `.env` in jeder
+    Tiefe ab, eine solche Datei existiert also lokal, ohne je in Git oder CI
+    aufzutauchen. Ein Verzeichnis-Mount traegt sie trotzdem in den Container.
+    Diese Pruefung sieht deshalb als einzige aufs Dateisystem - sie schlaegt genau
+    dort an, wo ein Geheimnis wirklich liegt, und bleibt sonst still.
+    """
+    ordner = REPO_ROOT / quelle
+    if not ordner.is_dir():
+        return []
+    return sorted(p.relative_to(REPO_ROOT).as_posix() for p in ordner.rglob(".env"))
+
+
 def test_geheimnisse_bleiben_draussen():
     """CLAUDE.md §8: .env und die Worktrees darunter gehoeren nicht in den Container."""
     verboten = sorted(q for q in _bind_quellen() if _traegt_geheimnisse(q))
+    verboten += [
+        f"{quelle} enthaelt {datei}"
+        for quelle in sorted(_api_mounts())
+        for datei in _versteckte_env(quelle)
+    ]
     assert not verboten, f"Mount traegt fremde Geheimnisse in den Container: {verboten}"
