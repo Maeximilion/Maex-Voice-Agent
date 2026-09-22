@@ -18,5 +18,7 @@ def get_item_details_tool(
     body: ItemDetailsRequest, session: Session = Depends(get_db)
 ) -> JSONResponse:
     bind_call_id(str(body.call_id))
-    result = get_item_details(session, body.tenant_id, body.menu_item_id)
+    result = get_item_details(
+        session, body.tenant_id, body.menu_item_id, body.allergen_question
+    )
     return envelope.ok(result.model_dump(mode="json"), say=result.say)

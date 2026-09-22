@@ -21,7 +21,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.main import app
-from api.models import MenuItem
+from api.models import ItemAllergen, MenuItem
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -78,9 +78,14 @@ def gericht(session, tenant_id, nummer: str) -> MenuItem:
     )
 
 
-def details(session, tenant_id, nummer: str, **kw):
+def details(session, tenant_id, nummer: str, allergen_question: bool = True, **kw):
     return get_item_details(
-        session, tenant_id, gericht(session, tenant_id, nummer).id, now=NOW, **kw
+        session,
+        tenant_id,
+        gericht(session, tenant_id, nummer).id,
+        allergen_question,
+        now=NOW,
+        **kw,
     )
 
 
@@ -155,7 +160,7 @@ def test_fehlende_allergen_auskunft_wiegt_schwerer_als_ausverkauft(session, tena
 
 def test_unbekannte_id_ist_not_found(session, tenant_id):
     with pytest.raises(NotFound):
-        get_item_details(session, tenant_id, uuid.uuid4(), now=NOW)
+        get_item_details(session, tenant_id, uuid.uuid4(), True, now=NOW)
 
 
 def test_inaktives_gericht_liefert_keine_details(session, tenant_id):
@@ -166,7 +171,45 @@ def test_inaktives_gericht_liefert_keine_details(session, tenant_id):
 def test_fremder_mandant_bekommt_das_gericht_nicht(session, tenant_id):
     item = gericht(session, tenant_id, "23")
     with pytest.raises(NotFound):
-        get_item_details(session, uuid.uuid4(), item.id, now=NOW)
+        get_item_details(session, uuid.uuid4(), item.id, True, now=NOW)
+
+
+def test_ohne_allergenfrage_gibt_es_keinen_rueckruf_satz(session, tenant_id):
+    """Die Saucenfrage zu einem Gericht ohne gepflegte Allergene bleibt die Saucenfrage."""
+    result = details(session, tenant_id, "12", allergen_question=False)
+
+    assert result.allergens.known is False
+    assert result.say is None
+
+
+def test_ohne_allergenfrage_bleibt_der_ausverkauft_satz(session, tenant_id):
+    """Sonst verdeckt die stumme Allergen-Luecke, dass das Gericht heute aus ist."""
+    item = gericht(session, tenant_id, "12")
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.id == item.id)
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.commit()
+
+    result = details(session, tenant_id, "12", allergen_question=False)
+
+    assert result.say == "Wan-Tan-Suppe ist heute leider aus."
+
+
+def test_confirmed_at_ist_das_ortsdatum(session, tenant_id):
+    """Nachweis am 19.09. um 00:30 Ortszeit steht als 18.09. 22:30 UTC in der Zeile."""
+    item = gericht(session, tenant_id, "23")
+    session.execute(
+        update(ItemAllergen)
+        .where(ItemAllergen.menu_item_id == item.id)
+        .values(confirmed_at=datetime(2026, 9, 18, 22, 30, tzinfo=UTC))
+    )
+    session.commit()
+
+    result = details(session, tenant_id, "23")
+
+    assert result.allergens.confirmed_at == date(2026, 9, 19)
 
 
 # --- HTTP-Hülle --------------------------------------------------------------------
@@ -185,11 +228,12 @@ def client(engine, tenant_id):
         app.dependency_overrides.clear()
 
 
-def post(client, tenant_id, menu_item_id, **extra):
+def post(client, tenant_id, menu_item_id, allergen_question=True, **extra):
     body = {
         "call_id": str(uuid.uuid4()),
         "tenant_id": str(tenant_id),
         "menu_item_id": str(menu_item_id),
+        "allergen_question": allergen_question,
         **extra,
     }
     return client.post("/v1/tools/get_item_details", json=body, headers=AUTH)
@@ -243,6 +287,7 @@ def test_tool_ohne_token_kein_zugriff(client, session, tenant_id):
             "call_id": str(uuid.uuid4()),
             "tenant_id": str(tenant_id),
             "menu_item_id": str(item.id),
+            "allergen_question": True,
         },
     )
 
@@ -252,11 +297,41 @@ def test_tool_ohne_token_kein_zugriff(client, session, tenant_id):
 def test_tool_ohne_menu_item_id_ist_invalid_input(client, tenant_id):
     r = client.post(
         "/v1/tools/get_item_details",
-        json={"call_id": str(uuid.uuid4()), "tenant_id": str(tenant_id)},
+        json={
+            "call_id": str(uuid.uuid4()),
+            "tenant_id": str(tenant_id),
+            "allergen_question": True,
+        },
         headers=AUTH,
     )
 
     assert r.json()["error"]["code"] == "invalid_input"
+
+
+def test_tool_ohne_allergen_frage_ist_invalid_input(client, session, tenant_id):
+    """Das Feld hat keine Vorgabe: fehlt es, faellt es auf, statt still zu wirken."""
+    item = gericht(session, tenant_id, "23")
+
+    r = client.post(
+        "/v1/tools/get_item_details",
+        json={
+            "call_id": str(uuid.uuid4()),
+            "tenant_id": str(tenant_id),
+            "menu_item_id": str(item.id),
+        },
+        headers=AUTH,
+    )
+
+    assert r.json()["error"]["code"] == "invalid_input"
+
+
+def test_tool_ohne_allergenfrage_schweigt_zum_rueckruf(client, session, tenant_id):
+    item = gericht(session, tenant_id, "12")
+
+    body = post(client, tenant_id, item.id, allergen_question=False).json()
+
+    assert body["data"]["allergens"]["known"] is False
+    assert body["say"] is None
 
 
 def test_latenz_p95_unter_300_ms(client, session, tenant_id):

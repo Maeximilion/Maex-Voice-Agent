@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.22.1
+> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.23.0
 
 ---
 
@@ -245,6 +245,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.23.0 · 22.09.2026:** Review T-4.4: `allergen_question` als Pflichtfeld im Request - der Satz zum Rückruf kommt nur noch auf die Allergenfrage, nicht mehr auf jede Detailabfrage; `confirmed_at` als Ortsdatum statt UTC-Datum
 - **v1.22.1 · 22.09.2026:** Rule A measured and recorded: with a number marker a second position is a question, without one the name search takes over and drops the spoken number - one sentence, one position until T-4.5 splits it
 - **v1.22.0 · 22.09.2026:** T-4.4 done: get_item_details with allergen rule unknown is not none, shared option building block with search_menu
 - **v1.21.3 · 22.09.2026:** PR #120 (Jules review of T-4.3) recorded as an open point: its N+1 finding is obsolete since Rule A, the reviewer journal is still to decide

@@ -45,6 +45,11 @@ class SearchResult(BaseModel):
 
 class ItemDetailsRequest(ToolRequest):
     menu_item_id: uuid.UUID
+    # Pflichtfeld ohne Vorgabe: fragt der Gast nach Allergenen, haengt daran der
+    # Satz zum Rueckruf (docs/04, docs/05 §3). Ein Vorgabewert waere hier die
+    # falsche Sicherheit - fehlt das Feld, ist die Antwort invalid_input und der
+    # Agent merkt es, statt still die Auskunft zu verlieren.
+    allergen_question: bool
 
 
 class Allergens(BaseModel):
