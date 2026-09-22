@@ -161,20 +161,12 @@ def search_menu(
     if len(marked) > 1:
         # "Nummer 23, nein, Nummer 24" oder "Nummer 23 oder Nummer 24": beide
         # zur Wahl stellen statt die erste zu nehmen (Befund Codex PR #117).
-        valid_refs = [ref.text.lstrip("0") or "0" for ref in marked if ref.valid]
-        if valid_refs:
-            stored = func.lower(
-                func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
-            )
-            items = list(
-                session.scalars(
-                    select(MenuItem)
-                    .where(*_active(tenant_id), stored.in_(valid_refs))
-                    .order_by(MenuItem.number)
-                )
-            )
-        else:
-            items = []
+        items = [
+            i
+            for ref in marked
+            if ref.valid
+            for i in _by_number(session, tenant_id, ref.text)
+        ]
         if not items:
             spoken = " und ".join(ref.text for ref in marked)
             raise NotFound(
