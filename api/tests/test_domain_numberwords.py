@@ -552,6 +552,40 @@ def test_sole_item_number_unklar(text):
     assert unclear and ref is None
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Marker plus zweite Position: Rueckfrage nach der einen Nummer.
+        "ich hätte gern die Nummer 23 und einmal Pho Bo",
+        # Marker plus Zusatzwunsch: die Sauce ist eine Option, kein Gericht -
+        # Regel A sieht nur, dass neben der Nummer Inhalt steht.
+        "Nummer 23 mit Erdnusssauce",
+    ],
+)
+def test_marker_plus_inhalt_ist_eine_rueckfrage(text):
+    """Mit „Nummer" daneben und Inhalt im Satz wird gefragt, nicht gewählt."""
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "die 23 und einmal Pho Bo",
+        "einmal die 23 und zweimal Frühlingsrollen",
+    ],
+)
+def test_ohne_marker_ist_ein_zweiter_teil_kein_nummernsatz(text):
+    """Ohne „Nummer" entscheidet die Namenssuche - und verliert dabei die Zahl.
+
+    `(None, False)` heisst: kein Nummernsatz, der Satz geht als Ganzes in die
+    Namenssuche. Die genannte 23 taucht danach nirgends mehr auf; ein Satz mit
+    zwei Positionen liefert am Ende **eine**. Das ist heute so und steht als
+    offener Punkt in `docs/01_STATUS.md`: die Zerlegung je Position gehört vor
+    die Suche, in den Bestellfluss (T-4.5).
+    """
+    assert sole_item_number(text) == (None, False)
+
+
 def test_zwei_zahlen_ohne_marker_fragen_nach_statt_namen_zu_suchen():
     """ "23 oder 24" darf nicht als Name "oder" in der Suche landen."""
     assert sole_item_number("23 oder 24") == (None, True)

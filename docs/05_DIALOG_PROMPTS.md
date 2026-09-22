@@ -108,9 +108,12 @@ Kein Beschwichtigen, kein Ausfragen, keine Zusagen. Der Agent nimmt auf und gibt
 
 ### Allergie
 ```text
-get_item_details
+get_item_details mit allergen_question: true
    known: true  → Codes nennen, aber keine medizinische Aussage
-   known: false → "Das lasse ich Ihnen vom Team bestätigen" → create_callback
+   known: false → say aus dem Code vorlesen → create_callback
+
+Jede andere Rückfrage (Optionen, Extras, Beschreibung):
+   get_item_details mit allergen_question: false
 ```
 
 ---

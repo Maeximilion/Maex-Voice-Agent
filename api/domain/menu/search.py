@@ -36,10 +36,12 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.errors import Ambiguous, NotFound
 from api.core.time import utcnow
+from api.domain.menu.items import is_sold_out as _sold_out
+from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
-from api.models import ItemAlias, ItemOption, MenuItem
-from api.schemas.menu import MenuHit, OptionGroup, OptionOut, SearchResult
+from api.models import ItemAlias, MenuItem
+from api.schemas.menu import MenuHit, SearchResult
 
 SAY_NOT_FOUND = (
     "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?"
@@ -81,34 +83,8 @@ def _by_number(session: Session, tenant_id: uuid.UUID, spoken: str) -> list[Menu
     )
 
 
-def _sold_out(item: MenuItem, now: datetime) -> bool:
-    return item.sold_out_until is not None and item.sold_out_until > now
-
-
 def _hits(session: Session, items: list[MenuItem], now: datetime) -> list[MenuHit]:
-    options = session.scalars(
-        select(ItemOption)
-        .where(ItemOption.menu_item_id.in_([i.id for i in items]))
-        .order_by(
-            ItemOption.group_name,
-            ItemOption.is_default.desc(),
-            ItemOption.option_name,
-        )
-    ).all()
-    by_item: dict[uuid.UUID, dict[str, OptionGroup]] = {}
-    for option in options:
-        groups = by_item.setdefault(option.menu_item_id, {})
-        group = groups.setdefault(
-            option.group_name,
-            OptionGroup(group=option.group_name, required=option.required, options=[]),
-        )
-        group.options.append(
-            OptionOut(
-                name=option.option_name,
-                price_delta_cents=option.price_delta_cents,
-                default=option.is_default,
-            )
-        )
+    groups = option_groups(session, [i.id for i in items])
     return [
         MenuHit(
             menu_item_id=item.id,
@@ -116,7 +92,7 @@ def _hits(session: Session, items: list[MenuItem], now: datetime) -> list[MenuHi
             name=item.name,
             price_cents=item.price_cents,
             sold_out=_sold_out(item, now),
-            option_groups=list(by_item.get(item.id, {}).values()),
+            option_groups=groups.get(item.id, []),
         )
         for item in items
     ]
