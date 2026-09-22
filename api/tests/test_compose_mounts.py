@@ -41,8 +41,8 @@ WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 GESCHUETZT = (".env", ".claude")
 
 
-def _quelle(entry: str | dict) -> str | None:
-    """Der Host-Pfad eines Volume-Eintrags, oder None bei einem benannten Volume.
+def _quelle_und_ziel(entry: str | dict) -> tuple[str | None, str]:
+    """Host-Pfad und Container-Ziel eines Volume-Eintrags, oder None bei einem Volume.
 
     Die Unterscheidung laeuft ueber die Form, nicht ueber das Praefix `./`: ein
     benanntes Volume ist ein blosser Name ohne Trennzeichen (`pgdata:/var/...`),
@@ -50,27 +50,45 @@ def _quelle(entry: str | dict) -> str | None:
     und absolute Pfade, die ohne diese Regel unbesehen durchgingen.
     """
     if isinstance(entry, dict):  # lange Compose-Schreibweise
-        return entry.get("source") if entry.get("type", "bind") == "bind" else None
+        if entry.get("type", "bind") != "bind":
+            return None, ""
+        return entry.get("source"), entry.get("target", "")
+    praefix, rest = "", entry
     if WINDOWS_ABS_RE.match(entry):  # C:\... - der Doppelpunkt gehoert zum Laufwerk
-        return entry[:2] + entry[2:].partition(":")[0]
-    kopf = entry.split(":", 1)[0]
-    return None if NAMED_VOLUME_RE.match(kopf) else kopf
+        praefix, rest = entry[:2], entry[2:]
+    kopf, _, schwanz = rest.partition(":")
+    if not praefix and NAMED_VOLUME_RE.match(kopf):
+        return None, ""
+    return praefix + kopf, schwanz.split(":", 1)[0]
 
 
-def _bind_quellen() -> set[str]:
-    """Alle Bind-Quellen des api-Service, normalisiert.
+def _binds() -> set[tuple[str, str]]:
+    """Alle Binds des api-Service als (normalisierte Quelle, Ziel).
 
     Normalisiert, weil Docker den Pfad aufloest und jede Pruefung darunter sonst rein
     lexikalisch waere: `./.claude/commands/../../.env` sieht wie ein Nachfahre von
     `commands/` aus und ist in Wahrheit die `.env` im Repo-Wurzelverzeichnis.
     """
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    quellen = set()
+    binds = set()
     for entry in compose["services"]["api"]["volumes"]:
-        host = _quelle(entry)
+        host, ziel = _quelle_und_ziel(entry)
         if host:
-            quellen.add(posixpath.normpath(host.replace("\\", "/")).rstrip("/"))
-    return quellen
+            binds.add((posixpath.normpath(host.replace("\\", "/")).rstrip("/"), ziel))
+    return binds
+
+
+def _bind_quellen() -> set[str]:
+    return {quelle for quelle, _ in _binds()}
+
+
+def _nicht_aufloesbar(quelle: str) -> bool:
+    """`${PWD}` und `$HOME` loest Compose auf, `yaml.safe_load` nicht.
+
+    Was hier als Variable ankommt, kann nach der Aufloesung auf alles zeigen - auch
+    auf die Repo-Wurzel. Ungeprueft durchlassen waere die groesste der Luecken.
+    """
+    return "$" in quelle
 
 
 def _zeigt_aus_dem_repo(quelle: str) -> bool:
@@ -81,8 +99,19 @@ def _zeigt_aus_dem_repo(quelle: str) -> bool:
 
 
 def _api_mounts() -> set[str]:
-    """Die Bind-Quellen, die tatsaechlich im Repo liegen - nur die decken Pfade ab."""
-    return {q for q in _bind_quellen() if not _zeigt_aus_dem_repo(q)}
+    """Die Repo-Pfade, die im Container wirklich unter `/app/<pfad>` liegen.
+
+    Das Ziel gehoert zur Pruefung: `./deploy:/tmp/deploy` mountet zwar `deploy`,
+    aber nicht dorthin, wo die Suite es sucht (REPO_ROOT ist `/app`). Ohne den
+    Abgleich haette ein geaendertes Ziel als Abdeckung gezaehlt.
+    """
+    return {
+        quelle
+        for quelle, ziel in _binds()
+        if not _zeigt_aus_dem_repo(quelle)
+        and not _nicht_aufloesbar(quelle)
+        and ziel == f"/app/{quelle}"
+    }
 
 
 def _is_mounted(ref: str, mounts: set[str]) -> bool:
@@ -174,7 +203,7 @@ def _traegt_geheimnisse(mount: str) -> bool:
     Was aus dem Repo herauszeigt, ist ohnehin tabu: dort liegen die
     Nachbar-Checkouts, und absolute Pfade sind von hier aus nicht pruefbar.
     """
-    if _zeigt_aus_dem_repo(mount):
+    if _zeigt_aus_dem_repo(mount) or _nicht_aufloesbar(mount):
         return True
     if _ist_unter(mount, ".claude/commands"):
         return False
