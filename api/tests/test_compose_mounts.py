@@ -12,7 +12,7 @@ jeden Dateiverweis aus den Slash-Befehlen und jeden Pfad, den ein Test ueber
 """
 
 import re
-from pathlib import Path, PurePosixPath
+from pathlib import PurePosixPath
 
 import yaml
 
@@ -100,11 +100,21 @@ def test_dispatcher_braucht_die_testpfade_nicht():
     assert hosts == {"./api", "./scripts", "./db"}
 
 
+def _traegt_geheimnisse(mount: str) -> bool:
+    """Alles unter `.claude/` ausser den Befehlen ist tabu, ebenso jede .env.
+
+    Als Positivliste und nicht als Verbotsliste: unter `.claude/` liegen im
+    Haupt-Checkout die Worktrees mit eigenen `.env`-Dateien, und ein Mount von
+    `.claude/worktrees` oder einem einzelnen Worktree darunter waere genauso
+    falsch wie `.claude` selbst - nur faellt er einer Verbotsliste nicht auf.
+    """
+    teile = PurePosixPath(mount).parts
+    if teile[:1] == (".claude",):
+        return teile[:2] != (".claude", "commands")
+    return PurePosixPath(mount).name == ".env"
+
+
 def test_geheimnisse_bleiben_draussen():
     """CLAUDE.md §8: .env und die Worktrees darunter gehoeren nicht in den Container."""
-    verboten = [
-        mount
-        for mount in _api_mounts()
-        if mount == ".claude" or Path(mount).name == ".env"
-    ]
+    verboten = sorted(mount for mount in _api_mounts() if _traegt_geheimnisse(mount))
     assert not verboten, f"Mount traegt fremde Geheimnisse in den Container: {verboten}"
