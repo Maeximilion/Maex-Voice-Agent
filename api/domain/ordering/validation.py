@@ -14,8 +14,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Closed, Conflict, InvalidInput, NotFound
-from api.domain.menu.items import is_sold_out
+from api.core.errors import Closed, Conflict, InvalidInput, NotFound, ServiceUnavailable
+from api.domain.menu.items import is_sold_out, option_key
 from api.domain.menu.search import SAY_SOLD_OUT
 from api.domain.ordering.pricing import Line
 from api.domain.status.hours import load_hours, open_window_at
@@ -27,9 +27,13 @@ SAY_PICKUP_CLOSED = "Abholung ist gerade leider nicht möglich."
 SAY_ITEM_UNKNOWN = "Ein Gericht habe ich nicht auf der Karte gefunden. Können Sie mir die Nummer sagen?"
 SAY_OPTION_UNKNOWN = "{option} gibt es zu {name} nicht."
 SAY_OPTION_MISSING = "Welche Auswahl bei {group} möchten Sie zu {name}?"
+SAY_OPTION_REPEATED = "{option} zu {name} habe ich schon. Einmal {option}, richtig?"
+SAY_MENU_BROKEN = (
+    "Das kann ich gerade nicht sicher aufnehmen. Ich verbinde Sie mit dem Restaurant."
+)
 SAY_OPTION_TWICE = "Bei {group} zu {name} geht nur eine Auswahl. Welche möchten Sie?"
 
-# Gruppe -> Option -> Zeile, beide Schlüssel über _key() vereinheitlicht.
+# Gruppe -> Option -> Zeile, beide Schlüssel über option_key() vereinheitlicht.
 Offered = dict[str, dict[str, ItemOption]]
 
 
@@ -69,7 +73,18 @@ def validated_lines(
     for opt in session.scalars(
         select(ItemOption).where(ItemOption.menu_item_id.in_(ids))
     ):
-        offered[opt.menu_item_id][_key(opt.group_name)][_key(opt.option_name)] = opt
+        group = offered[opt.menu_item_id][option_key(opt.group_name)]
+        name = option_key(opt.option_name)
+        if name in group:
+            # Zwei Zeilen, die sich nur in der Schreibweise unterscheiden: welche
+            # gemeint ist, und damit der Preis, wäre geraten. Der Import lehnt das
+            # ab; Altdaten fängt diese Stelle (Codex PR #124).
+            raise ServiceUnavailable(
+                f"Option {opt.group_name}/{opt.option_name} an Gericht "
+                f"{opt.menu_item_id} doppelt in der Karte",
+                say=SAY_MENU_BROKEN,
+            )
+        group[name] = opt
 
     lines = []
     for wanted in items:
@@ -92,21 +107,24 @@ def validated_lines(
 def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict]:
     chosen: list[ItemOption] = []
     for choice in wanted.options:
-        opt = offered.get(_key(choice.group), {}).get(_key(choice.name))
+        opt = offered.get(option_key(choice.group), {}).get(option_key(choice.name))
         if opt is None:
             raise InvalidInput(
                 f"Option {choice.group}/{choice.name} gibt es an {item.number} nicht",
                 say=SAY_OPTION_UNKNOWN.format(option=choice.name, name=item.name),
             )
         if opt in chosen:
-            raise InvalidInput(f"Option {choice.group}/{choice.name} doppelt")
+            raise InvalidInput(
+                f"Option {choice.group}/{choice.name} doppelt",
+                say=SAY_OPTION_REPEATED.format(option=opt.option_name, name=item.name),
+            )
         chosen.append(opt)
 
-    for group in offered.values():
+    for key, group in offered.items():
         first = next(iter(group.values()))
         if not first.required:
             continue
-        count = sum(1 for opt in chosen if opt.group_name == first.group_name)
+        count = sum(1 for opt in chosen if option_key(opt.group_name) == key)
         say_args = {"group": first.group_name, "name": item.name}
         if count == 0:
             raise InvalidInput(
@@ -131,7 +149,3 @@ def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict
         # Datenfehler in der Karte, kein Fall für den Gast.
         raise InvalidInput(f"Preis von {item.number} mit Optionen negativ")
     return options
-
-
-def _key(text: str) -> str:
-    return " ".join(text.split()).casefold()

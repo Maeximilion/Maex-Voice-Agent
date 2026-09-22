@@ -132,7 +132,10 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    `domain/menu/split.py` (`split_positions`, T-4.5). Getrennt wird an „und",
    „sowie" und Komma, aber nie bei Korrektur oder Alternative („23, nein 24",
    „23 oder 24") und nie, wenn ein Teil nur Zögerlaut ist („23, äh, 24") -
-   dann bleibt der Satz ganz und `search_menu` fragt laut nach.
+   dann bleibt der Satz ganz und `search_menu` fragt laut nach. Jeder
+   Teil muss selbst eine Position eröffnen (Nummer, Menge oder „ein/eine") und
+   darf nicht mit „ohne", „mit" oder „extra" beginnen; „Ente süß und sauer" und
+   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
@@ -287,6 +290,7 @@ Verstoß → `ok: false` mit passendem Code und `say`.
 | Pflichtgruppe ohne Wahl | `invalid_input`, `say` fragt nach der Gruppe. Die Voreinstellung wird **nicht** still eingesetzt - sie wäre geraten |
 | Menge über 30 oder mehr als 30 Positionen | `invalid_input` (Schutz gegen Hörfehler, nicht gegen Großbestellungen) |
 
+- Dieselbe Option zweimal ergibt `invalid_input` mit `say` („Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"). Zwei Kartenzeilen, die sich nur in der Schreibweise unterscheiden, ergeben `service_unavailable` mit Übergabe ans Team statt einer geratenen Zeile; der Import lehnt solche Zeilen ab.
 - Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
 - `ready_at` = jetzt + `service_config.pickup_wait_minutes`, auf die volle Minute **aufgerundet** (in UTC): angesagt wird nie weniger als die Wartezeit. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
 - `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: `readback` und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können.

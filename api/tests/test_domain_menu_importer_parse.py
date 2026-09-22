@@ -381,3 +381,15 @@ def test_optionen_finden_die_nummer_auch_ohne_null():
     )
     assert plan.ok, plan.errors
     assert set(plan.items) == {"07"} and "07" in plan.options and "07" in plan.aliases
+
+
+def test_option_nur_in_schreibweise_verschieden():
+    """Codex PR #124: draft_order vergleicht ohne Groß-/Kleinschreibung, der Import muss es auch."""
+    assert "Option doppelt" in fehler(
+        **{OPTIONS_FILE: OPTIONS + "47;größe;  KLEIN ;-0,50;nein;nein\n"}
+    )
+
+
+def test_gruppe_in_zwei_schreibweisen():
+    text = fehler(**{OPTIONS_FILE: OPTIONS + "47;größe;groß;1,00;nein;nein\n"})
+    assert "47/größe" in text and "Schreibweise" in text

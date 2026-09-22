@@ -35,6 +35,14 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("die 23 oder die 24", ["die 23 oder die 24"]),
         ("die 23, äh, 24", ["die 23, äh, 24"]),
         ("die 23 und bitte", ["die 23 und bitte"]),
+        # Ein Teil ohne eigene Position ist Name oder Hinweis (Codex PR #124)
+        ("Ente süß und sauer", ["Ente süß und sauer"]),
+        ("Nummer 23, ohne Zwiebeln", ["Nummer 23, ohne Zwiebeln"]),
+        ("die 23 und einmal ohne Koriander", ["die 23 und einmal ohne Koriander"]),
+        (
+            "zwei Frühlingsrollen und eine Pho Bo",
+            ["zwei Frühlingsrollen", "eine Pho Bo"],
+        ),
         ("", []),
     ],
 )

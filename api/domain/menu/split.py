@@ -14,6 +14,11 @@ ist. Im Zweifel bleibt der Satz ganz, und `search_menu` antwortet laut mit
 - Ein Teil nur aus Zögerlauten oder Füllwörtern ("23, äh, 24") heißt
   Selbstkorrektur, nicht Aufzählung - der Satz bleibt ganz.
 - "drei und zwanzig" ist eine Zahl, kein "drei" und "zwanzig".
+- Jeder Teil muss selbst eine Position eröffnen: mit Nummer, Menge ("einmal",
+  "zwei") oder "ein/eine". Sonst ist er Teil eines Namens oder ein Hinweis -
+  "Ente süß und sauer", "Nummer 23, ohne Zwiebeln" - und der Satz bleibt ganz
+  (Codex PR #124). Beginnt ein Teil nach der Menge mit "ohne", "mit" oder
+  "extra", ist er ein Hinweis zur Position davor, keine neue.
 
 Optionen ("Nummer 23 mit Erdnusssauce") trennt das nicht: "mit" hängt an der
 Position, die Sauce ist Option und kein zweites Gericht.
@@ -21,7 +26,12 @@ Position, die Sauce ist Option und kein zweites Gericht.
 
 import re
 
-from api.domain.menu.numberwords import fold, parse_cardinal
+from api.domain.menu.numberwords import (
+    find_numbers,
+    find_quantity,
+    fold,
+    parse_cardinal,
+)
 
 _SEPARATOR = re.compile(r"\s*,\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
 _WORD = re.compile(r"\d+|[a-z]+")
@@ -29,6 +39,8 @@ _WORD = re.compile(r"\d+|[a-z]+")
 _CORRECTION_WORDS = frozenset(
     {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
 )
+_ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
+_MODIFIERS = frozenset({"ohne", "mit", "extra", "aber", "dazu"})
 _EMPTY_WORDS = frozenset(
     {"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm", "bitte", "dann", "noch", "auch"}
 )
@@ -42,7 +54,7 @@ def split_positions(text: str) -> list[str]:
         return [stripped] if stripped else []
 
     parts = [p.strip(" .!?;:") for p in _split(stripped)]
-    if any(not _content(p) for p in parts):
+    if len(parts) > 1 and not all(_opens_position(p) for p in parts):
         return [stripped]
     return parts
 
@@ -67,5 +79,12 @@ def _split(text: str) -> list[str]:
     return parts
 
 
-def _content(part: str) -> bool:
-    return any(w not in _EMPTY_WORDS for w in _WORD.findall(fold(part)))
+def _opens_position(part: str) -> bool:
+    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    if not words or _MODIFIERS.intersection(words[:2]):
+        return False
+    return (
+        words[0] in _ARTICLES
+        or find_quantity(part) is not None
+        or bool(find_numbers(part))
+    )

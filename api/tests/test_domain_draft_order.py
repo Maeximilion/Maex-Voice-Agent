@@ -8,7 +8,13 @@ import pytest
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
-from api.core.errors import Closed, Conflict, InvalidInput, NotFound
+from api.core.errors import (
+    Closed,
+    Conflict,
+    InvalidInput,
+    NotFound,
+    ServiceUnavailable,
+)
 from api.domain.menu.importer import (
     ALIASES_FILE,
     ALLERGENS_FILE,
@@ -20,7 +26,15 @@ from api.domain.menu.importer import (
 from api.domain.ordering import draft_order
 from api.domain.ordering.draft import WARNING_READY_AFTER_CLOSE
 from api.domain.ordering.readback import spoken_euro, spoken_times
-from api.models import AuditLog, Call, MenuItem, OpeningHours, Order, OrderItem
+from api.models import (
+    AuditLog,
+    Call,
+    ItemOption,
+    MenuItem,
+    OpeningHours,
+    Order,
+    OrderItem,
+)
 from api.schemas.orders import DraftOrderRequest
 from scripts.seed import seed
 
@@ -301,6 +315,46 @@ def test_pflichtgruppe_zweimal(session, tenant_id, call_id):
     with pytest.raises(InvalidInput) as err:
         draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
     assert "nur eine Auswahl" in err.value.say
+
+
+def test_gleiche_option_zweimal_hat_say(session, tenant_id, call_id):
+    """Codex PR #124: ohne say konnte der Agent die Korrektur nicht vorlesen."""
+    items = [
+        ente(
+            session,
+            tenant_id,
+            ("Fleisch", "Ente"),
+            ("Sauce", "Erdnuss"),
+            ("Sauce", "Erdnuss"),
+        )
+    ]
+    with pytest.raises(InvalidInput) as err:
+        draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
+    assert (
+        err.value.say
+        == "Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"
+    )
+
+
+def test_optionen_nur_in_schreibweise_verschieden_raten_nicht(
+    session, tenant_id, call_id
+):
+    """Codex PR #124: "Sauce/Erdnuss" und "sauce/erdnuss" fielen auf einen Schlüssel,
+    eine Zeile überschrieb still die andere und damit den Preis."""
+    session.add(
+        ItemOption(
+            menu_item_id=item(session, tenant_id, "47"),
+            group_name="sauce",
+            option_name="erdnuss",
+            price_delta_cents=200,
+        )
+    )
+    session.commit()
+    items = [ente(session, tenant_id, ("Fleisch", "Ente"), ("Sauce", "Erdnuss"))]
+    with pytest.raises(ServiceUnavailable) as err:
+        draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
+    assert err.value.say is not None
+    assert session.scalar(select(func.count()).select_from(Order)) == 0
 
 
 def test_unbekannte_option(session, tenant_id, call_id):
