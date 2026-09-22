@@ -41,45 +41,64 @@ WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 GESCHUETZT = (".env", ".claude")
 
 
+def _geraet(name: str) -> str | None:
+    """Der Host-Pfad hinter einem benannten Volume, falls es in Wahrheit ein Bind ist.
+
+    Der lokale Treiber kann ein Volume an ein Host-Verzeichnis haengen
+    (`driver_opts: {type: none, o: bind, device: ...}`). Ein solches Volume traegt
+    denselben Baum herein wie ein Bind, sieht im Dienst aber aus wie ein blosser
+    Name - ohne diese Aufloesung bliebe es ungeprueft.
+    """
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    definition = (compose.get("volumes") or {}).get(name) or {}
+    return (definition.get("driver_opts") or {}).get("device")
+
+
 def _quelle_und_ziel(entry: str | dict) -> tuple[str | None, str]:
     """Host-Pfad und Container-Ziel eines Volume-Eintrags, oder None bei einem Volume.
 
     Die Unterscheidung laeuft ueber die Form, nicht ueber das Praefix `./`: ein
     benanntes Volume ist ein blosser Name ohne Trennzeichen (`pgdata:/var/...`),
     alles andere ist ein Bind und muss geprueft werden - auch `../nachbar/.env`
-    und absolute Pfade, die ohne diese Regel unbesehen durchgingen.
+    und absolute Pfade, die ohne diese Regel unbesehen durchgingen. Ein benanntes
+    Volume mit `driver_opts.device` zaehlt als Bind auf genau dieses Geraet.
     """
     if isinstance(entry, dict):  # lange Compose-Schreibweise
+        quelle = entry.get("source") or ""
         if entry.get("type", "bind") != "bind":
-            return None, ""
-        return entry.get("source"), entry.get("target", "")
+            return _geraet(quelle), entry.get("target", "")
+        return quelle or None, entry.get("target", "")
     praefix, rest = "", entry
     if WINDOWS_ABS_RE.match(entry):  # C:\... - der Doppelpunkt gehoert zum Laufwerk
         praefix, rest = entry[:2], entry[2:]
     kopf, _, schwanz = rest.partition(":")
+    ziel = schwanz.split(":", 1)[0]
     if not praefix and NAMED_VOLUME_RE.match(kopf):
-        return None, ""
-    return praefix + kopf, schwanz.split(":", 1)[0]
+        return _geraet(kopf), ziel
+    return praefix + kopf, ziel
 
 
-def _binds() -> set[tuple[str, str]]:
-    """Alle Binds des api-Service als (normalisierte Quelle, Ziel).
+def _dienste() -> dict:
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+
+
+def _binds(dienst: str = "api") -> set[tuple[str, str]]:
+    """Alle Binds eines Dienstes als (normalisierte Quelle, Ziel).
 
     Normalisiert, weil Docker den Pfad aufloest und jede Pruefung darunter sonst rein
     lexikalisch waere: `./.claude/commands/../../.env` sieht wie ein Nachfahre von
     `commands/` aus und ist in Wahrheit die `.env` im Repo-Wurzelverzeichnis.
     """
-    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
     binds = set()
-    for entry in compose["services"]["api"]["volumes"]:
+    for entry in _dienste()[dienst].get("volumes", []):
         host, ziel = _quelle_und_ziel(entry)
         if host:
             binds.add((posixpath.normpath(host.replace("\\", "/")).rstrip("/"), ziel))
     return binds
 
 
-def _bind_quellen() -> set[str]:
-    return {quelle for quelle, _ in _binds()}
+def _bind_quellen(dienst: str = "api") -> set[str]:
+    return {quelle for quelle, _ in _binds(dienst)}
 
 
 def _nicht_aufloesbar(quelle: str) -> bool:
@@ -92,8 +111,13 @@ def _nicht_aufloesbar(quelle: str) -> bool:
 
 
 def _zeigt_aus_dem_repo(quelle: str) -> bool:
-    """Absolut oder oberhalb der Wurzel - beides ist von hier aus nicht pruefbar."""
-    return quelle.startswith("/") or bool(
+    """Alles, was nicht unterhalb der Repo-Wurzel liegt - von hier aus nicht pruefbar.
+
+    Vier Formen: absolut, Laufwerksbuchstabe, oberhalb der Wurzel (`..`) und das
+    Heimatverzeichnis (`~`), das Compose aufloest und das sonst als harmloser
+    Pfad im Repo durchginge.
+    """
+    return quelle.startswith(("/", "~")) or bool(
         WINDOWS_ABS_RE.match(quelle) or PurePosixPath(quelle).parts[:1] == ("..",)
     )
 
@@ -110,7 +134,7 @@ def _api_mounts() -> set[str]:
         for quelle, ziel in _binds()
         if not _zeigt_aus_dem_repo(quelle)
         and not _nicht_aufloesbar(quelle)
-        and ziel == f"/app/{quelle}"
+        and posixpath.normpath(ziel) == f"/app/{quelle}"
     }
 
 
@@ -163,11 +187,8 @@ def test_die_compose_datei_mountet_sich_selbst():
 
 def test_dispatcher_braucht_die_testpfade_nicht():
     """Der dispatcher fuehrt weder pytest noch ruff aus - seine Mounts bleiben klein."""
-    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    hosts = {
-        entry.split(":", 1)[0] for entry in compose["services"]["dispatcher"]["volumes"]
-    }
-    assert hosts == {"./api", "./scripts", "./db"}
+    hosts = {quelle for quelle, _ in _binds("dispatcher")}
+    assert hosts == {"api", "scripts", "db"}
 
 
 def _teile(pfad: str) -> tuple[str, ...]:
@@ -228,19 +249,22 @@ def _versteckte_env(quelle: str) -> list[str]:
 
 
 def test_geheimnisse_bleiben_draussen():
-    """CLAUDE.md §8: .env und die Worktrees darunter gehoeren nicht in den Container."""
-    verboten = sorted(q for q in _bind_quellen() if _traegt_geheimnisse(q))
-    # Ueber alle Binds im Repo, nicht ueber _api_mounts(): dort faellt heraus, was an
-    # einem anderen Ziel als /app/<pfad> haengt - fuer die Abdeckung zurecht, fuer ein
-    # Geheimnis nicht. `./data:/tmp/data` traegt `data/.env` genauso in den Container.
-    im_repo = sorted(
-        q
-        for q in _bind_quellen()
-        if not _zeigt_aus_dem_repo(q) and not _nicht_aufloesbar(q)
-    )
-    verboten += [
-        f"{quelle} enthaelt {datei}"
-        for quelle in im_repo
-        for datei in _versteckte_env(quelle)
-    ]
+    """CLAUDE.md §8: .env und die Worktrees darunter gehoeren in keinen Container.
+
+    Ueber alle Dienste, nicht nur api: db, dispatcher und n8n laufen auf demselben
+    Host, und ein Mount ist dort genauso ein Leck. Und ueber alle Binds, nicht nur
+    die aus `_api_mounts()`: was an einem anderen Ziel als `/app/<pfad>` haengt,
+    faellt fuer die Abdeckung zurecht heraus, traegt ein Geheimnis aber genauso
+    herein - `./data:/tmp/data` bringt `data/.env` mit.
+    """
+    verboten: list[str] = []
+    for dienst in sorted(_dienste()):
+        for quelle in sorted(_bind_quellen(dienst)):
+            if _traegt_geheimnisse(quelle):
+                verboten.append(f"{dienst}: {quelle}")
+                continue
+            verboten += [
+                f"{dienst}: {quelle} enthaelt {datei}"
+                for datei in _versteckte_env(quelle)
+            ]
     assert not verboten, f"Mount traegt fremde Geheimnisse in den Container: {verboten}"
