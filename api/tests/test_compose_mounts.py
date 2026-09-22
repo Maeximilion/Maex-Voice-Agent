@@ -297,7 +297,16 @@ def test_geheimnisse_bleiben_draussen():
     herein - `./data:/tmp/data` bringt `data/.env` mit.
     """
     verboten: list[str] = []
-    for dienst in sorted(_dienste()):
+    for dienst, definition in sorted(_dienste().items()):
+        # extends holt Felder aus einer anderen Datei, die Compose erst beim Start
+        # zusammenfuehrt. Geerbte Mounts stehen nicht im rohen YAML, der Waechter
+        # waere hier blind - wie bei einer nicht aufloesbaren Variablen gilt
+        # deshalb: nicht pruefbar heisst nicht erlaubt.
+        if "extends" in definition:
+            verboten.append(
+                f"{dienst}: erbt per extends, geerbte Mounts sind hier unsichtbar"
+            )
+            continue
         for quelle in sorted(_bind_quellen(dienst) | _dateiquellen(dienst)):
             if _traegt_geheimnisse(quelle):
                 verboten.append(f"{dienst}: {quelle}")
