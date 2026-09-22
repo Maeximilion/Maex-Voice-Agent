@@ -45,6 +45,11 @@ WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 # Pfade, die niemals in den Container gehoeren: die Umgebungsdatei und alles unter
 # .claude/ - dort liegen im Haupt-Checkout die Worktrees samt eigener .env.
 GESCHUETZT = (".env", ".claude")
+# Felder, die Compose erst beim Start aus anderen Quellen zusammenfuehrt. Was sie
+# hereinholen, steht nicht im rohen YAML - der Waechter ist dort blind und sagt das,
+# statt stillzuhalten. Kommt ein weiteres Feld dieser Art dazu, gehoert es hierher.
+UNPRUEFBAR_JE_DIENST = ("extends", "volumes_from")
+UNPRUEFBAR_OBEN = ("include",)
 
 
 @cache
@@ -311,15 +316,18 @@ def test_geheimnisse_bleiben_draussen():
     faellt fuer die Abdeckung zurecht heraus, traegt ein Geheimnis aber genauso
     herein - `./data:/tmp/data` bringt `data/.env` mit.
     """
-    verboten: list[str] = []
+    verboten: list[str] = [
+        f"{feld}: bindet weitere Dateien ein, deren Mounts hier unsichtbar sind"
+        for feld in UNPRUEFBAR_OBEN
+        if _compose().get(feld)
+    ]
     for dienst, definition in sorted(_dienste().items()):
-        # extends holt Felder aus einer anderen Datei, die Compose erst beim Start
-        # zusammenfuehrt. Geerbte Mounts stehen nicht im rohen YAML, der Waechter
-        # waere hier blind - wie bei einer nicht aufloesbaren Variablen gilt
-        # deshalb: nicht pruefbar heisst nicht erlaubt.
-        if "extends" in definition:
+        # Nicht pruefbar heisst nicht erlaubt - dieselbe Regel wie bei einer
+        # nicht aufloesbaren Variablen.
+        geerbt = [feld for feld in UNPRUEFBAR_JE_DIENST if definition.get(feld)]
+        if geerbt:
             verboten.append(
-                f"{dienst}: erbt per extends, geerbte Mounts sind hier unsichtbar"
+                f"{dienst}: {', '.join(geerbt)} - die so geholten Mounts sind hier unsichtbar"
             )
             continue
         verboten += [
