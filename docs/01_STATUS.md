@@ -198,6 +198,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 22.09.2026 | **T-4.4 merged (PR #118):** `get_item_details` with the allergen rule. Review of this session found two issues, both fixed before the merge: the callback sentence fired on every detail lookup of a dish without maintained allergens, so a question about options was answered with a callback promise - it now hangs on the mandatory `allergen_question` flag in the request; and `confirmed_at` was the UTC date instead of the tenant's local date. The two Codex P1 findings were refuted, not fixed: they targeted the `search_menu` draft that `51192fc` removed, and main covers both through existing regression tests. 1359 tests green, p95 8,7 ms. main = 4933cee |
 | 11.09.2026 | PCF v1.0 created and released, hybrid architecture decided (E1) |
 | 15.09.2026 | Repo skeleton and specs exported for Claude Code |
 | 15.09.2026 | API minimal skeleton: `/health`, token auth, response envelope, 3 tests green (T-0.3 done) |
