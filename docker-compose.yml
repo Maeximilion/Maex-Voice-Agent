@@ -47,7 +47,10 @@ services:
       # FileNotFoundError aus, obwohl der Code in Ordnung ist.
       - ./Makefile:/app/Makefile:ro
       - ./deploy:/app/deploy:ro
-      - ./.claude:/app/.claude:ro
+      # Nur commands/, nicht ganz .claude/: dort liegen im Haupt-Checkout die
+      # Worktrees mit ihren eigenen .env-Dateien, die im Container nichts zu
+      # suchen haben (CLAUDE.md §8). Der Test liest ohnehin nur die Befehle.
+      - ./.claude/commands:/app/.claude/commands:ro
       - ./CLAUDE.md:/app/CLAUDE.md:ro
       - ./README.md:/app/README.md:ro
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro
