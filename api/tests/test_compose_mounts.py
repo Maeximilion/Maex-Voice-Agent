@@ -9,10 +9,16 @@ dort, wo niemand hinsieht.
 Dieser Test prueft statisch und ohne Docker, was die Suite an Repo-Pfaden anfasst:
 jeden Dateiverweis aus den Slash-Befehlen und jeden Pfad, den ein Test ueber
 `parents[2]` oder `REPO_ROOT` oeffnet. Jeder davon muss in einem Mount liegen.
+
+Grenze der Erkennung: gefunden werden genau diese beiden Schreibweisen mit
+woertlichen Segmenten. Ein Test, der die Wurzel anders erreicht - ueber
+`parents[3]`, eine Kette von `.parent`, oder einen Pfad aus einer Variablen -
+bleibt unsichtbar. Wer so etwas schreibt, prueft den Mount selbst.
 """
 
 import posixpath
 import re
+from functools import cache
 from pathlib import PurePosixPath
 
 import yaml
@@ -41,6 +47,12 @@ WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 GESCHUETZT = (".env", ".claude")
 
 
+@cache
+def _compose() -> dict:
+    """Die Compose-Datei, einmal gelesen. Sie aendert sich waehrend eines Laufs nicht."""
+    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+
+
 def _geraet(name: str) -> str | None:
     """Der Host-Pfad hinter einem benannten Volume, falls es in Wahrheit ein Bind ist.
 
@@ -49,8 +61,7 @@ def _geraet(name: str) -> str | None:
     denselben Baum herein wie ein Bind, sieht im Dienst aber aus wie ein blosser
     Name - ohne diese Aufloesung bliebe es ungeprueft.
     """
-    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    definition = (compose.get("volumes") or {}).get(name) or {}
+    definition = (_compose().get("volumes") or {}).get(name) or {}
     return (definition.get("driver_opts") or {}).get("device")
 
 
@@ -71,7 +82,10 @@ def _quelle_und_ziel(entry: str | dict) -> tuple[str | None, str]:
     praefix, rest = "", entry
     if WINDOWS_ABS_RE.match(entry):  # C:\... - der Doppelpunkt gehoert zum Laufwerk
         praefix, rest = entry[:2], entry[2:]
-    kopf, _, schwanz = rest.partition(":")
+    kopf, trenner, schwanz = rest.partition(":")
+    if not trenner:
+        # Nur ein Containerpfad: anonymes Volume, Docker verwaltet es selbst.
+        return None, kopf
     ziel = schwanz.split(":", 1)[0]
     if not praefix and NAMED_VOLUME_RE.match(kopf):
         return _geraet(kopf), ziel
@@ -79,7 +93,7 @@ def _quelle_und_ziel(entry: str | dict) -> tuple[str | None, str]:
 
 
 def _dienste() -> dict:
-    return yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))["services"]
+    return _compose()["services"]
 
 
 def _binds(dienst: str = "api") -> set[tuple[str, str]]:
@@ -90,7 +104,7 @@ def _binds(dienst: str = "api") -> set[tuple[str, str]]:
     `commands/` aus und ist in Wahrheit die `.env` im Repo-Wurzelverzeichnis.
     """
     binds = set()
-    for entry in _dienste()[dienst].get("volumes", []):
+    for entry in _dienste()[dienst].get("volumes") or []:
         host, ziel = _quelle_und_ziel(entry)
         if host:
             binds.add((posixpath.normpath(host.replace("\\", "/")).rstrip("/"), ziel))
@@ -109,10 +123,9 @@ def _dateiquellen(dienst: str) -> set[str]:
     Umgebungsdatei unter /run/secrets ab. Fuer den Waechter ist das derselbe Fall
     wie ein Bind und muss durch dieselbe Pruefung.
     """
-    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
     quellen = set()
     for art in ("secrets", "configs"):
-        definitionen = compose.get(art) or {}
+        definitionen = _compose().get(art) or {}
         for eintrag in _dienste()[dienst].get(art) or []:
             name = eintrag.get("source") if isinstance(eintrag, dict) else eintrag
             datei = (definitionen.get(name) or {}).get("file")
@@ -262,10 +275,12 @@ def _aufgeloest(quelle: str) -> str | None:
     aus dem Repo heraus, kommt `..` zurueck - das faellt ohnehin durch.
     """
     pfad = REPO_ROOT / quelle
-    if not pfad.exists():
+    # is_symlink() statt nur exists(): in der CI und im Container fehlt die .env,
+    # ein Link darauf haengt also ins Leere - erkannt werden muss er trotzdem.
+    if not (pfad.exists() or pfad.is_symlink()):
         return None
     try:
-        echt = pfad.resolve()
+        echt = pfad.resolve(strict=False)
         return echt.relative_to(REPO_ROOT.resolve()).as_posix() or "."
     except (OSError, ValueError):
         return ".."
@@ -307,6 +322,11 @@ def test_geheimnisse_bleiben_draussen():
                 f"{dienst}: erbt per extends, geerbte Mounts sind hier unsichtbar"
             )
             continue
+        verboten += [
+            f"{dienst}: Ziel {ziel} von {quelle} nicht aufloesbar"
+            for quelle, ziel in sorted(_binds(dienst))
+            if _nicht_aufloesbar(ziel)
+        ]
         for quelle in sorted(_bind_quellen(dienst) | _dateiquellen(dienst)):
             if _traegt_geheimnisse(quelle):
                 verboten.append(f"{dienst}: {quelle}")
