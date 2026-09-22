@@ -1,0 +1,137 @@
+"""Prüfungen vor der Summe: offen, aktiv, nicht aus, Optionen gültig, Pflichtgruppen gewählt.
+
+Im Code, nicht im Modell (docs/04 §draft_order). Eine fehlende Pflichtwahl wird
+nicht mit der Voreinstellung gefüllt, sondern erfragt - die Voreinstellung wäre
+geraten (CLAUDE.md §2 Regel 2). Jeder Verstoß kommt mit einem `say`, das der
+Agent vorlesen kann.
+"""
+
+import uuid
+from collections import defaultdict
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from api.core.errors import Closed, Conflict, InvalidInput, NotFound
+from api.domain.menu.items import is_sold_out
+from api.domain.menu.search import SAY_SOLD_OUT
+from api.domain.ordering.pricing import Line
+from api.domain.status.hours import load_hours, open_window_at
+from api.domain.status.service import PICKUP
+from api.models import ItemOption, MenuItem
+from api.schemas.orders import OrderItemIn
+
+SAY_PICKUP_CLOSED = "Abholung ist gerade leider nicht möglich."
+SAY_ITEM_UNKNOWN = "Ein Gericht habe ich nicht auf der Karte gefunden. Können Sie mir die Nummer sagen?"
+SAY_OPTION_UNKNOWN = "{option} gibt es zu {name} nicht."
+SAY_OPTION_MISSING = "Welche Auswahl bei {group} möchten Sie zu {name}?"
+SAY_OPTION_TWICE = "Bei {group} zu {name} geht nur eine Auswahl. Welche möchten Sie?"
+
+# Gruppe -> Option -> Zeile, beide Schlüssel über _key() vereinheitlicht.
+Offered = dict[str, dict[str, ItemOption]]
+
+
+def require_pickup_open(
+    session: Session, tenant_id: uuid.UUID, now: datetime, zone: ZoneInfo
+) -> None:
+    if not pickup_open_at(session, tenant_id, now, zone):
+        raise Closed("Abholung gerade geschlossen", say=SAY_PICKUP_CLOSED)
+
+
+def pickup_open_at(
+    session: Session, tenant_id: uuid.UUID, at: datetime, zone: ZoneInfo
+) -> bool:
+    data = load_hours(session, tenant_id, at.astimezone(zone).date())
+    return open_window_at(data, at, PICKUP, zone) is not None
+
+
+def validated_lines(
+    session: Session, tenant_id: uuid.UUID, items: list[OrderItemIn], now: datetime
+) -> list[Line]:
+    """Die Positionen in der gesprochenen Reihenfolge, Preise aus der Karte."""
+    ids = {i.menu_item_id for i in items}
+    menu = {
+        m.id: m
+        for m in session.scalars(
+            select(MenuItem).where(
+                MenuItem.tenant_id == tenant_id,
+                MenuItem.id.in_(ids),
+                MenuItem.active.is_(True),
+            )
+        )
+    }
+    if ids - menu.keys():
+        raise NotFound("Gericht unbekannt oder inaktiv", say=SAY_ITEM_UNKNOWN)
+
+    offered: dict[uuid.UUID, Offered] = defaultdict(lambda: defaultdict(dict))
+    for opt in session.scalars(
+        select(ItemOption).where(ItemOption.menu_item_id.in_(ids))
+    ):
+        offered[opt.menu_item_id][_key(opt.group_name)][_key(opt.option_name)] = opt
+
+    lines = []
+    for wanted in items:
+        item = menu[wanted.menu_item_id]
+        if is_sold_out(item, now):
+            raise Conflict(
+                "Gericht ausverkauft", say=SAY_SOLD_OUT.format(name=item.name)
+            )
+        lines.append(
+            Line(
+                item=item,
+                quantity=wanted.quantity,
+                options=_options(item, wanted, offered[item.id]),
+                note=(wanted.note or "").strip() or None,
+            )
+        )
+    return lines
+
+
+def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict]:
+    chosen: list[ItemOption] = []
+    for choice in wanted.options:
+        opt = offered.get(_key(choice.group), {}).get(_key(choice.name))
+        if opt is None:
+            raise InvalidInput(
+                f"Option {choice.group}/{choice.name} gibt es an {item.number} nicht",
+                say=SAY_OPTION_UNKNOWN.format(option=choice.name, name=item.name),
+            )
+        if opt in chosen:
+            raise InvalidInput(f"Option {choice.group}/{choice.name} doppelt")
+        chosen.append(opt)
+
+    for group in offered.values():
+        first = next(iter(group.values()))
+        if not first.required:
+            continue
+        count = sum(1 for opt in chosen if opt.group_name == first.group_name)
+        say_args = {"group": first.group_name, "name": item.name}
+        if count == 0:
+            raise InvalidInput(
+                f"Pflichtgruppe {first.group_name} an {item.number} fehlt",
+                say=SAY_OPTION_MISSING.format(**say_args),
+            )
+        if count > 1:
+            raise InvalidInput(
+                f"Pflichtgruppe {first.group_name} an {item.number} mehrfach",
+                say=SAY_OPTION_TWICE.format(**say_args),
+            )
+
+    options = [
+        {
+            "group": opt.group_name,
+            "option": opt.option_name,
+            "price_delta_cents": opt.price_delta_cents,
+        }
+        for opt in chosen
+    ]
+    if item.price_cents + sum(o["price_delta_cents"] for o in options) < 0:
+        # Datenfehler in der Karte, kein Fall für den Gast.
+        raise InvalidInput(f"Preis von {item.number} mit Optionen negativ")
+    return options
+
+
+def _key(text: str) -> str:
+    return " ".join(text.split()).casefold()

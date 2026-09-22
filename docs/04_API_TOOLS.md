@@ -128,8 +128,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Geraten wird dabei nichts, aber eine Position verschwindet ohne Signal.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
-   Zerlegung gehört zum Bestellfluss (T-4.5), nicht in `search_menu`
-   (`docs/01_STATUS.md` § Open Points from Reviews).
+   Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
+   `domain/menu/split.py` (`split_positions`, T-4.5). Getrennt wird an „und",
+   „sowie" und Komma, aber nie bei Korrektur oder Alternative („23, nein 24",
+   „23 oder 24") und nie, wenn ein Teil nur Zögerlaut ist („23, äh, 24") -
+   dann bleibt der Satz ganz und `search_menu` fragt laut nach.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
@@ -248,7 +251,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 
 **Request**
 ```json
-{ "call_id": "…", "tenant_id": "…", "type": "delivery",
+{ "call_id": "…", "tenant_id": "…", "idempotency_key": "…", "type": "delivery",
   "customer": { "name": "Müller", "phone": "+49…", "address_id": "…" },
   "items": [
     { "menu_item_id": "…", "quantity": 2,
@@ -272,6 +275,21 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 
 **Prüfungen im Code, nicht im Modell:** Öffnungszeit · Position aktiv und nicht ausverkauft · Optionen gültig · Pflichtgruppen gewählt · Zone auflösbar · Mindestbestellwert erreicht · Summe korrekt · Lieferzeit aus aktueller Wartezeit.
 Verstoß → `ok: false` mit passendem Code und `say`.
+
+**Stand T-4.5 (nur Abholung):** `type: "delivery"` antwortet `invalid_input` mit der Frage, ob der Gast abholen möchte; Zone, Pauschale und Mindestbestellwert kommen mit T-6.5. Im Code (`domain/ordering/`):
+
+| Lage | Antwort |
+|---|---|
+| Abholung gerade nicht offen | `closed` |
+| Gericht unbekannt, inaktiv oder von einem anderen Mandanten | `not_found` |
+| Gericht ausverkauft | `conflict`, `say` wie bei `search_menu` |
+| Option gibt es an diesem Gericht nicht, doppelt, oder Pflichtgruppe mehrfach | `invalid_input` mit `say` |
+| Pflichtgruppe ohne Wahl | `invalid_input`, `say` fragt nach der Gruppe. Die Voreinstellung wird **nicht** still eingesetzt - sie wäre geraten |
+| Menge über 30 oder mehr als 30 Positionen | `invalid_input` (Schutz gegen Hörfehler, nicht gegen Großbestellungen) |
+
+- Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
+- `ready_at` = jetzt (minutengenau) + `service_config.pickup_wait_minutes`. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
+- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort, auch nach Schluss.
 
 ---
 
