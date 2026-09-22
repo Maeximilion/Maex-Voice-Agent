@@ -230,7 +230,16 @@ def test_dispatcher_braucht_die_testpfade_nicht():
 
 
 def _teile(pfad: str) -> tuple[str, ...]:
-    return PurePosixPath(pfad).parts if pfad not in (".", "") else ()
+    """Die Segmente eines Pfades, klein geschrieben.
+
+    Klein, weil macOS und Windows Dateinamen ohne Ruecksicht auf Gross- und
+    Kleinschreibung aufloesen: dort ist `./.ENV` die `.env` des Repos und
+    `.CLAUDE` das Verzeichnis mit den Worktrees. Ein Vergleich Zeichen fuer
+    Zeichen wuerde beides durchlassen - und der Test laeuft im Linux-Container,
+    kann die echte Schreibweise des Hosts also gar nicht nachsehen.
+    """
+    teile = PurePosixPath(pfad).parts if pfad not in (".", "") else ()
+    return tuple(teil.casefold() for teil in teile)
 
 
 def _ist_unter(quelle: str, ordner: str) -> bool:
@@ -264,7 +273,7 @@ def _traegt_geheimnisse(mount: str) -> bool:
     """
     if _zeigt_aus_dem_repo(mount) or _nicht_aufloesbar(mount):
         return True
-    if PurePosixPath(mount).name == ".env":  # auch tiefer liegende .env
+    if PurePosixPath(mount).name.casefold() == ".env":  # auch tiefer liegende .env
         return True
     if _ist_unter(mount, ".claude/commands"):  # nach der .env-Pruefung, nicht davor
         return False
@@ -299,6 +308,13 @@ def _versteckte_env(quelle: str) -> list[str]:
     aufzutauchen. Ein Verzeichnis-Mount traegt sie trotzdem in den Container.
     Diese Pruefung sieht deshalb als einzige aufs Dateisystem - sie schlaegt genau
     dort an, wo ein Geheimnis wirklich liegt, und bleibt sonst still.
+
+    Ihre Reichweite endet am Container: ueber `make test` laeuft sie in `api` und
+    sieht nur, was dorthin gemountet ist. Ein Bind eines anderen Dienstes - etwa
+    `./n8n` - liegt hier gar nicht, eine `n8n/.env` bliebe also unentdeckt. In der
+    CI, die auf einem vollen Checkout laeuft, ist der Blick vollstaendig. Diese
+    Pruefung ist deshalb eine zweite Reihe; die eigentliche Zusage tragen die
+    Pfadregeln darueber, die ohne Dateisystem auskommen.
     """
     ordner = REPO_ROOT / quelle
     if not ordner.is_dir():
