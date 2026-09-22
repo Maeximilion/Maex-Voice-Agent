@@ -468,6 +468,45 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 22.09.2026 - T-4.4 (Review, Merge)
+Status: Karten-Tools vollstaendig bis zur Bestellung: search_menu (T-4.3, PR #117) und
+       get_item_details (T-4.4, PR #118) laufen gegen main. Beschreibung, Optionsgruppen und
+       Allergene zu einer menu_item_id; Allergene nur aus item_allergens, ohne gepflegte Zeile
+       known: false. 1359 Tests gruen gegen PostgreSQL 16 mit pg_trgm, CI gruen, ruff sauber,
+       get_item_details p95 8,7 ms gegen 300 ms Budget. Laeuft noch nicht: draft_order (T-4.5),
+       ein echtes Modell (T-2.4, weiterhin FakeLLM), die Telefonie (C2 offen), die echte Karte
+       (C1 offen).
+Artifacts: PR #118 squash-gemergt, main = 4933cee. Drei Commits auf dem Branch:
+       34d9c83 (Merge-Konflikt in docs/01 aufgeloest), 50c75a1 (beide Review-Befunde gefixt),
+       d1ee25d (docs/01 und docs/07 auf den neuen Vertrag). api/domain/menu/{details,items}.py,
+       api/schemas/menu.py, api/tools/get_item_details.py, api/tests/test_domain_menu_details.py
+       (19 Faelle), docs/04, docs/05, docs/01 auf v1.23.0, CHANGELOG. Offen daneben: PR #122
+       (Compose-Mounts, aus dieser Sitzung angestossen) und PR #120 (Jules zu T-4.3).
+Decisions: allergen_question als Pflichtfeld im Request, ohne Vorgabewert - der Satz zum Rueckruf
+       darf nur auf die Allergenfrage kommen, weil dasselbe Tool auch Optionen beantwortet; ein
+       Default entscheidet still und falsch, ein fehlendes Pflichtfeld faellt als invalid_input
+       sofort auf. Der Satz bleibt dabei im Code (CLAUDE.md 9), nur das Ob wandert zum Agenten
+       · confirmed_at als Ortsdatum des Mandanten statt UTC-Datum (CLAUDE.md 8), wie jedes andere
+       Domain-Modul es haelt · die beiden Codex-P1 nicht gefixt, sondern widerlegt: sie galten dem
+       search_menu-Entwurf, den 51192fc entfernt hat, und mains Fassung deckt beide durch
+       bestehende Regressionstests ab.
+Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Interner Stand:
+       Block 4 (Karte und Bestellung) zur Haelfte - T-4.1 bis T-4.4 fertig, T-4.5 ist der naechste
+       Schritt und hat alle Abhaengigkeiten erfuellt.
+Open: T-4.5 draft_order mit allen Pruefungen und readback - Testdaten reichen, bis die echte Karte
+       da ist. Davor oder parallel: PR #122 durchziehen (macht make test und make lint wieder
+       deckungsgleich mit der CI), PR #120 entscheiden (N+1-Befund hinfaellig, offen ist nur das
+       Reviewer-Journal). Danach C1 Karten-CSV und der echte Import.
+Lessons: Codex reviewt einen Commit, nicht die PR - die Zeile "Reviewed commit" steht im Kommentar
+       und zeigte hier auf db4be19d0, einen Stand, den ein spaeterer Merge laengst entfernt hatte.
+       Immer gegen den Head pruefen, bevor man einen Bot-Befund fixt, und nach Fix-Commits
+       @codex review auf den echten Head setzen · GitHub laesst den Autor seine eigene PR nicht
+       freigeben, ein Bot-Review landet als COMMENTED, nie als APPROVED - reviewDecision bleibt
+       auf eigenen PRs leer · der api-Container mountet weder sim/ noch Makefile, deploy/,
+       .claude/ oder docs/, deshalb melden make test vier Collection-Errors und make lint drei
+       falsche I001, waehrend die CI gruen ist; mit allen Pfaden dazugemountet sind es 1359 gruene
+       Tests. Das ist der Inhalt von PR #122.
+
 ## Handover 17.09.2026 – T-2.1, T-2.2
 Status: agent/ conversation core running: prompt.py, state.py, dispatch.py, loop.py, llm.py+FakeLLM
        (T-2.1); ladder.py (Verständnis-Leiter) and escalation.py (Sofort-Auslöser) wired into
