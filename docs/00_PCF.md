@@ -492,8 +492,8 @@ Decisions: allergen_question als Pflichtfeld im Request, ohne Vorgabewert - der 
        search_menu-Entwurf, den 51192fc entfernt hat, und mains Fassung deckt beide durch
        bestehende Regressionstests ab.
 Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Interner Stand:
-       Block 4 (Karte und Bestellung) zur Haelfte - T-4.1 bis T-4.4 fertig, T-4.5 ist der naechste
-       Schritt und hat alle Abhaengigkeiten erfuellt.
+       Block 3 (Stufe 2: Abholung, Sammel-Issue #9) bei 4 von 9 Aufgaben - T-4.1 bis T-4.4 fertig,
+       T-4.5 bis T-4.9 offen. T-4.5 ist der naechste Schritt und hat alle Abhaengigkeiten erfuellt.
 Open: T-4.5 draft_order mit allen Pruefungen und readback - alle Abhaengigkeiten erfuellt,
        Testdaten reichen, bis die echte Karte da ist. Danach C1 Karten-CSV und der echte Import.
        Nichts blockiert: die Nebenbaustellen dieser Sitzung sind zu.
