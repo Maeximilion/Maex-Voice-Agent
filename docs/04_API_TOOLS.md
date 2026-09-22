@@ -119,6 +119,17 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
+   „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`.
+   Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
+   und einmal Pho Bo", „Nummer 23 mit Erdnusssauce") ist es `ambiguous` mit der
+   Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
+   die Namenssuche läuft über den ganzen Satz - „die 23 und einmal Pho Bo" kommt
+   als `fuzzy_single` auf Pho Bo zurück, die genannte 23 fällt still weg.
+   Geraten wird dabei nichts, aber eine Position verschwindet ohne Signal.
+   **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
+   will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
+   Zerlegung gehört zum Bestellfluss (T-4.5), nicht in `search_menu`
+   (`docs/01_STATUS.md` § Open Points from Reviews).
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
@@ -145,14 +156,17 @@ liest `say` vor und fragt nach. Eine Nummer, die es nicht gibt, bleibt
 ## `get_item_details`
 Für Rückfragen zu Optionen, Extras und Allergenen.
 
-**Request** `{ "call_id": "…", "tenant_id": "…", "menu_item_id": "…" }`
+**Request** `{ "call_id": "…", "tenant_id": "…", "menu_item_id": "…", "allergen_question": false }`
+
+`allergen_question` ist **Pflicht** und hat keine Vorgabe: nur der Agent weiß, ob der Gast nach Allergenen gefragt hat oder nach der Sauce. Fehlt das Feld, antwortet das Tool `invalid_input` - das fällt auf, ein stiller Vorgabewert nicht.
 
 **Response**
 ```json
 {
   "ok": true,
   "data": {
-    "number": "23", "name": "Frühlingsrollen (4 Stück)", "price_cents": 690,
+    "menu_item_id": "…", "number": "23", "name": "Frühlingsrollen (4 Stück)",
+    "price_cents": 690, "sold_out": false,
     "description": "mit Gemüsefüllung, dazu süßsaure Sauce",
     "allergens": { "known": true, "codes": ["A", "F"], "confirmed_at": "2026-08-01" },
     "option_groups": [ ]
@@ -160,7 +174,9 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
   "say": null
 }
 ```
-**Allergene:** Ist `known: false`, lautet `say`: das Team ruft zurück und klärt es. Der Agent formuliert hier **nichts** selbst.
+**Allergene:** Ist `known: false` **und** `allergen_question: true`, lautet `say` wörtlich „Das kann ich Ihnen nicht sicher sagen. Das Team ruft Sie dazu zurück." (aus dem Code, `domain/menu/details.py`), und der Agent legt einen Rückruf an. Ohne Allergenfrage bleibt der Satz weg: sonst bekäme die Frage nach der Sauce den Rückruf statt einer Antwort. `known: false` steht trotzdem in den Daten - der Agent nennt nie ein Allergen, das dort nicht steht. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Gepflegte Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört; `confirmed_at` ist der jüngste Nachweis, als **Ortsdatum** des Mandanten (CLAUDE.md §8) und nicht als UTC-Datum: ein Nachweis vom 19.09. um 00:30 Ortszeit liegt als 18.09. 22:30 UTC in der Zeile.
+
+Die `menu_item_id` kommt aus `search_menu`, ein anderer Weg in die Karte existiert nicht. Inaktive Gerichte liefert das Tool nicht (`not_found`), ausverkaufte schon, mit `sold_out: true` und demselben Satz wie die Suche - es sei denn, es ging um Allergene und die Auskunft fehlt, die wiegt dann schwerer.
 
 ---
 

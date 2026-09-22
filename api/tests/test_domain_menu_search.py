@@ -546,3 +546,22 @@ def test_ohne_nummer_im_satz_bleibt_die_namenssuche(session, tenant_id):
     result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
 
     assert nummern(result)[0] == "23" and result.match_type != "exact_number"
+
+
+def test_zweite_position_ohne_marker_faellt_still_weg(session, tenant_id):
+    """Heutiger Stand, festgehalten als offener Punkt - nicht als Soll.
+
+    Ohne "Nummer" ist "die 23 und einmal Pho Bo" kein Nummernsatz (Regel A), und
+    die Namenssuche laeuft ueber den ganzen Satz: heraus kommt **ein** Gericht,
+    Pho Bo, und die genannte 23 taucht nirgends mehr auf. Geraten wird nichts,
+    aber eine Position verschwindet ohne Signal an den Agenten.
+
+    Mit Marker im Satz gaebe es die Rueckfrage (siehe
+    `test_nummer_mit_mehr_im_satz_fragt_nach`). Die Loesung liegt vor der Suche:
+    Satz je Position zerlegen, dann je Position fragen - Bestellfluss T-4.5,
+    `docs/01_STATUS.md` § Open Points from Reviews.
+    """
+    result = suche(session, tenant_id, "die 23 und einmal Pho Bo")
+
+    assert nummern(result) == ["13"]
+    assert result.match_type == "fuzzy_single"
