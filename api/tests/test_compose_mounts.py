@@ -33,22 +33,53 @@ SOURCE_DIRS = ("api", "evals", "sim", "scripts")
 # nicht wieder, das genau deshalb enger gemountet ist als `.claude`.
 ROOT_PATH_RE = re.compile(r'(?:parents\[2\]|REPO_ROOT)((?:\s*/\s*"[^"]+")+)')
 SEGMENT_RE = re.compile(r'"([^"]+)"')
+# Ein benanntes Volume ist ein blosser Name: keine Trennzeichen, kein Punkt-Praefix.
+NAMED_VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 
 
-def _api_mounts() -> set[str]:
-    """Die Quellpfade der api-Mounts, repo-relativ und normalisiert.
+def _quelle(entry: str | dict) -> str | None:
+    """Der Host-Pfad eines Volume-Eintrags, oder None bei einem benannten Volume.
+
+    Die Unterscheidung laeuft ueber die Form, nicht ueber das Praefix `./`: ein
+    benanntes Volume ist ein blosser Name ohne Trennzeichen (`pgdata:/var/...`),
+    alles andere ist ein Bind und muss geprueft werden - auch `../nachbar/.env`
+    und absolute Pfade, die ohne diese Regel unbesehen durchgingen.
+    """
+    if isinstance(entry, dict):  # lange Compose-Schreibweise
+        return entry.get("source") if entry.get("type", "bind") == "bind" else None
+    if WINDOWS_ABS_RE.match(entry):  # C:\... - der Doppelpunkt gehoert zum Laufwerk
+        return entry[:2] + entry[2:].partition(":")[0]
+    kopf = entry.split(":", 1)[0]
+    return None if NAMED_VOLUME_RE.match(kopf) else kopf
+
+
+def _bind_quellen() -> set[str]:
+    """Alle Bind-Quellen des api-Service, normalisiert.
 
     Normalisiert, weil Docker den Pfad aufloest und jede Pruefung darunter sonst rein
     lexikalisch waere: `./.claude/commands/../../.env` sieht wie ein Nachfahre von
     `commands/` aus und ist in Wahrheit die `.env` im Repo-Wurzelverzeichnis.
     """
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    mounts = set()
+    quellen = set()
     for entry in compose["services"]["api"]["volumes"]:
-        host = entry.split(":", 1)[0]
-        if host.startswith("./"):
-            mounts.add(posixpath.normpath(host).rstrip("/"))
-    return mounts
+        host = _quelle(entry)
+        if host:
+            quellen.add(posixpath.normpath(host.replace("\\", "/")).rstrip("/"))
+    return quellen
+
+
+def _zeigt_aus_dem_repo(quelle: str) -> bool:
+    """Absolut oder oberhalb der Wurzel - beides ist von hier aus nicht pruefbar."""
+    return quelle.startswith("/") or bool(
+        WINDOWS_ABS_RE.match(quelle) or PurePosixPath(quelle).parts[:1] == ("..",)
+    )
+
+
+def _api_mounts() -> set[str]:
+    """Die Bind-Quellen, die tatsaechlich im Repo liegen - nur die decken Pfade ab."""
+    return {q for q in _bind_quellen() if not _zeigt_aus_dem_repo(q)}
 
 
 def _is_mounted(ref: str, mounts: set[str]) -> bool:
@@ -115,12 +146,13 @@ def _traegt_geheimnisse(mount: str) -> bool:
     `.claude/worktrees` oder einem einzelnen Worktree darunter waere genauso
     falsch wie `.claude` selbst - nur faellt er einer Verbotsliste nicht auf.
 
-    Die Pfade kommen normalisiert aus `_api_mounts()`. Was danach noch aus dem
-    Repo herauszeigt (`..`), ist erst recht tabu: dort liegen die Nachbar-Checkouts.
+    Die Pfade kommen normalisiert aus `_bind_quellen()`. Was aus dem Repo
+    herauszeigt, ist erst recht tabu: dort liegen die Nachbar-Checkouts, und was
+    ein absoluter Pfad enthaelt, laesst sich von hier aus gar nicht pruefen.
     """
-    teile = PurePosixPath(mount).parts
-    if teile[:1] == ("..",):
+    if _zeigt_aus_dem_repo(mount):
         return True
+    teile = PurePosixPath(mount).parts
     if teile[:1] == (".claude",):
         return teile[:2] != (".claude", "commands")
     return PurePosixPath(mount).name == ".env"
@@ -128,5 +160,5 @@ def _traegt_geheimnisse(mount: str) -> bool:
 
 def test_geheimnisse_bleiben_draussen():
     """CLAUDE.md §8: .env und die Worktrees darunter gehoeren nicht in den Container."""
-    verboten = sorted(mount for mount in _api_mounts() if _traegt_geheimnisse(mount))
+    verboten = sorted(q for q in _bind_quellen() if _traegt_geheimnisse(q))
     assert not verboten, f"Mount traegt fremde Geheimnisse in den Container: {verboten}"
