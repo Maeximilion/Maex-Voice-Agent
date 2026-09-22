@@ -13,7 +13,9 @@ def readback(order: Order, lines: Sequence[Line]) -> str:
     satz = " ".join(_spoken_line(line) for line in lines)
     satz += f" Macht {spoken_euro(order.total_cents)}"
     if order.ready_at is not None:
-        minutes = round((order.ready_at - order.created_at).total_seconds() / 60)
+        # Abrunden: ready_at ist aufgerundet, die Differenz liegt in
+        # [Wartezeit, Wartezeit + 1 Minute) und ergibt so genau die Wartezeit.
+        minutes = int((order.ready_at - order.created_at).total_seconds() // 60)
         satz += f", abholbereit in etwa {minutes} Minuten"
     return satz + f", auf den Namen {order.customer_name}. Passt das so?"
 

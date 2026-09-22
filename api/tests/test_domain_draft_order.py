@@ -20,7 +20,7 @@ from api.domain.menu.importer import (
 from api.domain.ordering import draft_order
 from api.domain.ordering.draft import WARNING_READY_AFTER_CLOSE
 from api.domain.ordering.readback import spoken_euro, spoken_times
-from api.models import AuditLog, Call, MenuItem, Order, OrderItem
+from api.models import AuditLog, Call, MenuItem, OpeningHours, Order, OrderItem
 from api.schemas.orders import DraftOrderRequest
 from scripts.seed import seed
 
@@ -188,6 +188,45 @@ def test_gleicher_schluessel_gleiche_antwort(session, tenant_id, call_id):
     assert again == first
     assert session.scalar(select(func.count()).select_from(Order)) == 1
     assert session.scalar(select(func.count()).select_from(OrderItem)) == 3
+
+
+def test_replay_nach_umbenennung_sagt_dasselbe(session, tenant_id, call_id):
+    """Codex PR #124: der Replay las Name und Nummer aus der aktuellen Karte."""
+    req = request(session, tenant_id, call_id)
+    first = draft_order(session, req, now=NOW)
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(number="99", name="Sommerrollen")
+    )
+    session.commit()
+    assert draft_order(session, req, now=NOW) == first
+
+
+def test_replay_nach_neuen_oeffnungszeiten_warnt_gleich(session, tenant_id, call_id):
+    """Codex PR #124: die Warnung wurde beim Replay aus dem aktuellen Plan neu berechnet."""
+    req = request(session, tenant_id, call_id)
+    first = draft_order(session, req, now=NOW)
+    assert first.warnings == []
+    session.execute(
+        update(OpeningHours)
+        .where(
+            OpeningHours.tenant_id == tenant_id, OpeningHours.opens_at == time(17, 0)
+        )
+        .values(closes_at=time(18, 10))
+    )
+    session.commit()
+    assert draft_order(session, req, now=NOW).warnings == []
+
+
+@pytest.mark.parametrize("sekunde", [0, 1, 31, 59])
+def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekunde):
+    """Codex PR #124: um 18:00:45 wurden aus 20 Minuten Wartezeit 19 angesagt."""
+    now = NOW.replace(second=sekunde, microsecond=500)
+    draft = draft_order(session, request(session, tenant_id, call_id), now=now)
+    assert draft.ready_at >= now + timedelta(minutes=20)
+    assert draft.ready_at.second == 0 and draft.ready_at.microsecond == 0
+    assert "abholbereit in etwa 20 Minuten" in draft.readback
 
 
 def test_schluessel_eines_anderen_mandanten(session, tenant_id, call_id):

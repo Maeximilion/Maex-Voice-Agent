@@ -10,14 +10,14 @@ nimmt das Tool nur Abholungen an.
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Conflict, InvalidInput, NotFound, ServiceUnavailable
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.ordering.pricing import Line, items_total_cents
@@ -28,7 +28,7 @@ from api.domain.ordering.validation import (
     validated_lines,
 )
 from api.domain.status.service import PICKUP
-from api.models import AuditLog, Call, MenuItem, Order, OrderItem, ServiceConfig, Tenant
+from api.models import AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft
 
 ACTOR_AGENT = "agent"
@@ -72,10 +72,7 @@ def draft_order(
     require_pickup_open(session, req.tenant_id, now, zone)
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
-    # Minutengenau: vorgelesen wird "in etwa 20 Minuten", nicht Sekunden.
-    ready_at = now.replace(second=0, microsecond=0) + timedelta(
-        minutes=config.pickup_wait_minutes
-    )
+    ready_at = _ready_at(now, config.pickup_wait_minutes)
 
     order = Order(
         tenant_id=req.tenant_id,
@@ -119,6 +116,7 @@ def draft_order(
                 created_at=now + timedelta(microseconds=position),
             )
         )
+    draft = _draft(order, lines, _warnings(session, order, zone))
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,
@@ -131,11 +129,29 @@ def draft_order(
                 "type": req.type,
                 "positions": len(lines),
                 "total_cents": total,
+                # Was dem Gast gesagt wurde. Der Replay liest es von hier, statt
+                # aus Karte und Öffnungszeiten neu zu rechnen, die sich seitdem
+                # geändert haben können (Codex PR #124).
+                "readback": draft.readback,
+                "warnings": draft.warnings,
             },
         )
     )
     session.commit()
-    return _draft(session, order, lines, zone)
+    return draft
+
+
+def _ready_at(now: datetime, wait_minutes: int) -> datetime:
+    """Auf die volle Minute aufgerundet: die Zusage wird nie kürzer als die Wartezeit.
+
+    Abgerundet sagte ein Anruf um 18:00:45 bei 20 Minuten Wartezeit "in etwa 19
+    Minuten" an (Codex PR #124).
+    """
+    # In UTC wie jede gespeicherte Zeit (CLAUDE.md §8): Antwort und Replay aus
+    # der Datenbank serialisieren sonst verschieden.
+    ready = (now + timedelta(minutes=wait_minutes)).astimezone(UTC)
+    floored = ready.replace(second=0, microsecond=0)
+    return floored if floored == ready else floored + timedelta(minutes=1)
 
 
 def _by_key(session: Session, key: str) -> Order | None:
@@ -147,28 +163,33 @@ def _replay(
 ) -> OrderDraft:
     if existing.tenant_id != tenant_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
-    rows = session.execute(
-        select(OrderItem, MenuItem)
-        .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
-        .where(OrderItem.order_id == existing.id)
-        .order_by(OrderItem.created_at)
-    ).all()
-    lines = [
-        Line(item=menu, quantity=row.quantity, options=row.options, note=row.note)
-        for row, menu in rows
-    ]
-    return _draft(session, existing, lines, zone)
+    snapshot = session.scalar(
+        select(AuditLog.payload).where(
+            AuditLog.entity == "order",
+            AuditLog.entity_id == existing.id,
+            AuditLog.action == ACTION_DRAFT_CREATED,
+        )
+    )
+    if snapshot is None:
+        # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
+        # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
+        raise ServiceUnavailable("Entwurf ohne Audit-Zeile")
+    return _response(existing, snapshot["readback"], snapshot["warnings"])
 
 
-def _draft(
-    session: Session, order: Order, lines: list[Line], zone: ZoneInfo
-) -> OrderDraft:
-    warnings = []
-    # Aus den gespeicherten Werten, nicht aus der Uhr: ein Replay warnt gleich.
+def _warnings(session: Session, order: Order, zone: ZoneInfo) -> list[str]:
     if order.ready_at is not None and not pickup_open_at(
         session, order.tenant_id, order.ready_at, zone
     ):
-        warnings.append(WARNING_READY_AFTER_CLOSE)
+        return [WARNING_READY_AFTER_CLOSE]
+    return []
+
+
+def _draft(order: Order, lines: list[Line], warnings: list[str]) -> OrderDraft:
+    return _response(order, readback(order, lines), warnings)
+
+
+def _response(order: Order, spoken: str, warnings: list[str]) -> OrderDraft:
     return OrderDraft(
         order_id=order.id,
         status=order.status,
@@ -177,5 +198,5 @@ def _draft(
         total_cents=order.total_cents,
         ready_at=order.ready_at,
         warnings=warnings,
-        readback=readback(order, lines),
+        readback=spoken,
     )
