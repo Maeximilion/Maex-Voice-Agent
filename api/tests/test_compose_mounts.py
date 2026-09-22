@@ -319,7 +319,13 @@ def _versteckte_env(quelle: str) -> list[str]:
     ordner = REPO_ROOT / quelle
     if not ordner.is_dir():
         return []
-    return sorted(p.relative_to(REPO_ROOT).as_posix() for p in ordner.rglob(".env"))
+    # Zeichenklassen statt ".env": auf einem Host ohne Ruecksicht auf Schreibweise
+    # heisst die Datei vielleicht .ENV, und dieser Lauf hier sucht auf einem Linux-
+    # Dateisystem, das den Unterschied macht. Die Klassen treffen jede Mischung,
+    # ohne den ganzen Baum aufzuzaehlen.
+    return sorted(
+        p.relative_to(REPO_ROOT).as_posix() for p in ordner.rglob(".[eE][nN][vV]")
+    )
 
 
 def test_geheimnisse_bleiben_draussen():
