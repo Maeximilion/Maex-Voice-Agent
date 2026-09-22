@@ -230,9 +230,17 @@ def _versteckte_env(quelle: str) -> list[str]:
 def test_geheimnisse_bleiben_draussen():
     """CLAUDE.md §8: .env und die Worktrees darunter gehoeren nicht in den Container."""
     verboten = sorted(q for q in _bind_quellen() if _traegt_geheimnisse(q))
+    # Ueber alle Binds im Repo, nicht ueber _api_mounts(): dort faellt heraus, was an
+    # einem anderen Ziel als /app/<pfad> haengt - fuer die Abdeckung zurecht, fuer ein
+    # Geheimnis nicht. `./data:/tmp/data` traegt `data/.env` genauso in den Container.
+    im_repo = sorted(
+        q
+        for q in _bind_quellen()
+        if not _zeigt_aus_dem_repo(q) and not _nicht_aufloesbar(q)
+    )
     verboten += [
         f"{quelle} enthaelt {datei}"
-        for quelle in sorted(_api_mounts())
+        for quelle in im_repo
         for datei in _versteckte_env(quelle)
     ]
     assert not verboten, f"Mount traegt fremde Geheimnisse in den Container: {verboten}"
