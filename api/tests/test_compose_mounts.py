@@ -253,6 +253,24 @@ def _traegt_geheimnisse(mount: str) -> bool:
     return any(_beruehrt(mount, pfad) for pfad in GESCHUETZT)
 
 
+def _aufgeloest(quelle: str) -> str | None:
+    """Der Pfad hinter einem Symlink, repo-relativ - oder None, wenn keiner im Weg ist.
+
+    `posixpath.normpath` arbeitet rein lexikalisch und kann einen Symlink nicht
+    sehen: ein eingecheckter Link `public-config -> .env` bleibt `public-config`
+    und sieht harmlos aus. Docker folgt ihm beim Mounten trotzdem. Zeigt der Link
+    aus dem Repo heraus, kommt `..` zurueck - das faellt ohnehin durch.
+    """
+    pfad = REPO_ROOT / quelle
+    if not pfad.exists():
+        return None
+    try:
+        echt = pfad.resolve()
+        return echt.relative_to(REPO_ROOT.resolve()).as_posix() or "."
+    except (OSError, ValueError):
+        return ".."
+
+
 def _versteckte_env(quelle: str) -> list[str]:
     """Jede `.env`, die in einem gemounteten Verzeichnis tatsaechlich liegt.
 
@@ -283,6 +301,10 @@ def test_geheimnisse_bleiben_draussen():
         for quelle in sorted(_bind_quellen(dienst) | _dateiquellen(dienst)):
             if _traegt_geheimnisse(quelle):
                 verboten.append(f"{dienst}: {quelle}")
+                continue
+            echt = _aufgeloest(quelle)
+            if echt and echt != quelle and _traegt_geheimnisse(echt):
+                verboten.append(f"{dienst}: {quelle} zeigt auf {echt}")
                 continue
             verboten += [
                 f"{dienst}: {quelle} enthaelt {datei}"
