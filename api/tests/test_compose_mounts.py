@@ -36,6 +36,9 @@ SEGMENT_RE = re.compile(r'"([^"]+)"')
 # Ein benanntes Volume ist ein blosser Name: keine Trennzeichen, kein Punkt-Praefix.
 NAMED_VOLUME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
+# Pfade, die niemals in den Container gehoeren: die Umgebungsdatei und alles unter
+# .claude/ - dort liegen im Haupt-Checkout die Worktrees samt eigener .env.
+GESCHUETZT = (".env", ".claude")
 
 
 def _quelle(entry: str | dict) -> str | None:
@@ -138,24 +141,46 @@ def test_dispatcher_braucht_die_testpfade_nicht():
     assert hosts == {"./api", "./scripts", "./db"}
 
 
+def _teile(pfad: str) -> tuple[str, ...]:
+    return PurePosixPath(pfad).parts if pfad not in (".", "") else ()
+
+
+def _ist_unter(quelle: str, ordner: str) -> bool:
+    teile, oben = _teile(quelle), _teile(ordner)
+    return teile[: len(oben)] == oben
+
+
+def _beruehrt(quelle: str, geschuetzt: str) -> bool:
+    """Wahr, wenn einer der beiden Pfade im anderen liegt - in welcher Richtung auch immer.
+
+    Die Richtung nach oben ist die, die leicht vergessen wird: `.` ist der
+    gemeinsame Vorfahr von allem und traegt damit `.env` und die Worktrees
+    genauso herein wie ein Mount, der direkt auf sie zeigt.
+    """
+    teile, geschuetzte = _teile(quelle), _teile(geschuetzt)
+    tiefe = min(len(teile), len(geschuetzte))
+    return teile[:tiefe] == geschuetzte[:tiefe]
+
+
 def _traegt_geheimnisse(mount: str) -> bool:
-    """Alles unter `.claude/` ausser den Befehlen ist tabu, ebenso jede .env.
+    """Wahr, sobald der Mount einen geschuetzten Pfad beruehrt.
 
-    Als Positivliste und nicht als Verbotsliste: unter `.claude/` liegen im
-    Haupt-Checkout die Worktrees mit eigenen `.env`-Dateien, und ein Mount von
-    `.claude/worktrees` oder einem einzelnen Worktree darunter waere genauso
-    falsch wie `.claude` selbst - nur faellt er einer Verbotsliste nicht auf.
+    Geschuetzt sind `.env` und `.claude/` - dort liegen im Haupt-Checkout die
+    Worktrees mit ihren eigenen `.env`-Dateien. Geprueft wird die Beruehrung in
+    beide Richtungen, nicht die Gleichheit: `.claude/worktrees` zeigt hinein,
+    `.` umfasst alles, und beides traegt dieselben Geheimnisse herein.
 
-    Die Pfade kommen normalisiert aus `_bind_quellen()`. Was aus dem Repo
-    herauszeigt, ist erst recht tabu: dort liegen die Nachbar-Checkouts, und was
-    ein absoluter Pfad enthaelt, laesst sich von hier aus gar nicht pruefen.
+    Einzige Ausnahme ist `.claude/commands`, das die Testsuite wirklich liest.
+    Was aus dem Repo herauszeigt, ist ohnehin tabu: dort liegen die
+    Nachbar-Checkouts, und absolute Pfade sind von hier aus nicht pruefbar.
     """
     if _zeigt_aus_dem_repo(mount):
         return True
-    teile = PurePosixPath(mount).parts
-    if teile[:1] == (".claude",):
-        return teile[:2] != (".claude", "commands")
-    return PurePosixPath(mount).name == ".env"
+    if _ist_unter(mount, ".claude/commands"):
+        return False
+    if PurePosixPath(mount).name == ".env":  # auch tiefer liegende .env
+        return True
+    return any(_beruehrt(mount, pfad) for pfad in GESCHUETZT)
 
 
 def test_geheimnisse_bleiben_draussen():
