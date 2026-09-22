@@ -101,6 +101,26 @@ def _bind_quellen(dienst: str = "api") -> set[str]:
     return {quelle for quelle, _ in _binds(dienst)}
 
 
+def _dateiquellen(dienst: str) -> set[str]:
+    """Host-Dateien, die ein Dienst ueber `secrets:` oder `configs:` bekommt.
+
+    Beides reicht eine Datei in den Container, ohne in `volumes:` aufzutauchen:
+    `secrets: {repo_env: {file: .env}}` plus `api.secrets: [repo_env]` legt die
+    Umgebungsdatei unter /run/secrets ab. Fuer den Waechter ist das derselbe Fall
+    wie ein Bind und muss durch dieselbe Pruefung.
+    """
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    quellen = set()
+    for art in ("secrets", "configs"):
+        definitionen = compose.get(art) or {}
+        for eintrag in _dienste()[dienst].get(art) or []:
+            name = eintrag.get("source") if isinstance(eintrag, dict) else eintrag
+            datei = (definitionen.get(name) or {}).get("file")
+            if datei:
+                quellen.add(posixpath.normpath(datei.replace("\\", "/")).rstrip("/"))
+    return quellen
+
+
 def _nicht_aufloesbar(quelle: str) -> bool:
     """`${PWD}` und `$HOME` loest Compose auf, `yaml.safe_load` nicht.
 
@@ -252,14 +272,15 @@ def test_geheimnisse_bleiben_draussen():
     """CLAUDE.md §8: .env und die Worktrees darunter gehoeren in keinen Container.
 
     Ueber alle Dienste, nicht nur api: db, dispatcher und n8n laufen auf demselben
-    Host, und ein Mount ist dort genauso ein Leck. Und ueber alle Binds, nicht nur
+    Host, und ein Mount ist dort genauso ein Leck. Ueber Binds und ueber
+    `secrets:`/`configs:`, denn beide Wege reichen eine Host-Datei herein. Und ueber alle Binds, nicht nur
     die aus `_api_mounts()`: was an einem anderen Ziel als `/app/<pfad>` haengt,
     faellt fuer die Abdeckung zurecht heraus, traegt ein Geheimnis aber genauso
     herein - `./data:/tmp/data` bringt `data/.env` mit.
     """
     verboten: list[str] = []
     for dienst in sorted(_dienste()):
-        for quelle in sorted(_bind_quellen(dienst)):
+        for quelle in sorted(_bind_quellen(dienst) | _dateiquellen(dienst)):
             if _traegt_geheimnisse(quelle):
                 verboten.append(f"{dienst}: {quelle}")
                 continue
