@@ -133,7 +133,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    „sowie" und Komma, aber nie bei Korrektur oder Alternative („23, nein 24",
    „23 oder 24") und nie, wenn ein Teil nur Zögerlaut ist („23, äh, 24") -
    dann bleibt der Satz ganz und `search_menu` fragt laut nach. Jeder
-   Teil muss selbst eine Position eröffnen (Nummer, Menge oder „ein/eine") und
+   Teil muss mit einer eigenen Position beginnen (Nummer, Menge oder „ein/eine";
+   „Schärfe 2" beginnt keine) und
    darf nicht mit „ohne", „mit" oder „extra" beginnen; „Ente süß und sauer" und
    „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Nach „hundert" gehört
    „und" zur Zahl („hundert und eins").

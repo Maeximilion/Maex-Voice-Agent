@@ -47,6 +47,11 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "zwei Frühlingsrollen und eine Pho Bo",
             ["zwei Frühlingsrollen", "eine Pho Bo"],
         ),
+        # Die Zahl muss den Teil eröffnen, nicht irgendwo darin stehen (Codex PR #124)
+        ("Nummer 23, Schärfe 2", ["Nummer 23, Schärfe 2"]),
+        ("die 23 und Pho Bo für 2 Personen", ["die 23 und Pho Bo für 2 Personen"]),
+        ("die 23 und 2 x Pho Bo", ["die 23", "2 x Pho Bo"]),
+        ("die 23 und die Nummer 13", ["die 23", "die Nummer 13"]),
         ("", []),
     ],
 )
