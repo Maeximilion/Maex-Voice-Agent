@@ -75,6 +75,16 @@ def validated_lines(
     ):
         group = offered[opt.menu_item_id][option_key(opt.group_name)]
         name = option_key(opt.option_name)
+        first = next(iter(group.values()), None)
+        if first is not None and first.group_name != opt.group_name:
+            # Dieselbe Gruppe in zwei Schreibweisen ("Sauce", "sauce"): ob sie
+            # Pflicht ist, entschiede sonst die zufällig erste Zeile. Der
+            # Import lehnt das ab; Altdaten gehen ans Team (Codex PR #124).
+            raise ServiceUnavailable(
+                f"Gruppe {first.group_name}/{opt.group_name} an Gericht "
+                f"{opt.menu_item_id} in zwei Schreibweisen",
+                say=SAY_MENU_BROKEN,
+            )
         if name in group:
             # Zwei Zeilen, die sich nur in der Schreibweise unterscheiden: welche
             # gemeint ist, und damit der Preis, wäre geraten. Der Import lehnt das
