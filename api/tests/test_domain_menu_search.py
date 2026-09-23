@@ -571,3 +571,19 @@ def test_mehrere_positionen_ohne_marker_fragen_nach(session, tenant_id, gesagt, 
         suche(session, tenant_id, gesagt)
     assert teile in err.value.message
     assert err.value.say == SAY_ONE_AT_A_TIME
+
+
+def test_zweites_gericht_ohne_menge_fragt_auch_ueber_http_nach(session, tenant_id):
+    """ "die 23 und Pho Bo": der Satz allein trennt nicht, die Karte schon - jedes
+    Stueck trifft ein anderes Gericht. Dann fragt search_menu nach, statt ueber
+    den ganzen Satz nur Pho Bo zu finden (Codex PR #127, P1)."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, "die 23 und Pho Bo")
+    assert "die 23 | Pho Bo" in err.value.message
+    assert err.value.say == SAY_ONE_AT_A_TIME
+
+
+def test_name_mit_und_bleibt_eine_suche(session, tenant_id):
+    """Trifft ein Stueck nichts, gehoert das "und" zum Namen: normale Suche."""
+    result = suche(session, tenant_id, "die knusprige Ente und so")
+    assert nummern(result)[0] == "47"

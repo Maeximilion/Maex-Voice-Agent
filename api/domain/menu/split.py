@@ -69,16 +69,31 @@ _EMPTY_WORDS = frozenset(
 def split_positions(text: str) -> list[str]:
     """Teile je Position, in der gesprochenen Reihenfolge. Nicht sicher trennbar → [text]."""
     stripped = text.strip()
-    words = _WORD.findall(fold(stripped))
-    if not words or _CORRECTION_WORDS.intersection(words):
+    if not _separable(stripped):
         return [stripped] if stripped else []
-
-    if any(not _content(p) for p in _SEPARATOR.split(stripped)):
-        return [stripped]
     return [p.strip(" .!?;:") for p in _split(stripped)]
 
 
-def _split(text: str) -> list[str]:
+def raw_pieces(text: str) -> list[str]:
+    """Nur an den Trennern geschnitten, ohne die Pruefung, ob ein Teil eine
+    Position eroeffnet. Fuer den Gegencheck mit der Karte (agent/dispatch.py):
+    ob "die 23 und Pho Bo" zwei Gerichte sind, entscheidet nicht der Satz,
+    sondern ob jedes Stueck fuer sich ein anderes Gericht trifft. Dieselben
+    Sperren wie oben: Korrektur und Zoegerlaut ("23, aeh, 24") bleiben ganz."""
+    stripped = text.strip()
+    if not _separable(stripped):
+        return [stripped] if stripped else []
+    return [p.strip(" .!?;:") for p in _split(stripped, by_position=False)]
+
+
+def _separable(text: str) -> bool:
+    words = _WORD.findall(fold(text))
+    if not words or _CORRECTION_WORDS.intersection(words):
+        return False
+    return all(_content(p) for p in _SEPARATOR.split(text))
+
+
+def _split(text: str, *, by_position: bool = True) -> list[str]:
     """Am Trenner zerlegen. Ein Teil, der keine eigene Position eröffnet, hängt
     wieder an dem davor: "eine Ente süß und sauer" bleibt ein Name, die Grenze
     vor "die 23" bleibt trotzdem stehen (Codex PR #124).
@@ -107,7 +122,7 @@ def _split(text: str) -> list[str]:
                 or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
             )
         )
-        if number_joined or not _opens_position(piece):
+        if number_joined or (by_position and not _opens_position(piece)):
             parts[-1] += sep + piece
         else:
             parts.append(piece)

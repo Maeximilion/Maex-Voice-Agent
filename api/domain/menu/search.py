@@ -40,7 +40,7 @@ from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
-from api.domain.menu.split import split_positions
+from api.domain.menu.split import raw_pieces, split_positions
 from api.models import ItemAlias, MenuItem
 from api.schemas.menu import MenuHit, SearchResult
 
@@ -122,6 +122,47 @@ def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> Search
     )
 
 
+CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
+
+
+def position_parts(
+    session: Session,
+    tenant_id: uuid.UUID,
+    query: str,
+    now: datetime | None = None,
+    high: float | None = None,
+    low: float | None = None,
+) -> list[str]:
+    """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
+    mit der Karte.
+
+    "die 23 und Pho Bo": "Pho Bo" eroeffnet ohne Menge keine Position, der Satz
+    allein bliebe ganz, und die Namenssuche ueber den ganzen Satz faende nur Pho
+    Bo - die 23 fiele still weg (Codex PR #127, P1). Trifft jedes Stueck an den
+    Trennern fuer sich eindeutig ein **anderes** Gericht, sind es mehrere
+    Positionen. Trifft eines nichts oder dasselbe, war das "und" Teil eines
+    Namens ("Ente süß und sauer"), und der Satz bleibt ganz. Die Stuecke haben
+    keine Trenner mehr, die Suche je Stueck laeuft deshalb nicht noch einmal
+    hier hinein.
+    """
+    parts = split_positions(query)
+    if len(parts) > 1:
+        return parts
+    pieces = raw_pieces(query)
+    if len(pieces) <= 1:
+        return [query]
+    items = []
+    for piece in pieces:
+        try:
+            found = search_menu(session, tenant_id, piece, now=now, high=high, low=low)
+        except (Ambiguous, NotFound):
+            return [query]
+        if found.match_type not in CLEAR_MATCHES or not found.results:
+            return [query]
+        items.append(found.results[0].menu_item_id)
+    return pieces if len(set(items)) == len(items) else [query]
+
+
 def search_menu(
     session: Session,
     tenant_id: uuid.UUID,
@@ -166,7 +207,7 @@ def search_menu(
     # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
     # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
-    parts = split_positions(query)
+    parts = position_parts(session, tenant_id, query, now=now, high=high, low=low)
     if len(parts) > 1:
         raise Ambiguous(
             "mehrere Positionen: " + " | ".join(parts), say=SAY_ONE_AT_A_TIME

@@ -233,3 +233,57 @@ def test_draft_order_setzt_readback_pending_und_order_id(session, tenant_id, cal
     assert str(state.order_id) == result.data["order_id"]
     # Ohne order_id im Prompt kann das Modell beim Ja kein entity_id liefern.
     assert state.to_prompt_json()["order_id"] == result.data["order_id"]
+
+
+# --- Zerlegen mit der Karte (Codex PR #127, P1) --------------------------------------
+
+
+def test_zweites_gericht_ohne_menge_faellt_nicht_weg(session, tenant_id, call_id):
+    """ "die 23 und Pho Bo": split_positions laesst den Satz ganz, weil "Pho Bo"
+    ohne Menge keine Position eroeffnet. Die Namenssuche ueber den ganzen Satz
+    faende nur Pho Bo. Mit der Karte ist klar: beide Teile treffen je ein
+    anderes Gericht, also zwei Positionen."""
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 und Pho Bo"}
+    )
+
+    assert result.ok
+    assert result.data["match_type"] == "positions"
+    assert [p["results"][0]["number"] for p in result.data["positions"]] == [
+        "23",
+        "13",
+    ]
+
+
+def test_umgekehrte_reihenfolge(session, tenant_id, call_id):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "Pho Bo und die 23"}
+    )
+
+    assert result.data["match_type"] == "positions"
+    assert [p["results"][0]["number"] for p in result.data["positions"]] == [
+        "13",
+        "23",
+    ]
+
+
+def test_name_mit_und_bleibt_ein_gericht(session, tenant_id, call_id):
+    """Trifft ein Stueck nichts, war das "und" Teil eines Namens: ganz lassen."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Frühlingsrollen und Salat"},
+    )
+
+    assert result.data.get("match_type") != "positions"
+
+
+def test_selbstkorrektur_wird_nicht_mit_der_karte_zerlegt(session, tenant_id, call_id):
+    """ "die 23, äh, 24" meint eine Position: die Sperren von split_positions
+    gelten auch fuer den Gegencheck mit der Karte."""
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23, äh, 24"}
+    )
+    assert result.data.get("match_type") != "positions"
