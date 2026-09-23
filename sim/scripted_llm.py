@@ -2,9 +2,10 @@
 
 `api/agent/llm.py` hält die Schnittstelle (`LLMClient`) und ein Testdouble für die
 Loop-Unit-Tests bereit; das hier ist der skriptfähige Fake für `sim/`, den sein
-Docstring ankündigt. Er versteht genau den Ablauf aus `prompts/system_v1.md`:
-Status abfragen, Reservierungsangaben einsammeln, `check_slot`, `create_reservation`,
-vorlesen, auf ein Ja hin `confirm`.
+Docstring ankündigt. Er versteht die Abläufe aus `prompts/system_v2.md`: Status
+abfragen, dann entweder Reservierungsangaben einsammeln, `check_slot`,
+`create_reservation`, vorlesen, auf ein Ja hin `confirm` - oder eine Abholung
+(`sim/scripted_order.py`).
 
 Er ist ausdrücklich **kein** Sprachmodell: er rät nichts, er erkennt Muster. Wo er
 nichts erkennt, meldet er einen Fehlversuch (`understanding_failure`) und überlässt
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
 
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.numberwords import parse_cardinal
+from sim.scripted_order import PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -35,15 +37,19 @@ QUESTIONS = {
 
 GREETING = (
     "Guten Tag, hier ist der KI-Assistent des Restaurants. "
-    "Ich kann einen Tisch für Sie reservieren."
+    "Ich kann einen Tisch für Sie reservieren oder eine Bestellung zum Abholen aufnehmen."
 )
 SAY_CONFIRMED = "Ist notiert. Vielen Dank für den Anruf und bis dann."
 SAY_ASK_AGAIN = "Was soll ich ändern?"
 SAY_HANDOVER = "Ich gebe an das Team weiter."
 
-# Anliegen, die Version 1 nicht kann (prompts/system_v1.md §Harte Regeln).
-OUT_OF_SCOPE = ("speisekarte", "abhol", "liefer", "allergi", "karte")
-SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb von Version 1."
+# Anliegen, die dieses Skript nicht selbst kann: Lieferung (Version 2 noch nicht),
+# Allergene und das Vorlesen der Karte (dafuer ist ein echtes Modell noetig).
+OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
+# Waehrend einer Bestellung faellt "Karte" natuerlich ("die 23 von der Karte").
+OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergi")
+PICKUP = ("abhol", "bestell", "mitnehmen")
+SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb dessen, was die KI selbst kann."
 
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
 NO = ("nein", "nicht", "falsch", "doch nicht", "anders")
@@ -93,6 +99,10 @@ class ScriptedLLM:
         # Das zuletzt gehoerte Anliegen ausserhalb von Version 1, bis der Rueckruf
         # steht (Codex-Review PR #104, P1).
         self._out_of_scope_request: str | None = None
+        # Abholung, sobald der Gast sie nennt; die letzte Suchanfrage, weil das
+        # Tool-Ergebnis sie nicht mitliefert.
+        self._pickup: PickupScript | None = None
+        self._last_query = ""
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -108,15 +118,22 @@ class ScriptedLLM:
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
-        if state.get("stage") == "readback_pending":
+        if self._pickup is not None and self._pickup.readback_for:
+            yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
+            return self._pickup.on_readback(yes)
+        if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
 
-        if _mentions_stem(text, OUT_OF_SCOPE) or self._out_of_scope_request:
+        stems = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
+        if _mentions_stem(text, stems) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
             # Und gemerkt, bis der Rückruf steht: der nächste Zug enthält oft nur noch
             # die Rufnummer und träfe kein Stichwort mehr (Codex-Review PR #104, P1).
             self._out_of_scope_request = self._out_of_scope_request or text
             return self._out_of_scope(slots, patch)
+
+        if self._pickup is None and _mentions_stem(text, PICKUP):
+            self._pickup = PickupScript()
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -126,7 +143,16 @@ class ScriptedLLM:
                 tool_call=ToolCall("get_service_status"), state_patch=patch or None
             )
 
+        if self._pickup is not None:
+            turn = self._pickup.on_customer(text, slots, patch)
+            self._remember_query(turn)
+            return turn
+
         return self._next_step(slots, patch=patch, understood=bool(patch))
+
+    def _remember_query(self, turn: LLMTurn) -> None:
+        if turn.tool_call and turn.tool_call.name == "search_menu":
+            self._last_query = turn.tool_call.args["query"]
 
     def _after_readback(
         self,
@@ -188,7 +214,16 @@ class ScriptedLLM:
         if name == "get_service_status":
             if self._out_of_scope_request:
                 return self._out_of_scope(slots, {})
+            if self._pickup is not None:
+                return self._pickup.start(_join(self._greeting_once(), say))
             return self._next_step(slots, prefix=self._greeting_once(), extra=say)
+        if self._pickup is not None:
+            if name == "search_menu":
+                return self._pickup.on_search(self._last_query, data, slots)
+            if name == "draft_order":
+                return self._pickup.on_draft(data)
+            if name == "confirm" and "pickup_code" in data:
+                return self._pickup.on_confirmed(data)
         if name == "check_slot":
             if data.get("available"):
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
@@ -423,3 +458,8 @@ def _day(text: str, local_now: datetime) -> date | None:
             ahead = (index - local_now.weekday()) % 7 or 7
             return (local_now + timedelta(days=ahead)).date()
     return None
+
+
+def _join(*parts: str | None) -> str | None:
+    joined = " ".join(p for p in parts if p)
+    return joined or None
