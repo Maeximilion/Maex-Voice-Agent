@@ -64,7 +64,18 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
         session.commit()
         return _answer(order)
 
-    config = session.get(ServiceConfig, req.tenant_id)
+    # Gemeinsame Sperre auf die Konfiguration: ein laufender Not-Aus (pause_ai
+    # sperrt die Zeile FOR UPDATE) wird abgewartet, danach gilt sein Modus.
+    # Ein einfacher Lesezugriff saehe noch primary und schickte an die Kueche,
+    # obwohl die KI im selben Moment angehalten wird (Codex PR #125, P1).
+    # FOR SHARE statt FOR UPDATE: gleichzeitige Bestaetigungen warten nicht
+    # aufeinander, nur auf Aenderungen am Modus.
+    config = session.execute(
+        select(ServiceConfig)
+        .where(ServiceConfig.tenant_id == req.tenant_id)
+        .with_for_update(read=True),
+        execution_options={"populate_existing": True},
+    ).scalar_one_or_none()
     tenant = session.get(Tenant, req.tenant_id)
     if config is None or tenant is None:
         raise NotFound("Mandant ohne service_config", say=SAY_STOERUNG)

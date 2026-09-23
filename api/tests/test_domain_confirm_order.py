@@ -312,3 +312,49 @@ def test_parallel_auf_verschiedene_bestellungen_verschiedene_codes(migrated_db_u
     engine.dispose()
 
     assert sorted(results) == sorted(f"A{n}" for n in range(1, 7)), results
+
+
+def test_confirm_wartet_auf_laufenden_not_aus(migrated_db_url):
+    """Codex PR #125, P1: ein Not-Aus, der gerade laeuft (Zeile gesperrt, Modus
+    schon paused, noch nicht committed), darf von confirm nicht ueberholt werden.
+    Sonst las confirm den alten Modus primary und schickte an die Kueche."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tid = _tenant(s, "Testbetrieb")
+        _mode(s, tid, "primary")
+        cid = _call(s, tid)
+        order_id = _draft(s, tid, cid)
+
+    results: list[object] = []
+
+    def run() -> None:
+        with Session(engine) as own:
+            try:
+                results.append(_confirm(own, tid, cid, order_id))
+            except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+                results.append(exc)
+
+    with Session(engine) as pauser:
+        config = pauser.scalars(
+            select(ServiceConfig)
+            .where(ServiceConfig.tenant_id == tid)
+            .with_for_update()
+        ).one()
+        config.call_mode = "paused"
+        pauser.flush()
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join(timeout=1.5)
+        blocked = thread.is_alive()
+        pauser.commit()
+    thread.join(timeout=10)
+
+    with Session(engine) as s:
+        events = len(_events(s))
+    engine.dispose()
+
+    assert blocked, "confirm muss auf den laufenden Not-Aus warten"
+    [result] = results
+    assert result.handover == "awaiting_approval", result
+    assert events == 0
