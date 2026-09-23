@@ -651,3 +651,20 @@ def test_hinweis_nach_dem_komma_bleibt_an_der_position(
     ein Hinweis zur Position davor, keine zweite. Wie split_positions haengt
     ein Stueck mit "mit", "ohne", "extra" vorn an dem davor."""
     assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23 und Pho", "Pho und die 23"])
+def test_alias_im_rest_ist_kein_ganzes_gericht(session, tenant_id, gesagt):
+    """Codex PR #127, P1: ohne Nummer bleibt von "die 23 und Pho" nur "pho",
+    und das ist ein Alias. Ein Alias zaehlt nur fuer den ganzen Satz, wenn kein
+    Stueck dabei leer wird - sonst fiele die 23 still weg."""
+    assert len(position_parts(session, tenant_id, gesagt, now=NOW)) == 2
+
+
+def test_eigene_menge_je_teil_sind_zwei_positionen(session, zusammen_tenant):
+    """Nennt der Gast je Teil eine Menge, eroeffnet jeder Teil eine Position:
+    "zweimal Fisch und zweimal Chips" sind zwei, nicht zweimal Fisch und Chips.
+    Wer "Fisch und Chips" meint, hoert es beim Vorlesen und korrigiert."""
+    assert position_parts(
+        session, zusammen_tenant, "zweimal Fisch und zweimal Chips", now=NOW
+    ) == ["zweimal Fisch", "zweimal Chips"]

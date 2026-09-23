@@ -182,7 +182,10 @@ def _whole_dish(
     Chips, bitte" ist der Name mit Menge und Fuellwort (Codex PR #127, P1). Die
     Form wirft auch Nummern weg, aus "Pho Bo und die 23" bliebe "pho bo". Darum
     muss jedes Stueck dabei Inhalt behalten: "die 23" allein ist ein eigenes
-    Gericht, kein Teil des Namens."""
+    Gericht, kein Teil des Namens. Das gilt auch fuer den Alias: "die 23 und
+    Pho" traefe sonst den Alias "Pho" (Codex PR #127, P1)."""
+    if not all(normalize_query(p) for p in pieces):
+        return False
     try:
         found = search(query)
     except (Ambiguous, NotFound):
@@ -191,8 +194,6 @@ def _whole_dish(
         return False
     if found.match_type == "alias":
         return True
-    if not all(normalize_query(p) for p in pieces):
-        return False
     said = normalize_query(query)
     return any(normalize_query(hit.name) == said for hit in found.results)
 
