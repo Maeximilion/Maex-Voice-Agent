@@ -66,13 +66,19 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     was als Nächstes versucht wird (Verständnis-Leiter, T-2.2)."""
     if not result.ok:
         return
+    # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
+    # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst
+    # stuenden zwei bestaetigbare Vorgaenge im Prompt, und das naechste Ja
+    # koennte den verlassenen bestaetigen (Codex PR #127).
     if name == "create_reservation":
-        state.intent = state.intent or "reservation"
+        state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
+        state.order_id = None
         state.stage = "readback_pending"
     elif name == "draft_order":
-        state.intent = state.intent or "pickup"
+        state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
+        state.reservation_id = None
         state.stage = "readback_pending"
     elif name == "confirm":
         state.stage = "confirmed"

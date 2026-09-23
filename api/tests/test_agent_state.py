@@ -93,3 +93,37 @@ def test_transfer_mit_erreichbarkeit_setzt_transferred():
     )
     assert state.transferred is True
     assert state.stage == "transferred"
+
+
+def _ok(data: dict) -> ToolResult:
+    return ToolResult(ok=True, data=data)
+
+
+def test_wechsel_von_reservierung_zu_bestellung_macht_die_bestellung_aktiv():
+    """Codex PR #127: nach einem Reservierungsentwurf und dann einer Bestellung
+    standen beide IDs im Prompt, das naechste Ja konnte die verlassene
+    Reservierung bestaetigen. Aktiv ist, was zuletzt vorgelesen wurde."""
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    apply_tool_result(
+        state, "create_reservation", _ok({"reservation_id": str(uuid.uuid4())})
+    )
+    order_id = uuid.uuid4()
+    apply_tool_result(state, "draft_order", _ok({"order_id": str(order_id)}))
+
+    assert state.intent == "pickup"
+    assert state.order_id == order_id and state.reservation_id is None
+    prompt = state.to_prompt_json()
+    assert prompt["order_id"] == str(order_id) and "reservation_id" not in prompt
+
+
+def test_wechsel_von_bestellung_zu_reservierung_macht_die_reservierung_aktiv():
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    apply_tool_result(state, "draft_order", _ok({"order_id": str(uuid.uuid4())}))
+    reservation_id = uuid.uuid4()
+    apply_tool_result(
+        state, "create_reservation", _ok({"reservation_id": str(reservation_id)})
+    )
+
+    assert state.intent == "reservation"
+    assert state.reservation_id == reservation_id and state.order_id is None
+    assert "order_id" not in state.to_prompt_json()
