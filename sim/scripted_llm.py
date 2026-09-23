@@ -219,7 +219,7 @@ class ScriptedLLM:
             return self._next_step(slots, prefix=self._greeting_once(), extra=say)
         if self._pickup is not None:
             if name == "search_menu":
-                return self._pickup.on_search(self._last_query, data, slots)
+                return self._pickup.on_search(self._last_query, data, slots, say)
             if name == "draft_order":
                 return self._pickup.on_draft(data)
             if name == "confirm" and "pickup_code" in data:

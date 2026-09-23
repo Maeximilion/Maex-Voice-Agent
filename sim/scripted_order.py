@@ -53,6 +53,9 @@ class PickupScript:
         # Entwurf kommt, und ein spaeteres Ja bestaetigte sonst die verworfene
         # Bestellung (CLAUDE.md §2 Regel 3).
         self.readback_for: str | None = None
+        # Weitere unklare Teile eines Satzes: eine Rueckfrage nach der anderen,
+        # keiner faellt still weg. Nach der ersten Antwort wird der naechste gesucht.
+        self._later: list[str] = []
 
     # -- Kundenzug ---------------------------------------------------------
 
@@ -103,19 +106,27 @@ class PickupScript:
     # -- Tool-Ergebnis -----------------------------------------------------
 
     def on_search(
-        self, query: str, data: dict[str, Any], slots: dict[str, Any]
+        self,
+        query: str,
+        data: dict[str, Any],
+        slots: dict[str, Any],
+        say: str | None = None,
     ) -> LLMTurn:
+        """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
+        #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
         if data.get("match_type") == "positions":
             unclear: str | None = None
             for part in data["positions"]:
                 if not part["ok"]:
                     unclear = unclear or part.get("say")
                     continue
-                said = self._take(part["query"], part)
-                unclear = unclear or said
-            return self._next(slots, {}, lead=unclear)
-        said = self._take(query, data)
-        return self._next(slots, {}, lead=said)
+                if unclear and part.get("match_type") not in CLEAR_MATCHES:
+                    self._later.append(part["query"])
+                    continue
+                unclear = unclear or self._take(part["query"], part)
+            return self._next(slots, {}, lead=_join(data.get("say"), unclear))
+        taken = self._take(query, data)
+        return self._next(slots, {}, lead=taken if taken is not None else say)
 
     def on_confirmed(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = None
@@ -205,6 +216,8 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
+        if self._later and self.phase != "choose" and not lead:
+            return _search(self._later.pop(0), patch)
         if self.phase == "choose":
             # Hier steht immer die Rueckfrage mit den Vorschlaegen (_take).
             return LLMTurn(say=_join(lead) or SAY_WHAT, state_patch=state_patch)

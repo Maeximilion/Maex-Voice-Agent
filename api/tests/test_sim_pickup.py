@@ -259,3 +259,70 @@ def test_fall_mit_rufnummer_aus_der_erkennung(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert (order.customer_name, order.phone) == ("Schmidt", "+497215551234")
+
+
+# --- Mehreres hintereinander (Maxi, PR #127) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["Die 23, die 24 und die 13.", "Frühlingsrollen, Sommerrollen und Pho Bo."],
+)
+def test_mehreres_hintereinander_wird_wiederholt_und_aufgenommen(
+    session, tenant, gesagt
+):
+    """Nummern oder Namen hintereinander: der Agent wiederholt sofort alles
+    Verstandene und nimmt alles auf, ohne dass der Gast etwas wiederholen muss."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            gesagt,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    text = said(turns)
+    if gesagt.startswith("Die"):
+        assert "Nummer 23, Nummer 24 und Nummer 13" in text
+    else:
+        # Der Name, wie er auf der Karte steht, nicht wie der Gast ihn sagte.
+        assert (
+            "Nummer 23 Frühlingsrollen (4 Stück), Nummer 24 Sommerrollen mit "
+            "Garnelen und Nummer 13 Pho Bo"
+        ) in text
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == ["23", "24", "13"]
+
+
+def test_zwei_rueckfragen_nacheinander_keine_faellt_weg(session, tenant):
+    """Zwei unklare Teile in einem Satz: erst die eine Rueckfrage, dann die
+    andere. Keiner der beiden faellt still weg."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe und eine Ente.",
+            "Die 13.",
+            "Die 48.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    text = said(turns)
+    assert "Nummer 12 Wan-Tan-Suppe oder Nummer 13 Pho Bo" in text
+    assert "Nummer 47 Ente knusprig oder Nummer 48 Ente süß-sauer" in text
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == ["13", "48"]

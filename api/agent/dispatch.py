@@ -25,7 +25,7 @@ from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.menu import get_item_details, search_menu
-from api.domain.menu.search import position_parts
+from api.domain.menu.search import CLEAR_MATCHES, position_parts, say_understood
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
@@ -150,6 +150,9 @@ class PositionResult(BaseModel):
 class PositionsResult(BaseModel):
     match_type: str = "positions"
     positions: list[PositionResult]
+    # Wiederholt sofort, was eindeutig verstanden wurde (Maxi, PR #127). Offene
+    # Teile behalten ihr eigenes say, der Agent fragt sie nacheinander.
+    say: str | None = None
 
 
 def _search_menu(
@@ -167,8 +170,14 @@ def _search_menu(
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
     parts = position_parts(session, tenant_id, req.query, now=now)
     if len(parts) <= 1:
-        return search_menu(session, tenant_id, req.query, req.max_results, now=now)
+        found = search_menu(session, tenant_id, req.query, req.max_results, now=now)
+        hit = found.results[0] if found.results else None
+        if found.say is None and found.match_type in CLEAR_MATCHES and hit:
+            echo = say_understood([(found.match_type, hit)], req.query)
+            return found.model_copy(update={"say": echo})
+        return found
     positions = []
+    understood = []
     for part in parts:
         try:
             found = search_menu(session, tenant_id, part, req.max_results, now=now)
@@ -177,6 +186,9 @@ def _search_menu(
                 PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)
             )
             continue
+        hit = found.results[0] if found.results else None
+        if found.match_type in CLEAR_MATCHES and hit and not hit.sold_out:
+            understood.append((found.match_type, hit))
         positions.append(
             PositionResult(
                 query=part,
@@ -186,7 +198,9 @@ def _search_menu(
                 say=found.say,
             )
         )
-    return PositionsResult(positions=positions)
+    return PositionsResult(
+        positions=positions, say=say_understood(understood, req.query)
+    )
 
 
 def _item_details(
