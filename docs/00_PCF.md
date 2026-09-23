@@ -501,8 +501,9 @@ Decisions: Pflichtgruppe ohne Wahl wird erfragt, nie mit der Voreinstellung gefu
 Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Block 3 (Stufe 2,
        Sammel-Issue #9): T-4.1 bis T-4.5 fertig, confirm fuer Bestellungen dazu; offen T-4.6
        bis T-4.9.
-Open: Menue-Tools fuer den Agenten - search_menu, get_item_details, draft_order und confirm
-       (order) in agent/dispatch.py, prompts/tools_v1.md und sim/scripted_llm.py, mit
+Open: Menue-Tools fuer den Agenten - search_menu, get_item_details und draft_order in
+       agent/dispatch.py (confirm fuer Bestellungen laeuft dort schon ueber den generischen
+       Adapter; es fehlen order_id im Zustand, der Prompt und sim/scripted_llm.py), mit
        Nachfrage je Teil, wenn search_menu "mehrere Positionen" meldet. Danach T-4.7 (Freigabe
        im Tablet), dann T-4.6 (Bon ueber n8n). Offener Punkt aus docs/01: "die 23 und Pho Bo"
        (zweites Gericht ohne Menge) laesst sich ohne Karte nicht sicher trennen.

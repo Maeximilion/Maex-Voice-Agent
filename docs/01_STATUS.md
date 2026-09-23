@@ -79,7 +79,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **Menu tools for the agent** - `search_menu`, `get_item_details`, `draft_order` and `confirm` for orders exist as HTTP tools, but `agent/dispatch.py` and `prompts/tools_v1.md` only know Stage 1. Wire them in, with `split_positions` so the agent re-asks per part when `search_menu` answers "mehrere Positionen". After that T-4.7 (approval on the tablet), since outside `primary` confirmed orders wait there
+1. **Menu tools for the agent** - `search_menu`, `get_item_details` and `draft_order` exist as HTTP tools, but `agent/dispatch.py` does not register them. `confirm` for orders already runs through the generic adapter there; what is missing for it is `order_id` in the conversation state, the prompt (`prompts/tools_v1.md` only knows Stage 1) and `sim/scripted_llm.py`. Wire them in, with `split_positions` so the agent re-asks per part when `search_menu` answers "mehrere Positionen". After that T-4.7 (approval on the tablet), since outside `primary` confirmed orders wait there
 2. **T-4.7** approval column on the tablet (Passt / Korrigieren): outside `primary`, confirmed orders wait there and nobody can release them yet. Then **T-4.6**, the kitchen ticket over n8n for `order.confirmed`
 3. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
