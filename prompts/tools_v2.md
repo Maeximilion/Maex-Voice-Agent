@@ -18,7 +18,7 @@
 **Liefert:** `available`; bei „nein" bis zu zwei `alternatives`.
 
 ## create_reservation
-**Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet.
+**Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet. Nach jeder Änderung erneut `check_slot`, dann `create_reservation` — nie `draft_order`.
 **Eingabe:** `idempotency_key`, `guest_name`, `phone`, `party_size`, `reserved_for`, optional `note`.
 **Liefert:** `reservation_id`, Status `draft`, `readback` — der Satz, der vorgelesen wird.
 **Schreibend:** braucht `idempotency_key`.

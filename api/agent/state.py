@@ -81,7 +81,12 @@ def apply_state_patch(state: ConversationState, patch: dict[str, Any]) -> None:
 def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -> None:
     """Schreibt ein erfolgreiches Tool-Ergebnis in den Zustand. Fehlschläge ändern
     den Zustand nicht: das Modell entscheidet auf Basis von `say`/`error_code`,
-    was als Nächstes versucht wird (Verständnis-Leiter, T-2.2)."""
+    was als Nächstes versucht wird (Verständnis-Leiter, T-2.2).
+
+    Ausnahme: der Gast korrigiert nach dem Vorlesen. Dann ist der vorgelesene
+    Entwurf nicht mehr, was er will, auch wenn die Korrektur scheitert."""
+    if state.stage == "readback_pending" and _supersedes(name, result):
+        _drop_readback(state)
     if not result.ok:
         return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
@@ -105,3 +110,25 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     elif name == "transfer_to_team" and result.data.get("available"):
         state.transferred = True
         state.stage = "transferred"
+
+
+# Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
+# check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
+_CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
+
+
+def _supersedes(name: str, result: ToolResult) -> bool:
+    """Loest dieser Aufruf den vorgelesenen Entwurf ab, ohne selbst einen neuen
+    zu liefern? Ein neuer Entwurf ersetzt die ID ohnehin; ein gescheiterter
+    draft_order oder create_reservation und jede neue Slotpruefung liefern
+    keinen, und der alte bliebe bestaetigbar. Das naechste Ja bestaetigte dann
+    den Entwurf, den der Gast gerade korrigiert hat (Codex PR #127, P1)."""
+    if name == "check_slot":
+        return True
+    return name in _CORRECTING and not result.ok
+
+
+def _drop_readback(state: ConversationState) -> None:
+    state.order_id = None
+    state.reservation_id = None
+    state.stage = "collecting"
