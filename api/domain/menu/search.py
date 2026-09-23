@@ -158,9 +158,12 @@ def position_parts(
     search = partial(
         search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
     )
-    if _whole_dish(search, query, pieces):
+    if _whole_dish(session, tenant_id, search, query, pieces):
         return [query]
-    items = []
+    # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
+    # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
+    # anderen Worten - das kann eine Praezisierung sein, der Satz bleibt ganz.
+    said: dict[uuid.UUID, set[str]] = {}
     for piece in pieces:
         try:
             found = search(piece)
@@ -168,12 +171,18 @@ def position_parts(
             return [query]
         if found.match_type not in CLEAR_MATCHES or not found.results:
             return [query]
-        items.append(found.results[0].menu_item_id)
-    return pieces if len(set(items)) == len(items) else [query]
+        said.setdefault(found.results[0].menu_item_id, set()).add(
+            normalize_query(piece)
+        )
+    return pieces if all(len(words) == 1 for words in said.values()) else [query]
 
 
 def _whole_dish(
-    search: Callable[[str], SearchResult], query: str, pieces: list[str]
+    session: Session,
+    tenant_id: uuid.UUID,
+    search: Callable[[str], SearchResult],
+    query: str,
+    pieces: list[str],
 ) -> bool:
     """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
     Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo.
@@ -183,19 +192,47 @@ def _whole_dish(
     Form wirft auch Nummern weg, aus "Pho Bo und die 23" bliebe "pho bo". Darum
     muss jedes Stueck dabei Inhalt behalten: "die 23" allein ist ein eigenes
     Gericht, kein Teil des Namens. Das gilt auch fuer den Alias: "die 23 und
-    Pho" traefe sonst den Alias "Pho" (Codex PR #127, P1)."""
+    Pho" traefe sonst den Alias "Pho" (Codex PR #127, P1).
+
+    Ein Alias zaehlt auch, wenn er an mehreren Gerichten haengt: dann fragt die
+    Suche ueber den ganzen Satz, welches gemeint ist, statt die Stuecke als
+    Positionen zu nehmen (Codex PR #127, P2)."""
     if not all(normalize_query(p) for p in pieces):
         return False
+    if _alias_items(session, tenant_id, query):
+        return True
     try:
         found = search(query)
     except (Ambiguous, NotFound):
         return False
     if not found.results:
         return False
-    if found.match_type == "alias":
-        return True
     said = normalize_query(query)
     return any(normalize_query(hit.name) == said for hit in found.results)
+
+
+def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[MenuItem]:
+    """Aktive Gerichte, deren Alias genau das Gesagte ist (Schritt 2 der Suche)."""
+    text = normalize_query(query)
+    said = {normalize_alias(query), text}
+    matched_ids = {
+        item_id
+        for item_id, alias in session.execute(
+            select(ItemAlias.menu_item_id, ItemAlias.alias)
+            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+            .where(*_active(tenant_id))
+        )
+        if alias in said or normalize_query(alias) == text
+    }
+    if not matched_ids:
+        return []
+    return list(
+        session.scalars(
+            select(MenuItem)
+            .where(MenuItem.id.in_(matched_ids))
+            .order_by(MenuItem.number)
+        )
+    )
 
 
 def search_menu(
@@ -261,25 +298,7 @@ def search_menu(
     # Seiten werden deshalb ohne Füllwörter verglichen. In Python statt SQL:
     # normalize_query gibt es nur hier, und eine Karte hat ein paar hundert
     # Aliase - das ist ein Index-Scan und eine Schleife, keine Last.
-    said = {normalize_alias(query), text}
-    matched_ids = {
-        item_id
-        for item_id, alias in session.execute(
-            select(ItemAlias.menu_item_id, ItemAlias.alias)
-            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
-            .where(*_active(tenant_id))
-        )
-        if alias in said or normalize_query(alias) == text
-    }
-    by_alias = (
-        session.scalars(
-            select(MenuItem)
-            .where(MenuItem.id.in_(matched_ids))
-            .order_by(MenuItem.number)
-        ).all()
-        if matched_ids
-        else []
-    )
+    by_alias = _alias_items(session, tenant_id, query)
     if len(by_alias) == 1:
         return _single(session, "alias", by_alias[0], now)
     if by_alias:

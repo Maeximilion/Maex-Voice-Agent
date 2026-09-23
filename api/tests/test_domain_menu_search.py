@@ -668,3 +668,56 @@ def test_eigene_menge_je_teil_sind_zwei_positionen(session, zusammen_tenant):
     assert position_parts(
         session, zusammen_tenant, "zweimal Fisch und zweimal Chips", now=NOW
     ) == ["zweimal Fisch", "zweimal Chips"]
+
+
+def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
+    session, zusammen_tenant
+):
+    """Codex PR #127, P1: "Pho Bo und Pho Bo" sind zwei Portionen. Als ganzer
+    Satz faende die Suche ein Pho Bo, die zweite Portion fiele still weg."""
+    assert position_parts(session, zusammen_tenant, "Pho Bo und Pho Bo", now=NOW) == [
+        "Pho Bo",
+        "Pho Bo",
+    ]
+
+
+def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
+    """ "Pho und Pho Bo" trifft zweimal die 13, aber mit anderen Worten: das kann
+    ein Gericht sein, das der Gast praezisiert. Ganz lassen, nicht verdoppeln."""
+    assert position_parts(session, tenant_id, "Pho und Pho Bo", now=NOW) == [
+        "Pho und Pho Bo"
+    ]
+
+
+KARTE_DOPPELALIAS = {
+    **KARTE_ZUSAMMEN,
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "60;Backfisch mit Pommes;Hauptgerichte;12,50;;ja\n"
+        "61;Fisch;Hauptgerichte;10,00;;ja\n"
+        "62;Chips;Beilagen;3,00;;ja\n"
+        "64;Seelachs mit Kartoffeln;Hauptgerichte;13,50;;ja\n"
+    ),
+    ALIASES_FILE: (
+        "number;alias\n61;Fisch\n62;Chips\n60;Fisch und Chips\n64;Fisch und Chips\n"
+    ),
+}
+
+
+def test_doppelter_alias_fuer_den_ganzen_satz_fragt_nach(session):
+    """Codex PR #127, P2: "Fisch und Chips" haengt an zwei Gerichten. Dass
+    "Fisch" und "Chips" einzeln treffen, macht daraus keine zwei Positionen -
+    die Suche fragt, welches der beiden gemeint ist."""
+    tid = uuid.UUID(
+        seed(session, tenant_name="Doppelalias", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE_DOPPELALIAS)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+
+    assert position_parts(session, tid, "Fisch und Chips", now=NOW) == [
+        "Fisch und Chips"
+    ]
+    result = suche(session, tid, "Fisch und Chips")
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["60", "64"]

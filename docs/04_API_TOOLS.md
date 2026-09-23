@@ -139,7 +139,10 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Karte („Fisch und Chips" als Alias oder als Name, auch mit Menge und
    Füllwort: „einmal Fisch und Chips, bitte"), bleibt er ein Gericht, auch wenn
    die Stücke einzeln treffen. Ein Stück mit „mit", „ohne", „extra" vorn ist ein
-   Hinweis zur Position davor („die 23, mit Reis"), nie eine eigene.
+   Hinweis zur Position davor („die 23, mit Reis"), nie eine eigene. Dasselbe
+   Gericht mit denselben Worten zweimal („Pho Bo und Pho Bo") sind zwei
+   Positionen; mit anderen Worten („Pho und Pho Bo") bleibt der Satz ganz.
+   Hängt der ganze Satz als Alias an mehreren Gerichten, fragt die Suche nach.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
