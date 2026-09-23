@@ -135,7 +135,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    dann bleibt der Satz ganz und `search_menu` fragt laut nach. Jeder
    Teil muss mit einer eigenen Position beginnen (Nummer, Menge oder „ein/eine";
    „Schärfe 2" beginnt keine) und
-   darf nicht mit „ohne", „mit" oder „extra" beginnen; „Ente süß und sauer" und
+   darf nach Menge und Nummer nicht mit „ohne", „mit" oder „extra" weitergehen
+   („2 x ohne Koriander"); „Ente süß und sauer" und
    „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Nach „hundert" gehört
    „und" zur Zahl („hundert und eins").
 2. Alias-Tabelle, exakt → `match_type: "alias"`

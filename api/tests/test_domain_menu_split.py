@@ -52,6 +52,18 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("die 23 und Pho Bo für 2 Personen", ["die 23 und Pho Bo für 2 Personen"]),
         ("die 23 und 2 x Pho Bo", ["die 23", "2 x Pho Bo"]),
         ("die 23 und die Nummer 13", ["die 23", "die Nummer 13"]),
+        # Hinweis nach mehrteiliger Menge bleibt Hinweis (Codex PR #124)
+        ("die 23 und 2 x ohne Koriander", ["die 23 und 2 x ohne Koriander"]),
+        (
+            "die 23 und zwei Portionen ohne Koriander",
+            ["die 23 und zwei Portionen ohne Koriander"],
+        ),
+        ("die 23 und eine mit Reis", ["die 23 und eine mit Reis"]),
+        ("die 23 und zweimal die 13", ["die 23", "zweimal die 13"]),
+        (
+            "die 23 und zwei Portionen Pho Bo ohne Koriander",
+            ["die 23", "zwei Portionen Pho Bo ohne Koriander"],
+        ),
         ("", []),
     ],
 )

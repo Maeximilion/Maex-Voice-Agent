@@ -42,6 +42,8 @@ _CORRECTION_WORDS = frozenset(
 _ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 _DETERMINERS = frozenset({"die", "der", "das", "den"})
 _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
+# Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
+_QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber", "dazu"})
 _EMPTY_WORDS = frozenset(
     {"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm", "bitte", "dann", "noch", "auch"}
@@ -93,21 +95,35 @@ def _split(text: str) -> list[str]:
 def _opens_position(part: str) -> bool:
     """Eröffnet der Teil selbst eine Position? Nur, wenn er damit **beginnt**.
 
-    Erlaubt vorn: Artikel ("eine Pho Bo"), Menge ("zweimal", "2 x", "zwei"),
-    Nummer ("23", "Nummer 23"), davor höchstens "die/der/das/den". Eine Zahl
-    weiter hinten ("Schärfe 2", "für 2 Personen") macht keine neue Position
-    (Codex PR #124).
+    Vorn steht ein Präfix aus Artikel ("eine"), Menge ("zweimal", "2 x", "zwei
+    Portionen"), Nummer ("23", "Nummer 23") und "die/der/das/den". Eine Zahl
+    weiter hinten ("Schärfe 2", "für 2 Personen") eröffnet keine Position.
+    Direkt nach dem ganzen Präfix darf kein Hinweis stehen: "2 x ohne
+    Koriander" gehört zur Position davor (Codex PR #124). Besteht der Teil nur
+    aus dem Präfix, muss eine Nummer darin sein ("die 13"), sonst ist er leer.
     """
     words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
-    if not words or _MODIFIERS.intersection(words[:2]):
+    prefix = 0
+    while prefix < len(words) and _is_prefix_word(words[prefix]):
+        prefix += 1
+    rest = words[prefix:]
+    if prefix == 0 or (words[0] in _DETERMINERS and prefix == 1):
         return False
-    if words[0] in _DETERMINERS and len(words) > 1:
-        words = words[1:]
-    first = words[0]
+    if rest:
+        return rest[0] not in _MODIFIERS
+    return any(_is_number(w) for w in words)
+
+
+def _is_prefix_word(word: str) -> bool:
     return (
-        first in _ARTICLES
-        or first in _NUMBER_MARKERS
-        or first.isdigit()
-        or parse_cardinal(first) is not None
-        or find_quantity(first) is not None
+        word in _DETERMINERS
+        or word in _ARTICLES
+        or word in _NUMBER_MARKERS
+        or word in _QUANTITY_NOUNS
+        or _is_number(word)
+        or find_quantity(word) is not None
     )
+
+
+def _is_number(word: str) -> bool:
+    return word.isdigit() or parse_cardinal(word) is not None
