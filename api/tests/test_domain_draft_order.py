@@ -243,6 +243,26 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     assert "abholbereit in etwa 20 Minuten" in draft.readback
 
 
+def test_audit_haelt_keine_personendaten(session, tenant_id, call_id):
+    """audit_log bleibt länger als die Bestellung: Name, Telefon und Hinweise
+    (etwa "Allergie gegen Nüsse") gehören nicht in den Schnappschuss für den Replay."""
+    items = [
+        {
+            "menu_item_id": item(session, tenant_id, "23"),
+            "quantity": 1,
+            "note": "Allergie gegen Nüsse",
+        }
+    ]
+    req = request(session, tenant_id, call_id, items)
+    first = draft_order(session, req, now=NOW)
+    payload = session.scalar(
+        select(AuditLog.payload).where(AuditLog.entity_id == first.order_id)
+    )
+    text = str(payload)
+    assert "Müller" not in text and "Nüsse" not in text and "555" not in text
+    assert draft_order(session, req, now=NOW) == first
+
+
 def test_schluessel_eines_anderen_mandanten(session, tenant_id, call_id):
     req = request(session, tenant_id, call_id)
     draft_order(session, req, now=NOW)

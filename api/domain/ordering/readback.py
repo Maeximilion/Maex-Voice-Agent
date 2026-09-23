@@ -1,13 +1,28 @@
 """Der Vorlesetext, deterministisch aus dem Entwurf. Der Agent liest ihn wörtlich vor."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from api.domain.ordering.pricing import Line
 from api.domain.reservations.spoken import COUNTS
 from api.models import Order
 
 
-def readback(order: Order, lines: Sequence[Line]) -> str:
+@dataclass(frozen=True)
+class SpokenLine:
+    """Was von einer Position vorgelesen wird.
+
+    Nummer und Name sind der Stand der Karte beim Anlegen, nicht der aktuelle:
+    ein Replay nach einem Import sagt dasselbe Gericht (Codex PR #124).
+    """
+
+    number: str
+    name: str
+    quantity: int
+    options: list[dict]
+    note: str | None
+
+
+def readback(order: Order, lines: Sequence[SpokenLine]) -> str:
     """Bezug für "in etwa N Minuten" ist der Anlagezeitpunkt, nicht die Uhr:
     derselbe Schlüssel liefert denselben Satz."""
     satz = " ".join(_spoken_line(line) for line in lines)
@@ -20,8 +35,10 @@ def readback(order: Order, lines: Sequence[Line]) -> str:
     return satz + f", auf den Namen {order.customer_name}. Passt das so?"
 
 
-def _spoken_line(line: Line) -> str:
-    text = f"{spoken_times(line.quantity).capitalize()} Nummer {line.item.number} {line.item.name}"
+def _spoken_line(line: SpokenLine) -> str:
+    text = (
+        f"{spoken_times(line.quantity).capitalize()} Nummer {line.number} {line.name}"
+    )
     if line.options:
         text += " mit " + " und ".join(o["option"] for o in line.options)
     if line.note:

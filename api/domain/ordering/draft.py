@@ -21,7 +21,7 @@ from api.core.errors import Conflict, InvalidInput, NotFound, ServiceUnavailable
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.ordering.pricing import Line, items_total_cents
-from api.domain.ordering.readback import readback
+from api.domain.ordering.readback import SpokenLine, readback
 from api.domain.ordering.validation import (
     pickup_open_at,
     require_pickup_open,
@@ -56,7 +56,7 @@ def draft_order(
     # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
-        return _replay(session, existing, req.tenant_id, zone)
+        return _replay(session, existing, req.tenant_id)
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
@@ -98,7 +98,7 @@ def draft_order(
         existing = _by_key(session, req.idempotency_key)
         if existing is None:
             raise
-        return _replay(session, existing, req.tenant_id, zone)
+        return _replay(session, existing, req.tenant_id)
 
     for position, line in enumerate(lines):
         session.add(
@@ -111,12 +111,14 @@ def draft_order(
                 options=line.options,
                 note=line.note,
                 # Die Tabelle hat keine Positionsspalte. Der Abstand in
-                # Mikrosekunden hält die gesprochene Reihenfolge fest, damit der
-                # Replay die Positionen in derselben Folge vorliest.
+                # Mikrosekunden hält die gesprochene Reihenfolge fest, in der
+                # Replay, Tablet und Bon die Positionen lesen.
                 created_at=now + timedelta(microseconds=position),
             )
         )
-    draft = _draft(order, lines, _warnings(session, order, zone))
+    warnings = _warnings(session, order, zone)
+    labels = [[line.item.number, line.item.name] for line in lines]
+    draft = _response(order, readback(order, _spoken(lines, labels)), warnings)
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,
@@ -129,11 +131,13 @@ def draft_order(
                 "type": req.type,
                 "positions": len(lines),
                 "total_cents": total,
-                # Was dem Gast gesagt wurde. Der Replay liest es von hier, statt
-                # aus Karte und Öffnungszeiten neu zu rechnen, die sich seitdem
-                # geändert haben können (Codex PR #124).
-                "readback": draft.readback,
-                "warnings": draft.warnings,
+                # Stand von Karte und Öffnungszeiten beim Anlegen. Der Replay
+                # liest ihn von hier, statt neu zu rechnen, denn beides kann
+                # sich seitdem geändert haben (Codex PR #124). Nur Kartendaten:
+                # audit_log bleibt länger als die Bestellung, Name, Telefon und
+                # Hinweise stehen in orders und order_items und gehen mit ihnen.
+                "labels": labels,
+                "warnings": warnings,
             },
         )
     )
@@ -158,9 +162,7 @@ def _by_key(session: Session, key: str) -> Order | None:
     return session.scalar(select(Order).where(Order.idempotency_key == key))
 
 
-def _replay(
-    session: Session, existing: Order, tenant_id: uuid.UUID, zone: ZoneInfo
-) -> OrderDraft:
+def _replay(session: Session, existing: Order, tenant_id: uuid.UUID) -> OrderDraft:
     if existing.tenant_id != tenant_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
     snapshot = session.scalar(
@@ -174,7 +176,23 @@ def _replay(
         # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
         # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
         raise ServiceUnavailable("Entwurf ohne Audit-Zeile")
-    return _response(existing, snapshot["readback"], snapshot["warnings"])
+    rows = session.scalars(
+        select(OrderItem)
+        .where(OrderItem.order_id == existing.id)
+        .order_by(OrderItem.created_at)
+    ).all()
+    spoken = [
+        SpokenLine(number, name, row.quantity, row.options, row.note)
+        for row, (number, name) in zip(rows, snapshot["labels"], strict=True)
+    ]
+    return _response(existing, readback(existing, spoken), snapshot["warnings"])
+
+
+def _spoken(lines: list[Line], labels: list[list[str]]) -> list[SpokenLine]:
+    return [
+        SpokenLine(number, name, line.quantity, line.options, line.note)
+        for line, (number, name) in zip(lines, labels, strict=True)
+    ]
 
 
 def _warnings(session: Session, order: Order, zone: ZoneInfo) -> list[str]:
@@ -183,10 +201,6 @@ def _warnings(session: Session, order: Order, zone: ZoneInfo) -> list[str]:
     ):
         return [WARNING_READY_AFTER_CLOSE]
     return []
-
-
-def _draft(order: Order, lines: list[Line], warnings: list[str]) -> OrderDraft:
-    return _response(order, readback(order, lines), warnings)
 
 
 def _response(order: Order, spoken: str, warnings: list[str]) -> OrderDraft:
