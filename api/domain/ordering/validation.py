@@ -146,6 +146,9 @@ def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict
         for opt in chosen
     ]
     if item.price_cents + sum(o["price_delta_cents"] for o in options) < 0:
-        # Datenfehler in der Karte, kein Fall für den Gast.
-        raise InvalidInput(f"Preis von {item.number} mit Optionen negativ")
+        # Datenfehler in der Karte, kein Fall für den Gast: der kann nichts
+        # korrigieren, also Übergabe ans Team statt Rückfrage (Codex PR #124).
+        raise ServiceUnavailable(
+            f"Preis von {item.number} mit Optionen negativ", say=SAY_MENU_BROKEN
+        )
     return options

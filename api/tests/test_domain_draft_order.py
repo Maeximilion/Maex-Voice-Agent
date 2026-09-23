@@ -357,6 +357,31 @@ def test_optionen_nur_in_schreibweise_verschieden_raten_nicht(
     assert session.scalar(select(func.count()).select_from(Order)) == 0
 
 
+def test_negativer_preis_mit_optionen_geht_ans_team(session, tenant_id, call_id):
+    """Codex PR #124: ein Kartenfehler kam als invalid_input ohne say zurück."""
+    session.add(
+        ItemOption(
+            menu_item_id=item(session, tenant_id, "23"),
+            group_name="Rabatt",
+            option_name="Aktion",
+            price_delta_cents=-1000,
+        )
+    )
+    session.commit()
+    items = [
+        {
+            "menu_item_id": item(session, tenant_id, "23"),
+            "quantity": 1,
+            "options": [{"group": "Rabatt", "name": "Aktion"}],
+        }
+    ]
+    with pytest.raises(ServiceUnavailable) as err:
+        draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
+    assert err.value.say == (
+        "Das kann ich gerade nicht sicher aufnehmen. Ich verbinde Sie mit dem Restaurant."
+    )
+
+
 def test_unbekannte_option(session, tenant_id, call_id):
     items = [ente(session, tenant_id, ("Fleisch", "Tofu"))]
     with pytest.raises(InvalidInput) as err:
