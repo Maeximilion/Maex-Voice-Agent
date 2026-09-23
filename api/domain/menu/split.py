@@ -44,9 +44,25 @@ _DETERMINERS = frozenset({"die", "der", "das", "den"})
 _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
-_MODIFIERS = frozenset({"ohne", "mit", "extra", "aber", "dazu"})
+_MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
 _EMPTY_WORDS = frozenset(
-    {"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm", "bitte", "dann", "noch", "auch"}
+    {
+        "aeh",
+        "aehm",
+        "aehh",
+        "hm",
+        "hmm",
+        "ehm",
+        "oehm",
+        "bitte",
+        "dann",
+        "noch",
+        "auch",
+        # Einleitend vor einer neuen Position: "und dazu eine Cola" (Codex PR #124)
+        "dazu",
+        "ausserdem",
+        "zusaetzlich",
+    }
 )
 
 
@@ -85,7 +101,9 @@ def _split(text: str) -> list[str]:
             and left
             and right
             and (
-                left[-1].endswith("hundert")
+                # "hundert und eins": nur eine Zahl hängt an, keine neue
+                # Position ("die hundert und eine Cola", Codex PR #124).
+                (left[-1].endswith("hundert") and _only_number(piece))
                 or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
             )
         )
@@ -111,7 +129,9 @@ def _opens_position(part: str) -> bool:
     while prefix < len(words) and _is_prefix_word(words[prefix]):
         prefix += 1
     rest = words[prefix:]
-    if prefix == 0 or (words[0] in _DETERMINERS and prefix == 1):
+    # Nur "die" oder "Nummer" davor eröffnet nichts: es braucht Artikel, Menge
+    # oder Zahl ("Nummer weiß ich nicht" ist keine Position).
+    if not any(_opens(w) for w in words[:prefix]):
         return False
     if rest:
         return rest[0] not in _MODIFIERS
@@ -129,9 +149,18 @@ def _is_prefix_word(word: str) -> bool:
     )
 
 
+def _opens(word: str) -> bool:
+    return word in _ARTICLES or _is_number(word) or find_quantity(word) is not None
+
+
 def _is_number(word: str) -> bool:
     return word.isdigit() or parse_cardinal(word) is not None
 
 
 def _content(part: str) -> bool:
     return any(w not in _EMPTY_WORDS for w in _WORD.findall(fold(part)))
+
+
+def _only_number(part: str) -> bool:
+    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    return len(words) == 1 and _is_number(words[0])

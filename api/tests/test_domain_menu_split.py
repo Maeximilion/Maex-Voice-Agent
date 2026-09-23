@@ -29,7 +29,13 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         # Hunderter mit "und" sind eine Nummer, nicht 100 und 1 (Codex PR #124)
         ("Nummer hundert und eins", ["Nummer hundert und eins"]),
         ("die zweihundert und drei", ["die zweihundert und drei"]),
-        ("die hundert und einmal Pho Bo", ["die hundert und einmal Pho Bo"]),
+        # Nach "hundert" nur eine Zahl anhängen, keine neue Position (Codex PR #124)
+        ("die hundert und einmal Pho Bo", ["die hundert", "einmal Pho Bo"]),
+        ("die hundert und eine Cola", ["die hundert", "eine Cola"]),
+        ("Nummer hundert und drei mit Reis", ["Nummer hundert und drei mit Reis"]),
+        # Einleitende Wörter vor einer neuen Position (Codex PR #124)
+        ("die 23 und dazu eine Cola", ["die 23", "dazu eine Cola"]),
+        ("die 23 und außerdem zweimal die 13", ["die 23", "außerdem zweimal die 13"]),
         (
             "zweimal die drei und zwanzig und die 13",
             ["zweimal die drei und zwanzig", "die 13"],

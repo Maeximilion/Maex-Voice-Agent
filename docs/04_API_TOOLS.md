@@ -123,9 +123,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo", „Nummer 23 mit Erdnusssauce") ist es `ambiguous` mit der
    Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
-   die Namenssuche läuft über den ganzen Satz - „die 23 und einmal Pho Bo" kommt
-   als `fuzzy_single` auf Pho Bo zurück, die genannte 23 fällt still weg.
-   Geraten wird dabei nichts, aber eine Position verschwindet ohne Signal.
+   die Namenssuche liefe über den ganzen Satz und fände nur Pho Bo. Deshalb
+   prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
+   Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` bittet
+   um eins nach dem anderen, `message` nennt die Teile („mehrere Positionen:
+   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
@@ -139,7 +141,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    („2 x ohne Koriander"); „Ente süß und sauer" und
    „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Ein solcher Teil hängt
    wieder an dem davor, die übrigen Grenzen bleiben: „die 23 und eine Ente süß
-   und sauer" ergibt zwei Positionen. Nach „hundert" gehört
+   und sauer" ergibt zwei Positionen. Nach „hundert" hängt „und" nur eine Zahl
+   an („hundert und eins"), keine neue Position („die hundert und eine Cola").
+   Einleitende Wörter („dazu", „außerdem") vor einer Position stören nicht. Nach „hundert" gehört
    „und" zur Zahl („hundert und eins").
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
