@@ -6,11 +6,14 @@ Gesprächsdauer, der Verlauf schon.
 """
 
 import uuid
+from contextlib import suppress
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from api.agent.dispatch import ToolResult
+from api.core.errors import InvalidInput
+from api.domain.customers.phone import normalize_phone
 
 Stage = Literal[
     "start",
@@ -49,6 +52,21 @@ class ConversationState(BaseModel):
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
         return data
+
+
+def initial_state(
+    call_id: uuid.UUID, tenant_id: uuid.UUID, caller_id: str | None = None
+) -> ConversationState:
+    """Zustand zu Gespraechsbeginn. Der Gast ruft an, seine Nummer kennt die
+    Rufnummernerkennung schon: sie steht vorab in `slots.phone`, und der Agent
+    fragt nicht danach (Maxi, PR #127). Nennt der Gast eine andere, ueberschreibt
+    sein `state_patch` sie. Unterdrueckt oder keine gueltige Nummer: der Slot
+    bleibt leer, und der Agent fragt wie bisher."""
+    slots: dict[str, Any] = {}
+    if caller_id:
+        with suppress(InvalidInput):
+            slots["phone"] = normalize_phone(caller_id)
+    return ConversationState(call_id=call_id, tenant_id=tenant_id, slots=slots)
 
 
 def apply_state_patch(state: ConversationState, patch: dict[str, Any]) -> None:

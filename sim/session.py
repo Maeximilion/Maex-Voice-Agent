@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from api.agent.llm import LLMClient
 from api.agent.loop import ConversationLoop
 from api.agent.prompt import build_system_prompt
-from api.agent.state import ConversationState
+from api.agent.state import initial_state
 from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.domain.calls import end_call, start_call
@@ -106,7 +106,7 @@ class SimCall:
             now=self._now,
         )
         self.call_id = started.call_id
-        self.state = ConversationState(call_id=self.call_id, tenant_id=tenant.id)
+        self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
         self._loop = ConversationLoop(
             session,
             llm or ScriptedLLM(now=self._now, timezone=tenant.timezone),

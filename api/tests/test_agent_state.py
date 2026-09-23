@@ -2,8 +2,15 @@
 
 import uuid
 
+import pytest
+
 from api.agent.dispatch import ToolResult
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+    initial_state,
+)
 
 CALL_ID = uuid.uuid4()
 TENANT_ID = uuid.uuid4()
@@ -127,3 +134,24 @@ def test_wechsel_von_bestellung_zu_reservierung_macht_die_reservierung_aktiv():
     assert state.intent == "reservation"
     assert state.reservation_id == reservation_id and state.order_id is None
     assert "order_id" not in state.to_prompt_json()
+
+
+# --- Rufnummernerkennung (Maxi, PR #127) --------------------------------------------
+
+
+def test_rufnummer_aus_der_erkennung_ist_vorbelegt():
+    """Der Gast ruft an: seine Nummer ist schon da und wird nicht erfragt."""
+    state = initial_state(CALL_ID, TENANT_ID, caller_id="+497215551234")
+    assert state.slots == {"phone": "+497215551234"}
+    assert state.to_prompt_json()["slots"] == {"phone": "+497215551234"}
+
+
+@pytest.mark.parametrize("caller_id", [None, "", "anonymous", "sip:unbekannt"])
+def test_ohne_gueltige_rufnummer_bleibt_der_slot_leer(caller_id):
+    """Unterdrueckt oder keine Nummer: dann fragt der Agent wie bisher."""
+    assert initial_state(CALL_ID, TENANT_ID, caller_id=caller_id).slots == {}
+
+
+def test_nationale_schreibweise_wird_normalisiert():
+    state = initial_state(CALL_ID, TENANT_ID, caller_id="0721 5551234")
+    assert state.slots["phone"] == "+497215551234"

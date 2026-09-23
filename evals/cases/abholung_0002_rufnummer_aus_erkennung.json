@@ -1,0 +1,19 @@
+{
+  "id": "abholung_0002",
+  "name": "Abholung mit Rufnummer aus der Rufnummernerkennung",
+  "tags": ["abholung", "rufnummer"],
+  "source": "roleplay",
+  "caller_id": "+497215551234",
+  "transcript": [
+    { "role": "customer", "text": "Hallo, ich moechte etwas zum Abholen bestellen." },
+    { "role": "customer", "text": "Einmal die 13." },
+    { "role": "customer", "text": "Nein, das wars." },
+    { "role": "customer", "text": "Auf den Namen Schmidt." },
+    { "role": "customer", "text": "Ja, genau." }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false
+  }
+}

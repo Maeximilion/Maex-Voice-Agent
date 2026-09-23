@@ -189,3 +189,73 @@ def test_lieferung_bleibt_ein_rueckruf(session, tenant):
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
     assert orders(session) == []
+
+
+# --- Rufnummernerkennung (Maxi, PR #127) --------------------------------------------
+
+
+def test_rufnummer_kommt_aus_der_erkennung(session, tenant):
+    """Der Gast ruft an, seine Nummer ist bekannt: der Agent fragt nicht danach."""
+    fall = {
+        **case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 23.",
+            "Das wars.",
+            "Auf den Namen Mueller.",
+            "Ja.",
+        ),
+        "caller_id": "+497215551234",
+    }
+    _, turns = replay(session, fall, tenant, now=NOW)
+
+    assert "Telefonnummer" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert order.phone == "+497215551234"
+
+
+def test_andere_nummer_vom_gast_gilt(session, tenant):
+    """Nennt der Gast von sich aus eine andere Nummer, gilt diese."""
+    fall = {
+        **case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 23.",
+            "Das wars.",
+            "Auf den Namen Mueller, erreichbar unter 0721 9998877.",
+            "Ja.",
+        ),
+        "caller_id": "+497215551234",
+    }
+    replay(session, fall, tenant, now=NOW)
+
+    [order] = orders(session)
+    assert order.phone == "+497219998877"
+
+
+def test_unterdrueckte_nummer_wird_erfragt(session, tenant):
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 23.",
+            "Das wars.",
+            "Auf den Namen Mueller.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Telefonnummer" in said(turns)
+
+
+def test_fall_mit_rufnummer_aus_der_erkennung(session, tenant):
+    fall = json.loads(
+        (CASE.parent / "abholung_0002_rufnummer_aus_erkennung.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    _, turns = replay(session, fall, tenant, now=NOW)
+
+    assert "Telefonnummer" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert (order.customer_name, order.phone) == ("Schmidt", "+497215551234")
