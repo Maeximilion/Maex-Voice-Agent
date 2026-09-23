@@ -57,14 +57,17 @@ def split_positions(text: str) -> list[str]:
     if not words or _CORRECTION_WORDS.intersection(words):
         return [stripped] if stripped else []
 
-    parts = [p.strip(" .!?;:") for p in _split(stripped)]
-    if len(parts) > 1 and not all(_opens_position(p) for p in parts):
+    if any(not _content(p) for p in _SEPARATOR.split(stripped)):
         return [stripped]
-    return parts
+    return [p.strip(" .!?;:") for p in _split(stripped)]
 
 
 def _split(text: str) -> list[str]:
-    """Am Trenner zerlegen, Zahlen mit "und" dabei zusammenlassen.
+    """Am Trenner zerlegen. Ein Teil, der keine eigene Position eröffnet, hängt
+    wieder an dem davor: "eine Ente süß und sauer" bleibt ein Name, die Grenze
+    vor "die 23" bleibt trotzdem stehen (Codex PR #124).
+
+    Zahlen mit "und" bleiben ebenso zusammen.
 
     "drei und zwanzig" ist 23. Nach "hundert" ist ein "und" immer Teil der Zahl
     ("hundert und eins", "zweihundert und drei"): parse_cardinal kennt diese
@@ -77,7 +80,7 @@ def _split(text: str) -> list[str]:
     for sep, piece in zip(separators, pieces[1:], strict=True):
         left = _WORD.findall(fold(parts[-1]))
         right = _WORD.findall(fold(piece))
-        if (
+        number_joined = (
             sep.strip().casefold() == "und"
             and left
             and right
@@ -85,7 +88,8 @@ def _split(text: str) -> list[str]:
                 left[-1].endswith("hundert")
                 or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
             )
-        ):
+        )
+        if number_joined or not _opens_position(piece):
             parts[-1] += sep + piece
         else:
             parts.append(piece)
@@ -127,3 +131,7 @@ def _is_prefix_word(word: str) -> bool:
 
 def _is_number(word: str) -> bool:
     return word.isdigit() or parse_cardinal(word) is not None
+
+
+def _content(part: str) -> bool:
+    return any(w not in _EMPTY_WORDS for w in _WORD.findall(fold(part)))

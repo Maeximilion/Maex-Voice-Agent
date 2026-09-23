@@ -137,7 +137,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    „Schärfe 2" beginnt keine) und
    darf nach Menge und Nummer nicht mit „ohne", „mit" oder „extra" weitergehen
    („2 x ohne Koriander"); „Ente süß und sauer" und
-   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Nach „hundert" gehört
+   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Ein solcher Teil hängt
+   wieder an dem davor, die übrigen Grenzen bleiben: „die 23 und eine Ente süß
+   und sauer" ergibt zwei Positionen. Nach „hundert" gehört
    „und" zur Zahl („hundert und eins").
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle

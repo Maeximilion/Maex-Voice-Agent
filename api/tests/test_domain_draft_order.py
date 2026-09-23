@@ -411,6 +411,25 @@ def test_gruppe_in_zwei_schreibweisen_raet_nicht(session, tenant_id, call_id):
     assert err.value.say is not None
 
 
+def test_pflicht_uneinheitlich_in_altdaten_raet_nicht(session, tenant_id, call_id):
+    """Codex PR #124: gleiche Schreibweise, aber required uneinheitlich - die
+    zufällig erste Zeile entschied, ob die Gruppe Pflicht ist."""
+    session.add(
+        ItemOption(
+            menu_item_id=item(session, tenant_id, "47"),
+            group_name="Sauce",
+            option_name="Scharf",
+            price_delta_cents=0,
+            required=True,
+        )
+    )
+    session.commit()
+    items = [ente(session, tenant_id, ("Fleisch", "Ente"))]
+    with pytest.raises(ServiceUnavailable) as err:
+        draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
+    assert err.value.say is not None
+
+
 def test_negativer_preis_mit_optionen_geht_ans_team(session, tenant_id, call_id):
     """Codex PR #124: ein Kartenfehler kam als invalid_input ohne say zurück."""
     session.add(

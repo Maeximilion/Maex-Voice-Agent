@@ -64,6 +64,15 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "die 23 und zwei Portionen Pho Bo ohne Koriander",
             ["die 23", "zwei Portionen Pho Bo ohne Koriander"],
         ),
+        # Ein Name mit "und" hält die äußeren Grenzen nicht auf (Codex PR #124)
+        (
+            "die 23 und eine Ente süß und sauer",
+            ["die 23", "eine Ente süß und sauer"],
+        ),
+        (
+            "eine Ente süß und sauer und zweimal die 13",
+            ["eine Ente süß und sauer", "zweimal die 13"],
+        ),
         ("", []),
     ],
 )
