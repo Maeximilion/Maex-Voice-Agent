@@ -1,7 +1,7 @@
 # 05 – Dialog, Prompts und Eskalation
 
 > Die Gesprächsführung gehört ins Modell. Jede Prüfung gehört in den Code.
-> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf.
+> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf. Aktuell ist `v2` (Reservierung und Abholung, `agent/prompt.py` `PROMPT_VERSION`); `v1` bleibt ladbar.
 
 ---
 

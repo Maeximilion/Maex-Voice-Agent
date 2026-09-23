@@ -31,6 +31,7 @@ class ConversationState(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     open_questions: list[str] = Field(default_factory=list)
     reservation_id: uuid.UUID | None = None
+    order_id: uuid.UUID | None = None
     transferred: bool = False
 
     def to_prompt_json(self) -> dict[str, Any]:
@@ -44,6 +45,9 @@ class ConversationState(BaseModel):
             # Ohne das kann ein zustandsloses LLMClient auf dem "Ja" nach dem
             # readback kein entity_id für `confirm` liefern (Codex-Review PR #101, P1).
             data["reservation_id"] = str(self.reservation_id)
+        if self.order_id:
+            # Dasselbe fuer Bestellungen: confirm braucht entity_id.
+            data["order_id"] = str(self.order_id)
         return data
 
 
@@ -65,6 +69,10 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     if name == "create_reservation":
         state.intent = state.intent or "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
+        state.stage = "readback_pending"
+    elif name == "draft_order":
+        state.intent = state.intent or "pickup"
+        state.order_id = uuid.UUID(result.data["order_id"])
         state.stage = "readback_pending"
     elif name == "confirm":
         state.stage = "confirmed"

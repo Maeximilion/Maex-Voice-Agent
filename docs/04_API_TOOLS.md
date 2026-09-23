@@ -127,7 +127,10 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
    Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` bittet
    um eins nach dem anderen, `message` nennt die Teile („mehrere Positionen:
-   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg.
+   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg. Der eigene
+   Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
+   und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
+   (`query`, `ok`, Treffer oder `error_code` und `say`).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

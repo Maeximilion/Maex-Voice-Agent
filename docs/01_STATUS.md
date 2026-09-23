@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.25.0
+> Status: 23.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.26.0
 
 ---
 
@@ -79,7 +79,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **Menu tools for the agent** - `search_menu`, `get_item_details`, `draft_order` and `confirm` for orders exist as HTTP tools, but `agent/dispatch.py` and `prompts/tools_v1.md` only know Stage 1. Wire them in, with `split_positions` so the agent re-asks per part when `search_menu` answers "mehrere Positionen". After that T-4.7 (approval on the tablet), since outside `primary` confirmed orders wait there
+1. **Pickup flow in the text phone** - `sim/scripted_llm.py` still treats pickup as out of scope and lays a callback; teach it the order flow from `prompts/system_v2.md` (dish per `search_menu`, required options, name and phone, `draft_order`, read back, `confirm`) and add a replay case in `evals/cases/`, so one pickup order runs end to end without a phone. The agent core itself knows the menu tools since 23.09.2026
 2. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 3. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 4. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
@@ -172,6 +172,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 - **`draft_order` (T-4.5, 23.09.2026):** (a) `idempotency_key` is part of the request, as for every write tool (docs/04 §1), though the draft_order example lacked it. (b) A required option group without a choice is asked for, even when the menu marks a default - filling it in would be a guess (CLAUDE.md §2 rule 2). Required group = exactly one choice; optional groups allow several distinct options. (c) `ready_at` = now + `pickup_wait_minutes`, no load model yet (docs/11 `ready_time.py` stays unbuilt until there is a signal for load). (d) Limits 30 per position and 30 positions guard against mishearing, bigger orders go to the team. (e) Item order in the readback is kept via microsecond offsets in `order_items.created_at`, as the table has no position column - a column would cost a migration for no other gain today
 - **`confirm` for orders (23.09.2026):** (a) Only `primary` sends an order straight to the kitchen; `overflow`, `shadow` and `paused` all wait for approval - docs/02 says so for `overflow`, and `shadow`/`paused` take no real calls, so an order there is a test and must not reach the kitchen by itself. (b) Pickup code format "A" + running number per business day, as in the mockup; the letter keeps it apart from a card number at the counter. (c) The response keeps `status: confirmed` also for `approved`/`handed_over` rows: for the caller it is confirmed either way
+- **Agent splits, HTTP asks back (23.09.2026):** the same multi-dish sentence gets two answers. Over HTTP `search_menu` answers `ambiguous` with "eins nach dem anderen", because a foreign voice platform may not know `split_positions`. The own agent core splits and searches per part, because it can: the caller does not have to repeat themselves. Both paths use the same `split_positions`, so they cut at the same places
 ---
 
 ## Open Points from Reviews
@@ -200,6 +201,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 23.09.2026 | **Menu tools for the agent:** `agent/dispatch.py` runs `search_menu`, `get_item_details` and `draft_order` (plus `confirm` for orders) without HTTP. A sentence with several dishes is split with `split_positions` and searched per part; the answer carries one entry per part (`match_type: positions`), a part without a hit stays visible with `error_code` and `say`. `draft_order` gets its idempotency key from the call's data, so a model retry makes no second draft and a correction makes a new one. `ConversationState` tracks `order_id`, `draft_order` sets `readback_pending`. Prompt `v2` (`system_v2.md` ~630 tokens, `tools_v2.md`) is the default; its tests take the tool list from `dispatch.TOOLS`. 21 new tests, suite 1490 green |
 | 22.09.2026 | **T-4.4 merged (PR #118):** `get_item_details` with the allergen rule. Review of this session found two issues, both fixed before the merge: the callback sentence fired on every detail lookup of a dish without maintained allergens, so a question about options was answered with a callback promise - it now hangs on the mandatory `allergen_question` flag in the request; and `confirmed_at` was the UTC date instead of the tenant's local date. The two Codex P1 findings were refuted, not fixed: they targeted the `search_menu` draft that `51192fc` removed, and main covers both through existing regression tests. 1359 tests green, p95 8,7 ms. main = 4933cee |
 | 11.09.2026 | PCF v1.0 created and released, hybrid architecture decided (E1) |
 | 15.09.2026 | Repo skeleton and specs exported for Claude Code |
@@ -251,6 +253,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.26.0 · 23.09.2026:** Menue-Tools fuer den Agenten, Prompt v2
 - **v1.25.0 · 23.09.2026:** confirm fuer Bestellungen: Abholcode je Betriebstag, Uebergabe nur im Modus primary
 - **v1.24.0 · 23.09.2026:** T-4.5 draft_order fuer Abholung, Satz-Zerlegung je Position vor search_menu
 - **v1.23.2 · 22.09.2026:** Mount-Drift abgesichert: test_compose_mounts.py prueft die api-Mounts gegen das, was die Suite liest

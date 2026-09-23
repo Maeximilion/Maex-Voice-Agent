@@ -1,13 +1,13 @@
 """System-Prompt aus `prompts/system_vN.md` plus Menü-Index bauen (docs/05 §1, §5).
 
-Der Menü-Index kommt erst mit `domain/menu` (Stufe 2, T-4.x); bis dahin bleibt der
-Parameter ungenutzt, aber Teil der Signatur, damit `agent/loop.py` sich später nicht
-ändern muss.
+Version 2 kennt die Menü-Tools und die Abholung. Der Menü-Index (Nummer und Name,
+nie die ganze Karte, CLAUDE.md §2 Regel 6) wird angehängt, sobald ein Aufrufer ihn
+mitgibt.
 """
 
 from pathlib import Path
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 
 

@@ -6,6 +6,7 @@ der Eintrag in `calls.tool_calls` (docs/04 §Gemeinsame Regeln) laufen deshalb h
 noch einmal, statt über FastAPI und `core/tool_log.py`s Middleware zu gehen.
 """
 
+import json
 import logging
 import time
 import uuid
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
 from api.core.errors import AppError, InvalidInput
@@ -23,10 +24,14 @@ from api.core.logging import get_logger, log
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
+from api.domain.menu import get_item_details, search_menu, split_positions
+from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
+from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest
+from api.schemas.orders import DraftOrderRequest
 from api.schemas.reservations import CheckSlotRequest, CreateReservationRequest
 from api.schemas.transfer import TransferToTeamRequest
 
@@ -130,6 +135,93 @@ def _transfer(
     return transfer_to_team(session, req, now=now)
 
 
+class PositionResult(BaseModel):
+    """Ein Teil eines Satzes mit mehreren Positionen, je Teil gesucht."""
+
+    query: str
+    ok: bool
+    match_type: str | None = None
+    results: list[dict[str, Any]] = Field(default_factory=list)
+    error_code: str | None = None
+    say: str | None = None
+
+
+class PositionsResult(BaseModel):
+    match_type: str = "positions"
+    positions: list[PositionResult]
+
+
+def _search_menu(
+    session: Session,
+    call_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    args: dict[str, Any],
+    now: datetime | None,
+) -> BaseModel:
+    """Ein Satz, eine Position (docs/04 §search_menu): nennt der Gast mehrere, wird
+    der Satz hier zerlegt und je Teil gesucht. Ueber HTTP antwortet search_menu
+    darauf mit ambiguous; der Agent bekommt stattdessen alle Teile in einem Zug.
+    Ein Teil ohne Treffer bleibt mit error_code und say sichtbar, statt still
+    wegzufallen."""
+    req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
+    parts = split_positions(req.query)
+    if len(parts) <= 1:
+        return search_menu(session, tenant_id, req.query, req.max_results, now=now)
+    positions = []
+    for part in parts:
+        try:
+            found = search_menu(session, tenant_id, part, req.max_results, now=now)
+        except AppError as exc:
+            positions.append(
+                PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)
+            )
+            continue
+        positions.append(
+            PositionResult(
+                query=part,
+                ok=True,
+                match_type=found.match_type,
+                results=[hit.model_dump(mode="json") for hit in found.results],
+                say=found.say,
+            )
+        )
+    return PositionsResult(positions=positions)
+
+
+def _item_details(
+    session: Session,
+    call_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    args: dict[str, Any],
+    now: datetime | None,
+) -> BaseModel:
+    req = ItemDetailsRequest(call_id=call_id, tenant_id=tenant_id, **args)
+    return get_item_details(
+        session, tenant_id, req.menu_item_id, req.allergen_question, now=now
+    )
+
+
+def _draft_order(
+    session: Session,
+    call_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    args: dict[str, Any],
+    now: datetime | None,
+) -> BaseModel:
+    # Wie bei create_reservation: der Schluessel kommt aus den Angaben desselben
+    # Anrufs. Ein Modell-Retry mit denselben Positionen legt keinen zweiten
+    # Entwurf an; eine Korrektur (andere Menge, andere Option) ergibt einen
+    # neuen Entwurf mit neuem readback.
+    rest = {k: v for k, v in args.items() if k != "idempotency_key"}
+    key = args.get("idempotency_key") or idempotency_key(
+        call_id, "draft_order", json.dumps(rest, sort_keys=True, default=str)
+    )
+    req = DraftOrderRequest(
+        call_id=call_id, tenant_id=tenant_id, idempotency_key=key, **rest
+    )
+    return draft_order(session, req, now=now)
+
+
 TOOLS: dict[str, Adapter] = {
     "get_service_status": _status,
     "check_slot": _check_slot,
@@ -137,6 +229,9 @@ TOOLS: dict[str, Adapter] = {
     "confirm": _confirm,
     "create_callback": _create_callback,
     "transfer_to_team": _transfer,
+    "search_menu": _search_menu,
+    "get_item_details": _item_details,
+    "draft_order": _draft_order,
 }
 
 
