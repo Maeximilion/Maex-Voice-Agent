@@ -468,6 +468,55 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 23.09.2026 - T-4.5, confirm fuer Bestellungen
+Status: Abholung laeuft ueber HTTP von der Suche bis zum Abholcode: search_menu, get_item_details,
+       draft_order (T-4.5, PR #124) und confirm fuer entity: order (PR #125) liegen auf main.
+       draft_order prueft Oeffnung, aktiv/aus, Optionen und Pflichtgruppen im Code, rechnet in
+       Cent und liefert readback; confirm vergibt A1, A2, ... je Betriebstag und gibt nur im Modus
+       primary sofort an die Kueche. search_menu fragt bei mehreren Positionen in einem Satz nach
+       (split_positions), statt eine still zu verlieren. 1470 Tests gruen, CI gruen, ruff sauber,
+       draft_order p95 22 ms, confirm Bestellung p95 36 ms. Laeuft noch nicht: der Agent kennt die
+       Menue-Tools nicht (agent/dispatch.py, prompts/tools_v1.md nur Stufe 1), die Freigabe im
+       Tablet (T-4.7) fehlt - ausserhalb von primary bleibt eine bestaetigte Bestellung dort
+       stehen -, kein n8n-Workflow empfaengt order.confirmed (T-4.6), kein echtes Modell (T-2.4),
+       keine Telefonie (C2), keine echte Karte (C1).
+Artifacts: PR #124 squash-gemergt (main = 303d1b7): api/domain/ordering/{draft,validation,pricing,
+       readback}.py, api/domain/menu/split.py, api/schemas/orders.py, api/tools/draft_order.py,
+       option_key in api/domain/menu/items.py, Import-Pruefung in importer.py, Guard in
+       search.py. PR #125 squash-gemergt (main = 4610355): api/domain/ordering/confirm.py,
+       api/domain/confirm.py, api/schemas/confirm.py. Tests: test_domain_draft_order,
+       test_tool_draft_order, test_domain_menu_split, test_domain_confirm_order. docs/01 (v1.25.0),
+       03, 04, 07, README, CHANGELOG.
+Decisions: Pflichtgruppe ohne Wahl wird erfragt, nie mit der Voreinstellung gefuellt - die waere
+       geraten (CLAUDE.md 2 Regel 2) · Replay-Schnappschuss in audit_log nur mit Kartendaten
+       (Nummer, Name, Warnungen), Name/Telefon/Hinweise aus orders/order_items - audit_log bleibt
+       laenger als die Bestellung, die Loeschung (T-6.7) setzt an orders an · ready_at auf die
+       volle Minute aufgerundet, in UTC · Kartenfehler (Optionen in zwei Schreibweisen,
+       uneinheitliches required, negativer Preis) gehen per service_unavailable ans Team statt
+       geraten zu werden, der Import lehnt sie ab · search_menu zerlegt nicht, verweigert aber
+       Saetze mit mehreren Positionen (ambiguous, Teile in message) · nur primary uebergibt sofort,
+       overflow/shadow/paused warten auf Freigabe · Abholcode "A"+Zahl je Mandant und Betriebstag,
+       Tag aus created_at, Advisory-Lock · confirm liest den Modus FOR SHARE, damit ein laufender
+       Not-Aus nicht ueberholt wird.
+Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Block 3 (Stufe 2,
+       Sammel-Issue #9): T-4.1 bis T-4.5 fertig, confirm fuer Bestellungen dazu; offen T-4.6
+       bis T-4.9.
+Open: Menue-Tools fuer den Agenten - search_menu, get_item_details, draft_order und confirm
+       (order) in agent/dispatch.py, prompts/tools_v1.md und sim/scripted_llm.py, mit
+       Nachfrage je Teil, wenn search_menu "mehrere Positionen" meldet. Danach T-4.7 (Freigabe
+       im Tablet), dann T-4.6 (Bon ueber n8n). Offener Punkt aus docs/01: "die 23 und Pho Bo"
+       (zweites Gericht ohne Menge) laesst sich ohne Karte nicht sicher trennen.
+Lessons: Codex liefert je Runde neue Randfaelle, solange eine Heuristik offen ist - sieben Runden
+       fuer split_positions. Lieber frueh die harte Grenze ziehen (im Zweifel ganz lassen und laut
+       nachfragen) und den Rest als Open Point festhalten · ein Replay-Schnappschuss ist schnell
+       gebaut und schnell ein Datenschutzproblem: was laenger lebt als die Bestellung, darf keine
+       Personendaten tragen - eigenes Review vor dem Merge hat das gefunden, nicht der Bot · der
+       Docker-Daemon fiel zweimal weg; Docker Desktop liegt unter
+       %LOCALAPPDATA%\Programs\DockerDesktop\, danach docker compose up -d · git checkout -- <datei>
+       setzt die ganze Datei zurueck, nicht nur die letzte Aenderung; fuer temporaere Messungen
+       lieber -s mit einer Kopie arbeiten · main ist im Haupt-Checkout belegt, im Worktree von
+       origin/main abzweigen.
+
 ## Handover 22.09.2026 - T-4.4 (Review, Merge)
 Status: Karten-Tools vollstaendig bis zur Bestellung: search_menu (T-4.3, PR #117) und
        get_item_details (T-4.4, PR #118) laufen gegen main. Beschreibung, Optionsgruppen und

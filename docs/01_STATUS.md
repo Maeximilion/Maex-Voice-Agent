@@ -58,7 +58,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 | 5 Overflow operation | AI answers, only when team doesn't pick up | G5 | open |
 | 6 Primary operation & ongoing | AI picks up first, team fallback, monthly review running | Monthly review | open, target state |
 
-**We are here:** Stage 0, block "GUI-Grundlage" (`docs/07_WORKPACKAGES.md` Block 2) – the milestone "Durchstich ohne Telefon" is closed: terminal to agent to database to tablet runs. Next: the operating test T-3.5 (a team member operates the view five minutes without explanation), see "What's next". **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
+**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). The agent does not use the menu tools yet; that is next, then approval on the tablet (T-4.7) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
 
 ---
 
@@ -80,11 +80,12 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ### In Claude Code (can start immediately, without vendor)
 1. **Menu tools for the agent** - `search_menu`, `get_item_details`, `draft_order` and `confirm` for orders exist as HTTP tools, but `agent/dispatch.py` and `prompts/tools_v1.md` only know Stage 1. Wire them in, with `split_positions` so the agent re-asks per part when `search_menu` answers "mehrere Positionen". After that T-4.7 (approval on the tablet), since outside `primary` confirmed orders wait there
-2. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
-3. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
-4. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
-5. An n8n workflow that receives events from the dispatcher (export to `n8n/`); until then the cold path runs to nowhere
-6. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
+2. **T-4.7** approval column on the tablet (Passt / Korrigieren): outside `primary`, confirmed orders wait there and nobody can release them yet. Then **T-4.6**, the kitchen ticket over n8n for `order.confirmed`
+3. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
+4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
+5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
+6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`; export to `n8n/`); until then the cold path runs to nowhere
+7. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -200,6 +201,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 23.09.2026 | **Session handover (T-4.5, confirm for orders):** PR #124 and #125 squash-merged (`main` = `4610355`); pickup runs over HTTP from search to pickup code, 1470 tests green. Full block in `docs/00_PCF.md` § 13. Next step: menu tools for the agent |
 | 22.09.2026 | **T-4.4 merged (PR #118):** `get_item_details` with the allergen rule. Review of this session found two issues, both fixed before the merge: the callback sentence fired on every detail lookup of a dish without maintained allergens, so a question about options was answered with a callback promise - it now hangs on the mandatory `allergen_question` flag in the request; and `confirmed_at` was the UTC date instead of the tenant's local date. The two Codex P1 findings were refuted, not fixed: they targeted the `search_menu` draft that `51192fc` removed, and main covers both through existing regression tests. 1359 tests green, p95 8,7 ms. main = 4933cee |
 | 11.09.2026 | PCF v1.0 created and released, hybrid architecture decided (E1) |
 | 15.09.2026 | Repo skeleton and specs exported for Claude Code |
