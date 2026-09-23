@@ -3,7 +3,7 @@
 import pytest
 
 from api.domain.menu.search import search_menu
-from api.domain.menu.split import split_positions
+from api.domain.menu.split import raw_pieces, split_positions
 from api.tests.test_domain_menu_search import (  # noqa: F401
     NOW,
     engine,
@@ -104,3 +104,18 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         assert len(result.results) == 1, (teil, result.match_type)
         gefunden.append(result.results[0].number)
     assert gefunden == nummern
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "stuecke"),
+    [
+        ("die 23, mit Reis", ["die 23, mit Reis"]),
+        ("die 23, zweimal ohne Koriander", ["die 23, zweimal ohne Koriander"]),
+        ("Pho Bo, dazu extra scharf", ["Pho Bo, dazu extra scharf"]),
+        ("die 23 und Pho Bo", ["die 23", "Pho Bo"]),
+    ],
+)
+def test_raw_pieces_haengt_hinweise_an(gesagt, stuecke):
+    """Codex PR #127, P1: ein Hinweis nach dem Trenner ist keine neue Position,
+    auch fuer den Gegencheck mit der Karte nicht."""
+    assert raw_pieces(gesagt) == stuecke

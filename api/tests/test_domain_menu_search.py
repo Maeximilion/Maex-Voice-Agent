@@ -21,7 +21,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import SAY_ONE_AT_A_TIME, search_menu
+from api.domain.menu.search import SAY_ONE_AT_A_TIME, position_parts, search_menu
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -630,3 +630,24 @@ def test_zwei_gerichte_bleiben_zwei_auch_neben_einem_zusammengesetzten(
     with pytest.raises(Ambiguous) as err:
         suche(session, zusammen_tenant, "Pommes und Pho Bo")
     assert "Pommes | Pho Bo" in err.value.message
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["einmal Fisch und Chips", "Fisch und Chips bitte", "zweimal Fisch und Chips"],
+)
+def test_ganzes_gericht_mit_menge_oder_fuellwort(session, zusammen_tenant, gesagt):
+    """Codex PR #127, P1: Menge und Fuellwort gehoeren nicht zum Namen. Der
+    Vergleich mit dem Gericht laeuft deshalb in der Form der Suche selbst."""
+    result = suche(session, zusammen_tenant, gesagt)
+    assert nummern(result) == ["60"]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23, mit Reis", "Pho Bo, extra Reis"])
+def test_hinweis_nach_dem_komma_bleibt_an_der_position(
+    session, zusammen_tenant, gesagt
+):
+    """Codex PR #127, P1: "mit Reis" trifft selbst die Beilage, ist hier aber
+    ein Hinweis zur Position davor, keine zweite. Wie split_positions haengt
+    ein Stueck mit "mit", "ohne", "extra" vorn an dem davor."""
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]

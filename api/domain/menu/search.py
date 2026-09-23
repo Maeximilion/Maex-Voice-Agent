@@ -158,7 +158,7 @@ def position_parts(
     search = partial(
         search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
     )
-    if _whole_dish(search, query):
+    if _whole_dish(search, query, pieces):
         return [query]
     items = []
     for piece in pieces:
@@ -172,9 +172,17 @@ def position_parts(
     return pieces if len(set(items)) == len(items) else [query]
 
 
-def _whole_dish(search: Callable[[str], SearchResult], query: str) -> bool:
+def _whole_dish(
+    search: Callable[[str], SearchResult], query: str, pieces: list[str]
+) -> bool:
     """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
-    Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo."""
+    Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo.
+
+    Verglichen wird in der Form der Suche (normalize_query): "einmal Fisch und
+    Chips, bitte" ist der Name mit Menge und Fuellwort (Codex PR #127, P1). Die
+    Form wirft auch Nummern weg, aus "Pho Bo und die 23" bliebe "pho bo". Darum
+    muss jedes Stueck dabei Inhalt behalten: "die 23" allein ist ein eigenes
+    Gericht, kein Teil des Namens."""
     try:
         found = search(query)
     except (Ambiguous, NotFound):
@@ -183,7 +191,10 @@ def _whole_dish(search: Callable[[str], SearchResult], query: str) -> bool:
         return False
     if found.match_type == "alias":
         return True
-    return normalize_alias(found.results[0].name) == normalize_alias(query)
+    if not all(normalize_query(p) for p in pieces):
+        return False
+    said = normalize_query(query)
+    return any(normalize_query(hit.name) == said for hit in found.results)
 
 
 def search_menu(

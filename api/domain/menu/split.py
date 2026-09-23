@@ -76,10 +76,12 @@ def split_positions(text: str) -> list[str]:
 
 def raw_pieces(text: str) -> list[str]:
     """Nur an den Trennern geschnitten, ohne die Pruefung, ob ein Teil eine
-    Position eroeffnet. Fuer den Gegencheck mit der Karte (agent/dispatch.py):
+    Position eroeffnet. Fuer den Gegencheck mit der Karte (search.position_parts):
     ob "die 23 und Pho Bo" zwei Gerichte sind, entscheidet nicht der Satz,
     sondern ob jedes Stueck fuer sich ein anderes Gericht trifft. Dieselben
-    Sperren wie oben: Korrektur und Zoegerlaut ("23, aeh, 24") bleiben ganz."""
+    Sperren wie oben: Korrektur und Zoegerlaut ("23, aeh, 24") bleiben ganz, und
+    ein Stueck mit "mit", "ohne", "extra" vorn haengt an dem davor ("die 23, mit
+    Reis"), auch wenn es selbst ein Gericht traefe (Codex PR #127, P1)."""
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
@@ -122,7 +124,8 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
             )
         )
-        if number_joined or (by_position and not _opens_position(piece)):
+        attached = not _opens_position(piece) if by_position else _modifies(piece)
+        if number_joined or attached:
             parts[-1] += sep + piece
         else:
             parts.append(piece)
@@ -151,6 +154,14 @@ def _opens_position(part: str) -> bool:
     if rest:
         return rest[0] not in _MODIFIERS
     return any(_is_number(w) for w in words)
+
+
+def _modifies(part: str) -> bool:
+    """Ein Hinweis zur Position davor: nach Artikel und Menge steht vorn "mit",
+    "ohne", "extra" oder "aber" ("mit Reis", "2 x ohne Koriander")."""
+    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    rest = words[next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0) :]
+    return bool(rest) and rest[0] in _MODIFIERS
 
 
 def _is_prefix_word(word: str) -> bool:
