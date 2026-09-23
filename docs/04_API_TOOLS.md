@@ -135,7 +135,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Karte (`position_parts` in `domain/menu/search.py`): trifft jedes Stück an
    den Trennern für sich eindeutig ein anderes Gericht, sind es mehrere
    Positionen - über HTTP die Rückfrage, im Gesprächskern die Suche je Teil;
-   sonst war das „und" Teil eines Namens.
+   sonst war das „und" Teil eines Namens. Steht der ganze Satz selbst auf der
+   Karte („Fisch und Chips" als Alias oder genau als Name), bleibt er ein
+   Gericht, auch wenn die Stücke einzeln treffen.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

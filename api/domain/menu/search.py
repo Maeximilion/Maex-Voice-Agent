@@ -28,7 +28,9 @@ Unterschied klein, mit wachsender Karte trägt der Index die Suche.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 
 from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
@@ -141,9 +143,11 @@ def position_parts(
     Bo - die 23 fiele still weg (Codex PR #127, P1). Trifft jedes Stueck an den
     Trennern fuer sich eindeutig ein **anderes** Gericht, sind es mehrere
     Positionen. Trifft eines nichts oder dasselbe, war das "und" Teil eines
-    Namens ("Ente süß und sauer"), und der Satz bleibt ganz. Die Stuecke haben
-    keine Trenner mehr, die Suche je Stueck laeuft deshalb nicht noch einmal
-    hier hinein.
+    Namens ("Ente süß und sauer"), und der Satz bleibt ganz.
+
+    Vorher gilt der ganze Satz: steht er selbst so auf der Karte ("Fisch und
+    Chips" als Alias oder genau als Name), ist er ein Gericht, auch wenn "Fisch"
+    und "Chips" es einzeln auch sind (Codex PR #127, P1).
     """
     parts = split_positions(query)
     if len(parts) > 1:
@@ -151,16 +155,35 @@ def position_parts(
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
+    search = partial(
+        search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
+    )
+    if _whole_dish(search, query):
+        return [query]
     items = []
     for piece in pieces:
         try:
-            found = search_menu(session, tenant_id, piece, now=now, high=high, low=low)
+            found = search(piece)
         except (Ambiguous, NotFound):
             return [query]
         if found.match_type not in CLEAR_MATCHES or not found.results:
             return [query]
         items.append(found.results[0].menu_item_id)
     return pieces if len(set(items)) == len(items) else [query]
+
+
+def _whole_dish(search: Callable[[str], SearchResult], query: str) -> bool:
+    """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
+    Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo."""
+    try:
+        found = search(query)
+    except (Ambiguous, NotFound):
+        return False
+    if not found.results:
+        return False
+    if found.match_type == "alias":
+        return True
+    return normalize_alias(found.results[0].name) == normalize_alias(query)
 
 
 def search_menu(
@@ -171,7 +194,11 @@ def search_menu(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+    *,
+    split_check: bool = True,
 ) -> SearchResult:
+    """`split_check=False` nur fuer `position_parts`: die Suche je Stueck und ueber
+    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen."""
     now = now or utcnow()
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
@@ -207,7 +234,11 @@ def search_menu(
     # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
     # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
-    parts = position_parts(session, tenant_id, query, now=now, high=high, low=low)
+    parts = (
+        position_parts(session, tenant_id, query, now=now, high=high, low=low)
+        if split_check
+        else [query]
+    )
     if len(parts) > 1:
         raise Ambiguous(
             "mehrere Positionen: " + " | ".join(parts), say=SAY_ONE_AT_A_TIME

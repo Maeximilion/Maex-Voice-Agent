@@ -587,3 +587,46 @@ def test_name_mit_und_bleibt_eine_suche(session, tenant_id):
     """Trifft ein Stueck nichts, gehoert das "und" zum Namen: normale Suche."""
     result = suche(session, tenant_id, "die knusprige Ente und so")
     assert nummern(result)[0] == "47"
+
+
+KARTE_ZUSAMMEN = {
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "60;Fisch und Chips;Hauptgerichte;12,50;;ja\n"
+        "61;Fisch;Hauptgerichte;10,00;;ja\n"
+        "62;Chips;Beilagen;3,00;;ja\n"
+        "13;Pho Bo;Suppen;11,90;;ja\n"
+        "23;Frühlingsrollen;Vorspeisen;6,90;;ja\n"
+    ),
+    OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n",
+    ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
+    # "Fisch" und "Chips" treffen je fuer sich eindeutig (Alias), wie im Befund.
+    ALIASES_FILE: "number;alias\n61;Fisch\n62;Chips\n62;Pommes\n",
+}
+
+
+@pytest.fixture
+def zusammen_tenant(session) -> uuid.UUID:
+    tid = uuid.UUID(
+        seed(session, tenant_name="Zusammen", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE_ZUSAMMEN)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+    return tid
+
+
+def test_gericht_mit_und_im_namen_wird_nicht_zerlegt(session, zusammen_tenant):
+    """Codex PR #127, P1: "Fisch und Chips" steht selbst auf der Karte. Dass
+    "Fisch" und "Chips" es auch tun, macht daraus keine zwei Positionen."""
+    result = suche(session, zusammen_tenant, "Fisch und Chips")
+    assert nummern(result) == ["60"]
+
+
+def test_zwei_gerichte_bleiben_zwei_auch_neben_einem_zusammengesetzten(
+    session, zusammen_tenant
+):
+    """Pommes (Alias von Chips) und Pho Bo: kein ganzes Gericht, also zwei."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, zusammen_tenant, "Pommes und Pho Bo")
+    assert "Pommes | Pho Bo" in err.value.message
