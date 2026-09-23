@@ -165,17 +165,7 @@ def _by_key(session: Session, key: str) -> Order | None:
 def _replay(session: Session, existing: Order, tenant_id: uuid.UUID) -> OrderDraft:
     if existing.tenant_id != tenant_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
-    snapshot = session.scalar(
-        select(AuditLog.payload).where(
-            AuditLog.entity == "order",
-            AuditLog.entity_id == existing.id,
-            AuditLog.action == ACTION_DRAFT_CREATED,
-        )
-    )
-    if snapshot is None:
-        # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
-        # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
-        raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_CALL_UNKNOWN)
+    snapshot = _snapshot(session, existing.id)
     rows = session.scalars(
         select(OrderItem)
         .where(OrderItem.order_id == existing.id)
@@ -186,6 +176,26 @@ def _replay(session: Session, existing: Order, tenant_id: uuid.UUID) -> OrderDra
         for row, (number, name) in zip(rows, snapshot["labels"], strict=True)
     ]
     return _response(existing, readback(existing, spoken), snapshot["warnings"])
+
+
+def draft_labels(session: Session, order_id: uuid.UUID) -> list[list[str]]:
+    """Nummer und Name je Position, wie sie beim Anlegen vorgelesen wurden."""
+    return _snapshot(session, order_id)["labels"]
+
+
+def _snapshot(session: Session, order_id: uuid.UUID) -> dict:
+    snapshot = session.scalar(
+        select(AuditLog.payload).where(
+            AuditLog.entity == "order",
+            AuditLog.entity_id == order_id,
+            AuditLog.action == ACTION_DRAFT_CREATED,
+        )
+    )
+    if snapshot is None:
+        # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
+        # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
+        raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_CALL_UNKNOWN)
+    return snapshot
 
 
 def _spoken(lines: list[Line], labels: list[list[str]]) -> list[SpokenLine]:

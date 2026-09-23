@@ -156,3 +156,51 @@ def test_latenz(client):
         assert http.post("/v1/tools/draft_order", json=body, headers=AUTH).json()["ok"]
 
     assert p95_ms(call) < 300
+
+
+def _confirm_body(tenant_id, call_id, order_id) -> dict:
+    return {
+        "call_id": call_id,
+        "tenant_id": tenant_id,
+        "entity": "order",
+        "entity_id": order_id,
+        "idempotency_key": uuid.uuid4().hex,
+    }
+
+
+def test_entwurf_bestaetigen_ueber_http(client):
+    """Seed laeuft im Modus shadow: bestaetigt, Code vergeben, Freigabe steht aus."""
+    http, tenant_id, call_id, ids = client
+    order_id = http.post(
+        "/v1/tools/draft_order", json=_body(tenant_id, call_id, ids), headers=AUTH
+    ).json()["data"]["order_id"]
+    res = http.post(
+        "/v1/tools/confirm",
+        json=_confirm_body(tenant_id, call_id, order_id),
+        headers=AUTH,
+    ).json()
+    assert res == {
+        "ok": True,
+        "data": {
+            "status": "confirmed",
+            "handover": "awaiting_approval",
+            "pickup_code": "A1",
+        },
+        "say": None,
+    }
+
+
+def test_latenz_confirm_bestellung(client):
+    http, tenant_id, call_id, ids = client
+    drafts = iter(
+        http.post(
+            "/v1/tools/draft_order", json=_body(tenant_id, call_id, ids), headers=AUTH
+        ).json()["data"]["order_id"]
+        for _ in range(60)
+    )
+
+    def call():
+        body = _confirm_body(tenant_id, call_id, next(drafts))
+        assert http.post("/v1/tools/confirm", json=body, headers=AUTH).json()["ok"]
+
+    assert p95_ms(call) < 300

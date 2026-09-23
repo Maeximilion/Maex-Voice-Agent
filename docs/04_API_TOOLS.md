@@ -311,11 +311,18 @@ Der einzige Übergang von `draft` nach `confirmed`.
 
 **Request** `{ "call_id": "…", "tenant_id": "…", "entity": "order", "entity_id": "…", "idempotency_key": "…" }`
 
-**Response** `{ "ok": true, "data": { "status": "confirmed", "handover": "queued", "pickup_code": "A17" }, "say": null }`
+**Response** `{ "ok": true, "data": { "status": "confirmed", "handover": "queued", "pickup_code": "A17" }, "say": null }` — `handover` ist `"queued"` oder `"awaiting_approval"` (siehe unten)
 
 **Wirkung:** Status setzen, `audit_log` schreiben, Ereignis an n8n legen, GUI aktualisieren. Im Modus `overflow` wird `approved` erst durch das Team gesetzt; die Küche startet dann später.
 
-**Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `entity: "order"` steht im Vertrag, antwortet aber bis Stufe 2 mit `not_found`; `pickup_code` bleibt bei Reservierungen `null`.
+**Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `pickup_code` bleibt bei Reservierungen `null`.
+
+**Bestellungen** (`domain/ordering/confirm.py`, seit 23.09.2026):
+
+- `pickup_code` ist „A" plus laufende Nummer je Mandant und Betriebstag (A1, A2, …; Betriebstag ab 05:00, `core/time`). Der Tag kommt aus dem Anlagezeitpunkt der Bestellung. Zwei gleichzeitige Bestätigungen zählen nacheinander (Sperre je Mandant und Tag), nie zweimal derselbe Code.
+- `handover` hängt am Modus beim Bestätigen: nur `primary` gibt `"queued"`, setzt `handover_state = pending` und legt `order.confirmed` in die Outbox (Bon für die Küche). In `overflow`, `shadow` und `paused` antwortet es `"awaiting_approval"`: die Bestellung ist bestätigt, aber nichts geht an die Küche, bis das Team im Tablet freigibt (T-4.7, docs/02 §Modus). Ein späterer Moduswechsel ändert die Antwort auf einen erneuten Aufruf nicht.
+- Das Ereignis trägt die ganze Bestellung (Positionen mit Nummer, Name, Menge, Optionen, Hinweis, Preis). Nummer und Name kommen aus dem Schnappschuss des Entwurfs: auf dem Bon steht, was dem Gast vorgelesen wurde.
+- Eine Bestellung aus einem anderen Anruf ergibt `not_found`, eine stornierte `conflict`.
 
 ---
 

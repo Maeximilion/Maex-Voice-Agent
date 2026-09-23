@@ -1,13 +1,14 @@
 """confirm: der einzige Übergang von draft nach confirmed (docs/04 §confirm).
 
-Generisch über beide Vorgangsarten. Bestellungen kommen mit Stufe 2, bis dahin
-kennt der Verteiler unten nur Reservierungen.
+Generisch über beide Vorgangsarten; die Bestellung liegt in
+`domain/ordering/confirm.py` (Abholcode, Übergabe je Modus).
 """
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
+from api.domain.ordering.confirm import confirm_order
 from api.events import enqueue
 from api.events.types import RESERVATION_CONFIRMED
 from api.models import AuditLog, Call, Reservation, Tenant
@@ -36,7 +37,7 @@ def confirm(session: Session, req: ConfirmRequest) -> Confirmation:
 
     if req.entity == "reservation":
         return _confirm_reservation(session, req)
-    raise NotFound("Bestellungen gibt es erst ab Stufe 2", say=SAY_STOERUNG)
+    return confirm_order(session, req)
 
 
 def _confirm_reservation(session: Session, req: ConfirmRequest) -> Confirmation:
