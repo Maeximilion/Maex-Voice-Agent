@@ -26,7 +26,8 @@
 ## search_menu
 **Wann:** für jedes Gericht, das der Gast nennt, bevor es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam), optional `max_results`.
-**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz mehrere Gerichte: `match_type: "positions"` und je Teil ein Eintrag in `positions` (`query`, `ok`, Ergebnis oder `error_code` und `say`).
+**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`.
+**Mehrere Gerichte in einem Satz:** über HTTP `ok: false`, `error.code: "ambiguous"`, `say` bittet um eins nach dem anderen, `message` nennt die Teile — dann je Teil neu fragen. Nur im eigenen Gesprächskern (`agent/dispatch.py`) zerlegt das Tool selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).
 **Regel:** bei `ambiguous` nachfragen, nie selbst wählen. `not_found`: `say` sprechen.
 
 ## get_item_details
@@ -36,9 +37,9 @@
 
 ## draft_order
 **Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind. Nach jeder Änderung erneut.
-**Eingabe:** `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`).
+**Eingabe:** `idempotency_key`, `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`).
 **Liefert:** `order_id`, Summe, `ready_at`, `readback` — der Satz, der vorgelesen wird.
-**Schreibend:** der Schlüssel entsteht im Code.
+**Schreibend:** über HTTP ist `idempotency_key` Pflicht — gleicher Schlüssel, gleiche Antwort. Im eigenen Gesprächskern bildet der Code ihn aus den Angaben des Anrufs, das Modell lässt ihn weg.
 
 ## confirm
 **Wann:** nachdem der Gast das `readback` von `create_reservation` oder `draft_order` mit Ja bestätigt hat.
