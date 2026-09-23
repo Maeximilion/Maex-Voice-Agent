@@ -66,3 +66,17 @@ def test_harte_regeln_der_bestellung_stehen_drin():
     text = SYSTEM_PROMPT.read_text(encoding="utf-8")
     assert "menu_item_id" in text and "ambiguous" in text
     assert "readback" in text and "confirm" in text
+
+
+def test_korrektur_nach_dem_vorlesen_je_ablauf():
+    """Codex PR #127, P1: eine korrigierte Reservierung geht nicht ueber
+    draft_order - das scheitert an der Pruefung, der alte Entwurf bliebe
+    readback_pending, und das naechste Ja bestaetigte ihn. Jeder Ablauf nennt
+    sein eigenes Tool fuer die Korrektur."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    regel = next(z for z in text.splitlines() if "Ändert der Gast" in z)
+    assert "`check_slot`" in regel and "`create_reservation`" in regel
+    assert "`draft_order`" in regel
+    tools = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
+    reservierung = tools.split("## create_reservation")[1].split("## ")[0]
+    assert "Änderung" in reservierung
