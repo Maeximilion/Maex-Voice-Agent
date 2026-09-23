@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, func, select, update
+from sqlalchemy import create_engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import (
@@ -261,6 +261,20 @@ def test_audit_haelt_keine_personendaten(session, tenant_id, call_id):
     text = str(payload)
     assert "Müller" not in text and "Nüsse" not in text and "555" not in text
     assert draft_order(session, req, now=NOW) == first
+
+
+def test_replay_ohne_audit_zeile_uebergibt_mit_say(session, tenant_id, call_id):
+    """Codex PR #124: der kaputte Zustand kam ohne Satz fuer den Agenten zurueck."""
+    req = request(session, tenant_id, call_id)
+    first = draft_order(session, req, now=NOW)
+    session.execute(delete(AuditLog).where(AuditLog.entity_id == first.order_id))
+    session.commit()
+    with pytest.raises(ServiceUnavailable) as err:
+        draft_order(session, req, now=NOW)
+    assert err.value.say == (
+        "Bei mir gibt es gerade eine technische Störung. "
+        "Ich verbinde Sie mit dem Restaurant."
+    )
 
 
 def test_schluessel_eines_anderen_mandanten(session, tenant_id, call_id):

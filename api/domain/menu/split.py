@@ -60,7 +60,13 @@ def split_positions(text: str) -> list[str]:
 
 
 def _split(text: str) -> list[str]:
-    """Am Trenner zerlegen, "drei und zwanzig" dabei zusammenlassen."""
+    """Am Trenner zerlegen, Zahlen mit "und" dabei zusammenlassen.
+
+    "drei und zwanzig" ist 23. Nach "hundert" ist ein "und" immer Teil der Zahl
+    ("hundert und eins", "zweihundert und drei"): parse_cardinal kennt diese
+    Form nicht, getrennt würde daraus 100 und 1 (Codex PR #124). Im Zweifel
+    bleibt der Satz so ganz und search_menu fragt nach.
+    """
     pieces = _SEPARATOR.split(text)
     separators = _SEPARATOR.findall(text)
     parts = [pieces[0]]
@@ -71,7 +77,10 @@ def _split(text: str) -> list[str]:
             sep.strip().casefold() == "und"
             and left
             and right
-            and parse_cardinal(f"{left[-1]} und {right[0]}") is not None
+            and (
+                left[-1].endswith("hundert")
+                or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
+            )
         ):
             parts[-1] += sep + piece
         else:

@@ -135,7 +135,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    dann bleibt der Satz ganz und `search_menu` fragt laut nach. Jeder
    Teil muss selbst eine Position eröffnen (Nummer, Menge oder „ein/eine") und
    darf nicht mit „ohne", „mit" oder „extra" beginnen; „Ente süß und sauer" und
-   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz.
+   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Nach „hundert" gehört
+   „und" zur Zahl („hundert und eins").
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`

@@ -26,6 +26,10 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("zweimal die 23", ["zweimal die 23"]),
         ("Nummer 23 mit Erdnusssauce", ["Nummer 23 mit Erdnusssauce"]),
         ("die drei und zwanzig", ["die drei und zwanzig"]),
+        # Hunderter mit "und" sind eine Nummer, nicht 100 und 1 (Codex PR #124)
+        ("Nummer hundert und eins", ["Nummer hundert und eins"]),
+        ("die zweihundert und drei", ["die zweihundert und drei"]),
+        ("die hundert und einmal Pho Bo", ["die hundert und einmal Pho Bo"]),
         (
             "zweimal die drei und zwanzig und die 13",
             ["zweimal die drei und zwanzig", "die 13"],

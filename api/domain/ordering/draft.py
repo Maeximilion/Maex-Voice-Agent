@@ -175,7 +175,7 @@ def _replay(session: Session, existing: Order, tenant_id: uuid.UUID) -> OrderDra
     if snapshot is None:
         # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
         # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
-        raise ServiceUnavailable("Entwurf ohne Audit-Zeile")
+        raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_CALL_UNKNOWN)
     rows = session.scalars(
         select(OrderItem)
         .where(OrderItem.order_id == existing.id)
