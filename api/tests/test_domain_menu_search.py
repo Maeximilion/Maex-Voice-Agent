@@ -21,7 +21,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import SAY_ONE_AT_A_TIME, search_menu
+from api.domain.menu.search import SAY_ONE_AT_A_TIME, position_parts, search_menu
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -571,3 +571,100 @@ def test_mehrere_positionen_ohne_marker_fragen_nach(session, tenant_id, gesagt, 
         suche(session, tenant_id, gesagt)
     assert teile in err.value.message
     assert err.value.say == SAY_ONE_AT_A_TIME
+
+
+def test_zweites_gericht_ohne_menge_fragt_auch_ueber_http_nach(session, tenant_id):
+    """ "die 23 und Pho Bo": der Satz allein trennt nicht, die Karte schon - jedes
+    Stueck trifft ein anderes Gericht. Dann fragt search_menu nach, statt ueber
+    den ganzen Satz nur Pho Bo zu finden (Codex PR #127, P1)."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, "die 23 und Pho Bo")
+    assert "die 23 | Pho Bo" in err.value.message
+    assert err.value.say == SAY_ONE_AT_A_TIME
+
+
+def test_name_mit_und_bleibt_eine_suche(session, tenant_id):
+    """Trifft ein Stueck nichts, gehoert das "und" zum Namen: normale Suche."""
+    result = suche(session, tenant_id, "die knusprige Ente und so")
+    assert nummern(result)[0] == "47"
+
+
+KARTE_ZUSAMMEN = {
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "60;Fisch und Chips;Hauptgerichte;12,50;;ja\n"
+        "61;Fisch;Hauptgerichte;10,00;;ja\n"
+        "62;Chips;Beilagen;3,00;;ja\n"
+        "13;Pho Bo;Suppen;11,90;;ja\n"
+        "23;Frühlingsrollen;Vorspeisen;6,90;;ja\n"
+    ),
+    OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n",
+    ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
+    # "Fisch" und "Chips" treffen je fuer sich eindeutig (Alias), wie im Befund.
+    ALIASES_FILE: "number;alias\n61;Fisch\n62;Chips\n62;Pommes\n",
+}
+
+
+@pytest.fixture
+def zusammen_tenant(session) -> uuid.UUID:
+    tid = uuid.UUID(
+        seed(session, tenant_name="Zusammen", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE_ZUSAMMEN)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+    return tid
+
+
+def test_gericht_mit_und_im_namen_wird_nicht_zerlegt(session, zusammen_tenant):
+    """Codex PR #127, P1: "Fisch und Chips" steht selbst auf der Karte. Dass
+    "Fisch" und "Chips" es auch tun, macht daraus keine zwei Positionen."""
+    result = suche(session, zusammen_tenant, "Fisch und Chips")
+    assert nummern(result) == ["60"]
+
+
+def test_zwei_gerichte_bleiben_zwei_auch_neben_einem_zusammengesetzten(
+    session, zusammen_tenant
+):
+    """Pommes (Alias von Chips) und Pho Bo: kein ganzes Gericht, also zwei."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, zusammen_tenant, "Pommes und Pho Bo")
+    assert "Pommes | Pho Bo" in err.value.message
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["einmal Fisch und Chips", "Fisch und Chips bitte", "zweimal Fisch und Chips"],
+)
+def test_ganzes_gericht_mit_menge_oder_fuellwort(session, zusammen_tenant, gesagt):
+    """Codex PR #127, P1: Menge und Fuellwort gehoeren nicht zum Namen. Der
+    Vergleich mit dem Gericht laeuft deshalb in der Form der Suche selbst."""
+    result = suche(session, zusammen_tenant, gesagt)
+    assert nummern(result) == ["60"]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23, mit Reis", "Pho Bo, extra Reis"])
+def test_hinweis_nach_dem_komma_bleibt_an_der_position(
+    session, zusammen_tenant, gesagt
+):
+    """Codex PR #127, P1: "mit Reis" trifft selbst die Beilage, ist hier aber
+    ein Hinweis zur Position davor, keine zweite. Wie split_positions haengt
+    ein Stueck mit "mit", "ohne", "extra" vorn an dem davor."""
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23 und Pho", "Pho und die 23"])
+def test_alias_im_rest_ist_kein_ganzes_gericht(session, tenant_id, gesagt):
+    """Codex PR #127, P1: ohne Nummer bleibt von "die 23 und Pho" nur "pho",
+    und das ist ein Alias. Ein Alias zaehlt nur fuer den ganzen Satz, wenn kein
+    Stueck dabei leer wird - sonst fiele die 23 still weg."""
+    assert len(position_parts(session, tenant_id, gesagt, now=NOW)) == 2
+
+
+def test_eigene_menge_je_teil_sind_zwei_positionen(session, zusammen_tenant):
+    """Nennt der Gast je Teil eine Menge, eroeffnet jeder Teil eine Position:
+    "zweimal Fisch und zweimal Chips" sind zwei, nicht zweimal Fisch und Chips.
+    Wer "Fisch und Chips" meint, hoert es beim Vorlesen und korrigiert."""
+    assert position_parts(
+        session, zusammen_tenant, "zweimal Fisch und zweimal Chips", now=NOW
+    ) == ["zweimal Fisch", "zweimal Chips"]

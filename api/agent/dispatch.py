@@ -24,7 +24,8 @@ from api.core.logging import get_logger, log
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
-from api.domain.menu import get_item_details, search_menu, split_positions
+from api.domain.menu import get_item_details, search_menu
+from api.domain.menu.search import position_parts
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
@@ -164,7 +165,7 @@ def _search_menu(
     Ein Teil ohne Treffer bleibt mit error_code und say sichtbar, statt still
     wegzufallen."""
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    parts = split_positions(req.query)
+    parts = position_parts(session, tenant_id, req.query, now=now)
     if len(parts) <= 1:
         return search_menu(session, tenant_id, req.query, req.max_results, now=now)
     positions = []

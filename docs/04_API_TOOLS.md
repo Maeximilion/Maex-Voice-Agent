@@ -130,7 +130,16 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg. Der eigene
    Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
    und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
-   (`query`, `ok`, Treffer oder `error_code` und `say`).
+   (`query`, `ok`, Treffer oder `error_code` und `say`). Trennt der Satz allein
+   nicht („die 23 und Pho Bo": „Pho Bo" ohne Menge), prüfen beide Wege mit der
+   Karte (`position_parts` in `domain/menu/search.py`): trifft jedes Stück an
+   den Trennern für sich eindeutig ein anderes Gericht, sind es mehrere
+   Positionen - über HTTP die Rückfrage, im Gesprächskern die Suche je Teil;
+   sonst war das „und" Teil eines Namens. Steht der ganze Satz selbst auf der
+   Karte („Fisch und Chips" als Alias oder als Name, auch mit Menge und
+   Füllwort: „einmal Fisch und Chips, bitte"), bleibt er ein Gericht, auch wenn
+   die Stücke einzeln treffen. Ein Stück mit „mit", „ohne", „extra" vorn ist ein
+   Hinweis zur Position davor („die 23, mit Reis"), nie eine eigene.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
