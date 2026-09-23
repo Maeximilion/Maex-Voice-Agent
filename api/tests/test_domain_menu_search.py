@@ -21,7 +21,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import search_menu
+from api.domain.menu.search import SAY_ONE_AT_A_TIME, search_menu
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -548,20 +548,26 @@ def test_ohne_nummer_im_satz_bleibt_die_namenssuche(session, tenant_id):
     assert nummern(result)[0] == "23" and result.match_type != "exact_number"
 
 
-def test_zweite_position_ohne_marker_faellt_still_weg(session, tenant_id):
-    """Heutiger Stand, festgehalten als offener Punkt - nicht als Soll.
+@pytest.mark.parametrize(
+    ("gesagt", "teile"),
+    [
+        ("die 23 und einmal Pho Bo", "die 23 | einmal Pho Bo"),
+        (
+            "einmal die 23 und zweimal Sommerrollen",
+            "einmal die 23 | zweimal Sommerrollen",
+        ),
+    ],
+)
+def test_mehrere_positionen_ohne_marker_fragen_nach(session, tenant_id, gesagt, teile):
+    """Vorher fiel die 23 still weg: ohne "Nummer" ist der Satz kein Nummernsatz
+    (Regel A), und die Namenssuche fand nur Pho Bo (Open Point 21.09.2026).
 
-    Ohne "Nummer" ist "die 23 und einmal Pho Bo" kein Nummernsatz (Regel A), und
-    die Namenssuche laeuft ueber den ganzen Satz: heraus kommt **ein** Gericht,
-    Pho Bo, und die genannte 23 taucht nirgends mehr auf. Geraten wird nichts,
-    aber eine Position verschwindet ohne Signal an den Agenten.
-
-    Mit Marker im Satz gaebe es die Rueckfrage (siehe
-    `test_nummer_mit_mehr_im_satz_fragt_nach`). Die Loesung liegt vor der Suche:
-    Satz je Position zerlegen, dann je Position fragen - Bestellfluss T-4.5,
-    `docs/01_STATUS.md` § Open Points from Reviews.
+    Jetzt erkennt search_menu mit `split_positions`, dass mehr als eine Position
+    im Satz steht, und fragt nach, statt eine zu verschlucken (Codex PR #124,
+    P1). Zerlegt wird hier nichts: die Teile stehen in `message`, der Aufrufer
+    fragt je Teil erneut.
     """
-    result = suche(session, tenant_id, "die 23 und einmal Pho Bo")
-
-    assert nummern(result) == ["13"]
-    assert result.match_type == "fuzzy_single"
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, gesagt)
+    assert teile in err.value.message
+    assert err.value.say == SAY_ONE_AT_A_TIME

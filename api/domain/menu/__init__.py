@@ -11,6 +11,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
 )
 from api.domain.menu.search import search_menu
+from api.domain.menu.split import split_positions
 
 __all__ = [
     "ItemNumber",
@@ -25,4 +26,5 @@ __all__ = [
     "option_groups",
     "parse_cardinal",
     "search_menu",
+    "split_positions",
 ]

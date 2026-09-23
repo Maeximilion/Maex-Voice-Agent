@@ -123,26 +123,41 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo", „Nummer 23 mit Erdnusssauce") ist es `ambiguous` mit der
    Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
-   die Namenssuche läuft über den ganzen Satz - „die 23 und einmal Pho Bo" kommt
-   als `fuzzy_single` auf Pho Bo zurück, die genannte 23 fällt still weg.
-   Geraten wird dabei nichts, aber eine Position verschwindet ohne Signal.
+   die Namenssuche liefe über den ganzen Satz und fände nur Pho Bo. Deshalb
+   prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
+   Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` bittet
+   um eins nach dem anderen, `message` nennt die Teile („mehrere Positionen:
+   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
-   Zerlegung gehört zum Bestellfluss (T-4.5), nicht in `search_menu`
-   (`docs/01_STATUS.md` § Open Points from Reviews).
+   Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
+   `domain/menu/split.py` (`split_positions`, T-4.5). Getrennt wird an „und",
+   „sowie" und Komma, aber nie bei Korrektur oder Alternative („23, nein 24",
+   „23 oder 24") und nie, wenn ein Teil nur Zögerlaut ist („23, äh, 24") -
+   dann bleibt der Satz ganz und `search_menu` fragt laut nach. Jeder
+   Teil muss mit einer eigenen Position beginnen (Nummer, Menge oder „ein/eine";
+   „Schärfe 2" beginnt keine) und
+   darf nach Menge und Nummer nicht mit „ohne", „mit" oder „extra" weitergehen
+   („2 x ohne Koriander"); „Ente süß und sauer" und
+   „Nummer 23, ohne Zwiebeln" bleiben so ein Satz. Ein solcher Teil hängt
+   wieder an dem davor, die übrigen Grenzen bleiben: „die 23 und eine Ente süß
+   und sauer" ergibt zwei Positionen. Nach „hundert" hängt „und" nur eine Zahl
+   an („hundert und eins"), keine neue Position („die hundert und eine Cola").
+   Einleitende Wörter („dazu", „außerdem") vor einer Position stören nicht.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
 
-**Zwei Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
+**Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
 vorzuschlagen gibt:
 
 | Lage | Antwort |
 |---|---|
 | Mehrere Gerichte passen (Alias oder Trigram) | `ok: true`, `match_type: "ambiguous"`, bis zu 3 Vorschläge in `results` |
 | Der Satz nennt keine eine Nummer („23 oder 24", „Nummer 23, nein", „Nummer 47, die Ente") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` fragt nach der einen Nummer |
+| Der Satz nennt mehrere Positionen ohne Marker („die 23 und einmal Pho Bo") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` bittet um eins nach dem anderen, `message` nennt die Teile |
 
 Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
 könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent
@@ -248,7 +263,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 
 **Request**
 ```json
-{ "call_id": "…", "tenant_id": "…", "type": "delivery",
+{ "call_id": "…", "tenant_id": "…", "idempotency_key": "…", "type": "delivery",
   "customer": { "name": "Müller", "phone": "+49…", "address_id": "…" },
   "items": [
     { "menu_item_id": "…", "quantity": 2,
@@ -272,6 +287,22 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 
 **Prüfungen im Code, nicht im Modell:** Öffnungszeit · Position aktiv und nicht ausverkauft · Optionen gültig · Pflichtgruppen gewählt · Zone auflösbar · Mindestbestellwert erreicht · Summe korrekt · Lieferzeit aus aktueller Wartezeit.
 Verstoß → `ok: false` mit passendem Code und `say`.
+
+**Stand T-4.5 (nur Abholung):** `type: "delivery"` antwortet `invalid_input` mit der Frage, ob der Gast abholen möchte; Zone, Pauschale und Mindestbestellwert kommen mit T-6.5. Im Code (`domain/ordering/`):
+
+| Lage | Antwort |
+|---|---|
+| Abholung gerade nicht offen | `closed` |
+| Gericht unbekannt, inaktiv oder von einem anderen Mandanten | `not_found` |
+| Gericht ausverkauft | `conflict`, `say` wie bei `search_menu` |
+| Option gibt es an diesem Gericht nicht, doppelt, oder Pflichtgruppe mehrfach | `invalid_input` mit `say` |
+| Pflichtgruppe ohne Wahl | `invalid_input`, `say` fragt nach der Gruppe. Die Voreinstellung wird **nicht** still eingesetzt - sie wäre geraten |
+| Menge über 30 oder mehr als 30 Positionen | `invalid_input` (Schutz gegen Hörfehler, nicht gegen Großbestellungen) |
+
+- Dieselbe Option zweimal ergibt `invalid_input` mit `say` („Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"). Zwei Kartenzeilen oder Gruppen, die sich nur in der Schreibweise unterscheiden, ergeben `service_unavailable` mit Übergabe ans Team statt einer geratenen Zeile; der Import lehnt solche Zeilen ab. Ebenso eine Optionswahl, die den Preis unter null drückt: ein Kartenfehler, den der Gast nicht korrigieren kann.
+- Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
+- `ready_at` = jetzt + `service_config.pickup_wait_minutes`, auf die volle Minute **aufgerundet** (in UTC): angesagt wird nie weniger als die Wartezeit. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
+- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
 
 ---
 

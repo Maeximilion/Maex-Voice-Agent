@@ -31,6 +31,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.time import utcnow
+from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
@@ -316,7 +317,7 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
             problems.append(f"Preisdifferenz „{row['price_delta_eur']}“ nicht lesbar")
         if is_default is None or required is None:
             problems.append("is_default und required nur ja oder nein")
-        key = (number, row["group_name"], row["option_name"])
+        key = (number, option_key(row["group_name"]), option_key(row["option_name"]))
         if key in seen:
             problems.append("Option doppelt")
         if problems:
@@ -331,7 +332,16 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
 
     for number, options in plan.options.items():
         groups: dict[str, list[OptionRow]] = {}
+        spellings: dict[str, str] = {}
         for option in options:
+            first = spellings.setdefault(
+                option_key(option.group_name), option.group_name
+            )
+            if first != option.group_name:
+                plan.errors.append(
+                    f"{OPTIONS_FILE}: {number}/{option.group_name}: Gruppe „{first}“ "
+                    "steht in zwei Schreibweisen, bitte eine verwenden"
+                )
             groups.setdefault(option.group_name, []).append(option)
         for group, members in groups.items():
             flags = {m.required for m in members}
