@@ -209,13 +209,6 @@ def test_unbekannter_mandant_ist_not_found(session, tenant_id, call_id):
         confirm(session, request(uuid.uuid4(), call_id, draft_id))
 
 
-def test_bestellung_ist_bis_stufe_2_not_found(session, tenant_id, call_id):
-    draft_id = make_draft(session, tenant_id, call_id)
-    with pytest.raises(NotFound) as exc:
-        confirm(session, request(tenant_id, call_id, draft_id, entity="order"))
-    assert exc.value.say is not None
-
-
 def test_parallele_bestaetigung_legt_nur_ein_ereignis_an(migrated_db_url):
     """Acht gleichzeitige confirm-Aufrufe auf denselben Entwurf: ein Ereignis, ein Audit."""
     engine = create_engine(migrated_db_url)

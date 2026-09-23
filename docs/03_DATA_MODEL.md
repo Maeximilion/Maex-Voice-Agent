@@ -215,7 +215,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | note | TEXT | |
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
-| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf |
+| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt |
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
