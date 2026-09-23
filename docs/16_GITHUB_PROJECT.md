@@ -21,13 +21,15 @@ Was wie ein zweites Project aussieht, ist immer eine **View**. Views kosten nich
 
 | View | Typ | Zeigt |
 |---|---|---|
-| Board | Board nach Status | Der Arbeitsfluss: Todo, In Progress, Blocked, Done |
+| Board | Board nach Status | Der Arbeitsfluss: Todo, In progress, Done |
 | Aktuelle Iteration | Tabelle | Was gerade dran ist |
 | Backlog | Tabelle, nach Prioritaet | Offen, noch keiner Iteration zugeordnet |
 | Roadmap | Roadmap | Die Stufen ueber die Zeit. Monat oder Quartal ist eine Einstellung dieser View, kein eigenes Project |
 | In Review | Tabelle | Pull Requests, die auf Review warten |
 
 Wenn eine Sicht fehlt: eine View anlegen, niemals ein Project.
+
+**Das Project ist Nummer 2** (`https://github.com/users/Maeximilion/projects/2`): 121 Eintraege, 77 Issues und 44 Pull Requests, alle Felder gepflegt. Stand 23.09.2026 bestehen daneben Nummer 3 (77 Issues, vollstaendige Teilmenge von 2, kein einziger eigener Eintrag) und Nummer 4 (leer). Beide gehoeren geschlossen; solange sie offen sind, ist die Regel aus Abschnitt 1 nur aufgeschrieben, nicht hergestellt.
 
 ---
 
@@ -72,10 +74,10 @@ Geprueft wird:
 
 - derselbe Vorgang zweimal auf dem Board
 - Eintraege ohne Status
-- offene Eintraege ohne Iteration
+- Eintraege in Arbeit ohne Iteration (bewusst nicht der ganze Backlog, sonst meldet der Bericht taeglich alles)
 - `In Progress` seit sieben Tagen ohne Bewegung — wird gemeldet, nicht verschoben
 - `Done` aelter als vierzehn Tage — Archiv-Kandidat
-- Issue geschlossen, Board steht aber nicht auf `Done`
+- abgeschlossen, Board steht aber nicht auf `Done` - zaehlt `MERGED` mit, denn ein Pull Request erreicht `CLOSED` nie
 
 Archiviert wird nur, wenn der Lauf von Hand mit dem Schalter `apply` gestartet wird. Der taegliche Lauf berichtet ausschliesslich.
 

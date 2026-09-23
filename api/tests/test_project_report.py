@@ -75,12 +75,48 @@ def test_entwurf_ohne_nummer_zaehlt_nicht_als_dopplung() -> None:
     assert project_report.find_issues(eintraege, JETZT)["Doppelt auf dem Board"] == []
 
 
-def test_geschlossenes_issue_ohne_done_faellt_auf() -> None:
-    """Der wichtigste Drift: Issue ist zu, das Board zeigt es weiter als offen."""
-    befunde = project_report.find_issues(
-        [eintrag(3, state="CLOSED", status="Todo")], JETZT
+@pytest.mark.parametrize("geschrieben", ["In progress", "In Progress", "in arbeit"])
+def test_status_wird_unabhaengig_von_der_schreibweise_erkannt(geschrieben: str) -> None:
+    """GitHub liefert die Option so, wie sie angelegt wurde - der Vergleich darf daran nicht scheitern."""
+    eintraege = [eintrag(11, status=geschrieben, tage_alt=9)]
+    assert len(project_report.find_issues(eintraege, JETZT)[LIEGT_SCHLUESSEL]) == 1
+
+
+def test_backlog_ohne_iteration_wird_nicht_gemeldet() -> None:
+    """Nur was in Arbeit ist, braucht eine Iteration - sonst meldet der Bericht taeglich den ganzen Backlog."""
+    eintraege = [eintrag(12, status="Todo", iteration=None)]
+    befunde = project_report.find_issues(eintraege, JETZT)
+    assert befunde["In Arbeit, aber ohne Iteration"] == []
+
+
+def test_arbeit_ohne_iteration_faellt_auf() -> None:
+    """Umgekehrt: was laeuft, gehoert in eine Iteration."""
+    eintraege = [eintrag(13, status="In progress", iteration=None)]
+    assert (
+        len(
+            project_report.find_issues(eintraege, JETZT)[
+                "In Arbeit, aber ohne Iteration"
+            ]
+        )
+        == 1
     )
-    assert len(befunde["Geschlossen, steht aber nicht auf Done"]) == 1
+
+
+@pytest.mark.parametrize("zustand", ["CLOSED", "MERGED"])
+def test_abgeschlossenes_ohne_done_faellt_auf(zustand: str) -> None:
+    """Der wichtigste Drift. MERGED muss mitzaehlen: ein Pull Request landet nie auf CLOSED."""
+    befunde = project_report.find_issues(
+        [eintrag(3, state=zustand, status="Todo")], JETZT
+    )
+    assert len(befunde["Abgeschlossen, steht aber nicht auf Done"]) == 1
+
+
+def test_offenes_issue_gilt_nicht_als_abgeschlossen() -> None:
+    """Gegenprobe, damit die Pruefung nicht einfach alles meldet."""
+    befunde = project_report.find_issues(
+        [eintrag(3, state="OPEN", status="Todo")], JETZT
+    )
+    assert befunde["Abgeschlossen, steht aber nicht auf Done"] == []
 
 
 @pytest.mark.parametrize(
@@ -114,7 +150,7 @@ def test_fehlende_felder_werden_getrennt_gemeldet() -> None:
         [eintrag(6, status=None, iteration=None)], JETZT
     )
     assert len(befunde["Ohne Status"]) == 1
-    assert len(befunde["Offen, aber ohne Iteration"]) == 1
+    assert befunde["In Arbeit, aber ohne Iteration"] == []
 
 
 def test_bericht_ohne_befunde_bleibt_kurz() -> None:

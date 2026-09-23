@@ -96,6 +96,25 @@ class Item:
     def status(self) -> str | None:
         return self.fields.get("Status")
 
+    # GitHub schreibt die Optionen so, wie sie angelegt wurden: "In progress" aus der
+    # Vorlage, "In Progress" von Hand. Ein Vergleich auf den exakten Text laesst den
+    # Bericht still danebenliegen, darum wird normalisiert statt gleichgesetzt.
+    def _status_is(self, *names: str) -> bool:
+        return (self.status or "").strip().casefold() in names
+
+    @property
+    def is_in_progress(self) -> bool:
+        return self._status_is("in progress", "in arbeit")
+
+    @property
+    def is_done(self) -> bool:
+        return self._status_is("done", "fertig", "erledigt")
+
+    @property
+    def is_finished(self) -> bool:
+        """Abgeschlossen im Sinne von GitHub. Ein Pull Request landet auf MERGED, nicht auf CLOSED."""
+        return self.state in ("CLOSED", "MERGED")
+
     @property
     def label(self) -> str:
         return (
@@ -196,24 +215,26 @@ def find_issues(items: list[Item], now: datetime) -> dict[str, list[Item]]:
     return {
         "Doppelt auf dem Board": duplicates,
         "Ohne Status": [item for item in items if not item.status],
-        "Offen, aber ohne Iteration": [
+        # Nur was wirklich in Arbeit ist, braucht eine Iteration. Die Prueflinie auf
+        # jeden offenen Eintrag zu legen hiesse, den ganzen Backlog taeglich zu melden.
+        "In Arbeit, aber ohne Iteration": [
             item
             for item in items
-            if item.state == "OPEN" and not item.fields.get("Iteration")
+            if item.is_in_progress and not item.fields.get("Iteration")
         ],
         f"In Arbeit, seit {IN_PROGRESS_STALE_AFTER_DAYS} Tagen ohne Bewegung": [
             item
             for item in items
-            if item.status == "In Progress"
+            if item.is_in_progress
             and item.age_days(now) >= IN_PROGRESS_STALE_AFTER_DAYS
         ],
         f"Fertig, aelter als {DONE_ARCHIVE_AFTER_DAYS} Tage (Archiv-Kandidat)": [
             item
             for item in items
-            if item.status == "Done" and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
+            if item.is_done and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
         ],
-        "Geschlossen, steht aber nicht auf Done": [
-            item for item in items if item.state == "CLOSED" and item.status != "Done"
+        "Abgeschlossen, steht aber nicht auf Done": [
+            item for item in items if item.is_finished and not item.is_done
         ],
     }
 
@@ -264,6 +285,10 @@ def archive_stale_done(
 
 
 def main() -> int:
+    # Ohne das schreibt Windows den Bericht in cp1252 und zerlegt jedes Sonderzeichen.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--apply",
