@@ -143,21 +143,21 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    wieder an dem davor, die übrigen Grenzen bleiben: „die 23 und eine Ente süß
    und sauer" ergibt zwei Positionen. Nach „hundert" hängt „und" nur eine Zahl
    an („hundert und eins"), keine neue Position („die hundert und eine Cola").
-   Einleitende Wörter („dazu", „außerdem") vor einer Position stören nicht. Nach „hundert" gehört
-   „und" zur Zahl („hundert und eins").
+   Einleitende Wörter („dazu", „außerdem") vor einer Position stören nicht.
 2. Alias-Tabelle, exakt → `match_type: "alias"`
 3. Unscharfe Suche über Name und Alias (Trigram) → nur Treffer über Schwelle
    - genau ein Treffer über der hohen Schwelle → `match_type: "fuzzy_single"`
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
 
-**Zwei Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
+**Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
 vorzuschlagen gibt:
 
 | Lage | Antwort |
 |---|---|
 | Mehrere Gerichte passen (Alias oder Trigram) | `ok: true`, `match_type: "ambiguous"`, bis zu 3 Vorschläge in `results` |
 | Der Satz nennt keine eine Nummer („23 oder 24", „Nummer 23, nein", „Nummer 47, die Ente") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` fragt nach der einen Nummer |
+| Der Satz nennt mehrere Positionen ohne Marker („die 23 und einmal Pho Bo") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` bittet um eins nach dem anderen, `message` nennt die Teile |
 
 Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
 könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent
