@@ -145,9 +145,11 @@ def position_parts(
     Positionen. Trifft eines nichts oder dasselbe, war das "und" Teil eines
     Namens ("Ente süß und sauer"), und der Satz bleibt ganz.
 
-    Vorher gilt der ganze Satz: steht er selbst so auf der Karte ("Fisch und
-    Chips" als Alias oder genau als Name), ist er ein Gericht, auch wenn "Fisch"
-    und "Chips" es einzeln auch sind (Codex PR #127, P1).
+    Vorher gelten zusammenhaengende Stuecke: steht der ganze Satz oder ein Teil
+    davon selbst so auf der Karte ("Fisch und Chips" als Alias oder als Name),
+    ist er ein Gericht, auch wenn "Fisch" und "Chips" es einzeln auch sind -
+    auch mitten in einer Aufzaehlung ("Fisch und Chips und Pho Bo", Codex PR
+    #127, P1). Gesucht wird von links, das laengste Stueck zuerst.
     """
     parts = split_positions(query)
     if len(parts) > 1:
@@ -158,23 +160,48 @@ def position_parts(
     search = partial(
         search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
     )
-    if _whole_dish(session, tenant_id, search, query, pieces):
-        return [query]
+    spans = _spans(query, pieces)
+    positions: list[str] = []
     # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
     # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
     # anderen Worten - das kann eine Praezisierung sein, der Satz bleibt ganz.
     said: dict[uuid.UUID, set[str]] = {}
+    i = 0
+    while i < len(pieces):
+        for j in range(len(pieces) - 1, i, -1):
+            text = query[spans[i][0] : spans[j][1]]
+            if _whole_dish(session, tenant_id, search, text, pieces[i : j + 1]):
+                positions.append(text)
+                i = j + 1
+                break
+        else:
+            piece = pieces[i]
+            try:
+                found = search(piece)
+            except (Ambiguous, NotFound):
+                return [query]
+            if found.match_type not in CLEAR_MATCHES or not found.results:
+                return [query]
+            said.setdefault(found.results[0].menu_item_id, set()).add(
+                normalize_query(piece)
+            )
+            positions.append(piece)
+            i += 1
+    if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
+        return [query]
+    return positions
+
+
+def _spans(query: str, pieces: list[str]) -> list[tuple[int, int]]:
+    """Wo jedes Stueck im Satz steht, damit benachbarte Stuecke mit ihrem
+    Trenner wieder zusammengesetzt werden koennen, wie der Gast sie sagte."""
+    spans = []
+    start = 0
     for piece in pieces:
-        try:
-            found = search(piece)
-        except (Ambiguous, NotFound):
-            return [query]
-        if found.match_type not in CLEAR_MATCHES or not found.results:
-            return [query]
-        said.setdefault(found.results[0].menu_item_id, set()).add(
-            normalize_query(piece)
-        )
-    return pieces if all(len(words) == 1 for words in said.values()) else [query]
+        begin = query.index(piece, start)
+        start = begin + len(piece)
+        spans.append((begin, start))
+    return spans
 
 
 def _whole_dish(

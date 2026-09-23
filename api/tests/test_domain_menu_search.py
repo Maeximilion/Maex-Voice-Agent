@@ -721,3 +721,37 @@ def test_doppelter_alias_fuer_den_ganzen_satz_fragt_nach(session):
     result = suche(session, tid, "Fisch und Chips")
     assert result.match_type == "ambiguous"
     assert sorted(nummern(result)) == ["60", "64"]
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "teile"),
+    [
+        ("Fisch und Chips und Pho Bo", ["Fisch und Chips", "Pho Bo"]),
+        ("Pho Bo und Fisch und Chips", ["Pho Bo", "Fisch und Chips"]),
+        ("einmal Fisch und Chips und Pho Bo", ["einmal Fisch und Chips", "Pho Bo"]),
+    ],
+)
+def test_zusammengesetztes_gericht_in_einer_aufzaehlung(
+    session, zusammen_tenant, gesagt, teile
+):
+    """Codex PR #127, P1: steht "Fisch und Chips" neben einem weiteren Gericht,
+    ist der ganze Satz kein Gericht, die Stuecke "Fisch" und "Chips" aber schon.
+    Benachbarte Stuecke werden deshalb zuerst gemeinsam gegen die Karte
+    geprueft, das laengste zuerst."""
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == teile
+
+
+def test_aufzaehlung_ohne_mengen_bleibt_im_latenzbudget(session, zusammen_tenant):
+    """Das Zusammenfassen benachbarter Stuecke sucht je Spanne einmal. Fuenf
+    Gerichte ohne Menge sind der teure Fall; das Budget von 300 ms gilt auch hier."""
+    gesagt = "Pho Bo und Fisch und Chips und Frühlingsrollen und Pommes und Pho Bo"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [
+        "Pho Bo",
+        "Fisch und Chips",
+        "Frühlingsrollen",
+        "Pommes",
+        "Pho Bo",
+    ]
+    assert (
+        p95_ms(lambda: position_parts(session, zusammen_tenant, gesagt, now=NOW)) < 300
+    )

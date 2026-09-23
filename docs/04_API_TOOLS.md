@@ -143,6 +143,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Gericht mit denselben Worten zweimal („Pho Bo und Pho Bo") sind zwei
    Positionen; mit anderen Worten („Pho und Pho Bo") bleibt der Satz ganz.
    Hängt der ganze Satz als Alias an mehreren Gerichten, fragt die Suche nach.
+   Dasselbe gilt für benachbarte Stücke mitten in einer Aufzählung: „Fisch und
+   Chips und Pho Bo" sind zwei Positionen, geprüft von links, das längste Stück
+   zuerst.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

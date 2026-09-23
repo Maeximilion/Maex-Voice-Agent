@@ -127,3 +127,49 @@ def test_wechsel_von_bestellung_zu_reservierung_macht_die_reservierung_aktiv():
     assert state.intent == "reservation"
     assert state.reservation_id == reservation_id and state.order_id is None
     assert "order_id" not in state.to_prompt_json()
+
+
+# --- Gescheiterte Korrektur nach dem Vorlesen (Codex PR #127, P1) --------------------
+
+
+def test_gescheiterte_korrektur_der_bestellung_nimmt_den_alten_entwurf_raus():
+    """Der Gast korrigiert nach dem Vorlesen, der neue draft_order scheitert
+    (z. B. Menge ueber dem Limit). Der alte Entwurf ist nicht mehr, was der Gast
+    will: bliebe er im Zustand, bestaetigte das naechste Ja ihn."""
+    state = make_state(stage="readback_pending", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.order_id is None
+    assert state.stage == "collecting"
+    assert "order_id" not in state.to_prompt_json()
+
+
+def test_gescheiterte_korrektur_der_reservierung_nimmt_den_alten_entwurf_raus():
+    state = make_state(stage="readback_pending", reservation_id=uuid.uuid4())
+    apply_tool_result(
+        state, "create_reservation", ToolResult(ok=False, error_code="conflict")
+    )
+    assert state.reservation_id is None
+    assert state.stage == "collecting"
+
+
+def test_neue_slotpruefung_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus():
+    """Eine Korrektur der Reservierung beginnt mit check_slot. Ist der neue
+    Wunsch belegt, darf ein spaeteres Ja nicht den alten bestaetigen."""
+    state = make_state(stage="readback_pending", reservation_id=uuid.uuid4())
+    apply_tool_result(
+        state, "check_slot", ToolResult(ok=True, data={"available": False})
+    )
+    assert state.reservation_id is None
+    assert state.stage == "collecting"
+
+
+def test_fehler_ohne_offenes_vorlesen_aendert_nichts():
+    order_id = uuid.uuid4()
+    state = make_state(stage="confirmed", order_id=order_id)
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.stage == "confirmed"
+    assert state.order_id == order_id
