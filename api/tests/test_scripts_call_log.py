@@ -366,6 +366,17 @@ def test_allergie_mit_personenbezug_macht_datei_rot(text):
     assert errors and "Allergie" in errors[0], text
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["hat die 23 irgendwelche Allergien?", "ich habe eine Allergie gegen Sesam"],
+)
+def test_allergien_im_plural_ist_die_frage_zum_gericht(text):
+    """Umgangssprachlich heisst "Allergien" die Allergene des Gerichts; nur die
+    Allergie einer Person ist ein Gesundheitsdatum."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert bool(errors) is text.startswith("ich"), text
+
+
 def test_produktbezogene_allergenfrage_ist_erlaubt():
     _, errors = parse(
         HEADER

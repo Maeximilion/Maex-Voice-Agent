@@ -95,9 +95,10 @@ _EMAIL = re.compile(
     r"(?:de|com|net|org|eu|info|at|ch)\b"
 )
 # DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum.
-# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?"); "Allergene"
-# trifft das Muster nicht.
-_HEALTH = re.compile(r"allergi|allergisch|unvertraeglich|intoleran")
+# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?"). "Allergene"
+# und "Allergien" (umgangssprachlich fuer die Allergene eines Gerichts) treffen
+# das Muster nicht, "Allergie" als Wortende ("Nussallergie") schon.
+_HEALTH = re.compile(r"allergie\b|allergisch|unvertraeglich|intoleran")
 # Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
 _ADDRESS = re.compile(
     r"\b\w+(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"

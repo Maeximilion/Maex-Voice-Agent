@@ -47,7 +47,7 @@ Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer, E-M
 - Telefonnummer: sechs Ziffern in Folge, auch mit Klammer, Strich, Leerzeichen oder Punkt zwischen Ziffern, und diktiert („null sieben zwei eins …“, „null sieben einundzwanzig …“)
 - E-Mail: auch mit Leerzeichen oder diktiert („mueller at gmx punkt de“)
 - Adresse: Straße mit Hausnummer („Kaiserstraße 12“); ein Stadtteil ist erlaubt
-- Allergie: „Allergie“, „allergisch“, „Unverträglichkeit“, „Intoleranz“; die Frage nach „Allergenen“ eines Gerichts ist erlaubt
+- Allergie: „Allergie“ (auch „Nussallergie“), „allergisch“, „Unverträglichkeit“, „Intoleranz“; die Frage nach „Allergenen“ oder „Allergien“ eines Gerichts ist erlaubt
 
 Ein Datum mit Jahr schlägt deshalb auch an: `25.09.` statt `25.09.2026` schreiben, `am 25.09. 19 Uhr` geht. Mehrere Kartennummern mit Komma trennen (`die 12, 34 und 56`), sonst sehen sie wie eine Nummer aus. Namen erkennt das Script nicht, die bleiben Handarbeit.
 
