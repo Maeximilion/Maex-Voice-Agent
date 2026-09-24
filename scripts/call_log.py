@@ -72,6 +72,11 @@ WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 # Hierhin wandern durchgesehene Faelle; der Entwurfslauf raeumt seinen Ordner
 # leer und darf deshalb nie dorthin schreiben.
 EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
+# Name und Rufnummer stehen nie im Protokoll, der Agent braucht beide vor
+# `confirm`. Ein bestaetigter Fall bekommt deshalb erfundene Werte: den
+# Platzhalter-Namen der Evals und die Beispielnummer aus docs/08 §1.
+SYNTHETIC_CALLER_ID = "+497215551234"
+SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
 
 # Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich,
 # Punkt oder Klammer dazwischen, sind fast immer eine Telefonnummer. Mengen und
@@ -87,6 +92,7 @@ class Entry:
     line: int
     day: date
     hour: int
+    minute: int
     duration_min: float | None
     intent: str
     outcome: str
@@ -112,11 +118,11 @@ def _parse_date(value: str) -> date:
     return date(year, month, day)
 
 
-def _parse_hour(value: str) -> int:
+def _parse_time(value: str) -> tuple[int, int]:
     hour, minute = (int(part) for part in re.split(r"[:.]", value.strip()))
     if not (0 <= hour <= 23 and 0 <= minute <= 59):
         raise ValueError(value)
-    return hour
+    return hour, minute
 
 
 def parse(text: str) -> tuple[list[Entry], list[str]]:
@@ -166,7 +172,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
             errors.append(f"Zeile {line}: Datum '{row['date']}' nicht TT.MM.JJJJ")
             continue
         try:
-            hour = _parse_hour(row["time"])
+            hour, minute = _parse_time(row["time"])
         except ValueError:
             errors.append(f"Zeile {line}: Uhrzeit '{row['time']}' nicht HH:MM")
             continue
@@ -205,6 +211,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                 line,
                 day,
                 hour,
+                minute,
                 duration,
                 intent,
                 outcome,
@@ -259,7 +266,11 @@ def case_id(entry: Entry) -> str:
     """ID aus dem Inhalt, nicht aus der Zeilennummer: Zeile 2 kommt in jedem
     Wochenprotokoll wieder vor, und in evals/cases/ wuerde der neue Fall den
     alten ueberschreiben. Derselbe Anruf behaelt seine ID ueber jeden Lauf."""
-    key = f"{entry.day.isoformat()} {entry.hour} {'|'.join(entry.phrases)}"
+    # Mit Minute: zwei Anrufe derselben Stunde mit gleichem Wortlaut sind zwei Faelle.
+    key = (
+        f"{entry.day.isoformat()} {entry.hour:02d}:{entry.minute:02d} "
+        f"{'|'.join(entry.phrases)}"
+    )
     return "protokoll_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
 
 
@@ -288,15 +299,26 @@ def to_case(entry: Entry) -> dict | None:
     ]
     if entry.items:
         review.insert(0, f"expected.items aus '{entry.items}' mit Kartennummern")
-    return {
+    phrases = list(entry.phrases)
+    case: dict[str, object] = {
         "id": case_id(entry),
         "name": f"Anrufprotokoll Zeile {entry.line}",
         "tags": [entry.intent, "protokoll"],
         "source": "call_log",
-        "transcript": [{"role": "customer", "text": p} for p in entry.phrases],
-        "expected": expected,
-        "review": review,
     }
+    if expected.get("confirmed"):
+        # Vor dem letzten Satz, der meist das Ja zum Vorlesen ist.
+        phrases.insert(len(phrases) - 1, SYNTHETIC_NAME_TURN)
+        case["caller_id"] = SYNTHETIC_CALLER_ID
+        review.insert(
+            0,
+            f"'{SYNTHETIC_NAME_TURN}' und caller_id sind erfunden: Namenszeile "
+            "dorthin schieben, wo der Kunde seinen Namen nannte",
+        )
+    case["transcript"] = [{"role": "customer", "text": p} for p in phrases]
+    case["expected"] = expected
+    case["review"] = review
+    return case
 
 
 def write_cases(entries: list[Entry], folder: Path) -> int:
@@ -307,17 +329,20 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
     folder.mkdir(parents=True, exist_ok=True)
     for stale in folder.glob("protokoll_*.json"):
         stale.unlink()
-    written = 0
+    written: set[Path] = set()
     for entry in entries:
         case = to_case(entry)
         if case is None:
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
+        if path in written:
+            # Gleiche Minute, gleicher Wortlaut: dieselbe Zeile zweimal abgetippt.
+            continue
         path.write_text(
             json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
-        written += 1
-    return written
+        written.add(path)
+    return len(written)
 
 
 def main(argv: list[str] | None = None) -> int:

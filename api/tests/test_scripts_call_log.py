@@ -47,7 +47,11 @@ def test_normalfall_report_und_fall():
         "confirmed": True,
         "escalated": False,
     }
-    assert [t["text"] for t in case["transcript"]] == ["zweimal die 23", "ja passt so"]
+    assert [t["text"] for t in case["transcript"]] == [
+        "zweimal die 23",
+        "Auf den Namen Mueller.",
+        "ja passt so",
+    ]
 
 
 def test_telefonnummer_macht_datei_rot():
@@ -189,3 +193,42 @@ def test_entwuerfe_nie_direkt_nach_evals_cases(tmp_path, capsys):
     assert main([str(good), "--cases", str(cases)]) == 2
     assert sorted(cases.iterdir()) == vorher
     assert "evals/cases" in capsys.readouterr().err
+
+
+def test_gleicher_wortlaut_in_derselben_stunde_bleibt_getrennt(tmp_path):
+    """Codex PR #135: ohne Minute fielen zwei Anrufe um 18:05 und 18:40 zu
+    einer ID zusammen, der zweite ueberschrieb den ersten still."""
+    entries, _ = parse(
+        HEADER
+        + _row(time="18:05", intent="reservierung", phrases="Tisch fuer zwei | ja")
+        + _row(time="18:40", intent="reservierung", phrases="Tisch fuer zwei | ja")
+    )
+    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+    assert write_cases(entries, tmp_path) == 2
+    assert len(list(tmp_path.iterdir())) == 2
+
+
+def test_doppelt_abgetippte_zeile_wird_nicht_doppelt_gezaehlt(tmp_path):
+    entries, _ = parse(HEADER + _row() + _row())
+    assert write_cases(entries, tmp_path) == 1
+
+
+def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
+    """Codex PR #135: ohne Name und Rufnummer kann der Agent nie bestaetigen,
+    der Entwurf mit confirmed true waere immer rot."""
+    entries, _ = parse(HEADER + _row(phrases="zweimal die 23 | ja passt so"))
+    case = to_case(entries[0])
+    assert case["caller_id"] == "+497215551234"
+    assert [t["text"] for t in case["transcript"]] == [
+        "zweimal die 23",
+        "Auf den Namen Mueller.",
+        "ja passt so",
+    ]
+    assert any("erfunden" in hint for hint in case["review"])
+
+
+def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
+    entries, _ = parse(HEADER + _row(outcome="abgelehnt", phrases="Tisch fuer sechs?"))
+    case = to_case(entries[0])
+    assert "caller_id" not in case
+    assert [t["text"] for t in case["transcript"]] == ["Tisch fuer sechs?"]

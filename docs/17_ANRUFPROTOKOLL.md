@@ -55,7 +55,7 @@ python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwu
 Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde und Wochentag, alle notierten Probleme. Exit-Code 0 ausgewertet, 1 Prüffehler (nichts ausgewertet), 2 Datei fehlt oder Zielordner ist `evals/cases/`.
 
 ### Eval-Entwürfe
-Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Stunde und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. `--cases evals/cases/` lehnt das Script ab (Exit 2). Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
+Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. `--cases evals/cases/` lehnt das Script ab (Exit 2). Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
 
 | Protokoll | `expected` |
 |---|---|
@@ -64,6 +64,8 @@ Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `doc
 | outcome `abgelehnt` oder `abgebrochen` | `confirmed: false`, `escalated: false` |
 | outcome `rueckruf` oder intent `beschwerde` | `escalated: true` |
 | `frage`, `sonstiges` ohne Eskalation, oder keine Kundensätze | kein Fall |
+
+Name und Rufnummer stehen nie im Protokoll, der Agent braucht beide vor `confirm`. Ein Fall mit `confirmed: true` bekommt deshalb erfundene Werte: `caller_id` `+497215551234` (Beispielnummer aus `docs/08` §1) und die Zeile „Auf den Namen Mueller.“ vor dem letzten Kundensatz. Die ID enthält die Minute; eine doppelt abgetippte Zeile ergibt einen Fall, nicht zwei.
 
 Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Positionen mit Kartennummer nach `expected.items`, Namen prüfen, dann `review` löschen und die Datei nach `evals/cases/` verschieben.
 
