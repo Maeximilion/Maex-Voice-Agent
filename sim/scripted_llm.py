@@ -49,7 +49,9 @@ SAY_HANDOVER = "Ich gebe an das Team weiter."
 # Allergene und das Vorlesen der Karte (dafuer ist ein echtes Modell noetig).
 OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
 # Waehrend einer Bestellung faellt "Karte" natuerlich ("die 23 von der Karte").
-OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergi")
+# Die Frage nach Allergenen geht ans Team; die eigene Allergie ("ich habe eine
+# Erdnussallergie") ist ein Hinweis zur Position (E14, Codex PR #139).
+OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen")
 PICKUP = ("abhol", "mitnehmen")
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.

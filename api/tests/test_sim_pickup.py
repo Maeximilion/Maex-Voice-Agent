@@ -968,3 +968,13 @@ def test_weglassen_und_option_zusammen_in_der_bestellung(session, tenant):
     [order] = orders(session)
     assert positions(session, order) == [("47", 1, ["Huhn"])]
     assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_eigene_allergie_ist_kein_rueckruf(session, tenant):
+    """Codex PR #139: "ich habe eine Erdnussallergie" waehrend der Bestellung ist
+    ein Hinweis zur Position (E14), kein Anliegen fuer einen Rueckruf."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Erdnussallergie.")
+    session.expire_all()
+    assert list(session.scalars(select(Callback))) == []
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]

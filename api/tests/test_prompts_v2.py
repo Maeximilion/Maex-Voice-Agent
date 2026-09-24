@@ -92,3 +92,12 @@ def test_wuensche_und_aufpreis_nur_aus_der_karte():
     tools = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
     assert "`wish`" in tools.split("## search_menu")[1].split("## ")[0]
     assert "`reason`" in tools.split("## get_item_details")[1].split("## ")[0]
+
+
+def test_allergenfrage_und_eigene_allergie_getrennt():
+    """Codex PR #139: die Frage nach Allergenen eines Gerichts geht an
+    get_item_details, die eigene Allergie des Gastes kommt als Hinweis aus
+    search_menu - die Regeln widersprechen sich nicht."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    regel = next(z for z in text.splitlines() if z.startswith("- Allergien:"))
+    assert "Frage" in regel and "eigene Allergie" in regel

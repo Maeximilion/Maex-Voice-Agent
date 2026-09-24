@@ -511,3 +511,27 @@ def test_optionsname_mit_bindestrich():
         )
     ]
     assert classify_wish("mit Süß-Sauer", groups).kind == "option"
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "hinweis"),
+    [
+        (
+            "ich bin allergisch gegen Erdnüsse und Sesam",
+            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+        ),
+        (
+            "ich vertrage keine Erdnüsse, Sesam und Soja",
+            "WICHTIG: Keine Erdnüsse, Sesam und Soja. Grund: Allergie",
+        ),
+        (
+            "allergisch gegen Sesam und dann noch eine Cola",
+            "WICHTIG: Keine Sesam. Grund: Allergie",
+        ),
+    ],
+)
+def test_jede_zutat_einer_allergie_bleibt(gesagt, hinweis):
+    """Codex PR #139, P1: eine Aufzaehlung von Zutaten endet nicht am ersten
+    "und" - sonst fehlte eine Allergie im Hinweis an die Kueche. Erst ein neuer
+    Satzteil ("und dann noch eine Cola") beendet sie."""
+    assert classify_wish(gesagt, BEILAGE).text == hinweis

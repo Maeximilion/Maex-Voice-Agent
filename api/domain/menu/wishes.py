@@ -51,25 +51,31 @@ _COUNTED = re.compile(r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNO
 # Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
 # Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon.
 ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
-# Die Zutat endet am Satzteil: "gegen Sesam und dann noch eine Cola" ist Sesam.
-_UNTIL_CLAUSE = r"([^,.;!?]+?)(?=\s+(?:und|dann|noch|aber|sowie|bitte)\b|[,.;!?]|$)"
+# Die Zutaten reichen bis zum naechsten Satzteil: "gegen Erdnuesse und Sesam" sind
+# zwei (Codex PR #139, P1), "gegen Sesam und dann noch eine Cola" ist eine.
+_REST = r"(.+)$"
 _INGREDIENT = (
-    # "ich bin gegen Nüsse allergisch"
-    re.compile(r"gegen\s+([^,.;!?]+?)\s+allergisch", re.IGNORECASE),
+    # "ich bin gegen Nuesse allergisch"
+    re.compile(r"gegen\s+([^.;!?]+?)\s+allergisch", re.IGNORECASE),
     # "allergisch gegen Sesam", "Allergie gegen Sellerie"
     re.compile(
-        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+"
-        + _UNTIL_CLAUSE,
+        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+" + _REST,
         re.IGNORECASE,
     ),
-    # "ich vertrage keine Erdnüsse"
-    re.compile(
-        r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+" + _UNTIL_CLAUSE,
-        re.IGNORECASE,
-    ),
+    # "ich vertrage keine Erdnuesse"
+    re.compile(r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+" + _REST, re.IGNORECASE),
     # "Erdnussallergie"
     re.compile(r"(\w+?)allergie", re.IGNORECASE),
 )
+# Nach einem "und" oder Komma beginnt hier ein neuer Satzteil, keine Zutat mehr.
+_CLAUSE_WORDS = (
+    frozenset(
+        {"dann", "noch", "ich", "wir", "bitte", "aber", "dazu", "auch", "ausserdem"}
+    )
+    | _ARTICLES
+    | frozenset({"die", "der", "das", "den", "einmal"})
+)
+_PIECE = re.compile(r"[^\W_]+|[,.;!?]")
 
 
 def _words(text: str) -> list[str]:
@@ -94,10 +100,35 @@ def _ingredient(text: str) -> str | None:
     for pattern in _INGREDIENT:
         match = pattern.search(text)
         if match:
-            found = _TRAILING_PLEASE.sub("", match.group(1)).strip(" .,;!?")
+            found = _until_new_clause(match.group(1))
             if found:
                 return found[0].upper() + found[1:]
     return None
+
+
+def _until_new_clause(rest: str) -> str:
+    """Die Zutaten bis zum naechsten Satzteil, mit "und" und Komma dazwischen."""
+    pieces = _PIECE.findall(rest)
+    kept: list[str] = []
+    for i, piece in enumerate(pieces):
+        word = fold(piece)
+        if piece in ".;!?" or word == "bitte":
+            break
+        if piece == "," or word in ("und", "sowie", "oder"):
+            nxt = fold(pieces[i + 1]) if i + 1 < len(pieces) else None
+            if (
+                nxt is None
+                or nxt in ",.;!?"
+                or nxt in _CLAUSE_WORDS
+                or nxt.endswith("mal")
+                or parse_cardinal(nxt) is not None
+            ):
+                break
+        kept.append(piece)
+    text = ""
+    for piece in kept:
+        text += piece if piece == "," else f" {piece}"
+    return text.strip()
 
 
 def _starts(words: list[str]) -> list[int]:
