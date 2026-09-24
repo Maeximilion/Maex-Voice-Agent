@@ -40,7 +40,7 @@ def test_normalfall_report_und_fall():
     assert "Anrufe: 2 an 1 Tagen" in text
     assert "18 Uhr 1 · 19 Uhr 1" in text
     assert "Do 2" in text  # 24.09.2026 ist ein Donnerstag
-    case = to_case(entries[0], 1)
+    case = to_case(entries[0])
     assert case is not None
     assert case["expected"] == {
         "intent": "pickup",
@@ -95,14 +95,14 @@ def test_rueckruf_und_beschwerde_sind_eskalation():
         + _row(outcome="rueckruf")
         + _row(intent="beschwerde", outcome="erledigt")
     )
-    assert to_case(entries[0], 1)["expected"] == {"intent": "pickup", "escalated": True}
-    assert to_case(entries[1], 2)["expected"] == {"escalated": True}
+    assert to_case(entries[0])["expected"] == {"intent": "pickup", "escalated": True}
+    assert to_case(entries[1])["expected"] == {"escalated": True}
 
 
 def test_frage_ohne_kundensaetze_wird_kein_fall():
     entries, _ = parse(HEADER + _row(intent="frage") + _row(phrases=""))
-    assert to_case(entries[0], 1) is None
-    assert to_case(entries[1], 2) is None
+    assert to_case(entries[0]) is None
+    assert to_case(entries[1]) is None
 
 
 def test_entwuerfe_idempotent(tmp_path):
@@ -164,4 +164,28 @@ def test_veraltete_entwuerfe_verschwinden(tmp_path):
     entries, _ = parse(HEADER + _row(intent="lieferung"))
     assert write_cases(entries, tmp_path) == 1
     names = sorted(p.name for p in tmp_path.iterdir())
-    assert names == ["notizen.txt", "protokoll_0002_lieferung.json"]
+    assert len(names) == 2
+    assert names[0] == "notizen.txt"
+    assert names[1].startswith("protokoll_") and names[1].endswith("_lieferung.json")
+
+
+def test_fall_id_haengt_am_inhalt_nicht_an_der_zeile():
+    """Zeile 2 der Woche 1 und Zeile 2 der Woche 2 duerfen sich in evals/cases/
+    nicht ueberschreiben; derselbe Anruf behaelt seine ID."""
+    woche1, _ = parse(HEADER + _row())
+    woche2, _ = parse(HEADER + _row(date="01.10.2026"))
+    nochmal, _ = parse(HEADER + _row(intent="reservierung") + _row())
+    assert to_case(woche1[0])["id"] != to_case(woche2[0])["id"]
+    assert to_case(woche1[0])["id"] == to_case(nochmal[1])["id"]
+
+
+def test_entwuerfe_nie_direkt_nach_evals_cases(tmp_path, capsys):
+    """Der Lauf raeumt protokoll_*.json weg; in evals/cases/ waeren das
+    durchgesehene Faelle."""
+    good = tmp_path / "good.csv"
+    good.write_text(HEADER + _row(), encoding="utf-8")
+    cases = Path(__file__).resolve().parents[2] / "evals" / "cases"
+    vorher = sorted(cases.iterdir())
+    assert main([str(good), "--cases", str(cases)]) == 2
+    assert sorted(cases.iterdir()) == vorher
+    assert "evals/cases" in capsys.readouterr().err

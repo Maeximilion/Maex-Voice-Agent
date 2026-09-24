@@ -10,12 +10,14 @@ Rechts-Check (docs/09) offen ist, ist das die einzige Quelle echter Anrufe.
 Die Datei liegt in imports/ (im .gitignore), die Entwuerfe ebenso: ein Entwurf
 wandert erst nach Durchsicht von Hand nach evals/cases/.
 
-Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei, 2 Datei nicht gefunden.
+Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei, 2 Datei nicht gefunden
+oder Zielordner evals/cases/.
 Ohne Datenbank und ohne Netz.
 """
 
 import argparse
 import csv
+import hashlib
 import io
 import json
 import math
@@ -67,6 +69,9 @@ OUTCOME_SHORT = {
     "ab": "abgebrochen",
 }
 WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+# Hierhin wandern durchgesehene Faelle; der Entwurfslauf raeumt seinen Ordner
+# leer und darf deshalb nie dorthin schreiben.
+EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
 
 # Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich,
 # Punkt oder Klammer dazwischen, sind fast immer eine Telefonnummer. Mengen und
@@ -250,7 +255,15 @@ def report(entries: list[Entry]) -> str:
     return "\n".join(lines)
 
 
-def to_case(entry: Entry, number: int) -> dict | None:
+def case_id(entry: Entry) -> str:
+    """ID aus dem Inhalt, nicht aus der Zeilennummer: Zeile 2 kommt in jedem
+    Wochenprotokoll wieder vor, und in evals/cases/ wuerde der neue Fall den
+    alten ueberschreiben. Derselbe Anruf behaelt seine ID ueber jeden Lauf."""
+    key = f"{entry.day.isoformat()} {entry.hour} {'|'.join(entry.phrases)}"
+    return "protokoll_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
+
+
+def to_case(entry: Entry) -> dict | None:
     """Entwurf eines Eval-Falls (docs/08 §1) oder None, wenn nichts pruefbar ist.
 
     Erwartet wird nur, was das Protokoll sicher hergibt: Anliegen, bestaetigt
@@ -276,7 +289,7 @@ def to_case(entry: Entry, number: int) -> dict | None:
     if entry.items:
         review.insert(0, f"expected.items aus '{entry.items}' mit Kartennummern")
     return {
-        "id": f"protokoll_{number:04d}",
+        "id": case_id(entry),
         "name": f"Anrufprotokoll Zeile {entry.line}",
         "tags": [entry.intent, "protokoll"],
         "source": "call_log",
@@ -296,7 +309,7 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
         stale.unlink()
     written = 0
     for entry in entries:
-        case = to_case(entry, entry.line)
+        case = to_case(entry)
         if case is None:
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
@@ -326,6 +339,13 @@ def main(argv: list[str] | None = None) -> int:
     if errors:
         print(f"{len(errors)} Fehler, nichts ausgewertet.", file=sys.stderr)
         return 1
+    if args.cases and args.cases.resolve() == EVAL_CASES:
+        print(
+            "Entwuerfe nie direkt nach evals/cases: der Lauf loescht dort "
+            "protokoll_*.json. Anderen Ordner nehmen, z. B. imports/eval_entwuerfe/",
+            file=sys.stderr,
+        )
+        return 2
     print(report(entries))
     if args.cases:
         written = write_cases(entries, args.cases)

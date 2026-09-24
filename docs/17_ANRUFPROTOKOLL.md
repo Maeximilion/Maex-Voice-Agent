@@ -52,10 +52,10 @@ python -m scripts.call_log imports/anrufprotokoll.csv
 python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwuerfe/
 ```
 
-Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde und Wochentag, alle notierten Probleme. Exit-Code 0 ausgewertet, 1 Prüffehler (nichts ausgewertet), 2 Datei fehlt.
+Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde und Wochentag, alle notierten Probleme. Exit-Code 0 ausgewertet, 1 Prüffehler (nichts ausgewertet), 2 Datei fehlt oder Zielordner ist `evals/cases/`.
 
 ### Eval-Entwürfe
-Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<Zeile>_<anliegen>.json`. Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
+Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Stunde und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. `--cases evals/cases/` lehnt das Script ab (Exit 2). Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
 
 | Protokoll | `expected` |
 |---|---|
