@@ -1030,3 +1030,54 @@ def test_komma_trennt_gesprochene_zahlen():
     Karte; das Komma fiel vor dem Zaehlen weg."""
     _, errors = parse(HEADER + _row(phrases="hundertzwanzig, hundertdreissig"))
     assert errors == []
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["zum Abholen Nummer 12 bitte", "im Menue Nummer 12", "am Freitag Nr. 7"],
+)
+def test_nummer_der_karte_nach_praeposition_ist_keine_adresse(text):
+    """Codex PR #135: "Nr."/"Nummer" nur hinter einem Strassennamen streichen,
+    sonst wird aus einer Bestellung eine Adresse."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors == [], text
+
+
+def test_doppelt_abgetippte_zeile_zaehlt_einmal():
+    """Codex PR #135: dieselbe Zeile zweimal ist ein Anruf, auch in der Baseline."""
+    entries, errors = parse(HEADER + _row() + _row())
+    assert errors == []
+    assert len(entries) == 1
+    assert "Anrufe: 1 an 1 Tagen" in report(entries)
+
+
+@pytest.mark.parametrize("day", ["2026", "kein-datum", 20260924])
+def test_id_verzeichnis_mit_falschem_datum_bleibt_erhalten(
+    tmp_path, eval_cases, capsys, day
+):
+    """Codex PR #135: ein Datum, das keines ist, wurde still angenommen."""
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    ids = tmp_path / ".call_log_ids.json"
+    inhalt = json.dumps({"abc": {"day": day}})
+    ids.write_text(inhalt, encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
+    assert "ID-Verzeichnis" in capsys.readouterr().err
+    assert ids.read_text(encoding="utf-8") == inhalt
+
+
+def test_loeschen_behaelt_die_dateirechte(tmp_path, monkeypatch):
+    """Codex PR #135: die neue CSV bekam die Rechte der umask statt der alten."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    csv_file.chmod(0o600)
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 0
+    assert csv_file.stat().st_mode & 0o777 == 0o600
+
+
+def test_salz_und_verzeichnis_nur_fuer_den_eigentuemer(tmp_path, eval_cases):
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 0
+    for name in (".call_log_salt", ".call_log_ids.json"):
+        assert (tmp_path / name).stat().st_mode & 0o777 == 0o600, name

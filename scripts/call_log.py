@@ -120,10 +120,6 @@ _HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
 # ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
 # Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
 # vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
-# "Nr." oder "Nummer" vor einer Zahl faellt vor der Adresspruefung weg:
-# "Hauptstrasse Nr. 12" wird "hauptstrasse 12". "die Nr. 23" wird "die 23" und
-# bleibt die Nummer auf der Karte.
-_NR = re.compile(r"\b(?:nr\.?|nummer)\s*(?=\d)")
 # Das Wort direkt vor einer Zahl ist kein Strassenname, wenn es ein Artikel,
 # eine Zeit- oder Mengenangabe ist: "am Freitag die 23", "am Samstag gegen
 # 19.30", "um halb acht". Sonst waere jede zweite Bestellung eine Adresse.
@@ -132,8 +128,15 @@ _NOT_STREET = (
     r"|halb|viertel|fuer|mit|und|oder|je|nur|noch|so|heute|morgen|abend|mittag"
     r"|abholen|abholung|wochenende|montag|dienstag|mittwoch|donnerstag|freitag"
     r"|samstag|sonntag|januar|februar|maerz|april|mai|juni|juli|august"
-    r"|september|oktober|november|dezember)"
+    r"|september|oktober|november|dezember|nr|nummer|menue|karte|speisekarte"
+    r"|gericht|bestellung|bestellen)"
 )
+# "Nr." oder "Nummer" hinter einem moeglichen Strassennamen faellt vor der
+# Adresspruefung weg: "Hauptstrasse Nr. 12" wird "hauptstrasse 12". Hinter
+# einem Wort aus _NOT_STREET bleibt es stehen: "zum Abholen Nummer 12" und
+# "im Menue Nummer 12" sind Nummern der Karte.
+_NR = re.compile(rf"\b(?!{_NOT_STREET}\s)([a-z-]+\.?)\s+(?:nr\.?|nummer)\s*(?=\d)")
+
 # Nach der Zahl: keine Uhrzeit, kein Datum ("19.30", "25.09."), keine Menge.
 _NOT_HOUSE_NO = (
     r"(?![.:]\d)"
@@ -321,7 +324,8 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                     f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit, "
                     "bitte nur zum Gericht: 'welche Allergene hat die 23?'"
                 )
-            if _ADDRESS.search(_NR.sub("", _numbers_as_digits(row[column]))):
+            scanned = _NR.sub(r"\1 ", _numbers_as_digits(row[column]))
+            if _ADDRESS.search(scanned):
                 problems.append(
                     f"Zeile {line}: {column} enthaelt eine Adresse, bitte nur "
                     "den Stadtteil"
@@ -391,7 +395,8 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
 
 def _with_ordinals(entries: list[Entry]) -> list[Entry]:
     """Zaehlt verschiedene Anrufe derselben Minute durch. Eine doppelt
-    abgetippte Zeile ist derselbe Anruf und bekommt dieselbe Nummer."""
+    abgetippte Zeile ist derselbe Anruf und faellt weg, sonst zaehlte die
+    Baseline ihn zweimal."""
     seen: dict[tuple, list[tuple]] = {}
     out = []
     for e in entries:
@@ -405,9 +410,10 @@ def _with_ordinals(entries: list[Entry]) -> list[Entry]:
             e.duration_min,
         )
         bodies = seen.setdefault(minute, [])
-        if body not in bodies:
-            bodies.append(body)
-        out.append(dataclasses.replace(e, ordinal=bodies.index(body)))
+        if body in bodies:
+            continue
+        out.append(dataclasses.replace(e, ordinal=len(bodies)))
+        bodies.append(body)
     return out
 
 
@@ -727,6 +733,11 @@ def _load_known(path: Path) -> dict[str, dict[str, str]]:
         entry = {"day": value} if isinstance(value, str) else value
         if not isinstance(entry, dict) or not isinstance(entry.get("day"), str):
             raise ValueError(f"Eintrag {cid} ohne Datum")
+        # _forget_before vergleicht Texte: nur ein echtes Datum in einer Form.
+        try:
+            entry["day"] = date.fromisoformat(entry["day"]).isoformat()
+        except ValueError:
+            raise ValueError(f"Eintrag {cid} mit ungueltigem Datum") from None
         known[cid] = entry
     return known
 
@@ -735,7 +746,14 @@ def _replace(path: Path, text: str, encoding: str = "utf-8") -> None:
     """Erst eine Kopie daneben schreiben, dann tauschen: ein abgebrochener Lauf
     (Platte voll, Strom weg) hinterlaesst keine leere oder halbe Datei."""
     tmp = path.with_name(path.name + ".tmp")
+    # Rechte der alten Datei behalten (eine CSV mit 0600 bliebe sonst nicht
+    # privat); neue Dateien (Salz, Verzeichnis) nur fuer den Eigentuemer. Die
+    # Kopie ist ab dem Anlegen privat, erst dann kommt der Inhalt hinein.
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
     try:
+        tmp.unlink(missing_ok=True)
+        tmp.touch(mode=0o600)
+        os.chmod(tmp, mode)
         tmp.write_text(text, encoding=encoding)
         os.replace(tmp, path)
     except BaseException:
