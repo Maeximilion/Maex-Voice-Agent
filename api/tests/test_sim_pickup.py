@@ -760,3 +760,17 @@ def test_unbekanntes_gericht_zur_abholung_wird_gesagt(session, tenant, zeilen):
     der Gast das - nicht nur "Was moechten Sie bestellen?"."""
     _, turns = replay(session, case(*zeilen), tenant, now=NOW)
     assert "nicht gefunden" in " ".join(turns[-1].say)
+
+
+def test_auf_im_gerichtnamen_bleibt_im_gericht():
+    """Codex PR #133, P2: "Ente auf Reis" ist ein Gericht, kein Name "Reis"."""
+    from sim.scripted_llm import _opening_dish
+
+    assert _opening_dish("Ente auf Reis zum Abholen.") == "Ente auf Reis"
+    assert _opening_dish("die 23 zum Abholen, auf den Namen Mueller") == "die 23"
+
+
+def test_zahlwort_im_namen_auch_ohne_umlaut():
+    """Codex PR #133, P2: "fuenf schaetze" trifft "Fünf Schätze" - die Fünf gehoert
+    zum Namen, keine Menge. Verglichen wird in der gefalteten Form."""
+    assert _quantity("fuenf schaetze", {"number": "33", "name": "Fünf Schätze"}) == 1

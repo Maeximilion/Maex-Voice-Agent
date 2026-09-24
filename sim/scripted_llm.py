@@ -82,6 +82,12 @@ _NAME = re.compile(
 )
 # Mindestens sieben Ziffern, damit Uhrzeit ("19:30") und Datum ("22.09.") nicht als
 # Rufnummer durchgehen. Der Punkt fehlt deshalb bewusst in der Zeichenklasse.
+# Nur die eindeutigen Einleitungen eines Namens. Das nackte "auf" von _NAME ist in
+# einem Gerichtnamen eine Praeposition ("Ente auf Reis") (Codex PR #133, P2).
+_NAME_CLAUSE = re.compile(
+    r"(?i:auf den namen|mein name ist|name ist|ich heiße|ich heisse)\s+"
+    r"[A-ZÄÖÜ][^\s,.;!?]{1,40}"
+)
 _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
 _TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _TIME_DOT = re.compile(r"\b(\d{1,2})\.(\d{2})\s*uhr\b", re.IGNORECASE)
@@ -544,7 +550,7 @@ def _opening_dish(text: str) -> str | None:
     und Rufnummer im selben Satz sind kein Gericht: sie kommen in den
     state_patch, nicht in die Suche (Review PR #133)."""
     rest = _PICKUP_WORDS.sub(" ", text)
-    rest = _PHONE.sub(" ", _NAME.sub(" ", rest)).strip(" .,!?")
+    rest = _PHONE.sub(" ", _NAME_CLAUSE.sub(" ", rest)).strip(" .,!?")
     return rest if normalize_query(rest) or re.search(r"\d", rest) else None
 
 

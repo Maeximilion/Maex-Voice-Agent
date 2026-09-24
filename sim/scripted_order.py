@@ -17,6 +17,7 @@ from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.numberwords import (
     canonical_card,
     find_quantity,
+    fold,
     parse_cardinal,
     sole_item_number,
 )
@@ -397,7 +398,9 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
 
 
 def _words(text: str) -> list[str]:
-    return re.findall(r"[^\W_]+", text.lower())
+    # Gefaltet wie im Zahlwort-Parser: "fuenf" und "fünf" sind ein Wort (Codex PR
+    # #133, P2).
+    return re.findall(r"[^\W_]+", fold(text))
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:
