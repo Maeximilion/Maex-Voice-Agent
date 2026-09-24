@@ -2,7 +2,7 @@ Maintain the GitHub Project board. This is the only command allowed to write to 
 
 1. Read `docs/16_GITHUB_PROJECT.md` if the conventions are not already in context.
 2. Run the same pass the daily Action runs, with the local gh login:
-   `PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 python scripts/project_report.py --fix`
+   `PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJECT_REPO=Maeximilion/Maex-Voice-Agent python scripts/project_report.py --fix`
 3. Apply the remaining mechanical fixes directly, without asking - Maxi gave standing authorization on 2026-09-24:
    - duplicate item: remove the extra one from the board (the issue itself stays)
    - item without Status: set it from the issue state (open = Todo, closed or merged = Done)

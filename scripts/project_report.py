@@ -11,6 +11,9 @@ Aufruf: python scripts/project_report.py [--fix] [--archive]
 Umgeb.: PROJECT_TOKEN   Token mit Projects-Recht (Lesen; fuer --fix/--archive Schreiben)
         PROJECT_OWNER   Kontoname, dem das Project gehoert
         PROJECT_NUMBER  Nummer des Projects aus seiner URL
+        PROJECT_REPO    owner/name des Repos fuer den Abgleich offener Issues und
+                        Pull Requests; in einer Action faellt es auf GITHUB_REPOSITORY
+                        zurueck. Fehlt beides, entfaellt dieser eine Abgleich - laut.
 Abhaeng.: nur Standardbibliothek.
 """
 
@@ -64,6 +67,20 @@ query($owner: String!, $number: Int!, $cursor: String) {
           }
         }
       }
+    }
+  }
+}
+"""
+
+# Ein Platzhalter statt zwei fast gleicher Abfragen: issues und pullRequests haben
+# dieselbe Form. Getrennt blaettern, weil ein gemeinsamer Cursor die fertige Seite
+# der kuerzeren Liste erneut holen und Eintraege doppeln wuerde.
+REPO_OPEN_QUERY = """
+query($owner: String!, $name: String!, $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    CONNECTION(states: OPEN, first: 100, after: $cursor) {
+      pageInfo { hasNextPage endCursor }
+      nodes { number title url updatedAt }
     }
   }
 }
@@ -233,14 +250,65 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
         cursor = page["pageInfo"]["endCursor"]
 
 
-def find_issues(items: list[Item], now: datetime) -> dict[str, list[Item]]:
-    """Die Pruefungen. Jede liefert eine Liste von Eintraegen, die auffallen."""
+def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
+    """Alle offenen Issues und Pull Requests des Repos, als Items ohne Board-Felder."""
+    owner, _, name = repo.partition("/")
+    if not owner or not name:
+        raise ProjectError(f"PROJECT_REPO muss owner/name sein, nicht {repo!r}")
+
+    found: list[Item] = []
+    for connection in ("issues", "pullRequests"):
+        query = REPO_OPEN_QUERY.replace("CONNECTION", connection)
+        cursor: str | None = None
+        while True:
+            data = graphql(
+                query, {"owner": owner, "name": name, "cursor": cursor}, token
+            )
+            repository = data.get("repository")
+            if repository is None:
+                raise ProjectError(f"Repo {repo} nicht gefunden oder nicht lesbar.")
+            page = repository[connection]
+            found.extend(
+                Item(
+                    node_id="",
+                    title=node["title"],
+                    updated_at=datetime.fromisoformat(
+                        node["updatedAt"].replace("Z", "+00:00")
+                    ),
+                    number=node["number"],
+                    state="OPEN",
+                    url=node["url"],
+                )
+                for node in page["nodes"]
+            )
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            cursor = page["pageInfo"]["endCursor"]
+    return found
+
+
+def find_missing(items: list[Item], open_in_repo: list[Item]) -> list[Item]:
+    """Offen im Repo, aber nicht auf dem Board. Verglichen wird die URL: Issue- und
+    PR-Nummern teilen sich einen Zaehler, aber das Board kann Eintraege aus anderen
+    Repos tragen, und dort waere #12 etwas anderes."""
+    on_board = {item.url for item in items if item.url}
+    return [ref for ref in open_in_repo if ref.url not in on_board]
+
+
+def find_issues(
+    items: list[Item], now: datetime, open_in_repo: list[Item] | None = None
+) -> dict[str, list[Item]]:
+    """Die Pruefungen. Jede liefert eine Liste von Eintraegen, die auffallen.
+
+    open_in_repo=None heisst: der Abgleich mit dem Repo lief nicht. Dann fehlt der
+    Befund ganz, statt faelschlich "nichts fehlt" zu behaupten.
+    """
     seen = Counter(item.number for item in items if item.number is not None)
     duplicates = [
         item for item in items if item.number is not None and seen[item.number] > 1
     ]
 
-    return {
+    findings = {
         "Doppelt auf dem Board": duplicates,
         "Ohne Status": [item for item in items if not item.status],
         # Nur was wirklich in Arbeit ist, braucht eine Iteration. Die Prueflinie auf
@@ -259,12 +327,24 @@ def find_issues(items: list[Item], now: datetime) -> dict[str, list[Item]]:
         f"Fertig, aelter als {DONE_ARCHIVE_AFTER_DAYS} Tage (Archiv-Kandidat)": [
             item
             for item in items
-            if item.is_done and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
+            # is_finished zusaetzlich: ein wieder geoeffneter Eintrag, der auf Done
+            # haengen blieb, ist aktive Arbeit und darf nie aus der Sicht verschwinden.
+            if item.is_done
+            and item.is_finished
+            and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
         ],
         "Abgeschlossen, steht aber nicht auf Done": [
             item for item in items if item.is_finished and not item.is_done
         ],
+        "Offen, steht aber auf Done": [
+            item for item in items if item.state == "OPEN" and item.is_done
+        ],
     }
+    if open_in_repo is not None:
+        findings["Offen im Repo, fehlt auf dem Board"] = find_missing(
+            items, open_in_repo
+        )
+    return findings
 
 
 def render_report(
@@ -340,6 +420,10 @@ def mark_done(
         )
         # Lokal nachziehen, damit der Bericht den Stand nach der Korrektur zeigt.
         item.fields["Status"] = "Done"
+        # GitHub setzt updatedAt bei jeder Feldaenderung neu. Ohne das hier galte ein
+        # eben korrigierter Eintrag im selben Lauf als 14 Tage alt und wuerde mit
+        # --archive sofort wieder verschwinden, statt erst sichtbar Done zu sein.
+        item.updated_at = datetime.now(UTC)
         fixed.append(item.label)
     return fixed
 
@@ -378,6 +462,7 @@ def main() -> int:
     token = os.environ.get("PROJECT_TOKEN", "")
     owner = os.environ.get("PROJECT_OWNER", "")
     raw_number = os.environ.get("PROJECT_NUMBER", "")
+    repo = os.environ.get("PROJECT_REPO") or os.environ.get("GITHUB_REPOSITORY", "")
     missing = [
         name
         for name, value in (
@@ -408,7 +493,8 @@ def main() -> int:
             else []
         )
 
-        findings = find_issues(items, now)
+        open_in_repo = fetch_open_in_repo(repo, token) if repo else None
+        findings = find_issues(items, now, open_in_repo)
         archive_key = next(key for key in findings if "Archiv-Kandidat" in key)
         candidates = findings.pop(archive_key)
         # Erledigtes bleibt sichtbar, bis es jemand bewusst archiviert. Ohne --archive
@@ -417,6 +503,8 @@ def main() -> int:
             findings[archive_key] = candidates
 
         report = render_report(project_title, items, findings, now)
+        if open_in_repo is None:
+            report += "\n\nHinweis: PROJECT_REPO nicht gesetzt, fehlende Eintraege wurden nicht gesucht."
         if fixed:
             report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
             report += "\n".join(f"- {label}" for label in fixed)

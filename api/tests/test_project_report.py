@@ -283,3 +283,61 @@ def test_mark_done_ohne_kandidaten_ruft_github_nicht_auf(monkeypatch) -> None:
 
     monkeypatch.setattr(project_report, "graphql", darf_nicht_laufen)
     assert project_report.mark_done("owner", 2, "PROJ", [], "token") == []
+
+
+# Codex-Review PR #129 (P2 x3)
+
+
+def test_korrigierter_eintrag_wird_nicht_im_selben_lauf_archiviert(monkeypatch) -> None:
+    """--fix --archive: was eben auf Done gesetzt wurde, bleibt erst einmal sichtbar."""
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        if "field(name" in query:
+            return {
+                "user": {
+                    "projectV2": {
+                        "field": {"id": "F", "options": [{"id": "D", "name": "Done"}]}
+                    }
+                }
+            }
+        return {}
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    item = eintrag(82, state="CLOSED", status="In progress", tage_alt=30)
+    project_report.mark_done("owner", 2, "PROJ", [item], "token")
+
+    jetzt = datetime.now(UTC)
+    assert project_report.find_issues([item], jetzt)[ARCHIV_SCHLUESSEL] == []
+
+
+def test_offener_eintrag_auf_done_wird_nie_archiviert() -> None:
+    """Wieder geoeffnet, aber auf Done haengen geblieben: aktive Arbeit, kein Archiv."""
+    eintraege = [eintrag(7, state="OPEN", status="Done", tage_alt=30)]
+    befunde = project_report.find_issues(eintraege, JETZT)
+    assert befunde[ARCHIV_SCHLUESSEL] == []
+    assert len(befunde["Offen, steht aber auf Done"]) == 1
+
+
+def test_offenes_issue_ohne_board_eintrag_faellt_auf() -> None:
+    """Auto-add hat etwas verpasst: der Bericht darf dann nicht 'keine Abweichungen' sagen."""
+    board = [eintrag(1)]
+    repo = [eintrag(1), eintrag(99)]
+    befunde = project_report.find_issues(board, JETZT, open_in_repo=repo)
+    assert [item.number for item in befunde["Offen im Repo, fehlt auf dem Board"]] == [
+        99
+    ]
+
+
+def test_abgleich_vergleicht_url_nicht_nummer() -> None:
+    """Randfall: dieselbe Nummer aus einem anderen Repo zaehlt nicht als vorhanden."""
+    fremd = eintrag(5)
+    fremd.url = "https://github.com/andere/repo/issues/5"
+    eigen = eintrag(5)
+    befunde = project_report.find_issues([fremd], JETZT, open_in_repo=[eigen])
+    assert befunde["Offen im Repo, fehlt auf dem Board"] == [eigen]
+
+
+def test_ohne_repo_abgleich_fehlt_der_befund_statt_leer_zu_luegen() -> None:
+    """Randfall: lief der Abgleich nicht, darf der Bericht nicht 'nichts fehlt' behaupten."""
+    befunde = project_report.find_issues([eintrag(1)], JETZT)
+    assert "Offen im Repo, fehlt auf dem Board" not in befunde

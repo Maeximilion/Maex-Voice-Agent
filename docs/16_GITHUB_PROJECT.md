@@ -74,12 +74,14 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 
 **Nur gemeldet wird** alles, was eine Entscheidung braucht:
 
+- offene Issues und Pull Requests des Repos, die auf dem Board fehlen - falls die automatische Aufnahme etwas verpasst hat. Verglichen wird die URL, nicht die Nummer
+- offen, steht aber auf `Done` - ein wieder geoeffneter Eintrag, den der Workflow nicht zurueckgesetzt hat
 - derselbe Vorgang zweimal auf dem Board
 - Eintraege ohne Status
 - Eintraege in Arbeit ohne Iteration (bewusst nicht der ganze Backlog, sonst meldet der Bericht taeglich alles)
 - `In Progress` seit sieben Tagen ohne Bewegung — wird gemeldet, nicht verschoben
 
-**Archiviert wird nie automatisch.** Fuer ein Portfolio ist sichtbare, erledigte Arbeit in der Roadmap ein Wert und kein Ballast. Wer aufraeumen will, startet den Lauf von Hand mit dem Schalter `archive`; dann verschwinden `Done`-Eintraege, die seit vierzehn Tagen unbewegt sind.
+**Archiviert wird nie automatisch.** Fuer ein Portfolio ist sichtbare, erledigte Arbeit in der Roadmap ein Wert und kein Ballast. Wer aufraeumen will, startet den Lauf von Hand mit dem Schalter `archive`; dann verschwinden `Done`-Eintraege, die seit vierzehn Tagen unbewegt sind - aber nur abgeschlossene. Ein offener Eintrag auf `Done` wird nie archiviert, und was derselbe Lauf eben erst auf `Done` gesetzt hat, gilt als frisch bewegt.
 
 ### Einrichtung
 
@@ -91,12 +93,12 @@ Der `GITHUB_TOKEN` einer Action darf kontoeigene Projects nicht lesen. Es brauch
 2. Im Repo als Secret `PROJECT_TOKEN` hinterlegen
 3. Im Repo als Variable `PROJECT_NUMBER` die Nummer aus der Project-URL hinterlegen
 
-Beides ist seit 24.09.2026 eingerichtet (`PROJECT_NUMBER` = 2). Laeuft der Token ab, faellt der taegliche Lauf rot aus - das ist gewollt, ein stilles Aussetzen waere schlimmer.
+Beides ist seit 24.09.2026 eingerichtet (`PROJECT_NUMBER` = 2). Das Repo fuer den Abgleich offener Eintraege liest der Lauf in der Action aus `GITHUB_REPOSITORY`; lokal kommt es aus `PROJECT_REPO`. Fehlt beides, sagt der Bericht ausdruecklich, dass er nicht nach fehlenden Eintraegen gesucht hat. Laeuft der Token ab, faellt der taegliche Lauf rot aus - das ist gewollt, ein stilles Aussetzen waere schlimmer.
 
 Lokal derselbe Lauf:
 
 ```bash
-PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 python scripts/project_report.py
+PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJECT_REPO=Maeximilion/Maex-Voice-Agent python scripts/project_report.py
 ```
 
 ---
