@@ -223,6 +223,14 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
     missing = [c for c in COLUMNS if c not in header]
     if missing:
         return [], [f"Spalten fehlen: {', '.join(missing)}"]
+    # Genau die bekannten Spalten, jede einmal: eine Zusatzspalte ("phone")
+    # wuerde sonst nie auf Nummern, Adressen und Allergien geprueft.
+    unknown = [h or "(leer)" for h in header if h not in COLUMNS]
+    if unknown:
+        return [], [f"Unbekannte Spalten: {', '.join(unknown)}, bitte entfernen"]
+    doubled = [c for c in COLUMNS if header.count(c) > 1]
+    if doubled:
+        return [], [f"Doppelte Spalten: {', '.join(doubled)}"]
     reader.fieldnames = header
 
     entries: list[Entry] = []
@@ -462,7 +470,12 @@ def to_case(entry: Entry, salt: str = "") -> dict | None:
     return case
 
 
-def write_cases(entries: list[Entry], folder: Path, salt: str = "") -> int:
+def write_cases(
+    entries: list[Entry],
+    folder: Path,
+    salt: str = "",
+    known: dict[str, str] | None = None,
+) -> int:
     """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
     Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
     korrigierten Zeile der ueberholte Fall neben dem neuen liegen.
@@ -487,7 +500,10 @@ def write_cases(entries: list[Entry], folder: Path, salt: str = "") -> int:
         case = to_case(entry, salt)
         # Vor dem None-Zweig: eine Zeile, die nach einer Korrektur keinen Fall
         # mehr ergibt (zum Beispiel jetzt "frage"), muss ihren Fall melden.
-        reviewed = done.get(case_id(entry, salt).removeprefix("protokoll_"))
+        cid = case_id(entry, salt).removeprefix("protokoll_")
+        if known is not None:
+            known[cid] = entry.day.isoformat()
+        reviewed = done.get(cid)
         if reviewed is not None:
             if case is None:
                 print(
@@ -510,7 +526,31 @@ def write_cases(entries: list[Entry], folder: Path, salt: str = "") -> int:
         )
         written.add(path)
     _report_orphans(entries, salt, done)
+    if known is not None:
+        _reconcile(entries, salt, done, known)
     return len(written)
+
+
+def _reconcile(
+    entries: list[Entry], salt: str, done: dict[str, Path], known: dict[str, str]
+) -> None:
+    """Jeder durchgesehene Fall, dessen Anrufdatum im Zeitraum der CSV liegt,
+    braucht eine Zeile. Das Datum kommt aus dem lokalen Verzeichnis der IDs
+    (nur Datum, keine Uhrzeit); aeltere Faelle hat die Loeschfrist entfernt
+    und sind kein Alarm."""
+    if not entries:
+        return
+    first = min(e.day for e in entries).isoformat()
+    last = max(e.day for e in entries).isoformat()
+    current = {case_id(e, salt).removeprefix("protokoll_") for e in entries}
+    for cid, path in sorted(done.items()):
+        day = known.get(cid)
+        if day and first <= day <= last and cid not in current:
+            print(
+                f"Durchgesehener Fall hat keine Protokollzeile mehr: {path}. "
+                "Fall anpassen oder entfernen",
+                file=sys.stderr,
+            )
 
 
 def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> None:
@@ -565,6 +605,24 @@ def _salt(csv_file: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
+def _load_known(path: Path) -> dict[str, str]:
+    """Lokales Verzeichnis ID -> Anrufdatum, neben der CSV (imports/, ignoriert)."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _forget_before(path: Path, cutoff: date) -> None:
+    """Mit der Loeschfrist fallen auch die IDs geloeschter Anrufe aus dem
+    Verzeichnis."""
+    if not path.exists():
+        return
+    known = {k: v for k, v in _load_known(path).items() if v >= cutoff.isoformat()}
+    path.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
+
+
 def _today() -> date:
     """Heute in Ortszeit; die Tests setzen das Datum fest."""
     return datetime.now(ZoneInfo("Europe/Berlin")).date()
@@ -578,7 +636,10 @@ def purge(text: str, cutoff: date) -> str:
     rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";"))
     header, body = rows[0], rows[1:]
     at = [_norm(h) for h in header].index("date")
-    keep = [r for r in body if any(r) and _parse_date(r[at]) >= cutoff]
+    # Leerzeilen, auch nur aus Leerzeichen, ueberspringt parse; hier ebenso.
+    keep = [
+        r for r in body if any(c.strip() for c in r) and _parse_date(r[at]) >= cutoff
+    ]
     out = io.StringIO()
     writer = csv.writer(out, delimiter=";", lineterminator="\n")
     writer.writerow(header)
@@ -674,11 +735,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.loeschen and old:
             args.file.write_text(purge(text, cutoff), encoding="utf-8-sig")
+            _forget_before(args.file.with_name(".call_log_ids.json"), cutoff)
             entries = [e for e in entries if e.day >= cutoff]
             print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
-        written = write_cases(entries, args.cases, _salt(args.file))
+        known_path = args.file.with_name(".call_log_ids.json")
+        known = _load_known(known_path)
+        written = write_cases(entries, args.cases, _salt(args.file), known)
+        known_path.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
         print(f"Eval-Entwuerfe: {written} nach {args.cases}")
     return 0
 

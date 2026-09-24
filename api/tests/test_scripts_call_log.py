@@ -694,3 +694,63 @@ def test_verwaister_fall_in_derselben_minute_wird_gemeldet(
     err = capsys.readouterr().err
     assert namen[1] in err
     assert "keine Protokollzeile" in err
+
+
+def test_unbekannte_spalte_wird_abgelehnt():
+    """Codex PR #135: eine Zusatzspalte wie phone wurde nie geprueft."""
+    text = (
+        HEADER.replace("problems\n", "problems;phone\n")
+        + _row().rstrip("\n")
+        + ";0721 5551234\n"
+    )
+    _, errors = parse(text)
+    assert errors and "phone" in errors[0]
+
+
+def test_doppelte_spalte_wird_abgelehnt():
+    text = (
+        HEADER.replace("problems\n", "problems;phrases\n")
+        + _row().rstrip("\n")
+        + ";x\n"
+    )
+    _, errors = parse(text)
+    assert errors and "phrases" in errors[0]
+
+
+def test_loeschen_uebersteht_leerzeile_aus_leerzeichen(tmp_path, monkeypatch):
+    """Codex PR #135: eine Zeile nur aus Leerzeichen brach das Loeschen ab."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(
+        HEADER
+        + _row(date="01.06.2026")
+        + " ; ; ; ; ; ; ; \n"
+        + _row(date="20.09.2026"),
+        encoding="utf-8",
+    )
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 0
+    entries, _ = parse(csv_file.read_text(encoding="utf-8-sig"))
+    assert [e.day for e in entries] == [date(2026, 9, 20)]
+
+
+def test_ganze_minute_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys):
+    """Codex PR #135: faellt der einzige Anruf einer Minute weg, darf sein
+    durchgesehener Fall nicht still aktiv bleiben."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    csv_file.write_text(
+        HEADER + _row(time="18:00") + _row(time="19:00"), encoding="utf-8"
+    )
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    erster = next(p for p in entw.iterdir() if p.name.startswith("protokoll_"))
+    case = json.loads(erster.read_text(encoding="utf-8"))
+    del case["review"]
+    (eval_cases / erster.name).write_text(json.dumps(case), encoding="utf-8")
+    capsys.readouterr()
+    # Der Anruf dieses Falls verschwindet, der andere bleibt.
+    rest = [_row(time="18:00"), _row(time="19:00")]
+    for zeile in rest:
+        csv_file.write_text(HEADER + zeile, encoding="utf-8")
+        main([str(csv_file), "--cases", str(entw)])
+    err = capsys.readouterr().err
+    assert erster.name in err
