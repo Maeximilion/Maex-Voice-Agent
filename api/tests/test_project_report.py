@@ -473,3 +473,114 @@ def test_archiviert_ohne_aktiven_zwilling_wird_weiter_gemeldet() -> None:
     kopie.is_archived = True
     befunde = project_report.find_issues([kopie], JETZT)
     assert befunde["Archiviert, aber wieder offen"] == [kopie]
+
+
+def test_unlesbarer_inhalt_bricht_laut_ab(monkeypatch) -> None:
+    """Sieht der Token das Repo nicht, liefert GitHub jeden Board-Eintrag mit leerem
+    Inhalt. --fix fand dann nichts zu tun und lief still durch - so geschehen beim
+    ersten Lauf der Action am 24.09.2026. Das muss rot werden, nicht gruen."""
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        return {
+            "user": {
+                "projectV2": {
+                    "id": "P",
+                    "title": "Board",
+                    "items": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [
+                            {
+                                "id": "A",
+                                "isArchived": False,
+                                "updatedAt": "2026-09-20T08:00:00Z",
+                                "content": None,
+                            },
+                            {
+                                "id": "B",
+                                "isArchived": False,
+                                "updatedAt": "2026-09-20T08:00:00Z",
+                                "content": None,
+                            },
+                        ],
+                    },
+                }
+            }
+        }
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    with pytest.raises(project_report.ProjectError, match="2 Eintraege"):
+        project_report.fetch_items("owner", 2, "token")
+
+
+def test_entwurf_zaehlt_nicht_als_unlesbar(monkeypatch) -> None:
+    """Gegenprobe: ein Entwurf hat Inhalt (Titel), nur keine Nummer."""
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        return {
+            "user": {
+                "projectV2": {
+                    "id": "P",
+                    "title": "Board",
+                    "items": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": [
+                            {
+                                "id": "A",
+                                "isArchived": False,
+                                "updatedAt": "2026-09-20T08:00:00Z",
+                                "content": {
+                                    "__typename": "DraftIssue",
+                                    "title": "Idee",
+                                },
+                            },
+                        ],
+                    },
+                }
+            }
+        }
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    _, _, items = project_report.fetch_items("owner", 2, "token")
+    assert len(items) == 1
+
+
+def _board_mit(nodes: list[dict]):
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        return {
+            "user": {
+                "projectV2": {
+                    "id": "P",
+                    "title": "Board",
+                    "items": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": nodes,
+                    },
+                }
+            }
+        }
+
+    return falsches_graphql
+
+
+@pytest.mark.parametrize(
+    "knoten",
+    [
+        # Das offizielle Signal: ProjectV2Item.type = REDACTED.
+        {"type": "REDACTED", "content": {"__typename": "Issue"}},
+        # Defensiv: ein Inhaltstyp, den das Skript nicht kennt.
+        {"type": "ISSUE", "content": {"__typename": "Unbekannt"}},
+    ],
+)
+def test_geschwaerzter_oder_unbekannter_inhalt_bricht_ab(
+    monkeypatch, knoten: dict
+) -> None:
+    """Codex-Review PR #131: nicht nur content = null zaehlt als unlesbar."""
+    node = {
+        "id": "A",
+        "isArchived": False,
+        "updatedAt": "2026-09-20T08:00:00Z",
+        **knoten,
+    }
+    monkeypatch.setattr(project_report, "graphql", _board_mit([node]))
+    with pytest.raises(project_report.ProjectError, match="1 Eintraege"):
+        project_report.fetch_items("owner", 2, "token")

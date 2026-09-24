@@ -46,6 +46,7 @@ query($owner: String!, $number: Int!, $cursor: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
+          type
           isArchived
           updatedAt
           fieldValues(first: 20) {
@@ -241,12 +242,30 @@ def parse_item(node: dict) -> Item | None:
     )
 
 
+# Laut Schema (Union ProjectV2ItemContent) gibt es genau diese drei Inhalte.
+READABLE_CONTENT = frozenset({"Issue", "PullRequest", "DraftIssue"})
+
+
+def _is_unreadable(node: dict) -> bool:
+    """Ob der Token den Inhalt eines Board-Eintrags sehen darf.
+
+    Das offizielle Signal ist ProjectV2Item.type = REDACTED. Dazu kommt content = null,
+    und defensiv jeder Inhaltstyp ausserhalb des Schemas - lieber einmal zu laut als
+    einen Eintrag still uebergehen.
+    """
+    if node.get("type") == "REDACTED":
+        return True
+    content = node.get("content")
+    return content is None or content.get("__typename") not in READABLE_CONTENT
+
+
 def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Item]]:
     """Alle Eintraege des Projects holen, archivierte markiert, seitenweise."""
     items: list[Item] = []
     cursor: str | None = None
     project_id = ""
     project_title = ""
+    unreadable = 0
 
     while True:
         data = graphql(
@@ -262,11 +281,22 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
         project_title = project["title"]
 
         page = project["items"]
+        # Unlesbare Eintraege haben weder Nummer noch Zustand, --fix faende nichts und
+        # liefe still gruen durch.
+        unreadable += sum(1 for node in page["nodes"] if _is_unreadable(node))
         items.extend(item for node in page["nodes"] if (item := parse_item(node)))
 
         if not page["pageInfo"]["hasNextPage"]:
-            return project_id, project_title, items
+            break
         cursor = page["pageInfo"]["endCursor"]
+
+    if unreadable:
+        raise ProjectError(
+            f"Der Token sieht den Inhalt von {unreadable} Eintraegen nicht. Ihm fehlt "
+            "der Lesezugriff auf das Repo dahinter - klassisch Scope 'repo', "
+            "fine-grained 'Issues' und 'Pull requests' lesend. Siehe docs/16 Abschnitt 5."
+        )
+    return project_id, project_title, items
 
 
 def fetch_open_in_repo(repo: str, token: str) -> list[Item]:

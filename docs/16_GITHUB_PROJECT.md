@@ -90,8 +90,10 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 Der `GITHUB_TOKEN` einer Action darf kontoeigene Projects nicht lesen. Es braucht einmalig:
 
 1. Token anlegen, entweder
-   - klassisch unter `https://github.com/settings/tokens/new`, nur Scope **`project`** (einfachster Weg), oder
-   - fine-grained, Resource owner = eigenes Konto, unter **Account permissions** (nicht Repository permissions) **Projects: Read and write**
+   - klassisch unter `https://github.com/settings/tokens/new`, Scopes **`project`** und **`repo`** (einfachster Weg), oder
+   - fine-grained, Resource owner = eigenes Konto, Repository access = dieses Repo, dann unter **Account permissions** **Projects: Read and write** und unter **Repository permissions** **Issues** und **Pull requests** jeweils lesend
+
+   Das Repo-Recht ist kein Beiwerk: ohne es liefert GitHub jeden Board-Eintrag eines privaten Repos mit leerem Inhalt, also ohne Nummer und Zustand. Das Skript bricht dann ab, statt still nichts zu tun (erster Lauf 24.09.2026).
 2. Im Repo als Secret `PROJECT_TOKEN` hinterlegen
 3. Im Repo als Variable `PROJECT_NUMBER` die Nummer aus der Project-URL hinterlegen
 
