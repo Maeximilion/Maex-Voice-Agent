@@ -24,7 +24,6 @@ import hashlib
 import io
 import json
 import math
-import os
 import re
 import secrets
 import sys
@@ -34,6 +33,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from api.config import Settings
 from api.domain.menu.numberwords import ARTICLES, fold, parse_cardinal
 
 COLUMNS = (
@@ -509,7 +509,30 @@ def write_cases(entries: list[Entry], folder: Path, salt: str = "") -> int:
             json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         written.add(path)
+    _report_orphans(entries, salt, done)
     return len(written)
+
+
+def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> None:
+    """Die ID haengt an der Reihenfolge in der Minute. Faellt ein Anruf einer
+    Minute weg, rutscht der naechste nach vorn, und der durchgesehene Fall des
+    letzten Platzes hat keine Zeile mehr: fuer jede Minute im Protokoll die
+    Plaetze hinter dem letzten belegten pruefen und melden."""
+    last: dict[tuple, Entry] = {}
+    for e in entries:
+        key = (e.day, e.hour, e.minute)
+        if key not in last or e.ordinal > last[key].ordinal:
+            last[key] = e
+    for e in last.values():
+        for ordinal in range(e.ordinal + 1, e.ordinal + 4):
+            gone = case_id(dataclasses.replace(e, ordinal=ordinal), salt)
+            orphan = done.get(gone.removeprefix("protokoll_"))
+            if orphan is not None:
+                print(
+                    f"Durchgesehener Fall hat keine Protokollzeile mehr: {orphan}. "
+                    "Anrufe derselben Minute pruefen, Fall anpassen oder entfernen",
+                    file=sys.stderr,
+                )
 
 
 def _report_correction(case: dict, reviewed: Path) -> None:
@@ -564,11 +587,12 @@ def purge(text: str, cutoff: date) -> str:
 
 
 def _retention_days(value: int | None) -> int | None:
-    """Frist aus --frist-tage, sonst aus CALL_LOG_RETENTION_DAYS, sonst keine."""
+    """Frist aus --frist-tage, sonst CALL_LOG_RETENTION_DAYS aus Umgebung oder
+    .env (ueber die Settings der API, wie jede andere Einstellung), sonst keine.
+    Settings frisch bauen: die Umgebung kann sich seit dem Import geaendert haben."""
     if value is not None:
         return value
-    env = os.environ.get("CALL_LOG_RETENTION_DAYS", "").strip()
-    return int(env) if env else None
+    return Settings().call_log_retention_days
 
 
 def _inside_eval_cases(folder: Path) -> bool:

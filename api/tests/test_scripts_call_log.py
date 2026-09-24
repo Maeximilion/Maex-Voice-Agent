@@ -450,6 +450,7 @@ def test_frist_aus_umgebung(tmp_path, capsys, monkeypatch):
 
 def test_loeschen_ohne_frist_ist_ein_fehler(tmp_path, capsys, monkeypatch):
     monkeypatch.delenv("CALL_LOG_RETENTION_DAYS", raising=False)
+    monkeypatch.chdir(tmp_path)  # keine .env eines Entwicklers erwischen
     csv_file = _alt_und_neu(tmp_path)
     vorher = csv_file.read_text(encoding="utf-8")
     assert main([str(csv_file), "--loeschen"]) == 2
@@ -664,3 +665,32 @@ def test_adresse_mit_ausgeschriebener_hausnummer(text):
 def test_zahlwoerter_ohne_adresse_bleiben_erlaubt(text):
     _, errors = parse(HEADER + _row(phrases=text))
     assert errors == [], text
+
+
+def test_frist_aus_env_datei(tmp_path, capsys, monkeypatch):
+    """Codex PR #135: der dokumentierte Weg ist CALL_LOG_RETENTION_DAYS in der
+    .env; ein direkter Aufruf des Scripts muss sie auch lesen."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    monkeypatch.delenv("CALL_LOG_RETENTION_DAYS", raising=False)
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text("CALL_LOG_RETENTION_DAYS=90\n", encoding="utf-8")
+    assert main([str(_alt_und_neu(tmp_path)), "--loeschen"]) == 0
+    assert "Geloescht: 1 Eintraege" in capsys.readouterr().out
+
+
+def test_verwaister_fall_in_derselben_minute_wird_gemeldet(
+    tmp_path, eval_cases, capsys
+):
+    """Codex PR #135: zwei Anrufe derselben Minute, der erste wird entfernt; der
+    zweite rutscht auf Platz 0, der Fall von Platz 1 hat keine Zeile mehr."""
+    beide, _ = parse(HEADER + _row(phrases="Tisch fuer zwei") + _row(phrases="die 23"))
+    namen = []
+    for e in beide:
+        case = to_case(e)
+        namen.append(f"{case['id']}_abholung.json")
+        (eval_cases / namen[-1]).write_text(json.dumps(case), encoding="utf-8")
+    nur_zweiter, _ = parse(HEADER + _row(phrases="die 23"))
+    write_cases(nur_zweiter, tmp_path / "entwuerfe")
+    err = capsys.readouterr().err
+    assert namen[1] in err
+    assert "keine Protokollzeile" in err
