@@ -10,8 +10,8 @@ Rechts-Check (docs/09) offen ist, ist das die einzige Quelle echter Anrufe.
 Die Datei liegt in imports/ (im .gitignore), die Entwuerfe ebenso: ein Entwurf
 wandert erst nach Durchsicht von Hand nach evals/cases/.
 
-Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei, 2 Datei nicht gefunden
-oder Zielordner evals/cases/.
+Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei (auch: nicht UTF-8),
+2 Datei nicht gefunden oder nicht lesbar, oder Zielordner in evals/cases/.
 Ohne Datenbank und ohne Netz.
 """
 
@@ -25,8 +25,10 @@ import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
+
+from api.domain.menu.numberwords import ARTICLES, fold, parse_cardinal
 
 COLUMNS = (
     "date",
@@ -78,13 +80,24 @@ EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
 SYNTHETIC_CALLER_ID = "+497215551234"
 SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
 
-# Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich,
-# Punkt oder Klammer dazwischen, sind fast immer eine Telefonnummer. Mengen und
-# Kartennummern ("2x 23", "die 147") bleiben darunter. Ein Datum mit Jahr
-# (24.09.2026) schlaegt auch an: lieber einmal zu oft als eine Nummer zu wenig.
-_PHONE = re.compile(r"(?:\d[\s/.()-]*){6,}")
+# Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich oder
+# Klammer dazwischen, sind fast immer eine Telefonnummer. Ein Punkt zaehlt nur
+# direkt zwischen zwei Ziffern (0176.123.45.67): "am 25.09. 19 Uhr" ist ein
+# Datum ohne Jahr, wie docs/17 es empfiehlt. Mengen und Kartennummern ("2x 23",
+# "die 147") bleiben darunter. Ein Datum mit Jahr (24.09.2026) schlaegt an:
+# lieber einmal zu oft als eine Nummer zu wenig.
+_PHONE = re.compile(r"\d(?:(?:[\s/()-]|\.(?=\d))*\d){5,}")
 _DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
-_EMAIL = re.compile(r"\S+@\S+\.\S+")
+# Auch diktiert: "mueller at gmx punkt de", "mueller @ gmx.de", "(at)".
+_EMAIL = re.compile(
+    r"[\w.-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+\s*(?:\.|\bpunkt\b|\bdot\b)\s*"
+    r"(?:de|com|net|org|eu|info|at|ch)\b"
+)
+# Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
+_ADDRESS = re.compile(
+    r"\b\w+(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"
+)
+_WORD = re.compile(r"[a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -103,10 +116,33 @@ class Entry:
 
 def _norm(value: str) -> str:
     """Kleinschreibung, Umlaute wie auf der Tastatur ohne Umlaut."""
-    value = value.strip().lower()
-    for src, dst in (("ä", "ae"), ("ö", "oe"), ("ü", "ue"), ("ß", "ss")):
-        value = value.replace(src, dst)
-    return value
+    return fold(value.strip())
+
+
+def _spoken_phone(text: str) -> bool:
+    """Eine diktierte Nummer: "null sieben zwei eins ..." oder in Zweiergruppen
+    "null sieben einundzwanzig ...". Zaehlt die Ziffern einer Folge von
+    Zahlwoertern; Artikel ("eine Pizza") unterbrechen die Folge. Ziffern zaehlen
+    erst mit, wenn schon ein Zahlwort in der Folge steht, sonst waere jedes
+    Datum ohne Jahr eine Nummer (dafuer ist _PHONE da)."""
+    digits = 0
+    spoken = False
+    for token in _WORD.findall(fold(text)):
+        if token.isdigit():
+            count = len(token) if spoken else 0
+        elif token in ARTICLES:
+            count = 0
+        else:
+            value = parse_cardinal(token)
+            count = len(str(value)) if value is not None else 0
+            spoken = spoken or count > 0
+        if count == 0:
+            digits, spoken = 0, False
+            continue
+        digits += count
+        if digits >= 6:
+            return True
+    return False
 
 
 def _parse_date(value: str) -> date:
@@ -142,7 +178,11 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
 
     entries: list[Entry] = []
     errors: list[str] = []
-    for line, raw in enumerate(reader, start=2):
+    for raw in reader:
+        # line_num statt Zaehler: DictReader ueberspringt Leerzeilen, und eine
+        # Excel-Zelle mit Zeilenumbruch belegt mehrere Zeilen. Gemeldet wird die
+        # letzte Zeile des Eintrags, bei einzeiligen Eintraegen genau die richtige.
+        line = reader.line_num
         row = {k: (v or "").strip() for k, v in raw.items() if k in COLUMNS}
         if not any(row.values()):
             continue
@@ -155,13 +195,19 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
             continue
         problems = [f"Zeile {line}: {c} fehlt" for c in REQUIRED if not row[c]]
         for column in FREE_TEXT:
-            if _PHONE.search(row[column]):
+            if _PHONE.search(row[column]) or _spoken_phone(row[column]):
                 problems.append(
-                    f"Zeile {line}: {column} sieht nach Telefonnummer aus, bitte entfernen"
+                    f"Zeile {line}: {column} sieht nach Telefonnummer aus, bitte "
+                    "entfernen (Datum ohne Jahr, mehrere Nummern mit Komma trennen)"
                 )
-            if _EMAIL.search(row[column]):
+            if _EMAIL.search(fold(row[column])):
                 problems.append(
                     f"Zeile {line}: {column} enthaelt eine E-Mail-Adresse, bitte entfernen"
+                )
+            if _ADDRESS.search(fold(row[column])):
+                problems.append(
+                    f"Zeile {line}: {column} enthaelt eine Adresse, bitte nur "
+                    "den Stadtteil"
                 )
         if problems:
             errors.extend(problems)
@@ -205,7 +251,8 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                 + ", ".join(OUTCOMES)
             )
             continue
-        phrases = [p.strip() for p in row["phrases"].split("|") if p.strip()]
+        # Satzgrenze: | oder ein Zeilenumbruch in der Zelle (Alt+Enter in Excel).
+        phrases = [p.strip() for p in re.split(r"[|\n]", row["phrases"]) if p.strip()]
         entries.append(
             Entry(
                 line,
@@ -252,9 +299,18 @@ def report(entries: list[Entry]) -> str:
     lines.append(
         "Je Stunde: " + " · ".join(f"{h} Uhr {hours[h]}" for h in sorted(hours))
     )
+    # Mittel je Tag, nicht Summe: in 15 Tagen kommt ein Wochentag dreimal vor,
+    # die anderen zweimal, und die Summe zeigte eine Stosszeit, die keine ist.
     weekdays = Counter(e.day.weekday() for e in entries)
+    span = (days[-1] - days[0]).days + 1
+    occurs = Counter((days[0] + timedelta(n)).weekday() for n in range(span))
     lines.append(
-        "Je Wochentag: " + " · ".join(f"{WEEKDAYS[d]} {weekdays[d]}" for d in range(7))
+        "Je Wochentag, Mittel je Tag: "
+        + " · ".join(
+            f"{WEEKDAYS[d]} "
+            + (f"{weekdays[d] / occurs[d]:.1f}".replace(".", ",") if occurs[d] else "-")
+            for d in range(7)
+        )
     )
     noted = [e for e in entries if e.problems]
     lines.append(f"Probleme notiert: {len(noted)}")
@@ -324,25 +380,44 @@ def to_case(entry: Entry) -> dict | None:
 def write_cases(entries: list[Entry], folder: Path) -> int:
     """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
     Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
-    korrigierten Zeile der ueberholte Fall neben dem neuen liegen. Andere
-    Dateien im Ordner bleiben unberuehrt."""
+    korrigierten Zeile der ueberholte Fall neben dem neuen liegen.
+
+    Geloescht wird nur, was noch ein Feld `review` traegt, also ein
+    unbearbeiteter Entwurf; ein durchgesehener Fall und fremde Dateien bleiben.
+    Ein Fall, dessen ID schon in evals/cases/ liegt, wird nicht neu entworfen:
+    sonst ueberschriebe das naechste Verschieben den durchgesehenen Fall."""
     folder.mkdir(parents=True, exist_ok=True)
     for stale in folder.glob("protokoll_*.json"):
-        stale.unlink()
+        try:
+            draft = json.loads(stale.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(draft, dict) and "review" in draft:
+            stale.unlink()
+    done = {p.name.split("_")[1] for p in EVAL_CASES.glob("protokoll_*.json")}
     written: set[Path] = set()
     for entry in entries:
         case = to_case(entry)
-        if case is None:
+        if case is None or str(case["id"]).removeprefix("protokoll_") in done:
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
-        if path in written:
-            # Gleiche Minute, gleicher Wortlaut: dieselbe Zeile zweimal abgetippt.
+        if path in written or path.exists():
+            # Doppelt: dieselbe Zeile zweimal abgetippt (gleiche Minute, gleicher
+            # Wortlaut). Vorhanden: nach dem Aufraeumen oben ein durchgesehener Fall.
             continue
         path.write_text(
             json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         written.add(path)
     return len(written)
+
+
+def _inside_eval_cases(folder: Path) -> bool:
+    """evals/cases/ selbst oder ein Ordner darin, ohne Ruecksicht auf Gross- und
+    Kleinschreibung: auf macOS ist evals/Cases derselbe Ordner."""
+    target = [part.casefold() for part in folder.resolve().parts]
+    suite = [part.casefold() for part in EVAL_CASES.resolve().parts]
+    return target[: len(suite)] == suite
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -358,13 +433,25 @@ def main(argv: list[str] | None = None) -> int:
     if not args.file.is_file():
         print(f"Datei nicht gefunden: {args.file}", file=sys.stderr)
         return 2
-    entries, errors = parse(args.file.read_text(encoding="utf-8-sig"))
+    try:
+        text = args.file.read_text(encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        print(
+            f"{args.file} ist nicht UTF-8. In Excel als 'CSV UTF-8 (durch "
+            "Trennzeichen getrennt)' speichern.",
+            file=sys.stderr,
+        )
+        return 1
+    except OSError as exc:
+        print(f"Datei nicht lesbar: {args.file} ({exc.strerror})", file=sys.stderr)
+        return 2
+    entries, errors = parse(text)
     for error in errors:
         print(error, file=sys.stderr)
     if errors:
         print(f"{len(errors)} Fehler, nichts ausgewertet.", file=sys.stderr)
         return 1
-    if args.cases and args.cases.resolve() == EVAL_CASES:
+    if args.cases and _inside_eval_cases(args.cases):
         print(
             "Entwuerfe nie direkt nach evals/cases: der Lauf loescht dort "
             "protokoll_*.json. Anderen Ordner nehmen, z. B. imports/eval_entwuerfe/",

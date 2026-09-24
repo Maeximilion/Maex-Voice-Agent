@@ -3,6 +3,9 @@
 import json
 from pathlib import Path
 
+import pytest
+
+from scripts import call_log
 from scripts.call_log import main, parse, report, to_case, write_cases
 
 HEADER = "date;time;duration_min;intent;outcome;phrases;items;problems\n"
@@ -183,15 +186,25 @@ def test_fall_id_haengt_am_inhalt_nicht_an_der_zeile():
     assert to_case(woche1[0])["id"] == to_case(nochmal[1])["id"]
 
 
-def test_entwuerfe_nie_direkt_nach_evals_cases(tmp_path, capsys):
-    """Der Lauf raeumt protokoll_*.json weg; in evals/cases/ waeren das
-    durchgesehene Faelle."""
+@pytest.fixture
+def eval_cases(tmp_path, monkeypatch):
+    """Ein Wegwerf-evals/cases: der Test darf das echte nie beruehren, auch
+    nicht, wenn die Sperre einmal kaputt ist."""
+    folder = tmp_path / "evals" / "cases"
+    folder.mkdir(parents=True)
+    monkeypatch.setattr(call_log, "EVAL_CASES", folder)
+    return folder
+
+
+@pytest.mark.parametrize(
+    "ziel", ["evals/cases", "evals/Cases", "evals/cases/entwuerfe"]
+)
+def test_entwuerfe_nie_nach_evals_cases(tmp_path, eval_cases, capsys, ziel):
+    """Auch andere Schreibweise oder ein Unterordner ist die Suite."""
     good = tmp_path / "good.csv"
     good.write_text(HEADER + _row(), encoding="utf-8")
-    cases = Path(__file__).resolve().parents[2] / "evals" / "cases"
-    vorher = sorted(cases.iterdir())
-    assert main([str(good), "--cases", str(cases)]) == 2
-    assert sorted(cases.iterdir()) == vorher
+    assert main([str(good), "--cases", str(tmp_path / ziel)]) == 2
+    assert list(eval_cases.iterdir()) == []
     assert "evals/cases" in capsys.readouterr().err
 
 
@@ -232,3 +245,100 @@ def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
     case = to_case(entries[0])
     assert "caller_id" not in case
     assert [t["text"] for t in case["transcript"]] == ["Tisch fuer sechs?"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "meine Nummer ist null sieben zwei eins fuenf fuenf fuenf eins zwei drei vier",
+        "null sieben einundzwanzig fuenfundfuenfzig einundfuenfzig",
+    ],
+)
+def test_ausgeschriebene_telefonnummer(text):
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Telefonnummer" in errors[0], text
+
+
+@pytest.mark.parametrize(
+    "text", ["mueller at gmx punkt de", "mueller @ gmx.de", "Mueller (at) web punkt de"]
+)
+def test_ausgeschriebene_email(text):
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "E-Mail" in errors[0], text
+
+
+@pytest.mark.parametrize(
+    "text", ["Lieferung an die Kaiserstrasse 12", "in die Hauptstr. 5a"]
+)
+def test_adresse_macht_datei_rot(text):
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Kunde wollte am 25.09. 19 Uhr",
+        "eine Pizza und einen Salat",
+        "die dreiundzwanzig und die vierzehn",
+        "Lieferung in die Weststadt",
+    ],
+)
+def test_kein_fehlalarm(text):
+    """docs/17 empfiehlt 25.09. ohne Jahr; das darf nicht als Nummer gelten."""
+    _, errors = parse(HEADER + _row(problems=text))
+    assert errors == [], text
+
+
+def test_zeilennummer_stimmt_nach_leerzeile():
+    text = HEADER + _row() + "\n" + _row(phrases="ruf an 0721 5551234")
+    _, errors = parse(text)
+    assert errors[0].startswith("Zeile 4:")
+
+
+def test_mehrzeilige_zelle_sind_mehrere_saetze():
+    text = HEADER + _row(phrases='"zweimal die 23\nja passt so"')
+    entries, errors = parse(text)
+    assert errors == []
+    assert entries[0].phrases == ["zweimal die 23", "ja passt so"]
+
+
+def test_falsche_kodierung_gibt_meldung_statt_absturz(tmp_path, capsys):
+    bad = tmp_path / "excel.csv"
+    bad.write_bytes((HEADER + _row(phrases="für zwei")).encode("cp1252"))
+    assert main([str(bad)]) == 1
+    assert "UTF-8" in capsys.readouterr().err
+
+
+def test_durchgesehene_datei_im_entwurfsordner_bleibt(tmp_path, eval_cases):
+    entries, _ = parse(HEADER + _row())
+    write_cases(entries, tmp_path)
+    draft = next(tmp_path.glob("protokoll_*.json"))
+    case = json.loads(draft.read_text(encoding="utf-8"))
+    del case["review"]
+    draft.write_text(json.dumps(case), encoding="utf-8")
+    write_cases(entries, tmp_path)
+    assert "review" not in json.loads(draft.read_text(encoding="utf-8"))
+
+
+def test_schon_in_evals_cases_wird_nicht_neu_entworfen(tmp_path, eval_cases):
+    """Sonst ueberschreibt das naechste Verschieben den durchgesehenen Fall."""
+    entries, _ = parse(HEADER + _row() + _row(intent="reservierung", time="19:10"))
+    fertig = to_case(entries[0])
+    (eval_cases / f"{fertig['id']}_abholung.json").write_text("{}", encoding="utf-8")
+    assert write_cases(entries, tmp_path / "entwuerfe") == 1
+    names = [p.name for p in (tmp_path / "entwuerfe").iterdir()]
+    assert names == [f"{to_case(entries[1])['id']}_reservierung.json"]
+
+
+def test_wochentag_je_tag_gemittelt():
+    """Donnerstag dreimal im Zeitraum, Mittwoch zweimal: rohe Summen verzerren."""
+    rows = "".join(
+        _row(date=d)
+        for d in ("24.09.2026", "30.09.2026", "01.10.2026", "07.10.2026", "08.10.2026")
+    )
+    entries, _ = parse(HEADER + rows)
+    text = report(entries)
+    assert "Do 1,0" in text
+    assert "Mi 1,0" in text
+    assert "Mo 0,0" in text

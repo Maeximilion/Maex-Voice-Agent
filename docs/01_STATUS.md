@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.30.0
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.30.1
 
 ---
 
@@ -264,6 +264,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.30.1 · 24.09.2026:** Anrufprotokoll: diktierte Nummern, E-Mails und Adressen abgelehnt, richtige Zeilennummern, UTF-8-Meldung, durchgesehene Faelle nie ueberschrieben, Wochentag je Tag
 - **v1.30.0 · 24.09.2026:** Anrufprotokoll ohne Tonaufnahme: Druckbogen, CSV-Format (docs/17), scripts/call_log.py fuer C1-Baseline und Eval-Entwuerfe
 - **v1.29.0 · 24.09.2026:** Projektpflege sammelt offene Entscheidungen in einem Issue mit Erwaehnung
 - **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte

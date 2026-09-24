@@ -7,4 +7,5 @@
 | `menu_diff.py` | Price register vs. agent DB | T-4.9 |
 | `backup.sh` / `restore.sh` | `pg_dump` encrypted, restore | T-8.6 |
 | `seed_zones.py` | Delivery zones from zone list (from delivery service project) | T-6.3 |
+| `call_log.py` | Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: C1 baseline, `--cases` eval drafts | – (C1) |
 | `status_bump.py` | Auto-advance version, date, changelog line in `docs/01_STATUS.md` | – (Meta/Tooling) |

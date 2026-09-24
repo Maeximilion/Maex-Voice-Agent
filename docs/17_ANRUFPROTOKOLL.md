@@ -30,7 +30,7 @@ Keine Rechtsberatung: dass Protokolle ohne personenbezogene Daten unkritisch sin
 | duration_min | nein | `3` | Minuten, geschätzt reicht, Komma erlaubt |
 | intent | ja | `abholung` | `reservierung` · `abholung` · `lieferung` · `beschwerde` · `frage` · `sonstiges` |
 | outcome | ja | `erledigt` | `erledigt` · `rueckruf` · `abgelehnt` (ausgebucht, außerhalb Liefergebiet) · `abgebrochen` |
-| phrases | nein | `zweimal die dreiundzwanzig \| ja passt so` | **wörtlich**, wie der Kunde es sagte, Sätze mit `\|` trennen |
+| phrases | nein | `zweimal die dreiundzwanzig \| ja passt so` | **wörtlich**, wie der Kunde es sagte, Sätze mit `\|` oder Zeilenumbruch in der Zelle trennen |
 | items | nein | `2x 23, 1x Frühlingsrollen` | was am Ende bestellt wurde, **Komma**, nie Semikolon |
 | problems | nein | `sagte erst 32, meinte 23` | Missverständnis, Rückfrage, Ärger |
 
@@ -41,7 +41,13 @@ Groß- und Kleinschreibung und Umlaute sind egal (`Rückruf` = `rueckruf`). Die 
 - **Telefonnummern, Adressen, E-Mail.** Bei Lieferung reicht „Lieferung in die Weststadt".
 - Kürzel oder Namen aus dem Team.
 
-Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer (sechs Ziffern in Folge, auch mit Punkt, Klammer, Strich oder Leerzeichen dazwischen) oder E-Mail aussieht. Ein Datum mit Jahr im Freitext schlägt deshalb auch an: dort `25.09.` statt `25.09.2026` schreiben. Namen erkennt es nicht, die bleiben Handarbeit.
+Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer, E-Mail oder Adresse aussieht:
+
+- Telefonnummer: sechs Ziffern in Folge, auch mit Klammer, Strich, Leerzeichen oder Punkt zwischen Ziffern, und diktiert („null sieben zwei eins …“, „null sieben einundzwanzig …“)
+- E-Mail: auch mit Leerzeichen oder diktiert („mueller at gmx punkt de“)
+- Adresse: Straße mit Hausnummer („Kaiserstraße 12“); ein Stadtteil ist erlaubt
+
+Ein Datum mit Jahr schlägt deshalb auch an: `25.09.` statt `25.09.2026` schreiben, `am 25.09. 19 Uhr` geht. Mehrere Kartennummern mit Komma trennen (`die 12, 34 und 56`), sonst sehen sie wie eine Nummer aus. Namen erkennt das Script nicht, die bleiben Handarbeit.
 
 ---
 
@@ -52,10 +58,10 @@ python -m scripts.call_log imports/anrufprotokoll.csv
 python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwuerfe/
 ```
 
-Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde und Wochentag, alle notierten Probleme. Exit-Code 0 ausgewertet, 1 Prüffehler (nichts ausgewertet), 2 Datei fehlt oder Zielordner ist `evals/cases/`.
+Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde, Anrufe je Wochentag als Mittel je Tag (ein Wochentag, der im Zeitraum öfter vorkommt, wirkt sonst stärker, `-` wenn er nicht vorkommt), alle notierten Probleme mit Zeilennummer der CSV. Exit-Code 0 ausgewertet, 1 Prüffehler oder Datei nicht UTF-8 (nichts ausgewertet), 2 Datei fehlt oder ist nicht lesbar, oder Zielordner liegt in `evals/cases/`.
 
 ### Eval-Entwürfe
-Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. `--cases evals/cases/` lehnt das Script ab (Exit 2). Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
+Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. Einen Zielordner in `evals/cases/` lehnt das Script ab, auch in anderer Schreibweise oder als Unterordner (Exit 2). Jeder Lauf räumt den Ordner auf: Entwürfe, die noch das Feld `review` tragen, werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Ein Fall ohne `review` (schon durchgesehen) bleibt stehen und wird nicht überschrieben. Ein Anruf, dessen ID schon in `evals/cases/` liegt, wird nicht neu entworfen.
 
 | Protokoll | `expected` |
 |---|---|
@@ -74,7 +80,7 @@ Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Posit
 ## 4. Ablauf im Betrieb
 
 1. Bogen ausdrucken, neben das Telefon legen. Eine Zeile je Anruf, direkt nach dem Auflegen, 20 Sekunden.
-2. Abends oder am Wochenende in die CSV abtippen (Tabellenkalkulation, als CSV UTF-8 mit Semikolon speichern). Bögen danach vernichten.
+2. Abends oder am Wochenende in die CSV abtippen (Tabellenkalkulation, als „CSV UTF-8 (durch Trennzeichen getrennt)“ speichern; das normale CSV aus Excel ist kein UTF-8 und wird abgelehnt). Bögen danach vernichten.
 3. Einmal pro Woche auswerten, Zahlen in die C1-Bestandsaufnahme.
 4. Zwei Wochen reichen für eine erste Baseline.
 
