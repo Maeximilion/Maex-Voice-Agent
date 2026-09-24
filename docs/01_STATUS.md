@@ -191,6 +191,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Rejection plus replacement in one answer (`sim/scripted_order.py`, question branch) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): "keine davon, lieber Frühlingsrollen" closes the question and drops the whole answer, the caller has to name Frühlingsrollen again. Fix: short-circuit only a standalone rejection, search the rest of the reply. Stand-in only | with T-2.4 or the next sim change |
 | Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
 | Lower the wait time from the tablet | docs/06 §3 only specifies +15/+30; base values belong to the admin view (§4), not yet built | at T-3.5 operating test, latest with the admin view |
@@ -272,6 +273,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v1.31.16 · 24.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
+- **v1.31.15 · 24.09.2026:** PR #133 gemergt, ein Befund nach der abgearbeiteten Runde als offener Punkt (nur Text-Telefon)
 - **v1.31.14 · 24.09.2026:** Anrufprotokoll: Nr. nur hinter Strassennamen gestrichen, doppelte Zeile zaehlt einmal, Datum im ID-Verzeichnis geprueft, Dateirechte bleiben (Codex)
 - **v1.31.13 · 24.09.2026:** Anrufprotokoll: Fehlalarme bei Wochentag, Datum, Uhrzeit und Kartennummer behoben, Komma trennt gesprochene Zahlen; Folgepunkte aus eigenem Review notiert
 - **v1.31.12 · 24.09.2026:** Anrufprotokoll: ID-Verzeichnis laeuft auch ohne alte CSV-Zeilen ab, kaputtes expected als Meldung (Codex)
