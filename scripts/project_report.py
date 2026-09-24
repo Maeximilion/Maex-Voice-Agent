@@ -247,6 +247,7 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
     cursor: str | None = None
     project_id = ""
     project_title = ""
+    unreadable = 0
 
     while True:
         data = graphql(
@@ -262,11 +263,23 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
         project_title = project["title"]
 
         page = project["items"]
+        # content ist null, wenn der Token das Repo hinter dem Eintrag nicht lesen darf.
+        # Ein Entwurf hat dagegen immer Inhalt. Solche Eintraege haben weder Nummer
+        # noch Zustand, --fix faende nichts und liefe still gruen durch.
+        unreadable += sum(1 for node in page["nodes"] if node.get("content") is None)
         items.extend(item for node in page["nodes"] if (item := parse_item(node)))
 
         if not page["pageInfo"]["hasNextPage"]:
-            return project_id, project_title, items
+            break
         cursor = page["pageInfo"]["endCursor"]
+
+    if unreadable:
+        raise ProjectError(
+            f"Der Token sieht den Inhalt von {unreadable} Eintraegen nicht. Ihm fehlt "
+            "der Lesezugriff auf das Repo dahinter - klassisch Scope 'repo', "
+            "fine-grained 'Issues' und 'Pull requests' lesend. Siehe docs/16 Abschnitt 5."
+        )
+    return project_id, project_title, items
 
 
 def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
