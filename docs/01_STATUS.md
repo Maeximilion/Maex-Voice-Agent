@@ -58,7 +58,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 | 5 Overflow operation | AI answers, only when team doesn't pick up | G5 | open |
 | 6 Primary operation & ongoing | AI picks up first, team fallback, monthly review running | Monthly review | open, target state |
 
-**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). The agent does not use the menu tools yet; that is next, then approval on the tablet (T-4.7) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
+**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Next: wishes to a dish (T-4.10), then approval on the tablet (T-4.7) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
 
 ---
 
