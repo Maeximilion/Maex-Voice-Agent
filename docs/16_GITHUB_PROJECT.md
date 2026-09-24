@@ -72,6 +72,18 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 
 **Korrigiert wird:** was erledigt ist (Issue `CLOSED`, Pull Request `MERGED`), das Board aber nicht auf `Done` fuehrt. Ein Pull Request, der ohne Merge geschlossen wurde, hat ebenfalls den Zustand `CLOSED`, ist aber nicht erledigt - er wird nie automatisch auf `Done` gesetzt. Das ist die Luecke, die die eingebauten Workflows hinterlassen, denn sie greifen nur bei neuen Ereignissen und nie rueckwirkend. Die Korrektur ist idempotent und zieht das Board nur zur Wahrheit hin, nie davon weg.
 
+**Nachgetragen wird**, bei Pull Requests und nur in leere Felder:
+
+| Feld | Wert |
+|---|---|
+| Start date | Tag, an dem der Pull Request eroeffnet wurde |
+| Target date | Tag des Merge, bei ohne Merge geschlossenen der Tag des Schliessens |
+| Iteration, Quarter | der Zeitraum, in dem der Pull Request eroeffnet wurde - keiner, wenn der Tag vor oder zwischen den Zeitraeumen liegt |
+
+Tage gelten nach Berliner Zeit. Was von Hand gesetzt ist, bleibt stehen. Issues bekommen nichts davon: bei ihnen ist die Iteration Planung, keine Tatsache.
+
+Dazu setzt `scripts/pr_metadata.py` an jedem Pull Request ohne Assignee den Repo-Eigentuemer ein und an jedem ohne Label das Typ-Label aus dem Titel (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Ohne erkennbaren Typ bleibt das Label leer - lieber keins als ein geratenes.
+
 **Nur gemeldet wird** alles, was eine Entscheidung braucht:
 
 - offene Issues und Pull Requests des Repos, die auf dem Board fehlen - falls die automatische Aufnahme etwas verpasst hat. Verglichen wird die URL, nicht die Nummer

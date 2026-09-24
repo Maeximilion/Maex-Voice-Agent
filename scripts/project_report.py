@@ -6,7 +6,8 @@ Zweck : Das Board ist eine Ableitung. Waehrend der Arbeit fasst es niemand an;
         docs/07_WORKPACKAGES.md passt, und meldet die Abweichungen.
 Aufruf: python scripts/project_report.py [--fix] [--archive]
         Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
-        --fix      setzt Abgeschlossenes auf Done - der Lauf, den die Action taeglich macht
+        --fix      setzt Abgeschlossenes auf Done und traegt bei Pull Requests leere
+                   Felder nach (Start, Ziel, Iteration, Quarter) - der taegliche Lauf
         --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
         --findings-json DATEI  schreibt die offenen Befunde als JSON, fuer das
                    Entscheidungs-Issue (scripts/decision_issue.py)
@@ -29,7 +30,8 @@ import urllib.error
 import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 GRAPHQL_URL = "https://api.github.com/graphql"
 
@@ -61,12 +63,19 @@ query($owner: String!, $number: Int!, $cursor: String) {
                 title
                 field { ... on ProjectV2IterationField { name } }
               }
+              ... on ProjectV2ItemFieldDateValue {
+                date
+                field { ... on ProjectV2Field { name } }
+              }
             }
           }
           content {
             __typename
             ... on Issue { number title state url labels(first: 20) { nodes { name } } }
-            ... on PullRequest { number title state url labels(first: 20) { nodes { name } } }
+            ... on PullRequest {
+              number title state url createdAt mergedAt closedAt
+              labels(first: 20) { nodes { name } }
+            }
             ... on DraftIssue { title }
           }
         }
@@ -111,6 +120,44 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
 }
 """
 
+FIELDS_QUERY = """
+query($owner: String!, $number: Int!) {
+  user(login: $owner) {
+    projectV2(number: $number) {
+      fields(first: 50) {
+        nodes {
+          ... on ProjectV2Field { id name dataType }
+          ... on ProjectV2IterationField {
+            id name
+            configuration {
+              iterations { id startDate duration }
+              completedIterations { id startDate duration }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+SET_DATE_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $date: Date!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId, value: {date: $date}
+  }) { projectV2Item { id } }
+}
+"""
+
+SET_ITERATION_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
+    value: {iterationId: $iterationId}
+  }) { projectV2Item { id } }
+}
+"""
+
 ARCHIVE_MUTATION = """
 mutation($projectId: ID!, $itemId: ID!) {
   archiveProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) {
@@ -131,6 +178,15 @@ DONE_NAMES = frozenset({"done", "fertig", "erledigt"})
 # In progress ohne Iteration. Pruefte man es mit, meldete es sich selbst und koennte
 # sich nie schliessen. Darum ist es von jeder Pruefung ausgenommen.
 MAINTENANCE_LABEL = "projektpflege"
+
+# Gespeichert wird in UTC, angezeigt in Berlin. Ein Datum auf dem Board ist Anzeige:
+# ein Pull Request von 23:30 UTC gehoert in Berlin schon zum naechsten Tag.
+BERLIN = ZoneInfo("Europe/Berlin")
+
+# Welche Board-Felder bei Pull Requests aus Fakten folgen. Bei Issues keines davon:
+# dort ist die Iteration eine Planungsentscheidung, keine Tatsache.
+DATE_FIELDS = ("Start date", "Target date")
+ITERATION_FIELDS = ("Iteration", "Quarter")
 
 
 def _normalized(name: str | None) -> str:
@@ -157,6 +213,9 @@ class Item:
     # erledigt heisst, bei einem Pull Request aber abgelehnt.
     kind: str | None = None
     labels: frozenset[str] = frozenset()
+    created_at: datetime | None = None
+    # Bei Pull Requests der Merge, sonst das Schliessen. None, solange offen.
+    closed_at: datetime | None = None
 
     @property
     def status(self) -> str | None:
@@ -226,6 +285,10 @@ def graphql(query: str, variables: dict, token: str) -> dict:
     return body["data"]
 
 
+def _timestamp(raw: str | None) -> datetime | None:
+    return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
+
+
 def parse_item(node: dict) -> Item | None:
     """Einen GraphQL-Knoten in ein Item uebersetzen.
 
@@ -238,8 +301,10 @@ def parse_item(node: dict) -> Item | None:
         field_name = (value.get("field") or {}).get("name")
         if not field_name:
             continue
-        # Single-Select liefert "name", Iterationen liefern "title".
-        fields[field_name] = value.get("name") or value.get("title") or ""
+        # Single-Select liefert "name", Iterationen "title", Datumsfelder "date".
+        fields[field_name] = (
+            value.get("name") or value.get("title") or value.get("date") or ""
+        )
 
     content = node.get("content") or {}
     return Item(
@@ -248,6 +313,8 @@ def parse_item(node: dict) -> Item | None:
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
         kind=content.get("__typename"),
+        created_at=_timestamp(content.get("createdAt")),
+        closed_at=_timestamp(content.get("mergedAt") or content.get("closedAt")),
         labels=frozenset(
             label["name"] for label in (content.get("labels") or {}).get("nodes", [])
         ),
@@ -540,6 +607,82 @@ def mark_done(
     return fixed
 
 
+def pick_iteration(iterations: list[dict], day: date) -> str | None:
+    """Die Iteration, in deren Zeitraum der Tag liegt. Keine, wenn er davor oder
+    dazwischen liegt - dann wird nichts erfunden."""
+    for iteration in iterations:
+        start = date.fromisoformat(iteration["startDate"])
+        if start <= day < start + timedelta(days=iteration["duration"]):
+            return iteration["id"]
+    return None
+
+
+def derive_pr_fields(item: Item) -> dict[str, str]:
+    """Welche leeren Board-Felder eines Pull Requests aus Fakten folgen, als Berliner
+    Tag (ISO). Bei Iteration und Quarter ist es der Tag, nach dem sie gewaehlt werden.
+
+    Nur Pull Requests, nur leere Felder: was von Hand gesetzt ist, bleibt stehen.
+    """
+    if item.kind != "PullRequest" or item.created_at is None:
+        return {}
+    started = item.created_at.astimezone(BERLIN).date().isoformat()
+    derived = dict.fromkeys(("Start date", *ITERATION_FIELDS), started)
+    if item.closed_at is not None:
+        derived["Target date"] = item.closed_at.astimezone(BERLIN).date().isoformat()
+    return {name: value for name, value in derived.items() if not item.fields.get(name)}
+
+
+def fill_pr_fields(
+    owner: str, number: int, project_id: str, items: list[Item], token: str
+) -> list[str]:
+    """Leere Board-Felder von Pull Requests nachtragen. Idempotent: gefuellte Felder
+    werden nie ueberschrieben, ein zweiter Lauf findet nichts mehr."""
+    todo = [
+        (item, derived)
+        for item in items
+        if not item.is_archived and (derived := derive_pr_fields(item))
+    ]
+    if not todo:
+        return []
+
+    data = graphql(FIELDS_QUERY, {"owner": owner, "number": number}, token)
+    nodes = ((data.get("user") or {}).get("projectV2") or {}).get("fields", {})
+    fields = {node["name"]: node for node in nodes.get("nodes", []) if node.get("name")}
+
+    filled = []
+    for item, derived in todo:
+        done = []
+        for name, day in derived.items():
+            field_def = fields.get(name)
+            if field_def is None:
+                continue  # Das Board hat dieses Feld nicht - nichts zu tun.
+            variables = {
+                "projectId": project_id,
+                "itemId": item.node_id,
+                "fieldId": field_def["id"],
+            }
+            if name in ITERATION_FIELDS:
+                config = field_def.get("configuration") or {}
+                iterations = config.get("iterations", []) + config.get(
+                    "completedIterations", []
+                )
+                iteration_id = pick_iteration(iterations, date.fromisoformat(day))
+                if iteration_id is None:
+                    continue
+                graphql(
+                    SET_ITERATION_MUTATION,
+                    {**variables, "iterationId": iteration_id},
+                    token,
+                )
+            else:
+                graphql(SET_DATE_MUTATION, {**variables, "date": day}, token)
+            item.fields[name] = day
+            done.append(name)
+        if done:
+            filled.append(f"{item.label}: {', '.join(done)}")
+    return filled
+
+
 def archive_stale_done(
     project_id: str, candidates: list[Item], token: str
 ) -> list[str]:
@@ -610,6 +753,10 @@ def main() -> int:
             else []
         )
 
+        filled = (
+            fill_pr_fields(owner, number, project_id, items, token) if args.fix else []
+        )
+
         open_in_repo = fetch_open_in_repo(repo, token) if repo else None
         findings = find_issues(items, now, open_in_repo)
         archive_key = next(key for key in findings if "Archiv-Kandidat" in key)
@@ -625,6 +772,9 @@ def main() -> int:
         if fixed:
             report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
             report += "\n".join(f"- {label}" for label in fixed)
+        if filled:
+            report += f"\n\n## Felder nachgetragen ({len(filled)})\n\n"
+            report += "\n".join(f"- {line}" for line in filled)
         if args.archive:
             archived = archive_stale_done(project_id, candidates, token)
             report += f"\n\n## Archiviert ({len(archived)})\n\n"
