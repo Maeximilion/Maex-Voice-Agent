@@ -1,8 +1,9 @@
 name: projektpflege
 
 # Das Board wird einmal taeglich gepflegt, nicht bei jedem Commit. Waehrend der Arbeit
-# fasst es niemand an: Status bewegen die eingebauten Project-Workflows beim Merge,
-# alles andere faellt hier auf. Begruendung: docs/16_GITHUB_PROJECT.md
+# fasst es niemand an: Status bewegen die eingebauten Project-Workflows beim Merge.
+# Was ihnen durchrutscht - abgeschlossen, aber nicht auf Done -, setzt dieser Lauf
+# nach; alles andere meldet er nur. Begruendung: docs/16_GITHUB_PROJECT.md
 on:
   schedule:
     # 03:00 UTC, also 05:00 im Sommer und 04:00 im Winter. Die Stunde ist egal,
@@ -10,12 +11,12 @@ on:
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
-      apply:
-        description: "Archiv-Kandidaten wirklich archivieren statt nur melden"
+      archive:
+        description: "Zusaetzlich Done-Eintraege nach 14 Tagen archivieren (blendet sie aus der Roadmap aus)"
         type: boolean
         default: false
 
-# Nur lesen. Das Project haengt am PAT, nicht am GITHUB_TOKEN.
+# Das Repo wird nur gelesen. Das Board schreibt der PAT, nicht der GITHUB_TOKEN.
 permissions:
   contents: read
 
@@ -24,7 +25,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  bericht:
+  pflege:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -43,7 +44,10 @@ jobs:
             exit 1
           fi
 
-      - name: Bericht erzeugen
+      - name: Korrigieren und berichten
+        # Ausdruecklich bash: nur so setzt GitHub pipefail. Ohne das gewinnt der
+        # Exit-Code von tee, und ein gescheiterter Lauf stuende gruen im Verlauf.
+        shell: bash
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           PROJECT_OWNER: ${{ github.repository_owner }}
@@ -51,5 +55,5 @@ jobs:
         run: |
           # Der Bericht landet in der Job-Zusammenfassung, nicht als Kommentar an jedem
           # Eintrag. Ein Ort zum Nachsehen statt Rauschen auf dem Board.
-          python scripts/project_report.py ${{ inputs.apply && '--apply' || '' }} \
+          python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
             | tee "$GITHUB_STEP_SUMMARY"

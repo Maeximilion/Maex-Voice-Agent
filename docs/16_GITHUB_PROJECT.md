@@ -1,7 +1,7 @@
 # 16 – GitHub-Project
 
 > Das Board auf GitHub ist eine **Ableitung**, keine Handarbeit. Es zeigt den Stand, den Issues und Pull Requests ohnehin schon haben.
-> Version 1.0 · 22.09.2026
+> Version 1.1 · 24.09.2026
 
 ---
 
@@ -29,7 +29,7 @@ Was wie ein zweites Project aussieht, ist immer eine **View**. Views kosten nich
 
 Wenn eine Sicht fehlt: eine View anlegen, niemals ein Project.
 
-**Das Project ist Nummer 2** (`https://github.com/users/Maeximilion/projects/2`): 121 Eintraege, 77 Issues und 44 Pull Requests, alle Felder gepflegt. Stand 23.09.2026 bestehen daneben Nummer 3 (77 Issues, vollstaendige Teilmenge von 2, kein einziger eigener Eintrag) und Nummer 4 (leer). Beide gehoeren geschlossen; solange sie offen sind, ist die Regel aus Abschnitt 1 nur aufgeschrieben, nicht hergestellt.
+**Das Project ist Nummer 2, `Maex Voice-Agent`** (`https://github.com/users/Maeximilion/projects/2`). Am 24.09.2026 zusammengefuehrt: Nummer 3 war eine vollstaendige Teilmenge von 2 (77 Issues, kein einziger eigener Eintrag), Nummer 1 und 4 waren leer. Alle drei sind geschlossen, nicht geloescht - sie lassen sich wieder oeffnen, falls je etwas fehlt.
 
 ---
 
@@ -68,31 +68,35 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 
 ## 5. Die taegliche Pflege
 
-`.github/workflows/project-maintenance.yml` laeuft einmal taeglich um 03:00 UTC und ruft `scripts/project_report.py` auf. Das Skript liest, prueft und schreibt einen Bericht in die Job-Zusammenfassung. Es aendert von sich aus nichts.
+`.github/workflows/project-maintenance.yml` laeuft einmal taeglich um 03:00 UTC und ruft `scripts/project_report.py --fix` auf. Der Lauf korrigiert genau eine Sorte Fehler selbst und meldet alles andere in der Job-Zusammenfassung.
 
-Geprueft wird:
+**Korrigiert wird:** was GitHub abgeschlossen hat (Issue `CLOSED`, Pull Request `MERGED`), das Board aber nicht auf `Done` fuehrt. Das ist die Luecke, die die eingebauten Workflows hinterlassen, denn sie greifen nur bei neuen Ereignissen und nie rueckwirkend. Die Korrektur ist idempotent und zieht das Board nur zur Wahrheit hin, nie davon weg.
+
+**Nur gemeldet wird** alles, was eine Entscheidung braucht:
 
 - derselbe Vorgang zweimal auf dem Board
 - Eintraege ohne Status
 - Eintraege in Arbeit ohne Iteration (bewusst nicht der ganze Backlog, sonst meldet der Bericht taeglich alles)
 - `In Progress` seit sieben Tagen ohne Bewegung — wird gemeldet, nicht verschoben
-- `Done` aelter als vierzehn Tage — Archiv-Kandidat
-- abgeschlossen, Board steht aber nicht auf `Done` - zaehlt `MERGED` mit, denn ein Pull Request erreicht `CLOSED` nie
 
-Archiviert wird nur, wenn der Lauf von Hand mit dem Schalter `apply` gestartet wird. Der taegliche Lauf berichtet ausschliesslich.
+**Archiviert wird nie automatisch.** Fuer ein Portfolio ist sichtbare, erledigte Arbeit in der Roadmap ein Wert und kein Ballast. Wer aufraeumen will, startet den Lauf von Hand mit dem Schalter `archive`; dann verschwinden `Done`-Eintraege, die seit vierzehn Tagen unbewegt sind.
 
 ### Einrichtung
 
 Der `GITHUB_TOKEN` einer Action darf kontoeigene Projects nicht lesen. Es braucht einmalig:
 
-1. Fine-grained PAT anlegen, Berechtigung **Projects: Read and write**, Laufzeit notieren
+1. Token anlegen, entweder
+   - klassisch unter `https://github.com/settings/tokens/new`, nur Scope **`project`** (einfachster Weg), oder
+   - fine-grained, Resource owner = eigenes Konto, unter **Account permissions** (nicht Repository permissions) **Projects: Read and write**
 2. Im Repo als Secret `PROJECT_TOKEN` hinterlegen
 3. Im Repo als Variable `PROJECT_NUMBER` die Nummer aus der Project-URL hinterlegen
+
+Beides ist seit 24.09.2026 eingerichtet (`PROJECT_NUMBER` = 2). Laeuft der Token ab, faellt der taegliche Lauf rot aus - das ist gewollt, ein stilles Aussetzen waere schlimmer.
 
 Lokal derselbe Lauf:
 
 ```bash
-PROJECT_TOKEN=<pat> PROJECT_OWNER=<konto> PROJECT_NUMBER=<nummer> python scripts/project_report.py
+PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 python scripts/project_report.py
 ```
 
 ---
@@ -104,7 +108,9 @@ PROJECT_TOKEN=<pat> PROJECT_OWNER=<konto> PROJECT_NUMBER=<nummer> python scripts
 | Waehrend `/task`, `/done`, `/bug` | Nichts. Kein `gh project`, weder lesend noch schreibend |
 | Beim Anlegen eines Issues | Labels setzen: Art, Stufe, Prioritaet |
 | Beim Oeffnen eines Pull Requests | `Closes #N` in die Beschreibung, Branchname mit Issue-Nummer |
-| Auf `/project` oder in `/gate` | Board lesen, Bericht erzeugen, nach Rueckfrage aendern |
+| Auf `/project` oder in `/gate` | Board lesen und pflegen. Mechanische Korrekturen (Status nach Merge, Dopplungen, fehlende Eintraege) direkt, Ermessensfragen (Iteration, Archiv, neue Views) als Vorschlag |
+
+Grundlage ist Maxis stehende Freigabe vom 24.09.2026: Claude raeumt das Board selbst auf und haelt es aktuell - aber nur ausserhalb der Arbeit an einer Aufgabe. Loeschen von Projects, Eintraegen oder Feldern bleibt ausgenommen.
 
 Die Verbindung zwischen Arbeit und Board entsteht ueber Schluesselwoerter und Branchnamen, nicht ueber API-Aufrufe. Branchname traegt die Nummer: `task/T-4.3-search-menu` oder `fix/12-kurzbeschreibung`.
 

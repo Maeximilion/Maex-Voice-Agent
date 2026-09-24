@@ -4,9 +4,11 @@
 Zweck : Das Board ist eine Ableitung. Waehrend der Arbeit fasst es niemand an;
         einmal taeglich prueft dieses Skript, ob es noch zu Issues und
         docs/07_WORKPACKAGES.md passt, und meldet die Abweichungen.
-Aufruf: python scripts/project_report.py [--apply]
-        Ohne --apply wird nur gelesen und berichtet (Trockenlauf, Standard).
-Umgeb.: PROJECT_TOKEN   Fine-grained PAT, Projects: Read (fuer --apply: Read and write)
+Aufruf: python scripts/project_report.py [--fix] [--archive]
+        Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
+        --fix      setzt Abgeschlossenes auf Done - der Lauf, den die Action taeglich macht
+        --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
+Umgeb.: PROJECT_TOKEN   Token mit Projects-Recht (Lesen; fuer --fix/--archive Schreiben)
         PROJECT_OWNER   Kontoname, dem das Project gehoert
         PROJECT_NUMBER  Nummer des Projects aus seiner URL
 Abhaeng.: nur Standardbibliothek.
@@ -67,6 +69,27 @@ query($owner: String!, $number: Int!, $cursor: String) {
 }
 """
 
+STATUS_FIELD_QUERY = """
+query($owner: String!, $number: Int!) {
+  user(login: $owner) {
+    projectV2(number: $number) {
+      field(name: "Status") {
+        ... on ProjectV2SingleSelectField { id options { id name } }
+      }
+    }
+  }
+}
+"""
+
+SET_STATUS_MUTATION = """
+mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+  updateProjectV2ItemFieldValue(input: {
+    projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
+    value: {singleSelectOptionId: $optionId}
+  }) { projectV2Item { id } }
+}
+"""
+
 ARCHIVE_MUTATION = """
 mutation($projectId: ID!, $itemId: ID!) {
   archiveProjectV2Item(input: {projectId: $projectId, itemId: $itemId}) {
@@ -74,6 +97,17 @@ mutation($projectId: ID!, $itemId: ID!) {
   }
 }
 """
+
+
+# GitHub schreibt die Optionen so, wie sie angelegt wurden: "In progress" aus der
+# Vorlage, "In Progress" von Hand. Ein Vergleich auf den exakten Text laesst den
+# Bericht still danebenliegen, darum wird normalisiert statt gleichgesetzt.
+IN_PROGRESS_NAMES = frozenset({"in progress", "in arbeit"})
+DONE_NAMES = frozenset({"done", "fertig", "erledigt"})
+
+
+def _normalized(name: str | None) -> str:
+    return (name or "").strip().casefold()
 
 
 class ProjectError(RuntimeError):
@@ -96,19 +130,13 @@ class Item:
     def status(self) -> str | None:
         return self.fields.get("Status")
 
-    # GitHub schreibt die Optionen so, wie sie angelegt wurden: "In progress" aus der
-    # Vorlage, "In Progress" von Hand. Ein Vergleich auf den exakten Text laesst den
-    # Bericht still danebenliegen, darum wird normalisiert statt gleichgesetzt.
-    def _status_is(self, *names: str) -> bool:
-        return (self.status or "").strip().casefold() in names
-
     @property
     def is_in_progress(self) -> bool:
-        return self._status_is("in progress", "in arbeit")
+        return _normalized(self.status) in IN_PROGRESS_NAMES
 
     @property
     def is_done(self) -> bool:
-        return self._status_is("done", "fertig", "erledigt")
+        return _normalized(self.status) in DONE_NAMES
 
     @property
     def is_finished(self) -> bool:
@@ -271,10 +299,55 @@ def render_report(
     return "\n".join(lines)
 
 
+def items_to_mark_done(items: list[Item]) -> list[Item]:
+    """Was GitHub abgeschlossen hat, das Board aber nicht. Genau die Luecke, die die
+    eingebauten Workflows rueckwirkend nicht schliessen."""
+    return [item for item in items if item.is_finished and not item.is_done]
+
+
+def pick_done_option(options: list[dict]) -> str:
+    """Die Done-Option des Status-Felds finden, gleich welche Schreibweise sie hat."""
+    for option in options:
+        if _normalized(option.get("name")) in DONE_NAMES:
+            return option["id"]
+    names = ", ".join(option.get("name", "?") for option in options) or "keine"
+    raise ProjectError(f"Status-Feld hat keine Option fuer Done (vorhanden: {names})")
+
+
+def mark_done(
+    owner: str, number: int, project_id: str, items: list[Item], token: str
+) -> list[str]:
+    """Abgeschlossene Eintraege auf Done setzen. Idempotent: ein zweiter Lauf findet nichts."""
+    if not items:
+        return []
+    data = graphql(STATUS_FIELD_QUERY, {"owner": owner, "number": number}, token)
+    status_field = ((data.get("user") or {}).get("projectV2") or {}).get("field")
+    if not status_field or "options" not in status_field:
+        raise ProjectError("Das Project hat kein Single-Select-Feld namens Status.")
+    option_id = pick_done_option(status_field["options"])
+
+    fixed = []
+    for item in items:
+        graphql(
+            SET_STATUS_MUTATION,
+            {
+                "projectId": project_id,
+                "itemId": item.node_id,
+                "fieldId": status_field["id"],
+                "optionId": option_id,
+            },
+            token,
+        )
+        # Lokal nachziehen, damit der Bericht den Stand nach der Korrektur zeigt.
+        item.fields["Status"] = "Done"
+        fixed.append(item.label)
+    return fixed
+
+
 def archive_stale_done(
     project_id: str, candidates: list[Item], token: str
 ) -> list[str]:
-    """Fertige Eintraege archivieren. Laeuft nur mit --apply."""
+    """Fertige Eintraege archivieren. Laeuft nur mit --archive."""
     archived = []
     for item in candidates:
         graphql(
@@ -291,9 +364,14 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--apply",
+        "--fix",
         action="store_true",
-        help="Archiv-Kandidaten wirklich archivieren. Ohne diesen Schalter wird nur berichtet.",
+        help="Abgeschlossene Eintraege auf Done setzen. Sicher und idempotent.",
+    )
+    parser.add_argument(
+        "--archive",
+        action="store_true",
+        help="Done-Eintraege nach 14 Tagen archivieren. Nur von Hand, blendet sie aus der Roadmap aus.",
     )
     args = parser.parse_args()
 
@@ -322,13 +400,27 @@ def main() -> int:
     now = datetime.now(UTC)
     try:
         project_id, project_title, items = fetch_items(owner, number, token)
-        findings = find_issues(items, now)
-        report = render_report(project_title, items, findings, now)
 
-        if args.apply:
-            candidates = findings[
-                f"Fertig, aelter als {DONE_ARCHIVE_AFTER_DAYS} Tage (Archiv-Kandidat)"
-            ]
+        # Erst korrigieren, dann pruefen: der Bericht zeigt, was danach noch offen ist.
+        fixed = (
+            mark_done(owner, number, project_id, items_to_mark_done(items), token)
+            if args.fix
+            else []
+        )
+
+        findings = find_issues(items, now)
+        archive_key = next(key for key in findings if "Archiv-Kandidat" in key)
+        candidates = findings.pop(archive_key)
+        # Erledigtes bleibt sichtbar, bis es jemand bewusst archiviert. Ohne --archive
+        # wuerde die Liste taeglich mit jedem fertigen Eintrag laenger - reines Rauschen.
+        if args.archive:
+            findings[archive_key] = candidates
+
+        report = render_report(project_title, items, findings, now)
+        if fixed:
+            report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
+            report += "\n".join(f"- {label}" for label in fixed)
+        if args.archive:
             archived = archive_stale_done(project_id, candidates, token)
             report += f"\n\n## Archiviert ({len(archived)})\n\n"
             report += "\n".join(f"- {label}" for label in archived) or "- nichts"

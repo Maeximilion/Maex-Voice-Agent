@@ -210,3 +210,76 @@ def test_parse_item_liest_single_select_und_iteration() -> None:
     assert item.fields == {"Status": "Done", "Iteration": "Iteration 2"}
     assert item.number == 42
     assert item.label == "#42 T-4.2 Import"
+
+
+def test_nur_abgeschlossenes_ohne_done_wird_korrigiert() -> None:
+    """--fix fasst genau die Luecke an, die die eingebauten Workflows hinterlassen - sonst nichts."""
+    eintraege = [
+        eintrag(82, state="CLOSED", status="In progress"),
+        eintrag(105, state="MERGED", status="In progress"),
+        eintrag(49, state="OPEN", status="In progress"),
+        eintrag(4, state="CLOSED", status="Done"),
+    ]
+    zu_korrigieren = project_report.items_to_mark_done(eintraege)
+    assert [item.number for item in zu_korrigieren] == [82, 105]
+
+
+@pytest.mark.parametrize("geschrieben", ["Done", "done", " Fertig "])
+def test_done_option_wird_in_jeder_schreibweise_gefunden(geschrieben: str) -> None:
+    optionen = [{"id": "a", "name": "Todo"}, {"id": "b", "name": geschrieben}]
+    assert project_report.pick_done_option(optionen) == "b"
+
+
+def test_fehlende_done_option_bricht_mit_klartext_ab() -> None:
+    """Randfall: ein Board ohne Done-Spalte. Lieber laut abbrechen als irgendwohin schreiben."""
+    with pytest.raises(project_report.ProjectError, match="keine Option fuer Done"):
+        project_report.pick_done_option([{"id": "a", "name": "Todo"}])
+
+
+def test_mark_done_setzt_status_und_zieht_bericht_nach(monkeypatch) -> None:
+    """Die Mutation bekommt die richtigen IDs, und der Bericht sieht danach den neuen Stand."""
+    aufrufe: list[dict] = []
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        aufrufe.append(variables)
+        if "field(name" in query:
+            return {
+                "user": {
+                    "projectV2": {
+                        "field": {
+                            "id": "FELD",
+                            "options": [
+                                {"id": "OPT_TODO", "name": "Todo"},
+                                {"id": "OPT_DONE", "name": "Done"},
+                            ],
+                        }
+                    }
+                }
+            }
+        return {"updateProjectV2ItemFieldValue": {"projectV2Item": {"id": "x"}}}
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    item = eintrag(105, state="MERGED", status="In progress", node_id="PVTI_105")
+
+    korrigiert = project_report.mark_done("owner", 2, "PROJ", [item], "token")
+
+    assert korrigiert == [item.label]
+    assert aufrufe[-1] == {
+        "projectId": "PROJ",
+        "itemId": "PVTI_105",
+        "fieldId": "FELD",
+        "optionId": "OPT_DONE",
+    }
+    assert item.is_done
+    befunde = project_report.find_issues([item], JETZT)
+    assert befunde["Abgeschlossen, steht aber nicht auf Done"] == []
+
+
+def test_mark_done_ohne_kandidaten_ruft_github_nicht_auf(monkeypatch) -> None:
+    """Der taegliche Lauf an einem ruhigen Tag darf keine einzige Anfrage schreiben."""
+
+    def darf_nicht_laufen(*_args: object) -> dict:
+        raise AssertionError("graphql wurde ohne Anlass aufgerufen")
+
+    monkeypatch.setattr(project_report, "graphql", darf_nicht_laufen)
+    assert project_report.mark_done("owner", 2, "PROJ", [], "token") == []

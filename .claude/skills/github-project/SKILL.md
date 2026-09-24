@@ -42,10 +42,10 @@ Exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), 
 
 ## Maintenance runs daily, never per commit
 
-`.github/workflows/project-maintenance.yml` runs `scripts/project_report.py` once a day and writes a report into the job summary. It reports; it does not move items. Archiving happens only on a manual run with `apply`.
+`.github/workflows/project-maintenance.yml` runs `scripts/project_report.py --fix` once a day. It sets items GitHub has finished (issue `CLOSED`, PR `MERGED`) but the board has not to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap.
 
-Needs `PROJECT_TOKEN` (fine-grained PAT, Projects: Read and write) as a secret and `PROJECT_NUMBER` as a repo variable - the `GITHUB_TOKEN` cannot read account-owned projects.
+Needs `PROJECT_TOKEN` as a secret and `PROJECT_NUMBER` (= 2) as a repo variable, both set up 2026-09-24 - the `GITHUB_TOKEN` cannot read account-owned projects.
 
 ## When writing is allowed
 
-Only in `/project`, or inside `/gate` when the board has to reflect a passed gate. Both propose the changes first and wait for confirmation. Everything else: read `docs/07_WORKPACKAGES.md` and `docs/01_STATUS.md`, which are the real source anyway.
+Only in `/project`, or inside `/gate` when the board has to reflect a passed gate. Maxi gave standing authorization (2026-09-24) for Claude to clean up and update the board itself there: mechanical fixes are applied directly, judgment calls (iterations, archiving, views) are proposed. Deleting a project, an item or a field is never covered. Everywhere else: read `docs/07_WORKPACKAGES.md` and `docs/01_STATUS.md`, which are the real source anyway.

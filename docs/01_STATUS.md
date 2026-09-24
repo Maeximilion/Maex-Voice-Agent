@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.24.0
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.24.1
 
 ---
 
@@ -181,8 +181,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Reliable latency statement under lock contention | Measured ~11 ms is from same request repeated without concurrency; says nothing about lock wait times | with first load test, latest before gate G1 |
 | **A sentence with two positions loses one of them - silently when no number marker is spoken** (`domain/menu/numberwords.py` `sole_item_number`, `domain/menu/search.py`) | Measured 21.09.2026 against the merged code, against the test menu of `test_domain_menu_search.py`. A number with markers, filler words and **one** quantity next to it is fine: `"einmal die Nummer 23 bitte"`, `"zweimal die 23"`, `"die Nummer 23a"` all resolve to `exact_number`. Two cases part ways when **content** stands next to the number. **With** a marker (`"die Nummer 23 und einmal Pho Bo"`, `"Nummer 23 mit Erdnusssauce"`) the answer is `ambiguous` and the agent asks for the one number - loud and safe, though a sauce is an option, not a second dish. **Without** a marker it is not a number sentence at all, so the name search runs over the whole sentence: `"die 23 und einmal Pho Bo"` comes back as `fuzzy_single` on Pho Bo (number 13) and the spoken 23 is gone without a word, `"einmal die 23 und zweimal Frühlingsrollen"` as `alias` on 23. Nothing is guessed, but one position is dropped in silence, and the agent has no signal that it happened. Fix belongs **before** the search: split the sentence per position, then ask `search_menu` once per position - that is order-flow work, not a change to Rule A | with **T-4.5** `draft_order`, where several positions per sentence actually arrive |
 | **PR #120 (Google Jules, "CodeGuardian") on T-4.3** — decide and close | Opened 19.09.2026 against the pre-Rule-A branch. Its finding, an N+1 where `_by_number` ran once per parsed number, **no longer exists**: since Rule A (9d345a7) a sentence with more than one number raises `Ambiguous` before any query, and `_by_number` is called exactly once (verified on `main`, `search.py:171`). Merging the branch as it stands would reintroduce the multi-number path that Rule A removed. What is still worth a decision is the second half of that PR: a `.Jules/reviewer.md` journal of recurring bug patterns | after the gates, together with the deferred P2 polish |
-| **GitHub Project: two boards, both with template names** — merge into one | Screenshots 22.09.2026 show `@Maeximilion's untitled project` (~120 items, real data) and `Project.` (looks like an unused template). Their views overlap: `Backlog` against `Prioritized backlog`, `Monthly/Quarterly roadmap` against `Roadmap`. The convention is now written down (`docs/16_GITHUB_PROJECT.md` §2: one project, everything else is a view), but the cleanup itself has not happened — it needs `gh auth refresh -s project`, and closing a board is an outward-facing step that belongs to Maxi | next session, before the board is used for planning again |
-| **`PROJECT_TOKEN` and `PROJECT_NUMBER` not yet set up** | The daily maintenance workflow exists and fails loudly without them. An Action's `GITHUB_TOKEN` cannot read account-owned projects, so a fine-grained PAT is unavoidable | with the board cleanup above |
+| **Board items #82 and #105 still `In progress`** although closed/merged | Both finished before the built-in project workflows were switched on (24.09.2026), and those never act retroactively. The daily maintenance run with `--fix` corrects exactly this case, so they heal on its first run after merge - no manual step needed | first run of `projektpflege` after this branch is merged |
 
 ## Blockers
 
@@ -247,6 +246,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.24.1 · 24.09.2026:** GitHub-Project zusammengefuehrt, taegliche Pflege korrigiert Status nach Merge selbst
 - **v1.24.0 · 22.09.2026:** GitHub-Project als Ableitung festgelegt: ein Board, taegliche Pflege, Skill haelt die Haende still
 - **v1.23.0 · 22.09.2026:** Review T-4.4: `allergen_question` als Pflichtfeld im Request - der Satz zum Rückruf kommt nur noch auf die Allergenfrage, nicht mehr auf jede Detailabfrage; `confirmed_at` als Ortsdatum statt UTC-Datum
 - **v1.22.1 · 22.09.2026:** Rule A measured and recorded: with a number marker a second position is a question, without one the name search takes over and drops the spoken number - one sentence, one position until T-4.5 splits it
