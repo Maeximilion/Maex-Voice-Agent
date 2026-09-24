@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Anrufprotokoll</title>
+<!-- Druckbogen zu docs/17_ANRUFPROTOKOLL.md. Im Browser oeffnen, A4 quer drucken. -->
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  body { font-family: system-ui, sans-serif; font-size: 10pt; color: #000; background: #fff; margin: 0; }
+  h1 { font-size: 14pt; margin: 0 0 2mm; }
+  p { margin: 0 0 3mm; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; }
+  th { background: #eee; text-align: left; }
+  td { height: 7.5mm; }
+  .k { width: 7%; } .m { width: 5%; } .a { width: 12%; } .e { width: 12%; }
+  .s { width: 34%; } .b { width: 15%; } .p { width: 15%; }
+  .legend { margin-top: 2mm; font-size: 9pt; }
+</style>
+</head>
+<body>
+<h1>Anrufprotokoll &middot; Datum: ______________</h1>
+<p><strong>Keine Namen, keine Telefonnummern, keine Adressen, keine Allergien</strong> (nur „welche Allergene hat die 23?“). Kundensätze so wörtlich wie möglich.</p>
+<table>
+  <thead>
+    <tr>
+      <th class="k">Uhrzeit</th>
+      <th class="m">Min.</th>
+      <th class="a">Anliegen</th>
+      <th class="e">Ergebnis</th>
+      <th class="s">Was der Kunde wörtlich sagte</th>
+      <th class="b">Bestellt / gebucht</th>
+      <th class="p">Problem</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+    <tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  </tbody>
+</table>
+<p class="legend">
+  <strong>Anliegen:</strong> R Reservierung &middot; A Abholung &middot; L Lieferung &middot; B Beschwerde &middot; F Frage &middot; S Sonstiges
+  &nbsp;&nbsp;|&nbsp;&nbsp;
+  <strong>Ergebnis:</strong> E erledigt &middot; RR Rückruf &middot; AL abgelehnt (ausgebucht, außerhalb) &middot; AB abgebrochen
+  <br>Mehrere Kundensätze mit | trennen. Die Kürzel dürfen so in die CSV (docs/17).
+</p>
+</body>
+</html>

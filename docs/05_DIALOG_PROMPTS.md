@@ -119,6 +119,11 @@ get_item_details mit allergen_question: true
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
+
+Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
+   → Hinweis an Position oder Vorgang, Wortlaut fest (E14):
+     "WICHTIG: Keine <Zutat>. Grund: Allergie"
+   → beim Vorlesen wiederholen, nie zusagen, das Gericht sei frei davon
 ```
 
 ---
