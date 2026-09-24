@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.30.1
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.30.2
 
 ---
 
@@ -181,6 +181,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Rejection plus replacement in one answer (`sim/scripted_order.py`, question branch) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): "keine davon, lieber Frühlingsrollen" closes the question and drops the whole answer, the caller has to name Frühlingsrollen again. Fix: short-circuit only a standalone rejection, search the rest of the reply. Stand-in only | with T-2.4 or the next sim change |
 | Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | Reservation key without `note` (`agent/dispatch.py` `_create_reservation`) | Codex PR #127 (P2, after the fully worked round, rule 21.09.2026): the derived key leaves out `note`, so a correction of only the note after the readback ("mit Hochstuhl") replays the old draft and readback without it. Fix: include every persisted request field in the key | with T-4.10 (wishes and notes), latest before G1 |
 | Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
@@ -261,6 +262,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.30.2 · 24.09.2026:** PR #133 gemergt, ein Befund nach der abgearbeiteten Runde als offener Punkt (nur Text-Telefon)
 - **v1.30.1 · 24.09.2026:** Vier Befunde aus PR #130 im Text-Telefon behoben (fuehrende Null keine Menge, Menge bleibt bei neuer Suche, Abholung im spaeteren Satz, jedes ausverkaufte Gericht wird gesagt); dazu das eigene Review: Menge nach der Regel der Domain, gesprochene Nummer waehlt den Vorschlag, `canonical_card` an einer Stelle. Review-Regel verschaerft (Maxi): nach der abgearbeiteten Runde werden P1 noch vor dem Merge gefixt, nur P2 vermerkt
 - **v1.30.0 · 24.09.2026:** Projektpflege traegt PR-Felder und Assignee/Label nach
 - **v1.29.0 · 24.09.2026:** Projektpflege sammelt offene Entscheidungen in einem Issue mit Erwaehnung
