@@ -637,3 +637,30 @@ def test_korrektur_die_ein_feld_entfernt_wird_gemeldet(tmp_path, eval_cases, cap
     err = capsys.readouterr().err
     assert name in err
     assert "intent" in err
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Die Adresse ist Hauptstrasse zwoelf",
+        "Ich wohne am Stadtgarten fuenf",
+        "Kaiserstrasse dreiundzwanzig",
+    ],
+)
+def test_adresse_mit_ausgeschriebener_hausnummer(text):
+    """Codex PR #135: Zahlwoerter werden vor der Adresspruefung zu Ziffern."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "am Freitag eine Pizza",
+        "Tisch fuer sechs um acht",
+        "zum Abholen zwei mal die dreiundzwanzig",
+    ],
+)
+def test_zahlwoerter_ohne_adresse_bleiben_erlaubt(text):
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors == [], text

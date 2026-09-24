@@ -153,6 +153,21 @@ def _norm(value: str) -> str:
     return fold(value.strip())
 
 
+def _numbers_as_digits(text: str) -> str:
+    """Zahlwoerter als Ziffern, fuer die Adresspruefung: "Hauptstrasse zwoelf"
+    wird "hauptstrasse 12". Artikel ("eine Pizza") bleiben Woerter, sonst
+    saehe "am Freitag eine Pizza" wie eine Hausnummer aus."""
+
+    def digit(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token in ARTICLES:
+            return token
+        value = parse_cardinal(token)
+        return token if value is None else str(value)
+
+    return re.sub(r"[a-z]+", digit, fold(text))
+
+
 def _spoken_phone(text: str) -> bool:
     """Eine diktierte Nummer: "null sieben zwei eins ..." oder in Zweiergruppen
     "null sieben einundzwanzig ...". Zaehlt die Ziffern einer Folge von
@@ -243,7 +258,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                     f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit, "
                     "bitte nur zum Gericht: 'welche Allergene hat die 23?'"
                 )
-            if _ADDRESS.search(fold(row[column])):
+            if _ADDRESS.search(_numbers_as_digits(row[column])):
                 problems.append(
                     f"Zeile {line}: {column} enthaelt eine Adresse, bitte nur "
                     "den Stadtteil"
