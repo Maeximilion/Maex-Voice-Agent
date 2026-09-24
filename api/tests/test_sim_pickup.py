@@ -930,3 +930,25 @@ def test_allergie_steht_im_festen_wortlaut_in_der_bestellung(session, tenant):
     assert order.status == "confirmed"
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
     assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in said(turns)
+
+
+def test_wunsch_nach_der_wahl_wird_gesagt(
+    session,
+    tenant,
+):
+    """Codex PR #139, P2: nach der Wahl aus Vorschlaegen wird der Wunsch
+    eingeordnet und gesagt - Unbekanntes abgelehnt, eine Option wiederholt."""
+    _, turns = _bestellung(session, tenant, "Ente mit Pommes.", "Die 48.")
+    assert "Den Wunsch „mit Pommes“ kann ich leider nicht anbieten" in said(turns)
+
+
+def test_option_nach_der_wahl_wird_wiederholt(session, tenant):
+    _, turns = _bestellung(session, tenant, "Ente mit Huhn.", "Die 47.")
+    assert "Nummer 47 Ente knusprig mit Huhn" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+
+
+def test_unbekannter_wunsch_in_einer_aufzaehlung_wird_gesagt(session, tenant):
+    _, turns = _bestellung(session, tenant, "Die 23 mit Pommes und Pho Bo.")
+    assert "Den Wunsch „mit Pommes“ kann ich leider nicht anbieten" in said(turns)

@@ -475,3 +475,26 @@ def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
     again = run(session, tenant_id, call_id, "draft_order", explicit)
     assert again.data["order_id"] == first.data["order_id"]
     assert session.scalar(select(func.count()).select_from(Order)) == 1
+
+
+def test_hinweise_der_teile_stehen_im_satz_der_antwort(session, tenant_id, call_id):
+    """Codex PR #139, P1: in einer Aufzaehlung fielen "kann ich nicht anbieten" und
+    der Hinweis zur Allergie weg - nur die Wiederholung stand im Satz."""
+    unknown = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Pommes und Pho Bo"},
+    )
+    assert unknown.data["match_type"] == "positions"
+    assert "kann ich leider nicht anbieten" in unknown.data["say"]
+    allergy = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Pho Bo, ich habe eine Erdnussallergie und die 23"},
+    )
+    assert allergy.data["match_type"] == "positions"
+    assert "an die Küche weiter" in allergy.data["say"]

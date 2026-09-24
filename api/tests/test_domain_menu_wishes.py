@@ -349,3 +349,23 @@ def test_allergie_ohne_zutat_wird_nachgefragt(session, tenant_id):
 def test_allergie_in_der_suche_im_festen_wortlaut(session, tenant_id):
     result = suche(session, tenant_id, "Pho Bo, ich habe eine Erdnussallergie")
     assert result.wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie"
+
+
+# --- Codex PR #139 -----------------------------------------------------------------
+
+
+def test_allergie_ohne_komma_beginnt_am_satzteil():
+    """Codex PR #139, P2: Spracherkennung setzt selten Kommas. "ich habe eine" gehoert
+    zur Allergie, nicht zum Gericht."""
+    assert split_wish("Pho Bo ich habe eine Erdnussallergie") == (
+        "Pho Bo",
+        "ich habe eine Erdnussallergie",
+    )
+
+
+def test_merkmal_im_namen_und_danach_ein_wunsch(session, tenant_id):
+    """Codex PR #139, P2: "Sommerrollen mit Garnelen" heisst so; "ohne Koriander"
+    danach ist der Wunsch."""
+    result = suche(session, tenant_id, "Sommerrollen mit Garnelen ohne Koriander")
+    assert [h.number for h in result.results] == ["24"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Koriander")

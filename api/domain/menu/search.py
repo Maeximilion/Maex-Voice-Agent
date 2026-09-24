@@ -49,7 +49,7 @@ from api.domain.menu.wishes import (
     has_number,
     names_it,
     open_wish,
-    split_wish,
+    wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
 from api.schemas.menu import MenuHit, SearchResult, Wish
@@ -371,12 +371,24 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
     )
 
 
+def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
+    """Der Satz, den ein Wunsch braucht: nicht angeboten (D8) oder der Hinweis
+    zur Allergie ohne Zusage (E14). Weglassen und Optionen brauchen keinen, sie
+    werden mit wiederholt (`say_understood`)."""
+    if wish.kind == "unknown":
+        return SAY_WISH_UNKNOWN.format(wish=wish.text, name=hit.name)
+    if wish.kind == "allergy":
+        if wish.ingredient:
+            return SAY_ALLERGY_NOTE.format(name=hit.name)
+        return SAY_ALLERGY_WHICH
+    return None
+
+
 def _search_with_wish(
     session: Session,
     tenant_id: uuid.UUID,
     query: str,
-    dish: str,
-    wish: str,
+    candidates: list[tuple[str, str, str]],
     max_results: int,
     now: datetime,
     high: float,
@@ -388,41 +400,39 @@ def _search_with_wish(
 
     None heisst: die normale Suche ueber den ganzen Satz entscheidet - wenn im
     Wunsch eine Zahl steht (Regel A: "Nummer 23 mit 2 Soßen" wird nachgefragt),
-    wenn der Satz mehrere Positionen nennt (der Wunsch gehoert dann zu einer davon, die
-    Zerlegung kommt zuerst) oder das Gericht ohne Wunsch nichts findet. Gehoert
-    der Wunsch zum Namen ("Sommerrollen mit Garnelen"), ist er keiner.
+    wenn der Satz mehrere Positionen nennt (der Wunsch gehoert dann zu einer
+    davon, die Zerlegung kommt zuerst) oder das Gericht ohne Wunsch nichts
+    findet. Gehoert der erste Satzteil zum Namen ("Sommerrollen mit Garnelen"),
+    ist er keiner, und die naechste Trennung wird versucht ("... ohne
+    Koriander", Codex PR #139).
     """
-    if has_number(wish):
+    if has_number(candidates[0][1]):
         return None
     if (
         split_check
         and len(position_parts(session, tenant_id, query, now, high, low)) > 1
     ):
         return None
-    try:
-        found = search_menu(
-            session, tenant_id, dish, max_results, now, high, low, split_check=False
-        )
-    except (Ambiguous, NotFound):
-        return None
-    if not found.results:
-        return None
-    if found.match_type not in CLEAR_MATCHES:
-        return found.model_copy(update={"wish": open_wish(wish)})
-    hit = found.results[0]
-    if names_it(hit.name, wish):
-        return found
-    classified = classify_wish(wish, hit.option_groups)
-    say = found.say
-    if say is None and classified.kind == "unknown":
-        say = SAY_WISH_UNKNOWN.format(wish=wish, name=hit.name)
-    elif say is None and classified.kind == "allergy":
-        say = (
-            SAY_ALLERGY_NOTE.format(name=hit.name)
-            if classified.ingredient
-            else SAY_ALLERGY_WHICH
-        )
-    return found.model_copy(update={"wish": classified, "say": say})
+    for n, (dish, wish, segment) in enumerate(candidates):
+        try:
+            found = search_menu(
+                session, tenant_id, dish, max_results, now, high, low, split_check=False
+            )
+        except (Ambiguous, NotFound):
+            return None
+        if not found.results:
+            return None
+        if found.match_type not in CLEAR_MATCHES:
+            return found.model_copy(update={"wish": open_wish(wish)})
+        hit = found.results[0]
+        if names_it(hit.name, segment):
+            if n + 1 < len(candidates):
+                continue
+            return found
+        classified = classify_wish(wish, hit.option_groups)
+        say = found.say or say_for_wish(hit, classified)
+        return found.model_copy(update={"wish": classified, "say": say})
+    return None
 
 
 def search_menu(
@@ -442,14 +452,13 @@ def search_menu(
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
 
-    dish, wish = split_wish(query)
-    if wish is not None:
+    candidates = wish_candidates(query)
+    if candidates:
         found = _search_with_wish(
             session,
             tenant_id,
             query,
-            dish,
-            wish,
+            candidates,
             max_results,
             now,
             high,

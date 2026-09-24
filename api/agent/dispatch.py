@@ -198,6 +198,10 @@ def _search_menu(
         return found
     positions = []
     understood = []
+    # Pflichtsaetze der Teile: "kann ich nicht anbieten" und der Hinweis zur
+    # Allergie gehoeren in den Satz der Antwort, sonst fielen sie in einer
+    # Aufzaehlung weg (Codex PR #139, P1).
+    notices: list[str] = []
     for part in parts:
         try:
             found = search_menu(session, tenant_id, part, req.max_results, now=now)
@@ -208,6 +212,8 @@ def _search_menu(
             continue
         if _repeats(found):
             understood.append((found.match_type, found.results[0], found.wish))
+        if found.wish is not None and found.wish.kind in ("unknown", "allergy"):
+            notices.append(found.say or "")
         positions.append(
             PositionResult(
                 query=part,
@@ -219,7 +225,8 @@ def _search_menu(
             )
         )
     return PositionsResult(
-        positions=positions, say=say_understood(understood, req.query)
+        positions=positions,
+        say=_join(say_understood(understood, req.query), *notices),
     )
 
 

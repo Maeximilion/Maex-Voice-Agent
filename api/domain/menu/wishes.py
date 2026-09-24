@@ -68,34 +68,64 @@ def _ingredient(text: str) -> str | None:
     return None
 
 
-def split_wish(text: str) -> tuple[str, str | None]:
-    """Gericht und Wunsch, in der gesprochenen Reihenfolge. Ohne Wunsch: (text, None).
+# Womit ein Satzteil zur eigenen Allergie beginnt, auch ohne Komma davor.
+_CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
 
-    Der Wunsch beginnt am ersten Merkmal: "ohne", "kein", "mit", "extra"; bei
-    "statt" ein Wort davor ("Nudeln statt Reis"); bei einer Allergie am Anfang
-    ihres Satzteils ("ich habe eine Erdnussallergie"). Ob "mit Garnelen" doch
-    zum Namen gehoert ("Sommerrollen mit Garnelen"), entscheidet die Suche.
-    """
-    tokens = list(_TOKEN.finditer(text))
-    words = [fold(t.group()) for t in tokens]
-    start = None
+
+def _starts(words: list[str]) -> list[int]:
+    """Wo ein Wunsch beginnen kann, in Reihenfolge: an "ohne", "kein", "mit",
+    "extra"; bei "statt" ein Wort davor; bei einer Allergie am Anfang ihres
+    Satzteils - am Komma oder, ohne Komma, bei "ich", "wir", "mein" (Codex PR
+    #139). Nach einer Allergie beginnt kein weiterer Wunsch."""
+    starts: list[int] = []
     for i, word in enumerate(words):
         if word in _REMOVE or word in _ADD:
-            start = i
+            starts.append(i)
         elif word in _INSTEAD and i > 0 and words[i - 1] != ",":
-            start = i - 1
+            starts.append(i - 1)
         elif _is_allergy(word):
-            comma = max((j for j in range(i) if words[j] == ","), default=None)
-            start = comma + 1 if comma is not None else i
-        if start is not None:
+            comma = max((j for j in range(i) if words[j] == ","), default=-1)
+            opener = next(
+                (j for j in range(comma + 1, i) if words[j] in _CLAUSE_OPENERS), None
+            )
+            starts.append(
+                opener if opener is not None else comma + 1 if comma >= 0 else i
+            )
             break
-    if start is None:
+    # Ein Merkmal im Satzteil einer Allergie ("vertrage keine") beginnt keinen
+    # eigenen Wunsch davor.
+    return sorted(set(starts))
+
+
+def wish_candidates(text: str) -> list[tuple[str, str, str]]:
+    """Jede moegliche Trennung in Gericht, Wunsch und dessen ersten Satzteil, von
+    vorn. Die Suche nimmt die erste, deren Satzteil nicht zum Namen gehoert:
+    "Sommerrollen mit Garnelen ohne Koriander" - "mit Garnelen" ist Name,
+    "ohne Koriander" der Wunsch (Codex PR #139)."""
+    tokens = list(_TOKEN.finditer(text))
+    words = [fold(t.group()) for t in tokens]
+    starts = [i for i in _starts(words) if i > 0]
+    candidates = []
+    for n, start in enumerate(starts):
+        at = tokens[start].start()
+        dish = text[:at].strip(" ,.;")
+        wish = _TRAILING_PLEASE.sub("", text[at:]).strip(" ,.;!?")
+        end = tokens[starts[n + 1]].start() if n + 1 < len(starts) else len(text)
+        segment = text[at:end].strip(" ,.;!?")
+        if dish and wish:
+            candidates.append((dish, wish, segment))
+    return candidates
+
+
+def split_wish(text: str) -> tuple[str, str | None]:
+    """Gericht und Wunsch an der ersten moeglichen Stelle. Ohne Wunsch: (text,
+    None). Ob "mit Garnelen" doch zum Namen gehoert, entscheidet die Suche
+    (`wish_candidates`)."""
+    candidates = wish_candidates(text)
+    if not candidates:
         return text, None
-    dish = text[: tokens[start].start()].strip(" ,.;")
-    if not dish:
-        return text, None
-    wish = _TRAILING_PLEASE.sub("", text[tokens[start].start() :]).strip(" ,.;!?")
-    return dish, wish or None
+    dish, wish, _ = candidates[0]
+    return dish, wish
 
 
 def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:

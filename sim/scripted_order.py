@@ -21,9 +21,14 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.domain.menu.search import SAY_NOT_FOUND, SAY_SOLD_OUT
+from api.domain.menu.search import (
+    SAY_NOT_FOUND,
+    SAY_SOLD_OUT,
+    say_for_wish,
+    say_understood,
+)
 from api.domain.menu.wishes import classify_wish
-from api.schemas.menu import OptionGroup
+from api.schemas.menu import MenuHit, OptionGroup, Wish
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -108,12 +113,15 @@ class PickupScript:
                 quantity = _stated_quantity(text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
-                self._add(hit, self._suggestion_query, quantity, self._suggestion_wish)
+                wish = self._add(
+                    hit, self._suggestion_query, quantity, self._suggestion_wish
+                )
+                lead = _wish_sentence(hit, wish, text)
                 # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
                 # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
                 self._suggestions = []
                 self.phase = "dishes"
-                return self._next(slots, patch)
+                return self._next(slots, patch, lead=lead)
             # "Nein, das wars" oder "keine davon": die Vorschlaege sind verworfen.
             # Neu gesucht fanden die Worte kein Gericht, und dieselbe Frage kaeme
             # endlos zurueck (Codex PR #133).
@@ -257,7 +265,7 @@ class PickupScript:
         query: str,
         quantity: int | None = None,
         wish: dict[str, Any] | None = None,
-    ) -> None:
+    ) -> dict[str, Any] | None:
         pending = [
             {"group": g["group"], "options": [o["name"] for o in g["options"]]}
             for g in hit.get("option_groups", [])
@@ -272,17 +280,17 @@ class PickupScript:
                 pending=pending,
             )
         )
-        self._apply_wish(self.cart[-1], hit, wish)
+        return self._apply_wish(self.cart[-1], hit, wish)
 
     def _apply_wish(
         self, item: CartItem, hit: dict[str, Any], wish: dict[str, Any] | None
-    ) -> None:
+    ) -> dict[str, Any] | None:
         """Der Wunsch aus search_menu am Warenkorb (T-4.10): eine Option der Karte
         wird gewaehlt (die Pflichtfrage dieser Gruppe entfaellt), ein Hinweis und
         eine Allergie gehen in `note`. Was die Karte nicht kennt, bleibt weg - der
         Satz dazu kam schon aus dem Code (D8)."""
         if wish is None:
-            return
+            return None
         if wish["kind"] == "open":
             groups = [
                 OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
@@ -296,6 +304,7 @@ class PickupScript:
         ):
             # Die Allergie im festen Wortlaut (E14); ohne Zutat fragt der Satz nach.
             item.note = wish["text"]
+        return wish
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
@@ -395,6 +404,23 @@ class PickupScript:
                 for i in self.cart
             ],
         }
+
+
+def _wish_sentence(
+    hit: dict[str, Any], wish: dict[str, Any] | None, said: str
+) -> str | None:
+    """Nach der Wahl aus Vorschlaegen wird der Wunsch erst eingeordnet - und wie
+    in der Suche gesagt: eine Option oder ein Hinweis mit wiederholt, das
+    Unbekannte abgelehnt, die Allergie ohne Zusage (Codex PR #139)."""
+    if wish is None:
+        return None
+    menu_hit, settled = MenuHit.model_validate(hit), Wish.model_validate(wish)
+    echo = (
+        None
+        if settled.kind == "unknown"
+        else say_understood([("alias", menu_hit, settled)], said)
+    )
+    return _join(echo, say_for_wish(menu_hit, settled)) or None
 
 
 def _offer(hits: list[dict[str, Any]]) -> str:
