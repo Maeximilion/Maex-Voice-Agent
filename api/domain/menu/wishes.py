@@ -226,6 +226,14 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         if addition is None:
             return Wish(text=text, kind="note")
         return classify_wish(addition, groups).model_copy(update={"note": removal})
+    addition, removal = _split_removal(text)
+    if removal is not None:
+        # "mit Nudeln ohne Zwiebeln": die Option und der Hinweis, wie umgekehrt
+        # (Codex PR #139). Nur eine sichere Option nimmt den Hinweis mit.
+        wish = classify_wish(addition, groups)
+        if wish.kind != "option" or wish.note:
+            return Wish(text=text, kind="unknown")
+        return wish.model_copy(update={"text": text, "note": removal})
     # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
     cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
     wanted = set(words[:cut])
@@ -282,6 +290,18 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     removal = text[: tokens[at].start()]
     removal = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", removal)
     return removal.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
+
+
+def _split_removal(text: str) -> tuple[str, str | None]:
+    """ "mit Nudeln, aber ohne Zwiebeln" -> ("mit Nudeln", "ohne Zwiebeln")."""
+    tokens = list(_TOKEN.finditer(text))
+    words = [fold(t.group()) for t in tokens]
+    at = next((i for i, w in enumerate(words) if i > 0 and w in _REMOVE), None)
+    if at is None:
+        return text, None
+    addition = text[: tokens[at].start()]
+    addition = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", addition)
+    return addition.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 
 def _names(option: str, group: str, wanted: set[str]) -> set[str]:

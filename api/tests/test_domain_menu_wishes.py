@@ -595,3 +595,27 @@ def test_keine_zutat_ist_keine_allergie_zutat(gesagt):
     "Keine Weiß ich nicht" ginge an die Kueche, die Allergie bliebe unbekannt."""
     wish = classify_wish(gesagt, [])
     assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    "gesagt", ["mit Nudeln ohne Zwiebeln", "mit Nudeln, aber ohne Zwiebeln"]
+)
+def test_weglassen_nach_der_option_bleibt(gesagt):
+    """Codex PR #139, P2: die Option zuerst, das Weglassen danach - beides zaehlt,
+    wie in der umgekehrten Reihenfolge."""
+    wish = classify_wish(gesagt, BEILAGE)
+    assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Zwiebeln")
+
+
+def test_unbekannte_zugabe_mit_weglassen_bleibt_unbekannt():
+    assert classify_wish("mit Pommes ohne Zwiebeln", BEILAGE).kind == "unknown"
+
+
+def test_option_und_weglassen_in_der_suche(session, tenant_id):
+    result = suche(session, tenant_id, "die 47 mit Nudeln ohne Zwiebeln")
+    assert [h.number for h in result.results] == ["47"]
+    assert (result.wish.kind, result.wish.option, result.wish.note) == (
+        "option",
+        "Nudeln",
+        "ohne Zwiebeln",
+    )
