@@ -8,6 +8,8 @@ Aufruf: python scripts/project_report.py [--fix] [--archive]
         Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
         --fix      setzt Abgeschlossenes auf Done - der Lauf, den die Action taeglich macht
         --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
+        --findings-json DATEI  schreibt die offenen Befunde als JSON, fuer das
+                   Entscheidungs-Issue (scripts/decision_issue.py)
 Umgeb.: PROJECT_TOKEN   Token mit Projects-Recht (Lesen; fuer --fix/--archive Schreiben)
         PROJECT_OWNER   Kontoname, dem das Project gehoert
         PROJECT_NUMBER  Nummer des Projects aus seiner URL
@@ -63,8 +65,8 @@ query($owner: String!, $number: Int!, $cursor: String) {
           }
           content {
             __typename
-            ... on Issue { number title state url }
-            ... on PullRequest { number title state url }
+            ... on Issue { number title state url labels(first: 20) { nodes { name } } }
+            ... on PullRequest { number title state url labels(first: 20) { nodes { name } } }
             ... on DraftIssue { title }
           }
         }
@@ -82,7 +84,7 @@ query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     CONNECTION(states: OPEN, first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number title url updatedAt }
+      nodes { number title url updatedAt labels(first: 20) { nodes { name } } }
     }
   }
 }
@@ -124,6 +126,12 @@ mutation($projectId: ID!, $itemId: ID!) {
 IN_PROGRESS_NAMES = frozenset({"in progress", "in arbeit"})
 DONE_NAMES = frozenset({"done", "fertig", "erledigt"})
 
+# Das Label des Entscheidungs-Issues (scripts/decision_issue.py). Das Issue landet
+# ueber die automatische Aufnahme selbst auf dem Board; wieder geoeffnet steht es auf
+# In progress ohne Iteration. Pruefte man es mit, meldete es sich selbst und koennte
+# sich nie schliessen. Darum ist es von jeder Pruefung ausgenommen.
+MAINTENANCE_LABEL = "projektpflege"
+
 
 def _normalized(name: str | None) -> str:
     return (name or "").strip().casefold()
@@ -148,10 +156,15 @@ class Item:
     # "Issue", "PullRequest" oder "DraftIssue". Noetig, weil CLOSED bei einem Issue
     # erledigt heisst, bei einem Pull Request aber abgelehnt.
     kind: str | None = None
+    labels: frozenset[str] = frozenset()
 
     @property
     def status(self) -> str | None:
         return self.fields.get("Status")
+
+    @property
+    def is_maintenance(self) -> bool:
+        return MAINTENANCE_LABEL in self.labels
 
     @property
     def is_in_progress(self) -> bool:
@@ -235,6 +248,9 @@ def parse_item(node: dict) -> Item | None:
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
         kind=content.get("__typename"),
+        labels=frozenset(
+            label["name"] for label in (content.get("labels") or {}).get("nodes", [])
+        ),
         state=content.get("state"),
         url=content.get("url"),
         fields=fields,
@@ -328,6 +344,10 @@ def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
                     state="OPEN",
                     url=node["url"],
                     kind="PullRequest" if connection == "pullRequests" else "Issue",
+                    labels=frozenset(
+                        label["name"]
+                        for label in (node.get("labels") or {}).get("nodes", [])
+                    ),
                 )
                 for node in page["nodes"]
             )
@@ -358,8 +378,8 @@ def find_issues(
     # Zwilling, sie bleiben aussen vor.
     # Archiviert heisst weggelegt: fuer Drift, Dopplung und Archiv zaehlt nur das
     # sichtbare Board. Beim Abgleich mit dem Repo zaehlen archivierte dagegen mit.
-    board = [item for item in items if not item.is_archived]
-    archived = [item for item in items if item.is_archived]
+    board = [item for item in items if not item.is_archived and not item.is_maintenance]
+    archived = [item for item in items if item.is_archived and not item.is_maintenance]
 
     seen = Counter(item.url for item in board if item.url)
     duplicates = [item for item in board if item.url and seen[item.url] > 1]
@@ -415,9 +435,24 @@ def find_issues(
     }
     if open_in_repo is not None:
         findings["Offen im Repo, fehlt auf dem Board"] = find_missing(
-            items, open_in_repo
+            items, [ref for ref in open_in_repo if not ref.is_maintenance]
         )
     return findings
+
+
+def findings_to_json(findings: dict[str, list[Item]]) -> dict[str, list[dict]]:
+    """Befunde als schlichtes JSON: Ueberschrift -> Eintraege mit Label und URL.
+    Leere Befunde fallen weg, damit 'nichts offen' eindeutig ein leeres Objekt ist."""
+    return {
+        # id: die Board-ID, damit zwei Kopien desselben Issues unterscheidbar bleiben.
+        # Leer bei Eintraegen, die auf dem Board fehlen - die haben noch keine.
+        heading: [
+            {"id": item.node_id or None, "label": item.label, "url": item.url}
+            for item in found
+        ]
+        for heading, found in findings.items()
+        if found
+    }
 
 
 def render_report(
@@ -534,6 +569,11 @@ def main() -> int:
         action="store_true",
         help="Done-Eintraege nach 14 Tagen archivieren. Nur von Hand, blendet sie aus der Roadmap aus.",
     )
+    parser.add_argument(
+        "--findings-json",
+        metavar="DATEI",
+        help="Offene Befunde als JSON schreiben, Eingabe fuer scripts/decision_issue.py.",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("PROJECT_TOKEN", "")
@@ -592,6 +632,15 @@ def main() -> int:
     except ProjectError as exc:
         print(f"Projektpflege fehlgeschlagen: {exc}", file=sys.stderr)
         return 1
+
+    if args.findings_json:
+        # Ohne Archiv-Kandidaten: die sind mit --archive erledigt und ohne es bewusst
+        # kein Befund (siehe oben). Eine leere Liste heisst: das Issue darf zu.
+        open_findings = {k: v for k, v in findings.items() if k != archive_key}
+        with open(args.findings_json, "w", encoding="utf-8") as handle:
+            json.dump(
+                findings_to_json(open_findings), handle, ensure_ascii=False, indent=2
+            )
 
     print(report)
     return 0
