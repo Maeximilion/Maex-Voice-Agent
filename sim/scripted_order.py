@@ -20,6 +20,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
+from api.domain.menu.search import SAY_NOT_FOUND
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -66,6 +67,8 @@ class PickupScript:
         # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
         # ein Zug ist Satz oder Tool-Aufruf, nie beides.
         self._carry: str | None = None
+        # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
+        self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
     # -- Kundenzug ---------------------------------------------------------
 
@@ -80,9 +83,12 @@ class PickupScript:
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
             if hit is not None:
-                # Menge aus der Antwort ("einmal die dreizehn"), sonst aus der
-                # Frage, zu der die Vorschlaege gehoeren ("zwei Suppen").
-                quantity = find_quantity(text) or _quantity(self._suggestion_query)
+                # Menge aus der Antwort ("einmal die dreizehn", auch ohne Marker:
+                # "zwei Pho Bo", "zwei Nummer dreizehn"), sonst aus der Frage, zu
+                # der die Vorschlaege gehoeren ("zwei Suppen") (Codex PR #133).
+                quantity = _stated_quantity(text, hit) or _quantity(
+                    self._suggestion_query, hit
+                )
                 self._add(hit, self._suggestion_query, quantity)
                 # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
                 # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
@@ -91,7 +97,10 @@ class PickupScript:
                 return self._next(slots, patch)
             # Keine der angebotenen: ein anderes Gericht, neu suchen mit eigener
             # Menge - die aus der Frage darauf zu legen waere geraten (Review PR
-            # #133). Die Rueckfrage ist damit erledigt (Codex PR #130, P1).
+            # #133). Die Rueckfrage ist damit erledigt (Codex PR #130, P1) -
+            # ausser, die Suche findet nichts: dann wird sie wieder gestellt,
+            # statt dass die Position still verschwindet (on_search_failed).
+            self._reopen = (self._suggestions, self._suggestion_query)
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
@@ -136,6 +145,7 @@ class PickupScript:
     ) -> LLMTurn:
         """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
         #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
+        self._reopen = None
         if data.get("match_type") == "positions":
             unclear: str | None = None
             # "heute aus" ist eine Aussage, keine Frage: sie kommt direkt mit,
@@ -165,6 +175,20 @@ class PickupScript:
         taken = self._take(query, data)
         lead = _join(self.take_carry(), taken if taken is not None else say)
         return self._next(slots, {}, lead=lead)
+
+    def on_search_failed(self, say: str | None) -> LLMTurn | None:
+        """Die Antwort auf eine Rueckfrage fand nichts: die Frage gilt weiter.
+        Die allgemeine Meldung ("nicht gefunden, Nummer?") wuerde eine zweite
+        Frage daneben stellen, eine genaue ("Nummer 99 habe ich nicht") kommt
+        mit. None, wenn keine Rueckfrage offen war."""
+        if self._reopen is None:
+            return None
+        self._suggestions, self._suggestion_query = self._reopen
+        self._reopen = None
+        self.phase = "choose"
+        question = _offer(self._suggestions)
+        lead = question if say in (None, SAY_NOT_FOUND) else _join(say, question)
+        return LLMTurn(say=_join(self.take_carry(), lead))
 
     def take_carry(self) -> str | None:
         carry, self._carry = self._carry, None
@@ -196,8 +220,7 @@ class PickupScript:
             self.phase = "choose"
             self._suggestions = hits
             self._suggestion_query = query
-            offer = " oder ".join(f"Nummer {h['number']} {h['name']}" for h in hits)
-            return f"Meinen Sie {offer}?"
+            return _offer(hits)
         return found.get("say")
 
     def _add(
@@ -213,7 +236,7 @@ class PickupScript:
                 menu_item_id=hit["menu_item_id"],
                 number=hit["number"],
                 name=hit["name"],
-                quantity=quantity or _quantity(query),
+                quantity=quantity or _quantity(query, hit),
                 pending=pending,
             )
         )
@@ -317,6 +340,11 @@ class PickupScript:
         }
 
 
+def _offer(hits: list[dict[str, Any]]) -> str:
+    offer = " oder ".join(f"Nummer {h['number']} {h['name']}" for h in hits)
+    return f"Meinen Sie {offer}?"
+
+
 def _is_sold_out(found: dict[str, Any]) -> bool:
     hits = found.get("results") or []
     return (
@@ -332,28 +360,44 @@ def _search(text: str, patch: dict[str, Any]) -> LLMTurn:
     )
 
 
-def _quantity(query: str) -> int:
-    """Die Menge nach der Regel der Domain (numberwords): mit Marker ("zweimal",
-    "2 x") gilt sie immer. Ist der Satz die Kartennummer selbst ("die 7", "die
-    sieben", "die 23 a"), ist ein fuehrendes Zahlwort nur dann eine Menge, wenn
-    es nicht die Nummer ist ("zwei Nummer 23"). Neben einem Namen ist ein
-    fuehrendes Zahlwort immer eine Menge ("zwei Frühlingsrollen"), auch wenn es
-    einer Kartennummer gleicht (Review PR #133). Sonst eins - die Menge wird beim
-    Vorlesen bestaetigt."""
+def _quantity(query: str, hit: dict[str, Any] | None = None) -> int:
+    """Die Menge, eins, wenn keine genannt ist - sie wird beim Vorlesen bestaetigt."""
+    return _stated_quantity(query, hit) or 1
+
+
+def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | None:
+    """Die genannte Menge oder None. Nach der Regel der Domain (numberwords): mit
+    Marker ("zweimal", "2 x") gilt sie immer. Ist der Satz die Kartennummer
+    selbst ("die 7", "die sieben", "die 23 a"), ist ein fuehrendes Zahlwort nur
+    eine Menge, wenn es nicht die Nummer ist ("zwei Nummer 23"). Neben einem
+    Namen ist es eine Menge ("zwei Frühlingsrollen") - ausser, das gefundene
+    Gericht erklaert es: seine eigene Nummer mit Artikel davor ("die 23,
+    Frühlingsrollen") oder ein Name, der selbst mit dem Zahlwort beginnt ("Acht
+    Schätze") (Review PR #133)."""
     marked = find_quantity(query)
     if marked:
         return marked
-    lead = _leading_number(query)
+    words = _words(query)
+    at = next((i for i, w in enumerate(words) if w not in _LEAD_SKIP), None)
+    if at is None:
+        return None
+    lead = parse_cardinal(words[at])
+    if not lead:
+        return None
     ref, _ = sole_item_number(query)
     if ref is not None:
-        return lead if lead and lead != ref.value else 1
-    return lead or 1
+        return lead if lead != ref.value else None
+    if hit is not None:
+        name = _words(hit["name"])
+        if name and name[0] == words[at]:
+            return None
+        if at > 0 and canonical_card(str(lead)) == canonical_card(hit["number"]):
+            return None
+    return lead
 
 
-def _leading_number(query: str) -> int | None:
-    words = re.findall(r"[^\W_]+", query.lower())
-    first = next((w for w in words if w not in _LEAD_SKIP), None)
-    return parse_cardinal(first) if first else None
+def _words(text: str) -> list[str]:
+    return re.findall(r"[^\W_]+", text.lower())
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:

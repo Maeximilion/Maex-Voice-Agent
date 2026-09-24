@@ -660,3 +660,103 @@ def test_menge_neben_dem_namen_waehlt_nicht_die_nummer(antwort, nummer):
         {"number": "13", "name": "Pho Bo"},
     ]
     assert script._pick_suggestion(antwort)["number"] == nummer
+
+
+# --- Zweites Review PR #133 und Codex auf 79da492 ----------------------------------
+
+FRUEHLING = {"number": "23", "name": "Frühlingsrollen (4 Stück)"}
+ACHT = {"number": "31", "name": "Acht Schätze"}
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "treffer", "menge"),
+    [
+        # Nummer mit Artikel und dann der Name: das Gericht, keine Menge.
+        ("die 23 Frühlingsrollen", FRUEHLING, 1),
+        ("die 23, Frühlingsrollen", FRUEHLING, 1),
+        ("zweimal die 23 Frühlingsrollen", FRUEHLING, 2),
+        ("zwei Frühlingsrollen", FRUEHLING, 2),
+        # Der Name beginnt selbst mit dem Zahlwort.
+        ("Acht Schätze", ACHT, 1),
+        ("zweimal Acht Schätze", ACHT, 2),
+        ("zwei Acht Schätze", ACHT, 2),
+    ],
+)
+def test_menge_mit_dem_gefundenen_gericht(gesagt, treffer, menge):
+    assert _quantity(gesagt, treffer) == menge
+
+
+def test_menge_in_der_antwort_ohne_marker_gilt(session, tenant):
+    """Codex PR #133, P2: "Drei Suppen", dann "zwei Nummer dreizehn" - zwei."""
+    replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Drei Suppen.",
+            "Zwei Nummer dreizehn.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
+
+
+def test_name_mit_menge_als_antwort(session, tenant):
+    replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe.",
+            "Zwei Pho Bo.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
+
+
+def test_unklare_antwort_laesst_die_rueckfrage_offen(session, tenant):
+    """Findet die Antwort nichts ("Wie bitte?"), bleibt die Frage nach der Suppe
+    offen, samt der Menge - statt dass die Suppe still verschwindet."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Zwei Suppen.",
+            "Wie bitte?",
+            "Die dreizehn.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Nummer 12 Wan-Tan-Suppe oder Nummer 13 Pho Bo" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
+
+
+@pytest.mark.parametrize(
+    "zeilen",
+    [
+        ("Guten Tag.", "Schnitzel zum Abholen."),
+        ("Ich moechte Schnitzel zum Abholen.",),
+    ],
+)
+def test_unbekanntes_gericht_zur_abholung_wird_gesagt(session, tenant, zeilen):
+    """Codex PR #133, P2: nennt der Satz ein Gericht, das es nicht gibt, hoert
+    der Gast das - nicht nur "Was moechten Sie bestellen?"."""
+    _, turns = replay(session, case(*zeilen), tenant, now=NOW)
+    assert "nicht gefunden" in " ".join(turns[-1].say)
