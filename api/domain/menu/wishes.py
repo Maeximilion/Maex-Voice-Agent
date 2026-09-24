@@ -81,7 +81,7 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         (group, option)
         for group in groups
         for option in group.options
-        if set(fold(option.name).split()) <= wanted
+        if _names(option.name, group.group, wanted)
     ]
     if len(matches) != 1:
         return Wish(text=text, kind="unknown")
@@ -94,6 +94,16 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         price_delta_cents=option.price_delta_cents,
         reason=option.reason,
     )
+
+
+def _names(option: str, group: str, wanted: set[str]) -> bool:
+    """Nennt der Wunsch die Option? Als eigenes Wort ("mit Erdnuss") oder
+    zusammengesetzt mit dem Gruppennamen ("Erdnusssauce" = Erdnuss + Sauce).
+    Kein beliebiger Wortanfang: "Reisnudeln" ist nicht die Option Reis."""
+    words = fold(option).split()
+    if set(words) <= wanted:
+        return True
+    return len(words) == 1 and words[0] + fold(group).replace(" ", "") in wanted
 
 
 def open_wish(text: str) -> Wish:

@@ -175,6 +175,7 @@ Varianten und Extras mit Preisdifferenz.
 | price_delta_cents | INT | kann negativ sein |
 | is_default | BOOL | |
 | required | BOOL | Gruppe muss gewählt werden |
+| price_reason | TEXT NULL | warum die Option mehr kostet („zweite Station in der Küche"). Der Agent nennt nur diesen Satz, nie eine eigene Begründung. Leer: der Preis steht so in der Karte (Migration 003, T-4.10) |
 
 ### `item_allergens`
 | Feld | Typ | Bemerkung |
@@ -204,7 +205,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | tenant_id / call_id | UUID FK | |
 | type | TEXT | `pickup` / `delivery` |
 | status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
-| customer_id | UUID NULL FK | Fremdschlüssel erst mit 003 (`customers`), bis dahin nur das Feld |
+| customer_id | UUID NULL FK | Fremdschlüssel erst mit 004 (`customers`), bis dahin nur das Feld |
 | phone | TEXT | |
 | customer_name | TEXT | |
 | address_id | UUID NULL FK | nur bei Lieferung |
@@ -324,5 +325,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 |---|---|
 | 001 | `tenants`, `service_config`, `opening_hours`, `special_days`, `capacity`, `reservations`, `calls`, `callbacks`, `outbox`, `audit_log` |
 | 002 | Extension `pg_trgm` · `menu_items`, `item_options`, `item_allergens`, `item_aliases` (Trigram-Index auf `name` und `alias`), `orders`, `order_items` |
-| 003 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 004 | `eval_cases`, `eval_runs` |
+| 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
+| 004 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
+| 005 | `eval_cases`, `eval_runs` |

@@ -27,7 +27,7 @@
   - **Messverfahren:** bis zu 3 Messreihen. p95 gilt über alle bisher gemessenen Aufrufe (20, 40, dann 60), keine Reihe wird verworfen; liegt es unter dem Budget, endet die Messung. Die Grenze ist lokal und in CI dieselbe, 300 ms.
   - **Begründung:** Auf geteilten CI-Runnern laufen Push- und PR-Lauf plus `docker-smoke` gleichzeitig. Einzelne Ausreißer hoben p95 dort auf 560 ms (18.09.2026), lokal liegt es bei 10 bis 21 ms. Bei 20 Aufrufen reichen 2 Ausreißer für Rot, bei 60 sind bis zu 3 erlaubt; das ist weiter echtes p95. Ein Überschreiten in mehr als 5 Prozent der Aufrufe bleibt rot, auch wenn es nur zeitweise auftritt (Codex-Review PR #110).
   - Nicht erlaubt: Latenztests überspringen oder die Grenze anheben. 300 ms ist die Zusage an den Telefonpfad.
-- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang. Nur im selben Anruf: gehört der Schlüssel zu einem Vorgang eines anderen Anrufs, ist das `conflict`, nie dessen Antwort. Im eigenen Gesprächskern bildet der Code den Schlüssel immer selbst, einen Schlüssel vom Modell gibt es nicht.
+- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang. Nur im selben Anruf: gehört der Schlüssel zu einem Vorgang eines anderen Anrufs, ist das `conflict`, nie dessen Antwort. Im eigenen Gesprächskern bildet der Code den Schlüssel immer selbst, einen Schlüssel vom Modell gibt es nicht - aus der **geprüften** Anfrage mit allen gespeicherten Feldern: eine geänderte Notiz ist ein neuer Entwurf, `options: []` und ein weggelassenes Feld sind derselbe (T-4.10).
 - Jeder Aufruf landet mit Dauer und Ergebnis in `calls.tool_calls`.
 
 ---
@@ -121,8 +121,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
    „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`.
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
-   und einmal Pho Bo", „Nummer 23 mit Erdnusssauce") ist es `ambiguous` mit der
-   Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
+   und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
+   Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")
+   wird vorher abgetrennt, siehe **Wünsche zur Position** unten. **Ohne** Marker ist es gar kein Nummernsatz, und
    die Namenssuche liefe über den ganzen Satz und fände nur Pho Bo. Deshalb
    prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
    Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` („Einen
@@ -197,6 +198,26 @@ Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
 könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent
 liest `say` vor und fragt nach. Eine Nummer, die es nicht gibt, bleibt
 `not_found` — die Suche weicht nie auf ähnliche Namen aus.
+
+**Wünsche zur Position (T-4.10, Entscheidung D8):** steht ein Wunsch im Satz
+(„die 23 ohne Karotten", „die knusprige Ente mit Nudeln statt Reis"), trennt
+`domain/menu/wishes.py` ihn vom Gericht; gesucht wird das Gericht, der Wunsch
+kommt als `wish` mit:
+
+| `wish.kind` | Bedeutung | Was der Agent tut |
+|---|---|---|
+| `note` | Weglassen („ohne", „kein") | als `note` der Position in `draft_order`, ohne Preis |
+| `option` | steht als Option des Gerichts auf der Karte; `group`, `option`, `price_delta_cents` und `reason` aus `item_options` | in `options` von `draft_order`; der Aufpreis wird sofort mit wiederholt |
+| `allergy` | eine Allergie | als `note` an die Küche, `say` ohne Zusage, dass das Gericht frei davon ist |
+| `unknown` | steht nicht auf der Karte | nicht anbieten: `say` („Den Wunsch … kann ich leider nicht anbieten"), das Gericht bleibt wie auf der Karte |
+| `open` | bei mehreren Treffern | erst nach der Wahl des Gerichts einordnen |
+
+Gehört der „Wunsch" zum Namen („Sommerrollen mit Garnelen"), ist er keiner.
+Steht im Wunsch eine Zahl („Nummer 23 mit 2 Soßen"), gilt Regel A und die Suche
+fragt nach der einen Nummer. Nennt der Satz mehrere Positionen, wird zuerst
+zerlegt, der Wunsch gehört dann zu seinem Teil (`positions[].wish`). Der Satz
+zur Allergie ist ein Entwurf und wird vor dem Echtbetrieb mit dem Rechts-Check
+abgestimmt (docs/09).
 
 **Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
 

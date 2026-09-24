@@ -26,14 +26,14 @@
 ## search_menu
 **Wann:** für jedes Gericht, das der Gast nennt, bevor es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam), optional `max_results`.
-**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`.
+**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (Hinweis an die Küche, keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (erst nach der Wahl des Gerichts).
 **Mehrere Gerichte in einem Satz:** über HTTP `ok: false`, `error.code: "ambiguous"`, `say` lässt den Gast warten („der Reihe nach"), `message` nennt die Teile — dann je Teil neu fragen. Nur im eigenen Gesprächskern (`agent/dispatch.py`) zerlegt das Tool selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).
 **Regel:** bei `ambiguous` nachfragen, nie selbst wählen. `not_found`: `say` sprechen. Im Gesprächskern wiederholt das `say` eines eindeutigen Treffers, was verstanden wurde (Nummer oder Name der Karte) — sprich es, dann weiter.
 
 ## get_item_details
 **Wann:** bei Fragen zu Optionen, Beschreibung oder Allergenen eines gefundenen Gerichts.
 **Eingabe:** `menu_item_id`, `allergen_question` (Pflicht, `true` nur bei einer Allergenfrage).
-**Liefert:** Beschreibung, `option_groups`, `allergens` (`known: false` heißt: keine Auskunft, nicht „frei davon").
+**Liefert:** Beschreibung, `option_groups` (je Option `reason`: warum sie mehr kostet, aus der Karte; leer heißt, der Preis steht so in der Karte), `allergens` (`known: false` heißt: keine Auskunft, nicht „frei davon").
 
 ## draft_order
 **Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind. Nach jeder Änderung erneut.

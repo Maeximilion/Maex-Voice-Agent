@@ -6,7 +6,7 @@ test_migration_002 vergleicht beide.
 
 Abweichend von docs/03: `orders.pickup_code` (docs/04 confirm liefert ihn,
 docs/06 zeigt ihn gross). `orders.address_id` und der Fremdschlüssel auf
-`customer_id` kommen mit 003.
+`customer_id` kommen mit 004 (003 ist `item_options.price_reason`, T-4.10).
 
 Revision: 002
 Vorgänger: 001

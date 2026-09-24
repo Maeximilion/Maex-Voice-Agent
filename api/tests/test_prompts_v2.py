@@ -80,3 +80,15 @@ def test_korrektur_nach_dem_vorlesen_je_ablauf():
     tools = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
     reservierung = tools.split("## create_reservation")[1].split("## ")[0]
     assert "Änderung" in reservierung
+
+
+def test_wuensche_und_aufpreis_nur_aus_der_karte():
+    """T-4.10, D8: der Wunsch kommt aus search_menu, der Grund fuer einen Aufpreis
+    nur aus `reason` - das Modell erklaert und verhandelt keine Preise."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    regel = next(z for z in text.splitlines() if z.startswith("- Wünsche:"))
+    for wort in ("`wish`", "`options`", "`note`", "`unknown`", "`reason`", "Rabatt"):
+        assert wort in regel, wort
+    tools = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
+    assert "`wish`" in tools.split("## search_menu")[1].split("## ")[0]
+    assert "`reason`" in tools.split("## get_item_details")[1].split("## ")[0]

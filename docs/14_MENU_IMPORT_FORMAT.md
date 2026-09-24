@@ -24,6 +24,7 @@
 | price_delta_eur | `0,00` / `2,50` / `-1,00` | negativ erlaubt |
 | is_default | `ja`/`nein` | genau ein Default je Pflichtgruppe |
 | required | `ja`/`nein` | gilt für die ganze Gruppe, muss je Gruppe gleich sein |
+| price_reason | `Nudeln brauchen eine zweite Station in der Küche` | optional, Spalte darf fehlen. Warum die Option mehr kostet: der Agent nennt nur diesen Satz, wenn der Gast fragt, nie eine eigene Begründung. Leer heißt, der Preis steht so in der Karte (T-4.10) |
 
 ## `item_allergens.csv`
 | Spalte | Beispiel | Regel |

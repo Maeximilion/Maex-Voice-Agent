@@ -908,3 +908,16 @@ def test_wunsch_nach_der_wahl_aus_vorschlaegen(session, tenant):
     [order] = orders(session)
     assert positions(session, order)[0][0] == "48"
     assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_fall_mit_wuenschen_aus_evals(session, tenant):
+    fall = json.loads(
+        (CASE.parent / "abholung_0003_wuensche.json").read_text(encoding="utf-8")
+    )
+    _, turns = replay(session, fall, tenant, now=NOW)
+
+    assert "Welche Auswahl bei Fleisch" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("23", 1, []), ("47", 1, ["Huhn"])]
+    assert _notes(session, order) == ["ohne Karotten", None]

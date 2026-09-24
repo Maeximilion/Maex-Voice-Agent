@@ -278,3 +278,35 @@ def test_details_nennen_den_grund(session, tenant_id):
     assert nudeln.reason == GRUND
     reis = next(o for o in beilage.options if o.name == "Reis")
     assert reis.reason is None
+
+
+SAUCE = [
+    OptionGroup(
+        group="Sauce",
+        required=False,
+        options=[
+            OptionOut(name="süßsauer", price_delta_cents=0, default=True),
+            OptionOut(name="Erdnuss", price_delta_cents=50, default=False),
+        ],
+    ),
+    OptionGroup(
+        group="Beilage",
+        required=False,
+        options=[
+            OptionOut(name="Reis", price_delta_cents=0, default=True),
+            OptionOut(name="Nudeln", price_delta_cents=300, default=False),
+        ],
+    ),
+]
+
+
+def test_option_als_wortzusammensetzung_mit_der_gruppe():
+    """ "Erdnusssauce" ist Option Erdnuss der Gruppe Sauce."""
+    wish = classify_wish("mit Erdnusssauce", SAUCE)
+    assert (wish.kind, wish.group, wish.option) == ("option", "Sauce", "Erdnuss")
+
+
+def test_kein_vorsilben_treffer():
+    """ "Reisnudeln" ist nicht die Option Reis: nur Option plus Gruppenname zaehlt
+    zusammengesetzt, kein beliebiger Wortanfang."""
+    assert classify_wish("mit Reisnudeln", SAUCE).kind == "unknown"
