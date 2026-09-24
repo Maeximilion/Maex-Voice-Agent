@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.14
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.15
 
 ---
 
@@ -191,6 +191,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Rejection plus replacement in one answer (`sim/scripted_order.py`, question branch) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): "keine davon, lieber Frühlingsrollen" closes the question and drops the whole answer, the caller has to name Frühlingsrollen again. Fix: short-circuit only a standalone rejection, search the rest of the reply. Stand-in only | with T-2.4 or the next sim change |
 | Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | Reservation key without `note` (`agent/dispatch.py` `_create_reservation`) | Codex PR #127 (P2, after the fully worked round, rule 21.09.2026): the derived key leaves out `note`, so a correction of only the note after the readback ("mit Hochstuhl") replays the old draft and readback without it. Fix: include every persisted request field in the key | with T-4.10 (wishes and notes), latest before G1 |
 | Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
@@ -272,6 +273,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.15 · 24.09.2026:** PR #133 gemergt, ein Befund nach der abgearbeiteten Runde als offener Punkt (nur Text-Telefon)
 - **v1.31.14 · 24.09.2026:** Anrufprotokoll: Nr. nur hinter Strassennamen gestrichen, doppelte Zeile zaehlt einmal, Datum im ID-Verzeichnis geprueft, Dateirechte bleiben (Codex)
 - **v1.31.13 · 24.09.2026:** Anrufprotokoll: Fehlalarme bei Wochentag, Datum, Uhrzeit und Kartennummer behoben, Komma trennt gesprochene Zahlen; Folgepunkte aus eigenem Review notiert
 - **v1.31.12 · 24.09.2026:** Anrufprotokoll: ID-Verzeichnis laeuft auch ohne alte CSV-Zeilen ab, kaputtes expected als Meldung (Codex)
