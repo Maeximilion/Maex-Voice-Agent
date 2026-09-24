@@ -41,7 +41,7 @@ Groß- und Kleinschreibung und Umlaute sind egal (`Rückruf` = `rueckruf`). Die 
 - **Telefonnummern, Adressen, E-Mail.** Bei Lieferung reicht „Lieferung in die Weststadt".
 - Kürzel oder Namen aus dem Team.
 
-Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer (sechs Ziffern in Folge) oder E-Mail aussieht. Namen erkennt es nicht, die bleiben Handarbeit.
+Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer (sechs Ziffern in Folge, auch mit Punkt, Klammer, Strich oder Leerzeichen dazwischen) oder E-Mail aussieht. Ein Datum mit Jahr im Freitext schlägt deshalb auch an: dort `25.09.` statt `25.09.2026` schreiben. Namen erkennt es nicht, die bleiben Handarbeit.
 
 ---
 
@@ -55,7 +55,7 @@ python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwu
 Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde und Wochentag, alle notierten Probleme. Exit-Code 0 ausgewertet, 1 Prüffehler (nichts ausgewertet), 2 Datei fehlt.
 
 ### Eval-Entwürfe
-Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<Zeile>_<anliegen>.json`. Ein zweiter Lauf überschreibt, statt zu verdoppeln.
+Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<Zeile>_<anliegen>.json`. Jeder Lauf schreibt den Ordner neu: alte `protokoll_*.json` werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Durchgesehene Fälle deshalb sofort nach `evals/cases/` verschieben, nicht im Entwurfsordner bearbeiten.
 
 | Protokoll | `expected` |
 |---|---|

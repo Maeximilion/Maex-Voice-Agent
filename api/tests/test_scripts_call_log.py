@@ -134,3 +134,34 @@ def test_kuerzel_vom_druckbogen():
         ("abholung", "rueckruf"),
         ("reservierung", "abgelehnt"),
     ]
+
+
+def test_telefonnummer_mit_punkten_oder_klammern():
+    """Codex PR #135: 0176.123.45.67 und (0721) 12 34 56 rutschten durch."""
+    for text in ("ruf an 0176.123.45.67", "Nummer (0721) 12 34 56"):
+        _, errors = parse(HEADER + _row(phrases=text))
+        assert errors and "Telefonnummer" in errors[0], text
+
+
+def test_zweistelliges_jahr_wird_abgelehnt():
+    """Codex PR #135: 24.09.26 wurde still zum Jahr 26."""
+    _, errors = parse(HEADER + _row(date="24.09.26"))
+    assert "TT.MM.JJJJ" in errors[0]
+
+
+def test_unsinnige_dauer_wird_abgelehnt():
+    """Codex PR #135: nan, inf und negative Minuten verdarben den Mittelwert."""
+    for value in ("nan", "inf", "-2", "1e999"):
+        _, errors = parse(HEADER + _row(duration_min=value))
+        assert errors and "Dauer" in errors[0], value
+
+
+def test_veraltete_entwuerfe_verschwinden(tmp_path):
+    """Codex PR #135: korrigiertes Anliegen liess den alten Entwurf liegen."""
+    (tmp_path / "notizen.txt").write_text("bleibt", encoding="utf-8")
+    entries, _ = parse(HEADER + _row() + _row(intent="reservierung"))
+    assert write_cases(entries, tmp_path) == 2
+    entries, _ = parse(HEADER + _row(intent="lieferung"))
+    assert write_cases(entries, tmp_path) == 1
+    names = sorted(p.name for p in tmp_path.iterdir())
+    assert names == ["notizen.txt", "protokoll_0002_lieferung.json"]

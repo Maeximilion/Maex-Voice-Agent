@@ -18,6 +18,7 @@ import argparse
 import csv
 import io
 import json
+import math
 import re
 import sys
 from collections import Counter
@@ -67,10 +68,12 @@ OUTCOME_SHORT = {
 }
 WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 
-# Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich oder Bindestrich
-# dazwischen, sind fast immer eine Telefonnummer. Mengen und Kartennummern
-# ("2x 23", "die 147") bleiben darunter.
-_PHONE = re.compile(r"(?:\d[\s/-]*){6,}")
+# Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich,
+# Punkt oder Klammer dazwischen, sind fast immer eine Telefonnummer. Mengen und
+# Kartennummern ("2x 23", "die 147") bleiben darunter. Ein Datum mit Jahr
+# (24.09.2026) schlaegt auch an: lieber einmal zu oft als eine Nummer zu wenig.
+_PHONE = re.compile(r"(?:\d[\s/.()-]*){6,}")
+_DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 _EMAIL = re.compile(r"\S+@\S+\.\S+")
 
 
@@ -96,7 +99,11 @@ def _norm(value: str) -> str:
 
 
 def _parse_date(value: str) -> date:
-    day, month, year = (int(part) for part in value.strip().split("."))
+    # Vierstelliges Jahr Pflicht: "24.09.26" waere sonst still das Jahr 26.
+    match = _DATE.fullmatch(value.strip())
+    if not match:
+        raise ValueError(value)
+    day, month, year = (int(part) for part in match.groups())
     return date(year, month, day)
 
 
@@ -162,6 +169,10 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         if row["duration_min"]:
             try:
                 duration = float(row["duration_min"].replace(",", "."))
+                # float() nimmt auch nan, inf und Negatives; ein Wert davon
+                # verdirbt den Mittelwert der ganzen Baseline.
+                if not math.isfinite(duration) or duration < 0:
+                    raise ValueError(row["duration_min"])
             except ValueError:
                 errors.append(
                     f"Zeile {line}: Dauer '{row['duration_min']}' ist keine Zahl"
@@ -276,9 +287,13 @@ def to_case(entry: Entry, number: int) -> dict | None:
 
 
 def write_cases(entries: list[Entry], folder: Path) -> int:
-    """Schreibt die Entwuerfe. Gleiche Datei, gleiche Namen: ein zweiter Lauf
-    ueberschreibt, statt zu verdoppeln."""
+    """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
+    Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
+    korrigierten Zeile der ueberholte Fall neben dem neuen liegen. Andere
+    Dateien im Ordner bleiben unberuehrt."""
     folder.mkdir(parents=True, exist_ok=True)
+    for stale in folder.glob("protokoll_*.json"):
+        stale.unlink()
     written = 0
     for entry in entries:
         case = to_case(entry, entry.line)
