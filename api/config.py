@@ -28,5 +28,8 @@ class Settings(BaseSettings):
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
 
+    # Anrufprotokoll (docs/17): Loeschfrist der CSV in Tagen, D10
+    call_log_retention_days: int | None = None
+
 
 settings = Settings()
