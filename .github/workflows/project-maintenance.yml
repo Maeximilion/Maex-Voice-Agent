@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
   issues: write
+  # Assignee und Label an Pull Requests; die laufen ueber die Issue-Schnittstelle,
+  # GitHub verlangt fuer Pull Requests aber zusaetzlich dieses Recht.
+  pull-requests: write
 
 concurrency:
   group: projektpflege
@@ -67,3 +70,10 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
+
+      - name: Assignee und Label der Pull Requests ergaenzen
+        # Zuletzt, damit ein Fehler hier Board und Entscheidungs-Issue nicht aufhaelt.
+        # Setzt nur, was fehlt: Assignee = Eigentuemer, Label aus dem Titel.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/pr_metadata.py
