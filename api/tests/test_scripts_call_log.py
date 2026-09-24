@@ -51,7 +51,10 @@ def test_normalfall_report_und_fall():
         "confirmed": True,
         "escalated": False,
     }
-    assert case["transcript"] == []
+    assert case["transcript"] == [
+        {"role": "customer", "text": "Auf den Namen Mueller."},
+        {"role": "customer", "text": "Ja, das passt."},
+    ]
     assert case["source"] == "handcrafted"
 
 
@@ -230,14 +233,21 @@ def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
     entries, _ = parse(HEADER + _row(phrases="zweimal die 23 | ja passt so"))
     case = to_case(entries[0])
     assert case["caller_id"] == "+497215551234"
-    assert any("Auf den Namen Mueller." in hint for hint in case["review"])
+    # Codex PR #135: das Ja steht fest am Ende, statt es im letzten
+    # Protokollsatz zu vermuten ("Danke" ist keine Bestaetigung).
+    assert case["transcript"] == [
+        {"role": "customer", "text": "Auf den Namen Mueller."},
+        {"role": "customer", "text": "Ja, das passt."},
+    ]
     assert any("erfunden" in hint for hint in case["review"])
+    assert any("vor diese" in hint for hint in case["review"])
 
 
 def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
     entries, _ = parse(HEADER + _row(outcome="abgelehnt", phrases="Tisch fuer sechs?"))
     case = to_case(entries[0])
     assert "caller_id" not in case
+    assert case["transcript"] == []
     assert not any("Mueller" in hint for hint in case["review"])
 
 
@@ -348,7 +358,11 @@ def test_entwurf_enthaelt_keinen_echten_kundensatz(tmp_path, eval_cases):
     assert satz not in text
     assert "ja passt so" not in text
     case = json.loads(text)
-    assert case["transcript"] == []
+    # Nur die erfundenen Zeilen fuer Name und Ja, kein Satz aus dem Protokoll.
+    assert [t["text"] for t in case["transcript"]] == [
+        "Auf den Namen Mueller.",
+        "Ja, das passt.",
+    ]
     assert case["source"] == "handcrafted"
     assert any("nachstellen" in hint for hint in case["review"])
 
@@ -513,3 +527,32 @@ def test_unveraenderter_durchgesehener_fall_bleibt_still(tmp_path, eval_cases, c
     )
     write_cases(entries, tmp_path / "entwuerfe")
     assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ich habe Allergien gegen Nuesse",
+        "meine Allergien sind schlimm",
+        "mein Sohn hat Allergien",
+        "Allergien gegen Sesam",
+    ],
+)
+def test_allergien_einer_person_im_plural(text):
+    """Codex PR #135: der Plural zaehlte nie, auch nicht fuer eine Person."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Allergie" in errors[0], text
+
+
+def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys):
+    """Codex PR #135: wird eine Bestellung zur Frage korrigiert, entsteht kein
+    Fall mehr; der durchgesehene Fall darf nicht still aktiv bleiben."""
+    entries, _ = parse(HEADER + _row())
+    fertig = to_case(entries[0])
+    name = f"{fertig['id']}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
+    korrigiert, _ = parse(HEADER + _row(intent="frage"))
+    assert write_cases(korrigiert, tmp_path / "entwuerfe") == 0
+    err = capsys.readouterr().err
+    assert name in err
+    assert "keinen Fall" in err

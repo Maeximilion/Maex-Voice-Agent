@@ -83,6 +83,9 @@ EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
 # Platzhalter-Namen der Evals und die Beispielnummer aus docs/08 §1.
 SYNTHETIC_CALLER_ID = "+497215551234"
 SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
+# Ein bestaetigter Fall endet fest mit einem klaren Ja; ob der letzte Satz im
+# Protokoll eines war ("Danke" ist keines), bleibt offen.
+SYNTHETIC_YES_TURN = "Ja, das passt."
 
 # Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich oder
 # Klammer dazwischen, sind fast immer eine Telefonnummer. Ein Punkt zaehlt nur
@@ -101,10 +104,15 @@ _EMAIL = re.compile(
     rf"(?:{_DOT}[\w-]+)*{_DOT}[a-z]{{2,}}\b"
 )
 # DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum.
-# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?"). "Allergene"
-# und "Allergien" (umgangssprachlich fuer die Allergene eines Gerichts) treffen
-# das Muster nicht, "Allergie" als Wortende ("Nussallergie") schon.
-_HEALTH = re.compile(r"allergie\b|allergisch|unvertraeglich|intoleran")
+# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?", "hat die 23
+# Allergien?"). "Allergie" als Wortende ("Nussallergie") trifft immer, der
+# Plural nur mit "gegen" oder einem Personenbezug davor.
+_HEALTH = re.compile(
+    r"allergie\b|allergisch|unvertraeglich|intoleran|allergien\s+gegen"
+    # Plural nur mit Personenbezug: "ich habe Allergien", "mein Sohn hat Allergien"
+    r"|\b(?:ich|wir|mein\w*|unser\w*|sohn|tochter|kind\w*|frau|mann)\b"
+    r"[^.?!|]{0,30}\ballergien\b"
+)
 # Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
 # Auch mit Bindestrich oder getrennt ("Kaiser-Str. 12", "Kaiser Strasse 12a"),
 # ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
@@ -392,14 +400,19 @@ def to_case(entry: Entry) -> dict | None:
         "tags": [entry.intent, "protokoll"],
         "source": "handcrafted",
     }
+    transcript: list[dict[str, str]] = []
     if expected.get("confirmed"):
         case["caller_id"] = SYNTHETIC_CALLER_ID
+        transcript = [
+            {"role": "customer", "text": SYNTHETIC_NAME_TURN},
+            {"role": "customer", "text": SYNTHETIC_YES_TURN},
+        ]
         review.insert(
             0,
-            f"Name und caller_id sind erfunden: '{SYNTHETIC_NAME_TURN}' vor den "
-            "letzten Kundensatz (das Ja zum Vorlesen) setzen",
+            "Name, Ja und caller_id sind erfunden: die nachgestellten Kundensaetze "
+            "vor diese zwei Zeilen setzen",
         )
-    case["transcript"] = []
+    case["transcript"] = transcript
     case["expected"] = expected
     case["review"] = review
     return case
@@ -428,11 +441,20 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
     written: set[Path] = set()
     for entry in entries:
         case = to_case(entry)
-        if case is None:
-            continue
-        reviewed = done.get(str(case["id"]).removeprefix("protokoll_"))
+        # Vor dem None-Zweig: eine Zeile, die nach einer Korrektur keinen Fall
+        # mehr ergibt (zum Beispiel jetzt "frage"), muss ihren Fall melden.
+        reviewed = done.get(case_id(entry).removeprefix("protokoll_"))
         if reviewed is not None:
-            _report_correction(case, reviewed)
+            if case is None:
+                print(
+                    f"Protokoll ergibt keinen Fall mehr fuer {reviewed}: "
+                    "Fall von Hand pruefen oder entfernen",
+                    file=sys.stderr,
+                )
+            else:
+                _report_correction(case, reviewed)
+            continue
+        if case is None:
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
         if path in written or path.exists():
