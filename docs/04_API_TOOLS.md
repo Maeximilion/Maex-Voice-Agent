@@ -145,7 +145,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Hängt der ganze Satz als Alias an mehreren Gerichten, fragt die Suche nach.
    Dasselbe gilt für benachbarte Stücke mitten in einer Aufzählung: „Fisch und
    Chips und Pho Bo" sind zwei Positionen, geprüft von links, das längste Stück
-   zuerst.
+   zuerst. Eine Spanne ist nie länger als der längste Name oder Alias der Karte
+   (in Stücken an den Trennern): ohne Namen mit „und" gibt es keine
+   Spannenprüfung, eine lange Aufzählung bleibt im Latenzbudget.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

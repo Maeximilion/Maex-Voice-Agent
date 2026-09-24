@@ -42,7 +42,7 @@ from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
-from api.domain.menu.split import raw_pieces, split_positions
+from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.models import ItemAlias, MenuItem
 from api.schemas.menu import MenuHit, SearchResult
 
@@ -161,6 +161,11 @@ def position_parts(
         search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
     )
     spans = _spans(query, pieces)
+    # Laenger als der laengste Name oder Alias der Karte kann keine Spanne ein
+    # Gericht sein. Ohne Grenze pruefte eine Aufzaehlung von 20 Gerichten rund
+    # 190 Spannen (Codex PR #127, P2); so sind es hoechstens eine je Stueck, wenn
+    # die Karte Namen mit einem "und" hat, und keine, wenn nicht.
+    longest = _longest_dish(session, tenant_id)
     positions: list[str] = []
     # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
     # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
@@ -171,7 +176,7 @@ def position_parts(
     said: dict[uuid.UUID, set[str]] = {}
     i = 0
     while i < len(pieces):
-        for j in range(len(pieces) - 1, i, -1):
+        for j in range(min(len(pieces), i + longest) - 1, i, -1):
             text = query[spans[i][0] : spans[j][1]]
             ids = _whole_dish(session, tenant_id, search, text, pieces[i : j + 1])
             if ids:
@@ -196,6 +201,20 @@ def position_parts(
     if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
         return [query]
     return positions
+
+
+def _longest_dish(session: Session, tenant_id: uuid.UUID) -> int:
+    """Die meisten Stuecke an den Trennern, die ein aktiver Name oder Alias hat."""
+    names = session.scalars(select(MenuItem.name).where(*_active(tenant_id)))
+    aliases = session.scalars(
+        select(ItemAlias.alias)
+        .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+        .where(*_active(tenant_id))
+    )
+    return max(
+        (separator_pieces(text) for text in [*names, *aliases]),
+        default=1,
+    )
 
 
 def _spans(query: str, pieces: list[str]) -> list[tuple[int, int]]:
