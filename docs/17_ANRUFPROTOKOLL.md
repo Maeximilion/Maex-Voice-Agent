@@ -17,7 +17,7 @@ Aufzeichnen braucht die Einwilligung von Kunde und Team (§201 StGB) und den vol
 | Wie sagen Kunden es? | `phrases` | Aliase, Eval-Fälle (`docs/08` §5) |
 | Was ging schief? | `problems` | Fehler-Taxonomie, Leiter (`docs/05`) |
 
-Keine Rechtsberatung: dass Protokolle ohne personenbezogene Daten unkritisch sind, gehört trotzdem in den Rechts-Check.
+**Entschieden (Maxi, 24.09.2026):** Das Protokoll darf vor dem abgeschlossenen Rechts-Check geführt werden. Der DSFA-Entwurf vom 24.09.2026 führt es trotzdem als Verarbeitung personenbezogener Daten (D12), weil Uhrzeit und Wortlaut über die Anrufliste des Routers einem Anrufer zugeordnet werden können. Deshalb gelten die Regeln unten, und eine Löschfrist für die CSV ist noch offen (Datenschutzbeauftragter). Keine Rechtsberatung.
 
 ---
 
@@ -30,7 +30,7 @@ Keine Rechtsberatung: dass Protokolle ohne personenbezogene Daten unkritisch sin
 | duration_min | nein | `3` | Minuten, geschätzt reicht, Komma erlaubt |
 | intent | ja | `abholung` | `reservierung` · `abholung` · `lieferung` · `beschwerde` · `frage` · `sonstiges` |
 | outcome | ja | `erledigt` | `erledigt` · `rueckruf` · `abgelehnt` (ausgebucht, außerhalb Liefergebiet) · `abgebrochen` |
-| phrases | nein | `zweimal die dreiundzwanzig \| ja passt so` | **wörtlich**, wie der Kunde es sagte, Sätze mit `\|` oder Zeilenumbruch in der Zelle trennen |
+| phrases | nein | `zweimal die dreiundzwanzig \| ja passt so` | **wörtlich**, wie der Kunde es sagte, Sätze mit `\|` oder Zeilenumbruch in der Zelle trennen. Bleibt in der CSV, kommt nie ins Repo (§3) |
 | items | nein | `2x 23, 1x Frühlingsrollen` | was am Ende bestellt wurde, **Komma**, nie Semikolon |
 | problems | nein | `sagte erst 32, meinte 23` | Missverständnis, Rückfrage, Ärger |
 
@@ -40,12 +40,14 @@ Groß- und Kleinschreibung und Umlaute sind egal (`Rückruf` = `rueckruf`). Die 
 - **Namen** des Kunden. Im Satz „Auf Müller bitte" steht dann „Auf Mueller bitte" (der Platzhalter aus den Evals).
 - **Telefonnummern, Adressen, E-Mail.** Bei Lieferung reicht „Lieferung in die Weststadt".
 - Kürzel oder Namen aus dem Team.
+- **Allergien oder Unverträglichkeiten einer Person** („ich habe eine Nussallergie“). Das ist ein Gesundheitsdatum (DSFA M8). Stattdessen produktbezogen: „sind in der 23 Nüsse?“
 
-Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer, E-Mail oder Adresse aussieht:
+Das Script lehnt die ganze Datei ab, sobald ein Freitext nach Telefonnummer, E-Mail, Adresse oder Allergie einer Person aussieht:
 
 - Telefonnummer: sechs Ziffern in Folge, auch mit Klammer, Strich, Leerzeichen oder Punkt zwischen Ziffern, und diktiert („null sieben zwei eins …“, „null sieben einundzwanzig …“)
 - E-Mail: auch mit Leerzeichen oder diktiert („mueller at gmx punkt de“)
 - Adresse: Straße mit Hausnummer („Kaiserstraße 12“); ein Stadtteil ist erlaubt
+- Allergie: „Allergie“, „allergisch“, „Unverträglichkeit“, „Intoleranz“; die Frage nach „Allergenen“ eines Gerichts ist erlaubt
 
 Ein Datum mit Jahr schlägt deshalb auch an: `25.09.` statt `25.09.2026` schreiben, `am 25.09. 19 Uhr` geht. Mehrere Kartennummern mit Komma trennen (`die 12, 34 und 56`), sonst sehen sie wie eine Nummer aus. Namen erkennt das Script nicht, die bleiben Handarbeit.
 
@@ -61,7 +63,7 @@ python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwu
 Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde, Anrufe je Wochentag als Mittel je Tag (ein Wochentag, der im Zeitraum öfter vorkommt, wirkt sonst stärker, `-` wenn er nicht vorkommt), alle notierten Probleme mit Zeilennummer der CSV. Exit-Code 0 ausgewertet, 1 Prüffehler oder Datei nicht UTF-8 (nichts ausgewertet), 2 Datei fehlt oder ist nicht lesbar, oder Zielordner liegt in `evals/cases/`.
 
 ### Eval-Entwürfe
-Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `docs/08` §1, `source: "call_log"`, Dateiname `protokoll_<id>_<anliegen>.json`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. Einen Zielordner in `evals/cases/` lehnt das Script ab, auch in anderer Schreibweise oder als Unterordner (Exit 2). Jeder Lauf räumt den Ordner auf: Entwürfe, die noch das Feld `review` tragen, werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Ein Fall ohne `review` (schon durchgesehen) bleibt stehen und wird nicht überschrieben. Ein Anruf, dessen ID schon in `evals/cases/` liegt, wird nicht neu entworfen.
+Mit `--cases` wird jede Zeile mit Kundensätzen zum **Gerüst** eines Falls im Format von `docs/08` §1, `source: "handcrafted"`, Dateiname `protokoll_<id>_<anliegen>.json`. **Der Entwurf enthält keinen echten Kundensatz**, `transcript` ist leer (DSFA M15, CLAUDE.md §8: echte Kundensätze nie ins Git). Das Team stellt die Sätze mit eigenen Worten nach: gleiches Anliegen, gleiches Problem, anderer Wortlaut. Der echte Wortlaut bleibt in der CSV in `imports/`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. Einen Zielordner in `evals/cases/` lehnt das Script ab, auch in anderer Schreibweise oder als Unterordner (Exit 2). Jeder Lauf räumt den Ordner auf: Entwürfe, die noch das Feld `review` tragen, werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Ein Fall ohne `review` (schon durchgesehen) bleibt stehen und wird nicht überschrieben. Ein Anruf, dessen ID schon in `evals/cases/` liegt, wird nicht neu entworfen.
 
 | Protokoll | `expected` |
 |---|---|
@@ -71,9 +73,9 @@ Mit `--cases` wird jede Zeile mit Kundensätzen zu einem Fall im Format von `doc
 | outcome `rueckruf` oder intent `beschwerde` | `escalated: true` |
 | `frage`, `sonstiges` ohne Eskalation, oder keine Kundensätze | kein Fall |
 
-Name und Rufnummer stehen nie im Protokoll, der Agent braucht beide vor `confirm`. Ein Fall mit `confirmed: true` bekommt deshalb erfundene Werte: `caller_id` `+497215551234` (Beispielnummer aus `docs/08` §1) und die Zeile „Auf den Namen Mueller.“ vor dem letzten Kundensatz. Die ID enthält die Minute; eine doppelt abgetippte Zeile ergibt einen Fall, nicht zwei.
+Name und Rufnummer stehen nie im Protokoll, der Agent braucht beide vor `confirm`. Ein Fall mit `confirmed: true` bekommt deshalb die erfundene `caller_id` `+497215551234` (Beispielnummer aus `docs/08` §1), und `review` erinnert daran, beim Nachstellen die Zeile „Auf den Namen Mueller.“ vor den letzten Kundensatz zu setzen. Die ID enthält die Minute; eine doppelt abgetippte Zeile ergibt einen Fall, nicht zwei.
 
-Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Positionen mit Kartennummer nach `expected.items`, Namen prüfen, dann `review` löschen und die Datei nach `evals/cases/` verschieben.
+Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Kundensätze nachstellen (Anzahl steht dabei), das notierte Problem nachstellen, Positionen mit Kartennummer nach `expected.items`, dann `review` löschen und die Datei nach `evals/cases/` verschieben.
 
 ---
 
@@ -84,4 +86,4 @@ Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Posit
 3. Einmal pro Woche auswerten, Zahlen in die C1-Bestandsaufnahme.
 4. Zwei Wochen reichen für eine erste Baseline.
 
-Wenn der Rechts-Check durch ist und die Voice-Plattform steht, übernimmt der Modus `shadow` mit Aufnahme und Transkription (T-7.1 bis T-7.5). Das Protokoll bleibt als Vergleich bis Gate G4 sinnvoll.
+Wenn der Rechts-Check durch ist und die Voice-Plattform steht, übernimmt der Modus `shadow` mit Aufnahme und Transkription (T-7.1 bis T-7.5). **Tonaufnahmen und ihre weitere Verarbeitung brauchen die Einwilligung des Kunden** (Maxi, 24.09.2026; §201 StGB, DSFA M1 bis M3). Das Protokoll bleibt als Vergleich bis Gate G4 sinnvoll.

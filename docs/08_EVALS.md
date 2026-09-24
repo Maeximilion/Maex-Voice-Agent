@@ -98,6 +98,7 @@ make eval MODEL=<name>         # Modellvergleich
 |---|---|---|
 | Handgeschrieben | 20–30 | sofort, deckt die Regeln ab |
 | Rollenspiele mit dem Team | 50–80 | vor G1 und G2, mit echtem Küchenlärm |
+| Nachgestellt aus dem Anrufprotokoll (`docs/17`) | laufend | sofort; `source: handcrafted`, eigene Worte, nie der Wortlaut echter Anrufe |
 | Echte Anrufe (Schattenmodus) | laufend | ab Stufe 4, nach Rechtsfreigabe |
 | **Jeder Produktionsfehler** | 1 je Fehler | dauerhaft, nicht verhandelbar |
 

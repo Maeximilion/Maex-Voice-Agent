@@ -50,11 +50,8 @@ def test_normalfall_report_und_fall():
         "confirmed": True,
         "escalated": False,
     }
-    assert [t["text"] for t in case["transcript"]] == [
-        "zweimal die 23",
-        "Auf den Namen Mueller.",
-        "ja passt so",
-    ]
+    assert case["transcript"] == []
+    assert case["source"] == "handcrafted"
 
 
 def test_telefonnummer_macht_datei_rot():
@@ -118,7 +115,7 @@ def test_entwuerfe_idempotent(tmp_path):
     assert write_cases(entries, tmp_path) == 1
     files = list(tmp_path.iterdir())
     assert len(files) == 1
-    assert json.loads(files[0].read_text(encoding="utf-8"))["source"] == "call_log"
+    assert json.loads(files[0].read_text(encoding="utf-8"))["source"] == "handcrafted"
 
 
 def test_exit_codes(tmp_path, capsys):
@@ -232,11 +229,7 @@ def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
     entries, _ = parse(HEADER + _row(phrases="zweimal die 23 | ja passt so"))
     case = to_case(entries[0])
     assert case["caller_id"] == "+497215551234"
-    assert [t["text"] for t in case["transcript"]] == [
-        "zweimal die 23",
-        "Auf den Namen Mueller.",
-        "ja passt so",
-    ]
+    assert any("Auf den Namen Mueller." in hint for hint in case["review"])
     assert any("erfunden" in hint for hint in case["review"])
 
 
@@ -244,7 +237,7 @@ def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
     entries, _ = parse(HEADER + _row(outcome="abgelehnt", phrases="Tisch fuer sechs?"))
     case = to_case(entries[0])
     assert "caller_id" not in case
-    assert [t["text"] for t in case["transcript"]] == ["Tisch fuer sechs?"]
+    assert not any("Mueller" in hint for hint in case["review"])
 
 
 @pytest.mark.parametrize(
@@ -342,3 +335,40 @@ def test_wochentag_je_tag_gemittelt():
     assert "Do 1,0" in text
     assert "Mi 1,0" in text
     assert "Mo 0,0" in text
+
+
+def test_entwurf_enthaelt_keinen_echten_kundensatz(tmp_path, eval_cases):
+    """DSFA M15 und CLAUDE.md §8: echte Kundensaetze nie ins Git. Der Entwurf
+    traegt nur den Aufbau des Falls, die Saetze stellt das Team nach."""
+    satz = "haett gern zweimal die dreiundzwanzig zum Abholen"
+    entries, _ = parse(HEADER + _row(phrases=f"{satz} | ja passt so"))
+    write_cases(entries, tmp_path)
+    text = next(tmp_path.glob("protokoll_*.json")).read_text(encoding="utf-8")
+    assert satz not in text
+    assert "ja passt so" not in text
+    case = json.loads(text)
+    assert case["transcript"] == []
+    assert case["source"] == "handcrafted"
+    assert any("nachstellen" in hint for hint in case["review"])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "ich habe eine Nussallergie",
+        "mein Sohn ist allergisch gegen Erdnuss",
+        "Laktoseintoleranz",
+    ],
+)
+def test_allergie_mit_personenbezug_macht_datei_rot(text):
+    """DSFA M8: Allergien nie als Merkmal einer Person, nur produktbezogen."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Allergie" in errors[0], text
+
+
+def test_produktbezogene_allergenfrage_ist_erlaubt():
+    _, errors = parse(
+        HEADER
+        + _row(phrases="sind in der 23 Nuesse drin? | welche Allergene hat die 12")
+    )
+    assert errors == []

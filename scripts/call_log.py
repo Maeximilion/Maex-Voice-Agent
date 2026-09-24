@@ -7,8 +7,9 @@ Aufruf:
 Das Protokoll fuehrt das Team von Hand, ohne Tonaufnahme: Anliegen, Ergebnis und
 die woertlichen Kundensaetze, nie Namen oder Telefonnummern. Solange der
 Rechts-Check (docs/09) offen ist, ist das die einzige Quelle echter Anrufe.
-Die Datei liegt in imports/ (im .gitignore), die Entwuerfe ebenso: ein Entwurf
-wandert erst nach Durchsicht von Hand nach evals/cases/.
+Die Datei liegt in imports/ (im .gitignore), die Entwuerfe ebenso. Ein Entwurf
+enthaelt keinen echten Kundensatz (DSFA M15): das Team stellt die Saetze mit
+eigenen Worten nach, erst dann wandert der Fall nach evals/cases/.
 
 Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei (auch: nicht UTF-8),
 2 Datei nicht gefunden oder nicht lesbar, oder Zielordner in evals/cases/.
@@ -93,6 +94,10 @@ _EMAIL = re.compile(
     r"[\w.-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+\s*(?:\.|\bpunkt\b|\bdot\b)\s*"
     r"(?:de|com|net|org|eu|info|at|ch)\b"
 )
+# DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum.
+# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?"); "Allergene"
+# trifft das Muster nicht.
+_HEALTH = re.compile(r"allergi|allergisch|unvertraeglich|intoleran")
 # Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
 _ADDRESS = re.compile(
     r"\b\w+(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"
@@ -203,6 +208,11 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
             if _EMAIL.search(fold(row[column])):
                 problems.append(
                     f"Zeile {line}: {column} enthaelt eine E-Mail-Adresse, bitte entfernen"
+                )
+            if _HEALTH.search(fold(row[column])):
+                problems.append(
+                    f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit "
+                    "einer Person, bitte nur produktbezogen ('sind in der 23 Nuesse?')"
                 )
             if _ADDRESS.search(fold(row[column])):
                 problems.append(
@@ -349,29 +359,32 @@ def to_case(entry: Entry) -> dict | None:
     if not escalated:
         expected["confirmed"] = entry.outcome == "erledigt"
     expected["escalated"] = escalated
+    # DSFA M15 und CLAUDE.md §8: echte Kundensaetze kommen nie ins Git. Der
+    # Entwurf traegt nur den Aufbau des Falls; die Saetze stellt das Team mit
+    # eigenen Worten nach (source handcrafted). Der Wortlaut bleibt in der CSV.
     review = [
-        "Namen im Transkript durch Mueller ersetzen, falls noch einer drinsteht",
+        f"transcript nachstellen: {len(entry.phrases)} Kundensaetze mit eigenen "
+        "Worten, gleiches Anliegen, nie den Wortlaut aus dem Protokoll",
         "Feld review entfernen, dann nach evals/cases/ verschieben",
     ]
+    if entry.problems:
+        review.insert(1, f"Problem laut Protokoll nachstellen: {entry.problems}")
     if entry.items:
         review.insert(0, f"expected.items aus '{entry.items}' mit Kartennummern")
-    phrases = list(entry.phrases)
     case: dict[str, object] = {
         "id": case_id(entry),
         "name": f"Anrufprotokoll Zeile {entry.line}",
         "tags": [entry.intent, "protokoll"],
-        "source": "call_log",
+        "source": "handcrafted",
     }
     if expected.get("confirmed"):
-        # Vor dem letzten Satz, der meist das Ja zum Vorlesen ist.
-        phrases.insert(len(phrases) - 1, SYNTHETIC_NAME_TURN)
         case["caller_id"] = SYNTHETIC_CALLER_ID
         review.insert(
             0,
-            f"'{SYNTHETIC_NAME_TURN}' und caller_id sind erfunden: Namenszeile "
-            "dorthin schieben, wo der Kunde seinen Namen nannte",
+            f"Name und caller_id sind erfunden: '{SYNTHETIC_NAME_TURN}' vor den "
+            "letzten Kundensatz (das Ja zum Vorlesen) setzen",
         )
-    case["transcript"] = [{"role": "customer", "text": p} for p in phrases]
+    case["transcript"] = []
     case["expected"] = expected
     case["review"] = review
     return case
