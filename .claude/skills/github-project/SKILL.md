@@ -36,9 +36,11 @@ Status lives in the project's Status field and nowhere else - never additionally
 
 Exception in the label set: `status: blocked` mirrors the "blockiert" state that `docs/07_WORKPACKAGES.md` tracks, because that file is the source of truth. `status: in-progress` and `status: needs-review` are abolished.
 
-## Labels at issue creation
+## Labels and assignee at creation
 
-Exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
+Issues: exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
+
+Pull requests: always `gh pr create --assignee @me --label <type>`, the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The daily run fills in what is still missing, but a pull request should be complete from the start.
 
 ## Maintenance runs daily, never per commit
 

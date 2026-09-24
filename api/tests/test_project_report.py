@@ -652,3 +652,125 @@ def test_parse_item_liest_labels() -> None:
     )
     assert item is not None
     assert item.is_maintenance
+
+
+# PR-Felder aus Fakten ableiten: Start, Ziel, Iteration, Quarter
+
+
+ITERATIONEN = [
+    {"id": "IT1", "title": "Iteration 1", "startDate": "2026-09-16", "duration": 14},
+    {"id": "IT2", "title": "Iteration 2", "startDate": "2026-09-30", "duration": 14},
+]
+
+
+def pr(number: int, *, erstellt: str, geschlossen: str | None = None, felder=None):
+    item = eintrag(number, state="MERGED" if geschlossen else "OPEN", status="Done")
+    item.kind = "PullRequest"
+    item.fields = dict(felder or {})
+    item.created_at = datetime.fromisoformat(erstellt)
+    item.closed_at = datetime.fromisoformat(geschlossen) if geschlossen else None
+    return item
+
+
+@pytest.mark.parametrize(
+    ("tag", "erwartet"),
+    [
+        ("2026-09-16", "IT1"),  # erster Tag gehoert dazu
+        ("2026-09-29", "IT1"),  # letzter Tag gehoert dazu
+        ("2026-09-30", "IT2"),  # Grenze: naechste Iteration
+        ("2026-09-15", None),  # vor der ersten Iteration: nichts erfinden
+    ],
+)
+def test_iteration_nach_datum(tag: str, erwartet: str | None) -> None:
+    from datetime import date
+
+    assert (
+        project_report.pick_iteration(ITERATIONEN, date.fromisoformat(tag)) == erwartet
+    )
+
+
+def test_gemergter_pr_bekommt_alle_vier_felder() -> None:
+    item = pr(
+        134,
+        erstellt="2026-09-24T10:00:00+00:00",
+        geschlossen="2026-09-24T12:00:00+00:00",
+    )
+    felder = project_report.derive_pr_fields(item)
+    assert felder["Start date"] == "2026-09-24"
+    assert felder["Target date"] == "2026-09-24"
+    assert felder["Iteration"] == "2026-09-24"
+    assert felder["Quarter"] == "2026-09-24"
+
+
+def test_offener_pr_hat_noch_kein_zieldatum() -> None:
+    felder = project_report.derive_pr_fields(
+        pr(140, erstellt="2026-09-24T10:00:00+00:00")
+    )
+    assert "Target date" not in felder
+    assert felder["Start date"] == "2026-09-24"
+
+
+def test_gesetzte_felder_werden_nie_ueberschrieben() -> None:
+    """Was Maxi von Hand gesetzt hat (PR #129), bleibt stehen."""
+    item = pr(
+        129,
+        erstellt="2026-09-22T10:00:00+00:00",
+        geschlossen="2026-09-24T09:00:00+00:00",
+        felder={"Status": "Done", "Iteration": "Iteration 1", "Quarter": "Quarter 1"},
+    )
+    felder = project_report.derive_pr_fields(item)
+    assert "Iteration" not in felder
+    assert "Quarter" not in felder
+    assert set(felder) == {"Start date", "Target date"}
+
+
+def test_datum_nach_berliner_zeit() -> None:
+    """23:30 UTC am 23.09. ist in Berlin schon der 24.09. - das Board zeigt Berliner Tage."""
+    item = pr(141, erstellt="2026-09-23T23:30:00+00:00")
+    assert project_report.derive_pr_fields(item)["Start date"] == "2026-09-24"
+
+
+def test_issues_bekommen_keine_abgeleiteten_felder() -> None:
+    """Bei Issues ist die Iteration Planung, keine Tatsache."""
+    issue = eintrag(49, iteration=None)
+    issue.kind = "Issue"
+    issue.created_at = datetime.fromisoformat("2026-09-16T08:00:00+00:00")
+    assert project_report.derive_pr_fields(issue) == {}
+
+
+def test_nachgetragene_felder_frischen_den_zeitstempel_auf(monkeypatch) -> None:
+    """Codex-Review PR #137: jedes Nachtragen setzt auf GitHub updatedAt neu. Ohne das
+    lokal nachzuziehen, archivierte --fix --archive einen eben ergaenzten PR sofort."""
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        if "fields(first" in query:
+            return {
+                "user": {
+                    "projectV2": {
+                        "fields": {
+                            "nodes": [
+                                {
+                                    "id": "F_START",
+                                    "name": "Start date",
+                                    "dataType": "DATE",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        return {}
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    item = pr(
+        99,
+        erstellt="2026-08-01T10:00:00+00:00",
+        geschlossen="2026-08-02T10:00:00+00:00",
+        felder={"Status": "Done"},
+    )
+    item.updated_at = datetime(2026, 8, 2, tzinfo=UTC)
+    project_report.fill_pr_fields("owner", 2, "PROJ", [item], "token")
+
+    assert (
+        project_report.find_issues([item], datetime.now(UTC))[ARCHIV_SCHLUESSEL] == []
+    )
