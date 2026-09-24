@@ -92,6 +92,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-4.6 | #50 | Übergabe über n8n mit `handover_state`: **B** Netzwerk-Bondrucker (ESC/POS) zuerst, **C** <Kassensystem>-Bestell-Eingang als zweiter Adapter nach Antwort von <Kassenanbieter>; Idempotenz, Wiederholung | 02 §2, 01 D2 | T-1.6 | offen |
 | T-4.7 | #51 | GUI Spalte „Neue Bestellungen" mit Passt/Korrigieren und Korrekturgründen | 06 §3 | T-3.1, T-4.5 | offen |
 | T-4.8 | #52 | GUI „Gericht aus" | 06 §3 | T-4.1 | offen |
+| T-4.10 | - | Wünsche zu Positionen: Gericht und Wunsch im selben Satz trennen („die 23 ohne Karotten" findet heute nichts), Wunsch als Option der Karte (Preis aus `item_options`, Aufpreis beim Wiederholen genannt) oder als Hinweis nur für Weglassen („ohne", „kein"); alles, was nicht auf der Karte steht, bietet der Agent nicht an. Begründung für einen Aufpreis nur aus der Karte (neue optionale Spalte im Options-Import, Migration). Allergie ist kein Wunsch: Hinweis an die Küche plus Allergenpfad aus T-4.4, keine Zusage | 04, 05, 14 | T-4.5 | offen, Entscheidung Maxi 24.09.2026 (siehe `docs/01_STATUS.md` D8) |
 | T-4.9 | #53 | Preis-Abgleich Kasse gegen Agent-DB als Skript; Abweichung als rotes Badge am Gericht in der Admin-Liste, übernehmen oder verwerfen | 02 §6, 06 §4 | T-4.2 | offen |
 | T-5.1 | #54 | Eval-Runner `evals/runner.py`, Fall-Format, Report | 08 | T-4.5 | offen |
 | T-5.2 | #55 | Eval-Suite v1: mindestens 100 Fälle (Menü, Mengen, Optionen, Störgeräusche, Eskalation) | 08 | T-5.1 | offen |
