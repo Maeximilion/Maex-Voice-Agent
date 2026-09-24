@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.0
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.1
 
 ---
 
@@ -183,6 +183,10 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 |---|---|---|
 | Reservation key without `note` (`agent/dispatch.py` `_create_reservation`) | Codex PR #127 (P2, after the fully worked round, rule 21.09.2026): the derived key leaves out `note`, so a correction of only the note after the readback ("mit Hochstuhl") replays the old draft and readback without it. Fix: include every persisted request field in the key | with T-4.10 (wishes and notes), latest before G1 |
 | Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
+| Leading zero read as quantity in the text phone (`sim/scripted_order.py` `_quantity`) | Codex PR #130 (P1, after the fully worked round, rule 21.09.2026): "die 7" for card number `07` compares the raw strings, so 7 becomes the quantity. Fix: compare canonical numbers like `search_menu` does. Stand-in only, the agent core is not affected | before the first real menu import (numbers with leading zero) |
+| Quantity lost when a question is answered by a new search (`sim/scripted_order.py`) | Codex PR #130 (P1, same rule): "zwei Suppen", then "die dreizehn" - the new search adds 13 with quantity 1. Fix: carry the quantity of the original query into the replacement result. Stand-in only | with T-2.4 or the next sim change |
+| Pickup wording in a later turn (`sim/scripted_llm.py`) | Codex PR #130 (P2, same rule): when pickup is first named after the status check ("Guten Tag" first, then "Ich moechte die 23 zum Abholen"), the whole sentence goes to `search_menu` and "zum Abholen" hides the 23. Fix: apply `_opening_dish` whenever pickup is first detected. Stand-in only | with the next sim change |
+| Only the first sold-out part is spoken (`sim/scripted_order.py` `on_search`) | Codex PR #130 (P2, same rule): two sold-out parts in one sentence, the second is neither spoken nor queued. Fix: queue every further non-empty `_take` sentence like other unresolved parts. Stand-in only | with the next sim change |
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
 | Lower the wait time from the tablet | docs/06 §3 only specifies +15/+30; base values belong to the admin view (§4), not yet built | at T-3.5 operating test, latest with the admin view |
 | Reliable latency statement under lock contention | Measured ~11 ms is from same request repeated without concurrency; says nothing about lock wait times | with first load test, latest before gate G1 |
@@ -260,6 +264,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.28.1 · 24.09.2026:** PR #130 gemergt, vier Befunde nach der abgearbeiteten Runde als offene Punkte (nur Text-Telefon)
 - **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte
 - **v1.27.2 · 24.09.2026:** Projektpflege bricht ab, wenn der Token das Repo nicht sieht
 - **v1.27.1 · 24.09.2026:** Pull Requests ohne Merge werden nicht mehr als erledigt gezaehlt
