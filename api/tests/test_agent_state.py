@@ -2,6 +2,8 @@
 
 import uuid
 
+import pytest
+
 from api.agent.dispatch import ToolResult
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 
@@ -194,4 +196,19 @@ def test_gescheiterte_bestellung_nach_reservierung_setzt_die_absicht():
     apply_tool_result(
         state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
     )
+    assert state.intent == "pickup"
+
+
+@pytest.mark.parametrize("tool", ["search_menu", "get_item_details"])
+def test_menuesuche_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus(tool):
+    """Codex PR #127, P1: eine Korrektur der Bestellung kann mit search_menu
+    oder get_item_details beginnen. Endet der Zug mit einer Rueckfrage, bliebe
+    der alte Entwurf readback_pending, und ein Ja auf die Rueckfrage bestaetigte
+    ihn. Die Absicht bleibt Abholung."""
+    state = make_state(stage="readback_pending", intent="pickup", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, tool, ToolResult(ok=True, data={"match_type": "ambiguous"})
+    )
+    assert state.order_id is None
+    assert state.stage == "collecting"
     assert state.intent == "pickup"

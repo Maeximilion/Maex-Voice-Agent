@@ -97,6 +97,12 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
 # check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
 _CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
+# Eine Korrektur der Bestellung beginnt oft mit der Karte: neues Gericht suchen,
+# Optionen nachsehen. Jeder solche Aufruf loest den vorgelesenen Entwurf ab,
+# erfolgreich oder nicht - endet der Zug mit einer Rueckfrage, darf ein Ja
+# darauf nicht den alten bestaetigen (Codex PR #127, P1).
+_MENU_LOOKUP = frozenset({"search_menu", "get_item_details"})
+_PICKUP_TOOLS = frozenset({"draft_order"}) | _MENU_LOOKUP
 
 
 def _supersedes(name: str, result: ToolResult) -> bool:
@@ -105,7 +111,7 @@ def _supersedes(name: str, result: ToolResult) -> bool:
     draft_order oder create_reservation und jede neue Slotpruefung liefern
     keinen, und der alte bliebe bestaetigbar. Das naechste Ja bestaetigte dann
     den Entwurf, den der Gast gerade korrigiert hat (Codex PR #127, P1)."""
-    if name == "check_slot":
+    if name == "check_slot" or name in _MENU_LOOKUP:
         return True
     return name in _CORRECTING and not result.ok
 
@@ -116,5 +122,5 @@ def _drop_readback(state: ConversationState, name: str) -> None:
     Alternativen, nicht mehr um die Abholung (Codex PR #127, P2)."""
     state.order_id = None
     state.reservation_id = None
-    state.intent = "pickup" if name == "draft_order" else "reservation"
+    state.intent = "pickup" if name in _PICKUP_TOOLS else "reservation"
     state.stage = "collecting"

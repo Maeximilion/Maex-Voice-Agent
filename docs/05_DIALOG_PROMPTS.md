@@ -151,7 +151,8 @@ Sofort und ohne Diskussion:
 
 Nur ein vorgelesener Entwurf ist bestätigbar. Korrigiert der Gast nach dem Vorlesen
 und scheitert die Korrektur (`draft_order` oder `create_reservation` mit Fehler) oder
-beginnt eine neue Slotprüfung (`check_slot`), fällt der alte Entwurf aus dem Zustand
+beginnt eine neue Slotprüfung (`check_slot`) oder ein Blick in die Karte
+(`search_menu`, `get_item_details`), fällt der alte Entwurf aus dem Zustand
 und `stage` geht zurück auf `collecting`: ein späteres Ja kann ihn nicht mehr
 bestätigen (`agent/state.py`, Codex PR #127).
 
