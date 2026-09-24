@@ -16,9 +16,11 @@ on:
         type: boolean
         default: false
 
-# Das Repo wird nur gelesen. Das Board schreibt der PAT, nicht der GITHUB_TOKEN.
+# Das Board schreibt der PAT. Der GITHUB_TOKEN schreibt nur das Entscheidungs-Issue -
+# bewusst er und nicht der PAT: eine Erwaehnung vom eigenen Konto benachrichtigt nicht.
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: projektpflege
@@ -56,4 +58,12 @@ jobs:
           # Der Bericht landet in der Job-Zusammenfassung, nicht als Kommentar an jedem
           # Eintrag. Ein Ort zum Nachsehen statt Rauschen auf dem Board.
           python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
+            --findings-json "$RUNNER_TEMP/befunde.json" \
             | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Entscheidungs-Issue pflegen
+        # Was die Pflege nicht selbst entscheiden kann, landet in genau einem Issue.
+        # Erwaehnt wird nur bei neuen Punkten; ist nichts mehr offen, schliesst es sich.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
