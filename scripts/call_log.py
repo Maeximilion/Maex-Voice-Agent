@@ -13,7 +13,8 @@ enthaelt keinen echten Kundensatz (DSFA M15): das Team stellt die Saetze mit
 eigenen Worten nach, erst dann wandert der Fall nach evals/cases/.
 
 Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei (auch: nicht UTF-8),
-2 Datei nicht gefunden oder nicht lesbar, oder Zielordner in evals/cases/.
+2 Datei nicht gefunden oder nicht lesbar, Zielordner in evals/cases/ oder
+ID-Verzeichnis (.call_log_ids.json) unlesbar.
 Ohne Datenbank und ohne Netz.
 """
 
@@ -24,6 +25,7 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import secrets
 import sys
@@ -158,16 +160,30 @@ def _norm(value: str) -> str:
 def _numbers_as_digits(text: str) -> str:
     """Zahlwoerter als Ziffern, fuer die Adresspruefung: "Hauptstrasse zwoelf"
     wird "hauptstrasse 12". Artikel ("eine Pizza") bleiben Woerter, sonst
-    saehe "am Freitag eine Pizza" wie eine Hausnummer aus."""
+    saehe "am Freitag eine Pizza" wie eine Hausnummer aus. Getrennt geschriebene
+    Zahlen der Spracherkennung ("ein und zwanzig", "hundert drei") werden erst
+    zusammengezogen; dann zaehlt auch ein Artikel als Teil der Zahl."""
 
-    def digit(match: re.Match[str]) -> str:
-        token = match.group(0)
-        if token in ARTICLES:
-            return token
-        value = parse_cardinal(token)
-        return token if value is None else str(value)
+    def digits(match: re.Match[str]) -> str:
+        tokens = match.group(0).split()
+        out = []
+        i = 0
+        while i < len(tokens):
+            # Laengste Folge ab i, die zusammen eine Zahl ist, hoechstens fuenf Woerter.
+            for j in range(min(len(tokens), i + 5), i + 1, -1):
+                value = parse_cardinal("".join(tokens[i:j]))
+                if value is not None:
+                    out.append(str(value))
+                    i = j
+                    break
+            else:
+                token = tokens[i]
+                value = None if token in ARTICLES else parse_cardinal(token)
+                out.append(token if value is None else str(value))
+                i += 1
+        return " ".join(out)
 
-    return re.sub(r"[a-z]+", digit, fold(text))
+    return re.sub(r"[a-z]+(?:\s+[a-z]+)*", digits, fold(text))
 
 
 def _spoken_phone(text: str) -> bool:
@@ -487,7 +503,7 @@ def write_cases(
     entries: list[Entry],
     folder: Path,
     salt: str = "",
-    known: dict[str, str] | None = None,
+    known: dict[str, dict[str, str]] | None = None,
 ) -> int:
     """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
     Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
@@ -514,9 +530,18 @@ def write_cases(
         # Vor dem None-Zweig: eine Zeile, die nach einer Korrektur keinen Fall
         # mehr ergibt (zum Beispiel jetzt "frage"), muss ihren Fall melden.
         cid = case_id(entry, salt).removeprefix("protokoll_")
-        if known is not None:
-            known[cid] = entry.day.isoformat()
         reviewed = done.get(cid)
+        if known is not None:
+            fp = _fingerprint(entry, salt)
+            before = known.get(cid, {}).get("fp")
+            if reviewed is not None and before is not None and before != fp:
+                print(
+                    f"Zeile zu {reviewed} hat sich seit dem letzten Lauf geaendert: "
+                    "korrigiert, oder ein Anruf derselben Minute wurde eingefuegt "
+                    "oder umsortiert. Zuordnung und Fall pruefen",
+                    file=sys.stderr,
+                )
+            known[cid] = {"day": entry.day.isoformat(), "fp": fp}
         if reviewed is not None:
             if case is None:
                 print(
@@ -544,8 +569,29 @@ def write_cases(
     return len(written)
 
 
+def _fingerprint(entry: Entry, salt: str) -> str:
+    """Inhalt der Zeile, nur fuer das lokale Verzeichnis. Die ID haengt an der
+    Reihenfolge in der Minute; ein nachgetragener Anruf davor verschiebt sie.
+    Aendert sich der Inhalt hinter einer durchgesehenen ID, faellt das so auf."""
+    body = json.dumps(
+        [
+            entry.intent,
+            entry.outcome,
+            entry.phrases,
+            entry.items,
+            entry.problems,
+            entry.duration_min,
+        ],
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(f"{salt}|{body}".encode()).hexdigest()[:10]
+
+
 def _reconcile(
-    entries: list[Entry], salt: str, done: dict[str, Path], known: dict[str, str]
+    entries: list[Entry],
+    salt: str,
+    done: dict[str, Path],
+    known: dict[str, dict[str, str]],
 ) -> None:
     """Jeder durchgesehene Fall, dessen ID im lokalen Verzeichnis steht, braucht
     eine Zeile in der CSV. Keine Datumsgrenze: faellt der einzige Anruf am Rand
@@ -614,22 +660,43 @@ def _salt(csv_file: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
-def _load_known(path: Path) -> dict[str, str]:
-    """Lokales Verzeichnis ID -> Anrufdatum, neben der CSV (imports/, ignoriert)."""
+def _load_known(path: Path) -> dict[str, dict[str, str]]:
+    """Lokales Verzeichnis ID -> Anrufdatum und Fingerabdruck der Zeile, neben
+    der CSV (imports/, ignoriert). Fehlt es, ist es leer. Ist es unlesbar, bricht
+    der Lauf ab (ValueError): ein leeres Verzeichnis an seiner Stelle wuerde die
+    IDs geloeschter Anrufe fuer immer vergessen."""
+    if not path.exists():
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, ValueError) as exc:
+        raise ValueError(str(exc)) from exc
+    if not isinstance(data, dict):
+        raise ValueError("kein JSON-Objekt")
+    known: dict[str, dict[str, str]] = {}
+    for cid, value in data.items():
+        # Aeltere Form: nur das Datum.
+        entry = {"day": value} if isinstance(value, str) else value
+        if not isinstance(entry, dict) or not isinstance(entry.get("day"), str):
+            raise ValueError(f"Eintrag {cid} ohne Datum")
+        known[cid] = entry
+    return known
 
 
-def _forget_before(path: Path, cutoff: date) -> None:
+def _save_known(path: Path, known: dict[str, dict[str, str]]) -> None:
+    """Erst eine Kopie schreiben, dann tauschen: ein abgebrochener Lauf
+    hinterlaesst kein halbes Verzeichnis."""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _forget_before(
+    known: dict[str, dict[str, str]], cutoff: date
+) -> dict[str, dict[str, str]]:
     """Mit der Loeschfrist fallen auch die IDs geloeschter Anrufe aus dem
     Verzeichnis."""
-    if not path.exists():
-        return
-    known = {k: v for k, v in _load_known(path).items() if v >= cutoff.isoformat()}
-    path.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
+    return {k: v for k, v in known.items() if v["day"] >= cutoff.isoformat()}
 
 
 def _today() -> date:
@@ -735,6 +802,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    # Vor jedem Schreiben: ein unlesbares Verzeichnis bleibt, wie es ist.
+    known_path = args.file.with_name(".call_log_ids.json")
+    try:
+        known = _load_known(known_path)
+    except ValueError as exc:
+        print(
+            f"ID-Verzeichnis nicht lesbar: {known_path} ({exc}). Nichts geaendert; "
+            "Datei reparieren oder aus der Sicherung holen",
+            file=sys.stderr,
+        )
+        return 2
     if days is not None:
         cutoff = _today() - timedelta(days=days)
         old = [e for e in entries if e.day < cutoff]
@@ -744,15 +822,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.loeschen and old:
             args.file.write_text(purge(text, cutoff), encoding="utf-8-sig")
-            _forget_before(args.file.with_name(".call_log_ids.json"), cutoff)
+            known = _forget_before(known, cutoff)
+            if known_path.exists():
+                _save_known(known_path, known)
             entries = [e for e in entries if e.day >= cutoff]
             print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
-        known_path = args.file.with_name(".call_log_ids.json")
-        known = _load_known(known_path)
         written = write_cases(entries, args.cases, _salt(args.file), known)
-        known_path.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
+        _save_known(known_path, known)
         print(f"Eval-Entwuerfe: {written} nach {args.cases}")
     return 0
 

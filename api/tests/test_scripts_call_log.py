@@ -802,3 +802,92 @@ def test_gleicher_anruf_mit_anderer_dauer_ist_ein_zweiter_anruf():
     """Codex PR #135: die Dauer unterscheidet zwei Anrufe derselben Minute."""
     entries, _ = parse(HEADER + _row(duration_min="2") + _row(duration_min="5"))
     assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hauptstrasse ein und zwanzig",
+        "Kaiserstrasse drei und vierzig",
+        "Am Stadtgarten hundert drei",
+    ],
+)
+def test_adresse_mit_getrennten_zahlwoertern(text):
+    """Codex PR #135: die Spracherkennung schreibt "ein und zwanzig" getrennt;
+    die Zahlwoerter werden vor der Adresspruefung zusammengezogen."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+def test_getrennte_zahlwoerter_ohne_adresse_bleiben_erlaubt():
+    _, errors = parse(HEADER + _row(phrases="zwei und zwanzig Leute am Freitag"))
+    assert errors == []
+
+
+def _durchsehen(entw: Path, eval_cases: Path) -> list[str]:
+    """Alle Entwuerfe als durchgesehene Faelle nach evals/cases legen."""
+    namen = []
+    for p in sorted(entw.glob("protokoll_*.json")):
+        case = json.loads(p.read_text(encoding="utf-8"))
+        del case["review"]
+        (eval_cases / p.name).write_text(json.dumps(case), encoding="utf-8")
+        p.unlink()
+        namen.append(p.name)
+    return namen
+
+
+def test_eingefuegter_anruf_derselben_minute_wird_gemeldet(
+    tmp_path, eval_cases, capsys
+):
+    """Codex PR #135: ein nachgetragener Anruf vor zwei durchgesehenen derselben
+    Minute verschiebt die Reihenfolge; die Faelle haengen dann still an anderen
+    Anrufen."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    a = _row(phrases="die 23 bitte")
+    b = _row(phrases="zweimal die 12")
+    csv_file.write_text(HEADER + a + b, encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    namen = _durchsehen(entw, eval_cases)
+    assert len(namen) == 2
+    capsys.readouterr()
+    csv_file.write_text(HEADER + _row(phrases="einmal die 7") + a + b, encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    err = capsys.readouterr().err
+    assert all(n in err for n in namen), err
+    assert "derselben Minute" in err
+
+
+def test_unveraenderter_anruf_meldet_keine_verschiebung(tmp_path, eval_cases, capsys):
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    csv_file.write_text(HEADER + _row(phrases="die 23 bitte"), encoding="utf-8")
+    main([str(csv_file), "--cases", str(entw)])
+    _durchsehen(entw, eval_cases)
+    capsys.readouterr()
+    main([str(csv_file), "--cases", str(entw)])
+    main([str(csv_file), "--cases", str(entw)])
+    assert capsys.readouterr().err == ""
+
+
+def test_kaputtes_id_verzeichnis_bleibt_erhalten(tmp_path, eval_cases, capsys):
+    """Codex PR #135: ein unlesbares .call_log_ids.json wurde still durch ein
+    neues ersetzt; die IDs geloeschter Anrufe waren damit fuer immer weg."""
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    ids = tmp_path / ".call_log_ids.json"
+    ids.write_text('{"abc": "2026-09-2', encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
+    assert "ID-Verzeichnis" in capsys.readouterr().err
+    assert ids.read_text(encoding="utf-8") == '{"abc": "2026-09-2'
+
+
+def test_kaputtes_id_verzeichnis_stoppt_auch_das_loeschen(tmp_path, monkeypatch):
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    vorher = csv_file.read_text(encoding="utf-8")
+    ids = tmp_path / ".call_log_ids.json"
+    ids.write_text("[1, 2", encoding="utf-8")
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 2
+    assert csv_file.read_text(encoding="utf-8") == vorher
+    assert ids.read_text(encoding="utf-8") == "[1, 2"
