@@ -19,12 +19,14 @@ Ohne Datenbank und ohne Netz.
 
 import argparse
 import csv
+import dataclasses
 import hashlib
 import io
 import json
 import math
 import os
 import re
+import secrets
 import sys
 from collections import Counter
 from dataclasses import dataclass
@@ -86,6 +88,7 @@ SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
 # Ein bestaetigter Fall endet fest mit einem klaren Ja; ob der letzte Satz im
 # Protokoll eines war ("Danke" ist keines), bleibt offen.
 SYNTHETIC_YES_TURN = "Ja, das passt."
+SYNTHETIC_ADDRESS_TURN = "Die Adresse ist Musterstrasse 1 in 12345 Musterstadt."
 
 # Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich oder
 # Klammer dazwischen, sind fast immer eine Telefonnummer. Ein Punkt zaehlt nur
@@ -103,23 +106,24 @@ _EMAIL = re.compile(
     r"\w@\w|[\w.+-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+"
     rf"(?:{_DOT}[\w-]+)*{_DOT}[a-z]{{2,}}\b"
 )
-# DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum.
-# Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?", "hat die 23
-# Allergien?"). "Allergie" als Wortende ("Nussallergie") trifft immer, der
-# Plural nur mit "gegen" oder einem Personenbezug davor.
-_HEALTH = re.compile(
-    r"allergie\b|allergisch|unvertraeglich|intoleran|allergien\s+gegen"
-    # Plural nur mit Personenbezug: "ich habe Allergien", "mein Sohn hat Allergien"
-    r"|\b(?:ich|wir|mein\w*|unser\w*|sohn|tochter|kind\w*|frau|mann)\b"
-    r"[^.?!|]{0,30}\ballergien\b"
-)
+# DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum. Eine
+# Liste von Personenwoertern wird nie vollstaendig ("er", "der Kunde", ...),
+# deshalb ist jedes "Allergi..." rot; die Frage zum Gericht heisst "Allergene"
+# ("welche Allergene hat die 23?"), das trifft das Muster nicht.
+_HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
 # Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
 # Auch mit Bindestrich oder getrennt ("Kaiser-Str. 12", "Kaiser Strasse 12a"),
 # ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
 # Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
 # vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
 _ADDRESS = re.compile(
-    r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"
+    r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer|markt|hof"
+    r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*\d+"
+    # Nach einem Hinweiswort ist jede Zahl eine Hausnummer ("meine Adresse ist
+    # Lindenblick 4"), ausser vor Minuten, Uhr und aehnlichem.
+    r"|\b(?:adresse|wohne|wohnen|wohnt|liefern an|lieferung an|bringen an"
+    r"|liefern nach|lieferung nach)\b[^|.!?]{0,40}?\b\d{1,4}[a-z]?\b"
+    r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
     r"|\b(?:am|im|an der|an den|auf der|auf dem|in der|in den|zum|zur"
     r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+\d{1,3}[a-z]?\b"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
@@ -140,6 +144,8 @@ class Entry:
     phrases: list[str]
     items: str
     problems: str
+    # Reihenfolge unter verschiedenen Anrufen derselben Minute, fuer die ID.
+    ordinal: int = 0
 
 
 def _norm(value: str) -> str:
@@ -234,8 +240,8 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                 )
             if _HEALTH.search(fold(row[column])):
                 problems.append(
-                    f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit "
-                    "einer Person, bitte nur produktbezogen ('sind in der 23 Nuesse?')"
+                    f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit, "
+                    "bitte nur zum Gericht: 'welche Allergene hat die 23?'"
                 )
             if _ADDRESS.search(fold(row[column])):
                 problems.append(
@@ -300,7 +306,22 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                 row["problems"],
             )
         )
-    return entries, errors
+    return _with_ordinals(entries), errors
+
+
+def _with_ordinals(entries: list[Entry]) -> list[Entry]:
+    """Zaehlt verschiedene Anrufe derselben Minute durch. Eine doppelt
+    abgetippte Zeile ist derselbe Anruf und bekommt dieselbe Nummer."""
+    seen: dict[tuple, list[tuple]] = {}
+    out = []
+    for e in entries:
+        minute = (e.day, e.hour, e.minute)
+        body = (e.intent, e.outcome, tuple(e.phrases), e.items, e.problems)
+        bodies = seen.setdefault(minute, [])
+        if body not in bodies:
+            bodies.append(body)
+        out.append(dataclasses.replace(e, ordinal=bodies.index(body)))
+    return out
 
 
 def _share(counter: Counter[str], total: int) -> str:
@@ -351,19 +372,21 @@ def report(entries: list[Entry]) -> str:
     return "\n".join(lines)
 
 
-def case_id(entry: Entry) -> str:
-    """ID aus dem Inhalt, nicht aus der Zeilennummer: Zeile 2 kommt in jedem
-    Wochenprotokoll wieder vor, und in evals/cases/ wuerde der neue Fall den
-    alten ueberschreiben. Derselbe Anruf behaelt seine ID ueber jeden Lauf."""
-    # Mit Minute: zwei Anrufe derselben Stunde mit gleichem Wortlaut sind zwei Faelle.
+def case_id(entry: Entry, salt: str = "") -> str:
+    """ID des Anrufs: Datum, Minute und Reihenfolge in dieser Minute. Nicht aus
+    der Zeilennummer (Zeile 2 kommt jede Woche wieder) und nicht aus dem
+    Wortlaut (ein korrigierter Tippfehler wuerde den durchgesehenen Fall
+    verwaisen lassen). Das lokale Salz verhindert, dass sich aus einer ID in
+    evals/cases/ die Anrufzeit zurueckrechnen und mit der Anrufliste des
+    Routers abgleichen laesst."""
     key = (
-        f"{entry.day.isoformat()} {entry.hour:02d}:{entry.minute:02d} "
-        f"{'|'.join(entry.phrases)}"
+        f"{salt}|{entry.day.isoformat()} {entry.hour:02d}:{entry.minute:02d}"
+        f"|{entry.ordinal}"
     )
     return "protokoll_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
 
 
-def to_case(entry: Entry) -> dict | None:
+def to_case(entry: Entry, salt: str = "") -> dict | None:
     """Entwurf eines Eval-Falls (docs/08 §1) oder None, wenn nichts pruefbar ist.
 
     Erwartet wird nur, was das Protokoll sicher hergibt: Anliegen, bestaetigt
@@ -395,7 +418,7 @@ def to_case(entry: Entry) -> dict | None:
     if entry.items:
         review.insert(0, f"expected.items aus '{entry.items}' mit Kartennummern")
     case: dict[str, object] = {
-        "id": case_id(entry),
+        "id": case_id(entry, salt),
         "name": f"Anrufprotokoll Zeile {entry.line}",
         "tags": [entry.intent, "protokoll"],
         "source": "handcrafted",
@@ -403,14 +426,20 @@ def to_case(entry: Entry) -> dict | None:
     transcript: list[dict[str, str]] = []
     if expected.get("confirmed"):
         case["caller_id"] = SYNTHETIC_CALLER_ID
-        transcript = [
-            {"role": "customer", "text": SYNTHETIC_NAME_TURN},
-            {"role": "customer", "text": SYNTHETIC_YES_TURN},
-        ]
+        turns = [SYNTHETIC_NAME_TURN, SYNTHETIC_YES_TURN]
+        if entry.intent == "lieferung":
+            # Adressen stehen nie im Protokoll, confirm braucht aber eine.
+            turns.insert(0, SYNTHETIC_ADDRESS_TURN)
+            review.insert(
+                0,
+                "Adresse erfunden: muss in einer Lieferzone der Testdaten liegen "
+                "(scripts/seed_zones.py), sonst PLZ anpassen",
+            )
+        transcript = [{"role": "customer", "text": t} for t in turns]
         review.insert(
             0,
             "Name, Ja und caller_id sind erfunden: die nachgestellten Kundensaetze "
-            "vor diese zwei Zeilen setzen",
+            f"vor diese {len(turns)} Zeilen setzen",
         )
     case["transcript"] = transcript
     case["expected"] = expected
@@ -418,7 +447,7 @@ def to_case(entry: Entry) -> dict | None:
     return case
 
 
-def write_cases(entries: list[Entry], folder: Path) -> int:
+def write_cases(entries: list[Entry], folder: Path, salt: str = "") -> int:
     """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
     Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
     korrigierten Zeile der ueberholte Fall neben dem neuen liegen.
@@ -440,10 +469,10 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
     done = {p.name.split("_")[1]: p for p in EVAL_CASES.glob("protokoll_*.json")}
     written: set[Path] = set()
     for entry in entries:
-        case = to_case(entry)
+        case = to_case(entry, salt)
         # Vor dem None-Zweig: eine Zeile, die nach einer Korrektur keinen Fall
         # mehr ergibt (zum Beispiel jetzt "frage"), muss ihren Fall melden.
-        reviewed = done.get(case_id(entry).removeprefix("protokoll_"))
+        reviewed = done.get(case_id(entry, salt).removeprefix("protokoll_"))
         if reviewed is not None:
             if case is None:
                 print(
@@ -484,6 +513,15 @@ def _report_correction(case: dict, reviewed: Path) -> None:
             "Fall von Hand anpassen",
             file=sys.stderr,
         )
+
+
+def _salt(csv_file: Path) -> str:
+    """Lokales Salz fuer die Fall-IDs, neben der CSV (imports/, im .gitignore).
+    Einmal angelegt, danach wiederverwendet, damit IDs stabil bleiben."""
+    path = csv_file.with_name(".call_log_salt")
+    if not path.exists():
+        path.write_text(secrets.token_hex(16), encoding="utf-8")
+    return path.read_text(encoding="utf-8").strip()
 
 
 def _today() -> date:
@@ -598,7 +636,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
-        written = write_cases(entries, args.cases)
+        written = write_cases(entries, args.cases, _salt(args.file))
         print(f"Eval-Entwuerfe: {written} nach {args.cases}")
     return 0
 

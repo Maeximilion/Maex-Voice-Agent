@@ -182,7 +182,7 @@ def test_fall_id_haengt_am_inhalt_nicht_an_der_zeile():
     nicht ueberschreiben; derselbe Anruf behaelt seine ID."""
     woche1, _ = parse(HEADER + _row())
     woche2, _ = parse(HEADER + _row(date="01.10.2026"))
-    nochmal, _ = parse(HEADER + _row(intent="reservierung") + _row())
+    nochmal, _ = parse(HEADER + _row(intent="reservierung", time="12:00") + _row())
     assert to_case(woche1[0])["id"] != to_case(woche2[0])["id"]
     assert to_case(woche1[0])["id"] == to_case(nochmal[1])["id"]
 
@@ -383,13 +383,18 @@ def test_allergie_mit_personenbezug_macht_datei_rot(text):
 
 @pytest.mark.parametrize(
     "text",
-    ["hat die 23 irgendwelche Allergien?", "ich habe eine Allergie gegen Sesam"],
+    [
+        "hat die 23 irgendwelche Allergien?",
+        "ich habe eine Allergie gegen Sesam",
+        "Er hat Allergien",
+        "der Kunde hat Allergien",
+    ],
 )
-def test_allergien_im_plural_ist_die_frage_zum_gericht(text):
-    """Umgangssprachlich heisst "Allergien" die Allergene des Gerichts; nur die
-    Allergie einer Person ist ein Gesundheitsdatum."""
+def test_jedes_allergi_ist_rot(text):
+    """Codex PR #135: eine Liste von Personenwoertern wird nie vollstaendig.
+    Jedes "Allergi..." ist rot; die Frage zum Gericht heisst "Allergene"."""
     _, errors = parse(HEADER + _row(phrases=text))
-    assert bool(errors) is text.startswith("ich"), text
+    assert errors and "Allergene" in errors[0], text
 
 
 def test_produktbezogene_allergenfrage_ist_erlaubt():
@@ -556,3 +561,64 @@ def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, cap
     err = capsys.readouterr().err
     assert name in err
     assert "keinen Fall" in err
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Neuer Markt 3",
+        "Sonnenhof 3",
+        "Bahnhofchaussee 10",
+        "Lieferung an Neuer Weg Nord 3",
+        "meine Adresse ist Lindenblick 4",
+    ],
+)
+def test_adresse_weitere_formen(text):
+    """Codex PR #135: weitere Strassenformen und Hinweiswoerter."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+def test_lieferung_nach_minuten_ist_keine_adresse():
+    _, errors = parse(HEADER + _row(problems="Lieferung nach 30 Minuten zugesagt"))
+    assert errors == []
+
+
+def test_id_bleibt_bei_korrigiertem_wortlaut():
+    """Codex PR #135: ein korrigierter Tippfehler im Wortlaut darf die ID des
+    Anrufs nicht aendern, sonst findet das Script den durchgesehenen Fall nicht."""
+    vorher, _ = parse(HEADER + _row(phrases="zweimal die 32"))
+    nachher, _ = parse(HEADER + _row(phrases="zweimal die 23"))
+    assert to_case(vorher[0])["id"] == to_case(nachher[0])["id"]
+
+
+def test_zwei_anrufe_in_derselben_minute_bleiben_getrennt():
+    entries, _ = parse(
+        HEADER + _row(phrases="Tisch fuer zwei") + _row(phrases="die 23")
+    )
+    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+
+
+def test_salz_macht_id_unberechenbar():
+    """Ohne das lokale Salz laesst sich aus der ID keine Anrufzeit zurueckrechnen."""
+    entries, _ = parse(HEADER + _row())
+    assert to_case(entries[0], salt="a")["id"] != to_case(entries[0], salt="b")["id"]
+
+
+def test_salz_wird_neben_der_csv_angelegt_und_wiederverwendet(tmp_path, eval_cases):
+    good = tmp_path / "protokoll.csv"
+    good.write_text(HEADER + _row(), encoding="utf-8")
+    assert main([str(good), "--cases", str(tmp_path / "e")]) == 0
+    salt = (tmp_path / ".call_log_salt").read_text(encoding="utf-8")
+    first = sorted(p.name for p in (tmp_path / "e").iterdir())
+    assert main([str(good), "--cases", str(tmp_path / "e")]) == 0
+    assert (tmp_path / ".call_log_salt").read_text(encoding="utf-8") == salt
+    assert sorted(p.name for p in (tmp_path / "e").iterdir()) == first
+
+
+def test_bestaetigte_lieferung_bekommt_erfundene_adresse():
+    """Codex PR #135: ohne Adresse erreicht ein Lieferfall confirm nie."""
+    entries, _ = parse(HEADER + _row(intent="lieferung"))
+    texts = [t["text"] for t in to_case(entries[0])["transcript"]]
+    assert texts[0].startswith("Die Adresse ist Musterstrasse 1")
+    assert texts[-2:] == ["Auf den Namen Mueller.", "Ja, das passt."]
