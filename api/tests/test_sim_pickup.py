@@ -18,7 +18,7 @@ from api.models import Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
 from sim.replay import replay
-from sim.scripted_order import _quantity
+from sim.scripted_order import PickupScript, _quantity
 from sim.session import resolve_tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -638,3 +638,25 @@ def test_abholung_spaeter_mit_fuellwort_sagt_nicht_nicht_gefunden(session, tenan
     second = " ".join(turns[1].say)
     assert "nicht gefunden" not in second
     assert "Was möchten Sie bestellen?" in second
+
+
+@pytest.mark.parametrize(
+    ("antwort", "nummer"),
+    [
+        ("zwei Pho Bo", "13"),
+        ("die dreizehn", "13"),
+        ("einmal die dreizehn", "13"),
+        ("die 2", "2"),
+        ("Nummer zwei", "2"),
+    ],
+)
+def test_menge_neben_dem_namen_waehlt_nicht_die_nummer(antwort, nummer):
+    """Codex PR #133, P2: "zwei Pho Bo" nennt Menge und Namen - nicht Karte 2.
+    Wie in der Suche (sole_item_number) ist eine Zahl neben einem Namen eine
+    Menge; nur ein Satz, der die Nummer selbst ist, waehlt per Nummer."""
+    script = PickupScript()
+    script._suggestions = [
+        {"number": "2", "name": "Frühlingsrolle"},
+        {"number": "13", "name": "Pho Bo"},
+    ]
+    assert script._pick_suggestion(antwort)["number"] == nummer

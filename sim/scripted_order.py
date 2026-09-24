@@ -16,7 +16,6 @@ from typing import Any
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.numberwords import (
     canonical_card,
-    find_item_number_ref,
     find_quantity,
     parse_cardinal,
     sole_item_number,
@@ -224,7 +223,10 @@ class PickupScript:
         auf eine der angebotenen passt."""
         lowered = text.lower()
         # Auch gesprochen ("die dreizehn") und mit fuehrender Null (Review PR #133).
-        ref = find_item_number_ref(text)
+        # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
+        # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
+        # #133, P2).
+        ref, _ = sole_item_number(text)
         if ref is not None:
             card = canonical_card(ref.text)
             by_number = [
