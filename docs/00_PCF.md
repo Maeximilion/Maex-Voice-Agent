@@ -468,6 +468,95 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 23.09.2026 - T-4.5, confirm fuer Bestellungen
+Status: Abholung laeuft ueber HTTP von der Suche bis zum Abholcode: search_menu, get_item_details,
+       draft_order (T-4.5, PR #124) und confirm fuer entity: order (PR #125) liegen auf main.
+       draft_order prueft Oeffnung, aktiv/aus, Optionen und Pflichtgruppen im Code, rechnet in
+       Cent und liefert readback; confirm vergibt A1, A2, ... je Betriebstag und gibt nur im Modus
+       primary sofort an die Kueche. search_menu fragt bei mehreren Positionen in einem Satz nach
+       (split_positions), statt eine still zu verlieren. 1470 Tests gruen, CI gruen, ruff sauber,
+       draft_order p95 22 ms, confirm Bestellung p95 36 ms. Laeuft noch nicht: der Agent kennt die
+       Menue-Tools nicht (agent/dispatch.py, prompts/tools_v1.md nur Stufe 1), die Freigabe im
+       Tablet (T-4.7) fehlt - ausserhalb von primary bleibt eine bestaetigte Bestellung dort
+       stehen -, kein n8n-Workflow empfaengt order.confirmed (T-4.6), kein echtes Modell (T-2.4),
+       keine Telefonie (C2), keine echte Karte (C1).
+Artifacts: PR #124 squash-gemergt (main = 303d1b7): api/domain/ordering/{draft,validation,pricing,
+       readback}.py, api/domain/menu/split.py, api/schemas/orders.py, api/tools/draft_order.py,
+       option_key in api/domain/menu/items.py, Import-Pruefung in importer.py, Guard in
+       search.py. PR #125 squash-gemergt (main = 4610355): api/domain/ordering/confirm.py,
+       api/domain/confirm.py, api/schemas/confirm.py. Tests: test_domain_draft_order,
+       test_tool_draft_order, test_domain_menu_split, test_domain_confirm_order. docs/01 (v1.25.0),
+       03, 04, 07, README, CHANGELOG.
+Decisions: Pflichtgruppe ohne Wahl wird erfragt, nie mit der Voreinstellung gefuellt - die waere
+       geraten (CLAUDE.md 2 Regel 2) · Replay-Schnappschuss in audit_log nur mit Kartendaten
+       (Nummer, Name, Warnungen), Name/Telefon/Hinweise aus orders/order_items - audit_log bleibt
+       laenger als die Bestellung, die Loeschung (T-6.7) setzt an orders an · ready_at auf die
+       volle Minute aufgerundet, in UTC · Kartenfehler (Optionen in zwei Schreibweisen,
+       uneinheitliches required, negativer Preis) gehen per service_unavailable ans Team statt
+       geraten zu werden, der Import lehnt sie ab · search_menu zerlegt nicht, verweigert aber
+       Saetze mit mehreren Positionen (ambiguous, Teile in message) · nur primary uebergibt sofort,
+       overflow/shadow/paused warten auf Freigabe · Abholcode "A"+Zahl je Mandant und Betriebstag,
+       Tag aus created_at, Advisory-Lock · confirm liest den Modus FOR SHARE, damit ein laufender
+       Not-Aus nicht ueberholt wird.
+Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Block 3 (Stufe 2,
+       Sammel-Issue #9): T-4.1 bis T-4.5 fertig, confirm fuer Bestellungen dazu; offen T-4.6
+       bis T-4.9.
+Open: Menue-Tools fuer den Agenten - search_menu, get_item_details und draft_order in
+       agent/dispatch.py (confirm fuer Bestellungen laeuft dort schon ueber den generischen
+       Adapter; es fehlen order_id im Zustand, der Prompt und sim/scripted_llm.py), mit
+       Nachfrage je Teil, wenn search_menu "mehrere Positionen" meldet. Danach T-4.7 (Freigabe
+       im Tablet), dann T-4.6 (Bon ueber n8n). Offener Punkt aus docs/01: "die 23 und Pho Bo"
+       (zweites Gericht ohne Menge) laesst sich ohne Karte nicht sicher trennen.
+Lessons: Codex liefert je Runde neue Randfaelle, solange eine Heuristik offen ist - sieben Runden
+       fuer split_positions. Lieber frueh die harte Grenze ziehen (im Zweifel ganz lassen und laut
+       nachfragen) und den Rest als Open Point festhalten · ein Replay-Schnappschuss ist schnell
+       gebaut und schnell ein Datenschutzproblem: was laenger lebt als die Bestellung, darf keine
+       Personendaten tragen - eigenes Review vor dem Merge hat das gefunden, nicht der Bot · der
+       Docker-Daemon fiel zweimal weg; Docker Desktop liegt unter
+       %LOCALAPPDATA%\Programs\DockerDesktop\, danach docker compose up -d · git checkout -- <datei>
+       setzt die ganze Datei zurueck, nicht nur die letzte Aenderung; fuer temporaere Messungen
+       lieber -s mit einer Kopie arbeiten · main ist im Haupt-Checkout belegt, im Worktree von
+       origin/main abzweigen.
+
+## Handover 22.09.2026 - T-4.4 (Review, Merge)
+Status: Karten-Tools vollstaendig bis zur Bestellung: search_menu (T-4.3, PR #117) und
+       get_item_details (T-4.4, PR #118) laufen gegen main. Beschreibung, Optionsgruppen und
+       Allergene zu einer menu_item_id; Allergene nur aus item_allergens, ohne gepflegte Zeile
+       known: false. 1359 Tests gruen gegen PostgreSQL 16 mit pg_trgm, CI gruen, ruff sauber,
+       get_item_details p95 8,7 ms gegen 300 ms Budget. Laeuft noch nicht: draft_order (T-4.5),
+       ein echtes Modell (T-2.4, weiterhin FakeLLM), die Telefonie (C2 offen), die echte Karte
+       (C1 offen).
+Artifacts: PR #118 squash-gemergt, main = 4933cee. Drei Commits auf dem Branch:
+       34d9c83 (Merge-Konflikt in docs/01 aufgeloest), 50c75a1 (beide Review-Befunde gefixt),
+       d1ee25d (docs/01 und docs/07 auf den neuen Vertrag). api/domain/menu/{details,items}.py,
+       api/schemas/menu.py, api/tools/get_item_details.py, api/tests/test_domain_menu_details.py
+       (19 Faelle), docs/04, docs/05, docs/01 auf v1.23.0, CHANGELOG. Danach in derselben Sitzung
+       erledigt: PR #122 (Compose-Mounts, hier angestossen) gemergt, main = d8561e8, und PR #120
+       (Jules zu T-4.3) geschlossen.
+Decisions: allergen_question als Pflichtfeld im Request, ohne Vorgabewert - der Satz zum Rueckruf
+       darf nur auf die Allergenfrage kommen, weil dasselbe Tool auch Optionen beantwortet; ein
+       Default entscheidet still und falsch, ein fehlendes Pflichtfeld faellt als invalid_input
+       sofort auf. Der Satz bleibt dabei im Code (CLAUDE.md 9), nur das Ob wandert zum Agenten
+       · confirmed_at als Ortsdatum des Mandanten statt UTC-Datum (CLAUDE.md 8), wie jedes andere
+       Domain-Modul es haelt · die beiden Codex-P1 nicht gefixt, sondern widerlegt: sie galten dem
+       search_menu-Entwurf, den 51192fc entfernt hat, und mains Fassung deckt beide durch
+       bestehende Regressionstests ab.
+Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Interner Stand:
+       Block 3 (Stufe 2: Abholung, Sammel-Issue #9) bei 4 von 9 Aufgaben - T-4.1 bis T-4.4 fertig,
+       T-4.5 bis T-4.9 offen. T-4.5 ist der naechste Schritt und hat alle Abhaengigkeiten erfuellt.
+Open: T-4.5 draft_order mit allen Pruefungen und readback - alle Abhaengigkeiten erfuellt,
+       Testdaten reichen, bis die echte Karte da ist. Danach C1 Karten-CSV und der echte Import.
+       Nichts blockiert: die Nebenbaustellen dieser Sitzung sind zu.
+Lessons: Codex reviewt einen Commit, nicht die PR - die Zeile "Reviewed commit" steht im Kommentar
+       und zeigte hier auf db4be19d0, einen Stand, den ein spaeterer Merge laengst entfernt hatte.
+       Immer gegen den Head pruefen, bevor man einen Bot-Befund fixt, und nach Fix-Commits
+       @codex review auf den echten Head setzen · GitHub laesst den Autor seine eigene PR nicht
+       freigeben, ein Bot-Review landet als COMMENTED, nie als APPROVED - reviewDecision bleibt
+       auf eigenen PRs leer · der api-Container mountet weder sim/ noch Makefile, deploy/,
+       .claude/ oder docs/, deshalb melden make test vier Collection-Errors und make lint drei
+       falsche I001, waehrend die CI gruen ist; mit allen Pfaden dazugemountet sind es 1359 gruene
+       Tests. Das ist der Inhalt von PR #122.
+
 ## Handover 17.09.2026 – T-2.1, T-2.2
 Status: agent/ conversation core running: prompt.py, state.py, dispatch.py, loop.py, llm.py+FakeLLM
        (T-2.1); ladder.py (Verständnis-Leiter) and escalation.py (Sofort-Auslöser) wired into

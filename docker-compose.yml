@@ -32,9 +32,31 @@ services:
       - ./scripts:/app/scripts
       - ./evals:/app/evals
       - ./db:/app/db
+      # Quellcode wie ./api: ohne dieses Verzeichnis koennen die sim-Tests `sim` nicht
+      # importieren (4 Collection-Errors) und ruff sortiert sim-Importe als Fremdpaket
+      # ein (falsche I001-Meldungen). make test und make lint wichen so von der CI ab.
+      - ./sim:/app/sim
+      # scripts/status_bump.py schreibt docs/01_STATUS.md, deshalb nicht read-only.
+      - ./docs:/app/docs
       # Ohne diese Datei findet ruff im Container keine Konfiguration und prueft nach
       # seiner Standardmenge: make lint wuerde andere Regeln melden als die CI.
       - ./pyproject.toml:/app/pyproject.toml:ro
+      # Die folgenden Pfade liest die Testsuite nur: test_commands.py prueft die
+      # Slash-Befehle gegen Makefile, .claude/commands und die verwiesenen Dokumente,
+      # test_gui_router.py prueft deploy/Caddyfile. Fehlen sie, faellt pytest mit
+      # FileNotFoundError aus, obwohl der Code in Ordnung ist.
+      - ./Makefile:/app/Makefile:ro
+      - ./deploy:/app/deploy:ro
+      # Nur commands/, nicht ganz .claude/: dort liegen im Haupt-Checkout die
+      # Worktrees mit ihren eigenen .env-Dateien, die im Container nichts zu
+      # suchen haben (CLAUDE.md §8). Der Test liest ohnehin nur die Befehle.
+      - ./.claude/commands:/app/.claude/commands:ro
+      - ./CLAUDE.md:/app/CLAUDE.md:ro
+      - ./README.md:/app/README.md:ro
+      - ./CHANGELOG.md:/app/CHANGELOG.md:ro
+      # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
+      # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
+      - ./docker-compose.yml:/app/docker-compose.yml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
@@ -50,6 +72,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Hier laufen weder pytest noch ruff: der Prozess braucht nur api, scripts und db.
     volumes:
       - ./api:/app/api
       - ./scripts:/app/scripts

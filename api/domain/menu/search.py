@@ -40,6 +40,7 @@ from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
+from api.domain.menu.split import split_positions
 from api.models import ItemAlias, MenuItem
 from api.schemas.menu import MenuHit, SearchResult
 
@@ -52,6 +53,9 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
+SAY_ONE_AT_A_TIME = (
+    "Das waren mehrere Sachen. Sagen Sie mir bitte eins nach dem anderen - was zuerst?"
+)
 AMBIGUOUS_LIMIT = 3
 # Abstand der Sitzungsschwelle zur eigentlichen Schwelle, damit der Vorfilter
 # sicher eine Obermenge bleibt. Klein genug, um keine echte Zeile zusaetzlich
@@ -157,6 +161,16 @@ def search_menu(
 
     if not text:
         raise NotFound("Anfrage ohne Inhalt", say=SAY_NOT_FOUND)
+
+    # Ein Satz, eine Position: nennt der Satz mehrere, fragt die Suche nach,
+    # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
+    # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
+    # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
+    parts = split_positions(query)
+    if len(parts) > 1:
+        raise Ambiguous(
+            "mehrere Positionen: " + " | ".join(parts), say=SAY_ONE_AT_A_TIME
+        )
 
     # 2. Alias exakt. Aliase stehen wie aus der Karte da, oft mit Artikel ("die
     # knusprigen rollen"), der Gast sagt "die knusprigen Rollen, bitte". Beide

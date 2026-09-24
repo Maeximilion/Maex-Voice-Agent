@@ -38,7 +38,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 - No phone line, no provider chosen (decision D1)
 - The column "Neue Bestellungen" stays empty until T-4.7, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
-- No orders yet: the schema is in place (migration 002), the menu can be imported, searched (`POST /v1/tools/search_menu`) and asked about (`POST /v1/tools/get_item_details`), but `draft_order` and the order confirmation follow in T-4.5
+- Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code, but only in mode `primary` does the order go to the kitchen at once - in every other mode it waits for approval on the tablet, which is not built yet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events

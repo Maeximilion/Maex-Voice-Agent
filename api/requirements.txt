@@ -10,3 +10,5 @@ httpx==0.28.*
 pytest==9.*
 pytest-asyncio==1.4.*
 ruff==0.16.*
+# nur fuer test_compose_mounts.py; kommt ohnehin mit uvicorn[standard]
+pyyaml==6.*

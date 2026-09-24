@@ -16,6 +16,16 @@ from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
 
 
+def option_key(text: str) -> str:
+    """Vergleichsform von Gruppen- und Optionsnamen: ohne Groß-/Kleinschreibung und Mehrfach-Leerzeichen.
+
+    Import und draft_order vergleichen damit gleich. Sonst nähme der Import
+    "Sauce/Erdnuss" und "sauce/erdnuss" als zwei Optionen an, und draft_order
+    könnte nicht sagen, welche gemeint ist (Codex PR #124).
+    """
+    return " ".join(text.split()).casefold()
+
+
 def is_sold_out(item: MenuItem, now: datetime) -> bool:
     """Ausverkauft bis `sold_out_until` (docs/06 §3). Kein Wert heisst verfuegbar."""
     return item.sold_out_until is not None and item.sold_out_until > now
