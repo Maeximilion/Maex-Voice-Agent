@@ -24,7 +24,6 @@ from zoneinfo import ZoneInfo
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from api.domain.menu.search import SAY_NOT_FOUND
 from sim.scripted_order import PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -83,6 +82,12 @@ _NAME = re.compile(
 )
 # Mindestens sieben Ziffern, damit Uhrzeit ("19:30") und Datum ("22.09.") nicht als
 # Rufnummer durchgehen. Der Punkt fehlt deshalb bewusst in der Zeichenklasse.
+# Nur die eindeutigen Einleitungen eines Namens. Das nackte "auf" von _NAME ist in
+# einem Gerichtnamen eine Praeposition ("Ente auf Reis") (Codex PR #133, P2).
+_NAME_CLAUSE = re.compile(
+    r"(?i:auf den namen|mein name ist|name ist|ich heiße|ich heisse)\s+"
+    r"[A-ZÄÖÜ][^\s,.;!?]{1,40}"
+)
 _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
 _TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _TIME_DOT = re.compile(r"\b(\d{1,2})\.(\d{2})\s*uhr\b", re.IGNORECASE)
@@ -144,8 +149,10 @@ class ScriptedLLM:
             self._out_of_scope_request = self._out_of_scope_request or text
             return self._out_of_scope(slots, patch)
 
+        started_pickup = False
         if self._pickup is None and _wants_pickup(text):
             self._pickup = PickupScript()
+            started_pickup = True
             if not self._status_checked:
                 self._opening_query = _opening_dish(text)
 
@@ -158,6 +165,16 @@ class ScriptedLLM:
             )
 
         if self._pickup is not None:
+            if started_pickup:
+                # Abholung erst nach der Statusabfrage genannt ("Guten Tag", dann
+                # "die 23 zum Abholen"): wie im ersten Satz nur das Gericht suchen,
+                # "zum Abholen" verdeckte sonst die 23 (Codex PR #130, P2). Ohne
+                # Gericht die Frage nach der Bestellung, das Gesagte (Name,
+                # Nummer) bleibt im state_patch (Review PR #133).
+                dish = _opening_dish(text)
+                if dish is None:
+                    return self._pickup.start(patch=patch)
+                text = dish
             turn = self._pickup.on_customer(text, slots, patch)
             self._remember_query(turn)
             return turn
@@ -224,6 +241,10 @@ class ScriptedLLM:
             return self._after_opening_search(result, slots)
         if not result.get("ok"):
             if name == "search_menu" and self._pickup is not None:
+                # War es die Antwort auf eine Rueckfrage, gilt die Frage weiter.
+                reopened = self._pickup.on_search_failed(say)
+                if reopened is not None:
+                    return reopened
                 # Was vor einer nachgeholten Suche verstanden wurde, geht mit.
                 say = _join(self._pickup.take_carry(), say)
             return self._after_failure(name, say)
@@ -264,17 +285,15 @@ class ScriptedLLM:
     def _after_opening_search(
         self, result: dict[str, Any], slots: dict[str, Any]
     ) -> LLMTurn:
-        """Die Suche mit dem ersten Satz. Nennt er kein Gericht ("Ich moechte etwas
-        zum Abholen bestellen"), findet sie nichts - dann die normale Frage, was
-        der Gast bestellen moechte, ohne die allgemeine Fehlermeldung, die er
-        nicht ausgeloest hat. Eine genaue Antwort ("Die Nummer 99 habe ich nicht
-        auf der Karte", "Welche Nummer meinen Sie?") wird gesprochen. Sonst das
-        Ergebnis, mit der Begruessung davor."""
+        """Die Suche mit dem Gericht aus dem ersten Satz, die Begruessung davor.
+        Gesucht wird nur, wenn der Satz ein Gericht nennt (`_opening_dish`); findet
+        die Suche es nicht, hoert der Gast das ("Schnitzel" gibt es nicht), statt
+        nur gefragt zu werden, was er bestellen moechte (Codex PR #133, P2)."""
         assert self._pickup is not None
         prefix, self._opening_prefix = self._opening_prefix or None, None
         if not result.get("ok"):
             say = result.get("say")
-            if not say or say == SAY_NOT_FOUND:
+            if not say:
                 return self._pickup.start(prefix)
             return LLMTurn(say=_join(prefix, say))
         turn = self._pickup.on_search(
@@ -512,7 +531,7 @@ def _day(text: str, local_now: datetime) -> date | None:
 # Was im ersten Satz nur die Abholung ankuendigt, nicht das Gericht. Ein echtes
 # Modell gaebe search_menu nur das Gericht; das Skript streicht den Rest.
 _PICKUP_WORDS = re.compile(
-    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\betwas\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
+    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\b(?:et)?was\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
     re.IGNORECASE,
 )
 
@@ -526,9 +545,12 @@ def _wants_pickup(text: str) -> bool:
 
 
 def _opening_dish(text: str) -> str | None:
-    """Das Gericht aus dem ersten Satz ("Ich moechte die 23 zum Abholen" ->
-    "Ich moechte die 23"), oder None, wenn nur die Abholung angekuendigt wird."""
-    rest = _PICKUP_WORDS.sub(" ", text).strip(" .,!?")
+    """Das Gericht aus dem Satz, der die Abholung ankuendigt ("Ich moechte die 23
+    zum Abholen" -> "Ich moechte die 23"), oder None, wenn er keins nennt. Name
+    und Rufnummer im selben Satz sind kein Gericht: sie kommen in den
+    state_patch, nicht in die Suche (Review PR #133)."""
+    rest = _PICKUP_WORDS.sub(" ", text)
+    rest = _PHONE.sub(" ", _NAME_CLAUSE.sub(" ", rest)).strip(" .,!?")
     return rest if normalize_query(rest) or re.search(r"\d", rest) else None
 
 

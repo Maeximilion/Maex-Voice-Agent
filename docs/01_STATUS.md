@@ -185,6 +185,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | Reservation key without `note` (`agent/dispatch.py` `_create_reservation`) | Codex PR #127 (P2, after the fully worked round, rule 21.09.2026): the derived key leaves out `note`, so a correction of only the note after the readback ("mit Hochstuhl") replays the old draft and readback without it. Fix: include every persisted request field in the key | with T-4.10 (wishes and notes), latest before G1 |
 | Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
@@ -266,6 +267,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 - **v1.31.1 · 24.09.2026:** Anrufprotokoll: diktierte Nummern, E-Mails und Adressen abgelehnt, richtige Zeilennummern, UTF-8-Meldung, durchgesehene Faelle nie ueberschrieben, Wochentag je Tag
 - **v1.31.0 · 24.09.2026:** Anrufprotokoll ohne Tonaufnahme: Druckbogen, CSV-Format (docs/17), scripts/call_log.py fuer C1-Baseline und Eval-Entwuerfe
+- **v1.30.1 · 24.09.2026:** Vier Befunde aus PR #130 im Text-Telefon behoben (fuehrende Null keine Menge, Menge bleibt bei neuer Suche, Abholung im spaeteren Satz, jedes ausverkaufte Gericht wird gesagt); dazu das eigene Review: Menge nach der Regel der Domain, gesprochene Nummer waehlt den Vorschlag, `canonical_card` an einer Stelle. Review-Regel verschaerft (Maxi): nach der abgearbeiteten Runde werden P1 noch vor dem Merge gefixt, nur P2 vermerkt
 - **v1.30.0 · 24.09.2026:** Projektpflege traegt PR-Felder und Assignee/Label nach
 - **v1.29.0 · 24.09.2026:** Projektpflege sammelt offene Entscheidungen in einem Issue mit Erwaehnung
 - **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte
