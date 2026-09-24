@@ -124,20 +124,35 @@ _HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
 # "Hauptstrasse Nr. 12" wird "hauptstrasse 12". "die Nr. 23" wird "die 23" und
 # bleibt die Nummer auf der Karte.
 _NR = re.compile(r"\b(?:nr\.?|nummer)\s*(?=\d)")
+# Das Wort direkt vor einer Zahl ist kein Strassenname, wenn es ein Artikel,
+# eine Zeit- oder Mengenangabe ist: "am Freitag die 23", "am Samstag gegen
+# 19.30", "um halb acht". Sonst waere jede zweite Bestellung eine Adresse.
+_NOT_STREET = (
+    r"(?:der|die|das|den|dem|des|ein|eine|einen|um|gegen|ab|bis|ca|circa|etwa"
+    r"|halb|viertel|fuer|mit|und|oder|je|nur|noch|so|heute|morgen|abend|mittag"
+    r"|abholen|abholung|wochenende|montag|dienstag|mittwoch|donnerstag|freitag"
+    r"|samstag|sonntag|januar|februar|maerz|april|mai|juni|juli|august"
+    r"|september|oktober|november|dezember)"
+)
+# Nach der Zahl: keine Uhrzeit, kein Datum ("19.30", "25.09."), keine Menge.
+_NOT_HOUSE_NO = (
+    r"(?![.:]\d)"
+    r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
+)
 _ADDRESS = re.compile(
     r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer|markt|hof"
     r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*\d+"
-    # Nach einem Hinweiswort ist jede Zahl eine Hausnummer ("meine Adresse ist
-    # Lindenblick 4"), ausser vor Minuten, Uhr und aehnlichem.
+    # Nach einem Hinweiswort bis zum naechsten Satzzeichen ist eine Zahl hinter
+    # einem Namen eine Hausnummer ("meine Adresse ist Lindenblick 4"). Das Komma
+    # trennt: "Lieferung nach Weststadt, zwei Pizza".
     r"|\b(?:adresse|wohne|wohnen|wohnt|liefern an|lieferung an|bringen an"
-    r"|liefern nach|lieferung nach)\b[^|.!?]{0,40}?\b\d{1,4}[a-z]?\b"
-    r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
+    rf"|liefern nach|lieferung nach)\b[^|.!?,;]{{0,40}}?\b(?!{_NOT_STREET}\s)"
+    rf"[a-z-]+\s+\d{{1,4}}[a-z]?\b{_NOT_HOUSE_NO}"
     r"|\b(?:am|im|an der|an den|auf der|auf dem|in der|in den|zum|zur"
-    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+\d{1,3}[a-z]?\b"
-    r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
+    rf"|hinter der|unter den)\s+(?:[a-z-]+\s+){{0,2}}(?!{_NOT_STREET}\s)"
+    rf"[a-z-]+\s+\d{{1,3}}[a-z]?\b{_NOT_HOUSE_NO}"
     r"|\bhausn(?:umme)?r\b|\b\d{5}\s+[a-z]{3,}"
 )
-_WORD = re.compile(r"[a-z0-9]+")
 
 
 @dataclass(frozen=True)
@@ -212,7 +227,9 @@ def _spoken_phone(text: str) -> bool:
     Datum ohne Jahr eine Nummer (dafuer ist _PHONE da)."""
     digits = 0
     spoken = False
-    for token in _WORD.findall(fold(text)):
+    # Ein Komma, Semikolon oder | trennt zwei Zahlen ("hundertzwanzig,
+    # hundertdreissig" sind zwei Nummern der Karte, docs/17).
+    for token in re.findall(r"[a-z0-9]+|[,;|]", fold(text)):
         if token.isdigit():
             count = len(token) if spoken else 0
         elif token in ARTICLES:

@@ -1002,3 +1002,31 @@ def test_durchgesehener_fall_mit_falschem_expected_wird_gemeldet(
     (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
     write_cases(entries, tmp_path / "entwuerfe")
     assert "Fall nicht lesbar" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "am Freitag die 23",
+        "Tisch am Freitag den 25.09. um 19 Uhr",
+        "vier Personen am Samstag gegen 19.30",
+        "zum Abholen um halb acht zwei Pizzen",
+        "Lieferung nach Weststadt, zwei Pizza",
+        "wir wohnen in der Weststadt, zwei Pizza bitte",
+        "am Sonntag fuer 4 Personen",
+        "im Oktober 12 Leute",
+    ],
+)
+def test_alltagssaetze_sind_keine_adresse(text):
+    """Eigenes Review PR #135: Wochentag, Datum, Uhrzeit, Menge und Nummer der
+    Karte nach "am", "zum", "in der" oder "wohnen" galten als Hausnummer; die
+    ganze Datei war rot."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors == [], text
+
+
+def test_komma_trennt_gesprochene_zahlen():
+    """Eigenes Review PR #135: docs/17 sagt, ein Komma trennt Nummern der
+    Karte; das Komma fiel vor dem Zaehlen weg."""
+    _, errors = parse(HEADER + _row(phrases="hundertzwanzig, hundertdreissig"))
+    assert errors == []
