@@ -754,3 +754,51 @@ def test_ganze_minute_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsy
         main([str(csv_file), "--cases", str(entw)])
     err = capsys.readouterr().err
     assert erster.name in err
+
+
+def test_ueberlauf_in_sonst_leerer_zeile_wird_gemeldet():
+    """Codex PR #135: eine Zeile mit acht leeren Feldern und einem neunten Wert
+    galt als Leerzeile und wurde nie geprueft."""
+    _, errors = parse(HEADER + ";;;;;;;;07215551234\n")
+    assert errors and "mehr Felder" in errors[0]
+
+
+@pytest.mark.parametrize("value", ["1e308", "07215551234", "600"])
+def test_unplausible_dauer_wird_abgelehnt(value):
+    """Codex PR #135: eine endliche, aber unsinnige Dauer verdarb die Baseline."""
+    _, errors = parse(HEADER + _row(duration_min=value))
+    assert errors and "Dauer" in errors[0], value
+
+
+def test_letzter_tag_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys):
+    """Codex PR #135: faellt der einzige Anruf am Rand des Zeitraums weg, lag
+    sein Datum ausserhalb der neuen Grenzen und blieb still."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    csv_file.write_text(
+        HEADER + _row(date="20.09.2026") + _row(date="24.09.2026"), encoding="utf-8"
+    )
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    letzter, _ = parse(HEADER + _row(date="24.09.2026"))
+    name = next(
+        p.name
+        for p in entw.iterdir()
+        if p.name.startswith(
+            to_case(
+                letzter[0], (tmp_path / ".call_log_salt").read_text(encoding="utf-8")
+            )["id"]
+        )
+    )
+    case = json.loads((entw / name).read_text(encoding="utf-8"))
+    del case["review"]
+    (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
+    capsys.readouterr()
+    csv_file.write_text(HEADER + _row(date="20.09.2026"), encoding="utf-8")
+    main([str(csv_file), "--cases", str(entw)])
+    assert name in capsys.readouterr().err
+
+
+def test_gleicher_anruf_mit_anderer_dauer_ist_ein_zweiter_anruf():
+    """Codex PR #135: die Dauer unterscheidet zwei Anrufe derselben Minute."""
+    entries, _ = parse(HEADER + _row(duration_min="2") + _row(duration_min="5"))
+    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]

@@ -77,6 +77,8 @@ OUTCOME_SHORT = {
     "ab": "abgebrochen",
 }
 WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
+# Laenger telefoniert niemand eine Bestellung; alles darueber ist ein Tippfehler.
+MAX_MINUTES = 240
 # Hierhin wandern durchgesehene Faelle; der Entwurfslauf raeumt seinen Ordner
 # leer und darf deshalb nie dorthin schreiben.
 EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
@@ -241,14 +243,16 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         # letzte Zeile des Eintrags, bei einzeiligen Eintraegen genau die richtige.
         line = reader.line_num
         row = {k: (v or "").strip() for k, v in raw.items() if k in COLUMNS}
-        if not any(row.values()):
-            continue
+        # Vor der Leerzeilen-Pruefung: ";;;;;;;;07215551234" hat acht leere
+        # Spalten, der Wert im neunten Feld darf trotzdem nicht ungeprueft bleiben.
         if raw.get(None):  # type: ignore[call-overload]
             # Ein Semikolon im Freitext verschiebt jede Spalte dahinter still.
             errors.append(
                 f"Zeile {line}: mehr Felder als Spalten, Semikolon im Text? "
                 "In items und problems Komma verwenden"
             )
+            continue
+        if not any(row.values()):
             continue
         problems = [f"Zeile {line}: {c} fehlt" for c in REQUIRED if not row[c]]
         for column in FREE_TEXT:
@@ -290,7 +294,9 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                 duration = float(row["duration_min"].replace(",", "."))
                 # float() nimmt auch nan, inf und Negatives; ein Wert davon
                 # verdirbt den Mittelwert der ganzen Baseline.
-                if not math.isfinite(duration) or duration < 0:
+                # Oben begrenzt: 1e308 ist endlich, eine eingefuegte Telefonnummer
+                # auch, und beide verderben die Baseline.
+                if not math.isfinite(duration) or not 0 <= duration <= MAX_MINUTES:
                     raise ValueError(row["duration_min"])
             except ValueError:
                 errors.append(
@@ -339,7 +345,14 @@ def _with_ordinals(entries: list[Entry]) -> list[Entry]:
     out = []
     for e in entries:
         minute = (e.day, e.hour, e.minute)
-        body = (e.intent, e.outcome, tuple(e.phrases), e.items, e.problems)
+        body = (
+            e.intent,
+            e.outcome,
+            tuple(e.phrases),
+            e.items,
+            e.problems,
+            e.duration_min,
+        )
         bodies = seen.setdefault(minute, [])
         if body not in bodies:
             bodies.append(body)
@@ -534,18 +547,14 @@ def write_cases(
 def _reconcile(
     entries: list[Entry], salt: str, done: dict[str, Path], known: dict[str, str]
 ) -> None:
-    """Jeder durchgesehene Fall, dessen Anrufdatum im Zeitraum der CSV liegt,
-    braucht eine Zeile. Das Datum kommt aus dem lokalen Verzeichnis der IDs
-    (nur Datum, keine Uhrzeit); aeltere Faelle hat die Loeschfrist entfernt
-    und sind kein Alarm."""
-    if not entries:
-        return
-    first = min(e.day for e in entries).isoformat()
-    last = max(e.day for e in entries).isoformat()
+    """Jeder durchgesehene Fall, dessen ID im lokalen Verzeichnis steht, braucht
+    eine Zeile in der CSV. Keine Datumsgrenze: faellt der einzige Anruf am Rand
+    des Zeitraums weg, laege sein Datum sonst ausserhalb. Abgelaufene IDs hat
+    --loeschen schon aus dem Verzeichnis entfernt (_forget_before), sie sind
+    kein Alarm."""
     current = {case_id(e, salt).removeprefix("protokoll_") for e in entries}
     for cid, path in sorted(done.items()):
-        day = known.get(cid)
-        if day and first <= day <= last and cid not in current:
+        if cid in known and cid not in current:
             print(
                 f"Durchgesehener Fall hat keine Protokollzeile mehr: {path}. "
                 "Fall anpassen oder entfernen",
