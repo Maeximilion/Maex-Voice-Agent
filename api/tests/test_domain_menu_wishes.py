@@ -369,3 +369,19 @@ def test_merkmal_im_namen_und_danach_ein_wunsch(session, tenant_id):
     result = suche(session, tenant_id, "Sommerrollen mit Garnelen ohne Koriander")
     assert [h.number for h in result.results] == ["24"]
     assert (result.wish.kind, result.wish.text) == ("note", "ohne Koriander")
+
+
+def test_weglassen_einer_zutat_aus_dem_namen_ist_ein_hinweis(session, tenant_id):
+    """Codex PR #139, P2: "Sommerrollen ohne Garnelen" - die Garnelen stehen im
+    Namen, das "ohne" macht daraus trotzdem einen Hinweis fuer die Kueche."""
+    result = suche(session, tenant_id, "Sommerrollen ohne Garnelen")
+    assert [h.number for h in result.results] == ["24"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Garnelen")
+
+
+def test_option_mit_unbekanntem_rest_wird_nicht_still_verkuerzt():
+    """Codex PR #139, P2: "mit Nudeln und Pommes" - Pommes kennt die Karte nicht.
+    Nur Nudeln zu nehmen verschwiege die Pommes; der Wunsch gilt als unbekannt."""
+    assert classify_wish("mit Nudeln und Pommes", BEILAGE).kind == "unknown"
+    # Was nach "statt" steht, ist das Ersetzte, kein weiterer Wunsch.
+    assert classify_wish("mit Nudeln statt Reis bitte", BEILAGE).kind == "option"

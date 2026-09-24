@@ -147,14 +147,18 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
     wanted = set(words[:cut])
     matches = [
-        (group, option)
+        (group, option, used)
         for group in groups
         for option in group.options
-        if _names(option.name, group.group, wanted)
+        if (used := _names(option.name, group.group, wanted))
     ]
     if len(matches) != 1:
         return Wish(text=text, kind="unknown")
-    group, option = matches[0]
+    group, option, used = matches[0]
+    # Was die Option nicht erklaert, darf nicht still wegfallen: "mit Nudeln und
+    # Pommes" ist kein "mit Nudeln" (Codex PR #139).
+    if wanted - used - _ADD - _LEAD_FILLER - _GLUE:
+        return Wish(text=text, kind="unknown")
     return Wish(
         text=text,
         kind="option",
@@ -165,14 +169,20 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     )
 
 
-def _names(option: str, group: str, wanted: set[str]) -> bool:
-    """Nennt der Wunsch die Option? Als eigenes Wort ("mit Erdnuss") oder
-    zusammengesetzt mit dem Gruppennamen ("Erdnusssauce" = Erdnuss + Sauce).
-    Kein beliebiger Wortanfang: "Reisnudeln" ist nicht die Option Reis."""
+# Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
+_GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
+
+
+def _names(option: str, group: str, wanted: set[str]) -> set[str]:
+    """Die Woerter des Wunsches, die die Option nennen - leer, wenn sie es nicht
+    tun. Als eigenes Wort ("mit Erdnuss") oder zusammengesetzt mit dem
+    Gruppennamen ("Erdnusssauce" = Erdnuss + Sauce). Kein beliebiger
+    Wortanfang: "Reisnudeln" ist nicht die Option Reis."""
     words = fold(option).split()
     if set(words) <= wanted:
-        return True
-    return len(words) == 1 and words[0] + fold(group).replace(" ", "") in wanted
+        return set(words)
+    compound = words[0] + fold(group).replace(" ", "") if len(words) == 1 else None
+    return {compound} if compound in wanted else set()
 
 
 def open_wish(text: str) -> Wish:
@@ -198,6 +208,14 @@ def has_number(wish: str) -> bool:
 def names_it(name: str, wish: str) -> bool:
     """Gehoert der "Wunsch" zum Namen des Gerichts? "mit Garnelen" in
     "Sommerrollen mit Garnelen" ist kein Wunsch, sondern der Name."""
+    # "ohne Garnelen" gehoert nie zum Namen, auch wenn die Garnelen darin stehen:
+    # es ist genau der Hinweis fuer die Kueche (Codex PR #139).
+    lead = next(
+        (fold(w) for w in re.findall(r"[^\W_]+", wish) if fold(w) not in _LEAD_FILLER),
+        None,
+    )
+    if lead in _REMOVE:
+        return False
     in_name = set(fold(name).split())
     content = {
         w
