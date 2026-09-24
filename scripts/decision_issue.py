@@ -31,6 +31,7 @@ from dataclasses import dataclass
 API_URL = "https://api.github.com"
 LABEL = "projektpflege"
 TITLE = "Projektpflege: offene Entscheidungen"
+INTRO = "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheiden kann."
 # Die Schluessel der gemeldeten Befunde stehen unsichtbar im Issue. Nur so erkennt
 # der naechste Lauf, was neu ist, ohne eigenen Speicher.
 KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->")
@@ -42,7 +43,7 @@ class IssueError(RuntimeError):
 
 @dataclass
 class Plan:
-    """Was mit dem Issue passieren soll. action: none, create, update oder close."""
+    """Was mit dem Issue passieren soll. action: none, create, update, reopen oder close."""
 
     action: str
     body: str | None = None
@@ -92,26 +93,41 @@ def render_body(findings: dict[str, list[dict]], intro: str) -> str:
 
 
 def plan(
-    existing_body: str | None, findings: dict[str, list[dict]], mention: str
+    existing_body: str | None,
+    findings: dict[str, list[dict]],
+    mention: str,
+    closed: bool = False,
 ) -> Plan:
-    """Die ganze Entscheidung, ohne Netz. existing_body=None heisst: kein offenes Issue."""
+    """Die ganze Entscheidung, ohne Netz.
+
+    existing_body=None heisst: es gab nie ein Issue. closed=True heisst: es gibt eins,
+    aber es ist zu. Dann wird es wieder geoeffnet statt neu angelegt - sonst sammelte
+    jeder Zyklus aus "erledigt" und "wieder etwas offen" ein Issue mehr.
+    """
     if not findings:
-        if existing_body is None:
+        if existing_body is None or closed:
             return Plan("none")
         return Plan(
             "close", comment="Alle Punkte sind erledigt. Das Issue schliesst sich."
         )
 
+    if closed:
+        # Beim Schliessen galt alles als erledigt. Was wiederkommt, ist wieder neu und
+        # wird erwaehnt, auch wenn sein Schluessel noch im alten Text steht.
+        current = finding_keys(findings)
+        listing = "\n".join(f"- {current[key]}" for key in sorted(current))
+        return Plan(
+            "reopen",
+            body=render_body(findings, INTRO),
+            comment=f"{mention} Wieder offen:\n\n{listing}",
+        )
+
     if existing_body is None:
         # Nur beim Anlegen steht die Erwaehnung im Text. Bei spaeteren Aenderungen des
         # Texts nicht - wer bei jeder Aktualisierung erwaehnt wird, liest bald gar nichts mehr.
-        intro = f"{mention} Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheiden kann."
-        return Plan("create", body=render_body(findings, intro))
+        return Plan("create", body=render_body(findings, f"{mention} {INTRO}"))
 
-    intro = (
-        "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheiden kann."
-    )
-    body = render_body(findings, intro)
+    body = render_body(findings, INTRO)
     current = finding_keys(findings)
     new = sorted(key for key in current if key not in parse_keys(existing_body))
     if new:
@@ -169,10 +185,17 @@ def apply(repo: str, token: str, issue: dict | None, todo: Plan) -> str:
 
     assert issue is not None
     number = issue["number"]
-    if todo.body is not None:
-        rest("PATCH", f"{base}/issues/{number}", token, {"body": todo.body})
+    # Erst erwaehnen, dann den Text schreiben. Der Text traegt die Schluessel dessen, was
+    # als gemeldet gilt. Schrieben wir ihn zuerst und scheiterte danach der Kommentar,
+    # hielte der naechste Lauf die Punkte fuer gemeldet und erwaehnte nie. So herum
+    # gibt es im Fehlerfall hoechstens eine doppelte Erwaehnung - die kleinere Panne.
     if todo.comment:
         rest("POST", f"{base}/issues/{number}/comments", token, {"body": todo.comment})
+    if todo.body is not None:
+        update: dict = {"body": todo.body}
+        if todo.action == "reopen":
+            update["state"] = "open"
+        rest("PATCH", f"{base}/issues/{number}", token, update)
     if todo.action == "close":
         rest(
             "PATCH",
@@ -210,7 +233,9 @@ def main() -> int:
         issues = (
             rest(
                 "GET",
-                f"/repos/{repo}/issues?state=open&labels={LABEL}&per_page=5",
+                # state=all: auch ein geschlossenes Issue wird wiedergefunden und wieder
+                # geoeffnet. Neueste zuerst, damit genau eines gilt.
+                f"/repos/{repo}/issues?state=all&labels={LABEL}&sort=created&direction=desc&per_page=5",
                 token,
             )
             if token
@@ -220,7 +245,12 @@ def main() -> int:
         issue = next((i for i in issues if "pull_request" not in i), None)
         # Ein Issue mit leerem Text liefert body = null. Das ist nicht dasselbe wie
         # "kein Issue" und darf nicht zu einem zweiten Issue fuehren.
-        todo = plan((issue.get("body") or "") if issue else None, findings, mention)
+        todo = plan(
+            (issue.get("body") or "") if issue else None,
+            findings,
+            mention,
+            closed=bool(issue) and issue.get("state") == "closed",
+        )
         if args.dry_run:
             print(f"Geplant: {todo.action}")
             if todo.comment:

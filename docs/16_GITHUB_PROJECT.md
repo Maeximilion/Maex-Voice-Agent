@@ -91,7 +91,7 @@ Die Job-Zusammenfassung liest niemand von selbst. Darum sammelt der Lauf alles, 
 
 - **Anlegen**, sobald etwas offen ist - mit Erwaehnung, damit die Benachrichtigung ankommt.
 - **Aktualisieren** jeden Tag, ohne erneute Erwaehnung. Eine Erwaehnung gibt es nur, wenn ein neuer Punkt dazukommt, und dann nur fuer diesen.
-- **Schliessen**, sobald nichts mehr offen ist.
+- **Schliessen**, sobald nichts mehr offen ist - und beim naechsten offenen Punkt **wieder oeffnen**, mit Erwaehnung. Es entsteht nie ein zweites Issue.
 
 Das Issue schreibt der eingebaute `GITHUB_TOKEN`, nicht der `PROJECT_TOKEN`. Der Grund ist eine Eigenheit von GitHub: eine Erwaehnung, die vom eigenen Konto kommt, loest keine Benachrichtigung aus. Kommt sie von `github-actions`, schon.
 
