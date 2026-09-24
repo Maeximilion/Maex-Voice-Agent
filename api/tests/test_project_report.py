@@ -602,3 +602,53 @@ def test_findings_json_traegt_label_und_url() -> None:
     assert daten["Pull Request ohne Merge geschlossen"] == [
         {"id": abgelehnt.node_id, "label": abgelehnt.label, "url": abgelehnt.url}
     ]
+
+
+# Codex-Review PR #134: das Entscheidungs-Issue darf sich nicht selbst melden
+
+
+def pflege_issue(**kwargs) -> project_report.Item:
+    item = eintrag(200, **kwargs)
+    item.labels = frozenset({"projektpflege"})
+    return item
+
+
+def test_entscheidungs_issue_meldet_sich_nicht_selbst() -> None:
+    """Wieder geoeffnet steht es auf In progress ohne Iteration. Meldete es sich dann
+    selbst, koennte es sich nie schliessen - eine Schleife ohne Ausgang."""
+    item = pflege_issue(status="In progress", iteration=None, tage_alt=9)
+    befunde = project_report.find_issues([item], JETZT)
+    assert sum(len(treffer) for treffer in befunde.values()) == 0
+
+
+def test_entscheidungs_issue_fehlt_nicht_wenn_es_nicht_auf_dem_board_steht() -> None:
+    befunde = project_report.find_issues([], JETZT, open_in_repo=[pflege_issue()])
+    assert befunde["Offen im Repo, fehlt auf dem Board"] == []
+
+
+def test_andere_labels_bleiben_in_der_pruefung() -> None:
+    """Gegenprobe: nur genau dieses Label nimmt einen Eintrag aus der Pruefung."""
+    item = eintrag(201, status="In progress", iteration=None)
+    item.labels = frozenset({"feature"})
+    befunde = project_report.find_issues([item], JETZT)
+    assert len(befunde["In Arbeit, aber ohne Iteration"]) == 1
+
+
+def test_parse_item_liest_labels() -> None:
+    item = project_report.parse_item(
+        {
+            "id": "L",
+            "isArchived": False,
+            "updatedAt": "2026-09-20T08:00:00Z",
+            "content": {
+                "__typename": "Issue",
+                "number": 200,
+                "title": "t",
+                "state": "OPEN",
+                "url": "u",
+                "labels": {"nodes": [{"name": "projektpflege"}]},
+            },
+        }
+    )
+    assert item is not None
+    assert item.is_maintenance

@@ -65,8 +65,8 @@ query($owner: String!, $number: Int!, $cursor: String) {
           }
           content {
             __typename
-            ... on Issue { number title state url }
-            ... on PullRequest { number title state url }
+            ... on Issue { number title state url labels(first: 20) { nodes { name } } }
+            ... on PullRequest { number title state url labels(first: 20) { nodes { name } } }
             ... on DraftIssue { title }
           }
         }
@@ -84,7 +84,7 @@ query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
     CONNECTION(states: OPEN, first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number title url updatedAt }
+      nodes { number title url updatedAt labels(first: 20) { nodes { name } } }
     }
   }
 }
@@ -126,6 +126,12 @@ mutation($projectId: ID!, $itemId: ID!) {
 IN_PROGRESS_NAMES = frozenset({"in progress", "in arbeit"})
 DONE_NAMES = frozenset({"done", "fertig", "erledigt"})
 
+# Das Label des Entscheidungs-Issues (scripts/decision_issue.py). Das Issue landet
+# ueber die automatische Aufnahme selbst auf dem Board; wieder geoeffnet steht es auf
+# In progress ohne Iteration. Pruefte man es mit, meldete es sich selbst und koennte
+# sich nie schliessen. Darum ist es von jeder Pruefung ausgenommen.
+MAINTENANCE_LABEL = "projektpflege"
+
 
 def _normalized(name: str | None) -> str:
     return (name or "").strip().casefold()
@@ -150,10 +156,15 @@ class Item:
     # "Issue", "PullRequest" oder "DraftIssue". Noetig, weil CLOSED bei einem Issue
     # erledigt heisst, bei einem Pull Request aber abgelehnt.
     kind: str | None = None
+    labels: frozenset[str] = frozenset()
 
     @property
     def status(self) -> str | None:
         return self.fields.get("Status")
+
+    @property
+    def is_maintenance(self) -> bool:
+        return MAINTENANCE_LABEL in self.labels
 
     @property
     def is_in_progress(self) -> bool:
@@ -237,6 +248,9 @@ def parse_item(node: dict) -> Item | None:
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
         kind=content.get("__typename"),
+        labels=frozenset(
+            label["name"] for label in (content.get("labels") or {}).get("nodes", [])
+        ),
         state=content.get("state"),
         url=content.get("url"),
         fields=fields,
@@ -330,6 +344,10 @@ def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
                     state="OPEN",
                     url=node["url"],
                     kind="PullRequest" if connection == "pullRequests" else "Issue",
+                    labels=frozenset(
+                        label["name"]
+                        for label in (node.get("labels") or {}).get("nodes", [])
+                    ),
                 )
                 for node in page["nodes"]
             )
@@ -360,8 +378,8 @@ def find_issues(
     # Zwilling, sie bleiben aussen vor.
     # Archiviert heisst weggelegt: fuer Drift, Dopplung und Archiv zaehlt nur das
     # sichtbare Board. Beim Abgleich mit dem Repo zaehlen archivierte dagegen mit.
-    board = [item for item in items if not item.is_archived]
-    archived = [item for item in items if item.is_archived]
+    board = [item for item in items if not item.is_archived and not item.is_maintenance]
+    archived = [item for item in items if item.is_archived and not item.is_maintenance]
 
     seen = Counter(item.url for item in board if item.url)
     duplicates = [item for item in board if item.url and seen[item.url] > 1]
@@ -417,7 +435,7 @@ def find_issues(
     }
     if open_in_repo is not None:
         findings["Offen im Repo, fehlt auf dem Board"] = find_missing(
-            items, open_in_repo
+            items, [ref for ref in open_in_repo if not ref.is_maintenance]
         )
     return findings
 

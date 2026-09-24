@@ -210,3 +210,14 @@ def test_probelauf_ohne_token_bricht_ab(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
     monkeypatch.setattr(sys, "argv", ["decision_issue.py", str(datei), "--dry-run"])
     assert decision_issue.main() == 2
+
+
+def test_label_stimmt_mit_der_ausnahme_in_der_projektpflege_ueberein() -> None:
+    """Zwei Skripte, ein Label. Weichen sie ab, meldet sich das Issue wieder selbst."""
+    pfad = Path(__file__).resolve().parents[2] / "scripts" / "project_report.py"
+    spec = importlib.util.spec_from_file_location("project_report_label", pfad)
+    assert spec and spec.loader
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules["project_report_label"] = modul
+    spec.loader.exec_module(modul)
+    assert modul.MAINTENANCE_LABEL == decision_issue.LABEL
