@@ -437,21 +437,22 @@ def _search_with_wish(
         return None
     if not found.results:
         return None
-    if found.match_type not in CLEAR_MATCHES:
-        # Gehoert der Satzteil zum Namen eines der Treffer ("Pizza mit Salami"
-        # neben "Pizza mit Pilzen"), entscheidet der ganze Satz (Codex PR #139).
-        if any(names_it(hit.name, candidates[0][2]) for hit in found.results):
-            return None
-        return found.model_copy(update={"wish": open_wish(candidates[0][1])})
     hit = found.results[0]
     first = 0
     # Ist "Gericht + erster Satzteil" selbst ein Gericht ("Pizza mit Salami"
-    # neben "Pizza"), gilt dieses, und erst der naechste Satzteil ist der Wunsch
-    # (Codex PR #139).
+    # neben "Pizza" oder "Pizza mit Pilzen"), gilt dieses, und erst der naechste
+    # Satzteil ist der Wunsch (Codex PR #139).
     named = _named_dish(session, tenant_id, f"{dish} {candidates[0][2]}")
-    if named is not None and named.id != hit.menu_item_id:
+    clear = found.match_type in CLEAR_MATCHES
+    if named is not None and (not clear or named.id != hit.menu_item_id):
         found = _single(session, "alias", named, now)
         hit, first = found.results[0], 1
+    elif not clear:
+        # Gehoert der Satzteil zum Namen eines der Treffer, entscheidet der ganze
+        # Satz (Codex PR #139).
+        if any(names_it(h.name, candidates[0][2]) for h in found.results):
+            return None
+        return found.model_copy(update={"wish": open_wish(candidates[0][1])})
     for _, wish, segment in candidates[first:]:
         if names_it(hit.name, segment):
             continue

@@ -76,6 +76,12 @@ _CLAUSE_WORDS = (
     | frozenset({"die", "der", "das", "den", "einmal"})
 )
 _PIECE = re.compile(r"[^\W_]+|[,.;!?]")
+# Unsicherheit oder Ablehnung ist keine Zutat: "weiss ich nicht", "nein", "keine
+# Ahnung" - dann bleibt die Frage offen (Codex PR #139, P1).
+_NO_INGREDIENT = frozenset(
+    {"nein", "ja", "nicht", "nichts", "weiss", "ahnung", "egal", "vielleicht"}
+    | {"unsicher", "sicher", "genau", "irgendwas", "irgendwelche"}
+)
 
 
 def _words(text: str) -> list[str]:
@@ -101,8 +107,9 @@ def _ingredient(text: str) -> str | None:
         match = pattern.search(text)
         if match:
             found = _until_new_clause(match.group(1))
-            if found:
-                return found[0].upper() + found[1:]
+            if not found or _NO_INGREDIENT & set(_words(found)):
+                return None
+            return found[0].upper() + found[1:]
     return None
 
 
@@ -131,6 +138,14 @@ def _until_new_clause(rest: str) -> str:
     return text.strip()
 
 
+def _adds(words: list[str], i: int) -> bool:
+    """Beginnt hier eine Zugabe? "extra" direkt nach "ohne" gehoert zum
+    Weglassen: "ohne extra Kaese" ist keine Zugabe (Codex PR #139)."""
+    if words[i] not in _ADD:
+        return False
+    return not (words[i] == "extra" and i > 0 and words[i - 1] in _REMOVE)
+
+
 def _starts(words: list[str]) -> list[int]:
     """Wo ein Wunsch beginnen kann, in Reihenfolge: an "ohne", "kein", "mit",
     "extra"; bei "statt" ein Wort davor; bei einer Allergie am Anfang ihres
@@ -138,7 +153,7 @@ def _starts(words: list[str]) -> list[int]:
     #139). Nach einer Allergie beginnt kein weiterer Wunsch."""
     starts: list[int] = []
     for i, word in enumerate(words):
-        if word in _REMOVE or word in _ADD:
+        if word in _REMOVE or _adds(words, i):
             starts.append(i)
         elif word in _INSTEAD and i > 0 and words[i - 1] != ",":
             starts.append(i - 1)
@@ -253,7 +268,11 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     tokens = list(_TOKEN.finditer(text))
     words = [fold(t.group()) for t in tokens]
     at = next(
-        (i for i, w in enumerate(words) if i > 0 and (w in _ADD or w in _INSTEAD)),
+        (
+            i
+            for i, w in enumerate(words)
+            if i > 0 and (_adds(words, i) or w in _INSTEAD)
+        ),
         None,
     )
     if at is None:

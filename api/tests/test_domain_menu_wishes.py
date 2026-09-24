@@ -552,3 +552,46 @@ def test_wunsch_zur_einfachen_pizza_bleibt_wunsch(session, tenant_id):
     result = suche(session, tenant_id, "Pizza ohne Zwiebeln")
     assert [h.number for h in result.results] == ["62"]
     assert (result.wish.kind, result.wish.text) == ("note", "ohne Zwiebeln")
+
+
+def test_ganzer_name_bei_mehrdeutigem_praefix_mit_zweitem_wunsch(session, tenant_id):
+    """Codex PR #139, P2: ohne die einfache Pizza ist "Pizza" mehrdeutig. In
+    "Pizza mit Salami ohne Zwiebeln" gilt der ganze Name, der zweite Satzteil
+    bleibt Wunsch - sonst fiele "ohne Zwiebeln" nach der Rueckfrage weg."""
+    pizza = session.scalar(
+        select(MenuItem).where(MenuItem.tenant_id == tenant_id, MenuItem.number == "62")
+    )
+    pizza.active = False
+    session.flush()
+    result = suche(session, tenant_id, "Pizza mit Salami ohne Zwiebeln")
+    assert [h.number for h in result.results] == ["60"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Zwiebeln")
+
+
+@pytest.mark.parametrize("gesagt", ["ohne extra Käse", "keine extra Nudeln"])
+def test_extra_im_weglassen_ist_keine_zugabe(gesagt):
+    """Codex PR #139, P2: "extra" direkt nach "ohne" gehoert zum Weglassen. Sonst
+    kaeme die abgelehnte Zugabe als Option in die Bestellung."""
+    wish = classify_wish(gesagt, BEILAGE)
+    assert (wish.kind, wish.text, wish.option) == ("note", gesagt, None)
+    assert first_split(f"die 47 {gesagt}") == ("die 47", gesagt)
+
+
+def test_extra_nach_dem_weglassen_bleibt_zugabe():
+    wish = classify_wish("ohne Zwiebeln, extra Nudeln", BEILAGE)
+    assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Zwiebeln")
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "allergisch gegen weiß ich nicht",
+        "allergisch gegen nein",
+        "Allergie gegen keine Ahnung",
+    ],
+)
+def test_keine_zutat_ist_keine_allergie_zutat(gesagt):
+    """Codex PR #139, P1: Unsicherheit oder Ablehnung ist keine Zutat. Der Hinweis
+    "Keine Weiß ich nicht" ginge an die Kueche, die Allergie bliebe unbekannt."""
+    wish = classify_wish(gesagt, [])
+    assert (wish.kind, wish.ingredient) == ("allergy", None)

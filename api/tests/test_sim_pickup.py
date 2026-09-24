@@ -991,3 +991,15 @@ def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
     assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Weiß ich nicht.", "Nein."])
+def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
+    """Codex PR #139, P1: auf "Wogegen?" keine Zutat - die Frage bleibt offen,
+    kein Hinweis "Keine Weiß ich nicht" an die Kueche."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
