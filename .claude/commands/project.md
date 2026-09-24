@@ -1,6 +1,6 @@
 Maintain the GitHub Project board. This is the only command allowed to write to it.
 
-1. Read `docs/16_GITHUB_PROJECT.md` if the conventions are not already in context.
+1. Read `docs/16_GITHUB_PROJECT.md` if the conventions are not already in context. Then read the open issue labelled `projektpflege` - it lists what the daily run could not decide: `gh issue list --label projektpflege --state open`
 2. Run the same pass the daily Action runs, with the local gh login:
    `PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJECT_REPO=Maeximilion/Maex-Voice-Agent python scripts/project_report.py --fix`
 3. Apply the remaining mechanical fixes directly, without asking - Maxi gave standing authorization on 2026-09-24:

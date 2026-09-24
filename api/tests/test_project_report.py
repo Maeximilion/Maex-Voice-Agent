@@ -584,3 +584,21 @@ def test_geschwaerzter_oder_unbekannter_inhalt_bricht_ab(
     monkeypatch.setattr(project_report, "graphql", _board_mit([node]))
     with pytest.raises(project_report.ProjectError, match="1 Eintraege"):
         project_report.fetch_items("owner", 2, "token")
+
+
+def test_findings_json_laesst_leere_befunde_weg() -> None:
+    """'Nichts offen' muss eindeutig ein leeres Objekt sein - daran schliesst sich das Issue."""
+    eintraege = [eintrag(1)]
+    befunde = project_report.find_issues(eintraege, JETZT)
+    assert project_report.findings_to_json(befunde) == {}
+
+
+def test_findings_json_traegt_label_und_url() -> None:
+    abgelehnt = eintrag(82, state="CLOSED", status="In progress")
+    abgelehnt.kind = "PullRequest"
+    daten = project_report.findings_to_json(
+        project_report.find_issues([abgelehnt], JETZT)
+    )
+    assert daten["Pull Request ohne Merge geschlossen"] == [
+        {"label": abgelehnt.label, "url": abgelehnt.url}
+    ]

@@ -8,6 +8,8 @@ Aufruf: python scripts/project_report.py [--fix] [--archive]
         Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
         --fix      setzt Abgeschlossenes auf Done - der Lauf, den die Action taeglich macht
         --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
+        --findings-json DATEI  schreibt die offenen Befunde als JSON, fuer das
+                   Entscheidungs-Issue (scripts/decision_issue.py)
 Umgeb.: PROJECT_TOKEN   Token mit Projects-Recht (Lesen; fuer --fix/--archive Schreiben)
         PROJECT_OWNER   Kontoname, dem das Project gehoert
         PROJECT_NUMBER  Nummer des Projects aus seiner URL
@@ -420,6 +422,16 @@ def find_issues(
     return findings
 
 
+def findings_to_json(findings: dict[str, list[Item]]) -> dict[str, list[dict]]:
+    """Befunde als schlichtes JSON: Ueberschrift -> Eintraege mit Label und URL.
+    Leere Befunde fallen weg, damit 'nichts offen' eindeutig ein leeres Objekt ist."""
+    return {
+        heading: [{"label": item.label, "url": item.url} for item in found]
+        for heading, found in findings.items()
+        if found
+    }
+
+
 def render_report(
     project_title: str,
     items: list[Item],
@@ -534,6 +546,11 @@ def main() -> int:
         action="store_true",
         help="Done-Eintraege nach 14 Tagen archivieren. Nur von Hand, blendet sie aus der Roadmap aus.",
     )
+    parser.add_argument(
+        "--findings-json",
+        metavar="DATEI",
+        help="Offene Befunde als JSON schreiben, Eingabe fuer scripts/decision_issue.py.",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("PROJECT_TOKEN", "")
@@ -592,6 +609,15 @@ def main() -> int:
     except ProjectError as exc:
         print(f"Projektpflege fehlgeschlagen: {exc}", file=sys.stderr)
         return 1
+
+    if args.findings_json:
+        # Ohne Archiv-Kandidaten: die sind mit --archive erledigt und ohne es bewusst
+        # kein Befund (siehe oben). Eine leere Liste heisst: das Issue darf zu.
+        open_findings = {k: v for k, v in findings.items() if k != archive_key}
+        with open(args.findings_json, "w", encoding="utf-8") as handle:
+            json.dump(
+                findings_to_json(open_findings), handle, ensure_ascii=False, indent=2
+            )
 
     print(report)
     return 0
