@@ -15,7 +15,8 @@
 - [ ] **DSGVO** — Drittlandtransfer prüfen, falls ein Anbieter außerhalb der EU verarbeitet
 - [ ] **DSGVO** — Löschkonzept umgesetzt und getestet (`docs/03_DATA_MODEL.md`)
 - [ ] **DSGVO** — Verzeichnis der Verarbeitungstätigkeiten ergänzt
-- [ ] **DSGVO** — Datenschutz-Folgenabschätzung prüfen
+- [ ] **DSGVO** — Datenschutz-Folgenabschätzung prüfen. Entwurf v0.1 vom 24.09.2026 liegt vor (außerhalb des Repos, enthält echte Firmendaten), Prüfung durch den Datenschutzbeauftragten offen
+- [ ] **DSGVO** — Datenschutzbeauftragter benannt. Laut DSFA-Entwurf wahrscheinlich Pflicht, weil die Verarbeitung DSFA-pflichtig ist (§ 38 Abs. 1 S. 2 BDSG)
 - [ ] **Team** — informiert, Einwilligung oder Vereinbarung zu Aufnahmen liegt vor
 - [ ] **LMIV** — Allergen-Auskunft nur aus gepflegten Werten, sonst Rückruf
 - [ ] **TSE** — KI-Bestellungen werden ordnungsgemäß in der Kasse gebucht

@@ -24,6 +24,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Every agent API response follows the envelope from `docs/04_API_TOOLS.md`; errors return JSON with code and read-aloud text, never stacktrace
 - Database access with one session per request (`api/db.py`), logs as JSON lines with `request_id` and `call_id`
 - `make migrate` creates the stage-1 tables and the stage-2 tables for menu and orders (Alembic in `db/`, models in `api/models/`), `make seed` fills stage 1 idempotently with test config
+- Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -m scripts.call_log imports/anrufprotokoll.csv` prints the C1 baseline (volume, intent mix, outcomes, peak hours), `--cases <dir>` writes eval case skeletons without real customer sentences, `--frist-tage N --loeschen` enforces the deletion period; rejects files with phone numbers, e-mail, street addresses or a person's allergy
 - Menu import from CSV per `docs/14_MENU_IMPORT_FORMAT.md`: `python -m scripts.import_menu imports/ --dry-run` checks and reports, without `--dry-run` it loads; idempotent, price changes only with `--apply-price-changes`. The CSVs live in `imports/`, which is git-ignored
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
@@ -137,6 +138,8 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/13_DEPLOYMENT.md` | Operating locations, tunnel, EU server, backups, CI |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV format for menu digitization |
 | `docs/15_README_STRATEGY.md` | When and how to maintain this README |
+| `docs/16_GITHUB_PROJECT.md` | GitHub Project board: one project, derived from issues and PRs |
+| `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts |
 
 ## Contributing
 
