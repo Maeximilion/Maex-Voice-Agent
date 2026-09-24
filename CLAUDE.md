@@ -58,7 +58,8 @@ maex-voice-agent/
 ├── README.md
 ├── docker-compose.yml     Postgres · API · n8n (dev)
 ├── deploy/                Prod Compose, Caddyfile
-├── .claude/commands/      /start /task /done /bug /eval /handover
+├── .claude/commands/      /start /task /done /bug /eval /gate /project /handover
+├── .claude/skills/        Repo-specific rules Claude Code loads on demand
 ├── .github/workflows/     CI: ruff + pytest
 ├── docs/                  Planning, specs, status  →  Section 5
 ├── api/
@@ -107,13 +108,14 @@ maex-voice-agent/
 | `docs/13_DEPLOYMENT.md` | Tunnel for test calls, EU server, Caddy, backups, CI | before first test call |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV contract between chat (digitization) and import | before T-4.2 |
 | `docs/15_README_STRATEGY.md` | When and how to maintain README and CHANGELOG, versioning per gate | at every gate, with new dependencies |
+| `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
 
 ---
 
 ## 6. How You Work
 
 ### Slash Commands (`.claude/commands/`)
-`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
@@ -187,6 +189,7 @@ A task is complete when **all** of these are true:
 - Write the entire menu into the system prompt
 - Put domain logic in `tools/` or `gui/` instead of `domain/`
 - Use a provider name outside `telephony/`
+- Touch the GitHub Project board during a task: no `gh project` call in `/task`, `/done`, or `/bug`, and never a second project (`docs/16_GITHUB_PROJECT.md`)
 - Call n8n or external API directly from `domain/` (always via outbox)
 - Fix a bug without first having a red eval or unit test for it
 
