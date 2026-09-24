@@ -656,6 +656,8 @@ def _report_correction(case: dict, reviewed: Path) -> None:
     try:
         existing = json.loads(reviewed.read_text(encoding="utf-8")).get("expected", {})
     except (OSError, ValueError, AttributeError):
+        existing = None
+    if not isinstance(existing, dict):
         print(f"Fall nicht lesbar, bitte pruefen: {reviewed}", file=sys.stderr)
         return
     # Beide Seiten: auch ein Feld, das die Korrektur entfernt (intent bei einer
@@ -870,13 +872,17 @@ def main(argv: list[str] | None = None) -> int:
             f"Loeschfrist: {len(old)} Eintraege aelter als {days} Tage "
             f"(vor {cutoff:%d.%m.%Y})"
         )
-        if args.loeschen and old:
-            _replace(args.file, purge(text, cutoff), encoding="utf-8-sig")
-            known = _forget_before(known, cutoff)
-            if known_path.exists():
+        if args.loeschen:
+            if old:
+                _replace(args.file, purge(text, cutoff), encoding="utf-8-sig")
+                entries = [e for e in entries if e.day >= cutoff]
+                print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
+            # Auch ohne alte Zeilen: eine von Hand entfernte Zeile laeuft im
+            # Verzeichnis sonst nie ab.
+            kept = _forget_before(known, cutoff)
+            if kept != known:
+                known = kept
                 _save_known(known_path, known)
-            entries = [e for e in entries if e.day >= cutoff]
-            print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
         written = write_cases(entries, args.cases, salt, known)

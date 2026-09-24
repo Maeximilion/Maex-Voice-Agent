@@ -972,3 +972,33 @@ def test_salz_als_ordner_gibt_meldung_statt_absturz(tmp_path, eval_cases, capsys
     (tmp_path / ".call_log_salt").mkdir()
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
     assert "Salz" in capsys.readouterr().err
+
+
+def test_loeschen_raeumt_verzeichnis_auch_ohne_alte_zeilen(tmp_path, monkeypatch):
+    """Codex PR #135: eine von Hand entfernte Zeile hat in der CSV nichts
+    Altes mehr; ihr Eintrag im ID-Verzeichnis muss trotzdem ablaufen."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(date="20.09.2026"), encoding="utf-8")
+    ids = tmp_path / ".call_log_ids.json"
+    ids.write_text(
+        json.dumps({"alt": {"day": "2026-05-01"}, "neu": {"day": "2026-09-20"}}),
+        encoding="utf-8",
+    )
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 0
+    assert set(json.loads(ids.read_text(encoding="utf-8"))) == {"neu"}
+
+
+@pytest.mark.parametrize("expected", [[], "kaputt", None, 3])
+def test_durchgesehener_fall_mit_falschem_expected_wird_gemeldet(
+    tmp_path, eval_cases, capsys, expected
+):
+    """Codex PR #135: ein durchgesehener Fall mit expected als Liste, Text oder
+    null gab einen Traceback statt einer Meldung."""
+    entries, _ = parse(HEADER + _row())
+    case = to_case(entries[0])
+    case["expected"] = expected
+    name = f"{case['id']}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
+    write_cases(entries, tmp_path / "entwuerfe")
+    assert "Fall nicht lesbar" in capsys.readouterr().err
