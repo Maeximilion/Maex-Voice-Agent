@@ -14,7 +14,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from api.agent.llm import LLMTurn, ToolCall
-from api.domain.menu.numberwords import find_quantity, parse_cardinal
+from api.domain.menu.numberwords import (
+    canonical_card,
+    find_quantity,
+    fold,
+    parse_cardinal,
+    sole_item_number,
+)
+from api.domain.menu.search import SAY_NOT_FOUND, SAY_SOLD_OUT
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -27,6 +34,8 @@ SAY_APPROVAL = "Das Team bestätigt die Bestellung gleich noch."
 # Wer das sagt, ist mit den Gerichten fertig.
 DONE_PHRASES = ("nein", "das war", "das wars", "nichts mehr", "alles", "sonst nichts")
 CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
+# Vor dem fuehrenden Zahlwort: Artikel und Marker zaehlen nicht.
+_LEAD_SKIP = frozenset({"die", "der", "das", "den", "nummer", "nr"})
 
 
 @dataclass
@@ -59,27 +68,60 @@ class PickupScript:
         # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
         # ein Zug ist Satz oder Tool-Aufruf, nie beides.
         self._carry: str | None = None
+        # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
+        self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
     # -- Kundenzug ---------------------------------------------------------
 
-    def start(self, prefix: str | None = None) -> LLMTurn:
-        return LLMTurn(say=_join(prefix, SAY_WHAT))
+    def start(
+        self, prefix: str | None = None, patch: dict[str, Any] | None = None
+    ) -> LLMTurn:
+        return LLMTurn(say=_join(prefix, SAY_WHAT), state_patch=patch or None)
 
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
+            if hit is not None and hit.get("sold_out"):
+                # Heute aus: nicht aufnehmen, sagen und den Rest anbieten. Sonst
+                # lehnte draft_order den Warenkorb ab, und die Bestellung kaeme
+                # nicht mehr zum Abschluss (Codex PR #133).
+                sold = SAY_SOLD_OUT.format(name=hit["name"])
+                self._suggestions = [h for h in self._suggestions if h is not hit]
+                if self._suggestions:
+                    return LLMTurn(
+                        say=_join(sold, _offer(self._suggestions)),
+                        state_patch=patch or None,
+                    )
+                self.phase = "dishes"
+                return self._next(slots, patch, lead=sold)
             if hit is not None:
-                self._add(hit, self._suggestion_query)
+                # Menge aus der Antwort ("einmal die dreizehn", auch ohne Marker:
+                # "zwei Pho Bo", "zwei Nummer dreizehn"), sonst aus der Frage, zu
+                # der die Vorschlaege gehoeren ("zwei Suppen") (Codex PR #133).
+                quantity = _stated_quantity(text, hit) or _quantity(
+                    self._suggestion_query, hit
+                )
+                self._add(hit, self._suggestion_query, quantity)
                 # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
                 # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
                 self._suggestions = []
                 self.phase = "dishes"
                 return self._next(slots, patch)
-            # Keine der angebotenen: neu suchen mit dem, was jetzt gesagt wurde.
-            # Die Rueckfrage ist damit erledigt ("die dreizehn" findet die 13),
-            # sonst hielte _next sie weiter fuer offen (Codex PR #130, P1).
+            # "Nein, das wars" oder "keine davon": die Vorschlaege sind verworfen.
+            # Neu gesucht fanden die Worte kein Gericht, und dieselbe Frage kaeme
+            # endlos zurueck (Codex PR #133).
+            if _finishes(text) or _rejects(text):
+                self._suggestions = []
+                self.phase = "customer" if _finishes(text) and self.cart else "dishes"
+                return self._next(slots, patch)
+            # Keine der angebotenen: ein anderes Gericht, neu suchen mit eigener
+            # Menge - die aus der Frage darauf zu legen waere geraten (Review PR
+            # #133). Die Rueckfrage ist damit erledigt (Codex PR #130, P1) -
+            # ausser, die Suche findet nichts: dann wird sie wieder gestellt,
+            # statt dass die Position still verschwindet (on_search_failed).
+            self._reopen = (self._suggestions, self._suggestion_query)
             self.phase = "dishes"
             self._suggestions = []
             return _search(text, patch)
@@ -124,8 +166,12 @@ class PickupScript:
     ) -> LLMTurn:
         """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
         #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
+        self._reopen = None
         if data.get("match_type") == "positions":
             unclear: str | None = None
+            # "heute aus" ist eine Aussage, keine Frage: sie kommt direkt mit,
+            # ohne zweite Suche (Review PR #133).
+            sold_out: list[str] = []
             for part in data["positions"]:
                 if not part["ok"]:
                     # Jeder unklare Teil wird nachgefragt, einer nach dem anderen
@@ -141,12 +187,29 @@ class PickupScript:
                 # Jeder eindeutige Teil kommt in den Warenkorb, auch nach einer
                 # Rueckfrage; gesprochen wird nur die erste (Codex PR #130, P1).
                 said = self._take(part["query"], part)
-                unclear = unclear or said
-            lead = _join(self.take_carry(), data.get("say"), unclear)
+                if said and _is_sold_out(part):
+                    sold_out.append(said)
+                else:
+                    unclear = unclear or said
+            lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
         taken = self._take(query, data)
         lead = _join(self.take_carry(), taken if taken is not None else say)
         return self._next(slots, {}, lead=lead)
+
+    def on_search_failed(self, say: str | None) -> LLMTurn | None:
+        """Die Antwort auf eine Rueckfrage fand nichts: die Frage gilt weiter.
+        Die allgemeine Meldung ("nicht gefunden, Nummer?") wuerde eine zweite
+        Frage daneben stellen, eine genaue ("Nummer 99 habe ich nicht") kommt
+        mit. None, wenn keine Rueckfrage offen war."""
+        if self._reopen is None:
+            return None
+        self._suggestions, self._suggestion_query = self._reopen
+        self._reopen = None
+        self.phase = "choose"
+        question = _offer(self._suggestions)
+        lead = question if say in (None, SAY_NOT_FOUND) else _join(say, question)
+        return LLMTurn(say=_join(self.take_carry(), lead))
 
     def take_carry(self) -> str | None:
         carry, self._carry = self._carry, None
@@ -178,11 +241,12 @@ class PickupScript:
             self.phase = "choose"
             self._suggestions = hits
             self._suggestion_query = query
-            offer = " oder ".join(f"Nummer {h['number']} {h['name']}" for h in hits)
-            return f"Meinen Sie {offer}?"
+            return _offer(hits)
         return found.get("say")
 
-    def _add(self, hit: dict[str, Any], query: str) -> None:
+    def _add(
+        self, hit: dict[str, Any], query: str, quantity: int | None = None
+    ) -> None:
         pending = [
             {"group": g["group"], "options": [o["name"] for o in g["options"]]}
             for g in hit.get("option_groups", [])
@@ -193,7 +257,7 @@ class PickupScript:
                 menu_item_id=hit["menu_item_id"],
                 number=hit["number"],
                 name=hit["name"],
-                quantity=_quantity(query, hit["number"]),
+                quantity=quantity or _quantity(query, hit),
                 pending=pending,
             )
         )
@@ -202,10 +266,18 @@ class PickupScript:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
         auf eine der angebotenen passt."""
         lowered = text.lower()
-        numbers = set(re.findall(r"\d+[a-f]?", lowered))
-        by_number = [h for h in self._suggestions if h["number"].lower() in numbers]
-        if len(by_number) == 1:
-            return by_number[0]
+        # Auch gesprochen ("die dreizehn") und mit fuehrender Null (Review PR #133).
+        # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
+        # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
+        # #133, P2).
+        ref, _ = sole_item_number(text)
+        if ref is not None:
+            card = canonical_card(ref.text)
+            by_number = [
+                h for h in self._suggestions if canonical_card(h["number"]) == card
+            ]
+            if len(by_number) == 1:
+                return by_number[0]
         by_name = [h for h in self._suggestions if h["name"].lower() in lowered]
         return by_name[0] if len(by_name) == 1 else None
 
@@ -289,30 +361,89 @@ class PickupScript:
         }
 
 
+def _offer(hits: list[dict[str, Any]]) -> str:
+    offer = " oder ".join(f"Nummer {h['number']} {h['name']}" for h in hits)
+    return f"Meinen Sie {offer}?"
+
+
+def _is_sold_out(found: dict[str, Any]) -> bool:
+    hits = found.get("results") or []
+    return (
+        found.get("match_type") in CLEAR_MATCHES
+        and bool(hits)
+        and bool(hits[0].get("sold_out"))
+    )
+
+
 def _search(text: str, patch: dict[str, Any]) -> LLMTurn:
     return LLMTurn(
         tool_call=ToolCall("search_menu", {"query": text}), state_patch=patch or None
     )
 
 
-def _quantity(query: str, number: str) -> int:
-    """Menge nur mit Marker ("zweimal", "2 x") oder als fuehrendes Zahlwort, das
-    nicht die Kartennummer selbst ist ("zwei Frühlingsrollen", nicht "23").
-    Sonst eins - die Menge wird beim Vorlesen bestaetigt."""
+def _quantity(query: str, hit: dict[str, Any] | None = None) -> int:
+    """Die Menge, eins, wenn keine genannt ist - sie wird beim Vorlesen bestaetigt."""
+    return _stated_quantity(query, hit) or 1
+
+
+def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | None:
+    """Die genannte Menge oder None. Nach der Regel der Domain (numberwords): mit
+    Marker ("zweimal", "2 x") gilt sie immer. Ist der Satz die Kartennummer
+    selbst ("die 7", "die sieben", "die 23 a"), ist ein fuehrendes Zahlwort nur
+    eine Menge, wenn es nicht die Nummer ist ("zwei Nummer 23"). Neben einem
+    Namen ist es eine Menge ("zwei Frühlingsrollen") - ausser, das gefundene
+    Gericht erklaert es: seine eigene Nummer mit Artikel davor ("die 23,
+    Frühlingsrollen") oder ein Name, der selbst mit dem Zahlwort beginnt ("Acht
+    Schätze") (Review PR #133)."""
     marked = find_quantity(query)
     if marked:
         return marked
-    words = re.findall(r"[\wäöüß]+", query.lower())
-    first = next((w for w in words if w not in ("die", "der", "das", "den")), None)
-    if first is None or first == number.lower():
-        return 1
-    value = parse_cardinal(first)
-    return value if value and str(value) != number else 1
+    words = _words(query)
+    at = next((i for i, w in enumerate(words) if w not in _LEAD_SKIP), None)
+    if at is None:
+        return None
+    lead = parse_cardinal(words[at])
+    if not lead:
+        return None
+    ref, _ = sole_item_number(query)
+    if ref is not None:
+        return lead if lead != ref.value else None
+    if hit is not None:
+        name = _words(hit["name"])
+        if name and name[0] == words[at]:
+            return None
+        if at > 0 and canonical_card(str(lead)) == canonical_card(hit["number"]):
+            return None
+    return lead
+
+
+def _words(text: str) -> list[str]:
+    # Gefaltet wie im Zahlwort-Parser: "fuenf" und "fünf" sind ein Wort (Codex PR
+    # #133, P2).
+    return re.findall(r"[^\W_]+", fold(text))
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:
     offer = " oder ".join(group["options"])
     return f"Welche Auswahl bei {group['group']} möchten Sie zu {item.name}: {offer}?"
+
+
+# Auf eine Rueckfrage: "keine davon", "nein" verwirft die Vorschlaege.
+REJECT_WORDS = ("nein", "keine", "keins", "keinen", "weder")
+
+
+def _finishes(text: str) -> bool:
+    """Fertig mit den Gerichten, ausser dem blossen "nein": das verwirft auf eine
+    Rueckfrage nur die Vorschlaege."""
+    lowered = text.lower()
+    return any(
+        re.search(rf"\b{re.escape(p)}\b", lowered) for p in DONE_PHRASES if p != "nein"
+    )
+
+
+def _rejects(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(rf"\b{w}\b", lowered) for w in REJECT_WORDS)
 
 
 def _is_done(text: str) -> bool:
