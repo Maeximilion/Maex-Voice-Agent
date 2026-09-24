@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.3
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.4
 
 ---
 
@@ -112,8 +112,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
 | D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. Removal wishes ("ohne Karotten") are a note without price. Allergy wording before go-live with the legal check (docs/09). Task T-4.10 | Maxi | done |
 | D7 | Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop? recommended: own core if the platform allows | Maxi with C2 | together with D1 |
-| D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2) | Maxi | before `shadow` with recording |
-| D10 | Deletion period for the call log CSV (`imports/anrufprotokoll.csv`, DSFA D12); proposal 90 days like transcripts, tool ready (`scripts/call_log.py --frist-tage N --loeschen`) | Maxi with data protection officer | before the first weekly evaluation |
+| D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2). Maxi asked whether he can be the officer himself: likely not, the managing director decides purposes and means, would monitor himself (Art. 39) and report to himself (Art. 38 Abs. 3); Art. 38 Abs. 6 forbids a conflict of interest. Recommendation: external officer. Case law on this is not in the norm corpus | Maxi | before `shadow` with recording |
+| D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
 
 ---
 
@@ -166,6 +166,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **`orders.customer_id` has no foreign key until migration 003** (`customers` does not exist yet); `address_id` arrives with 003 as docs/03 plans. The downgrade of 002 keeps `pg_trgm` installed, because an extension is database-wide. Assumption from 18.09.2026
 - **GUI writes require the `HX-Request` header** (`gui/router.py`, `_require_htmx`): basic auth from the proxy is sent by the browser even for a form on a foreign site, a custom header is not without a CORS grant. Cheap protection against forged taps without a form token. Assumption from 18.09.2026
 - **E10 (set by Maxi, 24.09.2026):** The call log (`docs/17`) may be kept before the legal check is complete. The DSFA draft of 24.09.2026 still counts it as personal data (D12: time plus wording can be matched to the router's call list), so the rules in `docs/17` apply and a deletion period for the CSV is open for the data protection officer.
+- **E12 (set by Maxi, 24.09.2026):** Recognising callers by `caller_id` is fine; the register's VoIP already keeps the customers. The agent does not volunteer what it knows about a caller (name, address, order history) unless the caller asks, in line with DSFA M10 (a shared number can belong to someone else, R6). Legal basis per DSFA: Art. 6 Abs. 1 lit. f with objection right (Art. 21); the balancing of interests is still to be written. Reading of "sich revealen" confirmed with Maxi: open, see chat 24.09.2026
 - **E11 (set by Maxi, 24.09.2026):** Audio recordings and any further processing of them need the customer's consent. Maxi's view: transcribed text without audio may go into the repo. The code follows the stricter rule for now, DSFA M15 and CLAUDE.md §8 (real customer sentences never in git): eval drafts from the call log carry no real sentence. Loosening this needs the data protection officer's confirmation and a CLAUDE.md change.
 - **E9 (set, 16.09.2026):** Everything runs on EU servers or with EU vendors, including transcription and analysis. Maxi's PC is only a development workbench.
 - **`prompts/system_v1.md` covers Stage 1 only, not the full skeleton from docs/05 §1** (`prompts/system_v1.md`, `prompts/tools_v1.md`): docs/05's example skeleton includes a menu index and order-taking rules, but `search_menu`/`draft_order`/etc. don't exist until Stage 2 (T-4.x). Writing a prompt that references them would tell the model it can do something the code can't (CLAUDE.md §2 rule 1). Instead, unbuilt tools are named once as "not yet available" so the model routes those requests to `create_callback` (`reason: out_of_scope`) instead of guessing. `tools_v1.md` is a new file, not named in docs/05 — the task title asked for "tool descriptions for the platform" without specifying a format or filename, so it's versioned alongside the system prompt (`tools_vN.md`) rather than folded into `docs/04_API_TOOLS.md`, which stays the full contract (error codes, idempotency rules) and isn't meant to be handed to a model as-is. Token budget is checked with `len(text) / 4` as an approximation (~440 for v1 against an 800 budget) — a real tokenizer arrives with `evals/` (T-5.1); until then this is a rough but honest floor check, not the number a real model would report. Assumption from 17.09.2026, subject to change once D1 and `agent/prompt.py` (T-2.1) exist
@@ -268,6 +269,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.4 · 24.09.2026:** D10 entschieden (90 Tage, CALL_LOG_RETENTION_DAYS), D9 Einschaetzung Eigenbenennung, E12 Wiedererkennung per caller_id
 - **v1.31.3 · 24.09.2026:** Anrufprotokoll: Loeschfrist per --frist-tage/--loeschen, kaputte Entwuerfe gemeldet; D9 Datenschutzbeauftragter, D10 Frist offen
 - **v1.31.2 · 24.09.2026:** Anrufprotokoll nach Rechts-Check: Entwuerfe ohne echte Kundensaetze (DSFA M15), Allergien einer Person abgelehnt (M8), E10 und E11 entschieden
 - **v1.31.1 · 24.09.2026:** Anrufprotokoll: diktierte Nummern, E-Mails und Adressen abgelehnt, richtige Zeilennummern, UTF-8-Meldung, durchgesehene Faelle nie ueberschrieben, Wochentag je Tag

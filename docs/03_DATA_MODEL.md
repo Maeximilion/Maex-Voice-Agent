@@ -309,7 +309,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | Daten | Frist | Umsetzung |
 |---|---|---|
 | Anrufaufnahmen | 30 Tage (Vorschlag) | täglicher Job, harte Löschung |
-| Anrufprotokoll ohne Ton (`imports/anrufprotokoll.csv`, docs/17) | 90 Tage (Vorschlag, D10) | wöchentlich `scripts/call_log.py --frist-tage 90 --loeschen`; Papierbögen nach dem Abtippen vernichten |
+| Anrufprotokoll ohne Ton (`imports/anrufprotokoll.csv`, docs/17) | 90 Tage (entschieden 24.09.2026, D10) | wöchentlich `scripts/call_log.py --frist-tage 90 --loeschen`; Papierbögen nach dem Abtippen vernichten |
 | Transkripte | 90 Tage (Vorschlag) | täglicher Job |
 | `calls` ohne personenbezogene Felder | 24 Monate | Statistik bleibt, `caller_id` wird genullt |
 | Kunden ohne Bestellung | 24 Monate (Vorschlag) | `delete_after`, täglicher Job |
