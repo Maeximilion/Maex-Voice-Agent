@@ -790,3 +790,65 @@ def test_zusammengesetztes_gericht_zweimal_gleich_sind_zwei(session, zusammen_te
         "Fisch und Chips",
         "Fisch und Chips",
     ]
+
+
+FRUECHTE = [
+    "Apfel",
+    "Birne",
+    "Kirsche",
+    "Dattel",
+    "Feige",
+    "Guave",
+    "Honigmelone",
+    "Ingwer",
+    "Johannisbeere",
+    "Kiwi",
+    "Limette",
+    "Mango",
+    "Nektarine",
+    "Orange",
+    "Papaya",
+    "Quitte",
+    "Rhabarber",
+    "Stachelbeere",
+    "Traube",
+    "Zitrone",
+]
+
+
+def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
+    session, monkeypatch
+):
+    """Codex PR #127, P2: ohne Grenze prueft das Zusammenfassen jede Spanne,
+    bei 20 Gerichten rund 190 Suchen. Laenger als der laengste Name oder Alias
+    der Karte (in Stuecken an den Trennern) kann keine Spanne ein Gericht sein:
+    hier hat die Karte "Fisch und Chips", also hoechstens zwei Stuecke."""
+    tid = uuid.UUID(
+        seed(session, tenant_name="Obst", timezone="Europe/Berlin").tenant_id
+    )
+    zeilen = "".join(
+        f"{70 + i};{name};Test;3,00;;ja\n" for i, name in enumerate(FRUECHTE)
+    )
+    plan = parse(
+        {
+            **KARTE_ZUSAMMEN,
+            MENU_FILE: KARTE_ZUSAMMEN[MENU_FILE] + zeilen,
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+
+    import api.domain.menu.search as search_module
+
+    calls = []
+    original = search_module._whole_dish
+    monkeypatch.setattr(
+        search_module,
+        "_whole_dish",
+        lambda *a, **kw: calls.append(a[3]) or original(*a, **kw),
+    )
+    gesagt = " und ".join(FRUECHTE)
+    assert position_parts(session, tid, gesagt, now=NOW) == FRUECHTE
+    # Je Startstueck hoechstens eine Spanne aus zwei Stuecken.
+    assert len(calls) <= len(FRUECHTE) - 1
+    assert p95_ms(lambda: position_parts(session, tid, gesagt, now=NOW)) < 300

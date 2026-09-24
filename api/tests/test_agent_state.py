@@ -223,3 +223,30 @@ def test_gescheiterte_bestellung_nach_reservierung_setzt_die_absicht():
         state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
     )
     assert state.intent == "pickup"
+
+
+def test_menuesuche_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus():
+    """Codex PR #127, P1: eine Korrektur der Gerichte beginnt mit search_menu.
+    Endet der Zug mit einer Rueckfrage, bliebe der alte Entwurf readback_pending,
+    und ein Ja auf die Rueckfrage bestaetigte ihn. Die Absicht bleibt Abholung."""
+    state = make_state(stage="readback_pending", intent="pickup", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "search_menu", ToolResult(ok=True, data={"match_type": "ambiguous"})
+    )
+    assert state.order_id is None
+    assert state.stage == "collecting"
+    assert state.intent == "pickup"
+
+
+def test_frage_zu_einem_gericht_laesst_den_entwurf_stehen():
+    """Codex PR #127, P2: get_item_details beantwortet eine Frage (Allergene,
+    Beschreibung) und aendert nichts. Der Gast hoert die Antwort und sagt ja -
+    der vorgelesene Entwurf muss dann noch bestaetigbar sein. Eine Aenderung
+    der Optionen geht nur ueber draft_order, und das loest ihn ab."""
+    order_id = uuid.uuid4()
+    state = make_state(stage="readback_pending", intent="pickup", order_id=order_id)
+    apply_tool_result(
+        state, "get_item_details", ToolResult(ok=True, data={"number": "47"})
+    )
+    assert state.order_id == order_id
+    assert state.stage == "readback_pending"

@@ -120,6 +120,27 @@ def test_schluessel_eines_anderen_mandanten_ist_conflict(session, tenant_id, cal
         )
 
 
+def test_schluessel_eines_anderen_anrufs_ist_conflict(session, tenant_id, call_id):
+    """Codex PR #127, P1: wie bei Bestellungen - ein Schluessel eines anderen
+    Anrufs liefert nie dessen Reservierung."""
+    key = "gleicher-schluessel-anderer-anruf"
+    create_reservation(
+        session, request(tenant_id, call_id, idempotency_key=key), now=NOW
+    )
+    other_call = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-2",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(other_call)
+    session.commit()
+    with pytest.raises(Conflict):
+        create_reservation(
+            session, request(tenant_id, other_call.id, idempotency_key=key), now=NOW
+        )
+
+
 def test_voller_slot_ist_conflict_mit_alternativen(session, tenant_id, call_id):
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     with pytest.raises(Conflict) as exc:

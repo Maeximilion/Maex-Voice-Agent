@@ -364,3 +364,33 @@ def test_wiederholung_klingt_nicht_immer_gleich_ist_aber_reproduzierbar(
     assert len(leads) > 1
     again = run(session, tenant_id, call_id, "search_menu", {"query": "die 23"}).say
     assert again == says[0]
+
+
+def test_schluessel_vom_modell_wird_ignoriert(session, tenant_id, call_id):
+    """Codex PR #127, P1: den Schluessel bildet der Code aus dem Anruf, nie das
+    Modell. Ein erfundener oder wiederverwendeter Schluessel eines anderen
+    Anrufs darf dessen Bestellung nicht in diesen Anruf holen."""
+    other_call = _call(session, tenant_id)
+    foreign = run(
+        session,
+        tenant_id,
+        other_call,
+        "draft_order",
+        order_body(
+            session, tenant_id, customer={"name": "Fremd", "phone": "0721 5559999"}
+        ),
+    )
+    fremder_schluessel = session.get(Order, uuid.UUID(foreign.data["order_id"]))
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "draft_order",
+        order_body(
+            session, tenant_id, idempotency_key=fremder_schluessel.idempotency_key
+        ),
+    )
+
+    assert result.ok
+    assert result.data["order_id"] != foreign.data["order_id"]
+    assert "Fremd" not in result.data["readback"]

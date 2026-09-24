@@ -3,7 +3,7 @@
 import pytest
 
 from api.domain.menu.search import search_menu
-from api.domain.menu.split import raw_pieces, split_positions
+from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.tests.test_domain_menu_search import (  # noqa: F401
     NOW,
     engine,
@@ -119,3 +119,11 @@ def test_raw_pieces_haengt_hinweise_an(gesagt, stuecke):
     """Codex PR #127, P1: ein Hinweis nach dem Trenner ist keine neue Position,
     auch fuer den Gegencheck mit der Karte nicht."""
     assert raw_pieces(gesagt) == stuecke
+
+
+@pytest.mark.parametrize(
+    ("text", "stuecke"),
+    [("Pho Bo", 1), ("Fisch und Chips", 2), ("Fisch, Chips und Salat", 3)],
+)
+def test_separator_pieces_zaehlt_an_den_trennern(text, stuecke):
+    assert separator_pieces(text) == stuecke

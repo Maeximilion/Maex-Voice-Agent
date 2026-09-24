@@ -88,6 +88,12 @@ def raw_pieces(text: str) -> list[str]:
     return [p.strip(" .!?;:") for p in _split(stripped, by_position=False)]
 
 
+def separator_pieces(text: str) -> int:
+    """Wie viele Stuecke ein Text an den Trennern hat, ohne jede Pruefung. Fuer
+    die Grenze der Spannen in search.position_parts: "Fisch und Chips" hat zwei."""
+    return len(_SEPARATOR.split(text.strip()))
+
+
 def _separable(text: str) -> bool:
     words = _WORD.findall(fold(text))
     if not words or _CORRECTION_WORDS.intersection(words):
