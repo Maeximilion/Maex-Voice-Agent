@@ -448,3 +448,68 @@ def test_fehlerhafte_datei_wird_nicht_geloescht(tmp_path, monkeypatch):
     vorher = csv_file.read_text(encoding="utf-8")
     assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 1
     assert csv_file.read_text(encoding="utf-8") == vorher
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Lieferung Am Stadtgarten 5",
+        "an der Alten Post 12",
+        "in die Kaiser-Str. 12",
+        "Kaiser Strasse 12a",
+        "Hausnummer 7",
+        "nach 76547 Sinzheim",
+    ],
+)
+def test_adresse_ohne_bekannte_endung(text):
+    """Codex PR #135: Adressen ohne Strassen-Endung rutschten durch."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "am Freitag 19 Uhr",
+        "am Freitag um 19 Uhr",
+        "zum Abholen 2 mal",
+        "am Tisch fuer 4 Personen",
+    ],
+)
+def test_adresse_kein_fehlalarm_bei_uhrzeit_und_menge(text):
+    _, errors = parse(HEADER + _row(problems=text))
+    assert errors == [], text
+
+
+@pytest.mark.parametrize(
+    "text", ["name@mail.example.de", "name@example.io", "a.b+c@x.co.uk"]
+)
+def test_email_mit_beliebiger_domain(text):
+    """Codex PR #135: nur eine Domain-Stufe und feste Endungen wurden erkannt."""
+    _, errors = parse(HEADER + _row(phrases=f"schickt es an {text}"))
+    assert errors and "E-Mail" in errors[0], text
+
+
+def test_korrektur_an_durchgesehenem_fall_wird_gemeldet(tmp_path, eval_cases, capsys):
+    """Codex PR #135: wird eine Zeile korrigiert, nachdem ihr Fall schon in
+    evals/cases/ liegt, darf die Abweichung nicht still bleiben."""
+    entries, _ = parse(HEADER + _row())
+    fertig = to_case(entries[0])
+    name = f"{fertig['id']}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
+    korrigiert, _ = parse(HEADER + _row(outcome="abgebrochen"))
+    assert write_cases(korrigiert, tmp_path / "entwuerfe") == 0
+    err = capsys.readouterr().err
+    assert name in err
+    assert "confirmed" in err
+
+
+def test_unveraenderter_durchgesehener_fall_bleibt_still(tmp_path, eval_cases, capsys):
+    entries, _ = parse(HEADER + _row())
+    fertig = to_case(entries[0])
+    fertig["expected"]["items"] = [{"number": "23", "quantity": 2}]
+    (eval_cases / f"{fertig['id']}_abholung.json").write_text(
+        json.dumps(fertig), encoding="utf-8"
+    )
+    write_cases(entries, tmp_path / "entwuerfe")
+    assert capsys.readouterr().err == ""

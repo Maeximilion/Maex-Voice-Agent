@@ -93,9 +93,12 @@ SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
 _PHONE = re.compile(r"\d(?:(?:[\s/()-]|\.(?=\d))*\d){5,}")
 _DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
 # Auch diktiert: "mueller at gmx punkt de", "mueller @ gmx.de", "(at)".
+# Jede Domain mit beliebig vielen Stufen und jeder Endung ab zwei Buchstaben
+# (mail.example.de, example.io). Ein "@" zwischen zwei Wortzeichen reicht allein.
+_DOT = r"\s*(?:\.|\bpunkt\b|\bdot\b)\s*"
 _EMAIL = re.compile(
-    r"[\w.-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+\s*(?:\.|\bpunkt\b|\bdot\b)\s*"
-    r"(?:de|com|net|org|eu|info|at|ch)\b"
+    r"\w@\w|[\w.+-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+"
+    rf"(?:{_DOT}[\w-]+)*{_DOT}[a-z]{{2,}}\b"
 )
 # DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum.
 # Erlaubt ist nur die Frage zum Gericht ("sind in der 23 Nuesse?"). "Allergene"
@@ -103,8 +106,16 @@ _EMAIL = re.compile(
 # das Muster nicht, "Allergie" als Wortende ("Nussallergie") schon.
 _HEALTH = re.compile(r"allergie\b|allergisch|unvertraeglich|intoleran")
 # Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
+# Auch mit Bindestrich oder getrennt ("Kaiser-Str. 12", "Kaiser Strasse 12a"),
+# ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
+# Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
+# vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
 _ADDRESS = re.compile(
-    r"\b\w+(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"
+    r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer)\s*\d+"
+    r"|\b(?:am|im|an der|an den|auf der|auf dem|in der|in den|zum|zur"
+    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+\d{1,3}[a-z]?\b"
+    r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
+    r"|\bhausn(?:umme)?r\b|\b\d{5}\s+[a-z]{3,}"
 )
 _WORD = re.compile(r"[a-z0-9]+")
 
@@ -413,11 +424,15 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
             continue
         if isinstance(draft, dict) and "review" in draft:
             stale.unlink()
-    done = {p.name.split("_")[1] for p in EVAL_CASES.glob("protokoll_*.json")}
+    done = {p.name.split("_")[1]: p for p in EVAL_CASES.glob("protokoll_*.json")}
     written: set[Path] = set()
     for entry in entries:
         case = to_case(entry)
-        if case is None or str(case["id"]).removeprefix("protokoll_") in done:
+        if case is None:
+            continue
+        reviewed = done.get(str(case["id"]).removeprefix("protokoll_"))
+        if reviewed is not None:
+            _report_correction(case, reviewed)
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
         if path in written or path.exists():
@@ -429,6 +444,24 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
         )
         written.add(path)
     return len(written)
+
+
+def _report_correction(case: dict, reviewed: Path) -> None:
+    """Ein durchgesehener Fall wird nie ueberschrieben, eine spaetere Korrektur
+    der Zeile darf aber nicht still bleiben: Abweichungen im Ergebnis melden.
+    items fehlen im Entwurf und traegt der Mensch nach, sie zaehlen nicht."""
+    try:
+        existing = json.loads(reviewed.read_text(encoding="utf-8")).get("expected", {})
+    except (OSError, ValueError, AttributeError):
+        print(f"Fall nicht lesbar, bitte pruefen: {reviewed}", file=sys.stderr)
+        return
+    changed = [k for k, v in case["expected"].items() if existing.get(k) != v]
+    if changed:
+        print(
+            f"Protokoll weicht von {reviewed} ab ({', '.join(changed)}): "
+            "Fall von Hand anpassen",
+            file=sys.stderr,
+        )
 
 
 def _today() -> date:
