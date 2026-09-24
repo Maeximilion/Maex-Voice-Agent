@@ -394,3 +394,84 @@ def test_schluessel_vom_modell_wird_ignoriert(session, tenant_id, call_id):
     assert result.ok
     assert result.data["order_id"] != foreign.data["order_id"]
     assert "Fremd" not in result.data["readback"]
+
+
+# --- Wuensche (T-4.10) -------------------------------------------------------------
+
+
+def test_hinweis_wird_mit_wiederholt(session, tenant_id, call_id):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 ohne Karotten"}
+    )
+    assert "Nummer 23, ohne Karotten" in result.say
+    assert result.data["wish"]["kind"] == "note"
+
+
+def test_option_der_karte_mit_aufpreis_wird_mit_wiederholt(session, tenant_id, call_id):
+    """Der Aufpreis kommt aus item_options und wird sofort gesagt (D8)."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Ente knusprig mit Erdnuss"},
+    )
+    assert "Nummer 47 Ente knusprig mit Erdnuss, 0,50 Euro Aufpreis" in result.say
+    assert result.data["wish"]["option"] == "Erdnuss"
+    assert result.data["wish"]["price_delta_cents"] == 50
+
+
+def test_unbekannter_wunsch_hat_seinen_satz_ohne_wiederholung(
+    session, tenant_id, call_id
+):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 mit Pommes"}
+    )
+    assert result.say.startswith("Den Wunsch „mit Pommes“ kann ich leider nicht")
+
+
+def test_allergie_wiederholt_das_gericht_und_sagt_den_hinweis(
+    session, tenant_id, call_id
+):
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Pho Bo, ich habe eine Erdnussallergie"},
+    )
+    assert "Nummer 13 Pho Bo" in result.say
+    assert "an die Küche weiter" in result.say
+    assert "Erdnussallergie" not in result.say
+
+
+def test_wunsch_in_einer_aufzaehlung(session, tenant_id, call_id):
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 ohne Karotten und Pho Bo"},
+    )
+    assert result.data["match_type"] == "positions"
+    first, second = result.data["positions"]
+    assert first["wish"]["kind"] == "note"
+    assert second["wish"] is None
+    assert "Nummer 23, ohne Karotten und Nummer 13 Pho Bo" in result.data["say"]
+
+
+def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
+    session, tenant_id, call_id
+):
+    """Offener Punkt aus PR #127 (T-4.10): ein Modell-Retry mit `options: []` und
+    `note: null` statt weggelassener Felder ist dieselbe Bestellung - der
+    Schluessel kommt aus der gepruefen Form, nicht aus den rohen Argumenten."""
+    body = order_body(session, tenant_id)
+    first = run(session, tenant_id, call_id, "draft_order", body)
+    explicit = {
+        **body,
+        "items": [{**i, "options": [], "note": None} for i in body["items"]],
+    }
+    again = run(session, tenant_id, call_id, "draft_order", explicit)
+    assert again.data["order_id"] == first.data["order_id"]
+    assert session.scalar(select(func.count()).select_from(Order)) == 1

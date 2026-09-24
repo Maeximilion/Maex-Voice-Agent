@@ -210,3 +210,29 @@ def test_domain_fehler_wird_geloggt_und_sitzung_bleibt_nutzbar(
     assert entries[0]["ok"] is False
     assert entries[0]["error_code"] == "invalid_input"
     assert entries[1]["ok"] is True
+
+
+def test_geaenderte_notiz_ist_ein_neuer_entwurf(session, tenant_id, call_id):
+    """Offener Punkt aus PR #127 (T-4.10): aendert der Gast nach dem Vorlesen nur
+    die Notiz ("mit Hochstuhl"), entsteht ein neuer Entwurf mit neuem readback -
+    sonst kaeme der alte ohne Notiz zurueck."""
+    args = {
+        "guest_name": "Müller",
+        "phone": "+4972215551234",
+        "party_size": 4,
+        "reserved_for": berlin(DIENSTAG, 18, 30),
+    }
+    first = dispatch(
+        session, call_id, tenant_id, "create_reservation", dict(args), now=NOW
+    )
+    second = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {**args, "note": "mit Hochstuhl"},
+        now=NOW,
+    )
+    assert second.ok
+    assert second.data["reservation_id"] != first.data["reservation_id"]
+    assert second.data["note"] == "mit Hochstuhl"

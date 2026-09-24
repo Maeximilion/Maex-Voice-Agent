@@ -854,3 +854,57 @@ def test_das_wars_beendet_auch_waehrend_einer_rueckfrage(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert positions(session, order) == [("23", 1, [])]
+
+
+# --- Wuensche (T-4.10) -------------------------------------------------------------
+
+
+def _notes(session, order) -> list[str | None]:
+    return list(
+        session.scalars(
+            select(OrderItem.note)
+            .where(OrderItem.order_id == order.id)
+            .order_by(OrderItem.created_at)
+        )
+    )
+
+
+def _bestellung(session, tenant, *zeilen):
+    return replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            *zeilen,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+
+def test_hinweis_landet_in_der_bestellung(session, tenant):
+    _, turns = _bestellung(session, tenant, "Die 23 ohne Karotten.")
+    assert "Nummer 23, ohne Karotten" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["ohne Karotten"]
+
+
+def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
+    """ "mit Huhn" ist die Option der Pflichtgruppe Fleisch: keine Frage mehr
+    nach Ente oder Huhn, die Wahl steht in der Bestellung."""
+    _, turns = _bestellung(session, tenant, "Die knusprige Ente mit Huhn.")
+    assert "Welche Auswahl bei Fleisch" not in said(turns)
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+
+
+def test_wunsch_nach_der_wahl_aus_vorschlaegen(session, tenant):
+    """ "Ente ohne Zwiebeln" ist mehrdeutig; nach der Wahl gilt der Hinweis."""
+    _bestellung(session, tenant, "Ente ohne Zwiebeln.", "Die 48.")
+    [order] = orders(session)
+    assert positions(session, order)[0][0] == "48"
+    assert _notes(session, order) == ["ohne Zwiebeln"]

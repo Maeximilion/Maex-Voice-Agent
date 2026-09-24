@@ -20,6 +20,8 @@ class OptionOut(BaseModel):
     name: str
     price_delta_cents: int
     default: bool
+    # Warum die Option mehr kostet, aus der Karte (T-4.10). None: nichts gepflegt.
+    reason: str | None = None
 
 
 class OptionGroup(BaseModel):
@@ -37,9 +39,24 @@ class MenuHit(BaseModel):
     option_groups: list[OptionGroup] = Field(default_factory=list)
 
 
+class Wish(BaseModel):
+    """Ein Wunsch zur Position (T-4.10, domain/menu/wishes.py). `kind`: `note`
+    (Weglassen), `option` (steht auf der Karte, mit Aufpreis und Grund),
+    `allergy` (Hinweis ohne Zusage), `unknown` (nicht angeboten, D8), `open`
+    (erst nach der Wahl des Gerichts einzuordnen)."""
+
+    text: str
+    kind: Literal["note", "option", "allergy", "unknown", "open"]
+    group: str | None = None
+    option: str | None = None
+    price_delta_cents: int | None = None
+    reason: str | None = None
+
+
 class SearchResult(BaseModel):
     match_type: MatchType
     results: list[MenuHit]
+    wish: Wish | None = None
     say: str | None = Field(default=None, exclude=True)
 
 

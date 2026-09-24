@@ -87,6 +87,8 @@ class OptionRow:
     price_delta_cents: int
     is_default: bool
     required: bool
+    # Optionale Spalte (T-4.10): warum die Option mehr kostet.
+    price_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -322,7 +324,12 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
         seen.add(key)
         plan.options.setdefault(number, []).append(
             OptionRow(
-                row["group_name"], row["option_name"], delta, is_default, required
+                row["group_name"],
+                row["option_name"],
+                delta,
+                is_default,
+                required,
+                row.get("price_reason") or None,
             )
         )
 
@@ -571,13 +578,25 @@ def _sync_options(
                     price_delta_cents=row.price_delta_cents,
                     is_default=row.is_default,
                     required=row.required,
+                    price_reason=row.price_reason,
                 )
             )
             report.options_added += 1
             continue
-        values = (row.price_delta_cents, row.is_default, row.required)
-        if (option.price_delta_cents, option.is_default, option.required) != values:
-            option.price_delta_cents, option.is_default, option.required = values
+        values = (row.price_delta_cents, row.is_default, row.required, row.price_reason)
+        current_values = (
+            option.price_delta_cents,
+            option.is_default,
+            option.required,
+            option.price_reason,
+        )
+        if current_values != values:
+            (
+                option.price_delta_cents,
+                option.is_default,
+                option.required,
+                option.price_reason,
+            ) = values
             report.options_changed += 1
 
 

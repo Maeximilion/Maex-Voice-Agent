@@ -44,8 +44,15 @@ from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
+from api.domain.menu.wishes import (
+    classify_wish,
+    has_number,
+    names_it,
+    open_wish,
+    split_wish,
+)
 from api.models import ItemAlias, MenuItem
-from api.schemas.menu import MenuHit, SearchResult
+from api.schemas.menu import MenuHit, SearchResult, Wish
 
 SAY_NOT_FOUND = (
     "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?"
@@ -59,6 +66,17 @@ SAY_SOLD_OUT = "{name} ist heute leider aus."
 # Mehrere Positionen in einem Satz: der Gast darf das, und er muss nichts
 # wiederholen (Maxi, PR #127). Ueber HTTP fragt der Aufrufer danach je Teil.
 SAY_IN_TURN = "Einen Moment, ich nehme das der Reihe nach auf."
+# Wuensche (T-4.10, D8). Was die Karte nicht kennt, wird nicht angeboten; die
+# Allergie geht ohne Zusage an die Kueche. Der Wortlaut zur Allergie ist ein
+# Entwurf und wird vor dem Echtbetrieb mit dem Rechts-Check abgestimmt (docs/09).
+SAY_WISH_UNKNOWN = (
+    "Den Wunsch „{wish}“ kann ich leider nicht anbieten. {name} nehme ich so auf, "
+    "wie es auf der Karte steht."
+)
+SAY_ALLERGY_NOTE = (
+    "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
+    "ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist."
+)
 SAY_UNDERSTOOD = (
     "Gern, {items}.",
     "Alles klar, {items}.",
@@ -134,7 +152,9 @@ def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> Search
 CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
 
 
-def say_understood(understood: list[tuple[str, MenuHit]], said: str) -> str | None:
+def say_understood(
+    understood: list[tuple[str, MenuHit, Wish | None]], said: str
+) -> str | None:
     """Wiederholt sofort, was eindeutig verstanden wurde - so, wie ein Mensch am
     Telefon es tut (Maxi, PR #127).
 
@@ -146,19 +166,45 @@ def say_understood(understood: list[tuple[str, MenuHit]], said: str) -> str | No
 
     Die Einleitung wechselt, damit es nicht wie eine Ansage klingt. Gewaehlt
     wird aus dem Gesagten, nicht zufaellig: ein Replay sagt dasselbe (docs/08).
-    `understood` sind Paare aus match_type und Treffer; leer heisst kein Satz.
+    `understood` sind match_type, Treffer und Wunsch; leer heisst kein Satz.
+
+    Ein Wunsch wird mit wiederholt, damit der Gast hoert, dass er notiert ist:
+    "Nummer 23, ohne Karotten", "Nummer 47 Ente knusprig mit Nudeln, 3 Euro
+    Aufpreis" - der Aufpreis aus der Karte, nie vom Modell (T-4.10).
     """
     names = [
-        f"Nummer {hit.number}"
-        if match_type == "exact_number"
-        else f"Nummer {hit.number} {hit.name}"
-        for match_type, hit in understood
+        _with_wish(
+            f"Nummer {hit.number}"
+            if match_type == "exact_number"
+            else f"Nummer {hit.number} {hit.name}",
+            wish,
+        )
+        for match_type, hit, wish in understood
     ]
     if not names:
         return None
     items = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} und {names[-1]}"
     lead = SAY_UNDERSTOOD[zlib.crc32(said.casefold().encode()) % len(SAY_UNDERSTOOD)]
     return lead.format(items=items)
+
+
+def _with_wish(item: str, wish: Wish | None) -> str:
+    # Unbekannt hat einen eigenen Satz, offen ist noch nicht entschieden, und die
+    # Allergie steht im Satz danach (SAY_ALLERGY_NOTE) - hier nur das Gericht.
+    if wish is None or wish.kind in ("unknown", "open", "allergy"):
+        return item
+    if wish.kind != "option":
+        return f"{item}, {wish.text}"
+    # Import hier: ordering importiert search (validation), oben waere es zirkulaer.
+    from api.domain.ordering.readback import spoken_euro
+
+    delta = wish.price_delta_cents or 0
+    text = f"{item} mit {wish.option}"
+    if delta > 0:
+        return f"{text}, {spoken_euro(delta)} Aufpreis"
+    if delta < 0:
+        return f"{text}, {spoken_euro(-delta)} günstiger"
+    return text
 
 
 def position_parts(
@@ -324,6 +370,56 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
     )
 
 
+def _search_with_wish(
+    session: Session,
+    tenant_id: uuid.UUID,
+    query: str,
+    dish: str,
+    wish: str,
+    max_results: int,
+    now: datetime,
+    high: float,
+    low: float,
+    *,
+    split_check: bool,
+) -> SearchResult | None:
+    """Das Gericht ohne den Wunsch suchen, den Wunsch dazu einordnen (T-4.10).
+
+    None heisst: die normale Suche ueber den ganzen Satz entscheidet - wenn im
+    Wunsch eine Zahl steht (Regel A: "Nummer 23 mit 2 Soßen" wird nachgefragt),
+    wenn der Satz mehrere Positionen nennt (der Wunsch gehoert dann zu einer davon, die
+    Zerlegung kommt zuerst) oder das Gericht ohne Wunsch nichts findet. Gehoert
+    der Wunsch zum Namen ("Sommerrollen mit Garnelen"), ist er keiner.
+    """
+    if has_number(wish):
+        return None
+    if (
+        split_check
+        and len(position_parts(session, tenant_id, query, now, high, low)) > 1
+    ):
+        return None
+    try:
+        found = search_menu(
+            session, tenant_id, dish, max_results, now, high, low, split_check=False
+        )
+    except (Ambiguous, NotFound):
+        return None
+    if not found.results:
+        return None
+    if found.match_type not in CLEAR_MATCHES:
+        return found.model_copy(update={"wish": open_wish(wish)})
+    hit = found.results[0]
+    if names_it(hit.name, wish):
+        return found
+    classified = classify_wish(wish, hit.option_groups)
+    say = found.say
+    if say is None and classified.kind == "unknown":
+        say = SAY_WISH_UNKNOWN.format(wish=wish, name=hit.name)
+    elif say is None and classified.kind == "allergy":
+        say = SAY_ALLERGY_NOTE.format(name=hit.name)
+    return found.model_copy(update={"wish": classified, "say": say})
+
+
 def search_menu(
     session: Session,
     tenant_id: uuid.UUID,
@@ -340,6 +436,23 @@ def search_menu(
     now = now or utcnow()
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
+
+    dish, wish = split_wish(query)
+    if wish is not None:
+        found = _search_with_wish(
+            session,
+            tenant_id,
+            query,
+            dish,
+            wish,
+            max_results,
+            now,
+            high,
+            low,
+            split_check=split_check,
+        )
+        if found is not None:
+            return found
     limit = min(max_results, AMBIGUOUS_LIMIT)
 
     text = normalize_query(query)

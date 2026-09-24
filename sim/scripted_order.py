@@ -22,6 +22,8 @@ from api.domain.menu.numberwords import (
     sole_item_number,
 )
 from api.domain.menu.search import SAY_NOT_FOUND, SAY_SOLD_OUT
+from api.domain.menu.wishes import classify_wish
+from api.schemas.menu import OptionGroup
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -47,6 +49,8 @@ class CartItem:
     options: list[dict[str, str]] = field(default_factory=list)
     # Pflichtgruppen ohne Wahl: [{"group": ..., "options": [namen]}]
     pending: list[dict[str, Any]] = field(default_factory=list)
+    # Hinweis fuer die Kueche ("ohne Karotten", eine Allergie), T-4.10.
+    note: str | None = None
 
 
 class PickupScript:
@@ -57,6 +61,7 @@ class PickupScript:
         self.phase = "dishes"  # dishes · choose · option · more · customer
         self._suggestions: list[dict[str, Any]] = []
         self._suggestion_query = ""
+        self._suggestion_wish: dict[str, Any] | None = None
         # Die order_id, deren readback gerade offen ist. Nach einem Nein ist sie
         # weg: der Gespraechszustand bleibt readback_pending, bis ein neuer
         # Entwurf kommt, und ein spaeteres Ja bestaetigte sonst die verworfene
@@ -103,7 +108,7 @@ class PickupScript:
                 quantity = _stated_quantity(text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
-                self._add(hit, self._suggestion_query, quantity)
+                self._add(hit, self._suggestion_query, quantity, self._suggestion_wish)
                 # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
                 # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
                 self._suggestions = []
@@ -235,17 +240,23 @@ class PickupScript:
             hit = hits[0]
             if hit.get("sold_out"):
                 return found.get("say") or f"{hit['name']} ist heute leider aus."
-            self._add(hit, query)
+            self._add(hit, query, wish=found.get("wish"))
             return None
         if hits:
             self.phase = "choose"
             self._suggestions = hits
             self._suggestion_query = query
+            # Ein Wunsch bei mehreren Treffern wird nach der Wahl eingeordnet.
+            self._suggestion_wish = found.get("wish")
             return _offer(hits)
         return found.get("say")
 
     def _add(
-        self, hit: dict[str, Any], query: str, quantity: int | None = None
+        self,
+        hit: dict[str, Any],
+        query: str,
+        quantity: int | None = None,
+        wish: dict[str, Any] | None = None,
     ) -> None:
         pending = [
             {"group": g["group"], "options": [o["name"] for o in g["options"]]}
@@ -261,6 +272,27 @@ class PickupScript:
                 pending=pending,
             )
         )
+        self._apply_wish(self.cart[-1], hit, wish)
+
+    def _apply_wish(
+        self, item: CartItem, hit: dict[str, Any], wish: dict[str, Any] | None
+    ) -> None:
+        """Der Wunsch aus search_menu am Warenkorb (T-4.10): eine Option der Karte
+        wird gewaehlt (die Pflichtfrage dieser Gruppe entfaellt), ein Hinweis und
+        eine Allergie gehen in `note`. Was die Karte nicht kennt, bleibt weg - der
+        Satz dazu kam schon aus dem Code (D8)."""
+        if wish is None:
+            return
+        if wish["kind"] == "open":
+            groups = [
+                OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
+            ]
+            wish = classify_wish(wish["text"], groups).model_dump()
+        if wish["kind"] == "option":
+            item.options.append({"group": wish["group"], "name": wish["option"]})
+            item.pending = [g for g in item.pending if g["group"] != wish["group"]]
+        elif wish["kind"] in ("note", "allergy"):
+            item.note = wish["text"]
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
@@ -355,6 +387,7 @@ class PickupScript:
                     "menu_item_id": i.menu_item_id,
                     "quantity": i.quantity,
                     "options": i.options,
+                    **({"note": i.note} if i.note else {}),
                 }
                 for i in self.cart
             ],

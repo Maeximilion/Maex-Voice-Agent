@@ -31,7 +31,7 @@ from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
-from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest
+from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest, SearchResult
 from api.schemas.orders import DraftOrderRequest
 from api.schemas.reservations import CheckSlotRequest, CreateReservationRequest
 from api.schemas.transfer import TransferToTeamRequest
@@ -72,6 +72,26 @@ def _check_slot(
     return check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
 
 
+# Platzhalter, bis der Schluessel aus der geprueften Anfrage feststeht.
+_PENDING = "pending"
+_KEY_EXCLUDE = {"idempotency_key", "call_id", "tenant_id"}
+
+
+def _with_derived_key[R: (CreateReservationRequest, DraftOrderRequest)](
+    req: R, tool: str
+) -> R:
+    """Der Schluessel aus der **geprueften** Anfrage desselben Anrufs, nie vom
+    Modell. Aus jedem gespeicherten Feld: eine geaenderte Notiz ("mit
+    Hochstuhl") ist ein neuer Entwurf. Aus der kanonischen Form: `options: []`
+    und ein weggelassenes Feld sind dasselbe, ein Modell-Retry legt keinen
+    zweiten Entwurf an (offene Punkte aus PR #127, T-4.10)."""
+    canonical = json.dumps(
+        req.model_dump(mode="json", exclude=_KEY_EXCLUDE), sort_keys=True
+    )
+    key = idempotency_key(req.call_id, tool, canonical)
+    return req.model_copy(update={"idempotency_key": key})
+
+
 def _create_reservation(
     session: Session,
     call_id: uuid.UUID,
@@ -84,17 +104,12 @@ def _create_reservation(
     # identischen Angaben nicht doppelt bucht. Einen Schlüssel vom Modell gibt es
     # nicht - erfunden oder wiederverwendet holte er einen fremden Vorgang
     # (Codex PR #127, P1).
-    key = idempotency_key(
-        call_id,
-        "create_reservation",
-        args.get("guest_name"),
-        args.get("phone"),
-        args.get("party_size"),
-        args.get("reserved_for"),
-    )
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
-    req = CreateReservationRequest(
-        call_id=call_id, tenant_id=tenant_id, idempotency_key=key, **rest
+    req = _with_derived_key(
+        CreateReservationRequest(
+            call_id=call_id, tenant_id=tenant_id, idempotency_key=_PENDING, **rest
+        ),
+        "create_reservation",
     )
     return create_reservation(session, req, now=now)
 
@@ -144,6 +159,8 @@ class PositionResult(BaseModel):
     ok: bool
     match_type: str | None = None
     results: list[dict[str, Any]] = Field(default_factory=list)
+    # Wunsch zu diesem Teil (T-4.10): "ohne Karotten", eine Option der Karte, ...
+    wish: dict[str, Any] | None = None
     error_code: str | None = None
     say: str | None = None
 
@@ -172,10 +189,12 @@ def _search_menu(
     parts = position_parts(session, tenant_id, req.query, now=now)
     if len(parts) <= 1:
         found = search_menu(session, tenant_id, req.query, req.max_results, now=now)
-        hit = found.results[0] if found.results else None
-        if found.say is None and found.match_type in CLEAR_MATCHES and hit:
-            echo = say_understood([(found.match_type, hit)], req.query)
-            return found.model_copy(update={"say": echo})
+        if _repeats(found):
+            echo = say_understood(
+                [(found.match_type, found.results[0], found.wish)], req.query
+            )
+            # Eine Allergie wird mit wiederholt, ihr Satz aus der Domain folgt.
+            return found.model_copy(update={"say": _join(echo, found.say)})
         return found
     positions = []
     understood = []
@@ -187,21 +206,39 @@ def _search_menu(
                 PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)
             )
             continue
-        hit = found.results[0] if found.results else None
-        if found.match_type in CLEAR_MATCHES and hit and not hit.sold_out:
-            understood.append((found.match_type, hit))
+        if _repeats(found):
+            understood.append((found.match_type, found.results[0], found.wish))
         positions.append(
             PositionResult(
                 query=part,
                 ok=True,
                 match_type=found.match_type,
                 results=[hit.model_dump(mode="json") for hit in found.results],
+                wish=found.wish.model_dump() if found.wish else None,
                 say=found.say,
             )
         )
     return PositionsResult(
         positions=positions, say=say_understood(understood, req.query)
     )
+
+
+def _repeats(found: SearchResult) -> bool:
+    """Wird der Treffer sofort wiederholt? Nur ein eindeutiger, nicht
+    ausverkaufter; ein Wunsch, den die Karte nicht kennt, hat seinen eigenen
+    Satz (D8), eine Allergie wird mit wiederholt (T-4.10)."""
+    if found.match_type not in CLEAR_MATCHES or not found.results:
+        return False
+    if found.results[0].sold_out:
+        return False
+    if found.wish is not None:
+        return found.wish.kind != "unknown"
+    return found.say is None
+
+
+def _join(*parts: str | None) -> str | None:
+    joined = " ".join(p for p in parts if p)
+    return joined or None
 
 
 def _item_details(
@@ -230,11 +267,11 @@ def _draft_order(
     # neuen Entwurf mit neuem readback.
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
     # Wie bei create_reservation nie der Schluessel des Modells (Codex PR #127).
-    key = idempotency_key(
-        call_id, "draft_order", json.dumps(rest, sort_keys=True, default=str)
-    )
-    req = DraftOrderRequest(
-        call_id=call_id, tenant_id=tenant_id, idempotency_key=key, **rest
+    req = _with_derived_key(
+        DraftOrderRequest(
+            call_id=call_id, tenant_id=tenant_id, idempotency_key=_PENDING, **rest
+        ),
+        "draft_order",
     )
     return draft_order(session, req, now=now)
 
