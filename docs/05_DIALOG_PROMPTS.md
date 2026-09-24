@@ -1,7 +1,7 @@
 # 05 – Dialog, Prompts und Eskalation
 
 > Die Gesprächsführung gehört ins Modell. Jede Prüfung gehört in den Code.
-> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf.
+> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf. Aktuell ist `v2` (Reservierung und Abholung, `agent/prompt.py` `PROMPT_VERSION`); `v1` bleibt ladbar.
 
 ---
 
@@ -148,6 +148,15 @@ Sofort und ohne Diskussion:
   "items": [{ "id": "…", "n": 2, "opt": "Erdnuss" }],
   "open": ["Rufnummer bestätigen"], "stage": "readback_pending" }
 ```
+
+Nur ein vorgelesener Entwurf ist bestätigbar. Korrigiert der Gast nach dem Vorlesen
+und scheitert die Korrektur (`draft_order` oder `create_reservation` mit Fehler) oder
+beginnt eine neue Slotprüfung (`check_slot`) oder eine neue Suche in der Karte
+(`search_menu`), fällt der alte Entwurf aus dem Zustand
+und `stage` geht zurück auf `collecting`: ein späteres Ja kann ihn nicht mehr
+bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
+(`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
+bestätigbar, eine andere Option geht nur über `draft_order`.
 
 ---
 

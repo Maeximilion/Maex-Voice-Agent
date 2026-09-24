@@ -31,6 +31,7 @@ class ConversationState(BaseModel):
     slots: dict[str, Any] = Field(default_factory=dict)
     open_questions: list[str] = Field(default_factory=list)
     reservation_id: uuid.UUID | None = None
+    order_id: uuid.UUID | None = None
     transferred: bool = False
 
     def to_prompt_json(self) -> dict[str, Any]:
@@ -44,6 +45,9 @@ class ConversationState(BaseModel):
             # Ohne das kann ein zustandsloses LLMClient auf dem "Ja" nach dem
             # readback kein entity_id für `confirm` liefern (Codex-Review PR #101, P1).
             data["reservation_id"] = str(self.reservation_id)
+        if self.order_id:
+            # Dasselbe fuer Bestellungen: confirm braucht entity_id.
+            data["order_id"] = str(self.order_id)
         return data
 
 
@@ -59,12 +63,27 @@ def apply_state_patch(state: ConversationState, patch: dict[str, Any]) -> None:
 def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -> None:
     """Schreibt ein erfolgreiches Tool-Ergebnis in den Zustand. Fehlschläge ändern
     den Zustand nicht: das Modell entscheidet auf Basis von `say`/`error_code`,
-    was als Nächstes versucht wird (Verständnis-Leiter, T-2.2)."""
+    was als Nächstes versucht wird (Verständnis-Leiter, T-2.2).
+
+    Ausnahme: der Gast korrigiert nach dem Vorlesen. Dann ist der vorgelesene
+    Entwurf nicht mehr, was er will, auch wenn die Korrektur scheitert."""
+    if state.stage == "readback_pending" and _supersedes(name, result):
+        _drop_readback(state, name)
     if not result.ok:
         return
+    # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
+    # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst
+    # stuenden zwei bestaetigbare Vorgaenge im Prompt, und das naechste Ja
+    # koennte den verlassenen bestaetigen (Codex PR #127).
     if name == "create_reservation":
-        state.intent = state.intent or "reservation"
+        state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
+        state.order_id = None
+        state.stage = "readback_pending"
+    elif name == "draft_order":
+        state.intent = "pickup"
+        state.order_id = uuid.UUID(result.data["order_id"])
+        state.reservation_id = None
         state.stage = "readback_pending"
     elif name == "confirm":
         state.stage = "confirmed"
@@ -73,3 +92,36 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     elif name == "transfer_to_team" and result.data.get("available"):
         state.transferred = True
         state.stage = "transferred"
+
+
+# Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
+# check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
+_CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
+# Eine Korrektur der Gerichte beginnt mit search_menu: das loest den
+# vorgelesenen Entwurf ab, erfolgreich oder nicht - endet der Zug mit einer
+# Rueckfrage, darf ein Ja darauf nicht den alten bestaetigen (Codex PR #127, P1).
+# get_item_details nicht: es beantwortet eine Frage (Allergene, Beschreibung) und
+# aendert nichts; eine andere Option geht nur ueber draft_order (Codex PR #127, P2).
+_MENU_LOOKUP = frozenset({"search_menu"})
+_PICKUP_TOOLS = frozenset({"draft_order"}) | _MENU_LOOKUP
+
+
+def _supersedes(name: str, result: ToolResult) -> bool:
+    """Loest dieser Aufruf den vorgelesenen Entwurf ab, ohne selbst einen neuen
+    zu liefern? Ein neuer Entwurf ersetzt die ID ohnehin; ein gescheiterter
+    draft_order oder create_reservation und jede neue Slotpruefung liefern
+    keinen, und der alte bliebe bestaetigbar. Das naechste Ja bestaetigte dann
+    den Entwurf, den der Gast gerade korrigiert hat (Codex PR #127, P1)."""
+    if name == "check_slot" or name in _MENU_LOOKUP:
+        return True
+    return name in _CORRECTING and not result.ok
+
+
+def _drop_readback(state: ConversationState, name: str) -> None:
+    """Die Absicht folgt dem Ablauf, der den alten Entwurf abloest: wechselt der
+    Gast von der Bestellung zum Tisch und der Slot ist belegt, geht es danach um
+    Alternativen, nicht mehr um die Abholung (Codex PR #127, P2)."""
+    state.order_id = None
+    state.reservation_id = None
+    state.intent = "pickup" if name in _PICKUP_TOOLS else "reservation"
+    state.stage = "collecting"

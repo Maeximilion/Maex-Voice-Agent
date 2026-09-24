@@ -93,3 +93,132 @@ def test_transfer_mit_erreichbarkeit_setzt_transferred():
     )
     assert state.transferred is True
     assert state.stage == "transferred"
+
+
+def _ok(data: dict) -> ToolResult:
+    return ToolResult(ok=True, data=data)
+
+
+def test_wechsel_von_reservierung_zu_bestellung_macht_die_bestellung_aktiv():
+    """Codex PR #127: nach einem Reservierungsentwurf und dann einer Bestellung
+    standen beide IDs im Prompt, das naechste Ja konnte die verlassene
+    Reservierung bestaetigen. Aktiv ist, was zuletzt vorgelesen wurde."""
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    apply_tool_result(
+        state, "create_reservation", _ok({"reservation_id": str(uuid.uuid4())})
+    )
+    order_id = uuid.uuid4()
+    apply_tool_result(state, "draft_order", _ok({"order_id": str(order_id)}))
+
+    assert state.intent == "pickup"
+    assert state.order_id == order_id and state.reservation_id is None
+    prompt = state.to_prompt_json()
+    assert prompt["order_id"] == str(order_id) and "reservation_id" not in prompt
+
+
+def test_wechsel_von_bestellung_zu_reservierung_macht_die_reservierung_aktiv():
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    apply_tool_result(state, "draft_order", _ok({"order_id": str(uuid.uuid4())}))
+    reservation_id = uuid.uuid4()
+    apply_tool_result(
+        state, "create_reservation", _ok({"reservation_id": str(reservation_id)})
+    )
+
+    assert state.intent == "reservation"
+    assert state.reservation_id == reservation_id and state.order_id is None
+    assert "order_id" not in state.to_prompt_json()
+
+
+# --- Gescheiterte Korrektur nach dem Vorlesen (Codex PR #127, P1) --------------------
+
+
+def test_gescheiterte_korrektur_der_bestellung_nimmt_den_alten_entwurf_raus():
+    """Der Gast korrigiert nach dem Vorlesen, der neue draft_order scheitert
+    (z. B. Menge ueber dem Limit). Der alte Entwurf ist nicht mehr, was der Gast
+    will: bliebe er im Zustand, bestaetigte das naechste Ja ihn."""
+    state = make_state(stage="readback_pending", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.order_id is None
+    assert state.stage == "collecting"
+    assert "order_id" not in state.to_prompt_json()
+
+
+def test_gescheiterte_korrektur_der_reservierung_nimmt_den_alten_entwurf_raus():
+    state = make_state(stage="readback_pending", reservation_id=uuid.uuid4())
+    apply_tool_result(
+        state, "create_reservation", ToolResult(ok=False, error_code="conflict")
+    )
+    assert state.reservation_id is None
+    assert state.stage == "collecting"
+
+
+def test_neue_slotpruefung_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus():
+    """Eine Korrektur der Reservierung beginnt mit check_slot. Ist der neue
+    Wunsch belegt, darf ein spaeteres Ja nicht den alten bestaetigen."""
+    state = make_state(stage="readback_pending", reservation_id=uuid.uuid4())
+    apply_tool_result(
+        state, "check_slot", ToolResult(ok=True, data={"available": False})
+    )
+    assert state.reservation_id is None
+    assert state.stage == "collecting"
+
+
+def test_fehler_ohne_offenes_vorlesen_aendert_nichts():
+    order_id = uuid.uuid4()
+    state = make_state(stage="confirmed", order_id=order_id)
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.stage == "confirmed"
+    assert state.order_id == order_id
+
+
+def test_wechsel_zur_reservierung_mit_belegtem_slot_setzt_die_absicht():
+    """Codex PR #127, P2: die Bestellung wartet aufs Ja, der Gast will doch einen
+    Tisch, der Slot ist belegt. Ohne create_reservation bliebe intent "pickup",
+    und das Modell spraeche beim naechsten Zug ueber die falsche Sache."""
+    state = make_state(stage="readback_pending", intent="pickup", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "check_slot", ToolResult(ok=True, data={"available": False})
+    )
+    assert state.intent == "reservation"
+    assert state.order_id is None
+
+
+def test_gescheiterte_bestellung_nach_reservierung_setzt_die_absicht():
+    state = make_state(
+        stage="readback_pending", intent="reservation", reservation_id=uuid.uuid4()
+    )
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.intent == "pickup"
+
+
+def test_menuesuche_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus():
+    """Codex PR #127, P1: eine Korrektur der Gerichte beginnt mit search_menu.
+    Endet der Zug mit einer Rueckfrage, bliebe der alte Entwurf readback_pending,
+    und ein Ja auf die Rueckfrage bestaetigte ihn. Die Absicht bleibt Abholung."""
+    state = make_state(stage="readback_pending", intent="pickup", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "search_menu", ToolResult(ok=True, data={"match_type": "ambiguous"})
+    )
+    assert state.order_id is None
+    assert state.stage == "collecting"
+    assert state.intent == "pickup"
+
+
+def test_frage_zu_einem_gericht_laesst_den_entwurf_stehen():
+    """Codex PR #127, P2: get_item_details beantwortet eine Frage (Allergene,
+    Beschreibung) und aendert nichts. Der Gast hoert die Antwort und sagt ja -
+    der vorgelesene Entwurf muss dann noch bestaetigbar sein. Eine Aenderung
+    der Optionen geht nur ueber draft_order, und das loest ihn ab."""
+    order_id = uuid.uuid4()
+    state = make_state(stage="readback_pending", intent="pickup", order_id=order_id)
+    apply_tool_result(
+        state, "get_item_details", ToolResult(ok=True, data={"number": "47"})
+    )
+    assert state.order_id == order_id
+    assert state.stage == "readback_pending"

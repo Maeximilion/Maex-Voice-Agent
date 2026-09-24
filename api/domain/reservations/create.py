@@ -33,7 +33,7 @@ def create_reservation(
     # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
-        return _replay(existing, req.tenant_id, zone)
+        return _replay(existing, req.tenant_id, req.call_id, zone)
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
@@ -73,7 +73,7 @@ def create_reservation(
         existing = _by_key(session, req.idempotency_key)
         if existing is None:
             raise
-        return _replay(existing, req.tenant_id, zone)
+        return _replay(existing, req.tenant_id, req.call_id, zone)
 
     session.add(
         AuditLog(
@@ -108,9 +108,11 @@ def _by_key(session: Session, key: str) -> Reservation | None:
 
 
 def _replay(
-    existing: Reservation, tenant_id: uuid.UUID, zone: ZoneInfo
+    existing: Reservation, tenant_id: uuid.UUID, call_id: uuid.UUID, zone: ZoneInfo
 ) -> ReservationDraft:
-    if existing.tenant_id != tenant_id:
+    # Wie bei Bestellungen: nie die Reservierung eines anderen Anrufs (Codex PR
+    # #127, P1).
+    if existing.tenant_id != tenant_id or existing.call_id != call_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
     return _draft(existing, zone)
 
