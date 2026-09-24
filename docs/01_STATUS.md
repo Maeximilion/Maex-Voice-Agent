@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.9
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.10
 
 ---
 
@@ -271,6 +271,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.10 · 24.09.2026:** Anrufprotokoll: Hausnummern ab tausend, kaputtes Salz bricht ab, Loeschen ersetzt die CSV atomar (Codex)
 - **v1.31.9 · 24.09.2026:** Anrufprotokoll: getrennte Zahlwoerter in Adressen, nachgetragene Anrufe derselben Minute, unlesbares ID-Verzeichnis (Codex)
 - **v1.31.8 · 24.09.2026:** E14: eigene Allergie als Kuechenhinweis "WICHTIG: Keine <Zutat>. Grund: Allergie" (docs/05, docs/03, T-4.10)
 - **v1.31.7 · 24.09.2026:** E13 und die Aenderung an find_customer zurueckgenommen (Maxi), Spezifikation wie vor v1.31.6

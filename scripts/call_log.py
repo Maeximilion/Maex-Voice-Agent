@@ -157,6 +157,20 @@ def _norm(value: str) -> str:
     return fold(value.strip())
 
 
+def _cardinal(token: str) -> int | None:
+    """Zahlwort als Zahl, auch ab tausend: der Zahlenleser der Karte endet bei
+    999, eine Hausnummer nicht ("tausend", "zweitausenddrei")."""
+    head, sep, tail = token.partition("tausend")
+    if not sep:
+        return parse_cardinal(token)
+    high = 1 if head == "" else parse_cardinal(head)
+    tail = tail.removeprefix("und")
+    low = 0 if tail == "" else parse_cardinal(tail)
+    if high is None or low is None:
+        return None
+    return high * 1000 + low
+
+
 def _numbers_as_digits(text: str) -> str:
     """Zahlwoerter als Ziffern, fuer die Adresspruefung: "Hauptstrasse zwoelf"
     wird "hauptstrasse 12". Artikel ("eine Pizza") bleiben Woerter, sonst
@@ -171,14 +185,14 @@ def _numbers_as_digits(text: str) -> str:
         while i < len(tokens):
             # Laengste Folge ab i, die zusammen eine Zahl ist, hoechstens fuenf Woerter.
             for j in range(min(len(tokens), i + 5), i + 1, -1):
-                value = parse_cardinal("".join(tokens[i:j]))
+                value = _cardinal("".join(tokens[i:j]))
                 if value is not None:
                     out.append(str(value))
                     i = j
                     break
             else:
                 token = tokens[i]
-                value = None if token in ARTICLES else parse_cardinal(token)
+                value = None if token in ARTICLES else _cardinal(token)
                 out.append(token if value is None else str(value))
                 i += 1
         return " ".join(out)
@@ -651,13 +665,21 @@ def _report_correction(case: dict, reviewed: Path) -> None:
         )
 
 
+_SALT = re.compile(r"[0-9a-f]{32}")
+
+
 def _salt(csv_file: Path) -> str:
     """Lokales Salz fuer die Fall-IDs, neben der CSV (imports/, im .gitignore).
-    Einmal angelegt, danach wiederverwendet, damit IDs stabil bleiben."""
+    Einmal angelegt, danach wiederverwendet, damit IDs stabil bleiben. Ein
+    leeres oder kaputtes Salz bricht ab (ValueError): leer waeren die IDs
+    wieder berechenbar, ein neues aenderte alle IDs."""
     path = csv_file.with_name(".call_log_salt")
     if not path.exists():
-        path.write_text(secrets.token_hex(16), encoding="utf-8")
-    return path.read_text(encoding="utf-8").strip()
+        _replace(path, secrets.token_hex(16))
+    salt = path.read_text(encoding="utf-8").strip()
+    if not _SALT.fullmatch(salt):
+        raise ValueError("keine 32 Hex-Zeichen")
+    return salt
 
 
 def _load_known(path: Path) -> dict[str, dict[str, str]]:
@@ -683,12 +705,20 @@ def _load_known(path: Path) -> dict[str, dict[str, str]]:
     return known
 
 
-def _save_known(path: Path, known: dict[str, dict[str, str]]) -> None:
-    """Erst eine Kopie schreiben, dann tauschen: ein abgebrochener Lauf
-    hinterlaesst kein halbes Verzeichnis."""
+def _replace(path: Path, text: str, encoding: str = "utf-8") -> None:
+    """Erst eine Kopie daneben schreiben, dann tauschen: ein abgebrochener Lauf
+    (Platte voll, Strom weg) hinterlaesst keine leere oder halbe Datei."""
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(known, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    try:
+        tmp.write_text(text, encoding=encoding)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
+def _save_known(path: Path, known: dict[str, dict[str, str]]) -> None:
+    _replace(path, json.dumps(known, sort_keys=True))
 
 
 def _forget_before(
@@ -813,6 +843,18 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    salt = ""
+    if args.cases:
+        try:
+            salt = _salt(args.file)
+        except ValueError as exc:
+            print(
+                f"Salz nicht lesbar: {args.file.with_name('.call_log_salt')} "
+                f"({exc}). Nichts geaendert; aus der Sicherung holen, ein neues "
+                "Salz aendert alle Fall-IDs",
+                file=sys.stderr,
+            )
+            return 2
     if days is not None:
         cutoff = _today() - timedelta(days=days)
         old = [e for e in entries if e.day < cutoff]
@@ -821,7 +863,7 @@ def main(argv: list[str] | None = None) -> int:
             f"(vor {cutoff:%d.%m.%Y})"
         )
         if args.loeschen and old:
-            args.file.write_text(purge(text, cutoff), encoding="utf-8-sig")
+            _replace(args.file, purge(text, cutoff), encoding="utf-8-sig")
             known = _forget_before(known, cutoff)
             if known_path.exists():
                 _save_known(known_path, known)
@@ -829,7 +871,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
-        written = write_cases(entries, args.cases, _salt(args.file), known)
+        written = write_cases(entries, args.cases, salt, known)
         _save_known(known_path, known)
         print(f"Eval-Entwuerfe: {written} nach {args.cases}")
     return 0

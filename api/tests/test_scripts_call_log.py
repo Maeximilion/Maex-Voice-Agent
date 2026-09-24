@@ -891,3 +891,53 @@ def test_kaputtes_id_verzeichnis_stoppt_auch_das_loeschen(tmp_path, monkeypatch)
     assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 2
     assert csv_file.read_text(encoding="utf-8") == vorher
     assert ids.read_text(encoding="utf-8") == "[1, 2"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hauptstrasse tausend",
+        "Kaiserstrasse zweitausend drei",
+        "meine Adresse ist Lindenblick tausend zwei hundert",
+    ],
+)
+def test_adresse_mit_hausnummer_ab_tausend(text):
+    """Codex PR #135: der Zahlenleser der Karte endet bei 999; Hausnummern
+    koennen groesser sein."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+@pytest.mark.parametrize("inhalt", ["", "   \n", "kurz", "g" * 32])
+def test_kaputtes_salz_bricht_ab(tmp_path, eval_cases, capsys, inhalt):
+    """Codex PR #135: ein leeres Salz machte die IDs wieder berechenbar; ein
+    neues wuerde alle IDs aendern. Also abbrechen, nichts schreiben."""
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    (tmp_path / ".call_log_salt").write_text(inhalt, encoding="utf-8")
+    entw = tmp_path / "entwuerfe"
+    assert main([str(csv_file), "--cases", str(entw)]) == 2
+    assert "Salz" in capsys.readouterr().err
+    assert not entw.exists() or not any(entw.iterdir())
+    assert (tmp_path / ".call_log_salt").read_text(encoding="utf-8") == inhalt
+
+
+def test_loeschen_ersetzt_die_csv_erst_nach_vollstaendigem_schreiben(
+    tmp_path, monkeypatch
+):
+    """Codex PR #135: bricht das Schreiben ab, darf die einzige CSV nicht leer
+    oder halb zurueckbleiben."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    vorher = csv_file.read_text(encoding="utf-8")
+
+    def kaputt(self, *args, **kwargs):
+        # Wie die echte Methode: erst leeren, dann scheitert das Schreiben.
+        open(self, "w").close()
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(Path, "write_text", kaputt)
+    with pytest.raises(OSError):
+        main([str(csv_file), "--frist-tage", "90", "--loeschen"])
+    monkeypatch.undo()
+    assert csv_file.read_text(encoding="utf-8") == vorher
