@@ -54,12 +54,17 @@ def finding_keys(findings: dict[str, list[dict]]) -> dict[str, str]:
     """Stabiler Schluessel je Befund und Eintrag, Wert ist die Anzeigezeile.
 
     Gehasht, weil Titel beliebigen Text enthalten und den HTML-Kommentar sprengen
-    koennten. Die URL traegt die Identitaet, bei Entwuerfen ohne URL das Label.
+    koennten. Die Identitaet traegt die ID des Board-Eintrags: die URL allein reicht
+    nicht, denn zwei Kopien desselben Issues teilen sie - genau das ist eine Dopplung,
+    und eine dritte Kopie muss als neu gelten. Ohne ID (ein Issue, das auf dem Board
+    fehlt) die URL, bei Entwuerfen ohne URL das Label.
     """
     keys = {}
     for heading, entries in findings.items():
         for entry in entries:
-            identity = f"{heading}|{entry.get('url') or entry['label']}"
+            identity = (
+                f"{heading}|{entry.get('id') or entry.get('url') or entry['label']}"
+            )
             key = hashlib.sha1(identity.encode()).hexdigest()[:12]
             keys[key] = f"{heading}: {entry['label']}"
     return keys
@@ -219,9 +224,12 @@ def main() -> int:
 
     token = os.environ.get("GITHUB_TOKEN", "")
     repo = os.environ.get("GITHUB_REPOSITORY", "")
-    if not repo or (not token and not args.dry_run):
+    # Auch der Probelauf braucht den Token: ohne das bestehende Issue zu lesen, saehe er
+    # immer "create" oder "none", nie das "update", "reopen" oder "close" des echten Laufs.
+    if not repo or not token:
         print(
-            "GITHUB_TOKEN und GITHUB_REPOSITORY muessen gesetzt sein.", file=sys.stderr
+            "GITHUB_TOKEN und GITHUB_REPOSITORY muessen gesetzt sein, auch fuer --dry-run.",
+            file=sys.stderr,
         )
         return 2
     mention = os.environ.get("DECISION_MENTION") or f"@{repo.split('/')[0]}"
@@ -230,16 +238,12 @@ def main() -> int:
         findings = json.load(handle)
 
     try:
-        issues = (
-            rest(
-                "GET",
-                # state=all: auch ein geschlossenes Issue wird wiedergefunden und wieder
-                # geoeffnet. Neueste zuerst, damit genau eines gilt.
-                f"/repos/{repo}/issues?state=all&labels={LABEL}&sort=created&direction=desc&per_page=5",
-                token,
-            )
-            if token
-            else []
+        issues = rest(
+            "GET",
+            # state=all: auch ein geschlossenes Issue wird wiedergefunden und wieder
+            # geoeffnet. Neueste zuerst, damit genau eines gilt.
+            f"/repos/{repo}/issues?state=all&labels={LABEL}&sort=created&direction=desc&per_page=5",
+            token,
         )
         # Pull Requests tragen dieselbe Liste, ein Issue hat kein pull_request-Feld.
         issue = next((i for i in issues if "pull_request" not in i), None)

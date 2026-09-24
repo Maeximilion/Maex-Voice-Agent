@@ -426,7 +426,12 @@ def findings_to_json(findings: dict[str, list[Item]]) -> dict[str, list[dict]]:
     """Befunde als schlichtes JSON: Ueberschrift -> Eintraege mit Label und URL.
     Leere Befunde fallen weg, damit 'nichts offen' eindeutig ein leeres Objekt ist."""
     return {
-        heading: [{"label": item.label, "url": item.url} for item in found]
+        # id: die Board-ID, damit zwei Kopien desselben Issues unterscheidbar bleiben.
+        # Leer bei Eintraegen, die auf dem Board fehlen - die haben noch keine.
+        heading: [
+            {"id": item.node_id or None, "label": item.label, "url": item.url}
+            for item in found
+        ]
         for heading, found in findings.items()
         if found
     }

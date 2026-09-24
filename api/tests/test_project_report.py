@@ -600,5 +600,5 @@ def test_findings_json_traegt_label_und_url() -> None:
         project_report.find_issues([abgelehnt], JETZT)
     )
     assert daten["Pull Request ohne Merge geschlossen"] == [
-        {"label": abgelehnt.label, "url": abgelehnt.url}
+        {"id": abgelehnt.node_id, "label": abgelehnt.label, "url": abgelehnt.url}
     ]

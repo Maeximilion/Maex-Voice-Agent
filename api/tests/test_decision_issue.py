@@ -172,3 +172,41 @@ def test_wiedereroeffnen_setzt_status_open(monkeypatch) -> None:
     todo = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82]}, WER, closed=True)
     decision_issue.apply("o/r", "t", {"number": 7}, todo)
     assert any(payload.get("state") == "open" for _, _, payload in aufrufe)
+
+
+# Codex-Review PR #134, dritte Runde
+
+
+DOPPELT = "Doppelt auf dem Board"
+
+
+def _kopie(item_id: str) -> dict:
+    return {
+        "id": item_id,
+        "label": "#5 Issue",
+        "url": "https://github.com/o/r/issues/5",
+    }
+
+
+def test_dopplungen_bekommen_je_eintrag_einen_eigenen_schluessel() -> None:
+    """Zwei Board-Eintraege desselben Issues teilen die URL - der Schluessel darf das nicht."""
+    schluessel = decision_issue.finding_keys({DOPPELT: [_kopie("A"), _kopie("B")]})
+    assert len(schluessel) == 2
+
+
+def test_dritte_kopie_loest_eine_erwaehnung_aus() -> None:
+    angelegt = decision_issue.plan(None, {DOPPELT: [_kopie("A"), _kopie("B")]}, WER)
+    ergebnis = decision_issue.plan(
+        angelegt.body, {DOPPELT: [_kopie("A"), _kopie("B"), _kopie("C")]}, WER
+    )
+    assert ergebnis.comment is not None
+
+
+def test_probelauf_ohne_token_bricht_ab(monkeypatch, tmp_path) -> None:
+    """Ohne Token kennt der Probelauf das bestehende Issue nicht und saehe falsch 'create'."""
+    datei = tmp_path / "befunde.json"
+    datei.write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setattr(sys, "argv", ["decision_issue.py", str(datei), "--dry-run"])
+    assert decision_issue.main() == 2
