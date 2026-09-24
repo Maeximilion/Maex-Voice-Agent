@@ -201,3 +201,25 @@ def test_fehler_ohne_offenes_vorlesen_aendert_nichts():
     )
     assert state.stage == "confirmed"
     assert state.order_id == order_id
+
+
+def test_wechsel_zur_reservierung_mit_belegtem_slot_setzt_die_absicht():
+    """Codex PR #127, P2: die Bestellung wartet aufs Ja, der Gast will doch einen
+    Tisch, der Slot ist belegt. Ohne create_reservation bliebe intent "pickup",
+    und das Modell spraeche beim naechsten Zug ueber die falsche Sache."""
+    state = make_state(stage="readback_pending", intent="pickup", order_id=uuid.uuid4())
+    apply_tool_result(
+        state, "check_slot", ToolResult(ok=True, data={"available": False})
+    )
+    assert state.intent == "reservation"
+    assert state.order_id is None
+
+
+def test_gescheiterte_bestellung_nach_reservierung_setzt_die_absicht():
+    state = make_state(
+        stage="readback_pending", intent="reservation", reservation_id=uuid.uuid4()
+    )
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=False, error_code="invalid_input")
+    )
+    assert state.intent == "pickup"

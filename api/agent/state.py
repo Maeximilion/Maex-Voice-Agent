@@ -86,7 +86,7 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     Ausnahme: der Gast korrigiert nach dem Vorlesen. Dann ist der vorgelesene
     Entwurf nicht mehr, was er will, auch wenn die Korrektur scheitert."""
     if state.stage == "readback_pending" and _supersedes(name, result):
-        _drop_readback(state)
+        _drop_readback(state, name)
     if not result.ok:
         return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
@@ -128,7 +128,11 @@ def _supersedes(name: str, result: ToolResult) -> bool:
     return name in _CORRECTING and not result.ok
 
 
-def _drop_readback(state: ConversationState) -> None:
+def _drop_readback(state: ConversationState, name: str) -> None:
+    """Die Absicht folgt dem Ablauf, der den alten Entwurf abloest: wechselt der
+    Gast von der Bestellung zum Tisch und der Slot ist belegt, geht es danach um
+    Alternativen, nicht mehr um die Abholung (Codex PR #127, P2)."""
     state.order_id = None
     state.reservation_id = None
+    state.intent = "pickup" if name == "draft_order" else "reservation"
     state.stage = "collecting"
