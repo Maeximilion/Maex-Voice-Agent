@@ -165,12 +165,18 @@ def position_parts(
     # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
     # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
     # anderen Worten - das kann eine Praezisierung sein, der Satz bleibt ganz.
+    # Zaehlt fuer zusammengesetzte Gerichte genauso: "Fisch und Chips und
+    # Backfisch mit Pommes" nennt dasselbe Gericht mit anderen Worten (Codex PR
+    # #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
     i = 0
     while i < len(pieces):
         for j in range(len(pieces) - 1, i, -1):
             text = query[spans[i][0] : spans[j][1]]
-            if _whole_dish(session, tenant_id, search, text, pieces[i : j + 1]):
+            ids = _whole_dish(session, tenant_id, search, text, pieces[i : j + 1])
+            if ids:
+                if len(ids) == 1:
+                    said.setdefault(next(iter(ids)), set()).add(normalize_query(text))
                 positions.append(text)
                 i = j + 1
                 break
@@ -210,8 +216,10 @@ def _whole_dish(
     search: Callable[[str], SearchResult],
     query: str,
     pieces: list[str],
-) -> bool:
+) -> set[uuid.UUID]:
     """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
+    Liefert die Gerichte, die er so trifft - mehrere bei einem doppelten Alias,
+    keins, wenn er kein ganzes Gericht ist.
     Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo.
 
     Verglichen wird in der Form der Suche (normalize_query): "einmal Fisch und
@@ -225,17 +233,18 @@ def _whole_dish(
     Suche ueber den ganzen Satz, welches gemeint ist, statt die Stuecke als
     Positionen zu nehmen (Codex PR #127, P2)."""
     if not all(normalize_query(p) for p in pieces):
-        return False
-    if _alias_items(session, tenant_id, query):
-        return True
+        return set()
+    by_alias = _alias_items(session, tenant_id, query)
+    if by_alias:
+        return {item.id for item in by_alias}
     try:
         found = search(query)
     except (Ambiguous, NotFound):
-        return False
-    if not found.results:
-        return False
+        return set()
     said = normalize_query(query)
-    return any(normalize_query(hit.name) == said for hit in found.results)
+    return {
+        hit.menu_item_id for hit in found.results if normalize_query(hit.name) == said
+    }
 
 
 def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[MenuItem]:

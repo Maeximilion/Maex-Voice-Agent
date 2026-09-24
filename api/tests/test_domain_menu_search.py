@@ -597,11 +597,17 @@ KARTE_ZUSAMMEN = {
         "62;Chips;Beilagen;3,00;;ja\n"
         "13;Pho Bo;Suppen;11,90;;ja\n"
         "23;Frühlingsrollen;Vorspeisen;6,90;;ja\n"
+        "63;Reis;Beilagen;2,50;;ja\n"
     ),
     OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n",
     ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
     # "Fisch" und "Chips" treffen je fuer sich eindeutig (Alias), wie im Befund.
-    ALIASES_FILE: "number;alias\n61;Fisch\n62;Chips\n62;Pommes\n",
+    # "mit Reis" als Alias der Beilage: ein Hinweis, der selbst ein Gericht trifft.
+    # "Backfisch mit Pommes": dasselbe Gericht wie "Fisch und Chips", andere Worte.
+    ALIASES_FILE: (
+        "number;alias\n61;Fisch\n62;Chips\n62;Pommes\n63;mit Reis\n"
+        "60;Backfisch mit Pommes\n"
+    ),
 }
 
 
@@ -755,3 +761,22 @@ def test_aufzaehlung_ohne_mengen_bleibt_im_latenzbudget(session, zusammen_tenant
     assert (
         p95_ms(lambda: position_parts(session, zusammen_tenant, gesagt, now=NOW)) < 300
     )
+
+
+def test_zusammengesetztes_gericht_zweimal_mit_anderen_worten_bleibt_ganz(
+    session, zusammen_tenant
+):
+    """Codex PR #127, P1: "Fisch und Chips" und "Backfisch mit Pommes" sind
+    dasselbe Gericht (Name und Alias). Mit anderen Worten zweimal genannt kann
+    das eine Praezisierung sein - wie bei einzelnen Stuecken bleibt der Satz
+    ganz, statt die Bestellung zu verdoppeln."""
+    gesagt = "Fisch und Chips und Backfisch mit Pommes"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]
+
+
+def test_zusammengesetztes_gericht_zweimal_gleich_sind_zwei(session, zusammen_tenant):
+    gesagt = "Fisch und Chips und Fisch und Chips"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [
+        "Fisch und Chips",
+        "Fisch und Chips",
+    ]
