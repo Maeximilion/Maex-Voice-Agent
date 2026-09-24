@@ -58,7 +58,7 @@ Der wichtigste Schnitt im System.
    → Plattform startet Session, übergibt caller_id an unsere Tools
 2. Begrüßung mit KI-Hinweis (AI Act Art. 50)
 3. get_service_status          → offen? Lieferung an? Wartezeit? ausverkauft?
-4. find_customer(caller_id)    → bekannt? wie viele Adressen? (nie Name oder Adresse an das Modell, E13)
+4. find_customer(caller_id)    → Name bekannt? gespeicherte Adressen?
 5. Kunde nennt Wünsche
    → search_menu je Position   → Treffer mit menu_item_id, Preis, Optionen
    → bei Unsicherheit: Verständnis-Leiter, nie raten

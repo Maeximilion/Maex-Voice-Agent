@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.6
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.7
 
 ---
 
@@ -167,7 +167,6 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **GUI writes require the `HX-Request` header** (`gui/router.py`, `_require_htmx`): basic auth from the proxy is sent by the browser even for a form on a foreign site, a custom header is not without a CORS grant. Cheap protection against forged taps without a form token. Assumption from 18.09.2026
 - **E10 (set by Maxi, 24.09.2026):** The call log (`docs/17`) may be kept before the legal check is complete. The DSFA draft of 24.09.2026 still counts it as personal data (D12: time plus wording can be matched to the router's call list), so the rules in `docs/17` apply and a deletion period for the CSV is open for the data protection officer.
 - **E12 (set by Maxi, 24.09.2026):** Recognising callers by `caller_id` is fine; the register's VoIP already keeps the customers. Legal basis per DSFA: Art. 6 Abs. 1 lit. f with objection right (Art. 21); the balancing of interests is still to be written. Recommendation from DSFA M10, not yet decided: the agent does not volunteer stored data (name, address, order history), a shared number can belong to someone else (R6).
-- **E13 (set by Maxi, 24.09.2026):** The agent never gives out customer data, not even on request and not even to the caller: no names, addresses, order history, not whether someone is a customer. Asked for another person's address, it refuses. Spec updated before any code exists: `find_customer` returns only `customer_id` and the number of saved addresses (docs/04), the caller always states the address and the match happens in code (docs/05 delivery flow), refusal sentence in docs/05 §6, eval cases part of T-6.2. Supersedes the open M10 recommendation in E12
 - **AI disclosure stays as E7 (24.09.2026):** Maxi asked whether the agent could reveal itself as AI only when asked, assuming the law is not adopted yet. Not taken over: the AI Act (VO (EU) 2024/1689, amended by VO (EU) 2026/1744) applies from 02.08.2026 (Art. 113), Art. 50 is not among the later dates, and Art. 50 Abs. 1 and 5 require the information at the first interaction at the latest. What is not adopted is the GDPR part of the Digital Omnibus (norm corpus, as of 08.09.2026), which does not touch Art. 50. The greeting stays short (`docs/05` §6). Lawyer confirmation welcome, the norm corpus is a non-official copy
 - **E11 (set by Maxi, 24.09.2026):** Audio recordings and any further processing of them need the customer's consent. Maxi's view: transcribed text without audio may go into the repo. The code follows the stricter rule for now, DSFA M15 and CLAUDE.md §8 (real customer sentences never in git): eval drafts from the call log carry no real sentence. Loosening this needs the data protection officer's confirmation and a CLAUDE.md change.
 - **E9 (set, 16.09.2026):** Everything runs on EU servers or with EU vendors, including transcription and analysis. Maxi's PC is only a development workbench.
@@ -271,6 +270,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.7 · 24.09.2026:** E13 und die Aenderung an find_customer zurueckgenommen (Maxi), Spezifikation wie vor v1.31.6
 - **v1.31.6 · 24.09.2026:** E13: KI gibt nie Kundendaten heraus; find_customer ohne Name und Adresse, Adresse nennt der Anrufer, Absage-Satz, Eval-Faelle in T-6.2
 - **v1.31.5 · 24.09.2026:** E12 praezisiert, KI-Hinweis bleibt E7 (Art. 50 KI-VO gilt seit 02.08.2026)
 - **v1.31.4 · 24.09.2026:** D10 entschieden (90 Tage, CALL_LOG_RETENTION_DAYS), D9 Einschaetzung Eigenbenennung, E12 Wiedererkennung per caller_id
