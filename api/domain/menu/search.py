@@ -396,6 +396,20 @@ def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
     return None
 
 
+def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:
+    """Das eine aktive Gericht, das genau so heisst oder diesen Alias hat."""
+    by_alias = _alias_items(session, tenant_id, text)
+    if len(by_alias) == 1:
+        return by_alias[0]
+    said = normalize_query(text)
+    named = [
+        item
+        for item in session.scalars(select(MenuItem).where(*_active(tenant_id)))
+        if normalize_query(item.name) == said
+    ]
+    return named[0] if len(named) == 1 else None
+
+
 def _search_with_wish(
     session: Session,
     tenant_id: uuid.UUID,
@@ -430,7 +444,15 @@ def _search_with_wish(
             return None
         return found.model_copy(update={"wish": open_wish(candidates[0][1])})
     hit = found.results[0]
-    for _, wish, segment in candidates:
+    first = 0
+    # Ist "Gericht + erster Satzteil" selbst ein Gericht ("Pizza mit Salami"
+    # neben "Pizza"), gilt dieses, und erst der naechste Satzteil ist der Wunsch
+    # (Codex PR #139).
+    named = _named_dish(session, tenant_id, f"{dish} {candidates[0][2]}")
+    if named is not None and named.id != hit.menu_item_id:
+        found = _single(session, "alias", named, now)
+        hit, first = found.results[0], 1
+    for _, wish, segment in candidates[first:]:
         if names_it(hit.name, segment):
             continue
         classified = classify_wish(wish, hit.option_groups)

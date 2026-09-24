@@ -978,3 +978,16 @@ def test_eigene_allergie_ist_kein_rueckruf(session, tenant):
     assert list(session.scalars(select(Callback))) == []
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+
+
+def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
+    """Codex PR #139, P1: "ich habe eine Allergie" - die Frage "Wogegen?" bleibt
+    offen, bis die Antwort kommt; die Zutat geht im festen Wortlaut an die
+    Kueche, statt als Gericht gesucht zu werden."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[1].say)
+    assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]

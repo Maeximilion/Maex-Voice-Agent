@@ -46,6 +46,7 @@ KARTE_WUENSCHE = {
         "47;Ente knusprig;Hauptgerichte;15,50;;ja\n"
         "60;Pizza mit Salami;Pizza;9,50;;ja\n"
         "61;Pizza mit Pilzen;Pizza;9,00;;ja\n"
+        "62;Pizza;Pizza;7,00;;ja\n"
     ),
     OPTIONS_FILE: (
         "number;group_name;option_name;price_delta_eur;is_default;required;"
@@ -62,6 +63,7 @@ KARTE_WUENSCHE = {
         "24;Sommerrollen\n"
         "13;Pho\n"
         "47;die knusprige Ente\n"
+        "62;Pizza\n"
     ),
 }
 
@@ -535,3 +537,18 @@ def test_jede_zutat_einer_allergie_bleibt(gesagt, hinweis):
     "und" - sonst fehlte eine Allergie im Hinweis an die Kueche. Erst ein neuer
     Satzteil ("und dann noch eine Cola") beendet sie."""
     assert classify_wish(gesagt, BEILAGE).text == hinweis
+
+
+def test_ganzer_name_vor_eindeutigem_praefix(session, tenant_id):
+    """Codex PR #139: neben "Pizza" steht "Pizza mit Salami" auf der Karte. Die
+    Suche nach "Pizza" allein waere eindeutig - trotzdem ist "Pizza mit Salami"
+    das genannte Gericht, kein Wunsch zur Pizza."""
+    result = suche(session, tenant_id, "Pizza mit Salami")
+    assert [h.number for h in result.results] == ["60"]
+    assert result.wish is None
+
+
+def test_wunsch_zur_einfachen_pizza_bleibt_wunsch(session, tenant_id):
+    result = suche(session, tenant_id, "Pizza ohne Zwiebeln")
+    assert [h.number for h in result.results] == ["62"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Zwiebeln")
