@@ -1,6 +1,7 @@
 """Anrufprotokoll ohne Tonaufnahme (scripts/call_log.py, docs/17). Ohne Datenbank."""
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -383,3 +384,67 @@ def test_produktbezogene_allergenfrage_ist_erlaubt():
         + _row(phrases="sind in der 23 Nuesse drin? | welche Allergene hat die 12")
     )
     assert errors == []
+
+
+def test_kaputter_entwurf_wird_gemeldet(tmp_path, eval_cases, capsys):
+    """Ein Entwurf, der kein JSON mehr ist, bleibt liegen, aber nicht still."""
+    (tmp_path / "protokoll_kaputt_abholung.json").write_text("{", encoding="utf-8")
+    entries, _ = parse(HEADER + _row())
+    write_cases(entries, tmp_path)
+    assert "protokoll_kaputt_abholung.json" in capsys.readouterr().err
+
+
+def _alt_und_neu(tmp_path):
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(
+        HEADER + _row(date="01.06.2026") + _row(date="20.09.2026"), encoding="utf-8"
+    )
+    return csv_file
+
+
+def test_frist_zeigt_abgelaufene_ohne_zu_loeschen(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    vorher = csv_file.read_text(encoding="utf-8")
+    assert main([str(csv_file), "--frist-tage", "90"]) == 0
+    out = capsys.readouterr().out
+    assert "1 Eintraege aelter als 90 Tage (vor 26.06.2026)" in out
+    assert csv_file.read_text(encoding="utf-8") == vorher
+
+
+def test_loeschen_entfernt_nur_alte_zeilen(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = _alt_und_neu(tmp_path)
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 0
+    entries, errors = parse(csv_file.read_text(encoding="utf-8-sig"))
+    assert errors == []
+    assert [e.day for e in entries] == [date(2026, 9, 20)]
+    assert "Anrufe: 1 an 1 Tagen" in capsys.readouterr().out
+
+
+def test_frist_aus_umgebung(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    monkeypatch.setenv("CALL_LOG_RETENTION_DAYS", "90")
+    assert main([str(_alt_und_neu(tmp_path))]) == 0
+    assert "aelter als 90 Tage" in capsys.readouterr().out
+
+
+def test_loeschen_ohne_frist_ist_ein_fehler(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("CALL_LOG_RETENTION_DAYS", raising=False)
+    csv_file = _alt_und_neu(tmp_path)
+    vorher = csv_file.read_text(encoding="utf-8")
+    assert main([str(csv_file), "--loeschen"]) == 2
+    assert "Frist" in capsys.readouterr().err
+    assert csv_file.read_text(encoding="utf-8") == vorher
+
+
+def test_fehlerhafte_datei_wird_nicht_geloescht(tmp_path, monkeypatch):
+    """Erst pruefen, dann loeschen: eine rote Datei bleibt, wie sie ist."""
+    monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(
+        HEADER + _row(date="01.06.2026") + _row(intent="catering"), encoding="utf-8"
+    )
+    vorher = csv_file.read_text(encoding="utf-8")
+    assert main([str(csv_file), "--frist-tage", "90", "--loeschen"]) == 1
+    assert csv_file.read_text(encoding="utf-8") == vorher

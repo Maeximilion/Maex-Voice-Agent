@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.2
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.3
 
 ---
 
@@ -112,6 +112,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
 | D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. Removal wishes ("ohne Karotten") are a note without price. Allergy wording before go-live with the legal check (docs/09). Task T-4.10 | Maxi | done |
 | D7 | Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop? recommended: own core if the platform allows | Maxi with C2 | together with D1 |
+| D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2) | Maxi | before `shadow` with recording |
+| D10 | Deletion period for the call log CSV (`imports/anrufprotokoll.csv`, DSFA D12); proposal 90 days like transcripts, tool ready (`scripts/call_log.py --frist-tage N --loeschen`) | Maxi with data protection officer | before the first weekly evaluation |
 
 ---
 
@@ -266,6 +268,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.3 · 24.09.2026:** Anrufprotokoll: Loeschfrist per --frist-tage/--loeschen, kaputte Entwuerfe gemeldet; D9 Datenschutzbeauftragter, D10 Frist offen
 - **v1.31.2 · 24.09.2026:** Anrufprotokoll nach Rechts-Check: Entwuerfe ohne echte Kundensaetze (DSFA M15), Allergien einer Person abgelehnt (M8), E10 und E11 entschieden
 - **v1.31.1 · 24.09.2026:** Anrufprotokoll: diktierte Nummern, E-Mails und Adressen abgelehnt, richtige Zeilennummern, UTF-8-Meldung, durchgesehene Faelle nie ueberschrieben, Wochentag je Tag
 - **v1.31.0 · 24.09.2026:** Anrufprotokoll ohne Tonaufnahme: Druckbogen, CSV-Format (docs/17), scripts/call_log.py fuer C1-Baseline und Eval-Entwuerfe

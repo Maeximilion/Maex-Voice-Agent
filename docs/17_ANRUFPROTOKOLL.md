@@ -58,9 +58,14 @@ Ein Datum mit Jahr schlägt deshalb auch an: `25.09.` statt `25.09.2026` schreib
 ```bash
 python -m scripts.call_log imports/anrufprotokoll.csv
 python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwuerfe/
+python -m scripts.call_log imports/anrufprotokoll.csv --frist-tage 90            # nur anzeigen
+python -m scripts.call_log imports/anrufprotokoll.csv --frist-tage 90 --loeschen # wirklich löschen
 ```
 
 Ausgabe: Anzahl, Anliegen und Ergebnis mit Anteil, mittlere Dauer, Anrufe je Stunde, Anrufe je Wochentag als Mittel je Tag (ein Wochentag, der im Zeitraum öfter vorkommt, wirkt sonst stärker, `-` wenn er nicht vorkommt), alle notierten Probleme mit Zeilennummer der CSV. Exit-Code 0 ausgewertet, 1 Prüffehler oder Datei nicht UTF-8 (nichts ausgewertet), 2 Datei fehlt oder ist nicht lesbar, oder Zielordner liegt in `evals/cases/`.
+
+### Löschfrist
+`--frist-tage N` zeigt, wie viele Einträge älter als N Tage sind; mit `--loeschen` entfernt das Script sie aus der CSV (die übrigen Zeilen bleiben unverändert). Ohne `--frist-tage` gilt `CALL_LOG_RETENTION_DAYS` aus der Umgebung. `--loeschen` ohne Frist bricht ab (Exit 2), eine Datei mit Prüffehlern wird nie verändert (Exit 1). Die Frist ist offen (D10 in `docs/01_STATUS.md`); Vorschlag 90 Tage wie für Transkripte (`docs/03`). Ein Entwurf, der kein gültiges JSON mehr ist, bleibt liegen und wird gemeldet.
 
 ### Eval-Entwürfe
 Mit `--cases` wird jede Zeile mit Kundensätzen zum **Gerüst** eines Falls im Format von `docs/08` §1, `source: "handcrafted"`, Dateiname `protokoll_<id>_<anliegen>.json`. **Der Entwurf enthält keinen echten Kundensatz**, `transcript` ist leer (DSFA M15, CLAUDE.md §8: echte Kundensätze nie ins Git). Das Team stellt die Sätze mit eigenen Worten nach: gleiches Anliegen, gleiches Problem, anderer Wortlaut. Der echte Wortlaut bleibt in der CSV in `imports/`. Die ID kommt aus Datum, Uhrzeit und Kundensätzen, nicht aus der Zeilennummer: Fälle aus verschiedenen Wochen überschreiben sich in `evals/cases/` nicht, derselbe Anruf behält seine ID. Einen Zielordner in `evals/cases/` lehnt das Script ab, auch in anderer Schreibweise oder als Unterordner (Exit 2). Jeder Lauf räumt den Ordner auf: Entwürfe, die noch das Feld `review` tragen, werden vorher gelöscht, damit nach einer Korrektur kein überholter Entwurf liegen bleibt. Ein Fall ohne `review` (schon durchgesehen) bleibt stehen und wird nicht überschrieben. Ein Anruf, dessen ID schon in `evals/cases/` liegt, wird nicht neu entworfen.
@@ -83,7 +88,7 @@ Ein Entwurf ist **kein** fertiger Fall. Das Feld `review` sagt, was fehlt: Kunde
 
 1. Bogen ausdrucken, neben das Telefon legen. Eine Zeile je Anruf, direkt nach dem Auflegen, 20 Sekunden.
 2. Abends oder am Wochenende in die CSV abtippen (Tabellenkalkulation, als „CSV UTF-8 (durch Trennzeichen getrennt)“ speichern; das normale CSV aus Excel ist kein UTF-8 und wird abgelehnt). Bögen danach vernichten.
-3. Einmal pro Woche auswerten, Zahlen in die C1-Bestandsaufnahme.
+3. Einmal pro Woche auswerten, Zahlen in die C1-Bestandsaufnahme, danach mit `--frist-tage 90 --loeschen` alles außerhalb der Frist aus der CSV entfernen.
 4. Zwei Wochen reichen für eine erste Baseline.
 
 Wenn der Rechts-Check durch ist und die Voice-Plattform steht, übernimmt der Modus `shadow` mit Aufnahme und Transkription (T-7.1 bis T-7.5). **Tonaufnahmen und ihre weitere Verarbeitung brauchen die Einwilligung des Kunden** (Maxi, 24.09.2026; §201 StGB, DSFA M1 bis M3). Das Protokoll bleibt als Vergleich bis Gate G4 sinnvoll.

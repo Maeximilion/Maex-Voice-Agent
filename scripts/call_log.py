@@ -3,6 +3,7 @@
 Aufruf:
     python -m scripts.call_log imports/anrufprotokoll.csv
     python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwuerfe/
+    python -m scripts.call_log imports/anrufprotokoll.csv --frist-tage 90 [--loeschen]
 
 Das Protokoll fuehrt das Team von Hand, ohne Tonaufnahme: Anliegen, Ergebnis und
 die woertlichen Kundensaetze, nie Namen oder Telefonnummern. Solange der
@@ -22,12 +23,14 @@ import hashlib
 import io
 import json
 import math
+import os
 import re
 import sys
 from collections import Counter
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from api.domain.menu.numberwords import ARTICLES, fold, parse_cardinal
 
@@ -405,6 +408,8 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
         try:
             draft = json.loads(stale.read_text(encoding="utf-8"))
         except (OSError, ValueError):
+            # Liegen lassen, nicht still: vielleicht ist es ein halb bearbeiteter Fall.
+            print(f"Entwurf nicht lesbar, bitte pruefen: {stale.name}", file=sys.stderr)
             continue
         if isinstance(draft, dict) and "review" in draft:
             stale.unlink()
@@ -426,6 +431,35 @@ def write_cases(entries: list[Entry], folder: Path) -> int:
     return len(written)
 
 
+def _today() -> date:
+    """Heute in Ortszeit; die Tests setzen das Datum fest."""
+    return datetime.now(ZoneInfo("Europe/Berlin")).date()
+
+
+def purge(text: str, cutoff: date) -> str:
+    """Das Protokoll ohne Eintraege vor `cutoff` (Loeschfrist, DSFA D12).
+
+    Arbeitet auf den Zeilen der CSV, damit alles andere unveraendert bleibt.
+    Nur fuer eine Datei, die `parse` ohne Fehler gelesen hat."""
+    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";"))
+    header, body = rows[0], rows[1:]
+    at = [_norm(h) for h in header].index("date")
+    keep = [r for r in body if any(r) and _parse_date(r[at]) >= cutoff]
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\n")
+    writer.writerow(header)
+    writer.writerows(keep)
+    return out.getvalue()
+
+
+def _retention_days(value: int | None) -> int | None:
+    """Frist aus --frist-tage, sonst aus CALL_LOG_RETENTION_DAYS, sonst keine."""
+    if value is not None:
+        return value
+    env = os.environ.get("CALL_LOG_RETENTION_DAYS", "").strip()
+    return int(env) if env else None
+
+
 def _inside_eval_cases(folder: Path) -> bool:
     """evals/cases/ selbst oder ein Ordner darin, ohne Ruecksicht auf Gross- und
     Kleinschreibung: auf macOS ist evals/Cases derselbe Ordner."""
@@ -442,7 +476,31 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         help="Ordner fuer Eval-Entwuerfe, z. B. imports/eval_entwuerfe/",
     )
+    parser.add_argument(
+        "--frist-tage",
+        type=int,
+        help="Loeschfrist in Tagen; Standard aus CALL_LOG_RETENTION_DAYS",
+    )
+    parser.add_argument(
+        "--loeschen",
+        action="store_true",
+        help="Eintraege ausserhalb der Frist wirklich aus der CSV entfernen",
+    )
     args = parser.parse_args(argv)
+    try:
+        days = _retention_days(args.frist_tage)
+    except ValueError:
+        print("CALL_LOG_RETENTION_DAYS ist keine ganze Zahl.", file=sys.stderr)
+        return 2
+    if days is not None and days < 1:
+        print("Die Frist muss mindestens 1 Tag sein.", file=sys.stderr)
+        return 2
+    if args.loeschen and days is None:
+        print(
+            "--loeschen braucht eine Frist: --frist-tage N oder CALL_LOG_RETENTION_DAYS.",
+            file=sys.stderr,
+        )
+        return 2
 
     if not args.file.is_file():
         print(f"Datei nicht gefunden: {args.file}", file=sys.stderr)
@@ -472,6 +530,17 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    if days is not None:
+        cutoff = _today() - timedelta(days=days)
+        old = [e for e in entries if e.day < cutoff]
+        print(
+            f"Loeschfrist: {len(old)} Eintraege aelter als {days} Tage "
+            f"(vor {cutoff:%d.%m.%Y})"
+        )
+        if args.loeschen and old:
+            args.file.write_text(purge(text, cutoff), encoding="utf-8-sig")
+            entries = [e for e in entries if e.day >= cutoff]
+            print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
     print(report(entries))
     if args.cases:
         written = write_cases(entries, args.cases)
