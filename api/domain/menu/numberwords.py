@@ -413,9 +413,10 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     return ItemNumber(value=span.value, text=card, marked=marked)
 
 
-def _canonical(card: str) -> str:
-    """Kartennummer ohne führende Nullen, so wie search_menu sie vergleicht."""
-    return card.lstrip("0") or "0"
+def canonical_card(card: str) -> str:
+    """Kartennummer so, wie search_menu sie vergleicht: klein, ohne führende
+    Nullen. Eine Stelle für Import, Zahlwörter und Text-Telefon."""
+    return card.lower().lstrip("0") or "0"
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
@@ -574,7 +575,7 @@ def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[Item
     for span in spans:
         ref = _ref(tokens, span, marked=True, glued=glued)
         # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
-        if all(_canonical(r.text) != _canonical(ref.text) for r in found):
+        if all(canonical_card(r.text) != canonical_card(ref.text) for r in found):
             found.append(ref)
     return found
 

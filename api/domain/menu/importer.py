@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from api.core.time import utcnow
 from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_alias, normalize_query
+from api.domain.menu.numberwords import canonical_card
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
 
@@ -245,7 +246,7 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             continue
         # Dublette nach der Form, in der die Suche vergleicht: "7" und "07" sind
         # eine Nummer (Codex PR #117). Die Schreibweise aus der Datei bleibt.
-        key = _canonical(number)
+        key = canonical_card(number)
         if key in first_line:
             plan.errors.append(
                 f"{where}: Nummer {number} doppelt (zuerst in Zeile {first_line[key]})"
@@ -284,14 +285,9 @@ def parse(files: Mapping[str, str | None]) -> Plan:
     return plan
 
 
-def _canonical(number: str) -> str:
-    """Kartennummer so, wie search_menu sie vergleicht: klein, ohne führende Nullen."""
-    return number.lower().lstrip("0") or "0"
-
-
 def _known(plan: Plan, where: str, number: str, known: Mapping[str, str]) -> str | None:
     """Die Schreibweise aus menu_items.csv zu einer Nummer, auch als "7" für "07"."""
-    spelled = known.get(_canonical(number)) if number else None
+    spelled = known.get(canonical_card(number)) if number else None
     if spelled is not None:
         return spelled
     plan.errors.append(
@@ -466,7 +462,7 @@ def apply(
     # gilt - still eine zu verdecken hiesse, die andere nie wieder zu finden.
     by_key: dict[str, list[MenuItem]] = {}
     for row in rows:
-        by_key.setdefault(_canonical(row.number), []).append(row)
+        by_key.setdefault(canonical_card(row.number), []).append(row)
     clashes = [
         sorted(r.number for r in group) for group in by_key.values() if len(group) > 1
     ]
@@ -478,14 +474,14 @@ def apply(
             f"{listed}. Eine davon von Hand zusammenführen, dann erneut importieren."
         )
     existing = {key: group[0] for key, group in by_key.items()}
-    in_plan = {_canonical(n) for n in plan.items}
+    in_plan = {canonical_card(n) for n in plan.items}
     report.items_not_in_file = sorted(
         item.number for key, item in existing.items() if key not in in_plan
     )
 
     items: dict[str, MenuItem] = {}
     for number, row in plan.items.items():
-        item = existing.get(_canonical(number))
+        item = existing.get(canonical_card(number))
         if item is None:
             item = MenuItem(
                 tenant_id=tenant_id,

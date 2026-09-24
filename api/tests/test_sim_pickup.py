@@ -447,12 +447,25 @@ def test_antwort_auf_rueckfrage_als_neue_suche_beendet_die_rueckfrage(session, t
 
 @pytest.mark.parametrize(
     ("gesagt", "menge"),
-    [("die 7", 1), ("die sieben", 1), ("Nummer 07", 1), ("zweimal die 7", 2)],
+    [
+        # Der Satz ist die Kartennummer selbst: keine Menge (Codex PR #130, P1).
+        ("die 7", 1),
+        ("die sieben", 1),
+        ("Nummer 07", 1),
+        ("die 23 a", 1),
+        ("die dreiundzwanzig a", 1),
+        # Menge mit Marker oder vor der Nummer.
+        ("zweimal die 7", 2),
+        ("zwei Nummer 23", 2),
+        # Zahl neben einem Namen ist eine Menge (Regel wie sole_item_number),
+        # auch wenn sie zufaellig einer Kartennummer gleicht (Review PR #133).
+        ("zwei Frühlingsrollen", 2),
+        ("sieben Frühlingsrollen", 7),
+        ("Frühlingsrollen", 1),
+    ],
 )
-def test_fuehrende_null_ist_keine_menge(gesagt, menge):
-    """Codex PR #130, P1: "die 7" fuer Kartennummer 07 ist das Gericht, nicht
-    siebenmal. search_menu behandelt 7 und 07 als dieselbe Nummer."""
-    assert _quantity(gesagt, "07") == menge
+def test_menge_nach_der_regel_der_domain(gesagt, menge):
+    assert _quantity(gesagt) == menge
 
 
 def test_menge_bleibt_wenn_die_rueckfrage_neu_gesucht_wird(session, tenant):
@@ -520,3 +533,108 @@ def test_jedes_ausverkaufte_gericht_wird_gesagt(session, tenant):
     text = said(turns)
     assert "Frühlingsrollen (4 Stück) ist heute leider aus" in text
     assert "Sommerrollen mit Garnelen ist heute leider aus" in text
+
+
+# --- Review PR #133 ----------------------------------------------------------------
+
+
+def _suppe_und(session, tenant, *antworten):
+    return replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Zwei Suppen.",
+            *antworten,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+
+def test_gesprochene_nummer_waehlt_den_vorschlag_ohne_neue_suche(session, tenant):
+    """ "die dreizehn" ist einer der Vorschlaege - gewaehlt wird direkt, ohne
+    zweite Suche, mit der Menge aus "Zwei Suppen"."""
+    _, turns = _suppe_und(session, tenant, "Die dreizehn.")
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
+
+
+def test_menge_in_der_antwort_gilt(session, tenant):
+    """ "Einmal die dreizehn" korrigiert die Menge: eins, nicht zwei."""
+    _suppe_und(session, tenant, "Einmal die dreizehn.")
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 1, [])]
+
+
+def test_anderes_gericht_als_antwort_erbt_keine_menge(session, tenant):
+    """ "Dann die 23" ist keiner der Vorschlaege: neues Gericht, eigene Menge.
+    Die zwei aus "Zwei Suppen" darauf zu legen waere geraten."""
+    _suppe_und(session, tenant, "Dann die 23.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 1, [])]
+
+
+def test_menge_bleibt_nicht_haengen_nach_fehlgeschlagener_suche(session, tenant):
+    _suppe_und(session, tenant, "Die neunundneunzig.", "Dann die 23.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 1, [])]
+
+
+def test_ausverkauft_wird_ohne_zweite_suche_gesagt(session, tenant):
+    for nummer in ("23", "24"):
+        session.execute(
+            update(MenuItem)
+            .where(MenuItem.tenant_id == tenant.id, MenuItem.number == nummer)
+            .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
+        )
+    session.commit()
+    _, turns = replay(
+        session,
+        case("Ich moechte etwas zum Abholen bestellen.", "Die 23 und die 24."),
+        tenant,
+        now=NOW,
+    )
+    assert str(turns[1].tools).count("search_menu") == 1
+    text = " ".join(turns[1].say)
+    assert "Frühlingsrollen (4 Stück) ist heute leider aus" in text
+    assert "Sommerrollen mit Garnelen ist heute leider aus" in text
+
+
+def test_abholung_spaeter_ohne_gericht_behaelt_den_namen(session, tenant):
+    """Abholung erst nach dem Gruss genannt, ohne Gericht, aber mit Namen: der
+    Name geht nicht verloren, und es gibt kein "nicht gefunden"."""
+    _, turns = replay(
+        session,
+        case(
+            "Guten Tag.",
+            "Ich moechte etwas zum Abholen bestellen, auf den Namen Mueller.",
+            "Die 23.",
+            "Nein, das wars.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    text = said(turns)
+    assert "nicht gefunden" not in text
+    assert "Auf welchen Namen" not in text
+    [order] = orders(session)
+    assert order.customer_name == "Mueller"
+
+
+def test_abholung_spaeter_mit_fuellwort_sagt_nicht_nicht_gefunden(session, tenant):
+    _, turns = replay(
+        session,
+        case("Guten Tag.", "Ich moechte gern was zum Abholen."),
+        tenant,
+        now=NOW,
+    )
+    second = " ".join(turns[1].say)
+    assert "nicht gefunden" not in second
+    assert "Was möchten Sie bestellen?" in second

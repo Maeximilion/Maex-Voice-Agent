@@ -162,12 +162,20 @@ class ScriptedLLM:
         if self._pickup is not None:
             if started_pickup:
                 # Abholung erst nach der Statusabfrage genannt ("Guten Tag", dann
-                # "die 23 zum Abholen"): auch hier nur das Gericht suchen, "zum
-                # Abholen" verdeckte sonst die 23 (Codex PR #130, P2).
+                # "die 23 zum Abholen"): derselbe Weg wie im ersten Satz - nur das
+                # Gericht suchen, "zum Abholen" verdeckte sonst die 23 (Codex PR
+                # #130, P2), und ohne Gericht kein "nicht gefunden", sondern die
+                # Frage nach der Bestellung. Das Gesagte (Name, Nummer) bleibt im
+                # state_patch (Review PR #133).
                 dish = _opening_dish(text)
                 if dish is None:
-                    return self._pickup.start()
-                text = dish
+                    return self._pickup.start(patch=patch)
+                self._opening_prefix = ""
+                self._last_query = dish
+                return LLMTurn(
+                    tool_call=ToolCall("search_menu", {"query": dish}),
+                    state_patch=patch or None,
+                )
             turn = self._pickup.on_customer(text, slots, patch)
             self._remember_query(turn)
             return turn
@@ -522,7 +530,7 @@ def _day(text: str, local_now: datetime) -> date | None:
 # Was im ersten Satz nur die Abholung ankuendigt, nicht das Gericht. Ein echtes
 # Modell gaebe search_menu nur das Gericht; das Skript streicht den Rest.
 _PICKUP_WORDS = re.compile(
-    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\betwas\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
+    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\b(?:et)?was\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
     re.IGNORECASE,
 )
 
