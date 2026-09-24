@@ -376,8 +376,11 @@ def find_issues(
             and item.state == "CLOSED"
             and not item.is_done
         ],
+        # Nur ohne aktiven Zwilling: eine archivierte Dopplung teilt Zustand und URL mit
+        # dem Eintrag, der stehen blieb. Sie zurueckzuholen hiesse, die eben beseitigte
+        # Dopplung wiederherzustellen.
         "Archiviert, aber wieder offen": [
-            item for item in archived if item.state == "OPEN"
+            item for item in archived if item.state == "OPEN" and item.url not in seen
         ],
     }
     if open_in_repo is not None:

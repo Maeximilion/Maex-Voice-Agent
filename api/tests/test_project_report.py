@@ -453,3 +453,23 @@ def test_parse_item_liest_den_inhaltstyp() -> None:
     assert item is not None
     assert item.kind == "PullRequest"
     assert not item.is_finished
+
+
+def test_archivierte_dopplung_wird_nicht_zum_zurueckholen_gemeldet() -> None:
+    """Codex-Review PR #129, fuenfte Runde: /project archiviert die ueberzaehlige
+    Dopplung eines offenen Issues. Die darf danach nicht als 'wieder offen'
+    erscheinen, sonst holt der naechste Lauf sie zurueck und die Dopplung ist wieder da."""
+    aktiv = eintrag(8, node_id="AKTIV")
+    kopie = eintrag(8, node_id="KOPIE", status="Todo")
+    kopie.is_archived = True
+    befunde = project_report.find_issues([aktiv, kopie], JETZT)
+    assert befunde["Archiviert, aber wieder offen"] == []
+    assert befunde["Doppelt auf dem Board"] == []
+
+
+def test_archiviert_ohne_aktiven_zwilling_wird_weiter_gemeldet() -> None:
+    """Gegenprobe: ohne aktiven Eintrag gleicher URL bleibt der Befund bestehen."""
+    kopie = eintrag(9, status="Done")
+    kopie.is_archived = True
+    befunde = project_report.find_issues([kopie], JETZT)
+    assert befunde["Archiviert, aber wieder offen"] == [kopie]
