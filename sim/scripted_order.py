@@ -59,6 +59,9 @@ class PickupScript:
         # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
         # ein Zug ist Satz oder Tool-Aufruf, nie beides.
         self._carry: str | None = None
+        # Die Frage, deren Menge gilt, wenn die Antwort auf eine Rueckfrage neu
+        # gesucht wird: "zwei Suppen", dann "die dreizehn" (Codex PR #130, P1).
+        self._quantity_from: str | None = None
 
     # -- Kundenzug ---------------------------------------------------------
 
@@ -82,6 +85,7 @@ class PickupScript:
             # sonst hielte _next sie weiter fuer offen (Codex PR #130, P1).
             self.phase = "dishes"
             self._suggestions = []
+            self._quantity_from = self._suggestion_query
             return _search(text, patch)
         if self.phase == "option":
             return self._answer_option(text, slots, patch)
@@ -141,7 +145,11 @@ class PickupScript:
                 # Jeder eindeutige Teil kommt in den Warenkorb, auch nach einer
                 # Rueckfrage; gesprochen wird nur die erste (Codex PR #130, P1).
                 said = self._take(part["query"], part)
-                unclear = unclear or said
+                if said and unclear:
+                    # Auch ein zweites "heute aus" wird gesagt (Codex PR #130, P2).
+                    self._later.append(part["query"])
+                else:
+                    unclear = unclear or said
             lead = _join(self.take_carry(), data.get("say"), unclear)
             return self._next(slots, {}, lead=lead)
         taken = self._take(query, data)
@@ -193,10 +201,17 @@ class PickupScript:
                 menu_item_id=hit["menu_item_id"],
                 number=hit["number"],
                 name=hit["name"],
-                quantity=_quantity(query, hit["number"]),
+                quantity=self._quantity_for(query, hit["number"]),
                 pending=pending,
             )
         )
+        self._quantity_from = None
+
+    def _quantity_for(self, query: str, number: str) -> int:
+        own = _quantity(query, number)
+        if own == 1 and self._quantity_from:
+            return _quantity(self._quantity_from, number)
+        return own
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
@@ -303,11 +318,21 @@ def _quantity(query: str, number: str) -> int:
     if marked:
         return marked
     words = re.findall(r"[\wäöüß]+", query.lower())
-    first = next((w for w in words if w not in ("die", "der", "das", "den")), None)
-    if first is None or first == number.lower():
+    first = next(
+        (w for w in words if w not in ("die", "der", "das", "den", "nummer", "nr")),
+        None,
+    )
+    # Kanonisch wie search_menu: "7", "07" und "sieben" sind dieselbe Nummer 07,
+    # keine Menge (Codex PR #130, P1).
+    card = _canonical(number)
+    if first is None or _canonical(first) == card:
         return 1
     value = parse_cardinal(first)
-    return value if value and str(value) != number else 1
+    return value if value and str(value) != card else 1
+
+
+def _canonical(number: str) -> str:
+    return number.lower().lstrip("0") or "0"
 
 
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:

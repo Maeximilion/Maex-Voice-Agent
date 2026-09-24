@@ -144,8 +144,10 @@ class ScriptedLLM:
             self._out_of_scope_request = self._out_of_scope_request or text
             return self._out_of_scope(slots, patch)
 
+        started_pickup = False
         if self._pickup is None and _wants_pickup(text):
             self._pickup = PickupScript()
+            started_pickup = True
             if not self._status_checked:
                 self._opening_query = _opening_dish(text)
 
@@ -158,6 +160,14 @@ class ScriptedLLM:
             )
 
         if self._pickup is not None:
+            if started_pickup:
+                # Abholung erst nach der Statusabfrage genannt ("Guten Tag", dann
+                # "die 23 zum Abholen"): auch hier nur das Gericht suchen, "zum
+                # Abholen" verdeckte sonst die 23 (Codex PR #130, P2).
+                dish = _opening_dish(text)
+                if dish is None:
+                    return self._pickup.start()
+                text = dish
             turn = self._pickup.on_customer(text, slots, patch)
             self._remember_query(turn)
             return turn

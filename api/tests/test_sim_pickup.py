@@ -18,6 +18,7 @@ from api.models import Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
 from sim.replay import replay
+from sim.scripted_order import _quantity
 from sim.session import resolve_tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -439,3 +440,83 @@ def test_antwort_auf_rueckfrage_als_neue_suche_beendet_die_rueckfrage(session, t
     [order] = orders(session)
     assert order.status == "confirmed"
     assert [p[0] for p in positions(session, order)] == ["13"]
+
+
+# --- Befunde Codex PR #130 nach der abgearbeiteten Runde ---------------------------
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "menge"),
+    [("die 7", 1), ("die sieben", 1), ("Nummer 07", 1), ("zweimal die 7", 2)],
+)
+def test_fuehrende_null_ist_keine_menge(gesagt, menge):
+    """Codex PR #130, P1: "die 7" fuer Kartennummer 07 ist das Gericht, nicht
+    siebenmal. search_menu behandelt 7 und 07 als dieselbe Nummer."""
+    assert _quantity(gesagt, "07") == menge
+
+
+def test_menge_bleibt_wenn_die_rueckfrage_neu_gesucht_wird(session, tenant):
+    """Codex PR #130, P1: "zwei Suppen", dann "die dreizehn" - die neue Suche
+    findet die 13, die Menge aus der ersten Nennung bleibt."""
+    replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Zwei Suppen.",
+            "Die dreizehn.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
+
+
+def test_abholung_erst_im_zweiten_satz(session, tenant):
+    """Codex PR #130, P2: erst ein Gruss, dann "Ich moechte die 23 zum Abholen".
+    "zum Abholen" darf die 23 nicht verdecken."""
+    _, turns = replay(
+        session,
+        case(
+            "Guten Tag.",
+            "Ich moechte die 23 zum Abholen.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Nummer 23" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert [p[0] for p in positions(session, order)] == ["23"]
+
+
+def test_jedes_ausverkaufte_gericht_wird_gesagt(session, tenant):
+    """Codex PR #130, P2: zwei ausverkaufte Gerichte in einem Satz - beide werden
+    genannt, keins faellt still weg."""
+    for nummer in ("23", "24"):
+        session.execute(
+            update(MenuItem)
+            .where(MenuItem.tenant_id == tenant.id, MenuItem.number == nummer)
+            .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
+        )
+    session.commit()
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 23 und die 24.",
+            "Die 13.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    text = said(turns)
+    assert "Frühlingsrollen (4 Stück) ist heute leider aus" in text
+    assert "Sommerrollen mit Garnelen ist heute leider aus" in text

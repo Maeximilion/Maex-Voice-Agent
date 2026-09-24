@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.0
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.1
 
 ---
 
@@ -260,6 +260,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.28.1 · 24.09.2026:** Vier Befunde aus PR #130 im Text-Telefon behoben (fuehrende Null keine Menge, Menge bleibt bei neuer Suche, Abholung im spaeteren Satz, jedes ausverkaufte Gericht wird gesagt). Review-Regel verschaerft (Maxi): nach der abgearbeiteten Runde werden P1 noch vor dem Merge gefixt, nur P2 vermerkt
 - **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte
 - **v1.27.2 · 24.09.2026:** Projektpflege bricht ab, wenn der Token das Repo nicht sieht
 - **v1.27.1 · 24.09.2026:** Pull Requests ohne Merge werden nicht mehr als erledigt gezaehlt
