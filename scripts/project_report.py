@@ -303,10 +303,11 @@ def find_issues(
     open_in_repo=None heisst: der Abgleich mit dem Repo lief nicht. Dann fehlt der
     Befund ganz, statt faelschlich "nichts fehlt" zu behaupten.
     """
-    seen = Counter(item.number for item in items if item.number is not None)
-    duplicates = [
-        item for item in items if item.number is not None and seen[item.number] > 1
-    ]
+    # Nach URL, nicht nach Nummer: das Board kann Eintraege aus mehreren Repos tragen,
+    # und #5 aus zwei Repos sind zwei Vorgaenge. Entwuerfe haben keine URL und keinen
+    # Zwilling, sie bleiben aussen vor.
+    seen = Counter(item.url for item in items if item.url)
+    duplicates = [item for item in items if item.url and seen[item.url] > 1]
 
     findings = {
         "Doppelt auf dem Board": duplicates,

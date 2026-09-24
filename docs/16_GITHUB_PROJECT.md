@@ -110,7 +110,7 @@ PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJEC
 | Waehrend `/task`, `/done`, `/bug` | Nichts. Kein `gh project`, weder lesend noch schreibend |
 | Beim Anlegen eines Issues | Labels setzen: Art, Stufe, Prioritaet |
 | Beim Oeffnen eines Pull Requests | `Closes #N` in die Beschreibung, Branchname mit Issue-Nummer |
-| Auf `/project` oder in `/gate` | Board lesen und pflegen. Mechanische Korrekturen (Status nach Merge, Dopplungen, fehlende Eintraege) direkt, Ermessensfragen (Iteration, Archiv, neue Views) als Vorschlag |
+| Auf `/project` oder in `/gate` | Board lesen und pflegen. Mechanische Korrekturen (Status nach Merge, fehlende Eintraege, Dopplungen - die ueberzaehlige wird archiviert, nie geloescht) direkt, Ermessensfragen (Iteration, Archiv, neue Views) als Vorschlag |
 
 Grundlage ist Maxis stehende Freigabe vom 24.09.2026: Claude raeumt das Board selbst auf und haelt es aktuell - aber nur ausserhalb der Arbeit an einer Aufgabe. Loeschen von Projects, Eintraegen oder Feldern bleibt ausgenommen.
 

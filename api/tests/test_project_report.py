@@ -51,7 +51,8 @@ def eintrag(
         updated_at=JETZT - timedelta(days=tage_alt),
         number=number,
         state=state,
-        url=f"https://example.com/{number}",
+        # Wie bei GitHub: ein Entwurf ohne Nummer hat auch keine URL.
+        url=f"https://example.com/{number}" if number is not None else None,
         fields=felder,
     )
 
@@ -341,3 +342,14 @@ def test_ohne_repo_abgleich_fehlt_der_befund_statt_leer_zu_luegen() -> None:
     """Randfall: lief der Abgleich nicht, darf der Bericht nicht 'nichts fehlt' behaupten."""
     befunde = project_report.find_issues([eintrag(1)], JETZT)
     assert "Offen im Repo, fehlt auf dem Board" not in befunde
+
+
+def test_gleiche_nummer_aus_zwei_repos_ist_keine_dopplung() -> None:
+    """Codex-Review PR #129: #5 aus zwei Repos sind zwei Vorgaenge. Nach Nummer
+    gezaehlt wuerde /project einen davon als Dopplung entfernen."""
+    fremd = eintrag(5, node_id="A")
+    fremd.url = "https://github.com/andere/repo/issues/5"
+    eigen = eintrag(5, node_id="B")
+    assert (
+        project_report.find_issues([fremd, eigen], JETZT)["Doppelt auf dem Board"] == []
+    )
