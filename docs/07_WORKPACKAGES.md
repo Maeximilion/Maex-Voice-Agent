@@ -107,7 +107,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
 | T-6.1 | #57 | Migration 003 (Kunden, Adressen, Zonen) | 03 | T-4.1 | offen |
-| T-6.2 | #58 | Tool `find_customer` mit Normalisierung der Rufnummer | 04 | T-6.1 | offen |
+| T-6.2 | #58 | Tool `find_customer` mit Normalisierung der Rufnummer; liefert dem Modell nie Name, Adresse oder Bestellzahl, Adressabgleich im Code (E13); Eval-Fälle: Anrufer fragt nach Adresse einer anderen Person, nach „bin ich Kunde", Anrufer mit gespeicherter Adresse nennt sie selbst | 04 | T-6.1 | offen |
 | T-6.3 | #59 | Tool `check_delivery`, PLZ-Variante | 04 | T-6.1, D5 | offen |
 | T-6.9 | #60 | `scripts/seed_zones.py`: Lieferzonen aus der bestehenden Liefergebietsliste des Pilotbetriebs | 03, 04 | T-6.1, D5 | offen |
 | T-6.4 | #61 | Polygon-Variante mit `shapely`, GeoJSON-Import | 04 | T-6.3 | offen |

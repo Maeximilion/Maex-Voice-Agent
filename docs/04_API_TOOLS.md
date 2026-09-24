@@ -72,16 +72,14 @@ Nur sinnvoll, wenn die Nummer übermittelt wurde.
   "data": {
     "found": true,
     "customer_id": "…",
-    "name": "Herr Müller",
-    "addresses": [
-      { "address_id": "…", "label": "Musterstraße 1, 12345 Musterstadt", "is_default": true }
-    ],
-    "order_count": 12
+    "address_count": 1
   },
-  "say": "Wieder an die Rheinstraße 54?"
+  "say": null
 }
 ```
 Unbekannt → `found: false`, `say: null`. **Nie** raten, welcher Kunde gemeint sein könnte.
+
+**Datenschutz (E13, entschieden 24.09.2026):** Der Agent gibt nie Kundendaten heraus, auch nicht auf Nachfrage und auch nicht dem Anrufer selbst: keinen Namen, keine Adresse, keine Bestellhistorie, nicht einmal, ob jemand Kunde ist. Deshalb liefert `find_customer` dem Modell nur `customer_id` und die Zahl gespeicherter Adressen, nie Name, Adresse oder Bestellzahl. Unter einer Nummer kann jemand anderes anrufen (Familie, Firma; DSFA R6). Die Adresse nennt immer der Anrufer; der Abgleich mit den gespeicherten Adressen dieses Kunden passiert im Code (`check_delivery` mit `customer_id`, T-6.2/T-6.3), das Modell sieht nur „passt“ oder „neu“. `readback` enthält nur, was der Anrufer in diesem Gespräch selbst gesagt hat.
 
 ---
 

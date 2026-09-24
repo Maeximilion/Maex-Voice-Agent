@@ -113,7 +113,7 @@ EU Server ────────  Transcription of training recordings (nights
 | Tool | Purpose | Deterministic Check |
 |---|---|---|
 | `get_service_status` | open/closed, delivery on/off, wait time, sold-out dishes | Configuration |
-| `find_customer` | name and saved addresses for caller number | only if number provided |
+| `find_customer` | known customer and number of saved addresses for caller number, never name or address to the model (E13) | only if number provided |
 | `search_menu` | top-3 results with ID, price, options | exact number match, else alias table |
 | `get_item_details` | options, extras, allergens | DB values only |
 | `check_delivery` | zone, flat fee, minimum order value, delivery time | postal code or polygon |
