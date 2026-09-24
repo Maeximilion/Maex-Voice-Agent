@@ -109,6 +109,13 @@ class PickupScript:
                 self._suggestions = []
                 self.phase = "dishes"
                 return self._next(slots, patch)
+            # "Nein, das wars" oder "keine davon": die Vorschlaege sind verworfen.
+            # Neu gesucht fanden die Worte kein Gericht, und dieselbe Frage kaeme
+            # endlos zurueck (Codex PR #133).
+            if _finishes(text) or _rejects(text):
+                self._suggestions = []
+                self.phase = "customer" if _finishes(text) and self.cart else "dishes"
+                return self._next(slots, patch)
             # Keine der angebotenen: ein anderes Gericht, neu suchen mit eigener
             # Menge - die aus der Frage darauf zu legen waere geraten (Review PR
             # #133). Die Rueckfrage ist damit erledigt (Codex PR #130, P1) -
@@ -419,6 +426,24 @@ def _words(text: str) -> list[str]:
 def _option_question(item: CartItem, group: dict[str, Any]) -> str:
     offer = " oder ".join(group["options"])
     return f"Welche Auswahl bei {group['group']} möchten Sie zu {item.name}: {offer}?"
+
+
+# Auf eine Rueckfrage: "keine davon", "nein" verwirft die Vorschlaege.
+REJECT_WORDS = ("nein", "keine", "keins", "keinen", "weder")
+
+
+def _finishes(text: str) -> bool:
+    """Fertig mit den Gerichten, ausser dem blossen "nein": das verwirft auf eine
+    Rueckfrage nur die Vorschlaege."""
+    lowered = text.lower()
+    return any(
+        re.search(rf"\b{re.escape(p)}\b", lowered) for p in DONE_PHRASES if p != "nein"
+    )
+
+
+def _rejects(text: str) -> bool:
+    lowered = text.lower()
+    return any(re.search(rf"\b{w}\b", lowered) for w in REJECT_WORDS)
 
 
 def _is_done(text: str) -> bool:

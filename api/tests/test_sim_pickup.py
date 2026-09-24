@@ -808,3 +808,49 @@ def test_ausverkaufter_vorschlag_wird_nicht_aufgenommen(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert positions(session, order) == [("12", 1, [])]
+
+
+def test_keiner_der_vorschlaege_fuehrt_weiter(session, tenant):
+    """Codex PR #133: "keine davon" verwirft die Vorschlaege, statt als Gericht
+    gesucht zu werden und dieselbe Frage endlos zurueckzubringen."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe.",
+            "Keine davon.",
+            "Die 23.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Meinen Sie" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 1, [])]
+
+
+def test_das_wars_beendet_auch_waehrend_einer_rueckfrage(session, tenant):
+    """ "Nein, das wars" auf eine Rueckfrage: die Frage faellt weg, die
+    Bestellung geht mit dem Rest weiter zum Namen."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 23.",
+            "Eine Suppe.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Auf welchen Namen" in " ".join(turns[3].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("23", 1, [])]
