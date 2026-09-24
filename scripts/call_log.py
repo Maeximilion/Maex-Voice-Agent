@@ -120,21 +120,20 @@ _HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
 # ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
 # Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
 # vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
-# "Nr." oder "Nummer" zwischen Strasse und Hausnummer ("Hauptstrasse Nr. 12").
-# Allein ist "Nr. 23" die Nummer auf der Karte, keine Adresse.
-_NR = r"(?:(?:nr\.?|nummer)\s*)?"
+# "Nr." oder "Nummer" vor einer Zahl faellt vor der Adresspruefung weg:
+# "Hauptstrasse Nr. 12" wird "hauptstrasse 12". "die Nr. 23" wird "die 23" und
+# bleibt die Nummer auf der Karte.
+_NR = re.compile(r"\b(?:nr\.?|nummer)\s*(?=\d)")
 _ADDRESS = re.compile(
     r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer|markt|hof"
-    r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*"
-    rf"{_NR}\d+"
+    r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*\d+"
     # Nach einem Hinweiswort ist jede Zahl eine Hausnummer ("meine Adresse ist
     # Lindenblick 4"), ausser vor Minuten, Uhr und aehnlichem.
     r"|\b(?:adresse|wohne|wohnen|wohnt|liefern an|lieferung an|bringen an"
     r"|liefern nach|lieferung nach)\b[^|.!?]{0,40}?\b\d{1,4}[a-z]?\b"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
     r"|\b(?:am|im|an der|an den|auf der|auf dem|in der|in den|zum|zur"
-    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+"
-    rf"{_NR}\d{{1,3}}[a-z]?\b"
+    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+\d{1,3}[a-z]?\b"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
     r"|\bhausn(?:umme)?r\b|\b\d{5}\s+[a-z]{3,}"
 )
@@ -305,7 +304,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
                     f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit, "
                     "bitte nur zum Gericht: 'welche Allergene hat die 23?'"
                 )
-            if _ADDRESS.search(_numbers_as_digits(row[column])):
+            if _ADDRESS.search(_NR.sub("", _numbers_as_digits(row[column]))):
                 problems.append(
                     f"Zeile {line}: {column} enthaelt eine Adresse, bitte nur "
                     "den Stadtteil"
