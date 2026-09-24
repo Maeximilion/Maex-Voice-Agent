@@ -27,7 +27,7 @@
   - **Messverfahren:** bis zu 3 Messreihen. p95 gilt über alle bisher gemessenen Aufrufe (20, 40, dann 60), keine Reihe wird verworfen; liegt es unter dem Budget, endet die Messung. Die Grenze ist lokal und in CI dieselbe, 300 ms.
   - **Begründung:** Auf geteilten CI-Runnern laufen Push- und PR-Lauf plus `docker-smoke` gleichzeitig. Einzelne Ausreißer hoben p95 dort auf 560 ms (18.09.2026), lokal liegt es bei 10 bis 21 ms. Bei 20 Aufrufen reichen 2 Ausreißer für Rot, bei 60 sind bis zu 3 erlaubt; das ist weiter echtes p95. Ein Überschreiten in mehr als 5 Prozent der Aufrufe bleibt rot, auch wenn es nur zeitweise auftritt (Codex-Review PR #110).
   - Nicht erlaubt: Latenztests überspringen oder die Grenze anheben. 300 ms ist die Zusage an den Telefonpfad.
-- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang.
+- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang. Nur im selben Anruf: gehört der Schlüssel zu einem Vorgang eines anderen Anrufs, ist das `conflict`, nie dessen Antwort. Im eigenen Gesprächskern bildet der Code den Schlüssel immer selbst, einen Schlüssel vom Modell gibt es nicht.
 - Jeder Aufruf landet mit Dauer und Ergebnis in `calls.tool_calls`.
 
 ---
@@ -127,7 +127,27 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
    Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` bittet
    um eins nach dem anderen, `message` nennt die Teile („mehrere Positionen:
-   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg.
+   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg. Der eigene
+   Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
+   und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
+   (`query`, `ok`, Treffer oder `error_code` und `say`). Trennt der Satz allein
+   nicht („die 23 und Pho Bo": „Pho Bo" ohne Menge), prüfen beide Wege mit der
+   Karte (`position_parts` in `domain/menu/search.py`): trifft jedes Stück an
+   den Trennern für sich eindeutig ein anderes Gericht, sind es mehrere
+   Positionen - über HTTP die Rückfrage, im Gesprächskern die Suche je Teil;
+   sonst war das „und" Teil eines Namens. Steht der ganze Satz selbst auf der
+   Karte („Fisch und Chips" als Alias oder als Name, auch mit Menge und
+   Füllwort: „einmal Fisch und Chips, bitte"), bleibt er ein Gericht, auch wenn
+   die Stücke einzeln treffen. Ein Stück mit „mit", „ohne", „extra" vorn ist ein
+   Hinweis zur Position davor („die 23, mit Reis"), nie eine eigene. Dasselbe
+   Gericht mit denselben Worten zweimal („Pho Bo und Pho Bo") sind zwei
+   Positionen; mit anderen Worten („Pho und Pho Bo") bleibt der Satz ganz.
+   Hängt der ganze Satz als Alias an mehreren Gerichten, fragt die Suche nach.
+   Dasselbe gilt für benachbarte Stücke mitten in einer Aufzählung: „Fisch und
+   Chips und Pho Bo" sind zwei Positionen, geprüft von links, das längste Stück
+   zuerst. Eine Spanne ist nie länger als der längste Name oder Alias der Karte
+   (in Stücken an den Trennern): ohne Namen mit „und" gibt es keine
+   Spannenprüfung, eine lange Aufzählung bleibt im Latenzbudget.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

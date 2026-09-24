@@ -28,7 +28,9 @@ Unterschied klein, mit wachsender Karte trägt der Index die Suche.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import datetime
+from functools import partial
 
 from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
@@ -40,7 +42,7 @@ from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
-from api.domain.menu.split import split_positions
+from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.models import ItemAlias, MenuItem
 from api.schemas.menu import MenuHit, SearchResult
 
@@ -122,6 +124,172 @@ def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> Search
     )
 
 
+CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
+
+
+def position_parts(
+    session: Session,
+    tenant_id: uuid.UUID,
+    query: str,
+    now: datetime | None = None,
+    high: float | None = None,
+    low: float | None = None,
+) -> list[str]:
+    """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
+    mit der Karte.
+
+    "die 23 und Pho Bo": "Pho Bo" eroeffnet ohne Menge keine Position, der Satz
+    allein bliebe ganz, und die Namenssuche ueber den ganzen Satz faende nur Pho
+    Bo - die 23 fiele still weg (Codex PR #127, P1). Trifft jedes Stueck an den
+    Trennern fuer sich eindeutig ein **anderes** Gericht, sind es mehrere
+    Positionen. Trifft eines nichts oder dasselbe, war das "und" Teil eines
+    Namens ("Ente süß und sauer"), und der Satz bleibt ganz.
+
+    Vorher gelten zusammenhaengende Stuecke: steht der ganze Satz oder ein Teil
+    davon selbst so auf der Karte ("Fisch und Chips" als Alias oder als Name),
+    ist er ein Gericht, auch wenn "Fisch" und "Chips" es einzeln auch sind -
+    auch mitten in einer Aufzaehlung ("Fisch und Chips und Pho Bo", Codex PR
+    #127, P1). Gesucht wird von links, das laengste Stueck zuerst.
+    """
+    parts = split_positions(query)
+    if len(parts) > 1:
+        return parts
+    pieces = raw_pieces(query)
+    if len(pieces) <= 1:
+        return [query]
+    search = partial(
+        search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
+    )
+    spans = _spans(query, pieces)
+    # Laenger als der laengste Name oder Alias der Karte kann keine Spanne ein
+    # Gericht sein. Ohne Grenze pruefte eine Aufzaehlung von 20 Gerichten rund
+    # 190 Spannen (Codex PR #127, P2); so sind es hoechstens eine je Stueck, wenn
+    # die Karte Namen mit einem "und" hat, und keine, wenn nicht.
+    longest = _longest_dish(session, tenant_id)
+    positions: list[str] = []
+    # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
+    # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
+    # anderen Worten - das kann eine Praezisierung sein, der Satz bleibt ganz.
+    # Zaehlt fuer zusammengesetzte Gerichte genauso: "Fisch und Chips und
+    # Backfisch mit Pommes" nennt dasselbe Gericht mit anderen Worten (Codex PR
+    # #127, P1).
+    said: dict[uuid.UUID, set[str]] = {}
+    i = 0
+    while i < len(pieces):
+        for j in range(min(len(pieces), i + longest) - 1, i, -1):
+            text = query[spans[i][0] : spans[j][1]]
+            ids = _whole_dish(session, tenant_id, search, text, pieces[i : j + 1])
+            if ids:
+                if len(ids) == 1:
+                    said.setdefault(next(iter(ids)), set()).add(normalize_query(text))
+                positions.append(text)
+                i = j + 1
+                break
+        else:
+            piece = pieces[i]
+            try:
+                found = search(piece)
+            except (Ambiguous, NotFound):
+                return [query]
+            if found.match_type not in CLEAR_MATCHES or not found.results:
+                return [query]
+            said.setdefault(found.results[0].menu_item_id, set()).add(
+                normalize_query(piece)
+            )
+            positions.append(piece)
+            i += 1
+    if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
+        return [query]
+    return positions
+
+
+def _longest_dish(session: Session, tenant_id: uuid.UUID) -> int:
+    """Die meisten Stuecke an den Trennern, die ein aktiver Name oder Alias hat."""
+    names = session.scalars(select(MenuItem.name).where(*_active(tenant_id)))
+    aliases = session.scalars(
+        select(ItemAlias.alias)
+        .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+        .where(*_active(tenant_id))
+    )
+    return max(
+        (separator_pieces(text) for text in [*names, *aliases]),
+        default=1,
+    )
+
+
+def _spans(query: str, pieces: list[str]) -> list[tuple[int, int]]:
+    """Wo jedes Stueck im Satz steht, damit benachbarte Stuecke mit ihrem
+    Trenner wieder zusammengesetzt werden koennen, wie der Gast sie sagte."""
+    spans = []
+    start = 0
+    for piece in pieces:
+        begin = query.index(piece, start)
+        start = begin + len(piece)
+        spans.append((begin, start))
+    return spans
+
+
+def _whole_dish(
+    session: Session,
+    tenant_id: uuid.UUID,
+    search: Callable[[str], SearchResult],
+    query: str,
+    pieces: list[str],
+) -> set[uuid.UUID]:
+    """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
+    Liefert die Gerichte, die er so trifft - mehrere bei einem doppelten Alias,
+    keins, wenn er kein ganzes Gericht ist.
+    Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo.
+
+    Verglichen wird in der Form der Suche (normalize_query): "einmal Fisch und
+    Chips, bitte" ist der Name mit Menge und Fuellwort (Codex PR #127, P1). Die
+    Form wirft auch Nummern weg, aus "Pho Bo und die 23" bliebe "pho bo". Darum
+    muss jedes Stueck dabei Inhalt behalten: "die 23" allein ist ein eigenes
+    Gericht, kein Teil des Namens. Das gilt auch fuer den Alias: "die 23 und
+    Pho" traefe sonst den Alias "Pho" (Codex PR #127, P1).
+
+    Ein Alias zaehlt auch, wenn er an mehreren Gerichten haengt: dann fragt die
+    Suche ueber den ganzen Satz, welches gemeint ist, statt die Stuecke als
+    Positionen zu nehmen (Codex PR #127, P2)."""
+    if not all(normalize_query(p) for p in pieces):
+        return set()
+    by_alias = _alias_items(session, tenant_id, query)
+    if by_alias:
+        return {item.id for item in by_alias}
+    try:
+        found = search(query)
+    except (Ambiguous, NotFound):
+        return set()
+    said = normalize_query(query)
+    return {
+        hit.menu_item_id for hit in found.results if normalize_query(hit.name) == said
+    }
+
+
+def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[MenuItem]:
+    """Aktive Gerichte, deren Alias genau das Gesagte ist (Schritt 2 der Suche)."""
+    text = normalize_query(query)
+    said = {normalize_alias(query), text}
+    matched_ids = {
+        item_id
+        for item_id, alias in session.execute(
+            select(ItemAlias.menu_item_id, ItemAlias.alias)
+            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+            .where(*_active(tenant_id))
+        )
+        if alias in said or normalize_query(alias) == text
+    }
+    if not matched_ids:
+        return []
+    return list(
+        session.scalars(
+            select(MenuItem)
+            .where(MenuItem.id.in_(matched_ids))
+            .order_by(MenuItem.number)
+        )
+    )
+
+
 def search_menu(
     session: Session,
     tenant_id: uuid.UUID,
@@ -130,7 +298,11 @@ def search_menu(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+    *,
+    split_check: bool = True,
 ) -> SearchResult:
+    """`split_check=False` nur fuer `position_parts`: die Suche je Stueck und ueber
+    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen."""
     now = now or utcnow()
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
@@ -166,7 +338,11 @@ def search_menu(
     # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
     # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
-    parts = split_positions(query)
+    parts = (
+        position_parts(session, tenant_id, query, now=now, high=high, low=low)
+        if split_check
+        else [query]
+    )
     if len(parts) > 1:
         raise Ambiguous(
             "mehrere Positionen: " + " | ".join(parts), say=SAY_ONE_AT_A_TIME
@@ -177,25 +353,7 @@ def search_menu(
     # Seiten werden deshalb ohne Füllwörter verglichen. In Python statt SQL:
     # normalize_query gibt es nur hier, und eine Karte hat ein paar hundert
     # Aliase - das ist ein Index-Scan und eine Schleife, keine Last.
-    said = {normalize_alias(query), text}
-    matched_ids = {
-        item_id
-        for item_id, alias in session.execute(
-            select(ItemAlias.menu_item_id, ItemAlias.alias)
-            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
-            .where(*_active(tenant_id))
-        )
-        if alias in said or normalize_query(alias) == text
-    }
-    by_alias = (
-        session.scalars(
-            select(MenuItem)
-            .where(MenuItem.id.in_(matched_ids))
-            .order_by(MenuItem.number)
-        ).all()
-        if matched_ids
-        else []
-    )
+    by_alias = _alias_items(session, tenant_id, query)
     if len(by_alias) == 1:
         return _single(session, "alias", by_alias[0], now)
     if by_alias:

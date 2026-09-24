@@ -288,6 +288,22 @@ def test_schluessel_eines_anderen_mandanten(session, tenant_id, call_id):
         draft_order(session, foreign, now=NOW)
 
 
+def test_schluessel_eines_anderen_anrufs_ist_conflict(session, tenant_id, call_id):
+    """Codex PR #127, P1: derselbe Betrieb, aber ein anderer Anruf. Ein
+    wiederverwendeter Schluessel darf nie dessen readback mit Name, Gerichten
+    und Summe liefern."""
+    req = request(session, tenant_id, call_id)
+    draft_order(session, req, now=NOW)
+    foreign = request(
+        session,
+        tenant_id,
+        _call(session, tenant_id),
+        idempotency_key=req.idempotency_key,
+    )
+    with pytest.raises(Conflict):
+        draft_order(session, foreign, now=NOW)
+
+
 # --- Prüfungen ---------------------------------------------------------------------
 
 
