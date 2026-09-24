@@ -1,0 +1,59 @@
+name: projektpflege
+
+# Das Board wird einmal taeglich gepflegt, nicht bei jedem Commit. Waehrend der Arbeit
+# fasst es niemand an: Status bewegen die eingebauten Project-Workflows beim Merge.
+# Was ihnen durchrutscht - abgeschlossen, aber nicht auf Done -, setzt dieser Lauf
+# nach; alles andere meldet er nur. Begruendung: docs/16_GITHUB_PROJECT.md
+on:
+  schedule:
+    # 03:00 UTC, also 05:00 im Sommer und 04:00 im Winter. Die Stunde ist egal,
+    # solange sie taeglich dieselbe ist; Cron kennt keine Zeitzonen.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: "Zusaetzlich Done-Eintraege nach 14 Tagen archivieren (blendet sie aus der Roadmap aus)"
+        type: boolean
+        default: false
+
+# Das Repo wird nur gelesen. Das Board schreibt der PAT, nicht der GITHUB_TOKEN.
+permissions:
+  contents: read
+
+concurrency:
+  group: projektpflege
+  cancel-in-progress: false
+
+jobs:
+  pflege:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Zugang pruefen
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: |
+          if [ -z "$PROJECT_TOKEN" ] || [ -z "$PROJECT_NUMBER" ]; then
+            echo "::error::Secret PROJECT_TOKEN oder Variable PROJECT_NUMBER fehlt. Einrichtung: docs/16_GITHUB_PROJECT.md"
+            exit 1
+          fi
+
+      - name: Korrigieren und berichten
+        # Ausdruecklich bash: nur so setzt GitHub pipefail. Ohne das gewinnt der
+        # Exit-Code von tee, und ein gescheiterter Lauf stuende gruen im Verlauf.
+        shell: bash
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_OWNER: ${{ github.repository_owner }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: |
+          # Der Bericht landet in der Job-Zusammenfassung, nicht als Kommentar an jedem
+          # Eintrag. Ein Ort zum Nachsehen statt Rauschen auf dem Board.
+          python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
+            | tee "$GITHUB_STEP_SUMMARY"
