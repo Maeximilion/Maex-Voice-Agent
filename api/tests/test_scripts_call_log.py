@@ -1,0 +1,136 @@
+"""Anrufprotokoll ohne Tonaufnahme (scripts/call_log.py, docs/17). Ohne Datenbank."""
+
+import json
+from pathlib import Path
+
+from scripts.call_log import main, parse, report, to_case, write_cases
+
+HEADER = "date;time;duration_min;intent;outcome;phrases;items;problems\n"
+VORLAGE = (
+    Path(__file__).resolve().parents[2] / "docs" / "vorlagen" / "anrufprotokoll.csv"
+)
+
+
+def _row(**kw: str) -> str:
+    base = {
+        "date": "24.09.2026",
+        "time": "18:42",
+        "duration_min": "3",
+        "intent": "abholung",
+        "outcome": "erledigt",
+        "phrases": "zweimal die 23 | ja passt so",
+        "items": "2x 23",
+        "problems": "",
+    }
+    base.update(kw)
+    return ";".join(base.values()) + "\n"
+
+
+def test_vorlage_ist_gueltig():
+    """Die Vorlage im Repo ist das Beispiel fuer das Team, sie muss durchgehen."""
+    entries, errors = parse(VORLAGE.read_text(encoding="utf-8"))
+    assert errors == []
+    assert len(entries) == 2
+
+
+def test_normalfall_report_und_fall():
+    entries, errors = parse(HEADER + _row() + _row(intent="Reservierung", time="19.05"))
+    assert errors == []
+    text = report(entries)
+    assert "Anrufe: 2 an 1 Tagen" in text
+    assert "18 Uhr 1 · 19 Uhr 1" in text
+    assert "Do 2" in text  # 24.09.2026 ist ein Donnerstag
+    case = to_case(entries[0], 1)
+    assert case is not None
+    assert case["expected"] == {
+        "intent": "pickup",
+        "confirmed": True,
+        "escalated": False,
+    }
+    assert [t["text"] for t in case["transcript"]] == ["zweimal die 23", "ja passt so"]
+
+
+def test_telefonnummer_macht_datei_rot():
+    _, errors = parse(HEADER + _row(phrases="rufen Sie mich an unter 0721 555 12 34"))
+    assert len(errors) == 1
+    assert "Telefonnummer" in errors[0]
+
+
+def test_kartennummern_und_mengen_sind_keine_telefonnummer():
+    _, errors = parse(HEADER + _row(phrases="die 147 und zweimal 23", items="2x 147"))
+    assert errors == []
+
+
+def test_email_macht_datei_rot():
+    _, errors = parse(HEADER + _row(problems="schickt Bestaetigung an a@b.de"))
+    assert "E-Mail" in errors[0]
+
+
+def test_semikolon_im_text_wird_gemeldet_statt_still_verschoben():
+    _, errors = parse(HEADER + _row(items="2x 23; 1x Rolle"))
+    assert "Semikolon" in errors[0]
+
+
+def test_unbekanntes_anliegen_und_ergebnis():
+    _, errors = parse(HEADER + _row(intent="catering") + _row(outcome="vielleicht"))
+    assert "Anliegen 'catering'" in errors[0]
+    assert "Ergebnis 'vielleicht'" in errors[1]
+
+
+def test_fehlende_spalte():
+    _, errors = parse("date;time;intent\n24.09.2026;18:42;abholung\n")
+    assert errors[0].startswith("Spalten fehlen: duration_min")
+
+
+def test_umlaute_und_bom():
+    """Excel schreibt ein BOM und das Team tippt Umlaute."""
+    entries, errors = parse("\ufeff" + HEADER + _row(outcome="Rückruf"))
+    assert errors == []
+    assert entries[0].outcome == "rueckruf"
+
+
+def test_rueckruf_und_beschwerde_sind_eskalation():
+    entries, _ = parse(
+        HEADER
+        + _row(outcome="rueckruf")
+        + _row(intent="beschwerde", outcome="erledigt")
+    )
+    assert to_case(entries[0], 1)["expected"] == {"intent": "pickup", "escalated": True}
+    assert to_case(entries[1], 2)["expected"] == {"escalated": True}
+
+
+def test_frage_ohne_kundensaetze_wird_kein_fall():
+    entries, _ = parse(HEADER + _row(intent="frage") + _row(phrases=""))
+    assert to_case(entries[0], 1) is None
+    assert to_case(entries[1], 2) is None
+
+
+def test_entwuerfe_idempotent(tmp_path):
+    entries, _ = parse(HEADER + _row() + _row(intent="frage"))
+    assert write_cases(entries, tmp_path) == 1
+    assert write_cases(entries, tmp_path) == 1
+    files = list(tmp_path.iterdir())
+    assert len(files) == 1
+    assert json.loads(files[0].read_text(encoding="utf-8"))["source"] == "call_log"
+
+
+def test_exit_codes(tmp_path, capsys):
+    assert main([str(tmp_path / "fehlt.csv")]) == 2
+    bad = tmp_path / "bad.csv"
+    bad.write_text(HEADER + _row(time="25:00"), encoding="utf-8")
+    assert main([str(bad)]) == 1
+    good = tmp_path / "good.csv"
+    good.write_text(HEADER + _row(), encoding="utf-8")
+    assert main([str(good), "--cases", str(tmp_path / "cases")]) == 0
+    assert "Eval-Entwuerfe: 1" in capsys.readouterr().out
+
+
+def test_kuerzel_vom_druckbogen():
+    entries, errors = parse(
+        HEADER + _row(intent="A", outcome="RR") + _row(intent="r", outcome="al")
+    )
+    assert errors == []
+    assert [(e.intent, e.outcome) for e in entries] == [
+        ("abholung", "rueckruf"),
+        ("reservierung", "abgelehnt"),
+    ]

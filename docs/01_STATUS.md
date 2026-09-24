@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.0
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.29.0
 
 ---
 
 ## Summary
+
+**Call log without recording (24.09.2026): real calls before the legal check.** Maxi asked to record team calls from tomorrow as learning data. Not possible yet: recording needs consent of customer and team (§201 StGB) and the full legal check (`docs/09_OPERATIONS_LEGAL.md`, all points open, T-7.x blocked); router, phone provider and handsets are not captured either (C1). Instead the team writes one line per call on a paper sheet (`docs/vorlagen/anrufprotokoll_druck.html`): time, intent, outcome, the customer's words verbatim, no names, no numbers. `python -m scripts.call_log imports/anrufprotokoll.csv` turns the typed CSV into the C1 baseline (volume, intent mix, outcomes, peak hours) and with `--cases` into eval case drafts (`source: call_log`, reviewed by hand before they move to `evals/cases/`). The script rejects the whole file if a free-text field looks like a phone number or e-mail, and a semicolon inside text instead of shifting columns silently. Format and rules: `docs/17_ANRUFPROTOKOLL.md`.
 
 CI enhancement (17.09.2026): The `docker-smoke` job builds the API image without local CA certificate and starts it without bind mount. It checks `/health`, rejection of missing/incorrect tokens, and an authenticated ping. This automatically catches earlier Dockerfile errors with certificate and package path. The test checks container startup, not DB integration; that stays in the pytest suite. Local Docker execution was not available in this session; execution via GitHub Actions.
 
@@ -93,6 +95,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
+  - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: router model, phone provider, handsets
 - **C2** Research voice platform, evaluate, PoC on test number
 
 ---
@@ -160,6 +163,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **Menu child tables carry no `tenant_id`** (`item_options`, `item_allergens`, `item_aliases`): they belong to exactly one parent row and reach the tenant through it, as docs/03 specifies per table. **`order_items` does** (Codex review PR #114): it has two parents, and with single-column foreign keys the database would accept a dish of tenant B in an order of tenant A; both are now referenced via `(id, tenant_id)`. The general rule "every business table carries tenant_id" is read as "every table with its own business key". Assumption from 18.09.2026
 - **`orders.customer_id` has no foreign key until migration 003** (`customers` does not exist yet); `address_id` arrives with 003 as docs/03 plans. The downgrade of 002 keeps `pg_trgm` installed, because an extension is database-wide. Assumption from 18.09.2026
 - **GUI writes require the `HX-Request` header** (`gui/router.py`, `_require_htmx`): basic auth from the proxy is sent by the browser even for a form on a foreign site, a custom header is not without a CORS grant. Cheap protection against forged taps without a form token. Assumption from 18.09.2026
+- **Call logs contain no personal data and are therefore usable before the legal check** (`docs/17`): no names, numbers, addresses, team initials; the script enforces numbers and e-mail, names stay manual. Belongs into the legal check anyway. Assumption from 24.09.2026
 - **E9 (set, 16.09.2026):** Everything runs on EU servers or with EU vendors, including transcription and analysis. Maxi's PC is only a development workbench.
 - **`prompts/system_v1.md` covers Stage 1 only, not the full skeleton from docs/05 §1** (`prompts/system_v1.md`, `prompts/tools_v1.md`): docs/05's example skeleton includes a menu index and order-taking rules, but `search_menu`/`draft_order`/etc. don't exist until Stage 2 (T-4.x). Writing a prompt that references them would tell the model it can do something the code can't (CLAUDE.md §2 rule 1). Instead, unbuilt tools are named once as "not yet available" so the model routes those requests to `create_callback` (`reason: out_of_scope`) instead of guessing. `tools_v1.md` is a new file, not named in docs/05 — the task title asked for "tool descriptions for the platform" without specifying a format or filename, so it's versioned alongside the system prompt (`tools_vN.md`) rather than folded into `docs/04_API_TOOLS.md`, which stays the full contract (error codes, idempotency rules) and isn't meant to be handed to a model as-is. Token budget is checked with `len(text) / 4` as an approximation (~440 for v1 against an 800 budget) — a real tokenizer arrives with `evals/` (T-5.1); until then this is a rough but honest floor check, not the number a real model would report. Assumption from 17.09.2026, subject to change once D1 and `agent/prompt.py` (T-2.1) exist
 - **`/v1/calls/start` and `/end` are our own contract** (`api/schemas/calls.py`, `domain/calls/`): docs/04 lists the two endpoints (§Endpunkte) but, unlike the `/v1/tools/*` tools, doesn't spec their request/response shape. Designed to match the existing conventions: `start` takes `tenant_id`/`external_session_id`/`caller_id`, is idempotent over `external_session_id` while a call with that id is still open (a platform retry gets back the same `call_id` instead of a second row); `end` takes the same `call_id`/`tenant_id` shape as the tool contracts plus `outcome`/`intent`/`cost_cents`/`model`, and is idempotent over state like `domain/confirm.py` (a second `/end`, e.g. a late "error" after an already-recorded "completed", reads back the first result instead of overwriting it). Both live directly in `main.py`, like `/health` and `/v1/tools/ping`, since they aren't part of the agent tool surface. Assumption from 17.09.2026, subject to change
@@ -260,6 +264,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.29.0 · 24.09.2026:** Anrufprotokoll ohne Tonaufnahme: Druckbogen, CSV-Format (docs/17), scripts/call_log.py fuer C1-Baseline und Eval-Entwuerfe
 - **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte
 - **v1.27.2 · 24.09.2026:** Projektpflege bricht ab, wenn der Token das Repo nicht sieht
 - **v1.27.1 · 24.09.2026:** Pull Requests ohne Merge werden nicht mehr als erledigt gezaehlt
