@@ -56,7 +56,7 @@ def draft_order(
     # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
-        return _replay(session, existing, req.tenant_id)
+        return _replay(session, existing, req.tenant_id, req.call_id)
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
@@ -98,7 +98,7 @@ def draft_order(
         existing = _by_key(session, req.idempotency_key)
         if existing is None:
             raise
-        return _replay(session, existing, req.tenant_id)
+        return _replay(session, existing, req.tenant_id, req.call_id)
 
     for position, line in enumerate(lines):
         session.add(
@@ -162,8 +162,12 @@ def _by_key(session: Session, key: str) -> Order | None:
     return session.scalar(select(Order).where(Order.idempotency_key == key))
 
 
-def _replay(session: Session, existing: Order, tenant_id: uuid.UUID) -> OrderDraft:
-    if existing.tenant_id != tenant_id:
+def _replay(
+    session: Session, existing: Order, tenant_id: uuid.UUID, call_id: uuid.UUID
+) -> OrderDraft:
+    # Auch ein anderer Anruf desselben Betriebs bekommt nie die Antwort unter
+    # diesem Schluessel: sie traegt Name, Gerichte und Summe (Codex PR #127, P1).
+    if existing.tenant_id != tenant_id or existing.call_id != call_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
     snapshot = _snapshot(session, existing.id)
     rows = session.scalars(

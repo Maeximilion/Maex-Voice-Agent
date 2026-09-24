@@ -151,10 +151,12 @@ Sofort und ohne Diskussion:
 
 Nur ein vorgelesener Entwurf ist bestätigbar. Korrigiert der Gast nach dem Vorlesen
 und scheitert die Korrektur (`draft_order` oder `create_reservation` mit Fehler) oder
-beginnt eine neue Slotprüfung (`check_slot`) oder ein Blick in die Karte
-(`search_menu`, `get_item_details`), fällt der alte Entwurf aus dem Zustand
+beginnt eine neue Slotprüfung (`check_slot`) oder eine neue Suche in der Karte
+(`search_menu`), fällt der alte Entwurf aus dem Zustand
 und `stage` geht zurück auf `collecting`: ein späteres Ja kann ihn nicht mehr
-bestätigen (`agent/state.py`, Codex PR #127).
+bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
+(`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
+bestätigbar, eine andere Option geht nur über `draft_order`.
 
 ---
 

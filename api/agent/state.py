@@ -97,11 +97,12 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
 # check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
 _CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
-# Eine Korrektur der Bestellung beginnt oft mit der Karte: neues Gericht suchen,
-# Optionen nachsehen. Jeder solche Aufruf loest den vorgelesenen Entwurf ab,
-# erfolgreich oder nicht - endet der Zug mit einer Rueckfrage, darf ein Ja
-# darauf nicht den alten bestaetigen (Codex PR #127, P1).
-_MENU_LOOKUP = frozenset({"search_menu", "get_item_details"})
+# Eine Korrektur der Gerichte beginnt mit search_menu: das loest den
+# vorgelesenen Entwurf ab, erfolgreich oder nicht - endet der Zug mit einer
+# Rueckfrage, darf ein Ja darauf nicht den alten bestaetigen (Codex PR #127, P1).
+# get_item_details nicht: es beantwortet eine Frage (Allergene, Beschreibung) und
+# aendert nichts; eine andere Option geht nur ueber draft_order (Codex PR #127, P2).
+_MENU_LOOKUP = frozenset({"search_menu"})
 _PICKUP_TOOLS = frozenset({"draft_order"}) | _MENU_LOOKUP
 
 

@@ -79,10 +79,12 @@ def _create_reservation(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    # Der Schlüssel entscheidet Code, nie das Modell (CLAUDE.md §2 Regel 1): ohne
-    # eigenen Schlüssel vom Aufrufer aus denselben Eingaben desselben Anrufs
-    # abgeleitet, damit ein Modell-Retry mit identischen Angaben nicht doppelt bucht.
-    key = args.get("idempotency_key") or idempotency_key(
+    # Der Schlüssel entscheidet Code, nie das Modell (CLAUDE.md §2 Regel 1): immer
+    # aus denselben Eingaben desselben Anrufs abgeleitet, damit ein Modell-Retry mit
+    # identischen Angaben nicht doppelt bucht. Einen Schlüssel vom Modell gibt es
+    # nicht - erfunden oder wiederverwendet holte er einen fremden Vorgang
+    # (Codex PR #127, P1).
+    key = idempotency_key(
         call_id,
         "create_reservation",
         args.get("guest_name"),
@@ -104,9 +106,8 @@ def _confirm(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    key = args.get("idempotency_key") or idempotency_key(
-        call_id, "confirm", args.get("entity"), args.get("entity_id")
-    )
+    # Der Schluessel wandert nur ins Protokoll; trotzdem vom Code, nie vom Modell.
+    key = idempotency_key(call_id, "confirm", args.get("entity"), args.get("entity_id"))
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
     req = ConfirmRequest(
         call_id=call_id, tenant_id=tenant_id, idempotency_key=key, **rest
@@ -214,7 +215,8 @@ def _draft_order(
     # Entwurf an; eine Korrektur (andere Menge, andere Option) ergibt einen
     # neuen Entwurf mit neuem readback.
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
-    key = args.get("idempotency_key") or idempotency_key(
+    # Wie bei create_reservation nie der Schluessel des Modells (Codex PR #127).
+    key = idempotency_key(
         call_id, "draft_order", json.dumps(rest, sort_keys=True, default=str)
     )
     req = DraftOrderRequest(
