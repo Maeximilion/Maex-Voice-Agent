@@ -542,3 +542,45 @@ def test_entwurf_zaehlt_nicht_als_unlesbar(monkeypatch) -> None:
     monkeypatch.setattr(project_report, "graphql", falsches_graphql)
     _, _, items = project_report.fetch_items("owner", 2, "token")
     assert len(items) == 1
+
+
+def _board_mit(nodes: list[dict]):
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        return {
+            "user": {
+                "projectV2": {
+                    "id": "P",
+                    "title": "Board",
+                    "items": {
+                        "pageInfo": {"hasNextPage": False, "endCursor": None},
+                        "nodes": nodes,
+                    },
+                }
+            }
+        }
+
+    return falsches_graphql
+
+
+@pytest.mark.parametrize(
+    "knoten",
+    [
+        # Das offizielle Signal: ProjectV2Item.type = REDACTED.
+        {"type": "REDACTED", "content": {"__typename": "Issue"}},
+        # Defensiv: ein Inhaltstyp, den das Skript nicht kennt.
+        {"type": "ISSUE", "content": {"__typename": "Unbekannt"}},
+    ],
+)
+def test_geschwaerzter_oder_unbekannter_inhalt_bricht_ab(
+    monkeypatch, knoten: dict
+) -> None:
+    """Codex-Review PR #131: nicht nur content = null zaehlt als unlesbar."""
+    node = {
+        "id": "A",
+        "isArchived": False,
+        "updatedAt": "2026-09-20T08:00:00Z",
+        **knoten,
+    }
+    monkeypatch.setattr(project_report, "graphql", _board_mit([node]))
+    with pytest.raises(project_report.ProjectError, match="1 Eintraege"):
+        project_report.fetch_items("owner", 2, "token")

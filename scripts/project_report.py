@@ -46,6 +46,7 @@ query($owner: String!, $number: Int!, $cursor: String) {
         pageInfo { hasNextPage endCursor }
         nodes {
           id
+          type
           isArchived
           updatedAt
           fieldValues(first: 20) {
@@ -241,6 +242,23 @@ def parse_item(node: dict) -> Item | None:
     )
 
 
+# Laut Schema (Union ProjectV2ItemContent) gibt es genau diese drei Inhalte.
+READABLE_CONTENT = frozenset({"Issue", "PullRequest", "DraftIssue"})
+
+
+def _is_unreadable(node: dict) -> bool:
+    """Ob der Token den Inhalt eines Board-Eintrags sehen darf.
+
+    Das offizielle Signal ist ProjectV2Item.type = REDACTED. Dazu kommt content = null,
+    und defensiv jeder Inhaltstyp ausserhalb des Schemas - lieber einmal zu laut als
+    einen Eintrag still uebergehen.
+    """
+    if node.get("type") == "REDACTED":
+        return True
+    content = node.get("content")
+    return content is None or content.get("__typename") not in READABLE_CONTENT
+
+
 def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Item]]:
     """Alle Eintraege des Projects holen, archivierte markiert, seitenweise."""
     items: list[Item] = []
@@ -263,10 +281,9 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
         project_title = project["title"]
 
         page = project["items"]
-        # content ist null, wenn der Token das Repo hinter dem Eintrag nicht lesen darf.
-        # Ein Entwurf hat dagegen immer Inhalt. Solche Eintraege haben weder Nummer
-        # noch Zustand, --fix faende nichts und liefe still gruen durch.
-        unreadable += sum(1 for node in page["nodes"] if node.get("content") is None)
+        # Unlesbare Eintraege haben weder Nummer noch Zustand, --fix faende nichts und
+        # liefe still gruen durch.
+        unreadable += sum(1 for node in page["nodes"] if _is_unreadable(node))
         items.extend(item for node in page["nodes"] if (item := parse_item(node)))
 
         if not page["pageInfo"]["hasNextPage"]:
