@@ -941,3 +941,34 @@ def test_loeschen_ersetzt_die_csv_erst_nach_vollstaendigem_schreiben(
         main([str(csv_file), "--frist-tage", "90", "--loeschen"])
     monkeypatch.undo()
     assert csv_file.read_text(encoding="utf-8") == vorher
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Hauptstrasse Nr. 12",
+        "Kaiser Strasse Nummer 12",
+        "Lindenweg Nr 3a",
+        "Am Stadtgarten Nr. 5",
+    ],
+)
+def test_adresse_mit_nr_vor_der_hausnummer(text):
+    """Codex PR #135: "Nr." oder "Nummer" zwischen Strasse und Hausnummer."""
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors and "Adresse" in errors[0], text
+
+
+@pytest.mark.parametrize("text", ["die Nr. 23 bitte", "Nummer 12 zweimal"])
+def test_nummer_der_karte_ist_keine_adresse(text):
+    _, errors = parse(HEADER + _row(phrases=text))
+    assert errors == [], text
+
+
+def test_salz_als_ordner_gibt_meldung_statt_absturz(tmp_path, eval_cases, capsys):
+    """Codex PR #135: ein nicht lesbares Salz (Rechte, Ordner, E/A-Fehler) gab
+    einen Traceback statt Exit 2."""
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(), encoding="utf-8")
+    (tmp_path / ".call_log_salt").mkdir()
+    assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 2
+    assert "Salz" in capsys.readouterr().err

@@ -120,16 +120,21 @@ _HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
 # ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
 # Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
 # vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
+# "Nr." oder "Nummer" zwischen Strasse und Hausnummer ("Hauptstrasse Nr. 12").
+# Allein ist "Nr. 23" die Nummer auf der Karte, keine Adresse.
+_NR = r"(?:(?:nr\.?|nummer)\s*)?"
 _ADDRESS = re.compile(
     r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer|markt|hof"
-    r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*\d+"
+    r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*"
+    rf"{_NR}\d+"
     # Nach einem Hinweiswort ist jede Zahl eine Hausnummer ("meine Adresse ist
     # Lindenblick 4"), ausser vor Minuten, Uhr und aehnlichem.
     r"|\b(?:adresse|wohne|wohnen|wohnt|liefern an|lieferung an|bringen an"
     r"|liefern nach|lieferung nach)\b[^|.!?]{0,40}?\b\d{1,4}[a-z]?\b"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
     r"|\b(?:am|im|an der|an den|auf der|auf dem|in der|in den|zum|zur"
-    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+\d{1,3}[a-z]?\b"
+    r"|hinter der|unter den)\s+(?:[a-z-]+\s+){0,2}[a-z-]+\s+"
+    rf"{_NR}\d{{1,3}}[a-z]?\b"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
     r"|\bhausn(?:umme)?r\b|\b\d{5}\s+[a-z]{3,}"
 )
@@ -674,9 +679,12 @@ def _salt(csv_file: Path) -> str:
     leeres oder kaputtes Salz bricht ab (ValueError): leer waeren die IDs
     wieder berechenbar, ein neues aenderte alle IDs."""
     path = csv_file.with_name(".call_log_salt")
-    if not path.exists():
-        _replace(path, secrets.token_hex(16))
-    salt = path.read_text(encoding="utf-8").strip()
+    try:
+        if not path.exists():
+            _replace(path, secrets.token_hex(16))
+        salt = path.read_text(encoding="utf-8").strip()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(getattr(exc, "strerror", None) or str(exc)) from exc
     if not _SALT.fullmatch(salt):
         raise ValueError("keine 32 Hex-Zeichen")
     return salt
