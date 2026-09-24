@@ -679,6 +679,10 @@ def fill_pr_fields(
             item.fields[name] = day
             done.append(name)
         if done:
+            # Wie in mark_done: GitHub setzt updatedAt bei jeder Feldaenderung neu. Sonst
+            # galte ein eben ergaenzter PR im selben Lauf als alt und --archive nahme
+            # ihn sofort mit.
+            item.updated_at = datetime.now(UTC)
             filled.append(f"{item.label}: {', '.join(done)}")
     return filled
 

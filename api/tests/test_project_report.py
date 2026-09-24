@@ -736,3 +736,41 @@ def test_issues_bekommen_keine_abgeleiteten_felder() -> None:
     issue.kind = "Issue"
     issue.created_at = datetime.fromisoformat("2026-09-16T08:00:00+00:00")
     assert project_report.derive_pr_fields(issue) == {}
+
+
+def test_nachgetragene_felder_frischen_den_zeitstempel_auf(monkeypatch) -> None:
+    """Codex-Review PR #137: jedes Nachtragen setzt auf GitHub updatedAt neu. Ohne das
+    lokal nachzuziehen, archivierte --fix --archive einen eben ergaenzten PR sofort."""
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        if "fields(first" in query:
+            return {
+                "user": {
+                    "projectV2": {
+                        "fields": {
+                            "nodes": [
+                                {
+                                    "id": "F_START",
+                                    "name": "Start date",
+                                    "dataType": "DATE",
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        return {}
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    item = pr(
+        99,
+        erstellt="2026-08-01T10:00:00+00:00",
+        geschlossen="2026-08-02T10:00:00+00:00",
+        felder={"Status": "Done"},
+    )
+    item.updated_at = datetime(2026, 8, 2, tzinfo=UTC)
+    project_report.fill_pr_fields("owner", 2, "PROJ", [item], "token")
+
+    assert (
+        project_report.find_issues([item], datetime.now(UTC))[ARCHIV_SCHLUESSEL] == []
+    )
