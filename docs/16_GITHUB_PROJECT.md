@@ -76,6 +76,7 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 
 - offene Issues und Pull Requests des Repos, die auf dem Board fehlen - falls die automatische Aufnahme etwas verpasst hat. Verglichen wird die URL, nicht die Nummer
 - offen, steht aber auf `Done` - ein wieder geoeffneter Eintrag, den der Workflow nicht zurueckgesetzt hat
+- archiviert, aber wieder offen - wird zurueckgeholt, nicht neu angelegt. Archivierte Eintraege zaehlen beim Abgleich mit dem Repo als vorhanden, in allen anderen Pruefungen nicht
 - derselbe Vorgang zweimal auf dem Board
 - Eintraege ohne Status
 - Eintraege in Arbeit ohne Iteration (bewusst nicht der ganze Backlog, sonst meldet der Bericht taeglich alles)

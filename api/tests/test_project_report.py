@@ -180,9 +180,19 @@ def test_bericht_nennt_jeden_befund_mit_nummer() -> None:
     assert "#9" in text
 
 
-def test_parse_item_ueberspringt_archivierte() -> None:
-    """Archivierte Eintraege sind erledigt und gehoeren in keine Pruefung."""
-    assert project_report.parse_item({"id": "X", "isArchived": True}) is None
+def test_parse_item_behaelt_archivierte_mit_markierung() -> None:
+    """Archivierte Eintraege werden markiert, nicht verworfen: der Abgleich mit dem
+    Repo braucht ihre URL, sonst gilt ein wieder geoeffnetes Issue als fehlend."""
+    item = project_report.parse_item(
+        {
+            "id": "X",
+            "isArchived": True,
+            "updatedAt": "2026-09-01T08:00:00Z",
+            "content": {"number": 3, "title": "t", "state": "OPEN", "url": "u3"},
+        }
+    )
+    assert item is not None
+    assert item.is_archived
 
 
 def test_parse_item_liest_single_select_und_iteration() -> None:
@@ -353,3 +363,34 @@ def test_gleiche_nummer_aus_zwei_repos_ist_keine_dopplung() -> None:
     assert (
         project_report.find_issues([fremd, eigen], JETZT)["Doppelt auf dem Board"] == []
     )
+
+
+# Codex-Review PR #129, dritte Runde: archivierte und wieder geoeffnete Eintraege
+
+
+def archiviert(number: int, *, state: str, status: str = "Done") -> project_report.Item:
+    item = eintrag(number, state=state, status=status, tage_alt=30)
+    item.is_archived = True
+    return item
+
+
+def test_wieder_geoeffnetes_archiviertes_gilt_nicht_als_fehlend() -> None:
+    """Sonst wuerde /project es neu hinzufuegen statt es zurueckzuholen."""
+    item = archiviert(3, state="OPEN")
+    befunde = project_report.find_issues([item], JETZT, open_in_repo=[eintrag(3)])
+    assert befunde["Offen im Repo, fehlt auf dem Board"] == []
+    assert befunde["Archiviert, aber wieder offen"] == [item]
+
+
+def test_archivierte_zaehlen_in_keiner_anderen_pruefung() -> None:
+    """Archiviert heisst erledigt und weggelegt: kein Drift, kein Archiv-Kandidat."""
+    eintraege = [archiviert(4, state="CLOSED", status="In progress")]
+    befunde = project_report.find_issues(eintraege, JETZT)
+    assert befunde["Abgeschlossen, steht aber nicht auf Done"] == []
+    assert befunde["Archiviert, aber wieder offen"] == []
+
+
+def test_fix_fasst_archivierte_nicht_an() -> None:
+    """--fix korrigiert nur, was sichtbar auf dem Board steht."""
+    item = archiviert(4, state="CLOSED", status="In progress")
+    assert project_report.items_to_mark_done([item]) == []

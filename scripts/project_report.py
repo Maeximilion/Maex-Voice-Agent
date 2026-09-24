@@ -142,6 +142,7 @@ class Item:
     state: str | None = None
     url: str | None = None
     fields: dict[str, str] = field(default_factory=dict)
+    is_archived: bool = False
 
     @property
     def status(self) -> str | None:
@@ -198,10 +199,12 @@ def graphql(query: str, variables: dict, token: str) -> dict:
 
 
 def parse_item(node: dict) -> Item | None:
-    """Einen GraphQL-Knoten in ein Item uebersetzen. Archivierte Eintraege fallen raus."""
-    if node.get("isArchived"):
-        return None
+    """Einen GraphQL-Knoten in ein Item uebersetzen.
 
+    Archivierte Eintraege werden markiert, nicht verworfen: der Abgleich mit dem Repo
+    braucht ihre URL. Sonst gilt ein wieder geoeffnetes Issue als fehlend, und
+    /project wuerde es neu hinzufuegen, statt den archivierten Eintrag zurueckzuholen.
+    """
     fields: dict[str, str] = {}
     for value in node.get("fieldValues", {}).get("nodes", []):
         field_name = (value.get("field") or {}).get("name")
@@ -219,11 +222,12 @@ def parse_item(node: dict) -> Item | None:
         state=content.get("state"),
         url=content.get("url"),
         fields=fields,
+        is_archived=bool(node.get("isArchived")),
     )
 
 
 def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Item]]:
-    """Alle nicht archivierten Eintraege des Projects holen, seitenweise."""
+    """Alle Eintraege des Projects holen, archivierte markiert, seitenweise."""
     items: list[Item] = []
     cursor: str | None = None
     project_id = ""
@@ -306,28 +310,33 @@ def find_issues(
     # Nach URL, nicht nach Nummer: das Board kann Eintraege aus mehreren Repos tragen,
     # und #5 aus zwei Repos sind zwei Vorgaenge. Entwuerfe haben keine URL und keinen
     # Zwilling, sie bleiben aussen vor.
-    seen = Counter(item.url for item in items if item.url)
-    duplicates = [item for item in items if item.url and seen[item.url] > 1]
+    # Archiviert heisst weggelegt: fuer Drift, Dopplung und Archiv zaehlt nur das
+    # sichtbare Board. Beim Abgleich mit dem Repo zaehlen archivierte dagegen mit.
+    board = [item for item in items if not item.is_archived]
+    archived = [item for item in items if item.is_archived]
+
+    seen = Counter(item.url for item in board if item.url)
+    duplicates = [item for item in board if item.url and seen[item.url] > 1]
 
     findings = {
         "Doppelt auf dem Board": duplicates,
-        "Ohne Status": [item for item in items if not item.status],
+        "Ohne Status": [item for item in board if not item.status],
         # Nur was wirklich in Arbeit ist, braucht eine Iteration. Die Prueflinie auf
         # jeden offenen Eintrag zu legen hiesse, den ganzen Backlog taeglich zu melden.
         "In Arbeit, aber ohne Iteration": [
             item
-            for item in items
+            for item in board
             if item.is_in_progress and not item.fields.get("Iteration")
         ],
         f"In Arbeit, seit {IN_PROGRESS_STALE_AFTER_DAYS} Tagen ohne Bewegung": [
             item
-            for item in items
+            for item in board
             if item.is_in_progress
             and item.age_days(now) >= IN_PROGRESS_STALE_AFTER_DAYS
         ],
         f"Fertig, aelter als {DONE_ARCHIVE_AFTER_DAYS} Tage (Archiv-Kandidat)": [
             item
-            for item in items
+            for item in board
             # is_finished zusaetzlich: ein wieder geoeffneter Eintrag, der auf Done
             # haengen blieb, ist aktive Arbeit und darf nie aus der Sicht verschwinden.
             if item.is_done
@@ -335,10 +344,14 @@ def find_issues(
             and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
         ],
         "Abgeschlossen, steht aber nicht auf Done": [
-            item for item in items if item.is_finished and not item.is_done
+            item for item in board if item.is_finished and not item.is_done
         ],
         "Offen, steht aber auf Done": [
-            item for item in items if item.state == "OPEN" and item.is_done
+            item for item in board if item.state == "OPEN" and item.is_done
+        ],
+        # Wieder geoeffnet, aber archiviert: gehoert zurueckgeholt, nicht neu angelegt.
+        "Archiviert, aber wieder offen": [
+            item for item in archived if item.state == "OPEN"
         ],
     }
     if open_in_repo is not None:
@@ -358,7 +371,7 @@ def render_report(
     lines = [
         f"# Projektpflege - {project_title}",
         "",
-        f"Stand {now:%d.%m.%Y %H:%M} UTC · {len(items)} Eintraege aktiv",
+        f"Stand {now:%d.%m.%Y %H:%M} UTC · {sum(not i.is_archived for i in items)} Eintraege aktiv",
         "",
     ]
 
@@ -383,7 +396,11 @@ def render_report(
 def items_to_mark_done(items: list[Item]) -> list[Item]:
     """Was GitHub abgeschlossen hat, das Board aber nicht. Genau die Luecke, die die
     eingebauten Workflows rueckwirkend nicht schliessen."""
-    return [item for item in items if item.is_finished and not item.is_done]
+    return [
+        item
+        for item in items
+        if not item.is_archived and item.is_finished and not item.is_done
+    ]
 
 
 def pick_done_option(options: list[dict]) -> str:

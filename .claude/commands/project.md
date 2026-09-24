@@ -6,7 +6,8 @@ Maintain the GitHub Project board. This is the only command allowed to write to 
 3. Apply the remaining mechanical fixes directly, without asking - Maxi gave standing authorization on 2026-09-24:
    - duplicate item (same URL twice): archive the extra entry with `gh project item-archive`, never delete it. Keep the entry with more fields filled; on a tie keep the first one the report lists. Archiving is reversible and leaves the issue untouched
    - item without Status: set it from the issue state (open = Todo, closed or merged = Done)
-   - open issue or PR missing from the board: add it
+   - archived entry whose issue or PR is open again: unarchive it with `gh project item-archive --undo`, never add it anew
+   - open issue or PR missing from the board: add it. The report already counts archived entries as present, so this never duplicates one
 4. Propose, do not apply: assigning iterations, archiving anything other than a confirmed duplicate, new views or fields, anything touching docs/07 priorities.
 5. Report in at most five lines: what was fixed, what waits for a decision. Then leave the board alone until the next `/project`.
 
