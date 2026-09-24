@@ -388,3 +388,54 @@ def test_unbekannte_nummer_im_ersten_satz_wird_gesagt(session, tenant):
     first = " ".join(turns[0].say)
     assert first.startswith("Guten Tag, hier ist der KI-Assistent")
     assert "Die Nummer 99 habe ich nicht auf der Karte" in first
+
+
+def test_jeder_unklare_teil_wird_nachgefragt(session, tenant):
+    """Codex PR #130, P1: zwei Teile ohne Treffer in einem Satz. Nach dem ersten
+    kommt der zweite dran, statt still zu verschwinden."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Die 98 und die 99.",
+            "Die 23.",
+            "Die 24.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    text = said(turns)
+    assert "Die Nummer 98 habe ich nicht auf der Karte" in text
+    assert "Die Nummer 99 habe ich nicht auf der Karte" in text
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == ["23", "24"]
+
+
+def test_antwort_auf_rueckfrage_als_neue_suche_beendet_die_rueckfrage(session, tenant):
+    """Codex PR #130, P1: "die dreizehn" erkennt die Auswahl nicht direkt; die
+    neue Suche findet die 13. Danach ist die Rueckfrage erledigt, "das wars"
+    ist kein Gericht mehr."""
+    replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe.",
+            "Die dreizehn.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == ["13"]

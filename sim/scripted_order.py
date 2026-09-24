@@ -56,6 +56,9 @@ class PickupScript:
         # Weitere unklare Teile eines Satzes: eine Rueckfrage nach der anderen,
         # keiner faellt still weg. Nach der ersten Antwort wird der naechste gesucht.
         self._later: list[str] = []
+        # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
+        # ein Zug ist Satz oder Tool-Aufruf, nie beides.
+        self._carry: str | None = None
 
     # -- Kundenzug ---------------------------------------------------------
 
@@ -75,6 +78,10 @@ class PickupScript:
                 self.phase = "dishes"
                 return self._next(slots, patch)
             # Keine der angebotenen: neu suchen mit dem, was jetzt gesagt wurde.
+            # Die Rueckfrage ist damit erledigt ("die dreizehn" findet die 13),
+            # sonst hielte _next sie weiter fuer offen (Codex PR #130, P1).
+            self.phase = "dishes"
+            self._suggestions = []
             return _search(text, patch)
         if self.phase == "option":
             return self._answer_option(text, slots, patch)
@@ -121,7 +128,12 @@ class PickupScript:
             unclear: str | None = None
             for part in data["positions"]:
                 if not part["ok"]:
-                    unclear = unclear or part.get("say")
+                    # Jeder unklare Teil wird nachgefragt, einer nach dem anderen
+                    # (Codex PR #130, P1).
+                    if unclear:
+                        self._later.append(part["query"])
+                    else:
+                        unclear = part.get("say")
                     continue
                 if unclear and part.get("match_type") not in CLEAR_MATCHES:
                     self._later.append(part["query"])
@@ -130,9 +142,15 @@ class PickupScript:
                 # Rueckfrage; gesprochen wird nur die erste (Codex PR #130, P1).
                 said = self._take(part["query"], part)
                 unclear = unclear or said
-            return self._next(slots, {}, lead=_join(data.get("say"), unclear))
+            lead = _join(self.take_carry(), data.get("say"), unclear)
+            return self._next(slots, {}, lead=lead)
         taken = self._take(query, data)
-        return self._next(slots, {}, lead=taken if taken is not None else say)
+        lead = _join(self.take_carry(), taken if taken is not None else say)
+        return self._next(slots, {}, lead=lead)
+
+    def take_carry(self) -> str | None:
+        carry, self._carry = self._carry, None
+        return carry
 
     def on_confirmed(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = None
@@ -221,7 +239,8 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
-        if self._later and self.phase != "choose" and not lead:
+        if self._later and self.phase != "choose":
+            self._carry = _join(self._carry, lead)
             return _search(self._later.pop(0), patch)
         if self.phase == "choose":
             # Hier steht immer die Rueckfrage mit den Vorschlaegen (_take).

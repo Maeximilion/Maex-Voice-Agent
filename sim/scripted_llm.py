@@ -51,7 +51,11 @@ SAY_HANDOVER = "Ich gebe an das Team weiter."
 OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
 # Waehrend einer Bestellung faellt "Karte" natuerlich ("die 23 von der Karte").
 OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergi")
-PICKUP = ("abhol", "bestell", "mitnehmen")
+PICKUP = ("abhol", "mitnehmen")
+# "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
+# Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
+ORDER_WORD = ("bestell",)
+RESERVATION_WORDS = ("tisch", "reserv", "platz", "personen")
 SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb dessen, was die KI selbst kann."
 
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
@@ -140,7 +144,7 @@ class ScriptedLLM:
             self._out_of_scope_request = self._out_of_scope_request or text
             return self._out_of_scope(slots, patch)
 
-        if self._pickup is None and _mentions_stem(text, PICKUP):
+        if self._pickup is None and _wants_pickup(text):
             self._pickup = PickupScript()
             if not self._status_checked:
                 self._opening_query = _opening_dish(text)
@@ -219,6 +223,9 @@ class ScriptedLLM:
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok"):
+            if name == "search_menu" and self._pickup is not None:
+                # Was vor einer nachgeholten Suche verstanden wurde, geht mit.
+                say = _join(self._pickup.take_carry(), say)
             return self._after_failure(name, say)
         if name == "create_callback":
             self._out_of_scope_request = None
@@ -508,6 +515,14 @@ _PICKUP_WORDS = re.compile(
     r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\betwas\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
     re.IGNORECASE,
 )
+
+
+def _wants_pickup(text: str) -> bool:
+    if _mentions_stem(text, PICKUP):
+        return True
+    return _mentions_stem(text, ORDER_WORD) and not _mentions_stem(
+        text, RESERVATION_WORDS
+    )
 
 
 def _opening_dish(text: str) -> str | None:
