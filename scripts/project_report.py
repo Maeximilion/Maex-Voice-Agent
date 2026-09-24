@@ -61,6 +61,7 @@ query($owner: String!, $number: Int!, $cursor: String) {
             }
           }
           content {
+            __typename
             ... on Issue { number title state url }
             ... on PullRequest { number title state url }
             ... on DraftIssue { title }
@@ -143,6 +144,9 @@ class Item:
     url: str | None = None
     fields: dict[str, str] = field(default_factory=dict)
     is_archived: bool = False
+    # "Issue", "PullRequest" oder "DraftIssue". Noetig, weil CLOSED bei einem Issue
+    # erledigt heisst, bei einem Pull Request aber abgelehnt.
+    kind: str | None = None
 
     @property
     def status(self) -> str | None:
@@ -157,9 +161,19 @@ class Item:
         return _normalized(self.status) in DONE_NAMES
 
     @property
-    def is_finished(self) -> bool:
-        """Abgeschlossen im Sinne von GitHub. Ein Pull Request landet auf MERGED, nicht auf CLOSED."""
+    def is_closed(self) -> bool:
+        """Auf GitHub zu, gleich auf welchem Weg. Reicht fuers Archiv: auch ein
+        abgelehnter Pull Request ist vorbei."""
         return self.state in ("CLOSED", "MERGED")
+
+    @property
+    def is_finished(self) -> bool:
+        """Erledigt im Sinne der Konvention: ein Issue geschlossen, ein Pull Request
+        gemerged. Nur das darf auf Done. Ein Pull Request ohne Merge hat ebenfalls
+        den Zustand CLOSED und waere sonst als erledigt durchgerutscht."""
+        if self.kind == "PullRequest":
+            return self.state == "MERGED"
+        return self.is_closed
 
     @property
     def label(self) -> str:
@@ -219,6 +233,7 @@ def parse_item(node: dict) -> Item | None:
         title=content.get("title", "(ohne Titel)"),
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
+        kind=content.get("__typename"),
         state=content.get("state"),
         url=content.get("url"),
         fields=fields,
@@ -282,6 +297,7 @@ def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
                     number=node["number"],
                     state="OPEN",
                     url=node["url"],
+                    kind="PullRequest" if connection == "pullRequests" else "Issue",
                 )
                 for node in page["nodes"]
             )
@@ -340,7 +356,7 @@ def find_issues(
             # is_finished zusaetzlich: ein wieder geoeffneter Eintrag, der auf Done
             # haengen blieb, ist aktive Arbeit und darf nie aus der Sicht verschwinden.
             if item.is_done
-            and item.is_finished
+            and item.is_closed
             and item.age_days(now) >= DONE_ARCHIVE_AFTER_DAYS
         ],
         "Abgeschlossen, steht aber nicht auf Done": [
@@ -350,6 +366,16 @@ def find_issues(
             item for item in board if item.state == "OPEN" and item.is_done
         ],
         # Wieder geoeffnet, aber archiviert: gehoert zurueckgeholt, nicht neu angelegt.
+        # Weder erledigt noch Drift: ob ein abgelehnter Pull Request auf Done oder ins
+        # Archiv gehoert, entscheidet ein Mensch. Steht er schon auf Done, ist das
+        # entschieden, und er meldet sich nicht jeden Tag neu.
+        "Pull Request ohne Merge geschlossen": [
+            item
+            for item in board
+            if item.kind == "PullRequest"
+            and item.state == "CLOSED"
+            and not item.is_done
+        ],
         "Archiviert, aber wieder offen": [
             item for item in archived if item.state == "OPEN"
         ],

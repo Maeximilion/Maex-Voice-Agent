@@ -394,3 +394,62 @@ def test_fix_fasst_archivierte_nicht_an() -> None:
     """--fix korrigiert nur, was sichtbar auf dem Board steht."""
     item = archiviert(4, state="CLOSED", status="In progress")
     assert project_report.items_to_mark_done([item]) == []
+
+
+# Codex-Review PR #129, vierte Runde: ohne Merge geschlossene Pull Requests
+
+
+def pull_request(number: int, *, state: str, status: str) -> project_report.Item:
+    item = eintrag(number, state=state, status=status)
+    item.kind = "PullRequest"
+    return item
+
+
+def test_abgelehnter_pull_request_wird_nicht_auf_done_gesetzt() -> None:
+    """Done kommt bei Pull Requests nur vom Merge, nicht vom Schliessen."""
+    abgelehnt = pull_request(40, state="CLOSED", status="In progress")
+    gemergt = pull_request(41, state="MERGED", status="In progress")
+    assert project_report.items_to_mark_done([abgelehnt, gemergt]) == [gemergt]
+
+
+def test_abgelehnter_pull_request_ist_kein_drift_sondern_eigener_befund() -> None:
+    abgelehnt = pull_request(40, state="CLOSED", status="In progress")
+    befunde = project_report.find_issues([abgelehnt], JETZT)
+    assert befunde["Abgeschlossen, steht aber nicht auf Done"] == []
+    assert befunde["Pull Request ohne Merge geschlossen"] == [abgelehnt]
+
+
+def test_geschlossenes_issue_bleibt_erledigt() -> None:
+    """Gegenprobe: bei Issues ist CLOSED weiterhin erledigt."""
+    issue = eintrag(42, state="CLOSED", status="Todo")
+    issue.kind = "Issue"
+    assert project_report.items_to_mark_done([issue]) == [issue]
+
+
+def test_abgelehnter_pull_request_auf_done_bleibt_archivierbar() -> None:
+    """Archivieren braucht nur 'vorbei', nicht 'gemergt': auch ein abgelehnter PR ist durch."""
+    abgelehnt = pull_request(43, state="CLOSED", status="Done")
+    abgelehnt.updated_at = JETZT - timedelta(days=30)
+    befunde = project_report.find_issues([abgelehnt], JETZT)
+    assert befunde[ARCHIV_SCHLUESSEL] == [abgelehnt]
+    assert befunde["Pull Request ohne Merge geschlossen"] == []
+
+
+def test_parse_item_liest_den_inhaltstyp() -> None:
+    item = project_report.parse_item(
+        {
+            "id": "P",
+            "isArchived": False,
+            "updatedAt": "2026-09-20T08:00:00Z",
+            "content": {
+                "__typename": "PullRequest",
+                "number": 7,
+                "title": "t",
+                "state": "CLOSED",
+                "url": "u7",
+            },
+        }
+    )
+    assert item is not None
+    assert item.kind == "PullRequest"
+    assert not item.is_finished

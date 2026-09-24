@@ -42,7 +42,7 @@ Exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), 
 
 ## Maintenance runs daily, never per commit
 
-`.github/workflows/project-maintenance.yml` runs `scripts/project_report.py --fix` once a day. It sets items GitHub has finished (issue `CLOSED`, PR `MERGED`) but the board has not to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap.
+`.github/workflows/project-maintenance.yml` runs `scripts/project_report.py --fix` once a day. It sets items that are finished (issue `CLOSED`, PR `MERGED` - a PR closed without merge is not finished) but not on `Done` to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap.
 
 Needs `PROJECT_TOKEN` as a secret and `PROJECT_NUMBER` (= 2) as a repo variable, both set up 2026-09-24 - the `GITHUB_TOKEN` cannot read account-owned projects.
 

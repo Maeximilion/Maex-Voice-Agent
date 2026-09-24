@@ -70,12 +70,13 @@ Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Bes
 
 `.github/workflows/project-maintenance.yml` laeuft einmal taeglich um 03:00 UTC und ruft `scripts/project_report.py --fix` auf. Der Lauf korrigiert genau eine Sorte Fehler selbst und meldet alles andere in der Job-Zusammenfassung.
 
-**Korrigiert wird:** was GitHub abgeschlossen hat (Issue `CLOSED`, Pull Request `MERGED`), das Board aber nicht auf `Done` fuehrt. Das ist die Luecke, die die eingebauten Workflows hinterlassen, denn sie greifen nur bei neuen Ereignissen und nie rueckwirkend. Die Korrektur ist idempotent und zieht das Board nur zur Wahrheit hin, nie davon weg.
+**Korrigiert wird:** was erledigt ist (Issue `CLOSED`, Pull Request `MERGED`), das Board aber nicht auf `Done` fuehrt. Ein Pull Request, der ohne Merge geschlossen wurde, hat ebenfalls den Zustand `CLOSED`, ist aber nicht erledigt - er wird nie automatisch auf `Done` gesetzt. Das ist die Luecke, die die eingebauten Workflows hinterlassen, denn sie greifen nur bei neuen Ereignissen und nie rueckwirkend. Die Korrektur ist idempotent und zieht das Board nur zur Wahrheit hin, nie davon weg.
 
 **Nur gemeldet wird** alles, was eine Entscheidung braucht:
 
 - offene Issues und Pull Requests des Repos, die auf dem Board fehlen - falls die automatische Aufnahme etwas verpasst hat. Verglichen wird die URL, nicht die Nummer
 - offen, steht aber auf `Done` - ein wieder geoeffneter Eintrag, den der Workflow nicht zurueckgesetzt hat
+- Pull Request ohne Merge geschlossen und nicht auf `Done` - ob archivieren oder stehen lassen, entscheidet `/project`
 - archiviert, aber wieder offen - wird zurueckgeholt, nicht neu angelegt. Archivierte Eintraege zaehlen beim Abgleich mit dem Repo als vorhanden, in allen anderen Pruefungen nicht
 - derselbe Vorgang zweimal auf dem Board
 - Eintraege ohne Status
