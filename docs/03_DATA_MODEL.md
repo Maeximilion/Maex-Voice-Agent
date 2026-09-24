@@ -231,7 +231,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | quantity | INT | |
 | unit_price_cents | INT | Preis zum Bestellzeitpunkt, eingefroren |
 | options | JSONB | gewählte Optionen mit Preisdifferenz |
-| note | TEXT | „ohne Zwiebeln" |
+| note | TEXT | „ohne Zwiebeln", „WICHTIG: Keine Erdnüsse. Grund: Allergie" (E14) |
 
 ---
 
