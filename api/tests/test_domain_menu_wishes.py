@@ -44,6 +44,8 @@ KARTE_WUENSCHE = {
         "24;Sommerrollen mit Garnelen;Vorspeisen;7,50;;ja\n"
         "13;Pho Bo;Suppen;11,90;;ja\n"
         "47;Ente knusprig;Hauptgerichte;15,50;;ja\n"
+        "60;Pizza mit Salami;Pizza;9,50;;ja\n"
+        "61;Pizza mit Pilzen;Pizza;9,00;;ja\n"
     ),
     OPTIONS_FILE: (
         "number;group_name;option_name;price_delta_eur;is_default;required;"
@@ -489,3 +491,23 @@ def test_zweite_trennung_ohne_neue_suche(session, tenant_id, monkeypatch):
     )
     assert (result.wish.kind, result.wish.text) == ("note", "ohne Koriander")
     assert "Sommerrollen mit Garnelen" not in calls[1:]
+
+
+def test_voller_name_statt_offener_wunsch(session, tenant_id):
+    """Codex PR #139: "Pizza mit Salami" ist ein Gericht. Die Suche nur nach
+    "Pizza" faende zwei und fragte nach - der ganze Name entscheidet."""
+    result = suche(session, tenant_id, "Pizza mit Salami")
+    assert [h.number for h in result.results] == ["60"]
+    assert result.wish is None
+
+
+def test_optionsname_mit_bindestrich():
+    """Codex PR #139: "Süß-Sauer" als Option trifft den gesprochenen Wunsch."""
+    groups = [
+        OptionGroup(
+            group="Sauce",
+            required=False,
+            options=[OptionOut(name="Süß-Sauer", price_delta_cents=0, default=False)],
+        )
+    ]
+    assert classify_wish("mit Süß-Sauer", groups).kind == "option"

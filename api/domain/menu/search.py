@@ -424,6 +424,10 @@ def _search_with_wish(
     if not found.results:
         return None
     if found.match_type not in CLEAR_MATCHES:
+        # Gehoert der Satzteil zum Namen eines der Treffer ("Pizza mit Salami"
+        # neben "Pizza mit Pilzen"), entscheidet der ganze Satz (Codex PR #139).
+        if any(names_it(hit.name, candidates[0][2]) for hit in found.results):
+            return None
         return found.model_copy(update={"wish": open_wish(candidates[0][1])})
     hit = found.results[0]
     for _, wish, segment in candidates:
