@@ -774,3 +774,37 @@ def test_zahlwort_im_namen_auch_ohne_umlaut():
     """Codex PR #133, P2: "fuenf schaetze" trifft "Fünf Schätze" - die Fünf gehoert
     zum Namen, keine Menge. Verglichen wird in der gefalteten Form."""
     assert _quantity("fuenf schaetze", {"number": "33", "name": "Fünf Schätze"}) == 1
+
+
+def test_ausverkaufter_vorschlag_wird_nicht_aufgenommen(session, tenant):
+    """Codex PR #133: die Wahl aus den Vorschlaegen ("die dreizehn") nimmt ein
+    ausverkauftes Gericht nicht auf, sondern sagt es und bietet den Rest an.
+    Sonst lehnte draft_order den Warenkorb ab, und die Bestellung kaeme nicht
+    mehr zum Abschluss."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant.id, MenuItem.number == "13")
+        .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
+    )
+    session.commit()
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe.",
+            "Die dreizehn.",
+            "Die zwoelf.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    third = " ".join(turns[2].say)
+    assert "Pho Bo ist heute leider aus" in third
+    assert "Nummer 12 Wan-Tan-Suppe" in third
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("12", 1, [])]

@@ -21,7 +21,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.domain.menu.search import SAY_NOT_FOUND
+from api.domain.menu.search import SAY_NOT_FOUND, SAY_SOLD_OUT
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -83,6 +83,19 @@ class PickupScript:
     ) -> LLMTurn:
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
+            if hit is not None and hit.get("sold_out"):
+                # Heute aus: nicht aufnehmen, sagen und den Rest anbieten. Sonst
+                # lehnte draft_order den Warenkorb ab, und die Bestellung kaeme
+                # nicht mehr zum Abschluss (Codex PR #133).
+                sold = SAY_SOLD_OUT.format(name=hit["name"])
+                self._suggestions = [h for h in self._suggestions if h is not hit]
+                if self._suggestions:
+                    return LLMTurn(
+                        say=_join(sold, _offer(self._suggestions)),
+                        state_patch=patch or None,
+                    )
+                self.phase = "dishes"
+                return self._next(slots, patch, lead=sold)
             if hit is not None:
                 # Menge aus der Antwort ("einmal die dreizehn", auch ohne Marker:
                 # "zwei Pho Bo", "zwei Nummer dreizehn"), sonst aus der Frage, zu
