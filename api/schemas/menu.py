@@ -51,6 +51,9 @@ class Wish(BaseModel):
     option: str | None = None
     price_delta_cents: int | None = None
     reason: str | None = None
+    # Bei einer Allergie die Zutat aus den Worten des Gastes (E14). None: der
+    # Agent fragt nach, wogegen.
+    ingredient: str | None = None
 
 
 class SearchResult(BaseModel):

@@ -921,3 +921,12 @@ def test_fall_mit_wuenschen_aus_evals(session, tenant):
     assert order.status == "confirmed"
     assert positions(session, order) == [("23", 1, []), ("47", 1, ["Huhn"])]
     assert _notes(session, order) == ["ohne Karotten", None]
+
+
+def test_allergie_steht_im_festen_wortlaut_in_der_bestellung(session, tenant):
+    """E14: Hinweis an die Kueche im festen Wortlaut, beim Vorlesen wiederholt."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich vertrage keine Erdnüsse.")
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in said(turns)

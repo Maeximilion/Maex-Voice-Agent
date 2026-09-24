@@ -208,7 +208,7 @@ kommt als `wish` mit:
 |---|---|---|
 | `note` | Weglassen („ohne", „kein") | als `note` der Position in `draft_order`, ohne Preis |
 | `option` | steht als Option des Gerichts auf der Karte; `group`, `option`, `price_delta_cents` und `reason` aus `item_options` | in `options` von `draft_order`; der Aufpreis wird sofort mit wiederholt |
-| `allergy` | eine Allergie | als `note` an die Küche, `say` ohne Zusage, dass das Gericht frei davon ist |
+| `allergy` | eine eigene Allergie („ich vertrage keine Erdnüsse", „Erdnussallergie") | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen |
 | `unknown` | steht nicht auf der Karte | nicht anbieten: `say` („Den Wunsch … kann ich leider nicht anbieten"), das Gericht bleibt wie auf der Karte |
 | `open` | bei mehreren Treffern | erst nach der Wahl des Gerichts einordnen |
 
@@ -217,7 +217,7 @@ Steht im Wunsch eine Zahl („Nummer 23 mit 2 Soßen"), gilt Regel A und die Suc
 fragt nach der einen Nummer. Nennt der Satz mehrere Positionen, wird zuerst
 zerlegt, der Wunsch gehört dann zu seinem Teil (`positions[].wish`). Der Satz
 zur Allergie ist ein Entwurf und wird vor dem Echtbetrieb mit dem Rechts-Check
-abgestimmt (docs/09).
+abgestimmt (docs/09); der Wortlaut des Küchenhinweises steht fest (E14).
 
 **Harte Regel:** Der Agent darf nur eine Position übernehmen, die eine `menu_item_id` aus diesem Tool trägt. Bei `ambiguous` wird nachgefragt, nicht gewählt.
 

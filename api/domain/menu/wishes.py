@@ -32,8 +32,40 @@ _TOKEN = re.compile(r"[^\W_]+|,", re.UNICODE)
 _TRAILING_PLEASE = re.compile(r"[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
 
 
+# Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
+# Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon.
+ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
+_INGREDIENT = (
+    # "allergisch gegen Sesam", "Allergie gegen Sellerie"
+    re.compile(
+        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+(.+)$",
+        re.IGNORECASE,
+    ),
+    # "ich vertrage keine Erdnüsse"
+    re.compile(r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+(.+)$", re.IGNORECASE),
+    # "Erdnussallergie"
+    re.compile(r"(\w+?)allergie", re.IGNORECASE),
+)
+
+
 def _is_allergy(word: str) -> bool:
-    return "allerg" in word or "unvertraeglich" in word
+    return (
+        "allerg" in word
+        or "unvertraeglich" in word
+        or word.startswith(("vertrag", "vertraeg"))
+    )
+
+
+def _ingredient(text: str) -> str | None:
+    """Die Zutat, wie der Gast sie sagt: "Erdnussallergie" -> "Erdnuss",
+    "allergisch gegen Sesam" -> "Sesam". None: nicht erkennbar, nachfragen."""
+    for pattern in _INGREDIENT:
+        match = pattern.search(text)
+        if match:
+            found = _TRAILING_PLEASE.sub("", match.group(1)).strip(" .,;!?")
+            if found:
+                return found[0].upper() + found[1:]
+    return None
 
 
 def split_wish(text: str) -> tuple[str, str | None]:
@@ -70,7 +102,14 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen."""
     words = [fold(w) for w in re.findall(r"[^\W_]+", text)]
     if any(_is_allergy(w) for w in words):
-        return Wish(text=text, kind="allergy")
+        ingredient = _ingredient(text)
+        if ingredient is None:
+            return Wish(text=text, kind="allergy")
+        return Wish(
+            text=ALLERGY_NOTE.format(ingredient=ingredient),
+            kind="allergy",
+            ingredient=ingredient,
+        )
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
         return Wish(text=text, kind="note")

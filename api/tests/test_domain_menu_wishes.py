@@ -310,3 +310,42 @@ def test_kein_vorsilben_treffer():
     """ "Reisnudeln" ist nicht die Option Reis: nur Option plus Gruppenname zaehlt
     zusammengesetzt, kein beliebiger Wortanfang."""
     assert classify_wish("mit Reisnudeln", SAUCE).kind == "unknown"
+
+
+# --- Allergie im festen Wortlaut (E14, Maxi 24.09.2026) ----------------------------
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "hinweis"),
+    [
+        ("ich habe eine Erdnussallergie", "WICHTIG: Keine Erdnuss. Grund: Allergie"),
+        ("ich bin allergisch gegen Sesam", "WICHTIG: Keine Sesam. Grund: Allergie"),
+        ("ich vertrage keine Erdnüsse", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        ("Allergie gegen Sellerie", "WICHTIG: Keine Sellerie. Grund: Allergie"),
+    ],
+)
+def test_allergie_als_kuechenhinweis_im_festen_wortlaut(gesagt, hinweis):
+    """E14: der Hinweis an die Kueche hat einen festen Wortlaut; er wird beim
+    Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon."""
+    wish = classify_wish(gesagt, BEILAGE)
+    assert (wish.kind, wish.text) == ("allergy", hinweis)
+
+
+def test_vertraegt_keine_ist_eine_allergie_kein_weglassen():
+    """ "ich vertrage keine Erdnüsse" ist eine Allergie (docs/05 §Allergie), kein
+    "keine Karotten" - der Satzteil beginnt am Komma."""
+    assert split_wish("Pho Bo, ich vertrage keine Erdnüsse") == (
+        "Pho Bo",
+        "ich vertrage keine Erdnüsse",
+    )
+
+
+def test_allergie_ohne_zutat_wird_nachgefragt(session, tenant_id):
+    result = suche(session, tenant_id, "Pho Bo, ich habe eine Allergie")
+    assert result.wish.kind == "allergy"
+    assert "Wogegen" in result.say
+
+
+def test_allergie_in_der_suche_im_festen_wortlaut(session, tenant_id):
+    result = suche(session, tenant_id, "Pho Bo, ich habe eine Erdnussallergie")
+    assert result.wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie"

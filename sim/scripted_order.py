@@ -291,7 +291,10 @@ class PickupScript:
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
-        elif wish["kind"] in ("note", "allergy"):
+        elif wish["kind"] == "note" or (
+            wish["kind"] == "allergy" and wish.get("ingredient")
+        ):
+            # Die Allergie im festen Wortlaut (E14); ohne Zutat fragt der Satz nach.
             item.note = wish["text"]
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:

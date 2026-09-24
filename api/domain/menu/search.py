@@ -73,6 +73,7 @@ SAY_WISH_UNKNOWN = (
     "Den Wunsch „{wish}“ kann ich leider nicht anbieten. {name} nehme ich so auf, "
     "wie es auf der Karte steht."
 )
+SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
 SAY_ALLERGY_NOTE = (
     "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
     "ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist."
@@ -416,7 +417,11 @@ def _search_with_wish(
     if say is None and classified.kind == "unknown":
         say = SAY_WISH_UNKNOWN.format(wish=wish, name=hit.name)
     elif say is None and classified.kind == "allergy":
-        say = SAY_ALLERGY_NOTE.format(name=hit.name)
+        say = (
+            SAY_ALLERGY_NOTE.format(name=hit.name)
+            if classified.ingredient
+            else SAY_ALLERGY_WHICH
+        )
     return found.model_copy(update={"wish": classified, "say": say})
 
 
