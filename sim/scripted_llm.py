@@ -16,12 +16,15 @@ auch hier ausschließlich aus den Tool-Ergebnissen, nie aus diesem Modul
 
 import json
 import re
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from api.agent.llm import LLMTurn, ToolCall
+from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
+from api.domain.menu.search import SAY_NOT_FOUND
 from sim.scripted_order import PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -103,6 +106,11 @@ class ScriptedLLM:
         # Tool-Ergebnis sie nicht mitliefert.
         self._pickup: PickupScript | None = None
         self._last_query = ""
+        # "Ich moechte die 23 zum Abholen": der erste Satz nennt schon ein Gericht.
+        # Er wird nach der Statusabfrage gesucht, die Begruessung davor gesprochen
+        # (Codex PR #130, P2).
+        self._opening_query: str | None = None
+        self._opening_prefix: str | None = None
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -134,6 +142,8 @@ class ScriptedLLM:
 
         if self._pickup is None and _mentions_stem(text, PICKUP):
             self._pickup = PickupScript()
+            if not self._status_checked:
+                self._opening_query = _opening_dish(text)
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -206,6 +216,8 @@ class ScriptedLLM:
         say = result.get("say")
         slots = state.get("slots", {})
 
+        if name == "search_menu" and self._opening_prefix is not None:
+            return self._after_opening_search(result, slots)
         if not result.get("ok"):
             return self._after_failure(name, say)
         if name == "create_callback":
@@ -215,7 +227,14 @@ class ScriptedLLM:
             if self._out_of_scope_request:
                 return self._out_of_scope(slots, {})
             if self._pickup is not None:
-                return self._pickup.start(_join(self._greeting_once(), say))
+                prefix = _join(self._greeting_once(), say)
+                if self._opening_query:
+                    self._opening_prefix = prefix or ""
+                    self._last_query, self._opening_query = self._opening_query, None
+                    return LLMTurn(
+                        tool_call=ToolCall("search_menu", {"query": self._last_query})
+                    )
+                return self._pickup.start(prefix)
             return self._next_step(slots, prefix=self._greeting_once(), extra=say)
         if self._pickup is not None:
             if name == "search_menu":
@@ -234,6 +253,29 @@ class ScriptedLLM:
         if name == "confirm":
             return LLMTurn(say=SAY_CONFIRMED)
         return LLMTurn(say=say or SAY_HANDOVER)
+
+    def _after_opening_search(
+        self, result: dict[str, Any], slots: dict[str, Any]
+    ) -> LLMTurn:
+        """Die Suche mit dem ersten Satz. Nennt er kein Gericht ("Ich moechte etwas
+        zum Abholen bestellen"), findet sie nichts - dann die normale Frage, was
+        der Gast bestellen moechte, ohne die allgemeine Fehlermeldung, die er
+        nicht ausgeloest hat. Eine genaue Antwort ("Die Nummer 99 habe ich nicht
+        auf der Karte", "Welche Nummer meinen Sie?") wird gesprochen. Sonst das
+        Ergebnis, mit der Begruessung davor."""
+        assert self._pickup is not None
+        prefix, self._opening_prefix = self._opening_prefix or None, None
+        if not result.get("ok"):
+            say = result.get("say")
+            if not say or say == SAY_NOT_FOUND:
+                return self._pickup.start(prefix)
+            return LLMTurn(say=_join(prefix, say))
+        turn = self._pickup.on_search(
+            self._last_query, result.get("data") or {}, slots, result.get("say")
+        )
+        if turn.say:
+            return replace(turn, say=_join(prefix, turn.say))
+        return turn
 
     def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:
         """Ein Fehlschlag mit vorgeschriebenem Satz geht an den Kunden zurück, der
@@ -458,6 +500,21 @@ def _day(text: str, local_now: datetime) -> date | None:
             ahead = (index - local_now.weekday()) % 7 or 7
             return (local_now + timedelta(days=ahead)).date()
     return None
+
+
+# Was im ersten Satz nur die Abholung ankuendigt, nicht das Gericht. Ein echtes
+# Modell gaebe search_menu nur das Gericht; das Skript streicht den Rest.
+_PICKUP_WORDS = re.compile(
+    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\betwas\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
+    re.IGNORECASE,
+)
+
+
+def _opening_dish(text: str) -> str | None:
+    """Das Gericht aus dem ersten Satz ("Ich moechte die 23 zum Abholen" ->
+    "Ich moechte die 23"), oder None, wenn nur die Abholung angekuendigt wird."""
+    rest = _PICKUP_WORDS.sub(" ", text).strip(" .,!?")
+    return rest if normalize_query(rest) or re.search(r"\d", rest) else None
 
 
 def _join(*parts: str | None) -> str | None:

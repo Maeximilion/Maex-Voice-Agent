@@ -326,3 +326,65 @@ def test_zwei_rueckfragen_nacheinander_keine_faellt_weg(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert [p[0] for p in positions(session, order)] == ["13", "48"]
+
+
+def test_eindeutiges_nach_einer_rueckfrage_faellt_nicht_weg(session, tenant):
+    """Codex PR #130, P1: "eine Suppe und die 23" - die Suppe braucht eine
+    Rueckfrage, die 23 ist eindeutig. Sie kommt trotzdem in den Warenkorb."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe und die 23.",
+            "Die 13.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    assert "Nummer 12 Wan-Tan-Suppe oder Nummer 13 Pho Bo" in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert sorted(p[0] for p in positions(session, order)) == ["13", "23"]
+
+
+def test_gericht_im_ersten_satz_geht_nicht_verloren(session, tenant):
+    """Codex PR #130, P2: "Ich moechte die 23 zum Abholen" nennt schon das
+    Gericht. Nach der Statusabfrage wird es gesucht, statt erneut zu fragen,
+    was der Gast bestellen moechte. Der KI-Hinweis kommt trotzdem zuerst."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte die 23 zum Abholen.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+    first = " ".join(turns[0].say)
+    assert first.startswith("Guten Tag, hier ist der KI-Assistent")
+    assert "Nummer 23" in first
+    assert "Was möchten Sie bestellen?" not in first
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == ["23"]
+
+
+def test_unbekannte_nummer_im_ersten_satz_wird_gesagt(session, tenant):
+    _, turns = replay(
+        session,
+        case("Ich moechte die 99 zum Abholen."),
+        tenant,
+        now=NOW,
+    )
+    first = " ".join(turns[0].say)
+    assert first.startswith("Guten Tag, hier ist der KI-Assistent")
+    assert "Die Nummer 99 habe ich nicht auf der Karte" in first

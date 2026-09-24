@@ -69,6 +69,9 @@ class PickupScript:
             hit = self._pick_suggestion(text)
             if hit is not None:
                 self._add(hit, self._suggestion_query)
+                # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
+                # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
+                self._suggestions = []
                 self.phase = "dishes"
                 return self._next(slots, patch)
             # Keine der angebotenen: neu suchen mit dem, was jetzt gesagt wurde.
@@ -123,7 +126,10 @@ class PickupScript:
                 if unclear and part.get("match_type") not in CLEAR_MATCHES:
                     self._later.append(part["query"])
                     continue
-                unclear = unclear or self._take(part["query"], part)
+                # Jeder eindeutige Teil kommt in den Warenkorb, auch nach einer
+                # Rueckfrage; gesprochen wird nur die erste (Codex PR #130, P1).
+                said = self._take(part["query"], part)
+                unclear = unclear or said
             return self._next(slots, {}, lead=_join(data.get("say"), unclear))
         taken = self._take(query, data)
         return self._next(slots, {}, lead=taken if taken is not None else say)
@@ -173,7 +179,6 @@ class PickupScript:
                 pending=pending,
             )
         )
-        self._suggestions = []
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
