@@ -952,3 +952,19 @@ def test_option_nach_der_wahl_wird_wiederholt(session, tenant):
 def test_unbekannter_wunsch_in_einer_aufzaehlung_wird_gesagt(session, tenant):
     _, turns = _bestellung(session, tenant, "Die 23 mit Pommes und Pho Bo.")
     assert "Den Wunsch „mit Pommes“ kann ich leider nicht anbieten" in said(turns)
+
+
+def test_menge_am_ende_mit_wunsch(session, tenant):
+    """(4) "Die 23 ohne Zwiebeln, zweimal." - zwei Portionen, Hinweis ohne "zweimal"."""
+    _bestellung(session, tenant, "Die 23 ohne Zwiebeln, zweimal.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 2, [])]
+    assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_weglassen_und_option_zusammen_in_der_bestellung(session, tenant):
+    """(1) Hinweis und Option aus einem Wunsch landen beide in der Bestellung."""
+    _bestellung(session, tenant, "Die knusprige Ente ohne Zwiebeln, dafür mit Huhn.")
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+    assert _notes(session, order) == ["ohne Zwiebeln"]

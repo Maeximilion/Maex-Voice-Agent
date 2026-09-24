@@ -498,3 +498,53 @@ def test_hinweise_der_teile_stehen_im_satz_der_antwort(session, tenant_id, call_
     )
     assert allergy.data["match_type"] == "positions"
     assert "an die Küche weiter" in allergy.data["say"]
+
+
+def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):
+    """(7) Ausverkauft und ein Wunsch dazu: der Satz "heute aus" steht nicht
+    zusaetzlich unter den Pflichtsaetzen der Antwort."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import update
+
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(sold_out_until=datetime(2030, 1, 1, tzinfo=ZoneInfo("UTC")))
+    )
+    session.commit()
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Pommes und Pho Bo"},
+    )
+    assert "heute leider aus" not in (result.data["say"] or "")
+    assert "heute leider aus" in result.data["positions"][0]["say"]
+
+
+def test_eine_position_wird_nur_einmal_zerlegt(
+    session, tenant_id, call_id, monkeypatch
+):
+    """(10) dispatch zerlegt selbst; search_menu prueft danach nicht noch einmal."""
+    import api.domain.menu.search as search_module
+
+    calls = []
+    original = search_module.position_parts
+    monkeypatch.setattr(
+        search_module,
+        "position_parts",
+        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
+    )
+    import sys
+
+    dispatch_module = sys.modules["api.agent.dispatch"]
+    monkeypatch.setattr(
+        dispatch_module,
+        "position_parts",
+        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
+    )
+    run(session, tenant_id, call_id, "search_menu", {"query": "die 23 ohne Karotten"})
+    assert calls.count("die 23 ohne Karotten") == 1

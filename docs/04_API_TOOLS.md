@@ -210,8 +210,14 @@ kommt als `wish` mit:
 | `option` | steht als Option des Gerichts auf der Karte; `group`, `option`, `price_delta_cents` und `reason` aus `item_options` | in `options` von `draft_order`; der Aufpreis wird sofort mit wiederholt |
 | `allergy` | eine eigene Allergie („ich vertrage keine Erdnüsse", „Erdnussallergie") | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen |
 | `unknown` | steht nicht auf der Karte | nicht anbieten: `say` („Den Wunsch … kann ich leider nicht anbieten"), das Gericht bleibt wie auf der Karte |
-| `open` | bei mehreren Treffern | erst nach der Wahl des Gerichts einordnen |
+| `open` | bei mehreren Treffern, oder die Option steht in zwei Gruppen (`groups`, „Reis" als Beilage und als Extra) | nachfragen: erst das Gericht wählen lassen, bzw. `say` fragt nach der Gruppe |
 
+Weglassen zusammen mit einer Zugabe („ohne Zwiebeln, dafür mit Nudeln") wird nie
+zur freien Notiz: die Zugabe ist `option` oder `unknown`, das Weglassen steht in
+`wish.note` und gehört als `note` in `draft_order` - sonst bekäme die Küche eine
+Zugabe ohne Preis. Eine Menge im Wunsch („ohne Zwiebeln, zweimal") bleibt bei
+der Position, nicht im Hinweis. Eine Frage nach den Allergenen („welche
+Allergene sind drin") ist kein Wunsch, sondern der Allergenpfad.
 Gehört der „Wunsch" zum Namen („Sommerrollen mit Garnelen"), ist er keiner.
 Steht im Wunsch eine Zahl („Nummer 23 mit 2 Soßen"), gilt Regel A und die Suche
 fragt nach der einen Nummer. Nennt der Satz mehrere Positionen, wird zuerst

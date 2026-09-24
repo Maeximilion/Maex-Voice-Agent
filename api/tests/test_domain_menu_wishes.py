@@ -28,7 +28,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.search import search_menu
-from api.domain.menu.wishes import classify_wish, split_wish
+from api.domain.menu.wishes import classify_wish, wish_candidates
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
 from api.tests.conftest import p95_ms
@@ -113,7 +113,13 @@ BEILAGE = [
     ],
 )
 def test_gericht_und_wunsch_trennen(gesagt, gericht, wunsch):
-    assert split_wish(gesagt) == (gericht, wunsch)
+    assert first_split(gesagt) == (gericht, wunsch)
+
+
+def first_split(text):
+    """Die erste Trennung, wie die Suche sie zuerst versucht."""
+    candidates = wish_candidates(text)
+    return (candidates[0][0], candidates[0][1]) if candidates else (text, None)
 
 
 # --- ohne Datenbank: einordnen -------------------------------------------------------
@@ -334,7 +340,7 @@ def test_allergie_als_kuechenhinweis_im_festen_wortlaut(gesagt, hinweis):
 def test_vertraegt_keine_ist_eine_allergie_kein_weglassen():
     """ "ich vertrage keine Erdnüsse" ist eine Allergie (docs/05 §Allergie), kein
     "keine Karotten" - der Satzteil beginnt am Komma."""
-    assert split_wish("Pho Bo, ich vertrage keine Erdnüsse") == (
+    assert first_split("Pho Bo, ich vertrage keine Erdnüsse") == (
         "Pho Bo",
         "ich vertrage keine Erdnüsse",
     )
@@ -357,7 +363,7 @@ def test_allergie_in_der_suche_im_festen_wortlaut(session, tenant_id):
 def test_allergie_ohne_komma_beginnt_am_satzteil():
     """Codex PR #139, P2: Spracherkennung setzt selten Kommas. "ich habe eine" gehoert
     zur Allergie, nicht zum Gericht."""
-    assert split_wish("Pho Bo ich habe eine Erdnussallergie") == (
+    assert first_split("Pho Bo ich habe eine Erdnussallergie") == (
         "Pho Bo",
         "ich habe eine Erdnussallergie",
     )
@@ -385,3 +391,101 @@ def test_option_mit_unbekanntem_rest_wird_nicht_still_verkuerzt():
     assert classify_wish("mit Nudeln und Pommes", BEILAGE).kind == "unknown"
     # Was nach "statt" steht, ist das Ersetzte, kein weiterer Wunsch.
     assert classify_wish("mit Nudeln statt Reis bitte", BEILAGE).kind == "option"
+
+
+# --- Eigenes Review PR #139 --------------------------------------------------------
+
+
+def test_weglassen_und_hinzufuegen_zusammen():
+    """(1) "ohne Zwiebeln, dafür mit Nudeln": die Zugabe ist die Option mit
+    Aufpreis, das Weglassen kommt als Hinweis mit - nie beides als freie Notiz."""
+    wish = classify_wish("ohne Zwiebeln, dafür mit Nudeln", BEILAGE)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Nudeln", 300)
+    assert wish.note == "ohne Zwiebeln"
+
+
+def test_weglassen_und_unbekannte_zugabe():
+    wish = classify_wish("ohne Zwiebeln, dafür mit Pommes", BEILAGE)
+    assert wish.kind == "unknown"
+    assert wish.text == "mit Pommes"
+    assert wish.note == "ohne Zwiebeln"
+
+
+def test_name_mit_klammern_gehoert_zum_namen():
+    """(2) Satzzeichen im Namen: "Sommerrollen (mit Garnelen)"."""
+    from api.domain.menu.wishes import names_it
+
+    assert names_it("Sommerrollen (mit Garnelen)", "mit Garnelen")
+
+
+def test_frage_nach_allergenen_ist_keine_eigene_allergie():
+    """(3) "welche Allergene" fragt nach dem Gericht - das ist der Allergenpfad,
+    kein Hinweis an die Kueche."""
+    assert wish_candidates("die 23, welche Allergene sind drin") == []
+
+
+def test_menge_am_ende_bleibt_nicht_im_hinweis():
+    """(4) "zweimal" gehoert zur Position, nicht in den Hinweis fuer die Kueche."""
+    wish = classify_wish("ohne Zwiebeln, zweimal", BEILAGE)
+    assert (wish.kind, wish.text) == ("note", "ohne Zwiebeln")
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "hinweis"),
+    [
+        # (5) Die Zutat endet am Satzteil.
+        (
+            "ich bin allergisch gegen Sesam und dann noch eine Cola",
+            "WICHTIG: Keine Sesam. Grund: Allergie",
+        ),
+        # (6) Andere Wortstellung.
+        ("ich bin gegen Nüsse allergisch", "WICHTIG: Keine Nüsse. Grund: Allergie"),
+    ],
+)
+def test_zutat_der_allergie(gesagt, hinweis):
+    assert classify_wish(gesagt, BEILAGE).text == hinweis
+
+
+def test_option_in_zwei_gruppen_wird_nachgefragt():
+    """(9) Reis als Beilage und als Extra: nie selbst waehlen, nachfragen."""
+    groups = [
+        *BEILAGE,
+        OptionGroup(
+            group="Extra",
+            required=False,
+            options=[OptionOut(name="Reis", price_delta_cents=200, default=False)],
+        ),
+    ]
+    wish = classify_wish("mit Reis", groups)
+    assert wish.kind == "open"
+    assert wish.groups == ["Beilage", "Extra"]
+
+
+def test_leere_felder_gehen_nicht_ans_modell():
+    """(11) CLAUDE.md §2 Regel 6: keine "reason": null in jeder Option."""
+    assert (
+        "reason"
+        not in OptionOut(name="Reis", price_delta_cents=0, default=True).model_dump()
+    )
+    note = classify_wish("ohne Karotten", BEILAGE).model_dump()
+    assert set(note) == {"text", "kind"}
+
+
+def test_zweite_trennung_ohne_neue_suche(session, tenant_id, monkeypatch):
+    """(8, 10) Gehoert der erste Satzteil zum Namen, gilt der naechste Wunsch fuer
+    dasselbe Gericht - keine zweite Suche, die scheitern koennte."""
+    import api.domain.menu.search as search_module
+
+    calls = []
+    original = search_module.search_menu
+
+    def counting(*args, **kwargs):
+        calls.append(args[2])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(search_module, "search_menu", counting)
+    result = counting(
+        session, tenant_id, "Sommerrollen mit Garnelen ohne Koriander", now=NOW
+    )
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Koriander")
+    assert "Sommerrollen mit Garnelen" not in calls[1:]

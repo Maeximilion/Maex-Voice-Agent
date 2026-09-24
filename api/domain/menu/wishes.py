@@ -8,12 +8,18 @@ Hier wird er abgetrennt und eingeordnet, bevor der Agent etwas zusagt:
 - `option`: was als Option des Gerichts auf der Karte steht ("mit Nudeln statt
   Reis"). Gruppe, Name, Aufpreis und Begruendung kommen aus `item_options`,
   nie vom Modell (CLAUDE.md §2 Regel 1).
-- `allergy`: eine Allergie ist kein Wunsch. Sie geht als Hinweis an die Kueche,
-  ohne Zusage, dass das Gericht frei davon ist (CLAUDE.md §9).
+- `allergy`: eine eigene Allergie ist kein Wunsch. Sie geht als Hinweis im
+  festen Wortlaut an die Kueche (E14), ohne Zusage, dass das Gericht frei davon
+  ist (CLAUDE.md §9). Eine Frage nach den Allergenen eines Gerichts ist keine
+  eigene Allergie, sondern der Allergenpfad (`get_item_details`).
 - `unknown`: alles andere. Was die Karte nicht kennt, bietet der Agent am
   Telefon nicht an (Entscheidung D8, 24.09.2026).
-- `open`: bei mehreren Treffern noch nicht entscheidbar; eingeordnet wird, wenn
-  das Gericht feststeht.
+- `open`: noch nicht entscheidbar - bei mehreren Treffern fuer das Gericht oder
+  wenn die Option in mehreren Gruppen steht (`groups`); der Agent fragt.
+
+Weglassen zusammen mit einer Zugabe ("ohne Zwiebeln, dafür mit Nudeln") wird
+nie zur freien Notiz: die Zugabe ist Option oder unbekannt, das Weglassen kommt
+als `note` mit. Sonst bekaeme die Kueche eine Zugabe ohne Preis (Review PR #139).
 
 Reine Funktionen ohne Datenbank.
 """
@@ -27,28 +33,54 @@ from api.schemas.menu import OptionGroup, Wish
 _REMOVE = frozenset({"ohne", "kein", "keine", "keinen", "keinem"})
 _ADD = frozenset({"mit", "extra"})
 _INSTEAD = frozenset({"statt", "anstatt"})
-_LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann"})
-_TOKEN = re.compile(r"[^\W_]+|,", re.UNICODE)
+_LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
+# Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
+_GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
+_ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
+# Womit ein Satzteil zur eigenen Allergie beginnt, auch ohne Komma davor.
+_CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
+
+_WORD = re.compile(r"[^\W_]+")
+_TOKEN = re.compile(r"[^\W_]+|,")
 _TRAILING_PLEASE = re.compile(r"[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
+# Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
+_TIMES = re.compile(r"[\s,]*\b(\w+?)mal\b", re.IGNORECASE)
+_COUNTED = re.compile(r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE)
 
 
 # Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
 # Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon.
 ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
+# Die Zutat endet am Satzteil: "gegen Sesam und dann noch eine Cola" ist Sesam.
+_UNTIL_CLAUSE = r"([^,.;!?]+?)(?=\s+(?:und|dann|noch|aber|sowie|bitte)\b|[,.;!?]|$)"
 _INGREDIENT = (
+    # "ich bin gegen Nüsse allergisch"
+    re.compile(r"gegen\s+([^,.;!?]+?)\s+allergisch", re.IGNORECASE),
     # "allergisch gegen Sesam", "Allergie gegen Sellerie"
     re.compile(
-        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+(.+)$",
+        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+"
+        + _UNTIL_CLAUSE,
         re.IGNORECASE,
     ),
     # "ich vertrage keine Erdnüsse"
-    re.compile(r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+(.+)$", re.IGNORECASE),
+    re.compile(
+        r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+" + _UNTIL_CLAUSE,
+        re.IGNORECASE,
+    ),
     # "Erdnussallergie"
     re.compile(r"(\w+?)allergie", re.IGNORECASE),
 )
 
 
+def _words(text: str) -> list[str]:
+    return [fold(w) for w in _WORD.findall(text)]
+
+
 def _is_allergy(word: str) -> bool:
+    """Eine eigene Allergie. "Allergene" ist die Frage nach dem Gericht und
+    gehoert in den Allergenpfad, nicht hierher (Review PR #139)."""
+    if word.startswith("allergen"):
+        return False
     return (
         "allerg" in word
         or "unvertraeglich" in word
@@ -66,10 +98,6 @@ def _ingredient(text: str) -> str | None:
             if found:
                 return found[0].upper() + found[1:]
     return None
-
-
-# Womit ein Satzteil zur eigenen Allergie beginnt, auch ohne Komma davor.
-_CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
 
 
 def _starts(words: list[str]) -> list[int]:
@@ -92,8 +120,6 @@ def _starts(words: list[str]) -> list[int]:
                 opener if opener is not None else comma + 1 if comma >= 0 else i
             )
             break
-    # Ein Merkmal im Satzteil einer Allergie ("vertrage keine") beginnt keinen
-    # eigenen Wunsch davor.
     return sorted(set(starts))
 
 
@@ -101,7 +127,8 @@ def wish_candidates(text: str) -> list[tuple[str, str, str]]:
     """Jede moegliche Trennung in Gericht, Wunsch und dessen ersten Satzteil, von
     vorn. Die Suche nimmt die erste, deren Satzteil nicht zum Namen gehoert:
     "Sommerrollen mit Garnelen ohne Koriander" - "mit Garnelen" ist Name,
-    "ohne Koriander" der Wunsch (Codex PR #139)."""
+    "ohne Koriander" der Wunsch (Codex PR #139). Eine Menge im Wunsch bleibt
+    nicht darin ("ohne Zwiebeln, zweimal"), sie gehoert zur Position."""
     tokens = list(_TOKEN.finditer(text))
     words = [fold(t.group()) for t in tokens]
     starts = [i for i in _starts(words) if i > 0]
@@ -109,28 +136,35 @@ def wish_candidates(text: str) -> list[tuple[str, str, str]]:
     for n, start in enumerate(starts):
         at = tokens[start].start()
         dish = text[:at].strip(" ,.;")
-        wish = _TRAILING_PLEASE.sub("", text[at:]).strip(" ,.;!?")
+        wish = _clean(text[at:])
         end = tokens[starts[n + 1]].start() if n + 1 < len(starts) else len(text)
-        segment = text[at:end].strip(" ,.;!?")
+        segment = _clean(text[at:end])
         if dish and wish:
             candidates.append((dish, wish, segment))
     return candidates
 
 
-def split_wish(text: str) -> tuple[str, str | None]:
-    """Gericht und Wunsch an der ersten moeglichen Stelle. Ohne Wunsch: (text,
-    None). Ob "mit Garnelen" doch zum Namen gehoert, entscheidet die Suche
-    (`wish_candidates`)."""
-    candidates = wish_candidates(text)
-    if not candidates:
-        return text, None
-    dish, wish, _ = candidates[0]
-    return dish, wish
+def _clean(text: str) -> str:
+    return _TRAILING_PLEASE.sub("", _drop_quantity(text)).strip(" ,.;!?")
+
+
+def _drop_quantity(text: str) -> str:
+    """Nur echte Mengen: "zweimal", "einmal", "2 x" - nicht "normal"."""
+    text = _COUNTED.sub("", text)
+    return _TIMES.sub(
+        lambda m: (
+            ""
+            if fold(m.group(1)) == "ein" or parse_cardinal(fold(m.group(1))) is not None
+            else m.group(0)
+        ),
+        text,
+    )
 
 
 def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen."""
-    words = [fold(w) for w in re.findall(r"[^\W_]+", text)]
+    text = _clean(text)
+    words = _words(text)
     if any(_is_allergy(w) for w in words):
         ingredient = _ingredient(text)
         if ingredient is None:
@@ -142,7 +176,10 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         )
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
-        return Wish(text=text, kind="note")
+        removal, addition = _split_addition(text)
+        if addition is None:
+            return Wish(text=text, kind="note")
+        return classify_wish(addition, groups).model_copy(update={"note": removal})
     # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
     cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))
     wanted = set(words[:cut])
@@ -152,6 +189,17 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         for option in group.options
         if (used := _names(option.name, group.group, wanted))
     ]
+    if not matches:
+        return Wish(text=text, kind="unknown")
+    if len({option.name for _, option, _ in matches}) == 1 and len(matches) > 1:
+        # Dieselbe Option in zwei Gruppen (Reis als Beilage und als Extra): nie
+        # selbst waehlen, nachfragen (Review PR #139).
+        return Wish(
+            text=text,
+            kind="open",
+            option=matches[0][1].name,
+            groups=[group.group for group, _, _ in matches],
+        )
     if len(matches) != 1:
         return Wish(text=text, kind="unknown")
     group, option, used = matches[0]
@@ -169,8 +217,21 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     )
 
 
-# Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
-_GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
+def _split_addition(text: str) -> tuple[str, str | None]:
+    """ "ohne Zwiebeln, dafür mit Nudeln" -> ("ohne Zwiebeln", "mit Nudeln")."""
+    tokens = list(_TOKEN.finditer(text))
+    words = [fold(t.group()) for t in tokens]
+    at = next(
+        (i for i, w in enumerate(words) if i > 0 and (w in _ADD or w in _INSTEAD)),
+        None,
+    )
+    if at is None:
+        return text, None
+    if words[at] in _INSTEAD:
+        at -= 1
+    removal = text[: tokens[at].start()]
+    removal = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", removal)
+    return removal.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 
 def _names(option: str, group: str, wanted: set[str]) -> set[str]:
@@ -178,10 +239,10 @@ def _names(option: str, group: str, wanted: set[str]) -> set[str]:
     tun. Als eigenes Wort ("mit Erdnuss") oder zusammengesetzt mit dem
     Gruppennamen ("Erdnusssauce" = Erdnuss + Sauce). Kein beliebiger
     Wortanfang: "Reisnudeln" ist nicht die Option Reis."""
-    words = fold(option).split()
+    words = _words(option)
     if set(words) <= wanted:
         return set(words)
-    compound = words[0] + fold(group).replace(" ", "") if len(words) == 1 else None
+    compound = words[0] + "".join(_words(group)) if len(words) == 1 else None
     return {compound} if compound in wanted else set()
 
 
@@ -189,10 +250,9 @@ def open_wish(text: str) -> Wish:
     """Bei mehreren Treffern: Weglassen und Allergie stehen schon fest, eine
     Option erst, wenn der Gast das Gericht gewaehlt hat."""
     wish = classify_wish(text, [])
-    return wish if wish.kind in ("note", "allergy") else Wish(text=text, kind="open")
-
-
-_ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
+    if wish.kind in ("note", "allergy"):
+        return wish
+    return Wish(text=_clean(text), kind="open")
 
 
 def has_number(wish: str) -> bool:
@@ -201,25 +261,19 @@ def has_number(wish: str) -> bool:
     ("ohne eine Zwiebel") zaehlen nicht."""
     return any(
         w.isdigit() or (w not in _ARTICLES and parse_cardinal(w) is not None)
-        for w in (fold(x) for x in re.findall(r"[^\W_]+", wish))
+        for w in _words(wish)
     )
 
 
 def names_it(name: str, wish: str) -> bool:
     """Gehoert der "Wunsch" zum Namen des Gerichts? "mit Garnelen" in
-    "Sommerrollen mit Garnelen" ist kein Wunsch, sondern der Name."""
+    "Sommerrollen mit Garnelen" ist kein Wunsch, sondern der Name - auch mit
+    Satzzeichen im Namen ("Sommerrollen (mit Garnelen)", Review PR #139)."""
+    words = _words(wish)
     # "ohne Garnelen" gehoert nie zum Namen, auch wenn die Garnelen darin stehen:
     # es ist genau der Hinweis fuer die Kueche (Codex PR #139).
-    lead = next(
-        (fold(w) for w in re.findall(r"[^\W_]+", wish) if fold(w) not in _LEAD_FILLER),
-        None,
-    )
+    lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
         return False
-    in_name = set(fold(name).split())
-    content = {
-        w
-        for w in (fold(x) for x in re.findall(r"[^\W_]+", wish))
-        if w not in _ADD and w not in _REMOVE and w not in _LEAD_FILLER
-    }
-    return bool(content) and content <= in_name
+    content = {w for w in words if w not in _ADD and w not in _LEAD_FILLER}
+    return bool(content) and content <= set(_words(name))

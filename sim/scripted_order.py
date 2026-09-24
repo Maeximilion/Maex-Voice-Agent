@@ -296,6 +296,9 @@ class PickupScript:
                 OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
             ]
             wish = classify_wish(wish["text"], groups).model_dump()
+        if wish.get("note"):
+            # Weglassen zu einer Zugabe ("ohne Zwiebeln, dafür mit Huhn").
+            item.note = wish["note"]
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]

@@ -188,7 +188,10 @@ def _search_menu(
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
     parts = position_parts(session, tenant_id, req.query, now=now)
     if len(parts) <= 1:
-        found = search_menu(session, tenant_id, req.query, req.max_results, now=now)
+        # Schon zerlegt: search_menu prueft nicht noch einmal (Review PR #139).
+        found = search_menu(
+            session, tenant_id, req.query, req.max_results, now=now, split_check=False
+        )
         if _repeats(found):
             echo = say_understood(
                 [(found.match_type, found.results[0], found.wish)], req.query
@@ -212,7 +215,14 @@ def _search_menu(
             continue
         if _repeats(found):
             understood.append((found.match_type, found.results[0], found.wish))
-        if found.wish is not None and found.wish.kind in ("unknown", "allergy"):
+        # Ausverkauft hat seinen eigenen Satz im Teil; hier nur die Saetze der
+        # Wuensche, sonst stuende "heute aus" zweimal da (Review PR #139).
+        sold_out = bool(found.results) and found.results[0].sold_out
+        if (
+            not sold_out
+            and found.wish is not None
+            and found.wish.kind in ("unknown", "allergy", "open")
+        ):
             notices.append(found.say or "")
         positions.append(
             PositionResult(

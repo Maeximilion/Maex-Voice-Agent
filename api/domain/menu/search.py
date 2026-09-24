@@ -73,6 +73,7 @@ SAY_WISH_UNKNOWN = (
     "Den Wunsch „{wish}“ kann ich leider nicht anbieten. {name} nehme ich so auf, "
     "wie es auf der Karte steht."
 )
+SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
 SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
 SAY_ALLERGY_NOTE = (
     "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
@@ -200,7 +201,11 @@ def _with_wish(item: str, wish: Wish | None) -> str:
     from api.domain.ordering.readback import spoken_euro
 
     delta = wish.price_delta_cents or 0
-    text = f"{item} mit {wish.option}"
+    text = (
+        f"{item}, {wish.note}, mit {wish.option}"
+        if wish.note
+        else f"{item} mit {wish.option}"
+    )
     if delta > 0:
         return f"{text}, {spoken_euro(delta)} Aufpreis"
     if delta < 0:
@@ -372,11 +377,18 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
 
 
 def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
-    """Der Satz, den ein Wunsch braucht: nicht angeboten (D8) oder der Hinweis
-    zur Allergie ohne Zusage (E14). Weglassen und Optionen brauchen keinen, sie
-    werden mit wiederholt (`say_understood`)."""
+    """Der Satz, den ein Wunsch braucht: nicht angeboten (D8), die Frage nach der
+    Gruppe einer Option, die in zweien steht, oder der Hinweis zur Allergie ohne
+    Zusage (E14). Weglassen und Optionen brauchen keinen, sie werden mit
+    wiederholt (`say_understood`)."""
     if wish.kind == "unknown":
-        return SAY_WISH_UNKNOWN.format(wish=wish.text, name=hit.name)
+        sentence = SAY_WISH_UNKNOWN.format(wish=wish.text, name=hit.name)
+        # Das Weglassen dazu gilt trotzdem ("ohne Zwiebeln, dafür mit Pommes").
+        return f"{sentence} Notiert: {wish.note}." if wish.note else sentence
+    if wish.kind == "open" and wish.groups:
+        return SAY_WISH_WHICH_GROUP.format(
+            option=wish.option, groups=" oder bei ".join(wish.groups)
+        )
     if wish.kind == "allergy":
         if wish.ingredient:
             return SAY_ALLERGY_NOTE.format(name=hit.name)
@@ -387,52 +399,40 @@ def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
 def _search_with_wish(
     session: Session,
     tenant_id: uuid.UUID,
-    query: str,
     candidates: list[tuple[str, str, str]],
     max_results: int,
     now: datetime,
     high: float,
     low: float,
-    *,
-    split_check: bool,
 ) -> SearchResult | None:
     """Das Gericht ohne den Wunsch suchen, den Wunsch dazu einordnen (T-4.10).
 
-    None heisst: die normale Suche ueber den ganzen Satz entscheidet - wenn im
-    Wunsch eine Zahl steht (Regel A: "Nummer 23 mit 2 Soßen" wird nachgefragt),
-    wenn der Satz mehrere Positionen nennt (der Wunsch gehoert dann zu einer
-    davon, die Zerlegung kommt zuerst) oder das Gericht ohne Wunsch nichts
-    findet. Gehoert der erste Satzteil zum Namen ("Sommerrollen mit Garnelen"),
-    ist er keiner, und die naechste Trennung wird versucht ("... ohne
-    Koriander", Codex PR #139).
+    None heisst: die normale Suche ueber den ganzen Satz entscheidet, weil das
+    Gericht ohne Wunsch nichts findet. Gesucht wird einmal, mit dem Gericht der
+    ersten Trennung. Gehoert deren Satzteil zum Namen ("Sommerrollen mit
+    Garnelen"), gilt der naechste Wunsch fuer dasselbe Gericht ("... ohne
+    Koriander") - ohne zweite Suche, die scheitern koennte (Codex und Review
+    PR #139).
     """
-    if has_number(candidates[0][1]):
+    dish = candidates[0][0]
+    try:
+        found = search_menu(
+            session, tenant_id, dish, max_results, now, high, low, split_check=False
+        )
+    except (Ambiguous, NotFound):
         return None
-    if (
-        split_check
-        and len(position_parts(session, tenant_id, query, now, high, low)) > 1
-    ):
+    if not found.results:
         return None
-    for n, (dish, wish, segment) in enumerate(candidates):
-        try:
-            found = search_menu(
-                session, tenant_id, dish, max_results, now, high, low, split_check=False
-            )
-        except (Ambiguous, NotFound):
-            return None
-        if not found.results:
-            return None
-        if found.match_type not in CLEAR_MATCHES:
-            return found.model_copy(update={"wish": open_wish(wish)})
-        hit = found.results[0]
+    if found.match_type not in CLEAR_MATCHES:
+        return found.model_copy(update={"wish": open_wish(candidates[0][1])})
+    hit = found.results[0]
+    for _, wish, segment in candidates:
         if names_it(hit.name, segment):
-            if n + 1 < len(candidates):
-                continue
-            return found
+            continue
         classified = classify_wish(wish, hit.option_groups)
         say = found.say or say_for_wish(hit, classified)
         return found.model_copy(update={"wish": classified, "say": say})
-    return None
+    return found
 
 
 def search_menu(
@@ -452,21 +452,21 @@ def search_menu(
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
 
+    # Die Positionen des Satzes werden hoechstens einmal bestimmt, auch wenn ein
+    # Wunsch darin steht (Review PR #139).
+    parts: list[str] | None = None
     candidates = wish_candidates(query)
-    if candidates:
-        found = _search_with_wish(
-            session,
-            tenant_id,
-            query,
-            candidates,
-            max_results,
-            now,
-            high,
-            low,
-            split_check=split_check,
-        )
-        if found is not None:
-            return found
+    if candidates and not has_number(candidates[0][1]):
+        if split_check:
+            parts = position_parts(
+                session, tenant_id, query, now=now, high=high, low=low
+            )
+        if parts is None or len(parts) <= 1:
+            found = _search_with_wish(
+                session, tenant_id, candidates, max_results, now, high, low
+            )
+            if found is not None:
+                return found
     limit = min(max_results, AMBIGUOUS_LIMIT)
 
     text = normalize_query(query)
@@ -499,11 +499,12 @@ def search_menu(
     # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
     # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
-    parts = (
-        position_parts(session, tenant_id, query, now=now, high=high, low=low)
-        if split_check
-        else [query]
-    )
+    if parts is None:
+        parts = (
+            position_parts(session, tenant_id, query, now=now, high=high, low=low)
+            if split_check
+            else [query]
+        )
     if len(parts) > 1:
         raise Ambiguous("mehrere Positionen: " + " | ".join(parts), say=SAY_IN_TURN)
 
