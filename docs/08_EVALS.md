@@ -30,6 +30,8 @@ Ein Fall besteht aus dem, was der Kunde sagt, und dem, was dabei herauskommen mu
 }
 ```
 
+Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung. Ohne das Feld ist sie unterdrückt, und der Agent fragt nach der Rufnummer.
+
 **Grundsatz:** Erwartet wird das **Ergebnis**, nicht der Wortlaut. Wie der Agent formuliert, ist ihm überlassen. Was er bucht, nicht.
 
 ---

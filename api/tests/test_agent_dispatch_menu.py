@@ -73,7 +73,7 @@ def test_search_menu_eine_position(session, tenant_id, call_id):
 
 
 def test_search_menu_zerlegt_mehrere_positionen(session, tenant_id, call_id):
-    """Ueber HTTP waere das ambiguous ("eins nach dem anderen"). Der Agent fragt
+    """Ueber HTTP waere das ambiguous ("der Reihe nach"). Der Agent fragt
     stattdessen je Teil und bekommt alle Positionen in einem Zug zurueck."""
     result = run(
         session,
@@ -287,6 +287,83 @@ def test_selbstkorrektur_wird_nicht_mit_der_karte_zerlegt(session, tenant_id, ca
         session, tenant_id, call_id, "search_menu", {"query": "die 23, äh, 24"}
     )
     assert result.data.get("match_type") != "positions"
+
+
+# --- Wiederholen, was verstanden wurde (Maxi, PR #127) -------------------------------
+
+
+def test_nummern_werden_als_nummern_wiederholt(session, tenant_id, call_id):
+    """Der Gast nennt Nummern: der Agent wiederholt nur die Nummern, wie ein
+    Mensch am Telefon. Der Satz kommt aus dem Code, nicht vom Modell."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23, die 13 und die 47"},
+    )
+
+    assert result.ok
+    assert "Nummer 23, Nummer 13 und Nummer 47" in result.data["say"]
+    assert "Frühlingsrollen" not in result.data["say"]
+    assert result.say == result.data["say"]
+
+
+def test_namen_werden_mit_dem_namen_der_karte_wiederholt(session, tenant_id, call_id):
+    """Der Gast beschreibt das Gericht: wiederholt wird, wie es auf der Karte
+    heisst, mit Nummer - ein falscher Treffer faellt so sofort auf."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Frühlingsrollen und knusprige Ente"},
+    )
+
+    assert "Nummer 23 Frühlingsrollen und Nummer 47 Ente knusprig" in result.data["say"]
+
+
+def test_auch_ein_einzelnes_gericht_wird_wiederholt(session, tenant_id, call_id):
+    by_number = run(session, tenant_id, call_id, "search_menu", {"query": "die 23"})
+    by_name = run(
+        session, tenant_id, call_id, "search_menu", {"query": "knusprige Ente bitte"}
+    )
+
+    assert "Nummer 23" in by_number.say and "Frühlingsrollen" not in by_number.say
+    assert "Nummer 47 Ente knusprig" in by_name.say
+
+
+def test_teil_ohne_treffer_behaelt_seinen_satz(session, tenant_id, call_id):
+    """Nur Eindeutiges wird wiederholt. Ein Teil ohne Treffer behaelt sein say."""
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 und die 99"}
+    )
+    assert "Nummer 23" in result.data["say"]
+    assert "99" not in result.data["say"]
+    assert "99" in result.data["positions"][1]["say"]
+
+
+def test_nichts_eindeutig_nichts_zu_wiederholen(session, tenant_id, call_id):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 98 und die 99"}
+    )
+    assert result.data["say"] is None
+
+
+def test_wiederholung_klingt_nicht_immer_gleich_ist_aber_reproduzierbar(
+    session, tenant_id, call_id
+):
+    """Verschiedene Einleitungen, damit es nicht wie eine Ansage klingt. Gewaehlt
+    wird aus dem Gesagten, nicht zufaellig: ein Replay sagt dasselbe (docs/08)."""
+    queries = ["die 23", "die 13", "die 47", "Nummer 23", "Pho Bo", "Frühlingsrollen"]
+    says = [
+        run(session, tenant_id, call_id, "search_menu", {"query": q}).say
+        for q in queries
+    ]
+    leads = {s.split("Nummer")[0] for s in says}
+    assert len(leads) > 1
+    again = run(session, tenant_id, call_id, "search_menu", {"query": "die 23"}).say
+    assert again == says[0]
 
 
 def test_schluessel_vom_modell_wird_ignoriert(session, tenant_id, call_id):

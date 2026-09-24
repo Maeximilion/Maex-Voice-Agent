@@ -62,6 +62,8 @@ def replay(
         tenant,
         now=now,
         external_session_id=f"replay-{case.get('id', 'ohne-id')}-{rng.random():.6f}",
+        # Rufnummernerkennung: ohne das Feld ist die Nummer unterdrueckt.
+        caller_id=case.get("caller_id"),
     )
     turns = []
     for line in customer_lines(case):

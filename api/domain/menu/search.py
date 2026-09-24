@@ -28,6 +28,7 @@ Unterschied klein, mit wachsender Karte trägt der Index die Suche.
 """
 
 import uuid
+import zlib
 from collections.abc import Callable
 from datetime import datetime
 from functools import partial
@@ -55,8 +56,14 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
-SAY_ONE_AT_A_TIME = (
-    "Das waren mehrere Sachen. Sagen Sie mir bitte eins nach dem anderen - was zuerst?"
+# Mehrere Positionen in einem Satz: der Gast darf das, und er muss nichts
+# wiederholen (Maxi, PR #127). Ueber HTTP fragt der Aufrufer danach je Teil.
+SAY_IN_TURN = "Einen Moment, ich nehme das der Reihe nach auf."
+SAY_UNDERSTOOD = (
+    "Gern, {items}.",
+    "Alles klar, {items}.",
+    "Notiert: {items}.",
+    "{items}, sehr gern.",
 )
 AMBIGUOUS_LIMIT = 3
 # Abstand der Sitzungsschwelle zur eigentlichen Schwelle, damit der Vorfilter
@@ -125,6 +132,33 @@ def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> Search
 
 
 CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
+
+
+def say_understood(understood: list[tuple[str, MenuHit]], said: str) -> str | None:
+    """Wiederholt sofort, was eindeutig verstanden wurde - so, wie ein Mensch am
+    Telefon es tut (Maxi, PR #127).
+
+    Hat der Gast eine Nummer genannt, kommt nur die Nummer zurueck ("Nummer 9").
+    Hat er das Gericht beschrieben ("Süß Sauer mit Ente"), kommt der Name der
+    Karte mit Nummer ("Nummer 25a Ente süß-sauer"): nicht das Gesagte, sondern
+    das, was das System daraus gemacht hat - ein falscher Treffer faellt so
+    sofort auf. Ohne Menge, die kommt mit dem readback von draft_order.
+
+    Die Einleitung wechselt, damit es nicht wie eine Ansage klingt. Gewaehlt
+    wird aus dem Gesagten, nicht zufaellig: ein Replay sagt dasselbe (docs/08).
+    `understood` sind Paare aus match_type und Treffer; leer heisst kein Satz.
+    """
+    names = [
+        f"Nummer {hit.number}"
+        if match_type == "exact_number"
+        else f"Nummer {hit.number} {hit.name}"
+        for match_type, hit in understood
+    ]
+    if not names:
+        return None
+    items = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} und {names[-1]}"
+    lead = SAY_UNDERSTOOD[zlib.crc32(said.casefold().encode()) % len(SAY_UNDERSTOOD)]
+    return lead.format(items=items)
 
 
 def position_parts(
@@ -344,9 +378,7 @@ def search_menu(
         else [query]
     )
     if len(parts) > 1:
-        raise Ambiguous(
-            "mehrere Positionen: " + " | ".join(parts), say=SAY_ONE_AT_A_TIME
-        )
+        raise Ambiguous("mehrere Positionen: " + " | ".join(parts), say=SAY_IN_TURN)
 
     # 2. Alias exakt. Aliase stehen wie aus der Karte da, oft mit Artikel ("die
     # knusprigen rollen"), der Gast sagt "die knusprigen Rollen, bitte". Beide

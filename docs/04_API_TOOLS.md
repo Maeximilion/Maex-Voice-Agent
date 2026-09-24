@@ -125,9 +125,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Frage nach der einen Nummer. **Ohne** Marker ist es gar kein Nummernsatz, und
    die Namenssuche liefe über den ganzen Satz und fände nur Pho Bo. Deshalb
    prüft `search_menu` vorher mit `split_positions`, ob der Satz mehrere
-   Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` bittet
-   um eins nach dem anderen, `message` nennt die Teile („mehrere Positionen:
-   die 23 | einmal Pho Bo"). Keine Position fällt mehr still weg. Der eigene
+   Positionen nennt: dann `ok: false`, `error.code: "ambiguous"`, `say` („Einen
+   Moment, ich nehme das der Reihe nach auf.") lässt den Gast warten, statt ihn
+   um eine Wiederholung zu bitten, `message` nennt die Teile („mehrere
+   Positionen: die 23 | einmal Pho Bo"), der Aufrufer fragt je Teil. Keine
+   Position fällt mehr still weg. Der eigene
    Gesprächskern (`agent/dispatch.py`) fragt nicht nach, sondern zerlegt selbst
    und sucht je Teil: Antwort `match_type: "positions"` mit einem Eintrag je Teil
    (`query`, `ok`, Treffer oder `error_code` und `say`). Trennt der Satz allein
@@ -177,7 +179,19 @@ vorzuschlagen gibt:
 |---|---|
 | Mehrere Gerichte passen (Alias oder Trigram) | `ok: true`, `match_type: "ambiguous"`, bis zu 3 Vorschläge in `results` |
 | Der Satz nennt keine eine Nummer („23 oder 24", „Nummer 23, nein", „Nummer 47, die Ente") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` fragt nach der einen Nummer |
-| Der Satz nennt mehrere Positionen ohne Marker („die 23 und einmal Pho Bo") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` bittet um eins nach dem anderen, `message` nennt die Teile |
+| Der Satz nennt mehrere Positionen ohne Marker („die 23 und einmal Pho Bo") | `ok: false`, `error.code: "ambiguous"`, kein `results`, `say` „Einen Moment, ich nehme das der Reihe nach auf.", `message` nennt die Teile |
+
+**Wiederholen, was verstanden wurde (nur Gesprächskern, Maxi PR #127):** jeder
+eindeutige Treffer (`exact_number`, `alias`, `fuzzy_single`, nicht ausverkauft)
+kommt im Agenten mit einem `say`, das ihn sofort wiederholt, bei `positions`
+alle eindeutigen Teile in einem Satz. Hat der Gast eine Nummer genannt, nur die
+Nummer („Gern, Nummer 23 und Nummer 13."); hat er das Gericht beschrieben, der
+Name der Karte mit Nummer („Alles klar, Nummer 48 Ente süß-sauer.") - nicht das
+Gesagte, sondern das, was das System daraus gemacht hat, damit ein falscher
+Treffer sofort auffällt. Ohne Menge, die kommt mit dem `readback`. Die
+Einleitung wechselt, gewählt aus dem Gesagten, nicht zufällig: ein Replay sagt
+dasselbe. Unklare Teile behalten ihr eigenes `say` und werden nacheinander
+gefragt. Über HTTP bleibt `say` bei eindeutigen Treffern leer.
 
 Die zweite Form hat bewusst keine Vorschläge: welche Gerichte gemeint sein
 könnten, ist nicht entscheidbar, solange die Nummer nicht feststeht. Der Agent

@@ -244,3 +244,28 @@ def test_korrektur_beim_vorlesen_bucht_die_neue_zahl(session, tenant):
         )
     ).all()
     assert [r.party_size for r in bestaetigt] == [5]
+
+
+def test_tisch_bestellen_bleibt_eine_reservierung(session, tenant):
+    """Codex PR #130, P1: "einen Tisch bestellen" ist eine Reservierung, keine
+    Abholung. "bestell" allein schaltet nicht in den Bestellfluss."""
+    fall = {
+        "id": "tisch_bestellen",
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich moechte fuer morgen um 19 Uhr einen Tisch fuer vier "
+                "Personen bestellen.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ja, passt so."},
+        ],
+    }
+    call, turns = replay(session, fall, tenant, now=NOW)
+
+    assert all("search_menu" not in str(t.tools) for t in turns)
+    reservierung = session.scalars(
+        select(Reservation).where(Reservation.call_id == call.call_id)
+    ).one()
+    assert reservierung.status == "confirmed"

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.27.2
+> Status: 24.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.28.0
 
 ---
 
@@ -58,7 +58,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 | 5 Overflow operation | AI answers, only when team doesn't pick up | G5 | open |
 | 6 Primary operation & ongoing | AI picks up first, team fallback, monthly review running | Monthly review | open, target state |
 
-**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). The agent does not use the menu tools yet; that is next, then approval on the tablet (T-4.7) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
+**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Next: wishes to a dish (T-4.10), then approval on the tablet (T-4.7) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
 
 ---
 
@@ -79,7 +79,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **Pickup flow in the text phone** - `sim/scripted_llm.py` still treats pickup as out of scope and lays a callback; teach it the order flow from `prompts/system_v2.md` (dish per `search_menu`, required options, name and phone, `draft_order`, read back, `confirm`) and add a replay case in `evals/cases/`, so one pickup order runs end to end without a phone. The agent core itself knows the menu tools since 23.09.2026
+1. **T-4.10** wishes to a dish (D8): "die 23 ohne Karotten" finds nothing today - split dish and wish, option with surcharge from the menu or a removal note, repeat both back, nothing offered that the menu does not know
 2. **T-4.7** approval column on the tablet (Passt / Korrigieren): outside `primary`, confirmed orders wait there and nobody can release them yet. Then **T-4.6**, the kitchen ticket over n8n for `order.confirmed`
 3. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
@@ -107,6 +107,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D4 | Voice: natural or audibly synthetic | Maxi | Stage 1, dialog test |
 | D5 | Delivery zones: postal code list or polygons | Maxi | before T-6.x (Stage 3) |
 | D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
+| D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. Removal wishes ("ohne Karotten") are a note without price. Allergy wording before go-live with the legal check (docs/09). Task T-4.10 | Maxi | done |
 | D7 | Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop? recommended: own core if the platform allows | Maxi with C2 | together with D1 |
 
 ---
@@ -180,6 +181,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Reservation key without `note` (`agent/dispatch.py` `_create_reservation`) | Codex PR #127 (P2, after the fully worked round, rule 21.09.2026): the derived key leaves out `note`, so a correction of only the note after the readback ("mit Hochstuhl") replays the old draft and readback without it. Fix: include every persisted request field in the key | with T-4.10 (wishes and notes), latest before G1 |
+| Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
 | Partial unique index on `callbacks (tenant_id, call_id) WHERE status = 'open' AND deleted_at IS NULL`, plus handling of uniqueness conflict as replay | Today exactly one path writes to `callbacks`, and it holds the advisory lock; the index would be the harder barrier but costs a migration | latest when a second write path to `callbacks` appears (GUI approval, import, jobs) |
 | Lower the wait time from the tablet | docs/06 §3 only specifies +15/+30; base values belong to the admin view (§4), not yet built | at T-3.5 operating test, latest with the admin view |
 | Reliable latency statement under lock contention | Measured ~11 ms is from same request repeated without concurrency; says nothing about lock wait times | with first load test, latest before gate G1 |
@@ -203,6 +206,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 24.09.2026 | **Pickup in the text phone** (branch `feat/sim-pickup-flow`, PR after #127): `sim/scripted_order.py` takes dishes, options and name, `draft_order`, read back, `confirm`, pickup code; eval cases `abholung_0001` and `abholung_0002`. **Caller ID** fills `slots.phone`, the agent no longer asks for the number (Maxi). **Repeat-back** of every clear dish right after it is said: a number as number, a description as the menu name with number, varied lead-ins chosen from the utterance (Maxi). Over HTTP a multi-dish sentence no longer asks the guest to repeat one at a time |
 | 23.09.2026 | **Menu tools for the agent:** `agent/dispatch.py` runs `search_menu`, `get_item_details` and `draft_order` (plus `confirm` for orders) without HTTP. A sentence with several dishes is split with `split_positions` and searched per part; the answer carries one entry per part (`match_type: positions`), a part without a hit stays visible with `error_code` and `say`. `draft_order` gets its idempotency key from the call's data, so a model retry makes no second draft and a correction makes a new one. `ConversationState` tracks `order_id`, `draft_order` sets `readback_pending`. Prompt `v2` (`system_v2.md` ~630 tokens, `tools_v2.md`) is the default; its tests take the tool list from `dispatch.TOOLS`. 23 new tests (two of them from Codex: the entity read back last is the active one, the other id is cleared), suite 1492 green |
 | 23.09.2026 | **Session handover (T-4.5, confirm for orders):** PR #124 and #125 squash-merged (`main` = `4610355`); pickup runs over HTTP from search to pickup code, 1470 tests green. Full block in `docs/00_PCF.md` § 13. Next step: menu tools for the agent |
 | 22.09.2026 | **T-4.4 merged (PR #118):** `get_item_details` with the allergen rule. Review of this session found two issues, both fixed before the merge: the callback sentence fired on every detail lookup of a dish without maintained allergens, so a question about options was answered with a callback promise - it now hangs on the mandatory `allergen_question` flag in the request; and `confirmed_at` was the UTC date instead of the tenant's local date. The two Codex P1 findings were refuted, not fixed: they targeted the `search_menu` draft that `51192fc` removed, and main covers both through existing regression tests. 1359 tests green, p95 8,7 ms. main = 4933cee |
@@ -256,6 +260,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.28.0 · 24.09.2026:** Abholung im Text-Telefon, Rufnummer aus der Rufnummernerkennung, Verstandenes sofort wiederholen; D8 entschieden (nichts anbieten, was die Karte nicht kennt), T-4.10 angelegt; PR #127 gemergt, zwei P2 als offene Punkte
 - **v1.27.2 · 24.09.2026:** Projektpflege bricht ab, wenn der Token das Repo nicht sieht
 - **v1.27.1 · 24.09.2026:** Pull Requests ohne Merge werden nicht mehr als erledigt gezaehlt
 - **v1.27.0 · 24.09.2026:** GitHub-Project als Ableitung festgelegt und zusammengefuehrt: ein Board (Nr. 2), Status nur aus Merge und Close, taegliche Pflege setzt Abgeschlossenes selbst auf Done, Claude pflegt das Board nur in /project und /gate

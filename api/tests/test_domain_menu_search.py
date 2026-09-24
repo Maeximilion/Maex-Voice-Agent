@@ -21,7 +21,7 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import SAY_ONE_AT_A_TIME, position_parts, search_menu
+from api.domain.menu.search import SAY_IN_TURN, position_parts, search_menu
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -570,7 +570,7 @@ def test_mehrere_positionen_ohne_marker_fragen_nach(session, tenant_id, gesagt, 
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, gesagt)
     assert teile in err.value.message
-    assert err.value.say == SAY_ONE_AT_A_TIME
+    assert err.value.say == SAY_IN_TURN
 
 
 def test_zweites_gericht_ohne_menge_fragt_auch_ueber_http_nach(session, tenant_id):
@@ -580,7 +580,7 @@ def test_zweites_gericht_ohne_menge_fragt_auch_ueber_http_nach(session, tenant_i
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, "die 23 und Pho Bo")
     assert "die 23 | Pho Bo" in err.value.message
-    assert err.value.say == SAY_ONE_AT_A_TIME
+    assert err.value.say == SAY_IN_TURN
 
 
 def test_name_mit_und_bleibt_eine_suche(session, tenant_id):
@@ -761,6 +761,16 @@ def test_aufzaehlung_ohne_mengen_bleibt_im_latenzbudget(session, zusammen_tenant
     assert (
         p95_ms(lambda: position_parts(session, zusammen_tenant, gesagt, now=NOW)) < 300
     )
+
+
+def test_mehrere_positionen_ueber_http_ohne_bitte_um_wiederholung(session, tenant_id):
+    """Maxi, PR #127: der Gast darf mehreres hintereinander nennen. Die Antwort
+    bittet ihn nicht, es eins nach dem anderen zu wiederholen - der Aufrufer
+    fragt je Teil, der Gast wartet."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, "die 23 und einmal Pho Bo")
+    assert "eins nach dem anderen" not in err.value.say
+    assert "Reihe nach" in err.value.say
 
 
 def test_zusammengesetztes_gericht_zweimal_mit_anderen_worten_bleibt_ganz(

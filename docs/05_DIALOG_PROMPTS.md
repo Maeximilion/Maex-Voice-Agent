@@ -68,6 +68,11 @@ Die Tastatur-Stufe ist der Trick, den die meisten Systeme auslassen. Tastentöne
 
 ### Reservierung
 Pflicht: **Datum und Uhrzeit · Personenzahl · Name · Rufnummer**
+
+Die Rufnummer kommt aus der Rufnummernerkennung: `agent/state.py` legt sie zu
+Gesprächsbeginn in `slots.phone`, der Agent fragt nicht danach. Nennt der Gast von
+sich aus eine andere, gilt diese. Nur bei unterdrückter Nummer wird gefragt (Maxi,
+PR #127). Das gilt für Reservierung und Abholung.
 ```text
 → check_slot
    frei      → create_reservation → vorlesen → Ja → confirm

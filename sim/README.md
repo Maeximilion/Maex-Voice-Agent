@@ -17,11 +17,17 @@ Needs a seeded database (`make migrate`, `make seed`); `--tenant` picks one by n
 otherwise the first one is used.
 
 Until T-2.4 connects a real model, `scripted_llm.py` stands in for it: rule-based, German,
-scoped to the reservation flow from `prompts/system_v1.md`. It never guesses — what it does
+scoped to the reservation flow and the pickup flow (`scripted_order.py`) from
+`prompts/system_v2.md`. It never guesses — what it does
 not recognize it reports as a failed attempt, and the understanding ladder (`api/agent/ladder.py`)
 decides what happens next.
 
+The caller's number comes from caller ID, as on the phone: `--caller` in the terminal,
+`caller_id` in a case file. With it the agent does not ask for the number; without it
+(withheld) it asks.
+
 Files: `cli.py` terminal, `replay.py` transcript, `session.py` shared call mechanics,
-`scripted_llm.py` model stand-in, `noise.py` deliberate garbling.
+`scripted_llm.py` model stand-in, `scripted_order.py` its pickup flow, `noise.py`
+deliberate garbling.
 
 Tasks: T-2.1 through T-2.3 in `docs/07_WORKPACKAGES.md`. Structure: `docs/11_MODULE.md` §sim.
