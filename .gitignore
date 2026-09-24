@@ -15,6 +15,8 @@ backups/
 *.mp3
 evals/reports/
 imports/
+# Salz der Anrufprotokoll-IDs (docs/17), wo immer die CSV liegt
+.call_log_salt
 
 # Optionales Proxy-Zertifikat für den Image-Build, nie ins Repo
 api/ca-bundle.crt
