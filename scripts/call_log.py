@@ -506,7 +506,10 @@ def _report_correction(case: dict, reviewed: Path) -> None:
     except (OSError, ValueError, AttributeError):
         print(f"Fall nicht lesbar, bitte pruefen: {reviewed}", file=sys.stderr)
         return
-    changed = [k for k, v in case["expected"].items() if existing.get(k) != v]
+    # Beide Seiten: auch ein Feld, das die Korrektur entfernt (intent bei einer
+    # Beschwerde), zaehlt. Nur die Kernfelder; items traegt der Mensch nach.
+    core = ("intent", "confirmed", "escalated")
+    changed = [k for k in core if existing.get(k) != case["expected"].get(k)]
     if changed:
         print(
             f"Protokoll weicht von {reviewed} ab ({', '.join(changed)}): "

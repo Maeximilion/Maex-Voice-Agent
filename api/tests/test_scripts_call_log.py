@@ -622,3 +622,18 @@ def test_bestaetigte_lieferung_bekommt_erfundene_adresse():
     texts = [t["text"] for t in to_case(entries[0])["transcript"]]
     assert texts[0].startswith("Die Adresse ist Musterstrasse 1")
     assert texts[-2:] == ["Auf den Namen Mueller.", "Ja, das passt."]
+
+
+def test_korrektur_die_ein_feld_entfernt_wird_gemeldet(tmp_path, eval_cases, capsys):
+    """Codex PR #135: aus einem Rueckruf zur Abholung wird eine Beschwerde, das
+    neue expected hat kein intent mehr; der alte Fall erwartet es aber noch."""
+    entries, _ = parse(HEADER + _row(outcome="rueckruf"))
+    fertig = to_case(entries[0])
+    assert fertig["expected"] == {"intent": "pickup", "escalated": True}
+    name = f"{fertig['id']}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
+    korrigiert, _ = parse(HEADER + _row(intent="beschwerde", outcome="rueckruf"))
+    write_cases(korrigiert, tmp_path / "entwuerfe")
+    err = capsys.readouterr().err
+    assert name in err
+    assert "intent" in err
