@@ -208,7 +208,7 @@ kommt als `wish` mit:
 |---|---|---|
 | `note` | Weglassen („ohne", „kein") | als `note` der Position in `draft_order`, ohne Preis |
 | `option` | steht als Option des Gerichts auf der Karte; `group`, `option`, `price_delta_cents` und `reason` aus `item_options` | in `options` von `draft_order`; der Aufpreis wird sofort mit wiederholt |
-| `allergy` | eine eigene Allergie („ich vertrage keine Erdnüsse", „Erdnussallergie") | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen |
+| `allergy` | eine eigene Allergie („ich vertrage keine Erdnüsse", „Erdnussallergie") | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen; „weiß ich nicht" oder „nein" ist keine Zutat, die Frage bleibt offen. Mehrere Gerichte ohne Zutat in einem Satz: `say` fragt nach dem ersten und nennt es („Wogegen sind Sie bei Pho Bo allergisch?"), die anderen folgen einzeln |
 | `unknown` | steht nicht auf der Karte | nicht anbieten: `say` („Den Wunsch … kann ich leider nicht anbieten"), das Gericht bleibt wie auf der Karte |
 | `open` | bei mehreren Treffern, oder die Option steht in zwei Gruppen (`groups`, „Reis" als Beilage und als Extra) | nachfragen: erst das Gericht wählen lassen, bzw. `say` fragt nach der Gruppe |
 

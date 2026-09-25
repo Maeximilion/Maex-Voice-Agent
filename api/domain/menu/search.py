@@ -75,6 +75,11 @@ SAY_WISH_UNKNOWN = (
 )
 SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
 SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
+# Mehrere Gerichte mit Allergie ohne Zutat: eine Frage nach der anderen, jede
+# mit ihrem Gericht (Codex PR #139, P1).
+SAY_ALLERGY_WHICH_FOR = (
+    "Wogegen sind Sie bei {name} allergisch? Das gebe ich an die Küche weiter."
+)
 SAY_ALLERGY_NOTE = (
     "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
     "ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist."
@@ -394,6 +399,17 @@ def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
             return SAY_ALLERGY_NOTE.format(name=hit.name)
         return SAY_ALLERGY_WHICH
     return None
+
+
+def allergy_question(names: list[str], named: bool | None = None) -> str | None:
+    """Die Frage nach der ersten offenen Allergie. Bei mehreren nennt sie das
+    Gericht, damit die Antwort zu ihm gehoert - auch die letzte der Reihe
+    (`named`)."""
+    if not names:
+        return None
+    if named is None:
+        named = len(names) > 1
+    return SAY_ALLERGY_WHICH_FOR.format(name=names[0]) if named else SAY_ALLERGY_WHICH
 
 
 def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:

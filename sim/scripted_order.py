@@ -23,9 +23,9 @@ from api.domain.menu.numberwords import (
 )
 from api.domain.menu.search import (
     SAY_ALLERGY_NOTE,
-    SAY_ALLERGY_WHICH,
     SAY_NOT_FOUND,
     SAY_SOLD_OUT,
+    allergy_question,
     say_for_wish,
     say_understood,
 )
@@ -82,7 +82,10 @@ class PickupScript:
         self._carry: str | None = None
         # Die Position, zu der "Wogegen sind Sie allergisch?" offen ist: die Antwort
         # ist die Zutat, kein Gericht (Codex PR #139, P1).
-        self._allergy_for: CartItem | None = None
+        # Mehrere Positionen: jede einzeln, in Reihenfolge (Codex PR #139, P1).
+        self._allergy_for: list[CartItem] = []
+        # Stehen mehrere offen, nennt jede Frage ihr Gericht.
+        self._allergy_named = False
         # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
@@ -96,7 +99,7 @@ class PickupScript:
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
-        if self._allergy_for is not None:
+        if self._allergy_for:
             return self._answer_allergy(text, slots, patch)
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
@@ -311,7 +314,8 @@ class PickupScript:
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
         elif wish["kind"] == "allergy" and not wish.get("ingredient"):
             # Die Zutat fehlt: die Frage bleibt offen, bis die Antwort kommt.
-            self._allergy_for = item
+            self._allergy_for.append(item)
+            self._allergy_named = self._allergy_named or len(self._allergy_for) > 1
         elif wish["kind"] == "note" or (
             wish["kind"] == "allergy" and wish.get("ingredient")
         ):
@@ -342,17 +346,22 @@ class PickupScript:
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
         """Die Antwort auf "Wogegen?": die Zutat im festen Wortlaut (E14)."""
-        assert self._allergy_for is not None
         wish = classify_wish(f"allergisch gegen {text}", [])
         if not wish.ingredient:
             return LLMTurn(
-                say=SAY_ALLERGY_WHICH,
+                say=self._allergy_question(),
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
-        item, self._allergy_for = self._allergy_for, None
+        item = self._allergy_for.pop(0)
         item.note = wish.text
+        if not self._allergy_for:
+            self._allergy_named = False
         return self._next(slots, patch, lead=SAY_ALLERGY_NOTE.format(name=item.name))
+
+    def _allergy_question(self) -> str:
+        names = [i.name for i in self._allergy_for]
+        return allergy_question(names, self._allergy_named) or ""
 
     def _answer_option(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
@@ -384,10 +393,14 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
-        if self._allergy_for is not None:
-            # Nur die Frage nach der Allergie, keine zweite daneben.
+        if self._allergy_for:
+            # Nur die Frage nach der Allergie, keine zweite daneben. Steht sie
+            # schon im Satz der Suche, nicht noch einmal.
+            question = self._allergy_question()
+            said = _join(lead) or ""
             return LLMTurn(
-                say=_join(lead) or SAY_ALLERGY_WHICH, state_patch=state_patch
+                say=said if question in said else _join(lead, question),
+                state_patch=state_patch,
             )
         if self._later and self.phase != "choose":
             self._carry = _join(self._carry, lead)

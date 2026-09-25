@@ -1003,3 +1003,24 @@ def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
+    """Codex PR #139, P1: zwei Gerichte mit Allergie ohne Zutat in einem Satz -
+    jede Frage bleibt offen, jede Antwort gehoert zu ihrem Gericht."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo mit Allergie und Frühlingsrollen mit Allergie.",
+        "Erdnüsse.",
+        "Sesam.",
+    )
+    erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
+    assert erste.count("Wogegen") == 1
+    assert "bei Pho Bo" in erste
+    assert "bei Frühlingsrollen (4 Stück)" in zweite
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        "WICHTIG: Keine Sesam. Grund: Allergie",
+    ]

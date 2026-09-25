@@ -25,7 +25,12 @@ from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.menu import get_item_details, search_menu
-from api.domain.menu.search import CLEAR_MATCHES, position_parts, say_understood
+from api.domain.menu.search import (
+    CLEAR_MATCHES,
+    allergy_question,
+    position_parts,
+    say_understood,
+)
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
@@ -205,6 +210,9 @@ def _search_menu(
     # Allergie gehoeren in den Satz der Antwort, sonst fielen sie in einer
     # Aufzaehlung weg (Codex PR #139, P1).
     notices: list[str] = []
+    # Gerichte, zu denen "Wogegen?" offen ist: gefragt wird nach dem ersten, die
+    # anderen folgen einzeln (Codex PR #139, P1).
+    allergies: list[str] = []
     for part in parts:
         try:
             found = search_menu(session, tenant_id, part, req.max_results, now=now)
@@ -219,6 +227,13 @@ def _search_menu(
         # Wuensche, sonst stuende "heute aus" zweimal da (Review PR #139).
         sold_out = bool(found.results) and found.results[0].sold_out
         if (
+            not sold_out
+            and found.wish is not None
+            and found.wish.kind == "allergy"
+            and not found.wish.ingredient
+        ):
+            allergies.append(found.results[0].name)
+        elif (
             not sold_out
             and found.wish is not None
             and found.wish.kind in ("unknown", "allergy", "open")
@@ -236,7 +251,11 @@ def _search_menu(
         )
     return PositionsResult(
         positions=positions,
-        say=_join(say_understood(understood, req.query), *notices),
+        say=_join(
+            say_understood(understood, req.query),
+            *notices,
+            allergy_question(allergies),
+        ),
     )
 
 
