@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.23
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.24
 
 ---
 
@@ -297,6 +297,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.24 · 25.09.2026:** PR #139: eigenes Review, 13 Befunde behoben (Allergie bei neu gesuchter Wahl, mehrdeutiges Gericht mit Allergie, allgemeine Allergie fragt nach, "vertrage alles", Bestellung statt Zutat, Schluessel in E.164/UTC, Grund bleibt bei alter Optionsdatei, Schema der Wunsch-Felder)
 - **v1.31.23 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)
 - **v1.31.22 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
 - **v1.31.21 · 25.09.2026:** Offener Punkt aus PR #143

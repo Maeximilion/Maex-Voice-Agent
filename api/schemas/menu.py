@@ -20,8 +20,10 @@ class _WithoutEmpty(BaseModel):
     """Leere Felder gehen nicht ans Modell: jede Option jedes Treffers truege
     sonst "reason": null mit (CLAUDE.md §2 Regel 6, Review PR #139)."""
 
+    # Ohne Rueckgabetyp: sonst ersetzt Pydantic das Schema durch ein freies
+    # dict und die Felder fehlen in der API-Doku (Review PR #139).
     @model_serializer(mode="wrap")
-    def _drop_none(self, handler: Any, info: SerializationInfo) -> dict[str, Any]:
+    def _drop_none(self, handler: Any, info: SerializationInfo):
         return {k: v for k, v in handler(self).items() if v is not None}
 
 

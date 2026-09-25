@@ -1094,3 +1094,47 @@ def test_mehrdeutige_position_mit_wunsch_fragt_einmal(session, tenant):
     zur Ente steht im Teil und wird einmal gefragt, nicht doppelt."""
     _, turns = _bestellung(session, tenant, "Eine Ente mit Nudeln und eine Pho Bo.")
     assert " ".join(turns[1].say).count("Meinen Sie") == 1
+
+
+def test_allergie_bleibt_wenn_die_wahl_neu_gesucht_wird(session, tenant):
+    """Review PR #139: "Pho" statt der angebotenen "Pho Bo" wird neu gesucht - die
+    Allergie aus der Frage bleibt an diesem Gericht."""
+    _bestellung(session, tenant, "Eine Suppe mit Erdnussallergie.", "Pho.")
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+
+
+def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
+    """Review PR #139: mehrdeutiges Gericht mit Allergie ohne Zutat - erst die Wahl,
+    dann "Wogegen?", nie beides zugleich."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Eine Suppe mit Allergie und die 23.",
+        "Nummer 12.",
+        "Erdnüsse.",
+    )
+    erste = " ".join(turns[1].say)
+    assert "Wogegen" not in erste
+    assert erste.count("Meinen Sie") == 1
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+
+
+def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
+    _, turns = _bestellung(
+        session, tenant, "Eine Suppe mit Erdnussallergie und die 23.", "Nummer 12."
+    )
+    assert " ".join(turns[1].say).count("Meinen Sie") == 1
+
+
+@pytest.mark.parametrize("antwort", ["Eine Cola bitte.", "Nummer 12."])
+def test_bestellung_ist_keine_antwort_auf_wogegen(session, tenant, antwort):
+    """Review PR #139: ein Gericht statt der Zutat wird nicht zur Allergie."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]

@@ -235,8 +235,15 @@ def position_parts(
 
 
 def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
-    if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts[1:]):
+    if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts):
         return parts
+    if opens_with_allergy(parts[0]):
+        # Vorn im Satz: sie gehoert zum ersten Gericht danach, als Wunsch hinter
+        # dem Gericht (Review PR #139).
+        rest = _keep_allergy_clauses(query, parts[1:])
+        if opens_with_allergy(rest[0]):
+            return parts
+        return [f"{rest[0]}, {parts[0]}", *rest[1:]]
     spans: list[list[int]] = []
     at = 0
     for part in parts:
@@ -454,11 +461,20 @@ def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem |
     if len(by_alias) == 1:
         return by_alias[0]
     said = normalize_query(text)
-    named = [
-        item
-        for item in session.scalars(select(MenuItem).where(*_active(tenant_id)))
-        if normalize_query(item.name) == said
-    ]
+    # Die Namen der Karte einmal je Sitzung, nicht bei jeder Suche mit Wunsch neu
+    # (Review PR #139); aktiv wird beim Treffer geprueft.
+    names = session.info.setdefault("menu_names", {})
+    if tenant_id not in names:
+        names[tenant_id] = [
+            (normalize_query(name), item_id)
+            for item_id, name in session.execute(
+                select(MenuItem.id, MenuItem.name).where(
+                    MenuItem.tenant_id == tenant_id
+                )
+            )
+        ]
+    items = [session.get(MenuItem, i) for n, i in names[tenant_id] if n == said]
+    named = [item for item in items if item is not None and item.active]
     return named[0] if len(named) == 1 else None
 
 

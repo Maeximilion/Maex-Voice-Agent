@@ -88,6 +88,13 @@ _CLAUSE_WORDS = (
     | frozenset({"die", "der", "das", "den", "einmal"})
 )
 _PIECE = re.compile(r"[^\W_]+|[,.;!?]")
+# Kein Allergen, nur die Art der Allergie: "Nahrungsmittelallergie" - dann bleibt
+# "Wogegen?" offen (Review PR #139).
+_GENERIC_STEMS = frozenset(
+    {"nahrungsmittel", "lebensmittel", "essens", "speise", "kreuz", "kontakt"}
+)
+# Bestaetigung nach der Zutat ("Sesam, ja genau") beendet die Liste (Review PR #139).
+_AFFIRMATIONS = frozenset({"ja", "genau", "richtig", "stimmt", "sicher"})
 # Unsicherheit oder Ablehnung ist keine Zutat: "weiss ich nicht", "nein", "keine
 # Ahnung" - dann bleibt die Frage offen (Codex PR #139, P1).
 _NO_INGREDIENT = frozenset(
@@ -115,6 +122,16 @@ def _is_allergy(word: str) -> bool:
     )
 
 
+def _mentions_allergy(words: list[str], i: int) -> bool:
+    """Ist das Wort an Stelle i eine eigene Allergie? "vertrage" nur mit
+    Verneinung danach: "ich vertrage keine Erdnuesse", nicht "ich vertrage
+    alles" (Review PR #139)."""
+    word = words[i]
+    if word.startswith(("vertrag", "vertraeg")):
+        return any(w in _REMOVE or w == "nicht" for w in words[i + 1 : i + 3])
+    return _is_allergy(word)
+
+
 def _ingredient(text: str) -> str | None:
     """Die Zutaten, wie der Gast sie sagt: "Erdnussallergie" -> "Erdnuss",
     "allergisch gegen Sesam" -> "Sesam", mehrere in Reihenfolge ("Milch und
@@ -125,6 +142,8 @@ def _ingredient(text: str) -> str | None:
             found.append((match.start(1), _until_new_clause(match.group(1))))
     for match in _COMPOUND.finditer(text):
         stem = match.group(1) or match.group(2)
+        if fold(stem) in _GENERIC_STEMS:
+            continue
         found.append((match.start(), stem))
         if match.group(1):
             found.extend(_stems_before(text[: match.start()]))
@@ -186,6 +205,7 @@ def _ends_list(word: str | None) -> bool:
         or word in ",.;!?"
         or word in _CLAUSE_WORDS
         or word in ("gegen", "auf")
+        or word in _AFFIRMATIONS
         or _is_allergy(word)
         or word.endswith("mal")
         or parse_cardinal(word) is not None
@@ -239,7 +259,7 @@ def _starts(words: list[str]) -> list[int]:
             starts.append(i)
         elif word in _INSTEAD and i > 0 and words[i - 1] != ",":
             starts.append(i - 1)
-        elif _is_allergy(word):
+        elif _mentions_allergy(words, i):
             comma = max((j for j in range(i) if words[j] == ","), default=-1)
             opener = next(
                 (j for j in range(comma + 1, i) if words[j] in _CLAUSE_OPENERS), None
@@ -295,7 +315,7 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
     """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen."""
     text = _clean(text)
     words = _words(text)
-    if any(_is_allergy(w) for w in words):
+    if any(_mentions_allergy(words, i) for i in range(len(words))):
         ingredient = _ingredient(text)
         if ingredient is None:
             return Wish(text=text, kind="allergy")
@@ -316,7 +336,9 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         # (Codex PR #139). Nur eine sichere Option nimmt den Hinweis mit.
         wish = classify_wish(addition, groups)
         if wish.kind != "option" or wish.note:
-            return Wish(text=text, kind="unknown")
+            # Die Zugabe wird abgelehnt, das Weglassen bleibt - wie in "ohne
+            # Zwiebeln, dafuer mit Pommes" (Review PR #139).
+            return Wish(text=addition, kind="unknown", note=removal)
         return wish.model_copy(update={"text": text, "note": removal})
     # Bei "Nudeln statt Reis" gilt, was vor "statt" steht.
     cut = next((i for i, w in enumerate(words) if w in _INSTEAD), len(words))

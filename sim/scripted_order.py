@@ -192,7 +192,7 @@ class PickupScript:
     ) -> LLMTurn:
         """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
         #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
-        self._reopen = None
+        reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
             # "heute aus" ist eine Aussage, keine Frage: sie kommt direkt mit,
@@ -221,9 +221,42 @@ class PickupScript:
                 self._after_allergy, unclear = unclear, None
             lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
+        carried = self._carried_wish(reopen, data)
+        if carried is not None:
+            # Die neue Suche traf eines der angebotenen Gerichte: der Wunsch aus
+            # der Frage gilt fuer es, sonst fiele eine Allergie still weg (Review
+            # PR #139).
+            hit = data["results"][0]
+            wish = self._add(hit, query, wish=carried)
+            tail = (
+                say_for_wish(MenuHit.model_validate(hit), Wish.model_validate(wish))
+                if wish
+                else None
+            )
+            return self._next(slots, {}, lead=_join(self.take_carry(), say, tail))
         taken = self._take(query, data)
         lead = _join(self.take_carry(), taken if taken is not None else say)
         return self._next(slots, {}, lead=lead)
+
+    def _carried_wish(
+        self,
+        reopen: tuple[list[dict[str, Any]], str] | None,
+        found: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Der Wunsch der offenen Frage, wenn die neue Suche eindeutig eines der
+        angebotenen Gerichte fand und selbst keinen Wunsch traegt."""
+        hits = found.get("results") or []
+        if (
+            reopen is None
+            or self._suggestion_wish is None
+            or found.get("wish")
+            or found.get("match_type") not in CLEAR_MATCHES
+            or not hits
+            or hits[0].get("sold_out")
+        ):
+            return None
+        offered = {h["menu_item_id"] for h in reopen[0]}
+        return self._suggestion_wish if hits[0]["menu_item_id"] in offered else None
 
     def on_search_failed(self, say: str | None) -> LLMTurn | None:
         """Die Antwort auf eine Rueckfrage fand nichts: die Frage gilt weiter.
@@ -355,6 +388,14 @@ class PickupScript:
         # Zutat selbst; nur das blosse Wort ("Erdnuesse", "gegen Erdnuesse")
         # bekommt den Satzanfang (Codex PR #139, P1).
         wish = classify_wish(text, [])
+        if wish.kind != "allergy" and _orders_something(text):
+            # "Eine Cola bitte", "Nummer 12": keine Zutat - die Frage bleibt
+            # offen, statt "Keine Eine Cola" zu notieren (Review PR #139).
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
         if wish.kind != "allergy":
             # "Keine Erdnuesse" ergaebe sonst "Keine Keine Erdnuesse".
             bare = re.sub(
@@ -485,6 +526,19 @@ def _wish_sentence(
         else say_understood([("alias", menu_hit, settled)], said)
     )
     return _join(echo, say_for_wish(menu_hit, settled)) or None
+
+
+# Womit eine Bestellung beginnt, nie eine Zutat ("eine Cola", "Nummer 12").
+_ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
+
+
+def _orders_something(text: str) -> bool:
+    words = re.findall(r"[^\W_]+", text.lower())
+    return (
+        any(w.isdigit() for w in words)
+        or sole_item_number(text)[0] is not None
+        or (bool(words) and words[0] in _ORDER_LEADS)
+    )
 
 
 def _offer(hits: list[dict[str, Any]]) -> str:

@@ -767,3 +767,79 @@ def test_zweites_gericht_mit_allergie_bleibt_eigene_position(session, tenant_id)
         now=NOW,
     )
     assert parts == ["Pho Bo mit Allergie", "Frühlingsrollen mit Allergie"]
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["ich habe eine Nahrungsmittelallergie", "ich habe eine Lebensmittelallergie"],
+)
+def test_allgemeine_allergie_fragt_nach(gesagt):
+    """Review PR #139: "Nahrungsmittel" ist keine Zutat - die Frage "Wogegen?"
+    bleibt offen, statt "Keine Nahrungsmittel" an die Kueche zu geben."""
+    wish = classify_wish(gesagt, [])
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+def test_vertrage_alles_ist_keine_allergie():
+    """Review PR #139: "ich vertrage alles" ist keine Allergie."""
+    assert classify_wish("ich vertrage alles", []).kind != "allergy"
+    assert wish_candidates("Pho Bo, ich vertrage alles") == []
+    assert classify_wish("ich vertrage keine Erdnüsse", []).ingredient == "Erdnüsse"
+
+
+def test_weglassen_nach_unbekannter_zugabe_bleibt_notiert():
+    """Review PR #139: "mit Pommes ohne Zwiebeln" - die Zugabe wird abgelehnt, das
+    Weglassen bleibt, wie in der umgekehrten Reihenfolge."""
+    wish = classify_wish("mit Pommes ohne Zwiebeln", BEILAGE)
+    assert (wish.kind, wish.note) == ("unknown", "ohne Zwiebeln")
+
+
+@pytest.mark.parametrize(
+    "gesagt", ["allergisch gegen Sesam, ja genau", "allergisch gegen Sesam, richtig"]
+)
+def test_bestaetigung_nach_der_zutat(gesagt):
+    """Review PR #139: ein "ja genau" nach der Zutat macht sie nicht ungueltig."""
+    assert classify_wish(gesagt, []).ingredient == "Sesam"
+
+
+def test_allergie_vor_dem_gericht_gehoert_zum_gericht(session, tenant_id):
+    """Review PR #139: die Allergie vorn im Satz ist keine eigene Position."""
+    gesagt = "Ich habe eine Nussallergie, die 23"
+    assert position_parts(session, tenant_id, gesagt, now=NOW) == [
+        "die 23, Ich habe eine Nussallergie"
+    ]
+
+
+def test_schema_nennt_die_felder():
+    """Review PR #139: ohne leere Felder im Ergebnis, aber mit Schema."""
+    from api.schemas.menu import OptionOut, Wish
+
+    for model in (OptionOut, Wish):
+        schema = model.model_json_schema(mode="serialization")
+        assert "properties" in schema, model
+    assert (
+        "reason"
+        not in OptionOut(name="Reis", price_delta_cents=0, default=True).model_dump()
+    )
+
+
+def test_alte_optionsdatei_behaelt_den_grund(session, tenant_id):
+    """Review PR #139: eine Datei ohne Spalte price_reason loescht den gepflegten
+    Grund nicht."""
+    ohne_spalte = {
+        **KARTE_WUENSCHE,
+        OPTIONS_FILE: (
+            "number;group_name;option_name;price_delta_eur;is_default;required\n"
+            "47;Fleisch;Ente;0,00;ja;ja\n"
+            "47;Fleisch;Huhn;-1,00;nein;ja\n"
+            "47;Beilage;Reis;0,00;ja;nein\n"
+            "47;Beilage;Nudeln;3,00;nein;nein\n"
+        ),
+    }
+    plan = parse(ohne_spalte)
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    reason = session.scalar(
+        select(ItemOption.price_reason).where(ItemOption.option_name == "Nudeln")
+    )
+    assert reason == GRUND

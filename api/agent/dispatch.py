@@ -12,7 +12,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field, ValidationError
@@ -24,6 +24,7 @@ from api.core.logging import get_logger, log
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
+from api.domain.customers.phone import normalize_phone
 from api.domain.menu import get_item_details, search_menu
 from api.domain.menu.search import (
     CLEAR_MATCHES,
@@ -91,10 +92,31 @@ def _with_derived_key[R: (CreateReservationRequest, DraftOrderRequest)](
     und ein weggelassenes Feld sind dasselbe, ein Modell-Retry legt keinen
     zweiten Entwurf an (offene Punkte aus PR #127, T-4.10)."""
     canonical = json.dumps(
-        req.model_dump(mode="json", exclude=_KEY_EXCLUDE), sort_keys=True
+        _canonical(req).model_dump(mode="json", exclude=_KEY_EXCLUDE), sort_keys=True
     )
     key = idempotency_key(req.call_id, tool, canonical)
     return req.model_copy(update={"idempotency_key": key})
+
+
+def _canonical[R: (CreateReservationRequest, DraftOrderRequest)](req: R) -> R:
+    """Gleiche Angaben, gleiche Form: Rufnummer in E.164, Zeit in UTC - sonst
+    waere "07221 5551234" ein zweiter Entwurf (Review PR #139)."""
+    if isinstance(req, CreateReservationRequest):
+        return req.model_copy(
+            update={
+                "phone": _e164(req.phone),
+                "reserved_for": req.reserved_for.astimezone(UTC),
+            }
+        )
+    customer = req.customer.model_copy(update={"phone": _e164(req.customer.phone)})
+    return req.model_copy(update={"customer": customer})
+
+
+def _e164(phone: str) -> str:
+    try:
+        return normalize_phone(phone)
+    except AppError:
+        return phone
 
 
 def _create_reservation(
@@ -226,22 +248,21 @@ def _search_menu(
         # Ausverkauft hat seinen eigenen Satz im Teil; hier nur die Saetze der
         # Wuensche, sonst stuende "heute aus" zweimal da (Review PR #139).
         sold_out = bool(found.results) and found.results[0].sold_out
+        # Mehrdeutig: erst die Wahl, im Teil gefragt; der Wunsch zaehlt danach.
+        # Sonst stuende die Auswahl doppelt da oder "Wogegen?" daneben (Codex und
+        # Review PR #139).
+        settled = not sold_out and found.match_type in CLEAR_MATCHES
         if (
-            not sold_out
+            settled
             and found.wish is not None
             and found.wish.kind == "allergy"
             and not found.wish.ingredient
         ):
             allergies.append(found.results[0].name)
         elif (
-            not sold_out
+            settled
             and found.wish is not None
             and found.wish.kind in ("unknown", "allergy", "open")
-            # Mehrdeutig: die Auswahl steht im Teil und wird dort gefragt, im
-            # Satz der Antwort stuende sie doppelt (Codex PR #139).
-            and not (
-                found.wish.kind == "open" and found.match_type not in CLEAR_MATCHES
-            )
         ):
             notices.append(found.say or "")
         positions.append(
