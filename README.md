@@ -27,7 +27,8 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -m scripts.call_log imports/anrufprotokoll.csv` prints the C1 baseline (volume, intent mix, outcomes, peak hours), `--cases <dir>` writes eval case skeletons without real customer sentences, `--frist-tage N --loeschen` enforces the deletion period; rejects files with phone numbers, e-mail, street addresses or a person's allergy
 - Menu import from CSV per `docs/14_MENU_IMPORT_FORMAT.md`: `python -m scripts.import_menu imports/ --dry-run` checks and reports, without `--dry-run` it loads; idempotent, price changes only with `--apply-price-changes`. The CSVs live in `imports/`, which is git-ignored
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
-- Dispatcher (`api/events/`) drains outbox to n8n: separate process (`python -m api.events.dispatcher`), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
+- Kitchen ticket (T-4.6): the print bridge (`printbridge/`, stdlib only) runs on a machine in the restaurant, fetches confirmed orders over HTTPS from `POST /v1/kitchen/claim` and prints them as ESC/POS on the receipt printer, over the network (TCP 9100) or the Windows print queue (USB). Nothing needs to be opened in the restaurant's router. The tablet card turns red at once on a print error or when no ticket was fetched for 60 s, and back to normal once it prints; a lost acknowledgement never prints a second slip, an outdated revision never prints after a newer one. Setup: `printbridge/README.md`, server side `KITCHEN_BRIDGE_TOKEN`
+- Dispatcher (`api/events/`) drains outbox to n8n (all events except the kitchen ticket): separate process (`python -m api.jobs.cold_path`, also runs the kitchen-ticket watchdog), one POST per event with event-id as idempotency key, backoff 5 s / 30 s / 2 min / 10 min, then `failed` with alarm in log
 - `POST /v1/tools/create_callback` creates a callback task for the team when agent is stuck: task in DB, log entry, event for cold path; at most one open callback per call
 - Conversation core (`api/agent/`) with understanding ladder and escalation, driven from the text phone (`sim/`): `python -m sim.cli` runs a call in the terminal, `python -m sim.replay <case>` replays a transcript; a confirmed reservation lands in the database without any telephony
 - Operations view for the tablet at `/gui/` (`api/gui/`): header with mode, delivery and wait times and the buttons to pause the AI, switch delivery and raise the wait time; the column "Heute" with the confirmed reservations of the business day and the column "Rückrufe" with open callbacks, a tone for new ones and a done button. It updates itself over Server-Sent-Events, so a call held in `sim/` shows up on every tablet a moment later without reloading
@@ -38,8 +39,8 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 **Not yet working:**
 
 - No phone line, no provider chosen (decision D1)
-- The column "Neue Bestellungen" stays empty until T-4.7, and the admin view (`docs/06_GUI.md` §4) is still only a mockup
-- Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code, but only in mode `primary` does the order go to the kitchen at once - in every other mode it waits for approval on the tablet, which is not built yet (T-4.7). Delivery follows in T-6.5
+- The admin view (`docs/06_GUI.md` §4) is still only a mockup
+- Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
 - No n8n workflow yet to receive dispatcher events
@@ -150,6 +151,7 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 ## Known Issues
 
 - Docker Hub rate-limits anonymous image downloads. If `make up` fails with rate limit: `docker login` with a free Docker Hub account, then restart.
+- Kitchen ticket printing is tested against simulated printers only; the first real print on the restaurant's Epson TM-T20II is still open (which machine runs the bridge, network or USB port)
 - `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`) until T-2.4 connects a real one; tokens and cost per case stay empty until then.
 - Behind a TLS-terminating proxy, `pip install` in image build fails with `CERTIFICATE_VERIFY_FAILED`. Fix: place the proxy's CA cert as `api/ca-bundle.crt` (in `.gitignore`), the build auto-includes it.
 

@@ -1,13 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.18
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.19
 
 ---
 
 ## Summary
 
-**Eval runner (T-5.1, 25.09.2026): hard rule 4 has numbers now.** `make eval` plays every case from `evals/cases/` on its own throwaway database through the same conversation core as the text phone and judges the database, not the model's words. An observer between core and model counts the three hard metrics: a `menu_item_id` no search returned (guessed), a `confirm` without a preceding yes, and a missed escalation. Exit 1 on any hard violation or on accuracy below the last run with the same model and tags. Reports go to `evals/reports/`; the whole suite also runs in CI. Today it measures the rule-based stand-in model; T-2.4 plugs in a real one and fills tokens and cost. 4/4 cases green, hard metrics 0. `/eval` and step 2 of `/bug` work from now on.
+**Kitchen ticket over a print bridge (T-4.6, variant B, 25.09.2026): a confirmed order reaches the printer, and the tablet knows whether it did.** The server sits in a data centre and cannot reach the receipt printer in the restaurant, and neither can n8n without opening the restaurant's router. So a small print bridge (`printbridge/`, Python standard library only) runs on a machine in the restaurant and fetches tickets over HTTPS (`POST /v1/kitchen/claim`, own token), prints them as ESC/POS on the Epson (network port 9100 or the Windows print queue for USB) and reports back (`/ack`). `handover_state` finally moves: `sent` when the newest revision is printed, `failed` at once on a print error or when no ticket was fetched for 60 s (watchdog in the dispatcher process, alarm, `order.handover_failed` to n8n), and back to `sent` when it prints after all. An outdated revision is never delivered after a newer one; a print log in the bridge stops a second slip when an acknowledgement got lost. Until today nothing ever set `sent` or `failed`, so no card could turn red. Tested against simulated printers (TCP with status query, Windows queue with stuck job); the first real print on the Epson TM-T20II needs Maxi on site. The dispatcher no longer sends `order.confirmed` to n8n. No migration.
+
+**Eval runner (T-5.1, 25.09.2026): hard rule 4 has numbers now.** `make eval` plays every case from `evals/cases/` on its own throwaway database through the same conversation core as the text phone and judges the database, not the model's words. An observer between core and model counts the three hard metrics: a `menu_item_id` no search returned (guessed), a `confirm` without a preceding yes, and a missed escalation. Exit 1 on a crashed case, any hard violation, or a case that was green in the last passing run with the same model and tags and is red now (compared per case, not by accuracy). Reports go to `evals/reports/`; the whole suite also runs in CI. Today it measures the rule-based stand-in model; T-2.4 plugs in a real one and fills tokens and cost. 4/4 cases green, hard metrics 0. `/eval` and step 2 of `/bug` work from now on.
 
 **Tablet column "Neue Bestellungen" (T-4.7, 25.09.2026): outside `primary` an order now reaches the kitchen.** Until today an order confirmed in `overflow`, `shadow` or `paused` waited for an approval nobody could give. The first column of the operations view lists every order the team still has to act on: confirmed today and not yet ticked off, every order still waiting for release (past 05:00 too), and every red card (kitchen not reached), even after "Passt" and past 05:00. "Passt" sets `approved`; outside `primary` it is the release and sends the ticket, in `primary` the kitchen already has it. A red card offers "Nochmal senden" instead. "Korrigieren" opens its own box above the columns (the column keeps updating and ringing): quantity, swap a dish by card number (quantity and note stay), add a dish, pick options as big buttons, save with one tap on the reason. Prices and totals come from the database on every tap. A note such as an allergy never disappears silently. Every correction is an `order.corrected` row in `audit_log` without personal data, raw material for the accuracy KPI. A ticket carries `revision`; a newer state overwrites a ticket nobody has tried to send, so an old state cannot overtake a correction (contract for T-4.6 in docs/04). Before building, the design went through a three-angle review (domain safety, concurrency, tablet UX) with adversarial verification; all 12 confirmed findings are built in. No migration: open PR #139 holds 003.
 
@@ -64,7 +66,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 | 5 Overflow operation | AI answers, only when team doesn't pick up | G5 | open |
 | 6 Primary operation & ongoing | AI picks up first, team fallback, monthly review running | Monthly review | open, target state |
 
-**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Since 25.09.2026 the tablet releases, corrects and resends orders (T-4.7). Next: wishes to a dish (T-4.10, PR #139 open) and the kitchen ticket (T-4.6), see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
+**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Since 25.09.2026 the tablet releases, corrects and resends orders (T-4.7). Since 25.09.2026 the kitchen ticket is printed by a print bridge in the restaurant (T-4.6 variant B). Next: wishes to a dish (T-4.10, PR #139 open) and the first real print on site, see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
 
 ---
 
@@ -86,12 +88,12 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ### In Claude Code (can start immediately, without vendor)
 1. **T-4.10** wishes to a dish (D8): "die 23 ohne Karotten" finds nothing today - split dish and wish, option with surcharge from the menu or a removal note, repeat both back, nothing offered that the menu does not know
-2. **T-4.6** the kitchen ticket over n8n for `order.confirmed` (T-4.7 done 25.09.2026: the tablet releases, corrects and resends; the receiver must honour `revision`, docs/04 §confirm)
+2. **First real kitchen print** (T-4.6 variant B built 25.09.2026): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
 3. **T-5.2** eval suite v1 with at least 100 cases (docs/08 §6 mandatory coverage); the runner is ready (T-5.1 done 25.09.2026)
 4. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 5. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 6. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
-7. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`; export to `n8n/`); until then the cold path runs to nowhere
+7. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
 8. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
@@ -110,7 +112,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | # | Question | Who | When needed |
 |---|---|---|---|
 | D1 | Voice platform | Maxi after C2 research | before T-2.x (integration) |
-| D2 | Handoff path to register. Register is **<POS System> (<POS Provider>)**, the in-house shop already feeds into it automatically. Four options: A manual on tablet · B kitchen receipt directly · C via register's existing order intake (partner channel like food delivery services, no public docs) · D register API. Recommendation: start with A+B, C depends on <POS Provider> answer (email draft ready, 16.09.2026) | Maxi, <POS Provider> | A+B immediately, C before T-4.6 |
+| D2 | Handoff path to register. Register is **<POS System> (<POS Provider>)**, the in-house shop already feeds into it automatically. Four options: A manual on tablet · B kitchen receipt directly · C via register's existing order intake (partner channel like food delivery services, no public docs) · D register API. Recommendation: start with A+B, C depends on <POS Provider> answer (email draft ready, 16.09.2026) | Maxi, <POS Provider> | A built (T-4.7 tablet), B built 25.09.2026 (T-4.6 print bridge, first real print open); C after the <POS Provider> answer |
 | D3 | Hosting provider in the EU | C2 | before first deployment |
 | D4 | Voice: natural or audibly synthetic | Maxi | Stage 1, dialog test |
 | D5 | Delivery zones: postal code list or polygons | Maxi | before T-6.x (Stage 3) |
@@ -203,6 +205,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Order key from raw arguments (`agent/dispatch.py` `_draft_order`) | Codex PR #127 (P2, same rule): the key hashes the raw arguments, so a model retry with `options: []` or `note: null` instead of omitted fields creates a second draft. Fix: validate first, hash the canonical dump of `DraftOrderRequest` | with T-4.10, latest before G1 |
 | German identifiers in the older GUI code (PR #140 review, conventions) | CLAUDE.md §8 asks for English identifiers. T-4.7 code is English since PR #140 (`orders_fragment`, `correction_preview`, edit ops `swap`/`remove`/`restore`, `closeCorrection` in `app.js`); URLs, DOM ids and words the team sees stay German. Older GUI code from T-3.x still uses German names (`heute_fragment`, `rueckruf_erledigt`, `nachladen`) | rename in one refactor commit, no behaviour change |
 | Swap to the same dish with the same options counts as a correction (`domain/ordering/correction.py` `_plan`) | Codex PR #140 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Tauschen" with the original number and the original options is still classified `swapped`, so `NO_CHANGE` does not block. Saving writes `order.corrected`, raises `revision`, counts against the accuracy KPI and, if the kitchen has a ticket, sends a needless KORREKTUR. Fix: classify a line with the same `menu_item_id`, quantity and options as the stored row as `kept` | before T-8.4 reads corrections for the KPI, latest before G2 |
+| Machine for the print bridge and first real print (T-4.6) | The printers are Epson TM-T20II at the register ("Küche", "Receipt"); unknown yet whether USB or network. USB means the bridge runs on the register PC (Python plus pywin32, installing software there is Maxi's call because of the register vendor) or the printer is shared; network means any small computer in the restaurant. Code and tests cover both paths against simulated printers only | before the first test call with a real order |
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. Until then the reports in `evals/reports/` are the history, and the regression rule reads them | with the migration after PR #139, latest before G2 |
 | Reminder for orders waiting for release (T-4.7) | Design review (UX, minor): an order outside `primary` only cooks after "Passt". Today one tone and a blink; after N minutes without release the tone should repeat and the card should say how long it waits. Needs a value in `service_config` | with T-8.2 (overflow approval flow) |
 | Change the option of an existing position (T-4.7) | Design review (UX, minor): today "Tauschen" with the same number re-picks the options (base price stays frozen). A direct "Ändern" on an option line would be one tap shorter | at the T-3.5 operating test, if the team stumbles |
@@ -221,7 +224,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 |---|---|---|
 | Legal check not complete | any processing of real call recordings (C7 / T-7.x) | work through `docs/09_OPERATIONS_LEGAL.md` |
 | No vendor chosen | voice platform integration, real test calls | C2 in chat |
-| <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; build A+B until then |
+| <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; A and B are built |
 | Menu data not structured | Stage 2 complete | C1 clarifies format, then T-4.1 import |
 | Docker Hub rate limit on first `make up` possible (occurred 16.09.2026 once, cleared after wait) | image build | `docker login` with free account, see README, section Known Issues |
 
@@ -285,6 +288,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.19 · 25.09.2026:** T-4.6 B done: Kuechenbon ueber Druckbruecke
 - **v1.31.18 · 25.09.2026:** T-5.1 done
 - **v1.31.17 · 25.09.2026:** offener Punkt aus PR #140
 - **v1.31.16 · 25.09.2026:** T-4.7 done

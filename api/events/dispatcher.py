@@ -1,16 +1,21 @@
 """Dispatcher: leert die Outbox Richtung n8n (docs/11 §events, docs/03 §outbox).
 
-Eigener Prozess, nie im heissen Pfad: `python -m api.events.dispatcher`. Faellt n8n
+Eigener Prozess, nie im heissen Pfad: `python -m api.jobs.cold_path` (mit dem
+Waechter fuer den Kuechenbon) oder allein `python -m api.events.dispatcher`. Faellt n8n
 aus, bleibt der Vorgang gebucht und das Ereignis wartet. Jeder Versand traegt die
 Ereignis-id als Idempotenz-Schluessel, damit ein wiederholter Zustellversuch in n8n
-nicht zu einem zweiten Bon in der Kueche fuehrt.
+nicht zu einem zweiten Vorgang fuehrt.
+
+Den Kuechenbon (`order.confirmed`) stellt nicht der Dispatcher zu, sondern die
+Druckbruecke im Restaurant holt ihn ab (domain/ordering/handover.py, T-4.6).
 """
 
 import logging
 import signal
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import FrameType
 from typing import Protocol
 
@@ -21,14 +26,18 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.logging import configure_logging, get_logger, log
 from api.db import SessionLocal
+from api.events.outbox import (
+    BACKOFF_SECONDS,
+    MAX_ATTEMPTS,
+    mark_attempt_failed,
+    mark_sent,
+)
+from api.events.types import KITCHEN
 from api.models import OutboxEvent
 
 logger = get_logger("api.events.dispatcher")
 
-# docs/03 §outbox: 5 s, 30 s, 2 min, 10 min, danach failed plus Alarm.
-BACKOFF_SECONDS = (5, 30, 120, 600)
-MAX_ATTEMPTS = len(BACKOFF_SECONDS) + 1
-LAST_ERROR_MAX = 500
+__all__ = ["BACKOFF_SECONDS", "MAX_ATTEMPTS", "dispatch_once", "send_to_n8n"]
 
 
 class Sender(Protocol):
@@ -78,7 +87,11 @@ def _claim_due(session: Session, now: datetime) -> OutboxEvent | None:
     """
     return session.execute(
         select(OutboxEvent)
-        .where(OutboxEvent.status == "pending", OutboxEvent.next_attempt_at <= now)
+        .where(
+            OutboxEvent.status == "pending",
+            OutboxEvent.next_attempt_at <= now,
+            OutboxEvent.event_type.not_in(KITCHEN),
+        )
         .order_by(OutboxEvent.next_attempt_at)
         .limit(1)
         .with_for_update(skip_locked=True)
@@ -88,10 +101,7 @@ def _claim_due(session: Session, now: datetime) -> OutboxEvent | None:
 def _on_failure(
     event: OutboxEvent, exc: Exception, now: datetime, result: Result
 ) -> None:
-    event.attempts += 1
-    event.last_error = f"{type(exc).__name__}: {exc}"[:LAST_ERROR_MAX]
-    if event.attempts >= MAX_ATTEMPTS:
-        event.status = "failed"
+    if mark_attempt_failed(event, f"{type(exc).__name__}: {exc}", now):
         result.failed += 1
         # Alarm: ab hier holt das niemand mehr nach, ein Mensch muss ran (docs/02 §Ausfall).
         log(
@@ -104,7 +114,6 @@ def _on_failure(
             last_error=event.last_error,
         )
         return
-    event.next_attempt_at = now + timedelta(seconds=BACKOFF_SECONDS[event.attempts - 1])
     result.retried += 1
     log(
         logger,
@@ -139,18 +148,51 @@ def dispatch_once(
         except Exception as exc:  # noqa: BLE001 - jeder Zustellfehler fuehrt zum Backoff
             _on_failure(event, exc, moment, result)
         else:
-            event.status = "sent"
-            event.sent_at = moment
-            event.attempts += 1
-            event.last_error = None
+            mark_sent(event, moment)
             result.sent += 1
         # Commit gibt die Zeilensperre frei; der naechste Durchlauf sieht den neuen Stand.
         session.commit()
     return result
 
 
-def run_forever(send: Sender = send_to_n8n) -> None:
-    """Endlosschleife fuer den Containerbetrieb. SIGTERM beendet nach dem laufenden Ereignis."""
+def _pass(
+    session: Session,
+    send: Sender,
+    tick: Callable[[Session, datetime], object] | None,
+) -> None:
+    """Ein Durchlauf: erst versenden, dann der Waechter. Keiner reisst den anderen mit."""
+    try:
+        result = dispatch_once(session, send)
+        if result.handled:
+            log(
+                logger,
+                logging.INFO,
+                "Outbox abgearbeitet",
+                sent=result.sent,
+                retried=result.retried,
+                failed=result.failed,
+            )
+    except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
+        session.rollback()
+        log(logger, logging.ERROR, "Dispatcher-Durchlauf abgebrochen", error=str(exc))
+    if tick is None:
+        return
+    try:
+        tick(session, datetime.now(UTC))
+    except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
+        session.rollback()
+        log(logger, logging.ERROR, "Waechter abgebrochen", error=str(exc))
+
+
+def run_forever(
+    send: Sender = send_to_n8n,
+    tick: Callable[[Session, datetime], object] | None = None,
+) -> None:
+    """Endlosschleife fuer den Containerbetrieb. SIGTERM beendet nach dem laufenden Ereignis.
+
+    `tick` laeuft je Durchlauf nach dem Versand, in eigener Fehlerbehandlung:
+    der Waechter fuer den Kuechenbon (api/jobs/cold_path.py) haengt hier.
+    """
     stop = False
 
     def _stop(_signum: int, _frame: FrameType | None) -> None:
@@ -168,24 +210,7 @@ def run_forever(send: Sender = send_to_n8n) -> None:
     while not stop:
         session = SessionLocal()
         try:
-            result = dispatch_once(session, send)
-            if result.handled:
-                log(
-                    logger,
-                    logging.INFO,
-                    "Outbox abgearbeitet",
-                    sent=result.sent,
-                    retried=result.retried,
-                    failed=result.failed,
-                )
-        except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
-            session.rollback()
-            log(
-                logger,
-                logging.ERROR,
-                "Dispatcher-Durchlauf abgebrochen",
-                error=str(exc),
-            )
+            _pass(session, send, tick)
         finally:
             session.close()
         time.sleep(settings.dispatcher_interval_seconds)

@@ -137,11 +137,23 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `events/` – der kalte Pfad
 - `outbox.py` — Ereignis schreiben (in derselben Transaktion wie der Fachvorgang)
 - `dispatcher.py` — alle paar Sekunden: `pending` lesen, an n8n senden, `sent` oder Wiederholung mit Backoff, nach N Versuchen `failed` plus Alarm
-- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`
+- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`; `KITCHEN` nennt die Ereignisse, die die Druckbrücke abholt statt n8n (T-4.6)
+
+### `kitchen/` – Eingang der Druckbrücke (T-4.6)
+- `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)
+
+### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
+Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
+- `bridge.py` — Durchlauf: abholen, drucken, ins Protokoll, zurückmelden; `--test` für einen Probebon
+- `escpos.py` — Bonlayout als ESC/POS (PC858, 48 Zeichen), Korrektur oben, Hinweis fett, keine Telefonnummer
+- `transport.py` — Netzwerkdrucker (TCP 9100 mit Statusabfrage) oder Windows-Warteschlange (pywin32, wartet bis gedruckt)
+- `state.py` — Druckprotokoll: welche Bestellung in welcher Revision gedruckt ist, gegen doppelte und veraltete Bons
+- `client.py` — `/v1/kitchen/*`, nur https außer localhost
 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
 ### `jobs/`
+- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon (T-4.6); steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — täglicher Löschjob nach 03
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — Kennzahlen des Tages als Outbox-Ereignis

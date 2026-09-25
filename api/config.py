@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     n8n_timeout_seconds: float = 10.0
     dispatcher_interval_seconds: float = 5.0
     dispatcher_batch: int = 20
+    # Druckbruecke im Lokal (T-4.6): leer heisst, /v1/kitchen/* ist zu.
+    kitchen_bridge_token: str = ""
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
