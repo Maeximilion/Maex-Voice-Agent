@@ -64,8 +64,11 @@ _INGREDIENT = (
     ),
     # "ich vertrage keine Erdnuesse"
     re.compile(r"vertr(?:a|ä|ae)g\w*\s+(?:keine[nm]?|kein)\s+" + _REST, re.IGNORECASE),
-    # "Erdnussallergie"
-    re.compile(r"(\w+?)allergie", re.IGNORECASE),
+)
+# "Erdnussallergie", "Erdnuss-Allergie" und der Wortanfang in "Nuss- und
+# Sesamallergie": jede gilt, nicht nur die erste (Codex PR #139, P1).
+_COMPOUND = re.compile(
+    r"(\w+?)-?allergie|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)", re.IGNORECASE
 )
 # Nach einem "und" oder Komma beginnt hier ein neuer Satzteil, keine Zutat mehr.
 _CLAUSE_WORDS = (
@@ -101,16 +104,29 @@ def _is_allergy(word: str) -> bool:
 
 
 def _ingredient(text: str) -> str | None:
-    """Die Zutat, wie der Gast sie sagt: "Erdnussallergie" -> "Erdnuss",
-    "allergisch gegen Sesam" -> "Sesam". None: nicht erkennbar, nachfragen."""
+    """Die Zutaten, wie der Gast sie sagt: "Erdnussallergie" -> "Erdnuss",
+    "allergisch gegen Sesam" -> "Sesam", mehrere in Reihenfolge ("Milch und
+    Nuss"). None: nicht erkennbar, nachfragen."""
+    found: list[tuple[int, str]] = []
     for pattern in _INGREDIENT:
         match = pattern.search(text)
         if match:
-            found = _until_new_clause(match.group(1))
-            if not found or _NO_INGREDIENT & set(_words(found)):
-                return None
-            return found[0].upper() + found[1:]
-    return None
+            found.append((match.start(1), _until_new_clause(match.group(1))))
+    for match in _COMPOUND.finditer(text):
+        stem = match.group(1) or match.group(2)
+        found.append((match.start(), stem))
+    pieces: list[str] = []
+    for _, piece in sorted(found):
+        if not piece or _NO_INGREDIENT & set(_words(piece)):
+            return None
+        piece = piece[0].upper() + piece[1:]
+        if piece not in pieces:
+            pieces.append(piece)
+    if not pieces:
+        return None
+    if len(pieces) == 1:
+        return pieces[0]
+    return ", ".join(pieces[:-1]) + " und " + pieces[-1]
 
 
 def _until_new_clause(rest: str) -> str:

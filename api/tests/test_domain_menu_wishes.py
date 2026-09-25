@@ -627,3 +627,27 @@ def test_extra_zutat_aus_dem_namen_ist_wunsch(session, tenant_id):
     result = suche(session, tenant_id, "Sommerrollen extra Garnelen")
     assert [h.number for h in result.results] == ["24"]
     assert (result.wish.kind, result.wish.text) == ("unknown", "extra Garnelen")
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "hinweis"),
+    [
+        (
+            "ich habe eine Nuss- und Sesamallergie",
+            "WICHTIG: Keine Nuss und Sesam. Grund: Allergie",
+        ),
+        (
+            "ich habe eine Milchallergie und eine Nussallergie",
+            "WICHTIG: Keine Milch und Nuss. Grund: Allergie",
+        ),
+        (
+            "Erdnussallergie und allergisch gegen Sesam",
+            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie",
+        ),
+        ("ich habe eine Erdnuss-Allergie", "WICHTIG: Keine Erdnuss. Grund: Allergie"),
+    ],
+)
+def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
+    """Codex PR #139, P1: "Nuss- und Sesamallergie" sind zwei Allergien. Fehlt
+    eine im Hinweis, erfaehrt die Kueche nichts davon."""
+    assert classify_wish(gesagt, BEILAGE).text == hinweis
