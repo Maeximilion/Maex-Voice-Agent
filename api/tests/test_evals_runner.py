@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
-from api.models import MenuItem
+from api.models import MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
@@ -114,7 +114,7 @@ def test_falsche_erwartung_ist_roter_fall_und_regression_faellt_durch(
     assert not case.passed
     assert "items" in case.diffs[0]
     assert zweiter.verdict == "durchgefallen"
-    assert any("Genauigkeit gefallen" in r for r in zweiter.reasons)
+    assert any("Regression" in r and "gut" in r for r in zweiter.reasons)
 
 
 def test_verpasste_eskalation_ist_hart(migrated_db_url, tmp_path):
@@ -228,6 +228,9 @@ def test_confirm_nach_nein_gilt_als_unbestaetigt():
         ("Nein, ja doch nicht", False),
         ("Im Januar", False),
         ("Müller", False),
+        ("Das stimmt nicht.", False),
+        ("Passt so nicht, ich wollte zwei.", False),
+        ("Richtig, aber keine Ente.", False),
     ],
 )
 def test_ja_erkennung(text, yes):
@@ -305,3 +308,87 @@ def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):
     write(rep(["menu"], [ok]), tmp_path, datetime(2026, 9, 25, 8, tzinfo=UTC))
     assert previous_run(tmp_path, "scripted", []) is None
     assert previous_run(tmp_path, "scripted", ["menu"])["accuracy"] == 1.0
+
+
+# --- Befunde aus dem Review von PR #142 ----------------------------------------------
+
+
+def _report(cases, previous=None):
+    r = RunReport(run_at="t", model="scripted", tags=[], cases=cases, previous=previous)
+    r.decide()
+    return r
+
+
+def test_neuer_roter_fall_ist_keine_regression():
+    before = {"file": "alt.json", "accuracy": 1.0, "passed_ids": ["a", "b"]}
+    neu_rot = [
+        CaseResult(id="a", name="", tags=[], passed=True),
+        CaseResult(id="b", name="", tags=[], passed=True),
+        CaseResult(id="bug", name="", tags=[], passed=False),
+    ]
+    assert _report(neu_rot, before).verdict == "bestanden"
+    kaputt = [
+        CaseResult(id="a", name="", tags=[], passed=False),
+        CaseResult(id="b", name="", tags=[], passed=True),
+        CaseResult(id="neu", name="", tags=[], passed=True),
+    ]
+    assert _report(kaputt, before).verdict == "durchgefallen"
+
+
+def test_durchgefallener_lauf_ist_kein_massstab(tmp_path):
+    gruen = _report([CaseResult(id="a", name="", tags=[], passed=True)])
+    write(gruen, tmp_path, datetime(2026, 9, 25, 8, tzinfo=UTC))
+    rot = _report(
+        [CaseResult(id="a", name="", tags=[], passed=False)],
+        previous_run(tmp_path, "scripted", []),
+    )
+    assert rot.verdict == "durchgefallen"
+    write(rot, tmp_path, datetime(2026, 9, 25, 9, tzinfo=UTC))
+    # Der zweite Aufruf ohne Fix vergleicht weiter mit dem gruenen Lauf.
+    again = previous_run(tmp_path, "scripted", [])
+    assert again["passed_ids"] == ["a"]
+
+
+def test_optionen_nur_an_der_position_die_sie_nennt():
+    seen = Observed(
+        intent="pickup",
+        confirmed=True,
+        escalated=False,
+        items=[
+            {"number": "23", "quantity": 2, "options": ["Erdnuss"]},
+            {"number": "47", "quantity": 1, "options": ["Huhn"]},
+        ],
+        customer_name=None,
+        party_size=None,
+    )
+    want = [
+        {"number": "23", "quantity": 2},
+        {"number": "47", "quantity": 1, "options": ["Huhn"]},
+    ]
+    assert judge({"items": want}, seen) == []
+    assert judge({"items": [{"number": "23", "quantity": 2}]}, seen)  # 47 zu viel
+
+
+def test_faelle_teilen_keinen_mandanten(migrated_db_url, tmp_path):
+    # Derselbe Tisch zweimal: mit geteiltem Mandanten naehme der erste dem
+    # zweiten die Kapazitaet nicht, hier aber zaehlt jeder Fall fuer sich.
+    zeilen = [
+        "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("t1", zeilen, {"confirmed": True}),
+        fall("t2", zeilen, {"confirmed": True}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.accuracy == 1.0, report.to_markdown()
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session:
+            names = sorted(session.scalars(select(Tenant.name)))
+    finally:
+        engine.dispose()
+    assert names == ["Evalbetrieb t1", "Evalbetrieb t2"]

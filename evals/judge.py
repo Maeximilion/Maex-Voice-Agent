@@ -109,9 +109,33 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     )
 
 
-def _item_key(item: dict[str, Any], with_options: bool) -> tuple:
-    options = tuple(sorted(item.get("options") or [])) if with_options else ()
-    return (str(item["number"]).lower(), int(item["quantity"]), options)
+def _matches(want: dict[str, Any], got: dict[str, Any]) -> bool:
+    if str(want["number"]).lower() != str(got["number"]).lower():
+        return False
+    if int(want["quantity"]) != int(got["quantity"]):
+        return False
+    # Optionen nur, wo die Position sie nennt: "2x 23" legt die Auswahl nicht
+    # fest, "47 mit Huhn" schon.
+    return "options" not in want or sorted(want["options"]) == sorted(got["options"])
+
+
+def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
+    """Jede erwartete Position trifft genau eine gebuchte; Reihenfolge egal.
+
+    Positionen mit Optionen zuerst: sonst nähme "47 ohne Angabe" die Zeile
+    "47 mit Huhn" weg, die "47 mit Huhn" gebraucht hätte.
+    """
+    left = list(got_items)
+    missing = []
+    for want in sorted(want_items, key=lambda w: "options" not in w):
+        hit = next((g for g in left if _matches(want, g)), None)
+        if hit is None:
+            missing.append(want)
+        else:
+            left.remove(hit)
+    if not missing and not left:
+        return None
+    return f"items: fehlt {missing}, zu viel {left}"
 
 
 def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
@@ -127,12 +151,7 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         if (got or "").casefold() != str(want).casefold():
             diffs.append(f"customer_name: erwartet {want!r}, gebucht {got!r}")
     if "items" in expected:
-        # Optionen nur vergleichen, wo der Fall sie nennt: "2x 23" legt die
-        # Auswahl nicht fest, "47 mit Huhn" schon.
-        want_items = expected["items"]
-        with_options = any("options" in i for i in want_items)
-        want = sorted(_item_key(i, with_options) for i in want_items)
-        got = sorted(_item_key(i, with_options) for i in seen.items)
-        if want != got:
-            diffs.append(f"items: erwartet {want}, gebucht {got}")
+        diff = _compare_items(expected["items"], seen.items)
+        if diff:
+            diffs.append(diff)
     return diffs

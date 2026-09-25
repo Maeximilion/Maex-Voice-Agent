@@ -33,11 +33,20 @@ _YES = re.compile(
     re.IGNORECASE,
 )
 _NO = re.compile(r"^\s*(nein|ne|nee|nö|noe|falsch|stopp|halt)\b", re.IGNORECASE)
+# "Das stimmt nicht", "passt so nicht", "keine Ente": das Ja-Wort ist verneint.
+_NEGATED = re.compile(r"\b(nicht|kein|keine|keinen|nie)\b", re.IGNORECASE)
 
 
 def is_yes(text: str) -> bool:
-    """Ein Ja ohne vorangestelltes Nein. "Nein, das wars" ist kein Ja zum Vorlesen."""
-    return bool(_YES.search(text)) and not _NO.search(text)
+    """Ein Ja ohne Nein davor und ohne Verneinung im Satz.
+
+    Streng mit Absicht: ein verpasstes Ja macht hier einen Fall rot, den ein
+    Mensch prüft; ein fälschlich erkanntes Ja verdeckte einen `confirm` ohne
+    Zustimmung, und genau den soll diese harte Metrik finden.
+    """
+    return (
+        bool(_YES.search(text)) and not _NO.search(text) and not _NEGATED.search(text)
+    )
 
 
 @dataclass

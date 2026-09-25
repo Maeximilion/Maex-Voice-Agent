@@ -3,12 +3,16 @@
 Urteil nach docs/08:
 - Die drei harten Metriken sind Abbruchkriterien: ein einziger Verstoss, und der
   Lauf ist durchgefallen, egal wie gut die Genauigkeit ist.
-- Regressionsregel: fällt die Genauigkeit gegenüber dem letzten Lauf mit
-  demselben Modell und derselben Fallauswahl, ist der Lauf durchgefallen.
+- Regressionsregel: ein Fall, der im letzten **bestandenen** Lauf mit
+  demselben Modell und denselben Tags grün war und jetzt rot ist, lässt den
+  Lauf durchfallen - "kein 'ist nur ein Fall'" (docs/08 §4).
 
-Ein einzelner roter Fall allein lässt den Lauf nicht durchfallen: so steht ein
-neuer Fall aus `/bug` rot in der Suite, bis der Fix da ist (CLAUDE.md §9). Die
-Genauigkeit sinkt dabei nicht, sie steigt mit dem Fix.
+Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer roter Fall aus
+`/bug` senkt die Genauigkeit, ist aber keine Regression, und er soll rot in der
+Suite stehen dürfen, bis der Fix da ist (CLAUDE.md §9). Umgekehrt verdecken
+neue grüne Fälle keinen, der kaputtgegangen ist. Und nur ein bestandener Lauf
+ist Maßstab: sonst wäre eine Regression nach einem zweiten Aufruf von
+`make eval` einfach verschwunden.
 
 Die Reports liegen in `evals/reports/` und sind nicht im Repo (.gitignore).
 """
@@ -84,11 +88,13 @@ class RunReport:
         self.reasons = [
             f"{HARD[key]}: {count}" for key, count in self.hard().items() if count
         ]
-        if self.previous and self.accuracy < self.previous["accuracy"]:
-            self.reasons.append(
-                f"Genauigkeit gefallen: {self.previous['accuracy']:.1%} -> {self.accuracy:.1%}"
-                f" (Vergleich {self.previous['file']})"
-            )
+        if self.previous:
+            green_before = set(self.previous["passed_ids"])
+            broken = [c.id for c in self.cases if c.id in green_before and not c.passed]
+            if broken:
+                self.reasons.append(
+                    f"Regression gegen {self.previous['file']}: {', '.join(broken)}"
+                )
         self.verdict = "durchgefallen" if self.reasons else "bestanden"
         return not self.reasons
 
@@ -120,8 +126,12 @@ class RunReport:
             "",
             "| Metrik | Wert | Ziel |",
             "|---|---|---|",
-            f"| Genauigkeit | {self.passed}/{self.total} = {self.accuracy:.1%} | ≥ letzter Lauf"
-            + (f" ({self.previous['accuracy']:.1%})" if self.previous else "")
+            f"| Genauigkeit | {self.passed}/{self.total} = {self.accuracy:.1%} | "
+            + (
+                f"kein Fall rot, der zuletzt grün war (letzter Lauf {self.previous['accuracy']:.1%})"
+                if self.previous
+                else "kein Vergleichslauf"
+            )
             + " |",
         ]
         lines += [f"| {HARD[k]} | {v} | 0, hart |" for k, v in self.hard().items()]
@@ -147,7 +157,7 @@ def _filter_key(model: str, tags: list[str]) -> tuple[str, tuple[str, ...]]:
 def previous_run(
     report_dir: Path, model: str, tags: list[str]
 ) -> dict[str, Any] | None:
-    """Jüngster Report mit demselben Modell und denselben Tags, sonst None."""
+    """Jüngster **bestandene** Report mit demselben Modell und denselben Tags."""
     if not report_dir.is_dir():
         return None
     key = _filter_key(model, tags)
@@ -156,11 +166,17 @@ def previous_run(
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        if _filter_key(data.get("model", ""), data.get("tags", [])) == key:
+        if (
+            _filter_key(data.get("model", ""), data.get("tags", [])) == key
+            and data.get("verdict") == "bestanden"
+        ):
             return {
                 "file": path.name,
                 "accuracy": data["accuracy"],
                 "run_at": data["run_at"],
+                "passed_ids": [
+                    c["id"] for c in data.get("cases", []) if c.get("passed")
+                ],
             }
     return None
 

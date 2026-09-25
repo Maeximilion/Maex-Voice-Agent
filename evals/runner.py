@@ -19,7 +19,8 @@ Exit-Code: 0 bestanden · 1 durchgefallen (harte Metrik verletzt oder Genauigkei
 unter dem letzten Lauf) · 2 Fall oder Aufruf kaputt.
 
 Die Datenbank ist eine eigene, frisch migrierte je Lauf (evals/scratch_db.py),
-mit einem Mandanten und der Evalkarte aus `evals/menu/` (Testdaten nach docs/14).
+mit einem eigenen Mandanten je Fall und der Evalkarte aus `evals/menu/`
+(Testdaten nach docs/14).
 Entwicklungs- und Betriebsdaten berührt der Lauf nie.
 
 Abhängigkeiten: nur das Projekt selbst (Datenbank aus DATABASE_URL).
@@ -93,9 +94,15 @@ def model_factory(model: str) -> Callable[[datetime], LLMClient]:
     raise UsageError(f"Modell '{model}' gibt es noch nicht (kommt mit T-2.4)")
 
 
-def _prepare(session: Session, now: datetime):
-    seed(session, tenant_name=TENANT, timezone=TIMEZONE)
-    tenant = resolve_tenant(session, TENANT)
+def _prepare(session: Session, now: datetime, name: str = TENANT):
+    """Mandant mit Öffnungszeiten, Kapazität und Evalkarte.
+
+    Je Fall ein eigener: sonst füllen frühere Fälle die Kapazität eines Slots,
+    zählen den Abholcode hoch oder lassen Rückrufe offen, und ob ein Fall grün
+    ist, hinge von Reihenfolge und Tag-Filter ab (docs/08 §3 Schritt 1).
+    """
+    seed(session, tenant_name=name, timezone=TIMEZONE)
+    tenant = resolve_tenant(session, name)
     plan = parse(read_files(MENU))
     if not plan.ok:
         raise CaseError(f"Evalkarte evals/menu/ ungültig: {plan.errors}")
@@ -103,7 +110,7 @@ def _prepare(session: Session, now: datetime):
     return tenant
 
 
-def run_case(session: Session, tenant, case: dict[str, Any], make_llm) -> CaseResult:
+def run_case(session: Session, case: dict[str, Any], make_llm) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
     result = CaseResult(
@@ -115,15 +122,16 @@ def run_case(session: Session, tenant, case: dict[str, Any], make_llm) -> CaseRe
     )
     llm = RecordingLLM(make_llm(now))
     try:
+        tenant = _prepare(session, DEFAULT_NOW, name=f"{TENANT} {case['id']}")
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         call.finish()
+        seen = observe(session, call.call_id, llm.recording.confirms)
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
         return result
 
     rec = llm.recording
-    seen = observe(session, call.call_id, rec.confirms)
     result.turns = len(turns)
     result.diffs = judge(expected, seen)
     result.guessed_items = len(rec.guessed)
@@ -166,8 +174,11 @@ def run(
         if own_db:
             migrate(db_url)
         with Session(engine) as session:
-            tenant = _prepare(session, DEFAULT_NOW)
-            results = [run_case(session, tenant, c, make_llm) for c in cases]
+            # Die Karte einmal vorab prüfen: ist sie kaputt, bricht der Lauf ab,
+            # statt jeden Fall mit demselben Fehler rot zu zeigen.
+            if not parse(read_files(MENU)).ok:
+                raise CaseError("Evalkarte evals/menu/ ungültig")
+            results = [run_case(session, c, make_llm) for c in cases]
     finally:
         engine.dispose()
         if own_db and not keep_db:
