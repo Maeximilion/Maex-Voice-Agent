@@ -408,3 +408,61 @@ def test_draft_replay_nach_korrektur(session, tenant_id, call_id):
         select(func.count(OrderItem.id)).where(OrderItem.order_id == order_id)
     )
     assert count == 2
+
+
+# --- Befunde aus dem Review von PR #140 ----------------------------------------------
+
+
+def test_korrektur_nach_fehlgeschlagener_uebergabe_ist_erster_bon(
+    session, tenant_id, call_id
+):
+    order_id = _order(session, tenant_id, call_id, mode="primary")
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.payload["order_id"].astext == str(order_id))
+        .values(status="failed", attempts=4)
+    )
+    session.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="failed")
+    )
+    session.commit()
+    [row] = _rows(session, order_id)
+    _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+
+    # Die Kueche hat nie einen Bon bekommen: kein "KORREKTUR" auf dem neuen.
+    _old, new = _events(session, order_id)
+    assert new.payload["correction_reason"] is None
+    assert new.payload["revision"] == 1
+    assert _order_row(session, order_id).handover_state == "pending"
+
+
+def test_stornierte_bestellung_oeffnet_keinen_editor(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    session.execute(
+        update(Order).where(Order.id == order_id).values(status="cancelled")
+    )
+    session.commit()
+    with pytest.raises(Conflict):
+        preview_correction(session, tenant_id, order_id, now=NOW)
+
+
+def test_menge_ueber_der_grenze_des_agenten(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    [row] = _rows(session, order_id)
+    with pytest.raises(InvalidInput):
+        _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 31),))
+
+
+def test_kaputte_namensliste_bricht_nicht_ab(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    session.execute(
+        update(AuditLog)
+        .where(AuditLog.entity_id == order_id, AuditLog.action == "order.draft_created")
+        .values(payload={"labels": [], "warnings": []})
+    )
+    session.commit()
+    [row] = _rows(session, order_id)
+    # Namen dann aus der Karte von jetzt, statt eines Fehlers 500.
+    _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+    [card] = list_new(session, tenant_id, TZ, NOW)
+    assert card.lines[0].name == "Frühlingsrollen"

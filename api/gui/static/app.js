@@ -173,6 +173,8 @@
       }
       wecker();
     });
+    // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
+    korrektur.addEventListener("input", wecker);
     // Ins Bild rollen nur beim Oeffnen, nicht nach jedem Tap: rollt die Seite
     // unter dem Finger weg, trifft der naechste Tap einen anderen Knopf (im
     // Browsertest die Wartezeit in der Kopfzeile).

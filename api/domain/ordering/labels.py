@@ -16,11 +16,14 @@ from collections.abc import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.models import AuditLog
+from api.core.logging import get_logger
+from api.models import AuditLog, MenuItem, OrderItem
 
 ACTION_DRAFT_CREATED = "order.draft_created"
 ACTION_CORRECTED = "order.corrected"
 LABEL_ACTIONS = (ACTION_DRAFT_CREATED, ACTION_CORRECTED)
+
+logger = get_logger("api.domain.ordering.labels")
 
 
 def current_labels_many(
@@ -48,3 +51,34 @@ def current_labels_many(
 def current_labels(session: Session, order_id: uuid.UUID) -> list[list[str]] | None:
     """Juengste Liste einer Bestellung, `None` ohne Audit-Zeile."""
     return current_labels_many(session, [order_id]).get(order_id)
+
+
+def menu_labels(session: Session, rows: Sequence[OrderItem]) -> list[list[str]]:
+    """Nummer und Name aus der Karte von jetzt - nur der Notbehelf, siehe unten."""
+    menu = {
+        m.id: m
+        for m in session.scalars(
+            select(MenuItem).where(MenuItem.id.in_([r.menu_item_id for r in rows]))
+        )
+    }
+    return [[menu[r.menu_item_id].number, menu[r.menu_item_id].name] for r in rows]
+
+
+def labels_for_rows(
+    session: Session,
+    order_id: uuid.UUID,
+    rows: Sequence[OrderItem],
+    known: list[list[str]] | None = None,
+) -> list[list[str]]:
+    """Namensliste, die sicher zu `rows` passt.
+
+    Passt die gespeicherte Liste nicht (darf nicht vorkommen: Entwurf, Korrektur
+    und Liste entstehen in einer Transaktion), soll eine kaputte Bestellung
+    weder die Spalte leeren noch die Korrektur mit einem Fehler 500 abbrechen.
+    Dann eben die Namen der Karte von jetzt, mit Eintrag im Log.
+    """
+    labels = known if known is not None else current_labels(session, order_id)
+    if labels is not None and len(labels) == len(rows):
+        return labels
+    logger.error("Positionen ohne passende Namensliste: Bestellung %s", order_id)
+    return menu_labels(session, rows)

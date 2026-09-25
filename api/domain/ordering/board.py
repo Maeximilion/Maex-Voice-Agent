@@ -23,11 +23,14 @@ from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
-from api.core.logging import get_logger
 from api.core.time import business_day, business_day_bounds_utc
-from api.domain.ordering.labels import ACTION_CORRECTED, current_labels_many
+from api.domain.ordering.labels import (
+    ACTION_CORRECTED,
+    current_labels_many,
+    labels_for_rows,
+)
 from api.domain.ordering.ticket import send_ticket
-from api.models import AuditLog, MenuItem, Order, OrderItem
+from api.models import AuditLog, Order, OrderItem
 
 CONFIRMED = "confirmed"
 APPROVED = "approved"
@@ -35,8 +38,6 @@ FAILED = "failed"
 ACTOR_TABLET = "gui:tablet"
 ACTION_APPROVED = "order.approved"
 ACTION_RESENT = "order.resent"
-
-logger = get_logger("api.domain.ordering.board")
 
 
 @dataclass(frozen=True)
@@ -120,12 +121,7 @@ def list_new(
     labels = current_labels_many(session, ids)
     corrected = _last_correction_reasons(session, tenant_id, ids)
     for oid in ids:
-        if len(labels.get(oid, [])) != len(items[oid]):
-            # Darf nicht vorkommen (Entwurf, Korrektur und Namensliste entstehen
-            # in einer Transaktion). Eine kaputte Karte soll die Spalte aber
-            # nicht leeren: dann eben die Namen der Karte von jetzt.
-            logger.error("Positionen ohne passende Namensliste: Bestellung %s", oid)
-            labels[oid] = _menu_labels(session, items[oid])
+        labels[oid] = labels_for_rows(session, oid, items[oid], labels.get(oid))
     return [
         BoardOrder(
             order_id=o.id,
@@ -152,16 +148,6 @@ def list_new(
         )
         for o in orders
     ]
-
-
-def _menu_labels(session: Session, rows: list[OrderItem]) -> list[list[str]]:
-    menu = {
-        m.id: m
-        for m in session.scalars(
-            select(MenuItem).where(MenuItem.id.in_([r.menu_item_id for r in rows]))
-        )
-    }
-    return [[menu[r.menu_item_id].number, menu[r.menu_item_id].name] for r in rows]
 
 
 def _last_correction_reasons(

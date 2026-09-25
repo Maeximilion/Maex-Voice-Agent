@@ -36,11 +36,14 @@ from api.domain.menu.items import is_sold_out, option_groups, option_key
 # Dieselbe Nummernsuche wie search_menu ("7" findet "07", "23A" findet "23a").
 # Privat importiert, bis PR #139 search.py nicht mehr anfasst.
 from api.domain.menu.search import _by_number
-from api.domain.ordering.labels import ACTION_CORRECTED, current_labels
+from api.domain.ordering.labels import ACTION_CORRECTED, labels_for_rows
 from api.domain.ordering.pricing import row_cents
 from api.domain.ordering.ticket import send_ticket
 from api.models import AuditLog, MenuItem, Order, OrderItem
 from api.schemas.menu import OptionGroup
+
+# Dieselbe Obergrenze wie beim Agenten (draft_order).
+from api.schemas.orders import MAX_QUANTITY
 
 ACTOR_TABLET = "gui:tablet"
 # Gruende aus docs/06 §3. "Falsche Adresse" gibt es nur bei Lieferungen.
@@ -52,7 +55,6 @@ REASONS = {
 }
 DELIVERY_ONLY = ("wrong_address",)
 EDITABLE = ("confirmed", "approved")
-MAX_QUANTITY = 99
 
 NO_CHANGE = "Noch nichts geändert."
 NO_POSITION = (
@@ -176,6 +178,10 @@ def preview_correction(
 ) -> CorrectionPlan:
     """Vorschau fuer das Tablet. Schreibt nichts."""
     order = _order(session, tenant_id, order_id, lock=False)
+    if order.status not in EDITABLE:
+        # Storniert oder noch Entwurf: gar nicht erst bearbeiten lassen, statt
+        # erst beim Speichern abzulehnen.
+        raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     rows = _rows(session, order)
     if req is None:
         req = CorrectionRequest(version=order_version(rows))
@@ -192,7 +198,7 @@ def apply_correction(
     reason: str,
     actor: str = ACTOR_TABLET,
     now: datetime | None = None,
-) -> CorrectionPlan:
+) -> None:
     """Korrektur speichern. Zweimal getippt oder an zwei Tablets: einmal gespeichert."""
     now = now or utcnow()
     order = _order(session, tenant_id, order_id, lock=True)
@@ -201,7 +207,7 @@ def apply_correction(
     if req.edit_id and _already_saved(session, order, req.edit_id):
         # Derselbe Tap kam zweimal an: die erste Korrektur gilt, keine zweite.
         session.commit()
-        return preview_correction(session, tenant_id, order_id, None, now)
+        return
     if reason not in _reasons(order):
         raise InvalidInput(f"Grund {reason!r} unbekannt")
 
@@ -213,7 +219,7 @@ def apply_correction(
         raise InvalidInput(plan.blockers[0], say=plan.blockers[0])
     _check_notes(rows, req)
 
-    labels = current_labels(session, order.id) or []
+    labels = labels_for_rows(session, order.id, rows)
     before = [_audit_line(r, lbl) for r, lbl in zip(rows, labels, strict=True)]
     by_id = {r.id: r for r in rows}
     for line, edit in zip(plan.rows, _row_edits(rows, req), strict=True):
@@ -282,12 +288,12 @@ def apply_correction(
     )
     session.flush()
     if order.handover_state is not None:
-        # Die Kueche hat schon einen Bon (oder bekommt ihn gerade): der neue
-        # Stand geht hinterher, als KORREKTUR (ticket.py).
-        send_ticket(session, order, correction_reason=reason)
+        # Der neue Stand geht an die Kueche (ticket.py). "KORREKTUR" nur, wenn
+        # sie schon einen Bon hat oder bekommt; nach "failed" hat sie keinen.
+        reached = order.handover_state in ("pending", "sent")
+        send_ticket(session, order, correction_reason=reason if reached else None)
         order.handover_state = "pending"
     session.commit()
-    return preview_correction(session, tenant_id, order_id, None, now)
 
 
 # --- Bausteine ---------------------------------------------------------------------
@@ -371,7 +377,7 @@ def _plan(
     now: datetime,
 ) -> CorrectionPlan:
     edits = _row_edits(rows, req)
-    labels = current_labels(session, order.id) or [["?", "?"]] * len(rows)
+    labels = labels_for_rows(session, order.id, rows)
     wanted_ids = {e.swap_to for e in edits if e.swap_to} | {
         a.menu_item_id for a in req.added
     }
