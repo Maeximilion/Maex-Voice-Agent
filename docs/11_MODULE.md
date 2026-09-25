@@ -153,7 +153,7 @@ Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
 ### `jobs/`
-- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon (T-4.6); steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
+- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — täglicher Löschjob nach 03
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — Kennzahlen des Tages als Outbox-Ereignis

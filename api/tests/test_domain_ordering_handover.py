@@ -1,5 +1,6 @@
 """Kuechenbon ueber die Druckbruecke: abholen, Rueckmeldung, Revision, Waechter (T-4.6)."""
 
+import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -263,7 +264,7 @@ def test_fremder_mandant_sieht_keinen_bon(session, tenant_id, order_id):
 
 
 @pytest.fixture
-def http(migrated_db_url, monkeypatch):
+def http(migrated_db_url, monkeypatch, tenant_id):
     engine = create_engine(migrated_db_url)
 
     def override_get_db():
@@ -272,6 +273,7 @@ def http(migrated_db_url, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(settings, "kitchen_bridge_token", "bruecke-geheim")
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
     try:
         yield TestClient(app)
     finally:
@@ -303,7 +305,11 @@ def test_http_token_und_huelle(http, session, tenant_id, order_id, monkeypatch):
     assert unknown.json()["ok"] is False
     assert unknown.json()["error"]["code"] == "not_found"
 
+    # Ohne Betrieb zum Token ist der Eingang zu, auch mit richtigem Token.
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", "")
+    assert http.post("/v1/kitchen/claim", json=body, headers=auth).status_code == 401
     # Ohne gesetztes Token ist der Eingang zu, auch fuer "Bearer ".
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
     monkeypatch.setattr(settings, "kitchen_bridge_token", "")
     empty = {"Authorization": "Bearer "}
     assert http.post("/v1/kitchen/claim", json=body, headers=empty).status_code == 401
@@ -372,9 +378,8 @@ def test_ueberholter_bon_ohne_versuche_ist_kein_alarm(
     assert "Alarm" not in caplog.text
 
 
-def test_token_nur_fuer_den_eigenen_betrieb(http, tenant_id, monkeypatch):
+def test_token_nur_fuer_den_eigenen_betrieb(http, tenant_id):
     auth = {"Authorization": "Bearer bruecke-geheim"}
-    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
     own = http.post(
         "/v1/kitchen/claim", json={"tenant_id": str(tenant_id)}, headers=auth
     )
@@ -393,3 +398,105 @@ def test_token_nur_fuer_den_eigenen_betrieb(http, tenant_id, monkeypatch):
         headers=auth,
     )
     assert ack.status_code == 401
+
+
+# --- Befunde aus dem Codex-Review PR #143 --------------------------------------------
+
+
+def test_rueckmeldung_waehrend_einer_korrektur_meldet_nicht_gesendet(
+    migrated_db_url, session, tenant_id, order_id
+):
+    """Die Korrektur haelt die Sperre der Bestellung, als die Rueckmeldung fuer
+    Revision 0 eintrifft. Danach ist Revision 1 die aktuelle: die Karte darf
+    nicht auf "gesendet" springen, obwohl der korrigierte Bon noch aussteht."""
+    [ticket] = claim_tickets(session, tenant_id, _now())
+    engine = create_engine(migrated_db_url)
+    correction = Session(engine)
+    try:
+        order = correction.scalars(
+            select(Order).where(Order.id == order_id).with_for_update()
+        ).one()
+        correction.add(
+            OutboxEvent(
+                tenant_id=tenant_id,
+                event_type=ORDER_CONFIRMED,
+                payload={"order_id": str(order.id), "revision": 1},
+            )
+        )
+        correction.flush()
+
+        done: list[str] = []
+
+        def acknowledge():
+            with Session(engine) as other:
+                done.append(
+                    ack_ticket(other, tenant_id, uuid.UUID(ticket["id"]), True, _now())
+                )
+
+        worker = threading.Thread(target=acknowledge)
+        worker.start()
+        worker.join(timeout=0.5)
+        assert worker.is_alive()  # wartet auf die Sperre der Korrektur
+        correction.commit()
+        worker.join(timeout=5)
+        assert done == ["sent"]
+    finally:
+        correction.close()
+        engine.dispose()
+    assert _order(session, order_id).handover_state == "pending"
+
+
+def test_waechter_laeuft_im_eigenen_takt(migrated_db_url, session, tenant_id, order_id):
+    from api.jobs.cold_path import watch_forever
+
+    class Once:
+        def __init__(self):
+            self.runs = 0
+
+        def is_set(self):
+            return self.runs > 0
+
+        def wait(self, timeout=None):
+            self.runs += 1
+            return True
+
+    engine = create_engine(migrated_db_url)
+    try:
+        watch_forever(
+            Once(),
+            0,
+            session_factory=lambda: Session(engine),
+            clock=lambda: _now(PICKUP_TIMEOUT_SECONDS + 2),
+        )
+    finally:
+        engine.dispose()
+    assert _order(session, order_id).handover_state == "failed"
+
+
+def test_waechter_faden_ueberlebt_einen_fehler(caplog):
+    from api.jobs.cold_path import watch_forever
+
+    class Once:
+        done = False
+
+        def is_set(self):
+            return self.done
+
+        def wait(self, timeout=None):
+            self.done = True
+            return True
+
+    class Broken:
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+        def execute(self, *a, **k):
+            raise RuntimeError("DB weg")
+
+        scalars = scalar = execute
+
+    watch_forever(Once(), 0, session_factory=Broken)
+    assert "Waechter abgebrochen" in caplog.text

@@ -53,7 +53,7 @@ Annahme: Domainnamen sind Vorschläge.
 
 **Server** Vorschlag: kleiner VPS bei einem Anbieter mit Rechenzentrum in Deutschland, 2 vCPU, 4 GB RAM reichen für Stufe 1–6. Docker, Compose, `ufw` mit 22 und 443. Unattended Upgrades an.
 
-**Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` setzen, ohne Token ist `/v1/kitchen/*` zu.
+**Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` und `KITCHEN_BRIDGE_TENANT_ID` setzen, ohne beide ist `/v1/kitchen/*` zu. Genau eine Brücke je Betrieb.
 
 **Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, keine offenen DB-Ports, `restart: always`, `--reload` aus).
 

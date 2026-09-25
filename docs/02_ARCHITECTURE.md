@@ -59,7 +59,7 @@ confirm / Passt / Korrektur ─► Outbox order.confirmed (revision)
 Druckbrücke ── POST /v1/kitchen/claim ─► leiht Bon für 60 s aus
     │ druckt (TCP 9100 oder Windows-Warteschlange)
     └── POST /v1/kitchen/ack ─► sent / Fehlversuch, handover_state folgt
-Wächter (Dispatcher-Prozess) ─► 60 s unabgeholt: Karte rot, Alarm, order.handover_failed an n8n
+Wächter (eigener Faden)       ─► 60 s unabgeholt: Karte rot, Alarm, order.handover_failed an n8n
 ```
 
 - `handover_state` folgt nur dem Bon mit der neuesten Revision; ein überholter Bon wird nicht mehr ausgeliefert (docs/04 §confirm, Vertrag b und c).

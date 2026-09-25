@@ -15,6 +15,8 @@ Was passiert, wenn etwas ausfällt:
 
 ## Voraussetzungen
 
+- Genau eine Brücke je Betrieb: das Druckprotokoll liegt auf ihrem Rechner, eine zweite Brücke könnte einen Bon doppelt drucken
+
 - Python 3.12 auf dem Rechner, der die Brücke ausführt
 - Netzwerkdrucker (Epson mit Netzwerkkarte): keine weiteren Pakete
 - Drucker per USB am Windows-Rechner: `pip install pywin32`
@@ -28,7 +30,7 @@ Als Umgebungsvariablen:
 | Name | Beispiel | Bedeutung |
 |---|---|---|
 | `MAEX_SERVER_URL` | `https://agent.example.com` | Server, nur https (außer localhost) |
-| `MAEX_KITCHEN_TOKEN` | lang und zufällig | gleicher Wert wie `KITCHEN_BRIDGE_TOKEN` auf dem Server; dort auch `KITCHEN_BRIDGE_TENANT_ID` setzen, dann gilt das Token nur für diesen Betrieb |
+| `MAEX_KITCHEN_TOKEN` | lang und zufällig | gleicher Wert wie `KITCHEN_BRIDGE_TOKEN` auf dem Server; dort auch `KITCHEN_BRIDGE_TENANT_ID` (Pflicht): das Token gilt nur für diesen Betrieb |
 | `MAEX_TENANT_ID` | UUID | Betrieb, dessen Bons gedruckt werden |
 | `MAEX_PRINTER` | `tcp:192.168.1.50` oder `windows:EPSON TM-T20II Küche` | Drucker |
 | `MAEX_PRINTER_WIDTH` | `48` | Zeichen je Zeile (80-mm-Papier, Schrift A) |

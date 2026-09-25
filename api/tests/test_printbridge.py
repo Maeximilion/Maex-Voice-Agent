@@ -330,6 +330,7 @@ def setup(migrated_db_url, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     monkeypatch.setattr(settings, "kitchen_bridge_token", "bruecke-geheim")
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
     http = TestClient(app)
 
     def opener(request, timeout):
@@ -458,3 +459,15 @@ def test_protokollfehler_meldet_trotzdem_gedruckt(tmp_path):
     assert run_once(One(), printer, BrokenLog(tmp_path / "s")) == 1
     assert acks == [("e1", True)]
     assert b"Gedruckt 18:02" in printer.bons[0]
+
+
+def test_windows_auftrag_wird_bei_schreibfehler_geloescht():
+    class Failing(FakeWin32Print):
+        def WritePrinter(self, handle, data):
+            raise OSError("Verbindung zum Drucker verloren")
+
+    api = Failing()
+    with pytest.raises(PrinterError, match="verloren"):
+        WindowsPrinter("Kueche", api=api, sleep=lambda _s: None).send(b"BON")
+    assert "delete 7" in api.calls
+    assert api.calls[-1] == "close"

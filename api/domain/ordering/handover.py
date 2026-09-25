@@ -89,17 +89,24 @@ def _order(session: Session, event: OutboxEvent) -> Order | None:
         select(Order)
         .where(Order.id == _order_id(event), Order.tenant_id == event.tenant_id)
         .with_for_update()
+        # Nach dem Warten auf die Sperre den Stand der Datenbank, nicht den alten.
+        .execution_options(populate_existing=True)
     )
 
 
 def _to_red(session: Session, event: OutboxEvent, reason: str) -> None:
-    """Karte rot, wenn dieser Bon der aktuelle ist und die Kueche ihn noch nicht hat."""
-    if not _is_current(session, event):
-        return
+    """Karte rot, wenn dieser Bon der aktuelle ist und die Kueche ihn noch nicht hat.
+
+    Erst die Bestellung sperren, dann die Revision pruefen: eine Korrektur, die
+    gerade committet, haelt dieselbe Sperre. Vorher gelesen, galte ein Bon als
+    aktuell, den die Korrektur eben ueberholt hat (Codex PR #143).
+    """
     order = _order(session, event)
+    if order is None or not _is_current(session, event):
+        return
     # Nur aus `pending`: `sent` hat ein anderer Bon derselben Revision schon
     # geschafft ("Nochmal senden"), `failed` ist schon gemeldet.
-    if order is None or order.handover_state != PENDING:
+    if order.handover_state != PENDING:
         return
     order.handover_state = FAILED
     _audit(session, event, order, ACTION_HANDOVER_FAILED, reason)
@@ -128,10 +135,11 @@ def _to_red(session: Session, event: OutboxEvent, reason: str) -> None:
 
 
 def _to_sent(session: Session, event: OutboxEvent) -> None:
-    if not _is_current(session, event):
-        return
+    # Reihenfolge wie in `_to_red`: Sperre vor der Revisionspruefung.
     order = _order(session, event)
-    if order is not None and order.handover_state in (PENDING, FAILED):
+    if order is None or not _is_current(session, event):
+        return
+    if order.handover_state in (PENDING, FAILED):
         order.handover_state = SENT
         _audit(session, event, order, ACTION_HANDOVER_SENT)
 

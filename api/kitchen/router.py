@@ -1,7 +1,8 @@
 """POST /v1/kitchen/claim und /v1/kitchen/ack. Duenne Huelle um domain/ordering/handover.
 
-Eigenes Token (`KITCHEN_BRIDGE_TOKEN`): die Bruecke steht auf einem Rechner im
-Lokal und soll nur Bons abholen koennen, keine Tools des Agenten rufen.
+Eigenes Token (`KITCHEN_BRIDGE_TOKEN`), gebunden an einen Betrieb
+(`KITCHEN_BRIDGE_TENANT_ID`): die Bruecke steht auf einem Rechner im Lokal und
+soll nur die Bons ihres Betriebs abholen, keine Tools des Agenten rufen.
 """
 
 import uuid
@@ -23,8 +24,8 @@ router = APIRouter(prefix="/v1/kitchen", dependencies=[Depends(require_kitchen_t
 
 
 def _own_tenant(tenant_id: uuid.UUID) -> None:
-    bound = settings.kitchen_bridge_tenant_id
-    if bound and str(tenant_id) != bound:
+    """Der Betrieb kommt aus der Konfiguration des Tokens, die Anfrage muss passen."""
+    if str(tenant_id) != settings.kitchen_bridge_tenant_id:
         raise Unauthorized("unauthorized")
 
 

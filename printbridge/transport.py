@@ -9,6 +9,7 @@ die Bruecke meldet den Fehler, und die Karte im Tablet wird rot, statt dass ein
 Bon still im Papierfach eines ausgeschalteten Druckers verschwindet.
 """
 
+import contextlib
 import importlib
 import socket
 import time
@@ -131,6 +132,7 @@ class WindowsPrinter:
             handle = api.OpenPrinter(self.name)
         except Exception as exc:
             raise PrinterError(f"{self.name}: nicht gefunden ({exc})") from exc
+        job_id = None
         try:
             self._check_ready(handle)
             job_id = api.StartDocPrinter(handle, 1, ("Maex Kuechenbon", None, "RAW"))
@@ -144,9 +146,18 @@ class WindowsPrinter:
         except PrinterError:
             raise
         except Exception as exc:
+            # Der Auftrag steht schon in der Warteschlange: loeschen, sonst druckt
+            # Windows ihn spaeter noch, zusaetzlich zur Wiederholung (Codex PR #143).
+            if job_id is not None:
+                self._cancel(handle, job_id)
             raise PrinterError(f"{self.name}: {exc}") from exc
         finally:
             api.ClosePrinter(handle)
+
+    def _cancel(self, handle: Any, job_id: int) -> None:
+        # Schon weg ist auch gut: dann druckt ihn Windows ebenfalls nicht mehr.
+        with contextlib.suppress(Exception):
+            self.api.SetJob(handle, job_id, 0, None, JOB_CONTROL_DELETE)
 
 
 def from_spec(spec: str) -> Printer:

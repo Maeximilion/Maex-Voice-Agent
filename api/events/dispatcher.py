@@ -13,7 +13,6 @@ Druckbruecke im Restaurant holt ihn ab (domain/ordering/handover.py, T-4.6).
 import logging
 import signal
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import FrameType
@@ -155,44 +154,8 @@ def dispatch_once(
     return result
 
 
-def _pass(
-    session: Session,
-    send: Sender,
-    tick: Callable[[Session, datetime], object] | None,
-) -> None:
-    """Ein Durchlauf: erst versenden, dann der Waechter. Keiner reisst den anderen mit."""
-    try:
-        result = dispatch_once(session, send)
-        if result.handled:
-            log(
-                logger,
-                logging.INFO,
-                "Outbox abgearbeitet",
-                sent=result.sent,
-                retried=result.retried,
-                failed=result.failed,
-            )
-    except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
-        session.rollback()
-        log(logger, logging.ERROR, "Dispatcher-Durchlauf abgebrochen", error=str(exc))
-    if tick is None:
-        return
-    try:
-        tick(session, datetime.now(UTC))
-    except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
-        session.rollback()
-        log(logger, logging.ERROR, "Waechter abgebrochen", error=str(exc))
-
-
-def run_forever(
-    send: Sender = send_to_n8n,
-    tick: Callable[[Session, datetime], object] | None = None,
-) -> None:
-    """Endlosschleife fuer den Containerbetrieb. SIGTERM beendet nach dem laufenden Ereignis.
-
-    `tick` laeuft je Durchlauf nach dem Versand, in eigener Fehlerbehandlung:
-    der Waechter fuer den Kuechenbon (api/jobs/cold_path.py) haengt hier.
-    """
+def run_forever(send: Sender = send_to_n8n) -> None:
+    """Endlosschleife fuer den Containerbetrieb. SIGTERM beendet nach dem laufenden Ereignis."""
     stop = False
 
     def _stop(_signum: int, _frame: FrameType | None) -> None:
@@ -210,7 +173,24 @@ def run_forever(
     while not stop:
         session = SessionLocal()
         try:
-            _pass(session, send, tick)
+            result = dispatch_once(session, send)
+            if result.handled:
+                log(
+                    logger,
+                    logging.INFO,
+                    "Outbox abgearbeitet",
+                    sent=result.sent,
+                    retried=result.retried,
+                    failed=result.failed,
+                )
+        except Exception as exc:  # noqa: BLE001 - der Dispatcher darf nie sterben
+            session.rollback()
+            log(
+                logger,
+                logging.ERROR,
+                "Dispatcher-Durchlauf abgebrochen",
+                error=str(exc),
+            )
         finally:
             session.close()
         time.sleep(settings.dispatcher_interval_seconds)
