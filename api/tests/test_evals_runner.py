@@ -209,9 +209,18 @@ def test_position_ohne_suchtreffer_gilt_als_geraten():
     assert [g[0] for g in rec.recording.guessed] == [invented]
 
 
+def _draft_result() -> str:
+    return json.dumps({"tool": "draft_order", "ok": True, "data": {}})
+
+
 def test_confirm_nach_nein_gilt_als_unbestaetigt():
+    draft = LLMTurn(tool_call=ToolCall("draft_order", {"items": []}))
     confirm_turn = LLMTurn(tool_call=ToolCall("confirm", {}))
-    rec = RecordingLLM(FakeLLM([confirm_turn, confirm_turn]))
+    rec = RecordingLLM(
+        FakeLLM([draft, LLMTurn(say="vorlesen"), confirm_turn, confirm_turn])
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
     rec.next_turn("", {}, "Nein, das stimmt nicht.")
     rec.next_turn("", {}, "Ja, passt so.")
     assert rec.recording.unconfirmed == ["Nein, das stimmt nicht."]
@@ -410,3 +419,19 @@ def test_doppelte_id_auch_mit_getrennten_tags(tmp_path):
     )
     with pytest.raises(CaseError):
         runner.load_cases(folder, ["x"])
+
+
+def test_ja_vor_dem_entwurf_bestaetigt_nichts():
+    # "Ja" im ersten Satz, danach Entwurf und confirm im selben Zug, ohne
+    # Vorlesen: kein Ja zum Vorgang.
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Ja, guten Tag, einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    assert rec.recording.unconfirmed == ["Ja, guten Tag, einmal die 13."]

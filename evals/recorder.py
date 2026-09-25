@@ -25,6 +25,8 @@ from typing import Any
 from api.agent.llm import LLMClient, LLMTurn
 
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
+# Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
+DRAFT_TOOLS = frozenset({"draft_order", "create_reservation"})
 
 # Bewusst eigene, kleine Liste statt der Erkennung aus sim/scripted_llm.py:
 # sonst prüfte das Skript-Modell sich mit seiner eigenen Regel selbst.
@@ -59,6 +61,8 @@ class Recording:
     unconfirmed: list[str] = field(default_factory=list)
     confirms: int = 0
     tool_calls: list[str] = field(default_factory=list)
+    # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
+    drafted_at: int | None = None
 
 
 class RecordingLLM:
@@ -89,6 +93,8 @@ class RecordingLLM:
         rec = self.recording
         rec.tool_calls.append(name)
         last = rec.customer_lines[-1] if rec.customer_lines else ""
+        if name in DRAFT_TOOLS:
+            rec.drafted_at = len(rec.customer_lines)
         if name == "draft_order":
             for item in args.get("items") or []:
                 item_id = str(item.get("menu_item_id", ""))
@@ -96,7 +102,14 @@ class RecordingLLM:
                     rec.guessed.append((item_id, last))
         elif name == "confirm":
             rec.confirms += 1
-            if not is_yes(last):
+            # Das Ja zaehlt nur, wenn es nach dem Entwurf kam, also auf das
+            # Vorlesen antwortet. "Ja, guten Tag, einmal die 13" vor Suche,
+            # Entwurf und confirm im selben Zug ist keine Zustimmung zum
+            # Vorgang (Codex PR #142, P1).
+            after_draft = (
+                rec.drafted_at is not None and len(rec.customer_lines) > rec.drafted_at
+            )
+            if not (after_draft and is_yes(last)):
                 rec.unconfirmed.append(last)
 
 
