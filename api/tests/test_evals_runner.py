@@ -392,3 +392,21 @@ def test_faelle_teilen_keinen_mandanten(migrated_db_url, tmp_path):
     finally:
         engine.dispose()
     assert names == ["Evalbetrieb t1", "Evalbetrieb t2"]
+
+
+def test_abgestuerzter_fall_laesst_den_lauf_durchfallen():
+    crashed = CaseResult(
+        id="x", name="", tags=[], passed=False, error="TypeError: kaputt"
+    )
+    report = _report([crashed])
+    assert report.verdict == "durchgefallen"
+    assert any("Abgestürzt" in r for r in report.reasons)
+
+
+def test_doppelte_id_auch_mit_getrennten_tags(tmp_path):
+    folder = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}, tags=["x"]))
+    (folder / "a2.json").write_text(
+        json.dumps(fall("a", ["Hallo"], {}, tags=["y"])), encoding="utf-8"
+    )
+    with pytest.raises(CaseError):
+        runner.load_cases(folder, ["x"])

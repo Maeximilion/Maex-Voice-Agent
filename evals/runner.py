@@ -75,14 +75,15 @@ def load_cases(folder: Path, tags: list[str]) -> list[dict[str, Any]]:
         validate_case(case, path.name)
         if not customer_lines(case):
             raise CaseError(f"{path.name}: kein Kundensatz im Transkript")
-        if tags and not set(tags) & set(case.get("tags", [])):
-            continue
         cases.append(case)
+    # Ueber alle Faelle, vor dem Tag-Filter: zwei Dateien mit derselben id und
+    # verschiedenen Tags waeren sonst je nach Filter mal der eine, mal der
+    # andere Fall - und die Regressionsregel verglich Aepfel mit Birnen.
     ids = [c["id"] for c in cases]
     duplicates = sorted({i for i in ids if ids.count(i) > 1})
     if duplicates:
         raise CaseError(f"doppelte Fall-id: {duplicates}")
-    return cases
+    return [c for c in cases if not tags or set(tags) & set(c.get("tags", []))]
 
 
 def model_factory(model: str) -> Callable[[datetime], LLMClient]:

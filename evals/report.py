@@ -88,6 +88,12 @@ class RunReport:
         self.reasons = [
             f"{HARD[key]}: {count}" for key, count in self.hard().items() if count
         ]
+        # Ein abgestuerzter Fall hat nichts gemessen - auch keine harte Metrik.
+        # Er darf nicht als "nur rot" durchgehen, sonst besteht ein Lauf, in
+        # dem der Gespraechskern abstuerzt (Codex PR #142, P1).
+        crashed = [c.id for c in self.cases if c.error]
+        if crashed:
+            self.reasons.append(f"Abgestürzt: {', '.join(crashed)}")
         if self.previous:
             green_before = set(self.previous["passed_ids"])
             broken = [c.id for c in self.cases if c.id in green_before and not c.passed]
