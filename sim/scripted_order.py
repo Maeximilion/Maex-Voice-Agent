@@ -356,7 +356,10 @@ class PickupScript:
         # bekommt den Satzanfang (Codex PR #139, P1).
         wish = classify_wish(text, [])
         if wish.kind != "allergy":
-            bare = re.sub(r"^\s*(?:gegen|auf)\s+", "", text, flags=re.IGNORECASE)
+            # "Keine Erdnuesse" ergaebe sonst "Keine Keine Erdnuesse".
+            bare = re.sub(
+                r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
+            )
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if not wish.ingredient:
             return LLMTurn(

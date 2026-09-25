@@ -696,3 +696,19 @@ def test_jede_wiederholte_allergie_bleibt(gesagt):
     Y allergisch") - jede Zutat kommt in den Hinweis, nicht nur die erste."""
     wish = classify_wish(gesagt, BEILAGE)
     assert wish.ingredient in ("Erdnüsse und Sesam",)
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "zutaten"),
+    [
+        ("ich habe eine Erdnuss und Sesamallergie", "Erdnuss und Sesam"),
+        ("Milch, Ei und Nussallergie", "Milch, Ei und Nuss"),
+        ("Laktose und Glutenintoleranz", "Laktose und Gluten"),
+        ("ich habe eine Sesamallergie", "Sesam"),
+    ],
+)
+def test_zusammengesetzte_allergie_ohne_bindestrich(gesagt, zutaten):
+    """Codex PR #139, P1: die Erkennung schreibt "Erdnuss und Sesamallergie"
+    ohne Bindestrich - die Erdnuss gehoert trotzdem in den Hinweis. Ein
+    Gericht davor ist keine Zutat."""
+    assert classify_wish(gesagt, BEILAGE).ingredient == zutaten

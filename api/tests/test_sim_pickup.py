@@ -1061,3 +1061,12 @@ def test_ganze_antwort_auf_wogegen(session, tenant, antwort):
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Keine Erdnüsse.", "Kein Erdnüsse bitte."])
+def test_keine_als_antwort_auf_wogegen(session, tenant, antwort):
+    """Codex PR #139, P1: "Keine Erdnüsse" als Antwort ergibt keinen Hinweis
+    "Keine Keine Erdnüsse"."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]

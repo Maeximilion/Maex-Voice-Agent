@@ -122,6 +122,8 @@ def _ingredient(text: str) -> str | None:
     for match in _COMPOUND.finditer(text):
         stem = match.group(1) or match.group(2)
         found.append((match.start(), stem))
+        if match.group(1):
+            found.extend(_stems_before(text[: match.start()]))
     pieces: list[str] = []
     for _, piece in sorted(found):
         if not piece or _NO_INGREDIENT & set(_words(piece)):
@@ -134,6 +136,38 @@ def _ingredient(text: str) -> str | None:
     if len(pieces) == 1:
         return pieces[0]
     return ", ".join(pieces[:-1]) + " und " + pieces[-1]
+
+
+# Kein Wortanfang einer Allergie: was davor steht, gehoert zum Satz.
+_NOT_STEM = (
+    _ARTICLES
+    | _CLAUSE_WORDS
+    | _REMOVE
+    | _ADD
+    | frozenset({"gegen", "auf", "habe", "hab", "hat", "und", "oder"})
+)
+_WORD_AT = re.compile(r"[^\W_]+|,")
+
+
+def _stems_before(head: str) -> list[tuple[int, str]]:
+    """Die Wortanfaenge vor "...allergie", die die Erkennung ohne Bindestrich
+    schreibt: "Erdnuss und Sesamallergie", "Milch, Ei und Nussallergie" (Codex
+    PR #139, P1). Rueckwaerts, je ein Wort hinter "und", "oder" oder Komma."""
+    tokens = list(_WORD_AT.finditer(head))
+    stems: list[tuple[int, str]] = []
+    i = len(tokens) - 1
+    while i >= 1 and fold(tokens[i].group()) in (",", "und", "oder", "sowie"):
+        word = tokens[i - 1]
+        folded = fold(word.group())
+        if (
+            folded in _NOT_STEM
+            or _is_allergy(folded)
+            or parse_cardinal(folded) is not None
+        ):
+            break
+        stems.append((word.start(), word.group()))
+        i -= 2
+    return stems
 
 
 def _until_new_clause(rest: str) -> str:
