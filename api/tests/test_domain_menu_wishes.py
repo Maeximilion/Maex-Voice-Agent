@@ -679,3 +679,20 @@ def test_intoleranz_in_der_suche(session, tenant_id):
     result = suche(session, tenant_id, "die 23 mit Laktoseintoleranz")
     assert [h.number for h in result.results] == ["23"]
     assert result.wish.text == "WICHTIG: Keine Laktose. Grund: Allergie"
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "ich bin gegen Erdnüsse allergisch und gegen Sesam allergisch",
+        "allergisch gegen Erdnüsse und allergisch gegen Sesam",
+        "allergisch gegen Erdnüsse und gegen Sesam allergisch",
+        "allergisch gegen Erdnüsse, Allergie gegen Sesam",
+        "allergisch gegen Erdnüsse und Sesamallergie",
+    ],
+)
+def test_jede_wiederholte_allergie_bleibt(gesagt):
+    """Codex PR #139, P1: dieselbe Wendung zweimal ("gegen X allergisch und gegen
+    Y allergisch") - jede Zutat kommt in den Hinweis, nicht nur die erste."""
+    wish = classify_wish(gesagt, BEILAGE)
+    assert wish.ingredient in ("Erdnüsse und Sesam",)

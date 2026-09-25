@@ -53,10 +53,13 @@ _COUNTED = re.compile(r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNO
 ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
 # Die Zutaten reichen bis zum naechsten Satzteil: "gegen Erdnuesse und Sesam" sind
 # zwei (Codex PR #139, P1), "gegen Sesam und dann noch eine Cola" ist eine.
-_REST = r"(.+)$"
+# Der Rest steht im Lookahead: so findet die Suche auch die naechste Wendung
+# ("allergisch gegen X und allergisch gegen Y", Codex PR #139, P1).
+_REST = r"(?=(.+)$)"
 _INGREDIENT = (
-    # "ich bin gegen Nuesse allergisch"
-    re.compile(r"gegen\s+([^.;!?]+?)\s+allergisch", re.IGNORECASE),
+    # "ich bin gegen Nuesse allergisch" - ohne ein zweites "gegen" darin, sonst
+    # verschluckte die erste Wendung die zweite.
+    re.compile(r"gegen\s+((?:(?!\bgegen\b)[^.;!?])+?)\s+allergisch", re.IGNORECASE),
     # "allergisch gegen Sesam", "Allergie gegen Sellerie"
     re.compile(
         r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit|intoleran\w*)\s+"
@@ -114,8 +117,7 @@ def _ingredient(text: str) -> str | None:
     Nuss"). None: nicht erkennbar, nachfragen."""
     found: list[tuple[int, str]] = []
     for pattern in _INGREDIENT:
-        match = pattern.search(text)
-        if match:
+        for match in pattern.finditer(text):
             found.append((match.start(1), _until_new_clause(match.group(1))))
     for match in _COMPOUND.finditer(text):
         stem = match.group(1) or match.group(2)
@@ -140,7 +142,8 @@ def _until_new_clause(rest: str) -> str:
     kept: list[str] = []
     for i, piece in enumerate(pieces):
         word = fold(piece)
-        if piece in ".;!?" or word == "bitte":
+        # Eine weitere Allergie-Wendung zaehlt fuer sich, nicht als Zutat.
+        if piece in ".;!?" or word == "bitte" or _is_allergy(word):
             break
         if piece == "," or word in ("und", "sowie", "oder"):
             nxt = fold(pieces[i + 1]) if i + 1 < len(pieces) else None
@@ -148,6 +151,8 @@ def _until_new_clause(rest: str) -> str:
                 nxt is None
                 or nxt in ",.;!?"
                 or nxt in _CLAUSE_WORDS
+                or nxt in ("gegen", "auf")
+                or _is_allergy(nxt)
                 or nxt.endswith("mal")
                 or parse_cardinal(nxt) is not None
             ):
