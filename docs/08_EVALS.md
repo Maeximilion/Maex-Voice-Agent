@@ -69,6 +69,17 @@ Danach:
 
 **Wichtig:** Geprüft wird der **Datenbankzustand**, nicht was das Modell behauptet. Ein Agent, der „ist gebucht" sagt, ohne `confirm` aufzurufen, muss durchfallen.
 
+**Gebaut (T-5.1, 25.09.2026):**
+- Jeder Lauf bekommt eine eigene, frisch migrierte Datenbank (`evals/scratch_db.py`) mit dem Mandanten "Evalbetrieb" und der Evalkarte aus `evals/menu/`. Entwicklungs- und Betriebsdaten berührt er nie. Gespielt wird über `sim/replay.py`, also derselbe Gesprächskern wie im Text-Telefon.
+- Zeitpunkt: Dienstag, 15.09.2026, 18:00 Europe/Berlin. Ein Fall kann ihn mit `"now": "2026-09-15T23:30:00+02:00"` selbst setzen (Schließzeit, Tageswechsel).
+- `expected` kennt `intent`, `confirmed`, `escalated`, `items` (`number`, `quantity`, optional `options`), `customer_name`, `party_size`. Verglichen wird nur, was im Fall steht. Ein unbekannter Schlüssel, ein fehlendes Feld oder eine doppelte `id` bricht den Lauf mit Exit 2 ab, statt still grün zu sein.
+- Die harten Metriken misst ein Beobachter zwischen Gesprächskern und Modell (`evals/recorder.py`): eine `menu_item_id` in `draft_order`, die keine Suche im selben Anruf geliefert hat, gilt als geraten. Ein `confirm` gilt als unbestätigt, wenn nach dem letzten Entwurf (`draft_order`, `create_reservation`) kein Kundensatz kam oder dieser kein Ja war (ein beiläufiges "Ja, guten Tag" vor dem Vorlesen zählt nicht), ebenso ein bestätigter Vorgang ohne `confirm` des Modells. Der Beobachter arbeitet für jedes Modell gleich, auch für das echte aus T-2.4.
+- Jeder Fall bekommt einen eigenen Mandanten mit Evalkarte: Kapazität, Abholcodes und offene Rückrufe eines Falls beeinflussen keinen anderen, das Ergebnis hängt nicht an Reihenfolge oder Tag-Filter.
+- Urteil: Exit 1 bei einem abgestürzten Fall, bei einem einzigen harten Verstoß oder wenn ein Fall, der im letzten **bestandenen** Lauf mit demselben Modell und denselben Tags grün war, jetzt rot ist. Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer roter Fall aus `/bug` ist keine Regression und darf rot stehen, bis der Fix da ist; neue grüne Fälle verdecken keinen kaputten. Ein durchgefallener Lauf ist nie Maßstab, sonst verschwände eine Regression beim zweiten Aufruf.
+- Report als JSON und Markdown in `evals/reports/` (nicht im Repo). Tokens und Kosten je Fall bleiben leer, bis T-2.4 ein echtes Modell anschließt; `--model` nimmt bis dahin nur `scripted` und lehnt alles andere ab, statt still auf das Skript zurückzufallen.
+- Die ganze Suite aus `evals/cases/` läuft auch in CI (`api/tests/test_evals_runner.py`), damit Regel 4 aus CLAUDE.md §2 bei jedem Pull Request greift.
+- Noch offen: den Lauf in `eval_runs` speichern (Tabelle nach docs/03 §Migrationsreihenfolge, Nummer nach PR #139).
+
 Aufruf:
 ```bash
 make eval                      # alle Fälle
@@ -88,7 +99,7 @@ make eval MODEL=<name>         # Modellvergleich
 | Nach Modellwechsel | vollständig plus Kostenvergleich |
 | Wöchentlich automatisch | vollständig, Trend in die GUI |
 
-**Regressionsregel:** Fällt die Genauigkeit gegenüber dem letzten Lauf, wird nicht gemerged. Kein „ist nur ein Fall".
+**Regressionsregel:** Ist ein Fall rot, der im letzten bestandenen Lauf mit demselben Modell und denselben Tags grün war, wird nicht gemerged. Kein „ist nur ein Fall". Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer, noch roter Fall aus `/bug` ist keine Regression, und neue grüne Fälle verdecken keinen kaputten (§3, T-5.1).
 
 ---
 

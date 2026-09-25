@@ -1,0 +1,8 @@
+number;name;category;price_eur;description;active
+23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;;ja
+24;Sommerrollen mit Garnelen;Vorspeisen;7,50;;ja
+12;Wan-Tan-Suppe;Suppen;5,00;;ja
+13;Pho Bo;Suppen;11,90;;ja
+47;Ente knusprig;Hauptgerichte;15,50;;ja
+48;Ente süß-sauer;Hauptgerichte;14,90;;ja
+50;Altes Gericht;Hauptgerichte;9,00;;nein

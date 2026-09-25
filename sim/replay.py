@@ -20,6 +20,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.agent.llm import LLMClient
 from api.core.errors import AppError
 from api.db import SessionLocal
 from api.models import Reservation, Tenant
@@ -55,7 +56,10 @@ def replay(
     rng: random.Random | None = None,
     now: datetime | None = None,
     on_turn: Callable[[Turn], None] | None = None,
+    llm: LLMClient | None = None,
 ) -> tuple[SimCall, list[Turn]]:
+    """`llm` ersetzt das Skript-Modell; der Eval-Runner schaltet hier seinen
+    Beobachter dazwischen (evals/recorder.py)."""
     rng = rng or random.Random()
     call = SimCall(
         session,
@@ -64,6 +68,7 @@ def replay(
         external_session_id=f"replay-{case.get('id', 'ohne-id')}-{rng.random():.6f}",
         # Rufnummernerkennung: ohne das Feld ist die Nummer unterdrueckt.
         caller_id=case.get("caller_id"),
+        llm=llm,
     )
     turns = []
     for line in customer_lines(case):
