@@ -33,7 +33,7 @@ from api.tests.test_commands import (
 
 COMPOSE = REPO_ROOT / "docker-compose.yml"
 # Verzeichnisse mit Python, das die Suite ausfuehrt - dort stehen die Pfadzugriffe.
-SOURCE_DIRS = ("api", "evals", "sim", "scripts")
+SOURCE_DIRS = ("api", "evals", "sim", "scripts", "printbridge")
 # `... parents[2] / "deploy" / "Caddyfile"` wird als "deploy/Caddyfile" gelesen: die
 # ganze Kette, nicht nur das erste Segment - sonst faende der Test `.claude/commands`
 # nicht wieder, das genau deshalb enger gemountet ist als `.claude`.

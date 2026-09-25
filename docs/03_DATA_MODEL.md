@@ -123,7 +123,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
-| id | UUID PK | dient n8n als Idempotenz-Schlüssel |
+| id | UUID PK | dient n8n als Idempotenz-Schlüssel; `order.confirmed` holt die Druckbrücke ab, nicht der Dispatcher (T-4.6) |
 | tenant_id | UUID FK | |
 | event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` |
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
@@ -216,7 +216,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | note | TEXT | |
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
-| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt |
+| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 

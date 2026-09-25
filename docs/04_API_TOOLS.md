@@ -384,7 +384,7 @@ Der einzige Übergang von `draft` nach `confirmed`.
 - `handover` hängt am Modus beim Bestätigen: nur `primary` gibt `"queued"`, setzt `handover_state = pending` und legt `order.confirmed` in die Outbox (Bon für die Küche). In `overflow`, `shadow` und `paused` antwortet es `"awaiting_approval"`: die Bestellung ist bestätigt, aber nichts geht an die Küche, bis das Team im Tablet freigibt (T-4.7, docs/02 §Modus). Ein späterer Moduswechsel ändert die Antwort auf einen erneuten Aufruf nicht.
 - Das Ereignis trägt die ganze Bestellung (Positionen mit Nummer, Name, Menge, Optionen, Hinweis, Preis). Nummer und Name kommen aus dem Schnappschuss des Entwurfs: auf dem Bon steht, was dem Gast vorgelesen wurde - nach einer Korrektur im Tablet der korrigierte Stand.
 - **Bon aus dem Tablet (T-4.7):** „Passt" auf einer wartenden Bestellung, „Nochmal senden" und eine Korrektur, nachdem die Küche schon einen Bon hat, legen ebenfalls `order.confirmed` mit der ganzen Bestellung ab (`domain/ordering/ticket.py`). Zwei Felder kommen dazu: `revision` (Anzahl der Korrekturen, 0 beim ersten Bon) und `correction_reason` (`wrong_item` / `wrong_quantity` / `wrong_address` / `other`, nur wenn die Küche schon einen Bon hatte - dann druckt sie „KORREKTUR"; sonst `null`).
-- **Vertrag für den Bon-Empfänger (T-4.6):** Der Dispatcher stellt nach `next_attempt_at` zu, nicht nach Bestellung. Deshalb (a) überschreibt ein neuer Stand einen Bon, den noch niemand zu senden versucht hat (`pending`, `attempts = 0`), statt einen zweiten anzulegen; (b) verwirft der Empfänger einen Bon, dessen `revision` kleiner ist als eine für dieselbe `order_id` schon gedruckte; (c) folgt `handover_state` nur dem Ereignis mit der aktuellen Revision.
+- **Vertrag für den Bon-Empfänger (T-4.6):** Der Dispatcher stellt nach `next_attempt_at` zu, nicht nach Bestellung. Deshalb (a) überschreibt ein neuer Stand einen Bon, den noch niemand zu senden versucht hat (`pending`, `attempts = 0`), statt einen zweiten anzulegen; (b) verwirft der Empfänger einen Bon, dessen `revision` kleiner ist als eine für dieselbe `order_id` schon gedruckte; (c) folgt `handover_state` nur dem Ereignis mit der aktuellen Revision. Umgesetzt in T-4.6: (b) und (c) prüft der Server selbst beim Abholen und bei der Rückmeldung, die Druckbrücke verwirft zusätzlich jede schon gedruckte Revision (§Küchenbon).
 - Eine Bestellung aus einem anderen Anruf ergibt `not_found`, eine stornierte `conflict`.
 
 ---
@@ -435,3 +435,26 @@ Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen 
 | `GET /v1/gui/...` | Daten für die Oberfläche |
 | `POST /v1/gui/orders/{id}/approve` | Freigabe im Überlauf-Betrieb |
 | `POST /internal/events/replay` | hängengebliebene Übergaben erneut senden |
+| `POST /v1/kitchen/claim` · `/ack` | Küchenbon für die Druckbrücke im Lokal (T-4.6, §Küchenbon) |
+
+## Küchenbon (Druckbrücke, T-4.6)
+
+Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TOKEN` statt des Agent-Tokens. Das Token gilt für genau einen Betrieb (`KITCHEN_BRIDGE_TENANT_ID`); jeder andere `tenant_id` ist `unauthorized`. Fehlt Token oder Betrieb, ist der Eingang zu. Je Betrieb läuft genau eine Brücke: ihr Druckprotokoll ist lokal, eine zweite Brücke könnte einen Bon nach verlorener Rückmeldung noch einmal drucken. Antworten in der Hülle aus §1. Architektur: docs/02 §2a.
+
+**`POST /v1/kitchen/claim`** `{tenant_id, limit}` (1–10, Standard 5) → `{"tickets": [{"id", "attempt", "ticket", "ready_time", "print_time"}]}`
+
+- Fällige `order.confirmed` des Betriebs, älteste zuerst. `ticket` ist der Inhalt aus §confirm (Positionen, `revision`, `correction_reason`).
+- `ready_time` und `print_time` sind „HH:MM" in der Zeitzone des Betriebs: die Brücke rechnet nicht selbst um, der Bon stimmt auch auf einem Rechner mit UTC.
+- Abholen zählt als Versuch und leiht den Bon für 60 s aus. Ohne Rückmeldung ist er danach wieder fällig.
+- Ein Bon, zu dem es schon eine höhere Revision gibt, wird nicht ausgeliefert, sondern als erledigt verbucht (`last_error` sagt „überholt von Revision n").
+- Gemessen: p95 5,8 ms mit lokaler DB.
+
+**`POST /v1/kitchen/ack`** `{tenant_id, event_id, ok, error?}` → `{"status": "sent" | "pending" | "failed"}`
+
+- Erst wird die Bestellung gesperrt, dann die Revision geprüft: eine gleichzeitige Korrektur überholt die Rückmeldung nicht.
+- `ok = true`: Bon `sent`; ist er die neueste Revision, wird `handover_state` `sent` (auch aus `failed`: die Karte wird wieder normal).
+- `ok = false`: Fehlversuch mit Backoff (docs/03 §outbox), nach dem letzten `failed` plus Alarm. Ist er die neueste Revision und `handover_state` noch `pending`, wird die Karte sofort rot, Alarm im Log und `order.handover_failed` an n8n.
+- Jeder Wechsel der Karte steht im `audit_log` (`order.handover_sent` / `order.handover_failed`, Akteur `system`, ohne Personendaten).
+- Wiederholte Rückmeldung für einen erledigten Bon ändert nichts. Unbekannter oder fremder Bon: `not_found`.
+
+**Wächter** (eigener Faden im Dispatcher-Prozess, `python -m api.jobs.cold_path`, unabhängig davon, wie lange ein Versand an n8n hängt): liegt ein fälliger Bon 60 s unabgeholt, wird die Karte rot wie oben. Ein Bon ohne Versuche mehr wird `failed`, ein überholter stattdessen still erledigt. Er sperrt erst die Bestellung, dann den Bon, wie das Tablet: „Nochmal senden" während eines Durchlaufs legt keinen zweiten Bon an und wird nicht gleich wieder rot.
