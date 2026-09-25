@@ -12,6 +12,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -24,8 +25,11 @@ from api.core.logging import get_logger
 from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
+from api.domain.ordering import board as order_board
+from api.domain.ordering import correction
 from api.domain.reservations import list_today
 from api.domain.status import config as switches
+from api.gui import orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
 
@@ -113,6 +117,13 @@ def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
     return rows
 
 
+def _order_rows(session: Session, tenant: Tenant) -> list[dict]:
+    return [
+        orders_view.card(o, tenant.timezone)
+        for o in order_board.list_new(session, tenant.id, tenant.timezone)
+    ]
+
+
 def _header(session: Session, tenant: Tenant) -> dict:
     """Werte der Kopfzeile, immer frisch aus service_config."""
     config = session.get(ServiceConfig, tenant.id)
@@ -181,6 +192,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "tenant": tenant,
             "today": _today_rows(session, tenant),
             "callbacks": _callback_rows(session, tenant),
+            "orders": _order_rows(session, tenant),
             **_header(session, tenant),
         },
     )
@@ -322,6 +334,226 @@ def rueckruf_erledigt(
         "fragments/rueckrufe.html",
         {"callbacks": _callback_rows(session, tenant)},
     )
+
+
+# --- Spalte "Neue Bestellungen" (T-4.7) ---------------------------------------------
+
+ORDER_FAILED = "Das hat nicht geklappt. Bitte nochmal tippen."
+# Nach dem Speichern holt app.js die Spalte neu, die Korrektur schliesst sich.
+ORDERS_CHANGED = "bestellungen-geaendert"
+
+
+def _orders_fragment(
+    request: Request,
+    session: Session,
+    tenant: Tenant | None,
+    problem: str | None = None,
+) -> HTMLResponse:
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/bestellungen.html", {"problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request,
+        "fragments/bestellungen.html",
+        {"orders": _order_rows(session, tenant), "order_problem": problem},
+    )
+
+
+@router.get(
+    "/fragments/bestellungen", response_class=HTMLResponse, include_in_schema=False
+)
+def bestellungen_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Nur die Spalte "Neue Bestellungen". Holt die Seite nach jedem Ereignis."""
+    return _orders_fragment(request, session, _tenant(session))
+
+
+def _order_tap(
+    request: Request, session: Session, change: Callable[[uuid.UUID], object]
+) -> HTMLResponse:
+    """Passt oder Nochmal senden: die Spalte kommt frisch zurueck.
+
+    Eine Bestellung, die es nicht mehr gibt oder die ein anderes Tablet schon
+    abgehakt hat, ist fuer das Team kein Fehler - die frische Spalte zeigt den
+    Stand. Nur ein echter Widerspruch (Passt auf roter Karte) bekommt eine Zeile.
+    """
+    tenant = _tenant(session)
+    if tenant is None:
+        return _orders_fragment(request, session, None)
+    problem = None
+    try:
+        change(tenant.id)
+    except AppError as exc:
+        session.rollback()
+        logger.info("Bestellung nicht umgestellt: %s", exc.message)
+        if exc.code == "conflict":
+            problem = ORDER_FAILED
+    return _orders_fragment(request, session, tenant, problem)
+
+
+@router.post(
+    "/bestellungen/{order_id}/passt",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def bestellung_passt(
+    request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6)."""
+    return _order_tap(
+        request, session, lambda t: order_board.approve_order(session, t, order_id)
+    )
+
+
+@router.post(
+    "/bestellungen/{order_id}/nochmal-senden",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def bestellung_nochmal_senden(
+    request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    return _order_tap(
+        request, session, lambda t: order_board.resend_order(session, t, order_id)
+    )
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """Formularfelder eines HTMX-Taps (application/x-www-form-urlencoded).
+
+    Mit der Standardbibliothek statt ueber Form(): das braeuchte python-multipart
+    als zusaetzliche Abhaengigkeit, nur um drei Textfelder zu lesen. Async, damit
+    der Koerper im Event-Loop gelesen wird und der Endpunkt selbst synchron bleibt.
+    """
+    body = (await request.body()).decode("utf-8", errors="replace")
+    return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
+
+
+def _korrektur(
+    request: Request,
+    order_id: uuid.UUID,
+    plan: correction.CorrectionPlan | None,
+    edit: orders_view.EditState | None,
+    message: str | None = None,
+    status: int = 200,
+) -> HTMLResponse:
+    context: dict = {"order_id": str(order_id), "message": message}
+    if plan is not None and edit is not None:
+        context.update(orders_view.edit_lines(plan, edit))
+    return templates.TemplateResponse(
+        request, "fragments/korrektur.html", context, status
+    )
+
+
+@router.get(
+    "/bestellungen/{order_id}/korrigieren",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+)
+def korrektur_oeffnen(
+    request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
+    try:
+        plan = correction.preview_correction(session, tenant.id, order_id)
+    except AppError as exc:
+        return _korrektur(request, order_id, None, None, exc.say or ORDER_FAILED, 409)
+    return _korrektur(request, order_id, plan, orders_view.fresh_state(plan))
+
+
+@router.post(
+    "/bestellungen/{order_id}/korrigieren/vorschau",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def korrektur_vorschau(
+    request: Request,
+    order_id: uuid.UUID,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Ein Tap in der Korrektur: anwenden, neu rechnen, Karte zurueck. Schreibt nichts."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
+    op, nummer = form.get("op", ""), form.get("nummer", "")
+    try:
+        edit = orders_view.parse_state(form.get("state", ""))
+        before = correction.preview_correction(
+            session, tenant.id, order_id, edit.request()
+        )
+    except AppError as exc:
+        # Veralteter oder kaputter Stand: nichts raten, neu oeffnen lassen.
+        return _korrektur(request, order_id, None, None, exc.say or ORDER_FAILED, 409)
+
+    def find(number: str) -> uuid.UUID | None:
+        item = correction.find_by_number(session, tenant.id, number)
+        return item.id if item else None
+
+    snapshot = edit.dump()
+    try:
+        message = orders_view.apply_op(edit, op, before, nummer, find)
+        plan = correction.preview_correction(
+            session, tenant.id, order_id, edit.request()
+        )
+    except AppError as exc:
+        # Der Tap passt nicht (Menge, Auswahl): der alte Stand bleibt, mit Zeile.
+        return _korrektur(
+            request,
+            order_id,
+            before,
+            orders_view.parse_state(snapshot),
+            exc.say or ORDER_FAILED,
+            422,
+        )
+    return _korrektur(request, order_id, plan, edit, message)
+
+
+@router.post(
+    "/bestellungen/{order_id}/korrigieren",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def korrektur_speichern(
+    request: Request,
+    order_id: uuid.UUID,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Mit Grund speichern. Danach schliesst die Korrektur und die Spalte laedt neu."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
+    try:
+        edit = orders_view.parse_state(form.get("state", ""))
+    except AppError as exc:
+        return _korrektur(request, order_id, None, None, exc.say, 409)
+    try:
+        correction.apply_correction(
+            session, tenant.id, order_id, edit.request(), form.get("reason", "")
+        )
+    except AppError as exc:
+        session.rollback()
+        logger.info("Korrektur nicht gespeichert: %s", exc.message)
+        say = exc.say or ORDER_FAILED
+        try:
+            plan = correction.preview_correction(
+                session, tenant.id, order_id, edit.request()
+            )
+        except AppError:
+            return _korrektur(request, order_id, None, None, say, 409)
+        return _korrektur(request, order_id, plan, edit, say, 422)
+    response = HTMLResponse("")
+    response.headers["HX-Trigger"] = ORDERS_CHANGED
+    return response
 
 
 @router.get("/events", include_in_schema=False)

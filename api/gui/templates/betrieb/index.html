@@ -6,10 +6,13 @@
 {% endblock %}
 
 {% block main %}
+{# Ziel von "Korrigieren": eigener Kasten, damit die Spalten weiter live bleiben. #}
+<div id="korrektur"></div>
 <div class="board">
   <section class="col">
-    <h2>Neue Bestellungen</h2>
-    <p class="empty">Noch keine Bestellungen heute.</p>
+    <div id="bestellungen-liste">
+      {% include "fragments/bestellungen.html" %}
+    </div>
   </section>
 
   <section class="col">

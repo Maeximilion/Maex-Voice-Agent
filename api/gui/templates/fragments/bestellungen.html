@@ -1,0 +1,56 @@
+{# Spalte "Neue Bestellungen" (docs/06 §3, T-4.7). Wird als Ganzes ersetzt -
+   nach Passt, Nochmal senden, gespeicherter Korrektur und jedem Ereignis
+   "orders". Die Ueberschrift gehoert dazu, damit die Zahl mitwandert. data-id
+   nutzt app.js fuer Ton und Blinken bei neuen Karten. Zustand immer als Text
+   neben der Farbe (docs/06 §1 Regel 4). #}
+<h2>Neue Bestellungen{% if orders %} <span class="count">{{ orders|length }}</span>{% endif %}</h2>
+{% if problem %}
+<p class="empty">{{ problem }}</p>
+{% else %}
+{% if order_problem %}<p class="banner danger">{{ order_problem }}</p>{% endif %}
+{% if not orders %}
+<p class="empty">Noch keine Bestellungen heute.</p>
+{% else %}
+<ul class="cards">
+  {% for o in orders %}
+  <li class="card order {{ 'failed' if o.failed }}{{ ' awaiting' if o.awaiting and not o.failed }}" data-id="{{ o.id }}">
+    <div class="res-head">
+      <b class="time">{{ o.time }}</b>
+      <span class="badge accent">{{ o.type }}</span>
+      {% if o.pickup_code %}<span class="code" title="Abholcode">{{ o.pickup_code }}</span>{% endif %}
+    </div>
+    <div class="name">{{ o.name }} <span class="muted">&middot; {{ o.phone }}</span></div>
+    <ul class="lines">
+      {% for l in o.lines %}
+      <li>
+        {{ l.quantity }}&times; <span class="nr">{{ l.number }}</span> {{ l.name }}
+        {% for opt in l.options %}<div class="opt">&boxur; {{ opt }}</div>{% endfor %}
+        {% if l.note %}<div class="note">{{ l.note }}</div>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    <div class="order-foot">
+      <b>{{ o.total }}</b>
+      {% if o.ready %}<span>fertig {{ o.ready }}</span>{% endif %}
+    </div>
+    <div class="state">
+      <span class="badge {{ o.tone }}">{{ o.state }}</span>
+      {% if o.corrected %}<span class="badge accent">Korrigiert: {{ o.corrected }}</span>{% endif %}
+    </div>
+    <div class="cb-actions">
+      {% if o.failed %}
+      <button class="stop" hx-post="/gui/bestellungen/{{ o.id }}/nochmal-senden"
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">Nochmal senden</button>
+      {% elif o.can_approve %}
+      {# Ausserhalb von primary ist Passt die Freigabe: der Knopf sagt es. #}
+      <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/passt"
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">{{ "Passt, ab in die Küche" if o.awaiting else "Passt" }}</button>
+      {% endif %}
+      <button hx-get="/gui/bestellungen/{{ o.id }}/korrigieren"
+              hx-target="#korrektur" hx-swap="innerHTML">Korrigieren</button>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endif %}

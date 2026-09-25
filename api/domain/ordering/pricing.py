@@ -19,8 +19,18 @@ class Line:
     note: str | None
 
 
+def row_cents(unit_price_cents: int, options: Sequence[dict]) -> int:
+    """Stueckpreis einer Position: Grundpreis plus Optionen.
+
+    `order_items.unit_price_cents` haelt nur den Grundpreis, die Optionen tragen
+    ihre Differenz selbst. Wer eine gespeicherte Position rechnet, nimmt diese
+    Funktion und nie den Kartenpreis von jetzt (Korrektur im Tablet, T-4.7).
+    """
+    return unit_price_cents + sum(o["price_delta_cents"] for o in options)
+
+
 def unit_cents(line: Line) -> int:
-    return line.item.price_cents + sum(o["price_delta_cents"] for o in line.options)
+    return row_cents(line.item.price_cents, line.options)
 
 
 def items_total_cents(lines: Sequence[Line]) -> int:
