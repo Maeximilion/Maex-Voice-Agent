@@ -21,7 +21,16 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.domain.menu.search import SAY_NOT_FOUND, SAY_SOLD_OUT
+from api.domain.menu.search import (
+    SAY_ALLERGY_NOTE,
+    SAY_NOT_FOUND,
+    SAY_SOLD_OUT,
+    allergy_question,
+    say_for_wish,
+    say_understood,
+)
+from api.domain.menu.wishes import classify_wish
+from api.schemas.menu import MenuHit, OptionGroup, Wish
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 SAY_MORE = "Darf es noch etwas sein?"
@@ -47,6 +56,8 @@ class CartItem:
     options: list[dict[str, str]] = field(default_factory=list)
     # Pflichtgruppen ohne Wahl: [{"group": ..., "options": [namen]}]
     pending: list[dict[str, Any]] = field(default_factory=list)
+    # Hinweis fuer die Kueche ("ohne Karotten", eine Allergie), T-4.10.
+    note: str | None = None
 
 
 class PickupScript:
@@ -57,6 +68,7 @@ class PickupScript:
         self.phase = "dishes"  # dishes · choose · option · more · customer
         self._suggestions: list[dict[str, Any]] = []
         self._suggestion_query = ""
+        self._suggestion_wish: dict[str, Any] | None = None
         # Die order_id, deren readback gerade offen ist. Nach einem Nein ist sie
         # weg: der Gespraechszustand bleibt readback_pending, bis ein neuer
         # Entwurf kommt, und ein spaeteres Ja bestaetigte sonst die verworfene
@@ -68,6 +80,15 @@ class PickupScript:
         # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
         # ein Zug ist Satz oder Tool-Aufruf, nie beides.
         self._carry: str | None = None
+        # Die Position, zu der "Wogegen sind Sie allergisch?" offen ist: die Antwort
+        # ist die Zutat, kein Gericht (Codex PR #139, P1).
+        # Mehrere Positionen: jede einzeln, in Reihenfolge (Codex PR #139, P1).
+        self._allergy_for: list[CartItem] = []
+        # Stehen mehrere offen, nennt jede Frage ihr Gericht.
+        self._allergy_named = False
+        # Was nach der Allergie gefragt wird: nie zwei Fragen zugleich, sonst
+        # waere "Nummer 12" die Zutat (Codex PR #139, P1).
+        self._after_allergy: str | None = None
         # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
@@ -81,6 +102,8 @@ class PickupScript:
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
+        if self._allergy_for:
+            return self._answer_allergy(text, slots, patch)
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
             if hit is not None and hit.get("sold_out"):
@@ -103,12 +126,15 @@ class PickupScript:
                 quantity = _stated_quantity(text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
-                self._add(hit, self._suggestion_query, quantity)
+                wish = self._add(
+                    hit, self._suggestion_query, quantity, self._suggestion_wish
+                )
+                lead = _wish_sentence(hit, wish, text)
                 # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
                 # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
                 self._suggestions = []
                 self.phase = "dishes"
-                return self._next(slots, patch)
+                return self._next(slots, patch, lead=lead)
             # "Nein, das wars" oder "keine davon": die Vorschlaege sind verworfen.
             # Neu gesucht fanden die Worte kein Gericht, und dieselbe Frage kaeme
             # endlos zurueck (Codex PR #133).
@@ -166,7 +192,7 @@ class PickupScript:
     ) -> LLMTurn:
         """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
         #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
-        self._reopen = None
+        reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
             # "heute aus" ist eine Aussage, keine Frage: sie kommt direkt mit,
@@ -191,11 +217,46 @@ class PickupScript:
                     sold_out.append(said)
                 else:
                     unclear = unclear or said
+            if self._allergy_for and unclear:
+                self._after_allergy, unclear = unclear, None
             lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
+        carried = self._carried_wish(reopen, data)
+        if carried is not None:
+            # Die neue Suche traf eines der angebotenen Gerichte: der Wunsch aus
+            # der Frage gilt fuer es, sonst fiele eine Allergie still weg (Review
+            # PR #139).
+            hit = data["results"][0]
+            wish = self._add(hit, query, wish=carried)
+            tail = (
+                say_for_wish(MenuHit.model_validate(hit), Wish.model_validate(wish))
+                if wish
+                else None
+            )
+            return self._next(slots, {}, lead=_join(self.take_carry(), say, tail))
         taken = self._take(query, data)
         lead = _join(self.take_carry(), taken if taken is not None else say)
         return self._next(slots, {}, lead=lead)
+
+    def _carried_wish(
+        self,
+        reopen: tuple[list[dict[str, Any]], str] | None,
+        found: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Der Wunsch der offenen Frage, wenn die neue Suche eindeutig eines der
+        angebotenen Gerichte fand und selbst keinen Wunsch traegt."""
+        hits = found.get("results") or []
+        if (
+            reopen is None
+            or self._suggestion_wish is None
+            or found.get("wish")
+            or found.get("match_type") not in CLEAR_MATCHES
+            or not hits
+            or hits[0].get("sold_out")
+        ):
+            return None
+        offered = {h["menu_item_id"] for h in reopen[0]}
+        return self._suggestion_wish if hits[0]["menu_item_id"] in offered else None
 
     def on_search_failed(self, say: str | None) -> LLMTurn | None:
         """Die Antwort auf eine Rueckfrage fand nichts: die Frage gilt weiter.
@@ -235,18 +296,24 @@ class PickupScript:
             hit = hits[0]
             if hit.get("sold_out"):
                 return found.get("say") or f"{hit['name']} ist heute leider aus."
-            self._add(hit, query)
+            self._add(hit, query, wish=found.get("wish"))
             return None
         if hits:
             self.phase = "choose"
             self._suggestions = hits
             self._suggestion_query = query
+            # Ein Wunsch bei mehreren Treffern wird nach der Wahl eingeordnet.
+            self._suggestion_wish = found.get("wish")
             return _offer(hits)
         return found.get("say")
 
     def _add(
-        self, hit: dict[str, Any], query: str, quantity: int | None = None
-    ) -> None:
+        self,
+        hit: dict[str, Any],
+        query: str,
+        quantity: int | None = None,
+        wish: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         pending = [
             {"group": g["group"], "options": [o["name"] for o in g["options"]]}
             for g in hit.get("option_groups", [])
@@ -261,6 +328,38 @@ class PickupScript:
                 pending=pending,
             )
         )
+        return self._apply_wish(self.cart[-1], hit, wish)
+
+    def _apply_wish(
+        self, item: CartItem, hit: dict[str, Any], wish: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Der Wunsch aus search_menu am Warenkorb (T-4.10): eine Option der Karte
+        wird gewaehlt (die Pflichtfrage dieser Gruppe entfaellt), ein Hinweis und
+        eine Allergie gehen in `note`. Was die Karte nicht kennt, bleibt weg - der
+        Satz dazu kam schon aus dem Code (D8)."""
+        if wish is None:
+            return None
+        if wish["kind"] == "open":
+            groups = [
+                OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
+            ]
+            wish = classify_wish(wish["text"], groups).model_dump()
+        if wish.get("note"):
+            # Weglassen zu einer Zugabe ("ohne Zwiebeln, dafür mit Huhn").
+            item.note = wish["note"]
+        if wish["kind"] == "option":
+            item.options.append({"group": wish["group"], "name": wish["option"]})
+            item.pending = [g for g in item.pending if g["group"] != wish["group"]]
+        elif wish["kind"] == "allergy" and not wish.get("ingredient"):
+            # Die Zutat fehlt: die Frage bleibt offen, bis die Antwort kommt.
+            self._allergy_for.append(item)
+            self._allergy_named = self._allergy_named or len(self._allergy_for) > 1
+        elif wish["kind"] == "note" or (
+            wish["kind"] == "allergy" and wish.get("ingredient")
+        ):
+            # Die Allergie im festen Wortlaut (E14); ohne Zutat fragt der Satz nach.
+            item.note = wish["text"]
+        return wish
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
@@ -280,6 +379,47 @@ class PickupScript:
                 return by_number[0]
         by_name = [h for h in self._suggestions if h["name"].lower() in lowered]
         return by_name[0] if len(by_name) == 1 else None
+
+    def _answer_allergy(
+        self, text: str, slots: dict[str, Any], patch: dict[str, Any]
+    ) -> LLMTurn:
+        """Die Antwort auf "Wogegen?": die Zutat im festen Wortlaut (E14)."""
+        # Eine ganze Antwort ("ich bin gegen Erdnuesse allergisch") traegt ihre
+        # Zutat selbst; nur das blosse Wort ("Erdnuesse", "gegen Erdnuesse")
+        # bekommt den Satzanfang (Codex PR #139, P1).
+        wish = classify_wish(text, [])
+        if wish.kind != "allergy" and _orders_something(text):
+            # "Eine Cola bitte", "Nummer 12": keine Zutat - die Frage bleibt
+            # offen, statt "Keine Eine Cola" zu notieren (Review PR #139).
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
+        if wish.kind != "allergy":
+            # "Keine Erdnuesse" ergaebe sonst "Keine Keine Erdnuesse".
+            bare = re.sub(
+                r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
+            )
+            wish = classify_wish(f"allergisch gegen {bare}", [])
+        if not wish.ingredient:
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
+        item = self._allergy_for.pop(0)
+        item.note = wish.text
+        lead = SAY_ALLERGY_NOTE.format(name=item.name)
+        if not self._allergy_for:
+            self._allergy_named = False
+            lead = _join(lead, self._after_allergy)
+            self._after_allergy = None
+        return self._next(slots, patch, lead=lead)
+
+    def _allergy_question(self) -> str:
+        names = [i.name for i in self._allergy_for]
+        return allergy_question(names, self._allergy_named) or ""
 
     def _answer_option(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
@@ -311,6 +451,15 @@ class PickupScript:
     ) -> LLMTurn:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
+        if self._allergy_for:
+            # Nur die Frage nach der Allergie, keine zweite daneben. Steht sie
+            # schon im Satz der Suche, nicht noch einmal.
+            question = self._allergy_question()
+            said = _join(lead) or ""
+            return LLMTurn(
+                say=said if question in said else _join(lead, question),
+                state_patch=state_patch,
+            )
         if self._later and self.phase != "choose":
             self._carry = _join(self._carry, lead)
             return _search(self._later.pop(0), patch)
@@ -355,10 +504,41 @@ class PickupScript:
                     "menu_item_id": i.menu_item_id,
                     "quantity": i.quantity,
                     "options": i.options,
+                    **({"note": i.note} if i.note else {}),
                 }
                 for i in self.cart
             ],
         }
+
+
+def _wish_sentence(
+    hit: dict[str, Any], wish: dict[str, Any] | None, said: str
+) -> str | None:
+    """Nach der Wahl aus Vorschlaegen wird der Wunsch erst eingeordnet - und wie
+    in der Suche gesagt: eine Option oder ein Hinweis mit wiederholt, das
+    Unbekannte abgelehnt, die Allergie ohne Zusage (Codex PR #139)."""
+    if wish is None:
+        return None
+    menu_hit, settled = MenuHit.model_validate(hit), Wish.model_validate(wish)
+    echo = (
+        None
+        if settled.kind == "unknown"
+        else say_understood([("alias", menu_hit, settled)], said)
+    )
+    return _join(echo, say_for_wish(menu_hit, settled)) or None
+
+
+# Womit eine Bestellung beginnt, nie eine Zutat ("eine Cola", "Nummer 12").
+_ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
+
+
+def _orders_something(text: str) -> bool:
+    words = re.findall(r"[^\W_]+", text.lower())
+    return (
+        any(w.isdigit() for w in words)
+        or sole_item_number(text)[0] is not None
+        or (bool(words) and words[0] in _ORDER_LEADS)
+    )
 
 
 def _offer(hits: list[dict[str, Any]]) -> str:

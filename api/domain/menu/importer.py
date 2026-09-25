@@ -87,6 +87,9 @@ class OptionRow:
     price_delta_cents: int
     is_default: bool
     required: bool
+    # Optionale Spalte (T-4.10): warum die Option mehr kostet. None: die Datei
+    # hat die Spalte nicht, der gepflegte Grund bleibt; "": Grund geloescht.
+    price_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -322,7 +325,12 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
         seen.add(key)
         plan.options.setdefault(number, []).append(
             OptionRow(
-                row["group_name"], row["option_name"], delta, is_default, required
+                row["group_name"],
+                row["option_name"],
+                delta,
+                is_default,
+                required,
+                row.get("price_reason"),
             )
         )
 
@@ -571,13 +579,31 @@ def _sync_options(
                     price_delta_cents=row.price_delta_cents,
                     is_default=row.is_default,
                     required=row.required,
+                    price_reason=row.price_reason or None,
                 )
             )
             report.options_added += 1
             continue
-        values = (row.price_delta_cents, row.is_default, row.required)
-        if (option.price_delta_cents, option.is_default, option.required) != values:
-            option.price_delta_cents, option.is_default, option.required = values
+        # Alte Datei ohne Spalte: der Grund bleibt (Review PR #139).
+        reason = (
+            option.price_reason
+            if row.price_reason is None
+            else row.price_reason or None
+        )
+        values = (row.price_delta_cents, row.is_default, row.required, reason)
+        current_values = (
+            option.price_delta_cents,
+            option.is_default,
+            option.required,
+            option.price_reason,
+        )
+        if current_values != values:
+            (
+                option.price_delta_cents,
+                option.is_default,
+                option.required,
+                option.price_reason,
+            ) = values
             report.options_changed += 1
 
 

@@ -44,8 +44,16 @@ from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
+from api.domain.menu.wishes import (
+    classify_wish,
+    has_number,
+    names_it,
+    open_wish,
+    opens_with_allergy,
+    wish_candidates,
+)
 from api.models import ItemAlias, MenuItem
-from api.schemas.menu import MenuHit, SearchResult
+from api.schemas.menu import MenuHit, SearchResult, Wish
 
 SAY_NOT_FOUND = (
     "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?"
@@ -59,6 +67,24 @@ SAY_SOLD_OUT = "{name} ist heute leider aus."
 # Mehrere Positionen in einem Satz: der Gast darf das, und er muss nichts
 # wiederholen (Maxi, PR #127). Ueber HTTP fragt der Aufrufer danach je Teil.
 SAY_IN_TURN = "Einen Moment, ich nehme das der Reihe nach auf."
+# Wuensche (T-4.10, D8). Was die Karte nicht kennt, wird nicht angeboten; die
+# Allergie geht ohne Zusage an die Kueche. Der Wortlaut zur Allergie ist ein
+# Entwurf und wird vor dem Echtbetrieb mit dem Rechts-Check abgestimmt (docs/09).
+SAY_WISH_UNKNOWN = (
+    "Den Wunsch „{wish}“ kann ich leider nicht anbieten. {name} nehme ich so auf, "
+    "wie es auf der Karte steht."
+)
+SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
+SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
+# Mehrere Gerichte mit Allergie ohne Zutat: eine Frage nach der anderen, jede
+# mit ihrem Gericht (Codex PR #139, P1).
+SAY_ALLERGY_WHICH_FOR = (
+    "Wogegen sind Sie bei {name} allergisch? Das gebe ich an die Küche weiter."
+)
+SAY_ALLERGY_NOTE = (
+    "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
+    "ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist."
+)
 SAY_UNDERSTOOD = (
     "Gern, {items}.",
     "Alles klar, {items}.",
@@ -134,7 +160,9 @@ def _ambiguous(session: Session, items: list[MenuItem], now: datetime) -> Search
 CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
 
 
-def say_understood(understood: list[tuple[str, MenuHit]], said: str) -> str | None:
+def say_understood(
+    understood: list[tuple[str, MenuHit, Wish | None]], said: str
+) -> str | None:
     """Wiederholt sofort, was eindeutig verstanden wurde - so, wie ein Mensch am
     Telefon es tut (Maxi, PR #127).
 
@@ -146,19 +174,49 @@ def say_understood(understood: list[tuple[str, MenuHit]], said: str) -> str | No
 
     Die Einleitung wechselt, damit es nicht wie eine Ansage klingt. Gewaehlt
     wird aus dem Gesagten, nicht zufaellig: ein Replay sagt dasselbe (docs/08).
-    `understood` sind Paare aus match_type und Treffer; leer heisst kein Satz.
+    `understood` sind match_type, Treffer und Wunsch; leer heisst kein Satz.
+
+    Ein Wunsch wird mit wiederholt, damit der Gast hoert, dass er notiert ist:
+    "Nummer 23, ohne Karotten", "Nummer 47 Ente knusprig mit Nudeln, 3 Euro
+    Aufpreis" - der Aufpreis aus der Karte, nie vom Modell (T-4.10).
     """
     names = [
-        f"Nummer {hit.number}"
-        if match_type == "exact_number"
-        else f"Nummer {hit.number} {hit.name}"
-        for match_type, hit in understood
+        _with_wish(
+            f"Nummer {hit.number}"
+            if match_type == "exact_number"
+            else f"Nummer {hit.number} {hit.name}",
+            wish,
+        )
+        for match_type, hit, wish in understood
     ]
     if not names:
         return None
     items = names[0] if len(names) == 1 else f"{', '.join(names[:-1])} und {names[-1]}"
     lead = SAY_UNDERSTOOD[zlib.crc32(said.casefold().encode()) % len(SAY_UNDERSTOOD)]
     return lead.format(items=items)
+
+
+def _with_wish(item: str, wish: Wish | None) -> str:
+    # Unbekannt hat einen eigenen Satz, offen ist noch nicht entschieden, und die
+    # Allergie steht im Satz danach (SAY_ALLERGY_NOTE) - hier nur das Gericht.
+    if wish is None or wish.kind in ("unknown", "open", "allergy"):
+        return item
+    if wish.kind != "option":
+        return f"{item}, {wish.text}"
+    # Import hier: ordering importiert search (validation), oben waere es zirkulaer.
+    from api.domain.ordering.readback import spoken_euro
+
+    delta = wish.price_delta_cents or 0
+    text = (
+        f"{item}, {wish.note}, mit {wish.option}"
+        if wish.note
+        else f"{item} mit {wish.option}"
+    )
+    if delta > 0:
+        return f"{text}, {spoken_euro(delta)} Aufpreis"
+    if delta < 0:
+        return f"{text}, {spoken_euro(-delta)} günstiger"
+    return text
 
 
 def position_parts(
@@ -168,6 +226,48 @@ def position_parts(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+) -> list[str]:
+    """Die Positionen eines Satzes (`_position_parts`). Ein Teil, der mit einer
+    eigenen Allergie beginnt ("und einer Sesamallergie"), ist keine neue
+    Position, sondern gehoert zur davor (Codex PR #139, P1)."""
+    parts = _position_parts(session, tenant_id, query, now, high, low)
+    return _keep_allergy_clauses(query, parts)
+
+
+def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
+    if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts):
+        return parts
+    if opens_with_allergy(parts[0]):
+        # Vorn im Satz: sie gehoert zum ersten Gericht danach, als Wunsch hinter
+        # dem Gericht (Review PR #139).
+        rest = _keep_allergy_clauses(query, parts[1:])
+        if opens_with_allergy(rest[0]):
+            return parts
+        return [f"{rest[0]}, {parts[0]}", *rest[1:]]
+    spans: list[list[int]] = []
+    at = 0
+    for part in parts:
+        start = query.find(part, at)
+        if start < 0:
+            return parts
+        spans.append([start, start + len(part)])
+        at = start + len(part)
+    merged = [spans[0]]
+    for span, part in zip(spans[1:], parts[1:], strict=True):
+        if opens_with_allergy(part):
+            merged[-1][1] = span[1]
+        else:
+            merged.append(span)
+    return [query[start:end] for start, end in merged]
+
+
+def _position_parts(
+    session: Session,
+    tenant_id: uuid.UUID,
+    query: str,
+    now: datetime | None,
+    high: float | None,
+    low: float | None,
 ) -> list[str]:
     """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
     mit der Karte.
@@ -324,6 +424,112 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
     )
 
 
+def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
+    """Der Satz, den ein Wunsch braucht: nicht angeboten (D8), die Frage nach der
+    Gruppe einer Option, die in zweien steht, oder der Hinweis zur Allergie ohne
+    Zusage (E14). Weglassen und Optionen brauchen keinen, sie werden mit
+    wiederholt (`say_understood`)."""
+    if wish.kind == "unknown":
+        sentence = SAY_WISH_UNKNOWN.format(wish=wish.text, name=hit.name)
+        # Das Weglassen dazu gilt trotzdem ("ohne Zwiebeln, dafür mit Pommes").
+        return f"{sentence} Notiert: {wish.note}." if wish.note else sentence
+    if wish.kind == "open" and wish.groups:
+        return SAY_WISH_WHICH_GROUP.format(
+            option=wish.option, groups=" oder bei ".join(wish.groups)
+        )
+    if wish.kind == "allergy":
+        if wish.ingredient:
+            return SAY_ALLERGY_NOTE.format(name=hit.name)
+        return SAY_ALLERGY_WHICH
+    return None
+
+
+def allergy_question(names: list[str], named: bool | None = None) -> str | None:
+    """Die Frage nach der ersten offenen Allergie. Bei mehreren nennt sie das
+    Gericht, damit die Antwort zu ihm gehoert - auch die letzte der Reihe
+    (`named`)."""
+    if not names:
+        return None
+    if named is None:
+        named = len(names) > 1
+    return SAY_ALLERGY_WHICH_FOR.format(name=names[0]) if named else SAY_ALLERGY_WHICH
+
+
+def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:
+    """Das eine aktive Gericht, das genau so heisst oder diesen Alias hat."""
+    by_alias = _alias_items(session, tenant_id, text)
+    if len(by_alias) == 1:
+        return by_alias[0]
+    said = normalize_query(text)
+    # Die Namen der Karte einmal je Sitzung, nicht bei jeder Suche mit Wunsch neu
+    # (Review PR #139); aktiv wird beim Treffer geprueft.
+    names = session.info.setdefault("menu_names", {})
+    if tenant_id not in names:
+        names[tenant_id] = [
+            (normalize_query(name), item_id)
+            for item_id, name in session.execute(
+                select(MenuItem.id, MenuItem.name).where(
+                    MenuItem.tenant_id == tenant_id
+                )
+            )
+        ]
+    items = [session.get(MenuItem, i) for n, i in names[tenant_id] if n == said]
+    named = [item for item in items if item is not None and item.active]
+    return named[0] if len(named) == 1 else None
+
+
+def _search_with_wish(
+    session: Session,
+    tenant_id: uuid.UUID,
+    candidates: list[tuple[str, str, str]],
+    max_results: int,
+    now: datetime,
+    high: float,
+    low: float,
+) -> SearchResult | None:
+    """Das Gericht ohne den Wunsch suchen, den Wunsch dazu einordnen (T-4.10).
+
+    None heisst: die normale Suche ueber den ganzen Satz entscheidet, weil das
+    Gericht ohne Wunsch nichts findet. Gesucht wird einmal, mit dem Gericht der
+    ersten Trennung. Gehoert deren Satzteil zum Namen ("Sommerrollen mit
+    Garnelen"), gilt der naechste Wunsch fuer dasselbe Gericht ("... ohne
+    Koriander") - ohne zweite Suche, die scheitern koennte (Codex und Review
+    PR #139).
+    """
+    dish = candidates[0][0]
+    try:
+        found = search_menu(
+            session, tenant_id, dish, max_results, now, high, low, split_check=False
+        )
+    except (Ambiguous, NotFound):
+        return None
+    if not found.results:
+        return None
+    hit = found.results[0]
+    first = 0
+    # Ist "Gericht + erster Satzteil" selbst ein Gericht ("Pizza mit Salami"
+    # neben "Pizza" oder "Pizza mit Pilzen"), gilt dieses, und erst der naechste
+    # Satzteil ist der Wunsch (Codex PR #139).
+    named = _named_dish(session, tenant_id, f"{dish} {candidates[0][2]}")
+    clear = found.match_type in CLEAR_MATCHES
+    if named is not None and (not clear or named.id != hit.menu_item_id):
+        found = _single(session, "alias", named, now)
+        hit, first = found.results[0], 1
+    elif not clear:
+        # Gehoert der Satzteil zum Namen eines der Treffer, entscheidet der ganze
+        # Satz (Codex PR #139).
+        if any(names_it(h.name, candidates[0][2]) for h in found.results):
+            return None
+        return found.model_copy(update={"wish": open_wish(candidates[0][1])})
+    for _, wish, segment in candidates[first:]:
+        if names_it(hit.name, segment):
+            continue
+        classified = classify_wish(wish, hit.option_groups)
+        say = found.say or say_for_wish(hit, classified)
+        return found.model_copy(update={"wish": classified, "say": say})
+    return found
+
+
 def search_menu(
     session: Session,
     tenant_id: uuid.UUID,
@@ -340,6 +546,22 @@ def search_menu(
     now = now or utcnow()
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
+
+    # Die Positionen des Satzes werden hoechstens einmal bestimmt, auch wenn ein
+    # Wunsch darin steht (Review PR #139).
+    parts: list[str] | None = None
+    candidates = wish_candidates(query)
+    if candidates and not has_number(candidates[0][1]):
+        if split_check:
+            parts = position_parts(
+                session, tenant_id, query, now=now, high=high, low=low
+            )
+        if parts is None or len(parts) <= 1:
+            found = _search_with_wish(
+                session, tenant_id, candidates, max_results, now, high, low
+            )
+            if found is not None:
+                return found
     limit = min(max_results, AMBIGUOUS_LIMIT)
 
     text = normalize_query(query)
@@ -372,11 +594,12 @@ def search_menu(
     # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
     # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
-    parts = (
-        position_parts(session, tenant_id, query, now=now, high=high, low=low)
-        if split_check
-        else [query]
-    )
+    if parts is None:
+        parts = (
+            position_parts(session, tenant_id, query, now=now, high=high, low=low)
+            if split_check
+            else [query]
+        )
     if len(parts) > 1:
         raise Ambiguous("mehrere Positionen: " + " | ".join(parts), say=SAY_IN_TURN)
 
