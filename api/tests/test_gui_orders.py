@@ -241,3 +241,19 @@ def test_spalte_antwortet_schnell(client, db, tenant_id):
         _order(db, tenant_id)
     p95 = p95_ms(lambda: client.get("/gui/fragments/bestellungen"))
     assert p95 < 300, p95
+
+
+@pytest.mark.parametrize("swapping", ['"0"', "5", "-1", "true"])
+def test_kaputter_tauschen_index_meldet_statt_500(client, db, tenant_id, swapping):
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    state = json.loads(_state(client.get(base).text))
+    raw = json.dumps(state)[:-1] + f', "t": {swapping}}}'
+    raw = raw.replace('"t": null, ', "")
+    response = client.post(
+        f"{base}/vorschau",
+        data={"state": raw, "op": "number", "number": "13"},
+        headers=HX,
+    )
+    assert response.status_code == 409
+    assert "durcheinander" in response.text

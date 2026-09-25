@@ -148,6 +148,12 @@ def parse_state(raw: str) -> EditState:
             swapping=data.get("t"),
         )
         state.request()  # prueft Form und ids, wirft bei Unsinn
+        # Die Position im Tauschen-Modus: None oder ein Index in rows. "0" als
+        # Text oder ein Index ausserhalb liefe sonst erst beim naechsten Tap
+        # in einen Fehler 500 (Codex PR #140).
+        t = state.swapping
+        if t is not None and (type(t) is not int or not 0 <= t < len(state.rows)):
+            raise ValueError(f"t={t!r}")
     except (ValueError, KeyError, TypeError) as exc:
         raise InvalidInput(f"Korrekturstand unlesbar: {exc}", say=BAD_STATE) from exc
     return state
