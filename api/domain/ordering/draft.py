@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import Conflict, InvalidInput, NotFound, ServiceUnavailable
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
+from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
 from api.domain.ordering.pricing import Line, items_total_cents
 from api.domain.ordering.readback import SpokenLine, readback
 from api.domain.ordering.validation import (
@@ -32,7 +33,6 @@ from api.models import AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft
 
 ACTOR_AGENT = "agent"
-ACTION_DRAFT_CREATED = "order.draft_created"
 # Die zugesagte Zeit liegt nach Schluss der Abholung. Der Agent sagt es dem
 # Gast nicht selbst; das Team sieht die Warnung am Entwurf.
 WARNING_READY_AFTER_CLOSE = "ready_after_close"
@@ -183,7 +183,7 @@ def _replay(
 
 
 def draft_labels(session: Session, order_id: uuid.UUID) -> list[list[str]]:
-    """Nummer und Name je Position, wie sie beim Anlegen vorgelesen wurden."""
+    """Nummer und Name je Position, wie vorgelesen oder im Tablet korrigiert."""
     return _snapshot(session, order_id)["labels"]
 
 
@@ -199,7 +199,9 @@ def _snapshot(session: Session, order_id: uuid.UUID) -> dict:
         # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
         # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
         raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_CALL_UNKNOWN)
-    return snapshot
+    # Hat das Team im Tablet Positionen geaendert (T-4.7), passen die Namen
+    # vom Anlegen nicht mehr zu den Zeilen; die Warnungen bleiben die vom Anruf.
+    return {**snapshot, "labels": current_labels(session, order_id)}
 
 
 def _spoken(lines: list[Line], labels: list[list[str]]) -> list[SpokenLine]:

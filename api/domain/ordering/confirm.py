@@ -105,7 +105,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
             session,
             tenant_id=req.tenant_id,
             event_type=ORDER_CONFIRMED,
-            payload=_event_payload(session, order),
+            payload=order_event_payload(session, order),
         )
     session.commit()
     return _answer(order)
@@ -147,11 +147,22 @@ def _next_pickup_code(session: Session, order: Order, tz_name: str) -> str:
     return f"{PICKUP_PREFIX}{issued + 1}"
 
 
-def _event_payload(session: Session, order: Order) -> dict:
+def order_event_payload(
+    session: Session,
+    order: Order,
+    revision: int = 0,
+    correction_reason: str | None = None,
+) -> dict:
     """Vollstaendig, damit der kalte Pfad den Bon ohne zweite Abfrage druckt.
 
     Nummer und Name kommen aus dem Schnappschuss des Entwurfs, nicht aus der
-    Karte von jetzt: auf dem Bon steht, was dem Gast vorgelesen wurde.
+    Karte von jetzt: auf dem Bon steht, was dem Gast vorgelesen wurde. Nach
+    einer Korrektur im Tablet ist es der korrigierte Stand (domain/ordering/labels.py).
+
+    `revision` zaehlt die Korrekturen: 0 ist der erste Bon, jede hoehere Zahl
+    ersetzt den vorigen (docs/04 §confirm). `correction_reason` steht nur, wenn
+    die Kueche schon einen Bon hatte (domain/ordering/ticket.py). Die Freigabe
+    im Tablet (T-4.7) schickt denselben Inhalt wie confirm im Primaerbetrieb.
     """
     rows = session.scalars(
         select(OrderItem)
@@ -167,6 +178,8 @@ def _event_payload(session: Session, order: Order) -> dict:
         "customer_name": order.customer_name,
         "phone": order.phone,
         "ready_at": order.ready_at.isoformat() if order.ready_at else None,
+        "revision": revision,
+        "correction_reason": correction_reason,
         "items_total_cents": order.items_total_cents,
         "delivery_fee_cents": order.delivery_fee_cents,
         "total_cents": order.total_cents,

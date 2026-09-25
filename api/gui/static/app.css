@@ -110,6 +110,46 @@ header.aus .top > .mode ~ .mode{opacity:.6}
 .res .time{font-size:24px;font-weight:600;line-height:1.1}
 .res .name{font-weight:500}
 
+/* Spalte Neue Bestellungen (T-4.7). Abholcode gross und farbig hinterlegt:
+   aus zwei Metern lesbar (docs/06 §3). Kartennummer grau vor dem Namen. */
+.order .code{margin-left:auto;font-size:28px;font-weight:700;line-height:1;padding:6px 12px;border-radius:6px;background:var(--accent);color:var(--surface);letter-spacing:.02em}
+.order .lines{list-style:none;margin:8px 0;padding:0}
+.order .lines li{padding:2px 0}
+.nr{color:var(--muted);font-weight:500}
+.opt{padding-left:1.4em;color:var(--muted)}
+.order-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
+.order .state{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+/* Wartet auf Freigabe: gelber Rand plus Text, die Kueche hat noch nichts. */
+.order.awaiting{border-left:6px solid var(--warn);padding-left:15px}
+/* Rote Karte: Uebergabe fehlgeschlagen (docs/06 §3). Rahmen rot, Text daneben. */
+.order.failed{border:3px solid var(--danger)}
+.order.neu{animation:blink 1s ease-in-out 3}
+@keyframes blink{50%{background:var(--accent-bg)}}
+@media (prefers-reduced-motion:reduce){.order.neu{animation:none;background:var(--accent-bg)}}
+/* Korrektur: breiter Kasten ueber den Spalten. */
+#korrektur:empty{display:none}
+#korrektur{margin-bottom:16px}
+.korrektur{border:2px solid var(--accent)}
+.korrektur h2{margin:0;font-size:22px}
+.korrektur .schliessen{margin-left:auto}
+.korrektur fieldset{border:0;margin:0;padding:0;min-width:0}
+.korrektur fieldset[disabled]{opacity:.6}
+/* Gesperrt sieht gesperrt aus; der Grund steht als Text darueber. */
+.betrieb button:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(1)}
+.edit-line{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
+.edit-line.removed .edit-head > span:first-child{text-decoration:line-through;color:var(--muted)}
+.edit-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.edit-head .price{margin-left:auto}
+.edit-actions,.choice,.reasons{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;align-items:center}
+.choice-name{min-width:120px;font-weight:500}
+.betrieb button.qty{min-width:72px;font-size:26px;font-weight:600}
+.betrieb button.picked{background:var(--accent-bg);border:2px solid var(--accent);color:var(--accent-text);font-weight:600}
+.nummer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
+.betrieb .nummer input{height:60px;min-width:140px;font-size:22px}
+.blocker{color:var(--danger);font-weight:500;margin:8px 0}
+.hint{margin:8px 0 0}
+.betrieb .banner{font-size:18px}
+
 @media (max-width:900px){
   .board{grid-template-columns:1fr}
   .row{grid-template-columns:48px 1fr 90px}

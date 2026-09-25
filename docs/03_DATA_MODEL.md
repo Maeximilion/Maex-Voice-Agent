@@ -219,7 +219,9 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
-`approved` existiert nur im Überlauf-Betrieb (Stufe 5): Das Team gibt frei, bevor die Küche loslegt.
+`approved` heißt: das Team hat die Bestellung im Tablet mit „Passt" abgehakt (T-4.7). Außerhalb von `primary` ist das zugleich die Freigabe an die Küche - vorher gibt es keinen Bon (docs/04 §confirm). Im Überlauf-Betrieb (Stufe 5) ist genau das der Freigabe-Schritt; T-8.2 macht ihn abschaltbar.
+
+Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`-Zeilen ist die Revision des Bons.
 
 ### `order_items`
 | Feld | Typ | Bemerkung |

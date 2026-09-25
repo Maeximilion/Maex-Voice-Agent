@@ -1,8 +1,9 @@
 """Ereignisstrom der Betriebsansicht (docs/11 §gui, docs/06 §1 Regel 5: live, ohne Nachladen).
 
 Der Strom schickt keine Daten, nur ein Signal: "an der Spalte Heute hat sich etwas
-geändert" (`today`), "die Kopfzeile ist umgeschaltet" (`header`) oder "an den
-offenen Rückrufen hat sich etwas geändert" (`callbacks`). Die Seite
+geändert" (`today`), "die Kopfzeile ist umgeschaltet" (`header`), "an den
+offenen Rückrufen hat sich etwas geändert" (`callbacks`) oder "an den neuen
+Bestellungen" (`orders`). Die Seite
 holt das Fragment danach selbst. Das hält die Nutzlast klein und die Darstellung
 an genau einer Stelle - im Jinja2-Template.
 
@@ -25,6 +26,7 @@ from sqlalchemy.orm import Session
 from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.domain.callbacks import open_change_token
+from api.domain.ordering.board import new_orders_change_token
 from api.domain.reservations import today_change_token
 from api.domain.status.config import config_change_token
 
@@ -50,11 +52,15 @@ def _callbacks_token(session: Session, tenant_id: uuid.UUID) -> str:
     return open_change_token(session, tenant_id)
 
 
+def _orders_token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
+    return new_orders_change_token(session, tenant_id, tz_name)
+
+
 def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
     """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse.
 
-    Alle drei in einer Sitzung: die Abfragen lesen denselben Mandanten und
-    haengen nicht voneinander ab. Drei eigene Sitzungen waeren drei Entnahmen
+    Alle in einer Sitzung: die Abfragen lesen denselben Mandanten und
+    haengen nicht voneinander ab. Je eine eigene Sitzung waeren vier Entnahmen
     aus dem Pool je Takt und Tablet - bei vier Tablets und zwei Sekunden Takt
     sechs pro Sekunde, nur um festzustellen, dass sich nichts geaendert hat
     (Review PR #117).
@@ -65,6 +71,7 @@ def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
             "header": _header_token(session, tenant_id),
             "today": _token(session, tenant_id, tz_name),
             "callbacks": _callbacks_token(session, tenant_id),
+            "orders": _orders_token(session, tenant_id, tz_name),
         }
     finally:
         session.close()
