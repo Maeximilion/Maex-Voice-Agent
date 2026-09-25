@@ -409,6 +409,25 @@ def open_wish(text: str) -> Wish:
     return Wish(text=_clean(text), kind="open")
 
 
+# Womit ein Satzteil zur eigenen Allergie anfangen kann, bevor das Allergie-Wort
+# kommt: "und einer Sesamallergie", "ich bin gegen Sesam allergisch".
+_ALLERGY_LEAD = (
+    _ARTICLES
+    | _CLAUSE_OPENERS
+    | frozenset({"und", "auch", "noch", "habe", "hab", "bin"})
+)
+
+
+def opens_with_allergy(text: str) -> bool:
+    """Beginnt der Teil mit einer eigenen Allergie statt mit einem Gericht?
+    Dann gehoert er zur Position davor (Codex PR #139, P1)."""
+    for word in _words(text):
+        if word in _ALLERGY_LEAD:
+            continue
+        return _is_allergy(word) or word == "gegen"
+    return False
+
+
 def has_number(wish: str) -> bool:
     """Steht eine Zahl im Wunsch ("mit 2 Soßen")? Dann gilt Regel A: eine zweite
     Zahl neben der Nummer wird nachgefragt, nie als Wunsch abgetrennt. Artikel

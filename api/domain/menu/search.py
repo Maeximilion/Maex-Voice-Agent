@@ -49,6 +49,7 @@ from api.domain.menu.wishes import (
     has_number,
     names_it,
     open_wish,
+    opens_with_allergy,
     wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
@@ -225,6 +226,41 @@ def position_parts(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+) -> list[str]:
+    """Die Positionen eines Satzes (`_position_parts`). Ein Teil, der mit einer
+    eigenen Allergie beginnt ("und einer Sesamallergie"), ist keine neue
+    Position, sondern gehoert zur davor (Codex PR #139, P1)."""
+    parts = _position_parts(session, tenant_id, query, now, high, low)
+    return _keep_allergy_clauses(query, parts)
+
+
+def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
+    if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts[1:]):
+        return parts
+    spans: list[list[int]] = []
+    at = 0
+    for part in parts:
+        start = query.find(part, at)
+        if start < 0:
+            return parts
+        spans.append([start, start + len(part)])
+        at = start + len(part)
+    merged = [spans[0]]
+    for span, part in zip(spans[1:], parts[1:], strict=True):
+        if opens_with_allergy(part):
+            merged[-1][1] = span[1]
+        else:
+            merged.append(span)
+    return [query[start:end] for start, end in merged]
+
+
+def _position_parts(
+    session: Session,
+    tenant_id: uuid.UUID,
+    query: str,
+    now: datetime | None,
+    high: float | None,
+    low: float | None,
 ) -> list[str]:
     """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
     mit der Karte.

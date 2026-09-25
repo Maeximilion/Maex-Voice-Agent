@@ -27,7 +27,7 @@ from api.domain.menu.importer import (
     apply,
     parse,
 )
-from api.domain.menu.search import search_menu
+from api.domain.menu.search import position_parts, search_menu
 from api.domain.menu.wishes import classify_wish, wish_candidates
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
@@ -741,3 +741,29 @@ def test_beiwort_nach_und_beendet_die_liste_nicht(gesagt, zutaten):
     """Codex PR #139, P1: "und auch Sesam" - das "auch" beendet die Liste der
     Zutaten nicht; sonst fehlte der Sesam im Hinweis."""
     assert classify_wish(gesagt, BEILAGE).ingredient == zutaten
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "eine Pho mit einer Erdnussallergie und einer Sesamallergie",
+        "eine Pho mit Erdnussallergie und eine Sesamallergie habe ich auch",
+    ],
+)
+def test_allergie_mit_artikel_bleibt_beim_gericht(session, tenant_id, gesagt):
+    """Codex PR #139, P1: "und einer Sesamallergie" ist keine neue Position,
+    sondern die zweite Allergie zur Pho - sonst fehlte der Sesam im Hinweis."""
+    assert position_parts(session, tenant_id, gesagt, now=NOW) == [gesagt]
+    result = suche(session, tenant_id, gesagt)
+    assert [h.number for h in result.results] == ["13"]
+    assert result.wish.ingredient == "Erdnuss und Sesam"
+
+
+def test_zweites_gericht_mit_allergie_bleibt_eigene_position(session, tenant_id):
+    parts = position_parts(
+        session,
+        tenant_id,
+        "Pho Bo mit Allergie und Frühlingsrollen mit Allergie",
+        now=NOW,
+    )
+    assert parts == ["Pho Bo mit Allergie", "Frühlingsrollen mit Allergie"]
