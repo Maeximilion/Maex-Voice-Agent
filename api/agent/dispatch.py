@@ -237,6 +237,11 @@ def _search_menu(
             not sold_out
             and found.wish is not None
             and found.wish.kind in ("unknown", "allergy", "open")
+            # Mehrdeutig: die Auswahl steht im Teil und wird dort gefragt, im
+            # Satz der Antwort stuende sie doppelt (Codex PR #139).
+            and not (
+                found.wish.kind == "open" and found.match_type not in CLEAR_MATCHES
+            )
         ):
             notices.append(found.say or "")
         positions.append(

@@ -1087,3 +1087,10 @@ def test_allergiefrei_geht_an_das_team(session, tenant):
     assert "Wogegen" not in said(turns)
     # Der Rueckrufpfad fragt nach der Nummer (Rufnummer unterdrueckt).
     assert "Telefonnummer" in said(turns)
+
+
+def test_mehrdeutige_position_mit_wunsch_fragt_einmal(session, tenant):
+    """Codex PR #139, P2: "eine Ente mit Nudeln und eine Pho Bo" - die Auswahl
+    zur Ente steht im Teil und wird einmal gefragt, nicht doppelt."""
+    _, turns = _bestellung(session, tenant, "Eine Ente mit Nudeln und eine Pho Bo.")
+    assert " ".join(turns[1].say).count("Meinen Sie") == 1

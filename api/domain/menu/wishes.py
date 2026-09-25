@@ -174,26 +174,44 @@ def _stems_before(head: str) -> list[tuple[int, str]]:
     return stems
 
 
+# "und auch Sesam", "und noch Sesam": das Beiwort beendet die Liste nicht, wenn
+# eine Zutat folgt (Codex PR #139, P1).
+_LIST_MODIFIERS = frozenset({"auch", "noch", "zudem", "ausserdem", "zusaetzlich"})
+
+
+def _ends_list(word: str | None) -> bool:
+    """Beginnt mit diesem Wort nach "und" oder Komma ein neuer Satzteil?"""
+    return (
+        word is None
+        or word in ",.;!?"
+        or word in _CLAUSE_WORDS
+        or word in ("gegen", "auf")
+        or _is_allergy(word)
+        or word.endswith("mal")
+        or parse_cardinal(word) is not None
+    )
+
+
 def _until_new_clause(rest: str) -> str:
     """Die Zutaten bis zum naechsten Satzteil, mit "und" und Komma dazwischen."""
     pieces = _PIECE.findall(rest)
+    words = [fold(p) for p in pieces]
     kept: list[str] = []
+    skip: set[int] = set()
     for i, piece in enumerate(pieces):
-        word = fold(piece)
+        if i in skip:
+            continue
+        word = words[i]
         # Eine weitere Allergie-Wendung zaehlt fuer sich, nicht als Zutat.
         if piece in ".;!?" or word == "bitte" or _is_allergy(word):
             break
         if piece == "," or word in ("und", "sowie", "oder"):
-            nxt = fold(pieces[i + 1]) if i + 1 < len(pieces) else None
-            if (
-                nxt is None
-                or nxt in ",.;!?"
-                or nxt in _CLAUSE_WORDS
-                or nxt in ("gegen", "auf")
-                or _is_allergy(nxt)
-                or nxt.endswith("mal")
-                or parse_cardinal(nxt) is not None
-            ):
+            nxt = words[i + 1] if i + 1 < len(words) else None
+            after = words[i + 2] if i + 2 < len(words) else None
+            if nxt in _LIST_MODIFIERS and not _ends_list(after):
+                skip.add(i + 1)
+                nxt = after
+            if _ends_list(nxt):
                 break
         kept.append(piece)
     text = ""

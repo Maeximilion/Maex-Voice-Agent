@@ -727,3 +727,17 @@ def test_allergiefrei_ist_keine_eigene_allergie(gesagt):
     """Codex PR #139, P2: "allergiefrei?" fragt nach dem Gericht (Allergenpfad),
     keine eigene Allergie - sonst kaeme "Wogegen sind Sie allergisch?"."""
     assert classify_wish(gesagt, BEILAGE).kind != "allergy"
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "zutaten"),
+    [
+        ("allergisch gegen Erdnüsse und auch Sesam", "Erdnüsse und Sesam"),
+        ("allergisch gegen Erdnüsse und noch Sesam", "Erdnüsse und Sesam"),
+        ("allergisch gegen Sesam und auch noch eine Cola", "Sesam"),
+    ],
+)
+def test_beiwort_nach_und_beendet_die_liste_nicht(gesagt, zutaten):
+    """Codex PR #139, P1: "und auch Sesam" - das "auch" beendet die Liste der
+    Zutaten nicht; sonst fehlte der Sesam im Hinweis."""
+    assert classify_wish(gesagt, BEILAGE).ingredient == zutaten
