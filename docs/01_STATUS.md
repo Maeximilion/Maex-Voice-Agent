@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.16
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.17
 
 ---
 
@@ -281,6 +281,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.17 · 25.09.2026:** offener Punkt aus PR #140
 - **v1.31.16 · 25.09.2026:** T-4.7 done
 - **v1.31.15 · 24.09.2026:** PR #133 gemergt, ein Befund nach der abgearbeiteten Runde als offener Punkt (nur Text-Telefon)
 - **v1.31.14 · 24.09.2026:** Anrufprotokoll: Nr. nur hinter Strassennamen gestrichen, doppelte Zeile zaehlt einmal, Datum im ID-Verzeichnis geprueft, Dateirechte bleiben (Codex)
