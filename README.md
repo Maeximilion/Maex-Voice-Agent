@@ -109,7 +109,7 @@ Layers and dependency rules: `docs/11_MODULE.md`.
 make test        # pytest
 make lint        # ruff check
 make fmt         # ruff format
-make eval        # eval suite, optional TAGS=menu,noise (runner arrives with T-5.1)
+make eval        # eval suite on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric or an accuracy drop
 
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.replay evals/cases/<case>.json        # replay a transcript
@@ -150,7 +150,7 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 ## Known Issues
 
 - Docker Hub rate-limits anonymous image downloads. If `make up` fails with rate limit: `docker login` with a free Docker Hub account, then restart.
-- `make eval` fails until the eval runner exists (T-5.1). `evals/` currently holds cases only, no `runner.py`; `/eval` and step 2 of `/bug` are blocked until then.
+- `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`) until T-2.4 connects a real one; tokens and cost per case stay empty until then.
 - Behind a TLS-terminating proxy, `pip install` in image build fails with `CERTIFICATE_VERIFY_FAILED`. Fix: place the proxy's CA cert as `api/ca-bundle.crt` (in `.gitignore`), the build auto-includes it.
 
 ## License and Contact

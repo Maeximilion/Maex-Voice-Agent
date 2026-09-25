@@ -40,6 +40,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 - Desktop mockup of admin view in gui/mockups/
 - Column "Neue Bestellungen" of the operations view (T-4.7): orders the team still has to act on, red cards (kitchen not reached) on top with "Nochmal senden"; "Passt" ticks off and, outside `primary`, releases the order to the kitchen; "Korrigieren" in its own box above the columns (quantity, swap by card number keeping quantity and note, add a dish, options as buttons, save with the reason). Totals recomputed from the stored positions, corrections counted as `order.corrected` in `audit_log` without personal data, kitchen tickets carry `revision` and never overtake a newer state; event stream signal `orders` with its own tone
 
+- Eval runner (T-5.1): `make eval` / `python -m evals.runner [--tags] [--model]` plays every case from `evals/cases/` on a throwaway database, judges the database state against `expected`, counts the hard metrics (guessed positions, confirm without yes, missed escalation) through an observer at the model boundary, writes JSON and Markdown reports and fails on a hard violation or an accuracy drop against the last run
 ### Changed
 - Pilot operation, company, location, and provider names replaced with placeholders (`<PilotOperation>`, `<CompanyName>`, `<Location>`, `<PointOfSale>`, `<POSProvider>`, `example.com`)
 - README quick start reduced to steps that work today; `make migrate` and `make seed` follow in T-1.1 and T-1.2
