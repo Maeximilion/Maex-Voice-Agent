@@ -127,6 +127,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm) -> CaseResult:
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
+        diffs = judge(expected, seen)
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
@@ -134,7 +135,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm) -> CaseResult:
 
     rec = llm.recording
     result.turns = len(turns)
-    result.diffs = judge(expected, seen)
+    result.diffs = diffs
     result.guessed_items = len(rec.guessed)
     result.unconfirmed = len(rec.unconfirmed) + seen.confirmed_without_confirm
     result.missed_escalation = result.expected_escalation and not seen.escalated
