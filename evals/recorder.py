@@ -35,8 +35,17 @@ _YES = re.compile(
     re.IGNORECASE,
 )
 _NO = re.compile(r"^\s*(nein|ne|nee|nö|noe|falsch|stopp|halt)\b", re.IGNORECASE)
-# "Das stimmt nicht", "passt so nicht", "keine Ente": das Ja-Wort ist verneint.
-_NEGATED = re.compile(r"\b(nicht|kein|keine|keinen|nie)\b", re.IGNORECASE)
+# Verneint ist das Ja-Wort selbst ("stimmt nicht", "passt so nicht", "nicht
+# richtig") oder ein "aber" kuendigt eine Aenderung an ("Richtig, aber keine
+# Ente"). "Ja, kein Problem" oder "ja, nicht schlecht" bleiben ein Ja: ein
+# "kein" irgendwo im Satz zu verbieten, meldete einen korrekten Agenten als
+# Verstoss gegen eine harte Metrik (Review PR #142).
+_NEGATED = re.compile(
+    r"\b(stimmt|passt|richtig|korrekt|genau|okay|ok|einverstanden)\b(\s+\w+)?\s+(nicht|kein\w*)\b"
+    r"|\b(nicht|kein\w*)\s+(\w+\s+)?(richtig|korrekt|ok|okay|einverstanden|so)\b"
+    r"|\baber\b",
+    re.IGNORECASE,
+)
 
 
 def is_yes(text: str) -> bool:

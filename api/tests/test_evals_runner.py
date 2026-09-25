@@ -240,6 +240,9 @@ def test_confirm_nach_nein_gilt_als_unbestaetigt():
         ("Das stimmt nicht.", False),
         ("Passt so nicht, ich wollte zwei.", False),
         ("Richtig, aber keine Ente.", False),
+        ("Das ist nicht richtig.", False),
+        ("Ja, passt, kein Problem.", True),
+        ("Ja, nicht schlecht.", True),
     ],
 )
 def test_ja_erkennung(text, yes):
@@ -253,7 +256,7 @@ def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
     engine = create_engine(migrated_db_url)
     try:
         with Session(engine) as session:
-            tenant = runner._prepare(session, runner.DEFAULT_NOW)
+            tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
             call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
             item_id = session.scalar(
                 select(MenuItem.id).where(

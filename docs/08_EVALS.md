@@ -99,7 +99,7 @@ make eval MODEL=<name>         # Modellvergleich
 | Nach Modellwechsel | vollständig plus Kostenvergleich |
 | Wöchentlich automatisch | vollständig, Trend in die GUI |
 
-**Regressionsregel:** Fällt die Genauigkeit gegenüber dem letzten Lauf, wird nicht gemerged. Kein „ist nur ein Fall".
+**Regressionsregel:** Ist ein Fall rot, der im letzten bestandenen Lauf mit demselben Modell und denselben Tags grün war, wird nicht gemerged. Kein „ist nur ein Fall". Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer, noch roter Fall aus `/bug` ist keine Regression, und neue grüne Fälle verdecken keinen kaputten (§3, T-5.1).
 
 ---
 

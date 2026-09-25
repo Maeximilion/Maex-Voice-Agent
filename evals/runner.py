@@ -95,7 +95,15 @@ def model_factory(model: str) -> Callable[[datetime], LLMClient]:
     raise UsageError(f"Modell '{model}' gibt es noch nicht (kommt mit T-2.4)")
 
 
-def _prepare(session: Session, now: datetime, name: str = TENANT):
+def menu_plan():
+    """Evalkarte einmal lesen und pruefen; je Fall wird sie nur angewendet."""
+    plan = parse(read_files(MENU))
+    if not plan.ok:
+        raise CaseError(f"Evalkarte evals/menu/ ungültig: {plan.errors}")
+    return plan
+
+
+def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     """Mandant mit Öffnungszeiten, Kapazität und Evalkarte.
 
     Je Fall ein eigener: sonst füllen frühere Fälle die Kapazität eines Slots,
@@ -104,14 +112,11 @@ def _prepare(session: Session, now: datetime, name: str = TENANT):
     """
     seed(session, tenant_name=name, timezone=TIMEZONE)
     tenant = resolve_tenant(session, name)
-    plan = parse(read_files(MENU))
-    if not plan.ok:
-        raise CaseError(f"Evalkarte evals/menu/ ungültig: {plan.errors}")
     apply(session, tenant.id, plan, now=now)
     return tenant
 
 
-def run_case(session: Session, case: dict[str, Any], make_llm) -> CaseResult:
+def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
     result = CaseResult(
@@ -123,7 +128,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm) -> CaseResult:
     )
     llm = RecordingLLM(make_llm(now))
     try:
-        tenant = _prepare(session, DEFAULT_NOW, name=f"{TENANT} {case['id']}")
+        tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
@@ -176,11 +181,9 @@ def run(
         if own_db:
             migrate(db_url)
         with Session(engine) as session:
-            # Die Karte einmal vorab prüfen: ist sie kaputt, bricht der Lauf ab,
-            # statt jeden Fall mit demselben Fehler rot zu zeigen.
-            if not parse(read_files(MENU)).ok:
-                raise CaseError("Evalkarte evals/menu/ ungültig")
-            results = [run_case(session, c, make_llm) for c in cases]
+            # Kaputte Karte bricht den Lauf ab, statt jeden Fall rot zu zeigen.
+            plan = menu_plan()
+            results = [run_case(session, c, make_llm, plan) for c in cases]
     finally:
         engine.dispose()
         if own_db and not keep_db:
