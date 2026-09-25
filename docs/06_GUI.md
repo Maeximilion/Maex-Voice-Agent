@@ -66,7 +66,7 @@
 - Positionen zeigen die Kartennummer grau vor dem Namen. Die Küche arbeitet mit Nummern.
 - **Passt** → ab in die Küche (in Stufe 5 ist das die Freigabe)
 - **Korrigieren** → Positionen ändern, Grund wählen (falsches Gericht · falsche Menge · falsche Adresse · Sonstiges). Jede Korrektur wird gezählt und ist der Rohstoff für die Genauigkeits-KPI.
-- **Rote Karte = Übergabe fehlgeschlagen.** Eigener Zustand einer Bestellkarte (`handover_state = failed`), kein Fehlerbanner: Die Bestellung ist gebucht und bestätigt, nur der Bon fehlt. Roter Rahmen, Zeile „Küche nicht erreicht", ein Knopf „Nochmal senden". Bleibt oben in Spalte 1, bis die Übergabe gelingt.
+- **Rote Karte = Übergabe fehlgeschlagen.** Eigener Zustand einer Bestellkarte (`handover_state = failed`), kein Fehlerbanner: Die Bestellung ist gebucht und bestätigt, nur der Bon fehlt. Roter Rahmen, Zeile „Küche nicht erreicht", ein Knopf „Nochmal senden". Bleibt oben in Spalte 1, bis die Übergabe gelingt. Rot wird sie, sobald die Küche den Bon nicht hat: Druckfehler oder 60 s ohne Abholung durch die Druckbrücke (T-4.6); druckt die Brücke den Bon doch noch, wird sie von selbst wieder normal.
 
 **Gebaut (T-4.7, 25.09.2026)** - `domain/ordering/board.py`, `correction.py`, `ticket.py`, `gui/orders_view.py`, `fragments/bestellungen.html`, `fragments/korrektur.html`:
 - In der Spalte steht, was das Team noch tun muss: bestätigte Bestellungen des Betriebstags, die noch niemand abgehakt hat; jede, die noch auf die Freigabe wartet, und jede rote Karte - beide auch über 05:00 hinaus, die rote auch nach „Passt". Rote Karten oben, danach die älteste. Zähler in der Überschrift, neue Karte mit eigenem Ton, Blinken und Rollen ins Bild.

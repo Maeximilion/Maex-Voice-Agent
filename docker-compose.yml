@@ -36,6 +36,8 @@ services:
       # importieren (4 Collection-Errors) und ruff sortiert sim-Importe als Fremdpaket
       # ein (falsche I001-Meldungen). make test und make lint wichen so von der CI ab.
       - ./sim:/app/sim
+      # Druckbruecke (T-4.6): laeuft im Lokal, ihre Tests laufen hier mit.
+      - ./printbridge:/app/printbridge
       # scripts/status_bump.py schreibt docs/01_STATUS.md, deshalb nicht read-only.
       - ./docs:/app/docs
       # Ohne diese Datei findet ruff im Container keine Konfiguration und prueft nach
@@ -68,7 +70,7 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
-    command: python -m api.events.dispatcher
+    command: python -m api.jobs.cold_path
     depends_on:
       db:
         condition: service_healthy
