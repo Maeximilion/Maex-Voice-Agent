@@ -86,6 +86,9 @@ class PickupScript:
         self._allergy_for: list[CartItem] = []
         # Stehen mehrere offen, nennt jede Frage ihr Gericht.
         self._allergy_named = False
+        # Was nach der Allergie gefragt wird: nie zwei Fragen zugleich, sonst
+        # waere "Nummer 12" die Zutat (Codex PR #139, P1).
+        self._after_allergy: str | None = None
         # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
@@ -214,6 +217,8 @@ class PickupScript:
                     sold_out.append(said)
                 else:
                     unclear = unclear or said
+            if self._allergy_for and unclear:
+                self._after_allergy, unclear = unclear, None
             lead = _join(self.take_carry(), data.get("say"), *sold_out, unclear)
             return self._next(slots, {}, lead=lead)
         taken = self._take(query, data)
@@ -355,9 +360,12 @@ class PickupScript:
             )
         item = self._allergy_for.pop(0)
         item.note = wish.text
+        lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:
             self._allergy_named = False
-        return self._next(slots, patch, lead=SAY_ALLERGY_NOTE.format(name=item.name))
+            lead = _join(lead, self._after_allergy)
+            self._after_allergy = None
+        return self._next(slots, patch, lead=lead)
 
     def _allergy_question(self) -> str:
         names = [i.name for i in self._allergy_for]

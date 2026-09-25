@@ -345,5 +345,11 @@ def names_it(name: str, wish: str) -> bool:
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
         return False
-    content = {w for w in words if w not in _ADD and w not in _LEAD_FILLER}
-    return bool(content) and content <= set(_words(name))
+    # Der Satzteil steht so im Namen, samt "mit": "extra Garnelen" nennt die
+    # Garnelen aus "Sommerrollen mit Garnelen", ist aber ein Wunsch (Codex PR
+    # #139).
+    said = [w for w in words if w not in _LEAD_FILLER]
+    named = _words(name)
+    return bool(said) and any(
+        named[i : i + len(said)] == said for i in range(len(named) - len(said) + 1)
+    )

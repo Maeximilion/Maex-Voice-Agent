@@ -1024,3 +1024,23 @@ def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
         "WICHTIG: Keine Erdnüsse. Grund: Allergie",
         "WICHTIG: Keine Sesam. Grund: Allergie",
     ]
+
+
+def test_allergie_und_auswahl_nacheinander(session, tenant):
+    """Codex PR #139, P1: ein mehrdeutiges Gericht und eine Allergie ohne Zutat
+    in einem Satz - erst die Allergie, dann die Auswahl, nie beide Fragen
+    zugleich. Sonst wuerde "Nummer 12" als Zutat notiert."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Eine Suppe und eine Pho Bo mit Allergie.",
+        "Erdnüsse.",
+        "Nummer 12.",
+    )
+    erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
+    assert "Wogegen" in erste
+    assert "Meinen Sie" not in erste
+    assert "Meinen Sie" in zweite
+    [order] = orders(session)
+    assert sorted(p[0] for p in positions(session, order)) == ["12", "13"]
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)

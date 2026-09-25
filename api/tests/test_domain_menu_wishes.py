@@ -619,3 +619,11 @@ def test_option_und_weglassen_in_der_suche(session, tenant_id):
         "Nudeln",
         "ohne Zwiebeln",
     )
+
+
+def test_extra_zutat_aus_dem_namen_ist_wunsch(session, tenant_id):
+    """Codex PR #139, P2: "extra Garnelen" steht nicht im Namen, nur die
+    Garnelen. Der Wunsch bleibt und wird abgelehnt, statt still zu fehlen."""
+    result = suche(session, tenant_id, "Sommerrollen extra Garnelen")
+    assert [h.number for h in result.results] == ["24"]
+    assert (result.wish.kind, result.wish.text) == ("unknown", "extra Garnelen")
