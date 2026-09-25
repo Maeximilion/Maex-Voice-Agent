@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.18
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.19
 
 ---
 
@@ -204,6 +204,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Rejection plus replacement in one answer (`sim/scripted_order.py`, question branch) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): "keine davon, lieber Frühlingsrollen" closes the question and drops the whole answer, the caller has to name Frühlingsrollen again. Fix: short-circuit only a standalone rejection, search the rest of the reply. Stand-in only | with T-2.4 or the next sim change |
 | Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | German identifiers in the older GUI code (PR #140 review, conventions) | CLAUDE.md §8 asks for English identifiers. T-4.7 code is English since PR #140 (`orders_fragment`, `correction_preview`, edit ops `swap`/`remove`/`restore`, `closeCorrection` in `app.js`); URLs, DOM ids and words the team sees stay German. Older GUI code from T-3.x still uses German names (`heute_fragment`, `rueckruf_erledigt`, `nachladen`) | rename in one refactor commit, no behaviour change |
+| Swap to the same dish with the same options counts as a correction (`domain/ordering/correction.py` `_plan`) | Codex PR #140 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Tauschen" with the original number and the original options is still classified `swapped`, so `NO_CHANGE` does not block. Saving writes `order.corrected`, raises `revision`, counts against the accuracy KPI and, if the kitchen has a ticket, sends a needless KORREKTUR. Fix: classify a line with the same `menu_item_id`, quantity and options as the stored row as `kept` | before T-8.4 reads corrections for the KPI, latest before G2 |
 | Reminder for orders waiting for release (T-4.7) | Design review (UX, minor): an order outside `primary` only cooks after "Passt". Today one tone and a blink; after N minutes without release the tone should repeat and the card should say how long it waits. Needs a value in `service_config` | with T-8.2 (overflow approval flow) |
 | Change the option of an existing position (T-4.7) | Design review (UX, minor): today "Tauschen" with the same number re-picks the options (base price stays frozen). A direct "Ändern" on an option line would be one tap shorter | at the T-3.5 operating test, if the team stumbles |
 | Cancel an order from the tablet (T-4.7) | A correction may not remove the last position: an empty order is a cancellation, which needs a confirmation (docs/06 §1 rule 6) and a message to the kitchen. Not in T-4.7 | before G2 |
@@ -286,8 +287,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.31.18 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sechs P2 als offene Punkte (Regel A)
-- **v1.31.17 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
+- **v1.31.19 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sechs P2 als offene Punkte (Regel A)
+- **v1.31.18 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
+- **v1.31.17 · 25.09.2026:** offener Punkt aus PR #140
 - **v1.31.16 · 25.09.2026:** T-4.7 done
 - **v1.31.15 · 24.09.2026:** PR #133 gemergt, ein Befund nach der abgearbeiteten Runde als offener Punkt (nur Text-Telefon)
 - **v1.31.14 · 24.09.2026:** Anrufprotokoll: Nr. nur hinter Strassennamen gestrichen, doppelte Zeile zaehlt einmal, Datum im ID-Verzeichnis geprueft, Dateirechte bleiben (Codex)
