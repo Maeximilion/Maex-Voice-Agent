@@ -41,7 +41,7 @@
   {% if l.missing %}<p class="blocker">Fehlt noch: {{ l.missing|join(", ") }}</p>{% endif %}
   <div class="edit-actions">
     {% if l.kind == "removed" %}
-    {{ tap("zurueck:" ~ l.index, "Zurück") }}
+    {{ tap("restore:" ~ l.index, "Zurück") }}
     {% else %}
     {{ tap("minus:" ~ l.where ~ ":" ~ l.index, "−", "qty") }}
     {{ tap("plus:" ~ l.where ~ ":" ~ l.index, "+", "qty") }}
@@ -49,14 +49,14 @@
     {% if l.note %}
     {# Ein Hinweis kann eine Allergie sein (E14): Entfernen nur mit Rueckfrage,
        Tauschen behaelt ihn. #}
-    {{ tap("weg:" ~ l.index, "Entfernen", "", "Der Hinweis fällt mit weg: " ~ l.note ~ " - Wirklich entfernen?") }}
+    {{ tap("remove:" ~ l.index, "Entfernen", "", "Der Hinweis fällt mit weg: " ~ l.note ~ " - Wirklich entfernen?") }}
     {% endif %}
     {% if swapping == l.index %}
-    {{ tap("nicht-tauschen", "Nicht tauschen") }}
+    {{ tap("unswap", "Nicht tauschen") }}
     {% else %}
-    {{ tap("tauschen:" ~ l.index, "Tauschen") }}
+    {{ tap("swap:" ~ l.index, "Tauschen") }}
     {% endif %}
-    {% if l.kind == "swapped" %}{{ tap("zurueck:" ~ l.index, "Zurück") }}{% endif %}
+    {% if l.kind == "swapped" %}{{ tap("restore:" ~ l.index, "Zurück") }}{% endif %}
     {% endif %}
     {% endif %}
   </div>
@@ -75,7 +75,7 @@
   {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
   <form hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
         hx-target="#korrektur" hx-swap="innerHTML"
-        hx-vals='{"op": "nummer"}'
+        hx-vals='{"op": "number"}'
         hx-sync="this:drop" hx-disabled-elt="find fieldset">
     <fieldset>
       <input type="hidden" name="state" value="{{ state }}">
@@ -84,8 +84,8 @@
         {% for l in added %}{{ line_view(l) }}{% endfor %}
       </ul>
       <div class="nummer">
-        <label for="nummer">{{ "Tauschen gegen Nummer" if swapping is not none else "Gericht dazu, Nummer" }}</label>
-        <input type="text" id="nummer" name="nummer" inputmode="text" autocomplete="off">
+        <label for="number">{{ "Tauschen gegen Nummer" if swapping is not none else "Gericht dazu, Nummer" }}</label>
+        <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
         <button type="submit">Übernehmen</button>
       </div>
       <div class="order-foot">

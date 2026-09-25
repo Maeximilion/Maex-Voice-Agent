@@ -167,7 +167,7 @@ def apply_op(
     parts = op.split(":")
     kind = parts[0]
     try:
-        if kind == "nummer":
+        if kind == "number":
             item_id = find_item(number)
             if item_id is None:
                 return UNKNOWN_NUMBER.format(number=number.strip() or "?")
@@ -192,20 +192,20 @@ def apply_op(
                 # Mit Hinweis geht es nur ueber "Entfernen" mit Rueckfrage.
                 target["q"] = 1
             return None
-        if kind == "weg":
+        if kind == "remove":
             row = state.rows[int(parts[1])]
             row["q"], row["d"] = 0, True
             return None
-        if kind == "zurueck":
+        if kind == "restore":
             i = int(parts[1])
             row = state.rows[i]
             # Eine entfernte Zeile zeigt ihre Menge von vorher.
             row.update({"q": plan.rows[i].quantity, "d": False, "s": None, "o": []})
             return None
-        if kind == "tauschen":
+        if kind == "swap":
             state.swapping = int(parts[1])
             return None
-        if kind == "nicht-tauschen":
+        if kind == "unswap":
             state.swapping = None
             return None
         if kind == "opt":

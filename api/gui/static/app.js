@@ -107,8 +107,8 @@
   }
   // Was beim Laden schon da war, klingelt nicht.
   var bekannt = karten("rueckrufe-liste");
-  var bekannteBestellungen = karten("bestellungen-liste");
-  function neueIds(vorher, jetzt) {
+  var knownOrders = karten("bestellungen-liste");
+  function newIds(vorher, jetzt) {
     return Object.keys(jetzt).filter(function (id) {
       return !(id in vorher);
     });
@@ -116,15 +116,15 @@
   document.body.addEventListener("htmx:afterSwap", function (e) {
     var ziel = e.detail.target && e.detail.target.id;
     if (ziel === "bestellungen-liste") {
-      var jetztB = karten("bestellungen-liste");
-      var neuB = neueIds(bekannteBestellungen, jetztB);
-      bekannteBestellungen = jetztB;
-      if (!neuB.length) return;
+      var currentOrders = karten("bestellungen-liste");
+      var newOrders = newIds(knownOrders, currentOrders);
+      knownOrders = currentOrders;
+      if (!newOrders.length) return;
       // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
       // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
       // niemand das Blinken.
       ton([523, 659, 784]);
-      neuB.forEach(function (id, i) {
+      newOrders.forEach(function (id, i) {
         var el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
         if (!el) return;
         el.classList.add("neu");
@@ -134,7 +134,7 @@
     }
     if (ziel !== "rueckrufe-liste") return;
     var jetzt = karten("rueckrufe-liste");
-    var neu = neueIds(bekannt, jetzt);
+    var neu = newIds(bekannt, jetzt);
     bekannt = jetzt;
     if (!neu.length) return;
     var beschwerde = neu.some(function (id) {
@@ -143,7 +143,7 @@
     ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
   });
 
-  function bestellungen() {
+  function reloadOrders() {
     window.htmx.ajax("GET", "/gui/fragments/bestellungen", {
       target: "#bestellungen-liste",
     });
@@ -153,44 +153,44 @@
   // Speichern (Ereignis vom Server), mit "Abbrechen" und nach 90 Sekunden ohne
   // Tap - wer zum klingelnden Telefon geht, laesst sonst eine halbe Korrektur
   // offen stehen.
-  var korrektur = document.getElementById("korrektur");
-  var ruhe = null;
-  var RUHE_MS = 90000;
-  function korrekturZu() {
-    if (korrektur) korrektur.innerHTML = "";
-    if (ruhe) window.clearTimeout(ruhe);
-    ruhe = null;
+  var correctionBox = document.getElementById("korrektur");
+  var idleTimer = null;
+  var IDLE_MS = 90000;
+  function closeCorrection() {
+    if (correctionBox) correctionBox.innerHTML = "";
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = null;
   }
-  function wecker() {
-    if (ruhe) window.clearTimeout(ruhe);
-    ruhe = window.setTimeout(korrekturZu, RUHE_MS);
+  function armIdleTimer() {
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(closeCorrection, IDLE_MS);
   }
-  if (korrektur) {
-    korrektur.addEventListener("click", function (e) {
+  if (correctionBox) {
+    correctionBox.addEventListener("click", function (e) {
       if (e.target.closest("[data-schliessen]")) {
-        korrekturZu();
+        closeCorrection();
         return;
       }
-      wecker();
+      armIdleTimer();
     });
     // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
-    korrektur.addEventListener("input", wecker);
+    correctionBox.addEventListener("input", armIdleTimer);
     // Ins Bild rollen nur beim Oeffnen, nicht nach jedem Tap: rollt die Seite
     // unter dem Finger weg, trifft der naechste Tap einen anderen Knopf (im
     // Browsertest die Wartezeit in der Kopfzeile).
-    var warOffen = false;
+    var wasOpen = false;
     document.body.addEventListener("htmx:beforeSwap", function (e) {
-      if (e.detail.target === korrektur) warOffen = !!korrektur.firstElementChild;
+      if (e.detail.target === correctionBox) wasOpen = !!correctionBox.firstElementChild;
     });
     document.body.addEventListener("htmx:afterSwap", function (e) {
-      if (e.detail.target !== korrektur || !korrektur.firstElementChild) return;
-      wecker();
-      if (!warOffen) korrektur.scrollIntoView({ block: "start" });
+      if (e.detail.target !== correctionBox || !correctionBox.firstElementChild) return;
+      armIdleTimer();
+      if (!wasOpen) correctionBox.scrollIntoView({ block: "start" });
     });
   }
   document.body.addEventListener("bestellungen-geaendert", function () {
-    korrekturZu();
-    bestellungen();
+    closeCorrection();
+    reloadOrders();
   });
 
   var strom = new EventSource("/gui/events");
@@ -198,7 +198,7 @@
   // Liste und bleibt stehen (Design-Review T-4.7).
   strom.addEventListener("orders", function () {
     offline(false);
-    bestellungen();
+    reloadOrders();
   });
   strom.addEventListener("callbacks", function () {
     offline(false);

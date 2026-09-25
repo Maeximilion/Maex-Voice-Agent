@@ -363,7 +363,7 @@ def _orders_fragment(
 @router.get(
     "/fragments/bestellungen", response_class=HTMLResponse, include_in_schema=False
 )
-def bestellungen_fragment(
+def orders_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Nur die Spalte "Neue Bestellungen". Holt die Seite nach jedem Ereignis."""
@@ -399,7 +399,7 @@ def _order_tap(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def bestellung_passt(
+def approve_order_tap(
     request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6)."""
@@ -414,7 +414,7 @@ def bestellung_passt(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def bestellung_nochmal_senden(
+def resend_order_tap(
     request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     return _order_tap(
@@ -433,7 +433,7 @@ async def _form(request: Request) -> dict[str, str]:
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
 
-def _korrektur(
+def _correction_panel(
     request: Request,
     order_id: uuid.UUID,
     plan: correction.CorrectionPlan | None,
@@ -454,17 +454,19 @@ def _korrektur(
     response_class=HTMLResponse,
     include_in_schema=False,
 )
-def korrektur_oeffnen(
+def correction_open(
     request: Request, order_id: uuid.UUID, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     tenant = _tenant(session)
     if tenant is None:
-        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
+        return _correction_panel(request, order_id, None, None, NO_TENANT, 503)
     try:
         plan = correction.preview_correction(session, tenant.id, order_id)
     except AppError as exc:
-        return _korrektur(request, order_id, None, None, exc.say or ORDER_FAILED, 409)
-    return _korrektur(request, order_id, plan, orders_view.fresh_state(plan))
+        return _correction_panel(
+            request, order_id, None, None, exc.say or ORDER_FAILED, 409
+        )
+    return _correction_panel(request, order_id, plan, orders_view.fresh_state(plan))
 
 
 @router.post(
@@ -473,7 +475,7 @@ def korrektur_oeffnen(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def korrektur_vorschau(
+def correction_preview(
     request: Request,
     order_id: uuid.UUID,
     form: dict[str, str] = Depends(_form),
@@ -482,8 +484,8 @@ def korrektur_vorschau(
     """Ein Tap in der Korrektur: anwenden, neu rechnen, Karte zurueck. Schreibt nichts."""
     tenant = _tenant(session)
     if tenant is None:
-        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
-    op, nummer = form.get("op", ""), form.get("nummer", "")
+        return _correction_panel(request, order_id, None, None, NO_TENANT, 503)
+    op, number = form.get("op", ""), form.get("number", "")
     try:
         edit = orders_view.parse_state(form.get("state", ""))
         before = correction.preview_correction(
@@ -491,7 +493,9 @@ def korrektur_vorschau(
         )
     except AppError as exc:
         # Veralteter oder kaputter Stand: nichts raten, neu oeffnen lassen.
-        return _korrektur(request, order_id, None, None, exc.say or ORDER_FAILED, 409)
+        return _correction_panel(
+            request, order_id, None, None, exc.say or ORDER_FAILED, 409
+        )
 
     def find(number: str) -> uuid.UUID | None:
         item = correction.find_by_number(session, tenant.id, number)
@@ -499,13 +503,13 @@ def korrektur_vorschau(
 
     snapshot = edit.dump()
     try:
-        message = orders_view.apply_op(edit, op, before, nummer, find)
+        message = orders_view.apply_op(edit, op, before, number, find)
         plan = correction.preview_correction(
             session, tenant.id, order_id, edit.request()
         )
     except AppError as exc:
         # Der Tap passt nicht (Menge, Auswahl): der alte Stand bleibt, mit Zeile.
-        return _korrektur(
+        return _correction_panel(
             request,
             order_id,
             before,
@@ -513,7 +517,7 @@ def korrektur_vorschau(
             exc.say or ORDER_FAILED,
             422,
         )
-    return _korrektur(request, order_id, plan, edit, message)
+    return _correction_panel(request, order_id, plan, edit, message)
 
 
 @router.post(
@@ -522,7 +526,7 @@ def korrektur_vorschau(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def korrektur_speichern(
+def correction_save(
     request: Request,
     order_id: uuid.UUID,
     form: dict[str, str] = Depends(_form),
@@ -531,11 +535,11 @@ def korrektur_speichern(
     """Mit Grund speichern. Danach schliesst die Korrektur und die Spalte laedt neu."""
     tenant = _tenant(session)
     if tenant is None:
-        return _korrektur(request, order_id, None, None, NO_TENANT, 503)
+        return _correction_panel(request, order_id, None, None, NO_TENANT, 503)
     try:
         edit = orders_view.parse_state(form.get("state", ""))
     except AppError as exc:
-        return _korrektur(request, order_id, None, None, exc.say, 409)
+        return _correction_panel(request, order_id, None, None, exc.say, 409)
     try:
         correction.apply_correction(
             session, tenant.id, order_id, edit.request(), form.get("reason", "")
@@ -549,8 +553,8 @@ def korrektur_speichern(
                 session, tenant.id, order_id, edit.request()
             )
         except AppError:
-            return _korrektur(request, order_id, None, None, say, 409)
-        return _korrektur(request, order_id, plan, edit, say, 422)
+            return _correction_panel(request, order_id, None, None, say, 409)
+        return _correction_panel(request, order_id, plan, edit, say, 422)
     response = HTMLResponse("")
     response.headers["HX-Trigger"] = ORDERS_CHANGED
     return response

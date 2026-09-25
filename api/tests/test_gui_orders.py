@@ -157,14 +157,14 @@ def test_korrektur_menge_tauschen_und_speichern(client, db, tenant_id):
 
     html = client.post(
         f"{base}/vorschau",
-        data={"state": _state(html), "op": "nummer", "nummer": "13"},
+        data={"state": _state(html), "op": "number", "number": "13"},
         headers=HX,
     ).text
     assert "Pho Bo" in html and "32,60 €" in html
 
     unknown = client.post(
         f"{base}/vorschau",
-        data={"state": _state(html), "op": "nummer", "nummer": "99"},
+        data={"state": _state(html), "op": "number", "number": "99"},
         headers=HX,
     )
     assert "Nummer 99 gibt es nicht auf der Karte." in unknown.text
@@ -185,7 +185,7 @@ def test_korrektur_pflichtauswahl_per_tap(client, db, tenant_id):
     html = client.get(base).text
     html = client.post(
         f"{base}/vorschau",
-        data={"state": _state(html), "op": "nummer", "nummer": "47"},
+        data={"state": _state(html), "op": "number", "number": "47"},
         headers=HX,
     ).text
     assert "Fehlt noch: Fleisch" in html
