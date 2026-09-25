@@ -28,7 +28,7 @@ Als Umgebungsvariablen:
 | Name | Beispiel | Bedeutung |
 |---|---|---|
 | `MAEX_SERVER_URL` | `https://agent.example.com` | Server, nur https (außer localhost) |
-| `MAEX_KITCHEN_TOKEN` | lang und zufällig | gleicher Wert wie `KITCHEN_BRIDGE_TOKEN` auf dem Server |
+| `MAEX_KITCHEN_TOKEN` | lang und zufällig | gleicher Wert wie `KITCHEN_BRIDGE_TOKEN` auf dem Server; dort auch `KITCHEN_BRIDGE_TENANT_ID` setzen, dann gilt das Token nur für diesen Betrieb |
 | `MAEX_TENANT_ID` | UUID | Betrieb, dessen Bons gedruckt werden |
 | `MAEX_PRINTER` | `tcp:192.168.1.50` oder `windows:EPSON TM-T20II Küche` | Drucker |
 | `MAEX_PRINTER_WIDTH` | `48` | Zeichen je Zeile (80-mm-Papier, Schrift A) |
@@ -54,5 +54,9 @@ python -m printbridge
 ```
 
 Unter Windows startet die Aufgabenplanung die Brücke bei der Anmeldung ("Beim Start", "Bei Fehler neu starten").
+
+Die Uhrzeiten auf dem Bon (fertig um, gedruckt) kommen vom Server in der Zeitzone des Betriebs; die Uhr des Rechners spielt keine Rolle.
+
+Beim Netzwerkdrucker fragt die Brücke vor jedem Bon den Status ab (offline, Papier). Dafür muss die automatische Statusrückmeldung (ASB) des Druckers aus sein, so ist er ab Werk eingestellt.
 
 Der Kassenbetrieb läuft weiter: Kasse und Brücke teilen sich den Drucker, die Aufträge kommen nacheinander.

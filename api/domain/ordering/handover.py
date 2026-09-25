@@ -26,8 +26,10 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import Integer, cast, select
+from sqlalchemy import Integer, cast, or_, select
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
@@ -35,7 +37,7 @@ from api.core.logging import get_logger, log
 from api.events import enqueue
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed, mark_sent
 from api.events.types import KITCHEN, ORDER_HANDOVER_FAILED
-from api.models import Order, OutboxEvent
+from api.models import AuditLog, Order, OutboxEvent, Tenant
 
 logger = get_logger("api.domain.ordering.handover")
 
@@ -48,6 +50,10 @@ CLAIM_LIMIT_MAX = 10
 PENDING = "pending"
 SENT = "sent"
 FAILED = "failed"
+
+ACTOR = "system"
+ACTION_HANDOVER_SENT = "order.handover_sent"
+ACTION_HANDOVER_FAILED = "order.handover_failed"
 
 
 def _revision(event: OutboxEvent) -> int:
@@ -96,6 +102,7 @@ def _to_red(session: Session, event: OutboxEvent, reason: str) -> None:
     if order is None or order.handover_state != PENDING:
         return
     order.handover_state = FAILED
+    _audit(session, event, order, ACTION_HANDOVER_FAILED, reason)
     # Alarm: die Kueche hat den Bon nicht, ein Mensch muss ran (docs/02 §Ausfall).
     log(
         logger,
@@ -126,6 +133,46 @@ def _to_sent(session: Session, event: OutboxEvent) -> None:
     order = _order(session, event)
     if order is not None and order.handover_state in (PENDING, FAILED):
         order.handover_state = SENT
+        _audit(session, event, order, ACTION_HANDOVER_SENT)
+
+
+def _audit(
+    session: Session,
+    event: OutboxEvent,
+    order: Order,
+    action: str,
+    reason: str | None = None,
+) -> None:
+    """Jeder Wechsel der Karte steht im audit_log (docs/02 §7), ohne Personendaten."""
+    payload: dict[str, Any] = {
+        "call_id": str(order.call_id),
+        "event_id": str(event.id),
+        "revision": _revision(event),
+    }
+    if reason:
+        payload["reason"] = reason
+    session.add(
+        AuditLog(
+            tenant_id=order.tenant_id,
+            actor=ACTOR,
+            action=action,
+            entity="order",
+            entity_id=order.id,
+            payload=payload,
+        )
+    )
+
+
+def _supersede(event: OutboxEvent, newest: int, now: datetime) -> None:
+    """Ueberholter Bon: erledigt, ohne Druck und ohne Alarm."""
+    mark_sent(event, now, count_attempt=False)
+    event.last_error = f"nicht gedruckt: ueberholt von Revision {newest}"
+
+
+def _local_times(session: Session, tenant_id: uuid.UUID, now: datetime) -> tuple:
+    """Zeitzone des Betriebs: der Bon zeigt Europe/Berlin, egal wo die Bruecke laeuft."""
+    tz = ZoneInfo(session.scalar(select(Tenant.timezone).where(Tenant.id == tenant_id)))
+    return tz, now.astimezone(tz).strftime("%H:%M")
 
 
 def claim_tickets(
@@ -152,16 +199,29 @@ def claim_tickets(
         .with_for_update(skip_locked=True)
     ).all()
     tickets = []
+    tz, print_time = _local_times(session, tenant_id, now) if rows else (None, None)
     for event in rows:
         newest = _newest_revision(session, event) or 0
         if _revision(event) < newest:
-            mark_sent(event, now)
-            event.last_error = f"nicht gedruckt: ueberholt von Revision {newest}"
+            _supersede(event, newest, now)
             continue
         event.attempts += 1
         event.next_attempt_at = now + timedelta(seconds=LEASE_SECONDS)
+        ready_at = event.payload.get("ready_at")
         tickets.append(
-            {"id": str(event.id), "attempt": event.attempts, "ticket": event.payload}
+            {
+                "id": str(event.id),
+                "attempt": event.attempts,
+                "ticket": event.payload,
+                # Uhrzeiten schon in Ortszeit des Betriebs: die Bruecke kennt
+                # keine Zeitzone (CLAUDE.md §8, Anzeige in Europe/Berlin).
+                "ready_time": datetime.fromisoformat(ready_at)
+                .astimezone(tz)
+                .strftime("%H:%M")
+                if ready_at
+                else None,
+                "print_time": print_time,
+            }
         )
     session.commit()
     return tickets
@@ -218,21 +278,52 @@ def sweep(session: Session, now: datetime) -> int:
 
     Faellt die Bruecke aus, fragt niemand nach Bons, und ohne Waechter bliebe die
     Karte gruen, waehrend die Kueche nichts weiss.
+
+    Sperrreihenfolge wie im Tablet: erst die Bestellung, dann der Bon. Sonst
+    ueberspringt "Nochmal senden" den vom Waechter gesperrten Bon, legt einen
+    zweiten an, und der Waechter faerbt die Karte gleich danach wieder rot.
     """
-    stale = session.scalars(
-        select(OutboxEvent)
+    cutoff = now - timedelta(seconds=PICKUP_TIMEOUT_SECONDS)
+    stale = select(OutboxEvent.id).where(
+        OutboxEvent.event_type.in_(KITCHEN),
+        OutboxEvent.status == PENDING,
+        OutboxEvent.next_attempt_at <= cutoff,
+    )
+    # Nur, was etwas zu tun gibt: eine Karte, die noch nicht rot ist, oder ein
+    # Bon ohne Versuche mehr. Eine rote Karte wird nicht alle 5 s neu gesperrt.
+    candidates = session.scalars(
+        stale.join(
+            Order,
+            Order.id == cast(OutboxEvent.payload["order_id"].astext, PG_UUID),
+        )
         .where(
-            OutboxEvent.event_type.in_(KITCHEN),
-            OutboxEvent.status == PENDING,
-            OutboxEvent.next_attempt_at
-            <= now - timedelta(seconds=PICKUP_TIMEOUT_SECONDS),
+            or_(Order.handover_state == PENDING, OutboxEvent.attempts >= MAX_ATTEMPTS)
         )
         .order_by(OutboxEvent.created_at)
-        .with_for_update(skip_locked=True)
     ).all()
     turned = 0
-    for event in stale:
+    for event_id in candidates:
+        probe = session.get(OutboxEvent, event_id)
+        if probe is None:
+            continue
+        order = _order(session, probe)
+        # Nach der Sperre der Bestellung neu lesen: das Tablet kann den Bon
+        # inzwischen neu faellig gemacht oder die Bruecke ihn gemeldet haben.
+        event = session.scalar(
+            stale.where(OutboxEvent.id == event_id)
+            .with_for_update(skip_locked=True)
+            .execution_options(populate_existing=True)
+            .with_only_columns(OutboxEvent)
+        )
+        if event is None:
+            session.commit()
+            continue
         if event.attempts >= MAX_ATTEMPTS:
+            newest = _newest_revision(session, event) or 0
+            if _revision(event) < newest:
+                _supersede(event, newest, now)
+                session.commit()
+                continue
             event.status = FAILED
             log(
                 logger,
@@ -242,7 +333,6 @@ def sweep(session: Session, now: datetime) -> int:
                 attempts=event.attempts,
                 last_error=event.last_error,
             )
-        order = _order(session, event)
         before = order.handover_state if order is not None else None
         reason = (
             "Druckbruecke hat nicht zurueckgemeldet"
@@ -252,5 +342,5 @@ def sweep(session: Session, now: datetime) -> int:
         _to_red(session, event, reason)
         if order is not None and before != order.handover_state:
             turned += 1
-    session.commit()
+        session.commit()
     return turned

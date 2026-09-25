@@ -79,12 +79,22 @@ def run_once(
             ack(claimed["id"], True)
             continue
         try:
-            printer.send(render(ticket, width, clock()))
+            view = {
+                **ticket,
+                "ready_time": claimed.get("ready_time"),
+                "print_time": claimed.get("print_time"),
+            }
+            printer.send(render(view, width, clock()))
         except Exception as exc:  # noqa: BLE001 - jeder Druckfehler wird gemeldet
             logger.error("Druck fehlgeschlagen: %s", exc)
             ack(claimed["id"], False, str(exc))
             continue
-        log.record(order_id, revision)
+        try:
+            log.record(order_id, revision)
+        except OSError as exc:
+            # Gedruckt ist gedruckt: trotzdem melden, sonst kaeme der Bon nach
+            # der Leihfrist ein zweites Mal aus dem Drucker.
+            logger.error("Druckprotokoll nicht geschrieben: %s", exc)
         ack(claimed["id"], True)
         printed += 1
     if lost:

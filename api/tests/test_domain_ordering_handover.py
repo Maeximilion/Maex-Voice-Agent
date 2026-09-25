@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,7 +24,7 @@ from api.domain.ordering.handover import (
 from api.events.dispatcher import MAX_ATTEMPTS, dispatch_once
 from api.events.types import ORDER_CONFIRMED, ORDER_HANDOVER_FAILED
 from api.main import app
-from api.models import Order, OrderItem, OutboxEvent
+from api.models import AuditLog, Order, OrderItem, OutboxEvent
 from api.tests.conftest import LATENZ_RUNDEN, p95_ms
 from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
@@ -317,3 +318,78 @@ def test_http_abholen_unter_300_ms(http, tenant_id):
     )
     print(f"p95 /v1/kitchen/claim: {ms:.1f} ms")
     assert ms < 300
+
+
+# --- Befunde aus dem eigenen Review ------------------------------------------------
+
+
+def test_uhrzeiten_in_ortszeit_des_betriebs(session, tenant_id, order_id):
+    # Die Bruecke kann auf einem Rechner mit UTC laufen: der Server rechnet um.
+    now = _now()
+    [ticket] = claim_tickets(session, tenant_id, now)
+    berlin = ZoneInfo("Europe/Berlin")
+    assert ticket["print_time"] == now.astimezone(berlin).strftime("%H:%M")
+    ready = datetime.fromisoformat(ticket["ticket"]["ready_at"])
+    assert ticket["ready_time"] == ready.astimezone(berlin).strftime("%H:%M")
+
+
+def test_jeder_wechsel_der_karte_steht_im_audit_log(session, tenant_id, order_id):
+    [ticket] = claim_tickets(session, tenant_id, _now())
+    event_id = uuid.UUID(ticket["id"])
+    ack_ticket(session, tenant_id, event_id, False, _now(), "Papier leer")
+    [retry] = claim_tickets(session, tenant_id, _now(6))
+    ack_ticket(session, tenant_id, uuid.UUID(retry["id"]), True, _now(6))
+    rows = session.scalars(
+        select(AuditLog)
+        .where(AuditLog.entity_id == order_id, AuditLog.actor == "system")
+        .order_by(AuditLog.id)
+    ).all()
+    assert [r.action for r in rows] == ["order.handover_failed", "order.handover_sent"]
+    assert rows[0].payload["reason"] == "Papier leer"
+    assert "Müller" not in str([r.payload for r in rows])
+
+
+def test_ueberholter_bon_ohne_versuche_ist_kein_alarm(
+    session, tenant_id, order_id, caplog
+):
+    [first] = claim_tickets(session, tenant_id, _now())
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.id == uuid.UUID(first["id"]))
+        .values(attempts=MAX_ATTEMPTS)
+    )
+    session.commit()
+    _fix_quantity(session, tenant_id, order_id)
+    [second] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(session, tenant_id, uuid.UUID(second["id"]), True, _now())
+
+    caplog.clear()
+    sweep(session, _now(LEASE_SECONDS + PICKUP_TIMEOUT_SECONDS + 2))
+    old, _new = _events(session, order_id)
+    assert old.status == "sent"
+    assert "ueberholt von Revision 1" in old.last_error
+    assert _order(session, order_id).handover_state == "sent"
+    assert "Alarm" not in caplog.text
+
+
+def test_token_nur_fuer_den_eigenen_betrieb(http, tenant_id, monkeypatch):
+    auth = {"Authorization": "Bearer bruecke-geheim"}
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
+    own = http.post(
+        "/v1/kitchen/claim", json={"tenant_id": str(tenant_id)}, headers=auth
+    )
+    assert own.status_code == 200
+    other = http.post(
+        "/v1/kitchen/claim", json={"tenant_id": str(uuid.uuid4())}, headers=auth
+    )
+    assert other.status_code == 401
+    ack = http.post(
+        "/v1/kitchen/ack",
+        json={
+            "tenant_id": str(uuid.uuid4()),
+            "event_id": str(uuid.uuid4()),
+            "ok": True,
+        },
+        headers=auth,
+    )
+    assert ack.status_code == 401

@@ -412,11 +412,12 @@ Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen 
 
 ## Küchenbon (Druckbrücke, T-4.6)
 
-Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TOKEN` statt des Agent-Tokens. Ohne gesetztes Token ist der Eingang zu. Antworten in der Hülle aus §1. Architektur: docs/02 §2a.
+Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TOKEN` statt des Agent-Tokens. Ohne gesetztes Token ist der Eingang zu. Mit `KITCHEN_BRIDGE_TENANT_ID` gilt das Token nur für diesen Betrieb, jeder andere `tenant_id` ist `unauthorized`. Antworten in der Hülle aus §1. Architektur: docs/02 §2a.
 
-**`POST /v1/kitchen/claim`** `{tenant_id, limit}` (1–10, Standard 5) → `{"tickets": [{"id", "attempt", "ticket"}]}`
+**`POST /v1/kitchen/claim`** `{tenant_id, limit}` (1–10, Standard 5) → `{"tickets": [{"id", "attempt", "ticket", "ready_time", "print_time"}]}`
 
 - Fällige `order.confirmed` des Betriebs, älteste zuerst. `ticket` ist der Inhalt aus §confirm (Positionen, `revision`, `correction_reason`).
+- `ready_time` und `print_time` sind „HH:MM" in der Zeitzone des Betriebs: die Brücke rechnet nicht selbst um, der Bon stimmt auch auf einem Rechner mit UTC.
 - Abholen zählt als Versuch und leiht den Bon für 60 s aus. Ohne Rückmeldung ist er danach wieder fällig.
 - Ein Bon, zu dem es schon eine höhere Revision gibt, wird nicht ausgeliefert, sondern als erledigt verbucht (`last_error` sagt „überholt von Revision n").
 - Zwei Brücken gleichzeitig bekommen nie denselben Bon (Zeilensperre, SKIP LOCKED).
@@ -426,6 +427,7 @@ Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TO
 
 - `ok = true`: Bon `sent`; ist er die neueste Revision, wird `handover_state` `sent` (auch aus `failed`: die Karte wird wieder normal).
 - `ok = false`: Fehlversuch mit Backoff (docs/03 §outbox), nach dem letzten `failed` plus Alarm. Ist er die neueste Revision und `handover_state` noch `pending`, wird die Karte sofort rot, Alarm im Log und `order.handover_failed` an n8n.
+- Jeder Wechsel der Karte steht im `audit_log` (`order.handover_sent` / `order.handover_failed`, Akteur `system`, ohne Personendaten).
 - Wiederholte Rückmeldung für einen erledigten Bon ändert nichts. Unbekannter oder fremder Bon: `not_found`.
 
-**Wächter** (im Dispatcher-Prozess, `python -m api.jobs.cold_path`): liegt ein fälliger Bon 60 s unabgeholt, wird die Karte rot wie oben. Ein Bon ohne Versuche mehr wird `failed`.
+**Wächter** (im Dispatcher-Prozess, `python -m api.jobs.cold_path`): liegt ein fälliger Bon 60 s unabgeholt, wird die Karte rot wie oben. Ein Bon ohne Versuche mehr wird `failed`, ein überholter stattdessen still erledigt. Er sperrt erst die Bestellung, dann den Bon, wie das Tablet: „Nochmal senden" während eines Durchlaufs legt keinen zweiten Bon an und wird nicht gleich wieder rot.

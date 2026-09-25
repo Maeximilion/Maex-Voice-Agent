@@ -113,7 +113,9 @@ def render(
     kind = TYPES.get(ticket.get("type") or "", str(ticket.get("type") or "").upper())
     code = ticket.get("pickup_code") or ""
     out += [BIG_ON, _wrapped(f"{kind} {code}".strip(), width // 2), BIG_OFF]
-    ready = _clock(ticket.get("ready_at"))
+    # Der Server liefert die Uhrzeiten in der Ortszeit des Betriebs mit; nur
+    # ohne sie (Probebon) rechnet die Bruecke mit der Uhr ihres Rechners.
+    ready = ticket.get("ready_time") or _clock(ticket.get("ready_at"))
     if ready:
         out += [BOLD_ON, _line(f"Fertig um {ready}"), BOLD_OFF]
     if ticket.get("customer_name"):
@@ -135,7 +137,7 @@ def render(
             ]
     out.append(_line("-" * width))
     out.append(_line(f"Summe {_euro(ticket.get('total_cents'))}".rjust(width)))
-    stamp = (printed_at or local_now()).strftime("%H:%M")
+    stamp = ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
     revision = int(ticket.get("revision") or 0)
     footer = f"Gedruckt {stamp}" + (f" - Stand {revision}" if revision else "")
     out.append(_line(footer))

@@ -429,3 +429,32 @@ def test_gescheiterte_meldung_haelt_die_uebrigen_bons_nicht_auf(tmp_path):
         run_once(Flaky(), printer, PrintedLog(tmp_path / "s"))
     assert len(printer.bons) == 3
     assert acked == ["e1", "e2"]
+
+
+def test_server_uhrzeiten_gehen_vor_der_rechneruhr():
+    ticket = {**TICKET, "ready_time": "18:30", "print_time": "18:02"}
+    text = render(ticket, printed_at=datetime(2026, 9, 15, 3, 0, tzinfo=UTC)).decode(
+        "cp858"
+    )
+    assert "Fertig um 18:30" in text
+    assert "Gedruckt 18:02" in text
+
+
+def test_protokollfehler_meldet_trotzdem_gedruckt(tmp_path):
+    acks: list[tuple] = []
+
+    class One:
+        def claim(self):
+            return [{"id": "e1", "ticket": TICKET, "print_time": "18:02"}]
+
+        def ack(self, event_id, ok, error=None):
+            acks.append((event_id, ok))
+
+    class BrokenLog(PrintedLog):
+        def record(self, order_id, revision):
+            raise PermissionError("Datei gesperrt")
+
+    printer = FakePrinter()
+    assert run_once(One(), printer, BrokenLog(tmp_path / "s")) == 1
+    assert acks == [("e1", True)]
+    assert b"Gedruckt 18:02" in printer.bons[0]

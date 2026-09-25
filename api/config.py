@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     dispatcher_batch: int = 20
     # Druckbruecke im Lokal (T-4.6): leer heisst, /v1/kitchen/* ist zu.
     kitchen_bridge_token: str = ""
+    # Betrieb, fuer den das Token gilt. Gesetzt, ist jeder andere tenant_id
+    # abgelehnt: ein geleaktes Token eines Lokals oeffnet nicht die Bons aller.
+    kitchen_bridge_tenant_id: str = ""
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
