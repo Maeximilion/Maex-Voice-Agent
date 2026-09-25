@@ -59,7 +59,8 @@ _INGREDIENT = (
     re.compile(r"gegen\s+([^.;!?]+?)\s+allergisch", re.IGNORECASE),
     # "allergisch gegen Sesam", "Allergie gegen Sellerie"
     re.compile(
-        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit)\s+(?:gegen|auf)\s+" + _REST,
+        r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit|intoleran\w*)\s+"
+        r"(?:gegen|auf)\s+" + _REST,
         re.IGNORECASE,
     ),
     # "ich vertrage keine Erdnuesse"
@@ -68,7 +69,9 @@ _INGREDIENT = (
 # "Erdnussallergie", "Erdnuss-Allergie" und der Wortanfang in "Nuss- und
 # Sesamallergie": jede gilt, nicht nur die erste (Codex PR #139, P1).
 _COMPOUND = re.compile(
-    r"(\w+?)-?allergie|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)", re.IGNORECASE
+    r"(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
+    r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
+    re.IGNORECASE,
 )
 # Nach einem "und" oder Komma beginnt hier ein neuer Satzteil, keine Zutat mehr.
 _CLAUSE_WORDS = (
@@ -99,6 +102,8 @@ def _is_allergy(word: str) -> bool:
     return (
         "allerg" in word
         or "unvertraeglich" in word
+        # "Laktoseintoleranz" ist Allergie-Rede wie in docs/17 (Codex PR #139).
+        or "intoleran" in word
         or word.startswith(("vertrag", "vertraeg"))
     )
 

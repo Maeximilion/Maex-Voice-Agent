@@ -651,3 +651,31 @@ def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
     """Codex PR #139, P1: "Nuss- und Sesamallergie" sind zwei Allergien. Fehlt
     eine im Hinweis, erfaehrt die Kueche nichts davon."""
     assert classify_wish(gesagt, BEILAGE).text == hinweis
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "hinweis"),
+    [
+        ("mit Laktoseintoleranz", "WICHTIG: Keine Laktose. Grund: Allergie"),
+        (
+            "ich habe eine Glutenunverträglichkeit",
+            "WICHTIG: Keine Gluten. Grund: Allergie",
+        ),
+        (
+            "Laktose- und Glutenintoleranz",
+            "WICHTIG: Keine Laktose und Gluten. Grund: Allergie",
+        ),
+        ("ich bin intolerant gegen Laktose", "WICHTIG: Keine Laktose. Grund: Allergie"),
+    ],
+)
+def test_intoleranz_ist_allergie(gesagt, hinweis):
+    """Codex PR #139, P1: "Intoleranz" und "Unvertraeglichkeit" sind Allergie-
+    Rede (docs/17), kein unbekannter Wunsch."""
+    wish = classify_wish(gesagt, BEILAGE)
+    assert (wish.kind, wish.text) == ("allergy", hinweis)
+
+
+def test_intoleranz_in_der_suche(session, tenant_id):
+    result = suche(session, tenant_id, "die 23 mit Laktoseintoleranz")
+    assert [h.number for h in result.results] == ["23"]
+    assert result.wish.text == "WICHTIG: Keine Laktose. Grund: Allergie"

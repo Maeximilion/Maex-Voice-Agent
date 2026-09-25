@@ -351,7 +351,13 @@ class PickupScript:
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
         """Die Antwort auf "Wogegen?": die Zutat im festen Wortlaut (E14)."""
-        wish = classify_wish(f"allergisch gegen {text}", [])
+        # Eine ganze Antwort ("ich bin gegen Erdnuesse allergisch") traegt ihre
+        # Zutat selbst; nur das blosse Wort ("Erdnuesse", "gegen Erdnuesse")
+        # bekommt den Satzanfang (Codex PR #139, P1).
+        wish = classify_wish(text, [])
+        if wish.kind != "allergy":
+            bare = re.sub(r"^\s*(?:gegen|auf)\s+", "", text, flags=re.IGNORECASE)
+            wish = classify_wish(f"allergisch gegen {bare}", [])
         if not wish.ingredient:
             return LLMTurn(
                 say=self._allergy_question(),

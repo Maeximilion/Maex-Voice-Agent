@@ -1044,3 +1044,20 @@ def test_allergie_und_auswahl_nacheinander(session, tenant):
     [order] = orders(session)
     assert sorted(p[0] for p in positions(session, order)) == ["12", "13"]
     assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+
+
+@pytest.mark.parametrize(
+    "antwort",
+    [
+        "Gegen Erdnüsse.",
+        "Ich bin gegen Erdnüsse allergisch.",
+        "Ich habe eine Erdnüsseallergie.",
+        "Erdnüsse.",
+    ],
+)
+def test_ganze_antwort_auf_wogegen(session, tenant, antwort):
+    """Codex PR #139, P1: eine ganze Antwort ("gegen Erdnüsse", "ich bin gegen
+    Erdnüsse allergisch") gibt dieselbe Zutat wie das blosse Wort."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
