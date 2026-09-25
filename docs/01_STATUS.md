@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.19
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.20
 
 ---
 
@@ -289,6 +289,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.20 · 25.09.2026:** T-4.6 B: Codex-Befunde PR #143 behoben
 - **v1.31.19 · 25.09.2026:** T-4.6 B done: Kuechenbon ueber Druckbruecke
 - **v1.31.18 · 25.09.2026:** T-5.1 done
 - **v1.31.17 · 25.09.2026:** offener Punkt aus PR #140
