@@ -3,6 +3,8 @@
 In der Spalte steht eine Bestellung, solange das Team etwas tun muss:
 - bestaetigt (`confirmed`) am laufenden Betriebstag und noch nicht mit "Passt"
   abgehakt, oder
+- wartet noch auf die Freigabe (`confirmed`, kein `handover_state`), ohne
+  Tagesgrenze: die Kueche hat nichts, bis jemand "Passt" tippt, oder
 - rot: Uebergabe an die Kueche fehlgeschlagen (`handover_state = failed`), auch
   nach "Passt" und ueber 05:00 hinaus - bis sie gelingt (docs/06 §3). Sonst
   hat die Kueche keinen Bon und niemand merkt es (CLAUDE.md §2 Regel 5).
@@ -84,6 +86,10 @@ def _filters(tenant_id: uuid.UUID, start: datetime, end: datetime) -> tuple:
                 Order.created_at >= start,
                 Order.created_at < end,
             ),
+            # Ohne Tagesgrenze: wartet auf Freigabe, die Kueche hat noch nichts.
+            # Um 05:00 verschwaende sonst der einzige Knopf, der sie schickt
+            # (Codex PR #140).
+            and_(Order.status == CONFIRMED, Order.handover_state.is_(None)),
             # Ohne Tagesgrenze: ein fehlender Bon wird um 05:00 nicht besser.
             and_(
                 Order.status.in_((CONFIRMED, APPROVED)),

@@ -257,3 +257,17 @@ def test_kaputter_tauschen_index_meldet_statt_500(client, db, tenant_id, swappin
     )
     assert response.status_code == 409
     assert "durcheinander" in response.text
+
+
+def test_stand_ohne_zeilen_meldet_statt_500(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    state = json.loads(_state(client.get(base).text))
+    state["r"] = []
+    response = client.post(
+        f"{base}/vorschau",
+        data={"state": json.dumps(state), "op": "number", "number": "13"},
+        headers=HX,
+    )
+    assert response.status_code == 409
+    assert "durcheinander" in response.text

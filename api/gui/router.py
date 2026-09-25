@@ -443,7 +443,11 @@ def _correction_panel(
 ) -> HTMLResponse:
     context: dict = {"order_id": str(order_id), "message": message}
     if plan is not None and edit is not None:
-        context.update(orders_view.edit_lines(plan, edit))
+        try:
+            context.update(orders_view.edit_lines(plan, edit))
+        except AppError as exc:
+            # Stand passt nicht zu den Positionen: Meldung statt Fehler 500.
+            context["message"], status = exc.say, 409
     return templates.TemplateResponse(
         request, "fragments/korrektur.html", context, status
     )

@@ -241,7 +241,19 @@ def _line(plan: CorrectionPlan, where: str, index: int) -> PlannedLine:
 
 
 def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
-    """Werte fuer das Template der Korrektur."""
+    """Werte fuer das Template der Korrektur.
+
+    Der Stand muss Zeile fuer Zeile zu den Positionen passen, sonst zeigte das
+    Template Auswahl und Mengen an der falschen Zeile (oder griffe ins Leere,
+    Codex PR #140). Die Domain ergaenzt fehlende Zeilen stumm; hier nicht.
+    """
+    expected = [str(line.order_item_id) for line in plan.rows]
+    if [r.get("id") for r in state.rows] != expected or len(state.added) != len(
+        plan.added
+    ):
+        raise InvalidInput(
+            "Korrekturstand passt nicht zu den Positionen", say=BAD_STATE
+        )
 
     def view(line: PlannedLine, where: str, index: int, chosen) -> dict:
         picked = {(g, n) for g, n in (chosen or [])}

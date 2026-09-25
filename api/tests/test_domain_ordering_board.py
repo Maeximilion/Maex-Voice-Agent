@@ -239,3 +239,17 @@ def test_token_aendert_sich_bei_neu_passt_und_rot(session, tenant_id, call_id):
     # Rohes UPDATE ohne ORM: der Strom sieht es trotzdem.
     _set(session, order_id, handover_state="failed")
     assert new_orders_change_token(session, tenant_id, TZ, NOW) != abgehakt
+
+
+def test_wartende_bestellung_bleibt_ueber_den_tageswechsel(session, tenant_id, call_id):
+    _mode(session, tenant_id, "overflow")
+    wartet = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
+    _mode(session, tenant_id, "primary")
+    hat_bon = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
+
+    # Ohne Freigabe hat die Kueche nichts: sie steht noch da. Die mit Bon nicht.
+    ids = _ids(session, tenant_id)
+    assert wartet in ids
+    assert hat_bon not in ids
+    approve_order(session, tenant_id, wartet)
+    assert _ids(session, tenant_id) == []
