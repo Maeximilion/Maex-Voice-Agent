@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.22
+> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.23
 
 ---
 
@@ -211,6 +211,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Digit in a dish name against a number word in the alias (`sim/scripted_order.py` `_stated_quantity`) | Codex PR #133 (P2, rule A 24.09.2026: recorded, not blocking): a dish named `8 Schätze` found via the alias `acht schaetze` compares `8` with `acht` and reads 8 as the quantity. Wrong quantity shows in the readback, the caller can correct it. Fix: compare parsed cardinal values. Stand-in only | with T-2.4 or the next sim change |
 | German identifiers in the older GUI code (PR #140 review, conventions) | CLAUDE.md §8 asks for English identifiers. T-4.7 code is English since PR #140 (`orders_fragment`, `correction_preview`, edit ops `swap`/`remove`/`restore`, `closeCorrection` in `app.js`); URLs, DOM ids and words the team sees stay German. Older GUI code from T-3.x still uses German names (`heute_fragment`, `rueckruf_erledigt`, `nachladen`) | rename in one refactor commit, no behaviour change |
 | Swap to the same dish with the same options counts as a correction (`domain/ordering/correction.py` `_plan`) | Codex PR #140 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Tauschen" with the original number and the original options is still classified `swapped`, so `NO_CHANGE` does not block. Saving writes `order.corrected`, raises `revision`, counts against the accuracy KPI and, if the kitchen has a ticket, sends a needless KORREKTUR. Fix: classify a line with the same `menu_item_id`, quantity and options as the stored row as `kept` | before T-8.4 reads corrections for the KPI, latest before G2 |
+| `python -m printbridge --once` exits 0 after a failed run (`printbridge/bridge.py` `main`) | Codex PR #143 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): the one-shot run is meant as an installation check, but the loop's catch-all logs the error and `--once` still returns 0, so a script cannot tell a failed check from a good one. Fix: return 1 from the `--once` branch after a caught error; daemon mode keeps retrying | before the first real print on site |
 | Index for `outbox.payload->>'order_id'` (T-4.6) | Own review PR #143 (P2): `send_ticket` and the print bridge look up a ticket's newest revision by scanning the outbox for the order id; fine at pilot volume, but the outbox has no retention yet. An expression index needs a migration, and PR #139 is renumbering 003/004 | with the next migration after PR #139 |
 | Machine for the print bridge and first real print (T-4.6) | The printers are Epson TM-T20II at the register ("Küche", "Receipt"); unknown yet whether USB or network. USB means the bridge runs on the register PC (Python plus pywin32, installing software there is Maxi's call because of the register vendor) or the printer is shared; network means any small computer in the restaurant. Code and tests cover both paths against simulated printers only | before the first test call with a real order |
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. Until then the reports in `evals/reports/` are the history, and the regression rule reads them | with the migration after PR #139, latest before G2 |
@@ -296,8 +297,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.31.22 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)
-- **v1.31.21 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
+- **v1.31.23 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)
+- **v1.31.22 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
+- **v1.31.21 · 25.09.2026:** Offener Punkt aus PR #143
 - **v1.31.20 · 25.09.2026:** T-4.6 B: Codex-Befunde PR #143 behoben
 - **v1.31.19 · 25.09.2026:** T-4.6 B done: Kuechenbon ueber Druckbruecke
 - **v1.31.18 · 25.09.2026:** T-5.1 done
