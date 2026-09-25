@@ -712,3 +712,18 @@ def test_zusammengesetzte_allergie_ohne_bindestrich(gesagt, zutaten):
     ohne Bindestrich - die Erdnuss gehoert trotzdem in den Hinweis. Ein
     Gericht davor ist keine Zutat."""
     assert classify_wish(gesagt, BEILAGE).ingredient == zutaten
+
+
+def test_ganzer_name_vor_aber(session, tenant_id):
+    """Codex PR #139, P2: "Pizza mit Salami, aber ohne Zwiebeln" - das "aber"
+    gehoert nicht zum Namen, die Salami-Pizza bleibt das Gericht."""
+    result = suche(session, tenant_id, "Pizza mit Salami, aber ohne Zwiebeln")
+    assert [h.number for h in result.results] == ["60"]
+    assert (result.wish.kind, result.wish.text) == ("note", "ohne Zwiebeln")
+
+
+@pytest.mark.parametrize("gesagt", ["allergiefrei", "ist das allergenfrei"])
+def test_allergiefrei_ist_keine_eigene_allergie(gesagt):
+    """Codex PR #139, P2: "allergiefrei?" fragt nach dem Gericht (Allergenpfad),
+    keine eigene Allergie - sonst kaeme "Wogegen sind Sie allergisch?"."""
+    assert classify_wish(gesagt, BEILAGE).kind != "allergy"

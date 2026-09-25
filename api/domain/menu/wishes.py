@@ -42,6 +42,9 @@ _CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
 
 _WORD = re.compile(r"[^\W_]+")
 _TOKEN = re.compile(r"[^\W_]+|,")
+_TRAILING_GLUE = re.compile(
+    r"(?:[\s,]+(?:aber|und|dafür|dafuer|dann|bitte))+[\s,]*$", re.IGNORECASE
+)
 _TRAILING_PLEASE = re.compile(r"[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
 # Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
 _TIMES = re.compile(r"[\s,]*\b(\w+?)mal\b", re.IGNORECASE)
@@ -100,7 +103,8 @@ def _words(text: str) -> list[str]:
 def _is_allergy(word: str) -> bool:
     """Eine eigene Allergie. "Allergene" ist die Frage nach dem Gericht und
     gehoert in den Allergenpfad, nicht hierher (Review PR #139)."""
-    if word.startswith("allergen"):
+    # "allergiefrei", "allergenfrei": die Frage nach dem Gericht (Codex PR #139).
+    if word.startswith("allergen") or word.endswith("frei"):
         return False
     return (
         "allerg" in word
@@ -244,7 +248,9 @@ def wish_candidates(text: str) -> list[tuple[str, str, str]]:
         dish = text[:at].strip(" ,.;")
         wish = _clean(text[at:])
         end = tokens[starts[n + 1]].start() if n + 1 < len(starts) else len(text)
-        segment = _clean(text[at:end])
+        # "mit Salami, aber" - das Bindewort vor dem naechsten Wunsch gehoert
+        # nicht zum Satzteil, sonst traefe es den Namen nie (Codex PR #139).
+        segment = _TRAILING_GLUE.sub("", _clean(text[at:end]))
         if dish and wish:
             candidates.append((dish, wish, segment))
     return candidates

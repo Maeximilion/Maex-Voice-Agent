@@ -1070,3 +1070,20 @@ def test_keine_als_antwort_auf_wogegen(session, tenant, antwort):
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+def test_allergiefrei_geht_an_das_team(session, tenant):
+    """Codex PR #139, P2: "Frühlingsrollen allergiefrei?" waehrend der Bestellung
+    ist die Frage nach Allergenen (Rueckruf), nicht "Wogegen?"."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Sind die Frühlingsrollen allergiefrei?",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Wogegen" not in said(turns)
+    # Der Rueckrufpfad fragt nach der Nummer (Rufnummer unterdrueckt).
+    assert "Telefonnummer" in said(turns)
