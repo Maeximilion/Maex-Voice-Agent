@@ -14,9 +14,6 @@
       <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
       <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
     </div>
-    <div class="mode">
-      <b>Wartezeit {{ config.pickup_wait_minutes }} / {{ config.delivery_wait_minutes }} Min</b>
-    </div>
     {% endif %}
     <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
   </div>
@@ -41,9 +38,25 @@
     {% endif %}
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
     <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
-    {% for step in wait_steps %}
-    <button hx-post="/gui/kopfzeile/wartezeit/{{ step }}"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Wartezeit +{{ step }}</button>
+  </div>
+  {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
+     "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
+     einen Tap ohne Wirkung zu schlucken. #}
+  <div class="top actions">
+    {% for key, label, minutes in [
+         ("abholung", "Abholung", config.pickup_wait_minutes),
+         ("lieferung", "Lieferung", config.delivery_wait_minutes)] %}
+    <div class="mode">
+      <b>Wartezeit {{ label }} {{ minutes }} Min</b>
+      <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten weniger"
+              {% if minutes <= wait_min %}disabled{% endif %}>-{{ wait_step }}</button>
+      <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/{{ wait_step }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten mehr"
+              {% if minutes >= wait_max %}disabled{% endif %}>+{{ wait_step }}</button>
+    </div>
     {% endfor %}
   </div>
   {% endif %}

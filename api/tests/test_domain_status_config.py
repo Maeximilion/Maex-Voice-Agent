@@ -121,33 +121,71 @@ def test_lieferung_aus_und_wieder_an(session, tenant_id):
     assert payloads == [{"from": True, "to": False}, {"from": False, "to": True}]
 
 
-def test_wartezeit_steigt_fuer_abholung_und_lieferung(session, tenant_id):
+def test_wartezeit_je_service_getrennt(session, tenant_id):
     vorher = session.get(ServiceConfig, tenant_id)
     abholung, lieferung = vorher.pickup_wait_minutes, vorher.delivery_wait_minutes
 
-    config = switches.raise_wait(session, tenant_id, 15)
+    config = switches.change_wait(session, tenant_id, "delivery", 15)
 
-    assert config.pickup_wait_minutes == abholung + 15
     assert config.delivery_wait_minutes == lieferung + 15
-    assert audit(session, tenant_id)[-1].payload["step"] == 15
+    assert config.pickup_wait_minutes == abholung
+    eintrag = audit(session, tenant_id)[-1]
+    assert eintrag.action == switches.ACTION_WAIT
+    assert eintrag.payload == {
+        "service": "delivery",
+        "step": 15,
+        "from": lieferung,
+        "to": lieferung + 15,
+    }
+
+
+def test_wartezeit_laesst_sich_senken(session, tenant_id):
+    switches.change_wait(session, tenant_id, "pickup", 15)
+    vorher = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
+
+    config = switches.change_wait(session, tenant_id, "pickup", -15)
+
+    assert config.pickup_wait_minutes == vorher - 15
 
 
 def test_wartezeit_hat_eine_obergrenze(session, tenant_id):
     for _ in range(20):
-        config = switches.raise_wait(session, tenant_id, 30)
+        config = switches.change_wait(session, tenant_id, "pickup", 15)
 
     assert config.pickup_wait_minutes == switches.MAX_WAIT_MINUTES
-    assert config.delivery_wait_minutes == switches.MAX_WAIT_MINUTES
     # Am Deckel angekommen, schreibt ein weiterer Tap nichts mehr.
     anzahl = len(audit(session, tenant_id))
-    switches.raise_wait(session, tenant_id, 15)
+    switches.change_wait(session, tenant_id, "pickup", 15)
     assert len(audit(session, tenant_id)) == anzahl
 
 
-@pytest.mark.parametrize("minuten", [0, -15])
-def test_wartezeit_sinkt_hier_nie(session, tenant_id, minuten):
+def test_wartezeit_hat_eine_untergrenze(session, tenant_id):
+    for _ in range(20):
+        config = switches.change_wait(session, tenant_id, "delivery", -15)
+
+    assert config.delivery_wait_minutes == switches.MIN_WAIT_MINUTES
+    anzahl = len(audit(session, tenant_id))
+    switches.change_wait(session, tenant_id, "delivery", -15)
+    assert len(audit(session, tenant_id)) == anzahl
+
+
+def test_senken_erhoeht_nie_einen_wert_unter_der_untergrenze(session, tenant_id):
+    """Steht schon weniger als die Untergrenze in der DB, macht "-15" daraus nicht mehr."""
+    config = session.get(ServiceConfig, tenant_id)
+    config.pickup_wait_minutes = 5
+    session.commit()
+
+    config = switches.change_wait(session, tenant_id, "pickup", -15)
+
+    assert config.pickup_wait_minutes == 5
+    config = switches.change_wait(session, tenant_id, "pickup", 15)
+    assert config.pickup_wait_minutes == 20
+
+
+@pytest.mark.parametrize(("service", "minuten"), [("pickup", 0), ("dinein", 15)])
+def test_wartezeit_ungueltige_eingabe(session, tenant_id, service, minuten):
     with pytest.raises(InvalidInput):
-        switches.raise_wait(session, tenant_id, minuten)
+        switches.change_wait(session, tenant_id, service, minuten)
 
 
 def test_ohne_service_config_klare_meldung(session):
@@ -156,14 +194,14 @@ def test_ohne_service_config_klare_meldung(session):
 
 
 def test_gleichzeitige_taps_gehen_nicht_verloren(engine, session, tenant_id):
-    """Zwei Tablets tippen gleichzeitig "Wartezeit +15": das ergibt +30, nicht +15."""
+    """Zwei Tablets tippen gleichzeitig "Wartezeit Abholung +15": das ergibt +30, nicht +15."""
     start = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
     barrier = threading.Barrier(2)
 
     def tap():
         with Session(engine) as s:
             barrier.wait()
-            switches.raise_wait(s, tenant_id, 15)
+            switches.change_wait(s, tenant_id, "pickup", 15)
 
     threads = [threading.Thread(target=tap) for _ in range(2)]
     for t in threads:
