@@ -39,7 +39,8 @@
     "items": [
       {
         "number": "13",
-        "quantity": 1
+        "quantity": 1,
+        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
       }
     ],
     "customer_name": "Mueller"

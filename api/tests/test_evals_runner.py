@@ -181,6 +181,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         },
         {
             "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": "get_item_details"},
+        },
+        {
+            "id": "x",
             "repeat_confirm": "ja",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
@@ -615,3 +620,40 @@ def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
         assert seen.duplicate_confirms == 1
         assert any("doppelt" in d for d in judge({}, seen))
     engine.dispose()
+
+
+def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
+    """Codex PR #145: der Allergiehinweis zaehlt nur, wenn er gespeichert ist, und
+    eine Allergiefrage nur, wenn das Modell get_item_details gerufen hat."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 13, ich habe eine Erdnussallergie.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    hinweis = "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "hinweis",
+            zeilen,
+            {"items": [{"number": "13", "quantity": 1, "note": hinweis}]},
+        ),
+        fall(
+            "falscher_hinweis",
+            zeilen,
+            {
+                "items": [
+                    {"number": "13", "quantity": 1, "note": "WICHTIG: Keine Karotte."}
+                ]
+            },
+        ),
+        fall("ohne_tool", zeilen, {"confirmed": True, "tools": ["get_item_details"]}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["hinweis"].passed, result["hinweis"].diffs
+    assert not result["falscher_hinweis"].passed
+    assert result["ohne_tool"].diffs == ["tools: nie aufgerufen ['get_item_details']"]

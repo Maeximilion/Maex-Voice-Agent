@@ -192,6 +192,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         return result
 
     rec = llm.recording
+    missing_tools = [t for t in expected.get("tools", []) if t not in rec.tool_calls]
+    if missing_tools:
+        diffs.append(f"tools: nie aufgerufen {missing_tools}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)

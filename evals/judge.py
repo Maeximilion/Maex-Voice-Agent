@@ -32,9 +32,21 @@ from api.models import (
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
-    {"intent", "confirmed", "escalated", "items", "customer_name", "party_size"}
+    {
+        "intent",
+        "confirmed",
+        "escalated",
+        "items",
+        "customer_name",
+        "party_size",
+        # Tools, die das Modell aufgerufen haben muss: eine Allergiefrage
+        # gilt nur mit get_item_details als beantwortet (Codex PR #145, P1).
+        "tools",
+    }
 )
-ITEM_KEYS = frozenset({"number", "quantity", "options"})
+# `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
+# wegfallen (E14, Codex PR #145, P1).
+ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
 
 
 class CaseError(ValueError):
@@ -63,6 +75,9 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     sold_out = case.get("sold_out", [])
     if not isinstance(sold_out, list) or not all(isinstance(n, str) for n in sold_out):
         raise CaseError(f"{source}: sold_out ist eine Liste von Kartennummern")
+    tools = case["expected"].get("tools", [])
+    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
+        raise CaseError(f"{source}: tools ist eine Liste von Tool-Namen")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -107,14 +122,21 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     items: list[dict[str, Any]] = []
     for order in done_orders:
         rows = session.execute(
-            select(MenuItem.number, OrderItem.quantity, OrderItem.options)
+            select(
+                MenuItem.number, OrderItem.quantity, OrderItem.options, OrderItem.note
+            )
             .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
             .where(OrderItem.order_id == order.id)
             .order_by(OrderItem.created_at)
         ).all()
         items += [
-            {"number": n, "quantity": q, "options": [o["option"] for o in opts]}
-            for n, q, opts in rows
+            {
+                "number": n,
+                "quantity": q,
+                "options": [o["option"] for o in opts],
+                "note": note,
+            }
+            for n, q, opts, note in rows
         ]
 
     duplicates = _duplicate_confirms(session, orders, reservations)
@@ -176,7 +198,18 @@ def _matches(want: dict[str, Any], got: dict[str, Any]) -> bool:
         return False
     # Optionen nur, wo die Position sie nennt: "2x 23" legt die Auswahl nicht
     # fest, "47 mit Huhn" schon.
-    return "options" not in want or sorted(want["options"]) == sorted(got["options"])
+    if "options" in want and sorted(want["options"]) != sorted(got["options"]):
+        return False
+    return "note" not in want or _same_text(want["note"], got.get("note"))
+
+
+def _same_text(want: str | None, got: str | None) -> bool:
+    """Wortlaut ohne Unterschied in Gross-/Kleinschreibung und Leerzeichen."""
+
+    def norm(text: str | None) -> str:
+        return " ".join((text or "").split()).casefold()
+
+    return norm(want) == norm(got)
 
 
 def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:

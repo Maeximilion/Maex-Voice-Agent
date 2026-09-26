@@ -50,6 +50,9 @@
         "number": "23",
         "quantity": 1
       }
+    ],
+    "tools": [
+      "get_item_details"
     ]
   }
 }
