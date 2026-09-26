@@ -13,7 +13,7 @@ from api.domain.reservations.capacity import (
     booked_guests,
     capacity_windows,
 )
-from api.domain.reservations.spoken import spoken_time
+from api.domain.reservations.spoken import WEEKDAYS, spoken_time
 from api.domain.status.hours import load_hours, windows_for_day
 from api.models import Tenant
 from api.schemas.reservations import SlotCheck
@@ -79,12 +79,18 @@ def check_slot(
         and slot > now
         and fits(slot)
     ]
-    candidates.sort(key=lambda slot: (abs(slot - local), slot))
+    candidates.sort(key=lambda slot: (abs(slot.astimezone(UTC) - wish_utc), slot))
     alternatives = [slot.astimezone(UTC) for slot in candidates[:MAX_ALTERNATIVES]]
+    # Ruhetag oder geschlossener Sondertag: der Gast soll das hoeren, statt es mit
+    # anderen Uhrzeiten am selben Tag zu versuchen (Review PR #152). Nicht, wenn der
+    # Wunsch noch im Fenster des Vorabends liegt (Montag 00:30 nach Sonntag).
+    closed_day = not windows_for_day(hours, local.date(), DINEIN, zone) and not any(
+        opens <= local < closes for opens, closes in open_windows
+    )
     return SlotCheck(
         available=False,
         alternatives=alternatives,
-        say=_say(local, candidates[:MAX_ALTERNATIVES]),
+        say=_say(local, candidates[:MAX_ALTERNATIVES], closed_day),
     )
 
 
@@ -92,7 +98,9 @@ def _window_for(windows: list[CapacityWindow], at: datetime) -> CapacityWindow |
     return next((w for w in windows if w.contains(at)), None)
 
 
-def _say(wish: datetime, alternatives: list[datetime]) -> str:
+def _say(wish: datetime, alternatives: list[datetime], closed_day: bool) -> str:
+    if not alternatives and closed_day:
+        return f"Am {WEEKDAYS[wish.weekday()]} haben wir leider geschlossen."
     if not alternatives:
         # Nicht "an dem Tag": gesucht wird nur im Abstand, in dem die Ansage
         # eindeutig ist; ein Termin weiter weg kann noch frei sein (Review PR #152).

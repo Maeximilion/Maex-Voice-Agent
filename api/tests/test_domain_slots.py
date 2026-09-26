@@ -134,6 +134,8 @@ def test_ruhetag_hat_keine_termine(session, tenant_id):
         session, tenant_id, berlin(MONTAG, 18, 0), 2, now=berlin(MONTAG, 8)
     )
     assert result.available is False and result.alternatives == []
+    # Review PR #152: der Gast hoert, dass zu ist, statt andere Uhrzeiten zu probieren.
+    assert result.say == "Am Montag haben wir leider geschlossen."
 
 
 def test_ruhetag_bietet_keine_termine_vom_vortag_an(session, tenant_id):

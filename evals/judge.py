@@ -9,10 +9,9 @@ Unbekannte Schlüssel in `expected` sind ein Fehler im Fall, kein stilles Grün:
 ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 """
 
-import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
@@ -53,7 +52,6 @@ EXPECTED_KEYS = frozenset(
 )
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
 LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
-_LOCAL_MINUTE_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
 # wegfallen (E14, Codex PR #145, P1).
 ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
@@ -114,13 +112,13 @@ def _local_minute(entry: Any) -> bool:
     """Genau das Format, das offered_alternatives liefert: YYYY-MM-DDTHH:MM."""
     if not isinstance(entry, str):
         return False
-    if not _LOCAL_MINUTE_RE.fullmatch(entry):
-        return False
     try:
-        datetime.fromisoformat(entry)  # 2026-02-30 oder 25:00 fallen hier heraus
+        # Hin und zurueck mit demselben Format: faengt "2026-9-21T19:30" (fehlende
+        # Null) wie "2026-02-30T19:30". Die Zone ist nur fuer die Lint-Regel (DTZ007).
+        parsed = datetime.strptime(entry, LOCAL_MINUTE).replace(tzinfo=UTC)
     except ValueError:
         return False
-    return True
+    return parsed.strftime(LOCAL_MINUTE) == entry
 
 
 def _valid_tool(entry: Any) -> bool:

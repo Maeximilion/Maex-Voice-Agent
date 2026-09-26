@@ -297,7 +297,7 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 }
 ```
 
-`alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur unter sechs Stunden Abstand zum Wunsch**. Der Satz nennt die Uhrzeit ohne Tag, und der Gast hört die Deutung, die dem Wunsch am nächsten liegt; unter sechs Stunden ist das die richtige (die andere Hälfte der Uhr liegt ±12 h weg, ein anderer Tag ±24 h). Am Ruhetag gibt es deshalb nichts vom Vortag (Befund T-5.2, `reservierung_0027`), nachts um halb eins keinen Mittag als „halb zwei" (Review PR #152). Ohne Alternative sagt der Satz „auch nicht kurz davor oder danach", nicht „an dem Tag": weiter weg kann noch etwas frei sein.
+`alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur unter sechs Stunden Abstand zum Wunsch**. Der Satz nennt die Uhrzeit ohne Tag, und der Gast hört die Deutung, die dem Wunsch am nächsten liegt; unter sechs Stunden ist das die richtige (die andere Hälfte der Uhr liegt ±12 h weg, ein anderer Tag ±24 h). Am Ruhetag gibt es deshalb nichts vom Vortag (Befund T-5.2, `reservierung_0027`), nachts um halb eins keinen Mittag als „halb zwei" (Review PR #152). Ohne Alternative sagt der Satz „auch nicht kurz davor oder danach", nicht „an dem Tag": weiter weg kann noch etwas frei sein. Ist der Tag geschlossen (Ruhetag, geschlossener Sondertag) und liegt der Wunsch nicht im Fenster des Vorabends, heißt es „Am Montag haben wir leider geschlossen."
 
 ---
 

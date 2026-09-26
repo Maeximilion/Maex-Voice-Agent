@@ -6,6 +6,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
+from psycopg.errors import QueryCanceled
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
@@ -370,7 +371,7 @@ def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
         # A prueft gerade Montag 23:30, die Transaktion ist offen.
         reservations_create._lock_capacity_days(a, tenant, montag)
         b.execute(text("SET LOCAL statement_timeout = 300"))
-        with pytest.raises(OperationalError):
+        with pytest.raises(OperationalError) as waited:
             create_reservation(
                 b,
                 request(
@@ -381,6 +382,8 @@ def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
                 ),
                 now=berlin(montag, 8),
             )
+        # Genau das Warten auf die Sperre, nicht irgendein anderer DB-Fehler.
+        assert isinstance(waited.value.orig, QueryCanceled)
         b.rollback()
         a.rollback()
     engine.dispose()
