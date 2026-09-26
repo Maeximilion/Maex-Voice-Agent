@@ -31,6 +31,7 @@ def feste_kopfzeile(monkeypatch):
     monkeypatch.setattr(sse, "_header_token", lambda *_: "h0")
     monkeypatch.setattr(sse, "_callbacks_token", lambda *_: "c0")
     monkeypatch.setattr(sse, "_orders_token", lambda *_: "o0")
+    monkeypatch.setattr(sse, "_dishes_token", lambda *_: "d0")
 
 
 def drain(stream: AsyncIterator[str]) -> list[str]:
@@ -190,12 +191,14 @@ def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
         "event: today\ndata: 0:-\n\n",
         "event: callbacks\ndata: c0\n\n",
         "event: orders\ndata: o0\n\n",
+        "event: dishes\ndata: d0\n\n",
         "event: problem\ndata: db\n\n",
         # Nach der Erholung alle Signale, damit jeder Bereich frisch ist.
         "event: header\ndata: h0\n\n",
         "event: today\ndata: 0:-\n\n",
         "event: callbacks\ndata: c0\n\n",
         "event: orders\ndata: o0\n\n",
+        "event: dishes\ndata: d0\n\n",
     ]
 
 
@@ -212,6 +215,7 @@ def test_umgeschaltete_kopfzeile_sendet_nur_header(monkeypatch):
         "event: today\ndata: 0:-\n\n",
         "event: callbacks\ndata: c0\n\n",
         "event: orders\ndata: o0\n\n",
+        "event: dishes\ndata: d0\n\n",
         "event: header\ndata: h1\n\n",
     ]
 
@@ -227,7 +231,7 @@ def test_neuer_rueckruf_sendet_nur_callbacks(monkeypatch):
     assert [c for c in chunks if c.startswith("event:")][-1] == (
         "event: callbacks\ndata: 1:y\n\n"
     )
-    assert len([c for c in chunks if c.startswith("event:")]) == 5
+    assert len([c for c in chunks if c.startswith("event:")]) == 6
 
 
 def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):
@@ -244,7 +248,7 @@ def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):
 
 
 def test_ein_takt_braucht_eine_sitzung(monkeypatch):
-    """Vier Fingerabdruecke, eine Sitzung.
+    """Fuenf Fingerabdruecke, eine Sitzung.
 
     Je Takt und Tablet eine Entnahme aus dem Pool, nicht vier - bei zwei
     Sekunden Takt summiert sich das allein fuers Nachsehen (Review PR #117).
@@ -264,6 +268,7 @@ def test_ein_takt_braucht_eine_sitzung(monkeypatch):
     monkeypatch.setattr(sse, "_token", lambda *_: "t")
     monkeypatch.setattr(sse, "_callbacks_token", lambda *_: "c")
     monkeypatch.setattr(sse, "_orders_token", lambda *_: "o")
+    monkeypatch.setattr(sse, "_dishes_token", lambda *_: "d")
 
     tokens = sse._tokens(uuid.uuid4(), "Europe/Berlin")
 
@@ -272,5 +277,20 @@ def test_ein_takt_braucht_eine_sitzung(monkeypatch):
         "today": "t",
         "callbacks": "c",
         "orders": "o",
+        "dishes": "d",
     }
     assert len(geoeffnet) == 1 and len(geschlossen) == 1
+
+
+def test_gericht_aus_sendet_nur_dishes(monkeypatch):
+    """T-4.8: ein anderes Tablet schaltet ein Gericht aus - nur Kachel und Liste
+    laden neu, nicht die Spalten."""
+    monkeypatch.setattr(sse, "_token", lambda *_: "t0")
+    tokens = iter(["d0", "d0", "d1"])
+    monkeypatch.setattr(sse, "_dishes_token", lambda *_: next(tokens))
+
+    chunks = drain(stream(FakeRequest(), max_ticks=3))
+
+    events = [c for c in chunks if c.startswith("event: ")]
+    assert events[-1] == "event: dishes\ndata: d1\n\n"
+    assert sum(c.startswith("event: dishes") for c in events) == 2

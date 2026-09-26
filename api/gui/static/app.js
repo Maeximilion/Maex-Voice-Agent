@@ -188,6 +188,26 @@
       if (!wasOpen) correctionBox.scrollIntoView({ block: "start" });
     });
   }
+  // "Gericht aus" (T-4.8): eigener Kasten wie die Korrektur, "Fertig" schliesst.
+  // Nach jedem Tap zeigt die Kachel in der Kopfzeile sofort die neue Zahl.
+  var dishBox = document.getElementById("gericht-aus");
+  if (dishBox) {
+    dishBox.addEventListener("click", function (e) {
+      if (e.target.closest("[data-schliessen]")) dishBox.innerHTML = "";
+    });
+  }
+  function reloadDishes() {
+    var search = document.getElementById("gericht-suche");
+    if (!search) return;
+    window.htmx.ajax("GET", "/gui/fragments/gericht-aus", {
+      target: "#gericht-liste",
+      values: { q: search.value },
+    });
+  }
+  document.body.addEventListener("gerichte-geaendert", function () {
+    kopfzeile();
+  });
+
   document.body.addEventListener("bestellungen-geaendert", function () {
     closeCorrection();
     reloadOrders();
@@ -209,6 +229,13 @@
   strom.addEventListener("header", function () {
     offline(false);
     kopfzeile();
+  });
+  // Ein anderes Tablet hat ein Gericht aus- oder wieder angeschaltet, oder der
+  // Schalter ist am Morgen abgelaufen: Kachel und offene Liste zeigen es.
+  strom.addEventListener("dishes", function () {
+    offline(false);
+    kopfzeile();
+    reloadDishes();
   });
   strom.addEventListener("today", function () {
     offline(false);

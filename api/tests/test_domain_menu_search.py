@@ -242,7 +242,11 @@ def test_ausverkauft_mit_satz(session, tenant_id):
     result = suche(session, tenant_id, "Nummer 47")
 
     assert result.results[0].sold_out is True
-    assert result.say == "Ente knusprig ist heute leider aus."
+    # Mit Alternative aus derselben Kategorie (T-4.8, docs/06 §3).
+    assert result.say == (
+        "Ente knusprig ist heute leider aus. "
+        "Stattdessen hätte ich Nummer 48 Ente süß-sauer."
+    )
 
 
 def test_ausverkauft_abgelaufen_ist_wieder_da(session, tenant_id):

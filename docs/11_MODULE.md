@@ -64,6 +64,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `search.py` | die Auflösungsreihenfolge aus 04: Nummer → Alias → Trigram, mit Schwellen aus der Konfiguration |
 | `aliases.py` | Alias anlegen, Treffer zählen, Vorschläge aus Anrufen |
 | `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine" |
+| `sold_out.py` | Schalter „Gericht aus": bis Ende des Betriebstags, `audit_log`, Alternativen derselben Kategorie (T-4.8) |
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht |
 
 ### `domain/ordering/`

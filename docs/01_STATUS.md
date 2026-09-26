@@ -1,13 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.25
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.32.1
 
 ---
 
 ## Summary
 
 **Eval suite v1 (T-5.2, 26.09.2026): 107 cases, every mandatory line of docs/08 §6 covered.** Pickup (by number, name, alias, spoken numbers, quantities, options, ambiguous and sold-out dishes, unknown dishes, abort, read-back, closing time), reservations (times, dates, corrections at read-back, capacity, closed days), escalation (complaint, human, cancellation, noise) and allergens. A run takes about 12 s. With the rule-based stand-in model: 99/107 green, hard metrics 0, false escalation 4.5 %. Eight cases are **known gaps** (`pending` with the task that closes them: T-2.4 real model, T-6.5 delivery); CI demands every other case green and every gap red, so a gap that heals is noticed. The suite found four defects: two in the stand-in (a "yes" to the only offered dish was searched as a dish and asked again forever; a card number in the first sentence was stripped as a phone number), both fixed here; and one in the hot path, `check_slot` offering the previous day's times as alternatives (on closed Monday it offered Sunday 21:30 as "halb zehn"), fixed in its own bug PR; and the number rule for "und die 24" and "ich würde die 13", which is its own task.
+
+**"Gericht aus" on the tablet (T-4.8, 26.09.2026): the team takes a dish off, the agent stops offering it.** A button in the header (with "2 heute aus" next to it) opens a box above the columns with a search field and big switches. One tap marks a dish sold out until the end of the business day (05:00 local time), so it is back by itself the next morning; a second tap ("Wieder da") undoes it. Every tap is locked on the row and written to `audit_log`; other tablets follow over a new event `dishes`. `search_menu` then says "Frühlingsrollen ist heute leider aus. Stattdessen hätte ich Nummer 24 Sommerrollen." - up to two available dishes of the same category, never anything off the menu (D8). No migration: `sold_out_until` exists since 002. Clicked through in the browser against the eval menu.
 
 **Kitchen ticket over a print bridge (T-4.6, variant B, 25.09.2026): a confirmed order reaches the printer, and the tablet knows whether it did.** The server sits in a data centre and cannot reach the receipt printer in the restaurant, and neither can n8n without opening the restaurant's router. So a small print bridge (`printbridge/`, Python standard library only) runs on a machine in the restaurant and fetches tickets over HTTPS (`POST /v1/kitchen/claim`, own token), prints them as ESC/POS on the Epson (network port 9100 or the Windows print queue for USB) and reports back (`/ack`). `handover_state` finally moves: `sent` when the newest revision is printed, `failed` at once on a print error or when no ticket was fetched for 60 s (watchdog in the dispatcher process, alarm, `order.handover_failed` to n8n), and back to `sent` when it prints after all. An outdated revision is never delivered after a newer one; a print log in the bridge stops a second slip when an acknowledgement got lost. Until today nothing ever set `sent` or `failed`, so no card could turn red. Tested against simulated printers (TCP with status query, Windows queue with stuck job); the first real print on the Epson TM-T20II needs Maxi on site. The dispatcher no longer sends `order.confirmed` to n8n. No migration.
 
@@ -68,7 +70,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 | 5 Overflow operation | AI answers, only when team doesn't pick up | G5 | open |
 | 6 Primary operation & ongoing | AI picks up first, team fallback, monthly review running | Monthly review | open, target state |
 
-**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Since 25.09.2026 the tablet releases, corrects and resends orders (T-4.7). Since 25.09.2026 the kitchen ticket is printed by a print bridge in the restaurant (T-4.6 variant B). Next: wishes to a dish (T-4.10, PR #139 open) and the first real print on site, see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
+**We are here:** Stage 0, block "Stufe 2: Abholung" (`docs/07_WORKPACKAGES.md` Block 3) - pickup runs over HTTP from `search_menu` to the pickup code (T-4.1 to T-4.5 and `confirm` for orders done, 23.09.2026). Since 24.09.2026 the agent core uses the menu tools too, and a pickup order runs end to end in the text phone (caller ID, repeat-back, pickup code). Since 25.09.2026 the tablet releases, corrects and resends orders (T-4.7). Since 25.09.2026 the kitchen ticket is printed by a print bridge in the restaurant (T-4.6 variant B). Since 26.09.2026 wishes to a dish (T-4.10) and "Gericht aus" on the tablet (T-4.8) are done. Next: the first real print on site, see "What's next". The milestone "Durchstich ohne Telefon" for reservations is closed. **Where we're going:** Stage 6, ongoing operation with AI as primary intake and team as fallback.
 
 ---
 
@@ -300,7 +302,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.31.25 · 26.09.2026:** T-5.2 done: Eval-Suite v1 mit 105 Faellen
+- **v1.32.1 · 26.09.2026:** T-5.2 done: Eval-Suite v1 mit 107 Faellen
+- **v1.32.0 · 26.09.2026:** T-4.8 done: Gericht aus am Tablet, Alternativen derselben Kategorie im say von search_menu
 - **v1.31.24 · 25.09.2026:** PR #139: eigenes Review, 13 Befunde behoben (Allergie bei neu gesuchter Wahl, mehrdeutiges Gericht mit Allergie, allgemeine Allergie fragt nach, "vertrage alles", Bestellung statt Zutat, Schluessel in E.164/UTC, Grund bleibt bei alter Optionsdatei, Schema der Wunsch-Felder)
 - **v1.31.23 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)
 - **v1.31.22 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason
