@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.24
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.31.25
 
 ---
 
 ## Summary
+
+**Number sentences from eval suite v1 (26.09.2026): two phrasings resolved wrong in `sole_item_number`.** Building T-5.2 turned up two gaps in rule A. A leading "und" counted as a connector to a second number, so "Und noch die 24." - the normal way to add the next item - was a question back instead of item 24. And "würde", "hallo" and "dazu" were not filler words, so "Hallo, ich würde gern die 13" went to the name search. Fix per docs/08 §7: 14 lines added to `evals/cases/nummern.jsonl` first (9 red), then the rule: an "und" with no number before it is a continuation; between two numbers it still makes the sentence ambiguous ("die 23 und die 24"), and a leading "oder" stays a question. Number eval 98/98, full suite 2166 green. Checked against the T-5.2 cases with the scripted model: `abholung_0025` (Positionen nacheinander) and `abholung_0043` (Gericht im ersten Satz mit würde) turn green, no other case changes; their `pending` field goes on the T-5.2 branch. `abholung_0022` ("Zweimal die 23, ach nein, doch drei") stays pending: that is the quantity correction, not number recognition.
 
 **Kitchen ticket over a print bridge (T-4.6, variant B, 25.09.2026): a confirmed order reaches the printer, and the tablet knows whether it did.** The server sits in a data centre and cannot reach the receipt printer in the restaurant, and neither can n8n without opening the restaurant's router. So a small print bridge (`printbridge/`, Python standard library only) runs on a machine in the restaurant and fetches tickets over HTTPS (`POST /v1/kitchen/claim`, own token), prints them as ESC/POS on the Epson (network port 9100 or the Windows print queue for USB) and reports back (`/ack`). `handover_state` finally moves: `sent` when the newest revision is printed, `failed` at once on a print error or when no ticket was fetched for 60 s (watchdog in the dispatcher process, alarm, `order.handover_failed` to n8n), and back to `sent` when it prints after all. An outdated revision is never delivered after a newer one; a print log in the bridge stops a second slip when an acknowledgement got lost. Until today nothing ever set `sent` or `failed`, so no card could turn red. Tested against simulated printers (TCP with status query, Windows queue with stuck job); the first real print on the Epson TM-T20II needs Maxi on site. The dispatcher no longer sends `order.confirmed` to n8n. No migration.
 
@@ -297,6 +299,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.31.25 · 26.09.2026:** Nummernsatz: fuehrendes und, wuerde/hallo/dazu als Fuellwort (Befund T-5.2)
 - **v1.31.24 · 25.09.2026:** PR #139: eigenes Review, 13 Befunde behoben (Allergie bei neu gesuchter Wahl, mehrdeutiges Gericht mit Allergie, allgemeine Allergie fragt nach, "vertrage alles", Bestellung statt Zutat, Schluessel in E.164/UTC, Grund bleibt bei alter Optionsdatei, Schema der Wunsch-Felder)
 - **v1.31.23 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)
 - **v1.31.22 · 25.09.2026:** T-4.10 done: Wuensche zu einer Position, Migration 003 price_reason

@@ -82,3 +82,17 @@
 {"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
 {"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
 {"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}
+{"say": "und die 24", "expect": "24", "why": "und am Satzanfang fuehrt die Bestellung fort, verbindet keine zweite Zahl (T-5.2)"}
+{"say": "Und noch die 24.", "expect": "24", "why": "naechste Position im Folgesatz (T-5.2, abholung Positionen nacheinander)"}
+{"say": "und dann die 24", "expect": "24", "why": "und dann als Fortsetzung"}
+{"say": "und die zwölf", "expect": "12", "why": "Fortsetzung mit Zahlwort"}
+{"say": "und Nummer 24", "expect": "24", "why": "Fortsetzung mit Marker"}
+{"say": "die 23 und die 24", "expect": "?", "why": "und zwischen zwei Zahlen bleibt eine Aufzaehlung"}
+{"say": "und die 23 und die 24", "expect": "?", "why": "Fortsetzung vorweg, danach trotzdem zwei Zahlen"}
+{"say": "und die 23 und", "expect": "?", "why": "Fortsetzung vorweg, hinten nicht zu Ende gesprochen"}
+{"say": "oder die 24", "expect": "?", "why": "oder vorweg ist eine Alternative zu etwas Ungenanntem, keine Fortsetzung"}
+{"say": "ich würde die 13", "expect": "13", "why": "wuerde ist ein Fuellwort wie moechte (T-5.2, Gericht im ersten Satz mit wuerde)"}
+{"say": "ich wuerde die 13", "expect": "13", "why": "dasselbe ohne Umlaut aus der Erkennung"}
+{"say": "Hallo, ich würde gern die 13", "expect": "13", "why": "Begruessung vor der Bestellung"}
+{"say": "dazu die 24", "expect": "24", "why": "dazu haengt eine Position an, ist kein Gerichtname"}
+{"say": "ich würde gern Pho", "expect": "name", "why": "nur Fuellwoerter und ein Name"}

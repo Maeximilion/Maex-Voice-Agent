@@ -119,7 +119,10 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
-   „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`.
+   „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`,
+   ebenso „Hallo, ich würde gern die 13" und „dazu die 24". Ein „und" vor der
+   ersten Zahl setzt die Bestellung fort („Und noch die 24"), erst zwischen zwei
+   Zahlen („die 23 und die 24") macht es den Satz mehrdeutig.
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
    Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")

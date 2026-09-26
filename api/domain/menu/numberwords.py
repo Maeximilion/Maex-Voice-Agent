@@ -627,6 +627,9 @@ _SENTENCE_FILLER = frozenset(
         "meine", "meinte", "gern", "gerne", "bitte", "dann", "noch", "und", "also",
         "ja", "genau", "mal", "die", "der", "das", "den", "dem", "des", "ein",
         "eine", "einen", "einem", "einer", "von", "vom", "ist", "war", "waere",
+        # "ich wuerde die 13", "Hallo, ...", "dazu die 24": fielen ohne diese
+        # Woerter als Rest in die Namenssuche (T-5.2).
+        "wuerde", "wuerden", "hallo", "dazu",
     }
 )  # fmt: skip
 
@@ -740,8 +743,16 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     # der Gast zurückgenommen oder nicht zu Ende gesprochen. Es ist dann kein
     # Gerichtname - es gehört also nicht in den Rest, sondern macht den Satz
     # für sich unklar (Codex PR #117, P1).
+    #
+    # Ausnahme: ein "und", vor dem noch keine Zahl steht. "Und noch die 24" setzt
+    # die Bestellung aus dem vorigen Satz fort und verbindet keine zweite Zahl in
+    # diesem (T-5.2). Nur "und": ein "oder" oder "nein" vorweg bezieht sich auf
+    # etwas, das dieser Satz nicht nennt, und bleibt eine Rueckfrage.
+    def _continues(k: int, t: str) -> bool:
+        return t == "und" and not any(x < k for x in number_at)
+
     loose = any(
-        t in _CONNECTORS and not _connects(k)
+        t in _CONNECTORS and not _connects(k) and not _continues(k, t)
         for k, t in enumerate(tokens)
         if k not in consumed
     )
