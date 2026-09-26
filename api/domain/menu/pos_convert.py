@@ -176,7 +176,8 @@ def _eur(value: int) -> str:
 
 
 def _sizes(code: str) -> list[int]:
-    return sorted({int(c) for c in code if c.isdigit() and c != "0"})
+    # Nur ASCII 1-9: "²" ist für isdigit() eine Ziffer, für int() nicht.
+    return sorted({int(c) for c in code if c in "123456789"})
 
 
 def _size_price(base: int, row: dict[str, str], prefix: str, size: int) -> int | None:
@@ -545,7 +546,13 @@ def split_aliases(
             continue
         reader = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
         head = [h.strip() for h in next(reader, [])]
-        if head and ("number" not in head or (header is not None and head != header)):
+        # Beide Pflichtspalten des Imports, sonst läse import_menu die Datei
+        # nicht (Codex PR #149).
+        if head and (
+            "number" not in head
+            or "alias" not in head
+            or (header is not None and head != header)
+        ):
             return None
         header = header or head or None
         parts.append([row for row in reader if any(cell.strip() for cell in row)])

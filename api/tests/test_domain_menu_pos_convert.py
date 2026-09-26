@@ -394,3 +394,10 @@ def test_extra_mit_abzug_bleibt_erhalten():
         ("Ohne Fleisch", "-1,00")
     ]
     assert parse({**result.csv_files(), "item_aliases.csv": None}).ok
+
+
+def test_groesse_mit_nicht_ascii_ziffer():
+    """Codex PR #149: "²" ist für str.isdigit() eine Ziffer, für int() nicht."""
+    result = run([artikel("20", "Pho", groesse="+-1²")])
+
+    assert [i["number"] for i in result.menu] == ["20"]

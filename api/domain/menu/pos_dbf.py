@@ -28,6 +28,7 @@ _CODEPAGES = {
 }
 _HEADER_END = 0x0D
 _DELETED = ord("*")
+_STATUS = (ord(" "), _DELETED)
 # dBase IV: Memoblock beginnt mit FF FF 08 00 und der Länge inklusive Kopf.
 _MEMO_IV = b"\xff\xff\x08\x00"
 _MEMO_III_END = b"\x1a"
@@ -113,6 +114,10 @@ def _read(data: bytes, memo: bytes | None) -> Table:
     for index in range(count):
         start = header_len + index * record_len
         record = data[start : start + record_len]
+        if record[0] not in _STATUS:
+            # Nur " " und "*": ein gesperrter Artikel darf nicht still wieder
+            # aktiv werden, weil seine Marke kaputt ist (Codex PR #149).
+            raise DbfError(f"Zeile {index + 1}: Löschmarke 0x{record[0]:02x} ungültig")
         is_deleted = record[0] == _DELETED
         deleted.append(is_deleted)
         row: dict[str, str] = {}

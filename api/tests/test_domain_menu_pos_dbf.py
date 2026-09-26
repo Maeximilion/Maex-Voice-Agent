@@ -150,3 +150,15 @@ def test_dbase_iii_memo_ignoriert_bytes_20_21():
     muell = dbt[:20] + b"\x20\x20" + dbt[22:]
 
     assert read_table(dbf, muell).rows[0]["ZUTATEN"] == "Gebratene_Nudeln, Ei, Sojasoße"
+
+
+def test_kaputte_loeschmarke_ist_dbf_fehler():
+    """Codex PR #149: nur Leerzeichen und * sind gültig; sonst könnte ein
+    gesperrter Artikel still zurückkommen."""
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1], deleted=(0,))
+    start = 32 + 32 * len(FIELDS) + 1
+    assert dbf[start : start + 1] == b"*"
+    kaputt = dbf[:start] + b"#" + dbf[start + 1 :]
+
+    with pytest.raises(DbfError, match="Löschmarke"):
+        read_table(kaputt, dbt)

@@ -103,11 +103,13 @@ def plan_aliases(out: Path, numbers: list[str], output: Output) -> None:
         return
     split = split_aliases(texts[source], texts[side], numbers)
     if split is None:
-        output.notes.append(
-            f"Warnung: {ALIASES_FILE} ohne Spalte number oder mit anderen Spalten "
-            f"als {ALIASES_DROPPED}, Aliase unverändert"
+        # import_menu läse die Datei so nicht: nichts schreiben (Codex PR #149).
+        raise AliasFileError(
+            0,
+            f"{ALIASES_FILE} ohne Spalte number oder alias, oder mit anderen Spalten "
+            f"als {ALIASES_DROPPED}",
+            str(source),
         )
-        return
     output.write[ALIASES_FILE] = split.kept
     if split.dropped is None:
         # Alle Zeilen sind zurück in der Alias-Datei; die Nebendatei ist leer.

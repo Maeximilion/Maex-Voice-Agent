@@ -928,3 +928,17 @@ def test_skript_bak_nicht_loeschbar_ist_warnung_nach_erfolg(
     assert "nichts geschrieben" not in captured.err
     assert "menu_items.csv.bak" in captured.out
     assert "Miso Suppe" in (out / MENU_FILE).read_text(encoding="utf-8")
+
+
+def test_skript_alias_datei_ohne_pflichtspalte_schreibt_nichts(tmp_path, capsys):
+    """Codex PR #149: der Import läse die Alias-Datei danach nicht."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;name\n1;Miso\n", encoding="utf-8")
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "alias" in capsys.readouterr().err
+    assert not (out / MENU_FILE).exists()
