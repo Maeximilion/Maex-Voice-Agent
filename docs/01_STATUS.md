@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.6
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.7
 
 ---
 
@@ -214,6 +214,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 |---|---|---|
 | Register import, smaller review points (T-4.11) | Own review xhigh: `VK2_PREIS` 0.00 counts as a deviation (safe: dish left out, but an unset VK2 stored as 0 would drop it); the `--deactivate-missing` hint also shows after the flag was used; `WRGSHOWALL` true only as `T` (not `Y`/`t`); `pos_code` unique only per file, not in the DB; NUL-padded text fields would keep `\x00`; size names hardcoded in `pos_convert.SIZE_NAMES` although the register mask can rename them; `cents()`/`_eur` duplicate importer helpers; German parameter names in `convert()`; allergen-carrier warning only matches word starts. None changes a price or allergen the agent says today | with the card-number task or the first real register import |
 | Register import, second review round (T-4.11) | Own review xhigh on the head: dBase III memo block size taken from bytes 20-21 instead of fixed 512 (the table version byte is not used); a dBase IV memo block without its marker falls back to the III scan instead of an error; the blanket IndexError catch in `pos_dbf.read_table` would report reader bugs as a corrupt file; duplicate live keys in `zutgrp`/`warengrp` silently keep the last row; exit 1 on every real run today (item errors), so `kasse_to_csv && import_menu` never chains; alias reading duplicates `importer._rows`. Real files read correctly (dBase IV, all markers present, no duplicate keys) | with the first real register import |
+| Filler between leading "und" and a tens word (`api/domain/menu/numberwords.py` `sole_item_number`, `_opens`) | Codex PR #147 (P2, rule A: recorded, not blocking): the tens-word gate only looks at the token directly after "und". "und zwanzig" asks back, but "und äh zwanzig" and "und bitte zwanzig" return 20 - the cut-off half of "drei und zwanzig" with a hesitation in between becomes item 20. Fix: skip only punctuation, hesitations and non-number words after the "und" (never `ein`/`und`, they belong to a number), then read the whole number span there with `_scan`; ask back only if that span is a bare tens word. "und ein und zwanzig" scans as 21 and must stay 21 (existing line in `evals/cases/nummern.jsonl`, Codex PR #150). First as lines in `nummern.jsonl` ("und äh zwanzig", "und bitte zwanzig" -> "?") | with the next change to numberwords, latest before G1 |
 | Wish and allergy in one sentence (`api/domain/menu/wishes.py` `_starts`) | Codex PR #139 (P2, rule A): "ohne Zwiebeln, ich habe eine Erdnussallergie" - the allergy clause wins, the removal before it is dropped. The allergy itself is kept. Fix: split the allergy clause off and keep the preceding wish as `note` | with the next wish change, latest before G1 |
 | Two options in one wish (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Huhn und Nudeln" is declined as `unknown` instead of two options from different groups. Nothing wrong enters the order, the guest names them again. Fix: accept unambiguous matches from distinct groups | with the next wish change |
 | Allergy in the opening sentence (`sim/scripted_llm.py` `_after_customer`) | Codex PR #139 (P2, rule A): "Ich moechte Pho Bo mit Erdnussallergie zum Abholen" in the first turn matches `OUT_OF_SCOPE` before pickup is detected and creates a callback. Safe (the team calls back), but no order. Fix: detect pickup before the out-of-scope check. Stand-in only | with T-2.4 or the next sim change |
@@ -316,9 +317,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.34.6 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
-- **v1.34.5 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
-- **v1.34.4 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.7 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
+- **v1.34.6 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
+- **v1.34.5 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.4 · 26.09.2026:** Offener Punkt aus PR #147
 - **v1.34.3 · 26.09.2026:** PR #147 Review: fuehrendes und nur am Satzanfang, Fuellwoerter auch fuer die Namenssuche
 - **v1.34.2 · 26.09.2026:** Nummernsatz: fuehrendes und, wuerde/hallo/dazu als Fuellwort (Befund T-5.2)
 - **v1.34.1 · 26.09.2026:** PR #148: Codex-Befunde - pos_code als eigenes Feld, fehlende Kassenartikel inaktiv, Import mit --apply-price-changes
