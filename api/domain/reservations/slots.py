@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
-from api.core.time import utcnow
+from api.core.time import business_day, utcnow
 from api.domain.reservations.capacity import (
     CapacityWindow,
     booked_guests,
@@ -60,14 +60,19 @@ def check_slot(
     if fits(local):
         return SlotCheck(available=True)
 
-    # Nur der Tag des Wunschs: die Vortagsfenster sind allein fuer die Zeit nach
-    # Mitternacht geladen, und die Uhrzeit wird ohne Tag angesagt. Sonst kaeme am
-    # Ruhetag Sonntag 21:30 als "halb zehn" (Befund T-5.2, reservierung_0027).
+    # Nur der Betriebstag des Wunschs (Wechsel um 05:00): die Uhrzeit wird ohne Tag
+    # angesagt. Sonst kaeme am Ruhetag Sonntag 21:30 als "halb zehn" (Befund T-5.2,
+    # reservierung_0027), und nachts um halb eins der naechste Mittag als "halb zwoelf".
+    # Der Kalendertag reicht nicht: 00:30 gehoert noch zum Abend davor.
+    wish_day = business_day(local, tenant.timezone)
     candidates = [
         slot
         for window in windows
         for slot in window.grid()
-        if slot.date() == local.date() and slot != local and slot > now and fits(slot)
+        if business_day(slot, tenant.timezone) == wish_day
+        and slot != local
+        and slot > now
+        and fits(slot)
     ]
     candidates.sort(key=lambda slot: (abs(slot - local), slot))
     alternatives = [slot.astimezone(UTC) for slot in candidates[:MAX_ALTERNATIVES]]

@@ -157,6 +157,57 @@ def test_alternativen_liegen_am_tag_des_wunschs(session, tenant_id, book):
     assert all(a.astimezone(BERLIN).date() == DIENSTAG for a in result.alternatives)
 
 
+def _nachtfenster(session, tenant_id, weekday: int) -> None:
+    """18:00 bis 01:00 mit 20 Plaetzen am Wochentag `weekday` (0 = Montag)."""
+    session.add_all(
+        [
+            OpeningHours(
+                tenant_id=tenant_id,
+                weekday=weekday,
+                opens_at=time(18),
+                closes_at=time(1),
+                service="dinein",
+            ),
+            Capacity(
+                tenant_id=tenant_id,
+                weekday=weekday,
+                slot_start=time(18),
+                slot_end=time(1),
+                max_guests=20,
+            ),
+        ]
+    )
+    session.commit()
+
+
+def test_ruhetag_bietet_nicht_die_nacht_des_vortags_an(session, tenant_id):
+    # Review PR #152: Sonntag bis 01:00 geoeffnet. Montag 00:00 und 00:30 haben das
+    # Datum des Ruhetags, gehoeren aber zum Sonntagabend, 18 Stunden vor dem Wunsch.
+    session.query(OpeningHours).filter_by(tenant_id=tenant_id, weekday=6).delete()
+    session.query(Capacity).filter_by(tenant_id=tenant_id, weekday=6).delete()
+    _nachtfenster(session, tenant_id, weekday=6)
+    sonntag_frueh = berlin(date(2026, 9, 13), 8)
+    result = check_slot(session, tenant_id, berlin(MONTAG, 19), 2, now=sonntag_frueh)
+    assert result.available is False
+    assert result.alternatives == []
+
+
+def test_wunsch_nach_ladenschluss_nachts_bekommt_termine_desselben_abends(
+    session, tenant_id
+):
+    # Review PR #152: Dienstag 01:00 gehoert zum Montagabend (Betriebstag Montag),
+    # das Fenster schliesst um 01:00. Angeboten wird derselbe Abend.
+    _nachtfenster(session, tenant_id, weekday=0)
+    result = check_slot(
+        session, tenant_id, berlin(DIENSTAG, 1, 0), 2, now=berlin(MONTAG, 20)
+    )
+    assert result.available is False
+    assert result.alternatives == [
+        berlin(DIENSTAG, 0, 30).astimezone(UTC),
+        berlin(DIENSTAG, 0, 0).astimezone(UTC),
+    ]
+
+
 def test_fensterende_ist_exklusiv_und_ausserhalb_der_oeffnung_nicht_buchbar(
     session, tenant_id
 ):
@@ -210,8 +261,9 @@ def test_fenster_ueber_mitternacht_gilt_auch_fuer_check_slot(session, tenant_id,
     assert check_slot(session, tenant_id, wunsch, 1, now=montag_abend).available is True
     result = check_slot(session, tenant_id, wunsch, 2, now=montag_abend)
     assert result.available is False
-    # Das Nachtfenster ist voll, die nächsten freien Plätze liegen am Dienstagmittag.
-    assert result.alternatives[0] == berlin(DIENSTAG, 11, 30).astimezone(UTC)
+    # Das Nachtfenster ist voll. Dienstagmittag gehoert zu einem anderen Betriebstag
+    # und hiesse ohne Tag "halb zwoelf" - nachts klingt das nach 23:30 (Review PR #152).
+    assert result.alternatives == []
 
 
 def test_vergangener_zeitpunkt_ist_invalid_input(session, tenant_id):
