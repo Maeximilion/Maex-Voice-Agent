@@ -91,8 +91,8 @@ def test_seite_zeigt_wartende_bestellung_mit_freigabe(client, db, tenant_id):
     assert ">A1<" in html  # Abholcode gross
     assert "Frühlingsrollen" in html and "ohne Zwiebeln" in html
     assert "13,80 €" in html
-    assert "Noch nicht in der Küche" in html
-    assert "Passt, ab in die Küche" in html
+    assert "Noch nicht an der Kasse" in html
+    assert "Passt, Zettel an die Kasse" in html
     assert 'id="korrektur"' in html
 
 
@@ -128,7 +128,7 @@ def test_rote_karte_hat_nochmal_senden_statt_passt(client, db, tenant_id):
     )
     db.commit()
     html = client.get("/gui/fragments/bestellungen").text
-    assert "Küche nicht erreicht" in html
+    assert "Zettel nicht gedruckt" in html
     assert "Nochmal senden" in html
     assert f"/gui/bestellungen/{order_id}/passt" not in html
 

@@ -44,13 +44,19 @@ def _clock(value, tz_name: str) -> str:
 
 
 def card(order: BoardOrder, tz_name: str) -> dict:
-    """Eine Karte der Spalte. Zustand immer mit Text, nie nur Farbe (docs/06 §1 Regel 4)."""
+    """Eine Karte der Spalte. Zustand immer mit Text, nie nur Farbe (docs/06 §1 Regel 4).
+
+    Die Bruecke druckt einen Eingabezettel an der Kasse, die Kasse erst den
+    Kuechenbon (D2, docs/02 §2a): die Karte sagt, wo der Zettel ist, nicht "Kueche".
+    """
     if order.handover_state == "failed":
-        tone, state = "danger", "Küche nicht erreicht"
+        tone, state = "danger", "Zettel nicht gedruckt"
     elif order.handover_state is None:
-        tone, state = "warn", "Noch nicht in der Küche"
+        tone, state = "warn", "Noch nicht an der Kasse"
+    elif order.handover_state == "pending":
+        tone, state = "ok", "Zettel wird gedruckt"
     else:
-        tone, state = "ok", "Küche hat den Bon"
+        tone, state = "ok", "Zettel liegt an der Kasse"
     return {
         "id": str(order.order_id),
         "time": _clock(order.created_at, tz_name),

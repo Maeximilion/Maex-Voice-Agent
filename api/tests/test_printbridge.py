@@ -72,6 +72,19 @@ def test_bon_enthaelt_was_die_kueche_braucht():
     assert "5551234" not in text  # die Kueche braucht keine Telefonnummer
 
 
+def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
+    """D2 (docs/02 §2a): die Bruecke druckt einen Eingabezettel an der Kasse, keinen
+    Kuechenbon. Ganz oben und vor einer Korrektur, damit ihn niemand fuer einen
+    Beleg haelt und die Bestellung in die Kasse getippt wird (TSE)."""
+    ticket = {**TICKET, "revision": 2, "correction_reason": "wrong_quantity"}
+    text = render(ticket).decode("cp858")
+    assert "NICHT IN KASSE" in text
+    assert "Bitte in die Kasse eingeben." in text
+    assert (
+        text.index("NICHT IN KASSE") < text.index("KORREKTUR") < text.index("ABHOLUNG")
+    )
+
+
 def test_korrektur_steht_oben_mit_grund_und_stand():
     ticket = {**TICKET, "revision": 2, "correction_reason": "wrong_quantity"}
     text = render(ticket).decode("cp858")

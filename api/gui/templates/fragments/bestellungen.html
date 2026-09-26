@@ -44,7 +44,7 @@
       {% elif o.can_approve %}
       {# Ausserhalb von primary ist Passt die Freigabe: der Knopf sagt es. #}
       <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/passt"
-              hx-target="#bestellungen-liste" hx-swap="innerHTML">{{ "Passt, ab in die Küche" if o.awaiting else "Passt" }}</button>
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">{{ "Passt, Zettel an die Kasse" if o.awaiting else "Passt" }}</button>
       {% endif %}
       <button hx-get="/gui/bestellungen/{{ o.id }}/korrigieren"
               hx-target="#korrektur" hx-swap="innerHTML">Korrigieren</button>

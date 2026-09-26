@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.12
+> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.13
 
 ---
 
@@ -95,7 +95,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **First real print of the input slip** (T-4.6 variant B built 25.09.2026; since D2 on 26.09.2026 it goes to the main receipt printer at the register with the header "NICHT IN KASSE – bitte eingeben", that change is still to build): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
+1. **Check the first input slip on paper** (T-4.6): the test slip reached the Windows queue of the main receipt printer on 27.09.2026 00:29 via TeamViewer (`EPSON TM-T20II Receipt`, port ESDPRT001 = Epson APD, RAW), but nobody has seen the paper yet: umlauts, 48 characters, cut. A second job from 00:27 was still in the queue, check it is gone before service. Header "NICHT IN KASSE" built 26.09.2026; `pos_code` on the slip after T-4.11 (#149)
 2. **T-1.14** alternatives within the same service and no start shortly before closing, once D12 is decided (docs/04 §check_slot)
 3. **Card numbers of the register** (found by T-4.11): 50 dishes are not imported because the search only knows numbers up to 999 with a letter a to f - `25G`, `26G` ... `60G` (letter g) and sushi `S1` ... `S53`, `SM1` ... `SM6`. Extend `numberwords` and `importer._CARD_NUMBER` deliberately ("Nummer S zwölf", "25 G"), with eval cases; then the first real import: `python -m scripts.kasse_to_csv imports/kasse --out imports`, `python -m scripts.import_menu imports/ --dry-run --deactivate-missing`, read the report, then again with `--apply-price-changes --deactivate-missing`. Print `pos_code` instead of `number` on the input slip with the T-4.6 slip change
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
@@ -261,6 +261,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Date | What |
 |---|---|
 | 26.09.2026 | **T-4.11 menu from the register:** `domain/menu/pos_dbf.py` (dBase IV reader with memo, read-only), `domain/menu/pos_convert.py` (sizes, extras, allergen letter table, report), `scripts/kasse_to_csv.py`; importer takes optional `pos_code`, `--deactivate-missing`; migration 004 `menu_items.pos_code`. Tests with synthetic `.dbf` only (`api/tests/dbf_fixture.py`), real files stay in `imports/kasse/` |
+| 26.09.2026 | **T-4.6 input slip:** every slip from the bridge starts with "NICHT IN KASSE" (big, inverted) and "Bitte in die Kasse eingeben."; the tablet says "Zettel wird gedruckt" / "Zettel liegt an der Kasse" / "Zettel nicht gedruckt" / "Noch nicht an der Kasse" instead of "Küche" (D2). Printer setup on the register PC: Python and pywin32 installed by Maxi, test slip reached the Windows queue |
 | 26.09.2026 | **T-3.6 wait time per service:** the header has one row each for pickup and delivery with "-15" and "+15"; a button is off at its limit, `aria-label` names wait time and service. `change_wait` replaces `raise_wait`, audit action `service_config.wait_changed` with service, step, from, to. Clicked through in the browser (Chromium, 1024 px) |
 | 26.09.2026 | **Bug `check_slot` alternatives from the previous day fixed** (found by T-5.2): on the closed Monday it offered Sunday 21:30 as "halb zehn". Alternatives now only less than six hours from the wish (`domain/reservations/slots.py` `UNAMBIGUOUS`): the time is spoken without a day, and below six hours the nearest reading is the right one. Calendar day and business day both failed in review PR #152 (night wish got the midday, 05:00 hard-coded). Same PR: the reservation lock covers both days check_slot reads, so Monday 23:30 and Tuesday 00:30 in one overnight window no longer run in parallel; red first as eval `reservierung_0027` (new `expected.alternatives`, docs/08) and unit test; a closed day is now said as such ("Am Montag haben wir leider geschlossen."). 2285 tests green, eval 102/108 (the six red ones are the marked gaps), check_slot p95 16.8 ms, create_reservation p95 38.5 ms |
 | 26.09.2026 | **Handover D2, D11, T-4.11 prepared** (PR #148, docs only): receipts only via the register, print bridge as input slip; register `.dbf` mapped in docs/14 incl. allergen letter table a-n to LMIV; next T-4.11 with the six register files. Full block in `docs/00_PCF.md` §13 |
@@ -319,9 +320,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.34.12 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
-- **v1.34.11 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
-- **v1.34.10 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.13 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
+- **v1.34.12 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
+- **v1.34.11 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.10 · 27.09.2026:** T-4.6: Eingabezettel NICHT IN KASSE, Tablet-Texte Zettel statt Kueche
 - **v1.34.9 · 26.09.2026:** T-3.6 done: Wartezeit Abholung und Lieferung getrennt, senkbar
 - **v1.34.8 · 26.09.2026:** T-1.14 und D12 angelegt: Alternativen im selben Service, kein Beginn kurz vor Ladenschluss (Anforderung, nicht gebaut)
 - **v1.34.7 · 26.09.2026:** Bug: check_slot bot Uhrzeiten vom Vortag an; Alternativen jetzt nur unter sechs Stunden Abstand, Ruhetag-Satz, Sperre ueber Mitternacht (#eval reservierung_0027, PR #152)
