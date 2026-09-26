@@ -42,8 +42,15 @@ def _find(folder: Path, name: str) -> Path:
 
 
 def load(folder: Path, table: str, memo: bool = False) -> Table:
-    data = _find(folder, f"{table}.dbf").read_bytes()
-    memo_data = _find(folder, f"{table}.dbt").read_bytes() if memo else None
+    try:
+        data = _find(folder, f"{table}.dbf").read_bytes()
+        memo_data = _find(folder, f"{table}.dbt").read_bytes() if memo else None
+    except FileNotFoundError:
+        raise
+    except OSError as exc:
+        # Gesperrt (Kasse hat die Datei offen), Ordner statt Datei, Lesefehler:
+        # Meldung mit Exit 2 statt Traceback (Codex PR #149).
+        raise DbfError(f"{table}: Datei nicht lesbar ({exc.strerror or exc})") from exc
     try:
         return read_table(data, memo_data)
     except DbfError as exc:

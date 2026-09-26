@@ -690,3 +690,17 @@ def test_skript_alias_datei_mit_extra_feld_oder_falschem_zeichensatz(tmp_path, c
     (out / ALIASES_FILE).write_bytes("number;alias\n1;Suppe groß\n".encode("cp1252"))
     assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
     assert "nicht UTF-8" in capsys.readouterr().out
+
+
+def test_skript_unlesbare_datei_exit_2(tmp_path, capsys):
+    """Codex PR #149: gesperrte oder unlesbare Kopie (z. B. von der Kasse noch
+    geöffnet) ist eine Meldung mit Exit 2, kein Traceback."""
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+    (kasse / "zutgrp.DBF").unlink()
+    (kasse / "zutgrp.DBF").mkdir()  # read_bytes() wirft dann einen OSError
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
+    assert "zutgrp" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
