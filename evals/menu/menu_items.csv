@@ -6,3 +6,8 @@ number;name;category;price_eur;description;active
 47;Ente knusprig;Hauptgerichte;15,50;;ja
 48;Ente süß-sauer;Hauptgerichte;14,90;;ja
 50;Altes Gericht;Hauptgerichte;9,00;;nein
+60;Chop Suey mit Huhn;Hauptgerichte;12,50;;ja
+60g;Soße Chop Suey;Hauptgerichte;2,00;;ja
+S1;Lachs Nigiri (2 Stück);Sushi;4,50;;ja
+S12;Thunfisch Maki (6 Stück);Sushi;5,90;;ja
+SM1;Sushi-Menü klein;Sushi;16,90;;ja

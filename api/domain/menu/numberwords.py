@@ -14,14 +14,21 @@ Die Spracherkennung liefert dieselbe Zahl in mehreren Gestalten: als Ziffer
 zwanzig") oder ziffernweise gesprochen ("vierzig sieben"). Alle vier Formen
 ergeben hier dieselbe Zahl.
 
+Kartennummern tragen ausserdem Buchstaben: eine Endung a bis g ("23a", "25g")
+und, wenn die Karte es so hat, ein Praefix davor ("S12", "SM1"). Welche
+Praefixe gelten, steht nicht hier, sondern kommt als `CardFormat` aus den
+Nummern der Karte (CLAUDE.md §2 Regel 1, T-4.12). Ohne `CardFormat` kennt das
+Modul keine Praefixe.
+
 **Kein Treffer ergibt `None`, nie eine Vermutung** (CLAUDE.md §2 Regel 2). Ob
 daraus eine Rückfrage, eine Stufe der Verständnis-Leiter oder ein Abbruch wird,
 entscheidet der Aufrufer, nicht dieses Modul.
 """
 
 import re
-from dataclasses import dataclass
-from itertools import pairwise
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from itertools import pairwise, product
 
 # Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
 # ist am Telefon kein Zahlwort mehr, sondern eine Ziffernfolge.
@@ -102,11 +109,22 @@ _TOKEN = re.compile(r"\d+|[a-z]+|[.,;:!?]")
 @dataclass(frozen=True)
 class _Span:
     """Eine gefundene Zahl mit ihrer Lage im Satz. Die Lage braucht, wer wissen
-    will, ob diese Zahl schon als Menge vergeben ist."""
+    will, ob diese Zahl schon als Menge vergeben ist.
+
+    Mit Kartenpraefix ("S zwölf") beginnt die Spanne beim Praefix: `lead` Token
+    davor gehoeren zur Nummer, `prefixes` sind die Praefixe, die sie meinen
+    koennen - einer bei "S", mehrere bei einem Kategoriewort ("Sushi")."""
 
     start: int
     end: int
     value: int
+    lead: int = 0
+    prefixes: tuple[str, ...] = ()
+
+    @property
+    def digits_at(self) -> int:
+        """Wo die Zahl selbst beginnt, hinter einem Praefix."""
+        return self.start + self.lead
 
     def overlaps(self, other: "_Span") -> bool:
         return self.start < other.end and other.start < self.end
@@ -116,6 +134,89 @@ def fold(text: str) -> str:
     """Kleinschreibung plus Umlaut-Ersatzschreibung. Am Telefon klingt "fünf" wie
     "fuenf"; welche Schreibweise die Erkennung liefert, ist Zufall."""
     return text.lower().translate(_UMLAUTS)
+
+
+# Eine Kartennummer in ihren Teilen: Praefix, Ziffern, Endung. Welche Formen
+# erlaubt sind, prueft der Import (importer.is_card_number), hier nur zerlegen.
+_CARD_PARTS = re.compile(r"([a-z]*)(\d+)([a-z]*)")
+
+# Buchstaben, wie die Erkennung sie ausschreibt, wenn der Gast buchstabiert:
+# "Es zwölf" ist S12, "Es Em eins" SM1. Deutsches Alphabet, keine Kartendaten:
+# welcher Buchstabe als Praefix gilt, sagt allein die Karte (`CardFormat`).
+_LETTER_NAMES = {
+    "a": "a", "be": "b", "ce": "c", "ze": "c", "zeh": "c", "de": "d", "e": "e",
+    "ef": "f", "ge": "g", "ha": "h", "i": "i", "jot": "j", "ka": "k", "el": "l",
+    "em": "m", "en": "n", "o": "o", "pe": "p", "ku": "q", "er": "r", "es": "s",
+    "ess": "s", "te": "t", "u": "u", "vau": "v", "we": "w", "ix": "x",
+    "ypsilon": "y", "zett": "z",
+}  # fmt: skip
+# Hoechstens so viele Token bilden ein Praefix ("Es Em" -> sm, "S M" -> sm).
+_MAX_PREFIX_TOKENS = 3
+
+
+@dataclass(frozen=True)
+class CardFormat:
+    """Was eine Kartennummer dieser Karte vor der Zahl tragen kann (T-4.12).
+
+    `prefixes`: Buchstaben vor der Zahl, die auf der Karte vorkommen ("s",
+    "sm"). `words`: ein Kategoriewort, das der Gast statt des Praefixes sagt
+    ("Sushi zwölf"), mit allen Praefixen, die es meinen kann - "" steht fuer
+    Nummern ohne Praefix derselben Kategorie. Kommt aus der Datenbank
+    (`items.card_format`), nie aus dem Code (CLAUDE.md §2 Regel 1).
+    """
+
+    prefixes: frozenset[str] = frozenset()
+    words: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+
+    @classmethod
+    def from_items(cls, items: Iterable[tuple[str, str]]) -> "CardFormat":
+        """Aus (Nummer, Kategorie) der aktiven Gerichte.
+
+        Ein Kategoriewort zaehlt nur, wenn die Kategorie ein Wort ist und jedes
+        ihrer Praefixe nur in ihr vorkommt: die Warengruppe "Sushi" traegt S1
+        bis S53 und SM1 bis SM6, "Sushi zwölf" meint also S12 oder SM12, und
+        welche davon es gibt, entscheidet die Suche an der Karte.
+        """
+        prefixes: set[str] = set()
+        in_category: dict[str, set[str]] = {}
+        categories_of: dict[str, set[str]] = {}
+        for number, category in items:
+            parts = _CARD_PARTS.fullmatch(fold(number.strip()))
+            if parts is None:
+                continue
+            prefix = parts.group(1)
+            name = fold(category.strip())
+            if prefix:
+                prefixes.add(prefix)
+                categories_of.setdefault(prefix, set()).add(name)
+            in_category.setdefault(name, set()).add(prefix)
+        words: dict[str, tuple[str, ...]] = {}
+        for name, found in in_category.items():
+            carried = found - {""}
+            if (
+                carried
+                and name.isalpha()
+                and all(categories_of[p] == {name} for p in carried)
+            ):
+                words[name] = tuple(sorted(found))
+        return cls(frozenset(prefixes), words)
+
+    def prefixes_of(self, run: list[str]) -> tuple[str, ...]:
+        """Die Praefixe, die diese Token direkt vor einer Zahl meinen koennen."""
+        if not self.prefixes or not run or any(t in PUNCTUATION for t in run):
+            return ()
+        if len(run) == 1 and run[0] in self.words:
+            return self.words[run[0]]
+        spellings = {
+            "".join(parts)
+            for parts in product(
+                *({t, _LETTER_NAMES[t]} if t in _LETTER_NAMES else {t} for t in run)
+            )
+        }
+        return tuple(sorted(spellings & self.prefixes))
+
+
+NO_PREFIXES = CardFormat()
 
 
 def _below_hundred(word: str) -> int | None:
@@ -210,13 +311,16 @@ def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
     return None
 
 
-def _number_spans(tokens: list[str]) -> list[_Span]:
+def _number_spans(tokens: list[str], card: CardFormat = NO_PREFIXES) -> list[_Span]:
     """Alle genannten Zahlen mit ihrer Lage.
 
     Ein bloßer Artikel zählt nicht mit ("ein Tisch"), eine Zahl, die mit einem
     Artikel **beginnt**, sehr wohl: "die ein und zwanzig" ist die 21 und war
     vorher die 20, weil das "ein" verworfen wurde, bevor jemand geprüft hat, ob
     es eine Zahl eröffnet (Codex-Review PR #105, P1).
+
+    Steht direkt davor ein Praefix der Karte ("S zwölf", "Sushi zwölf"),
+    gehoert es zur Spanne (`_with_prefix`).
     """
     spans: list[_Span] = []
     i = 0
@@ -228,9 +332,25 @@ def _number_spans(tokens: list[str]) -> list[_Span]:
         if span is None or (tokens[i] in ARTICLES and span.end == i + 1):
             i += 1
             continue
-        spans.append(span)
+        floor = spans[-1].end if spans else 0
+        spans.append(_with_prefix(tokens, span, card, floor))
         i = max(span.end, i + 1)
     return spans
+
+
+def _with_prefix(tokens: list[str], span: _Span, card: CardFormat, floor: int) -> _Span:
+    """Die Spanne um ein Kartenpraefix direkt davor erweitert, das laengste zuerst.
+
+    Nur Token ab `floor`: was zur Zahl davor gehoert, ist kein Praefix.
+    """
+    for n in range(_MAX_PREFIX_TOKENS, 0, -1):
+        start = span.start - n
+        if start < floor:
+            continue
+        found = card.prefixes_of(tokens[start : span.start])
+        if found:
+            return _Span(start, span.end, span.value, n, found)
+    return span
 
 
 def _quantity_spans(tokens: list[str]) -> list[_Span]:
@@ -280,7 +400,7 @@ def find_numbers(text: str) -> list[int]:
     return [span.value for span in _number_spans(_tokens(text))]
 
 
-def find_item_number(text: str) -> int | None:
+def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
     """Die Gerichtnummer im Satz. Ein ausdrückliches "Nummer …" schlägt alles andere.
 
     Eine Zahl, die an einem Mengen-Marker hängt, ist keine Gerichtnummer: "2 x
@@ -293,7 +413,7 @@ def find_item_number(text: str) -> int | None:
     sich weiterarbeiten liesse. Wer die Schreibweise braucht, um danach zu
     fragen, nimmt `find_item_number_ref` (Codex PR #117, P2).
     """
-    ref = find_item_number_ref(text)
+    ref = find_item_number_ref(text, card)
     return ref.value if ref is not None and ref.valid else None
 
 
@@ -312,13 +432,24 @@ class ItemNumber:
     value: int
     text: str
     marked: bool
-    # False, wenn eine Endung dranhängt, die keine Karte hat ("23g", "23ab"):
+    # False, wenn eine Endung dranhängt, die keine Karte hat ("23h", "23ab"):
     # die Nummer gilt dann als nicht vorhanden, statt still zur 23 gekürzt zu
     # werden (Codex PR #117, P1).
     valid: bool = True
+    # Mehrere moegliche Kartennummern aus einer Stelle: "Sushi zwölf" ist S12
+    # oder SM12. `text` ist dann das Gesagte ("sushi 12"). Welche es gibt,
+    # entscheidet die Suche an der Karte (T-4.12).
+    choices: tuple[str, ...] = ()
+
+    @property
+    def cards(self) -> tuple[str, ...]:
+        """Die Kartennummern, die nachzuschlagen sind."""
+        return self.choices or (self.text,)
 
 
-_SUFFIXES = frozenset("abcdef")
+# Kartenendungen: a bis f fuer Varianten, g fuer die Sossen der Kasse (25G bis
+# 60G, T-4.12). Zusammengesetzte Endungen ("35AE") hat die Kasse nicht.
+_SUFFIXES = frozenset("abcdefg")
 # Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
 # mehr vom Leerzeichen-Fall ("23 bitte") zu unterscheiden. Deshalb je Token
 # merken, ob der nächste ohne Lücke folgt - nach Position, nicht nach
@@ -339,9 +470,9 @@ def _prefixed(text: str) -> set[int]:
     """Indizes der Buchstaben-Tokens, an denen ohne Lücke Ziffern hängen.
 
     Gegenstück zu `_glued`: dort folgt der Buchstabe auf die Ziffer ("23a"),
-    hier geht er ihr voran ("A12"). Eine Kartennummer sieht so nie aus (docs/14
-    lässt nur Ziffern mit optionalem a-f dahinter zu), deshalb ist "Nummer A12"
-    eine Nummer, die es nicht gibt - und kein Gerichtname (Codex PR #117).
+    hier geht er ihr voran ("A12"). Ist der Buchstabe kein Praefix der Karte
+    (`CardFormat`), ist "Nummer A12" eine Nummer, die es nicht gibt - und kein
+    Gerichtname (Codex PR #117).
     """
     matches = list(_TOKEN.finditer(fold(text)))
     return {
@@ -352,7 +483,7 @@ def _prefixed(text: str) -> set[int]:
 
 
 # Wie lang ein Buchstabenteil einer Kartennummer hoechstens ist. Die Karte
-# kennt eine Ziffernfolge mit einem Buchstaben a bis f (docs/14); zwei ist
+# kennt eine Ziffernfolge mit einem Buchstaben a bis g (docs/14); zwei ist
 # schon grosszuegig. Alles darueber ist ein Wort: "Ente", "Pho", "Beef",
 # "Cafe" sind Gerichtnamen, keine Kartenteile (Codex PR #117, P2).
 _MAX_CARD_LETTERS = 2
@@ -361,7 +492,7 @@ _MAX_CARD_LETTERS = 2
 def _card_letters(token: str) -> bool:
     """Buchstaben, die zu einer Kartennummer gehoeren koennten.
 
-    Nur a bis f (docs/14) und hoechstens zwei davon. Die Laenge allein reicht
+    Nur a bis g (docs/14) und hoechstens zwei davon. Die Laenge allein reicht
     nicht: "so" und "ab" sind beide zwei Zeichen, aber nur eines davon kann
     Teil einer Kartennummer sein. Sonst wuerde "Nummer so 23" zur nicht
     vorhandenen Nummer "so23", statt nach Regel A nachzufragen (Codex PR #117).
@@ -376,7 +507,7 @@ def _card_letters(token: str) -> bool:
 def _long_suffix(token: str) -> bool:
     """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
 
-    Begrenzt auf a bis f, die einzigen Buchstaben, die eine Kartennummer
+    Begrenzt auf a bis g, die einzigen Buchstaben, die eine Kartennummer
     tragen kann (docs/14). Damit bleibt "Nummer 23 mit Reis" die 23 mit einem
     Wort daneben, waehrend "Nummer 23 ab" wie "Nummer 23ab" ungueltig ist -
     die Erkennung setzt das Leerzeichen, nicht der Gast (Codex PR #117, P2).
@@ -385,10 +516,25 @@ def _long_suffix(token: str) -> bool:
 
 
 def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
-    digits = span.end - span.start == 1 and tokens[span.start].isdigit()
-    card = tokens[span.start] if digits else str(span.value)
+    ref = _plain_ref(tokens, span, marked, glued)
+    if not span.prefixes:
+        return ref
+    cards = tuple(prefix + ref.text for prefix in span.prefixes)
+    if len(cards) == 1:
+        return ItemNumber(ref.value, cards[0], marked, ref.valid)
+    said = " ".join(tokens[span.start : span.digits_at])
+    return ItemNumber(ref.value, f"{said} {ref.text}", marked, ref.valid, cards)
+
+
+def _plain_ref(
+    tokens: list[str], span: _Span, marked: bool, glued: set[int]
+) -> ItemNumber:
+    """Die Nummer ohne Praefix: Ziffern oder Zahlwort, dazu die Endung."""
+    at = span.digits_at
+    digits = span.end - at == 1 and tokens[at].isdigit()
+    card = tokens[at] if digits else str(span.value)
     nxt = tokens[span.end] if span.end < len(tokens) else ""
-    if digits and span.start in glued:
+    if digits and at in glued:
         suffix = nxt
         # "23x" ist keine Kartennummer und auch keine Endung: ungültig, nicht
         # die 23 (Codex PR #117). Echte Mengen ("2x Pho") hat _quantity_spans
@@ -399,7 +545,7 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     # geschrieben ("23ab") war das laengst ungueltig, getrennt kam bisher die
     # blanke 23 heraus - und zwar nur ueber find_item_number_ref, waehrend die
     # Suche nachfragte. Begrenzt auf Buchstaben, die eine Kartenendung
-    # ueberhaupt tragen kann (a bis f): "Nummer 23 mit Reis" bleibt die 23 mit
+    # ueberhaupt tragen kann (a bis g): "Nummer 23 mit Reis" bleibt die 23 mit
     # einem Wort daneben (Codex PR #117, P2).
     if marked and _long_suffix(nxt):
         return ItemNumber(span.value, card + nxt, marked, valid=False)
@@ -413,10 +559,15 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     return ItemNumber(value=span.value, text=card, marked=marked)
 
 
+_LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
+
+
 def canonical_card(card: str) -> str:
     """Kartennummer so, wie search_menu sie vergleicht: klein, ohne führende
-    Nullen. Eine Stelle für Import, Zahlwörter und Text-Telefon."""
-    return card.lower().lstrip("0") or "0"
+    Nullen der Zahl, auch hinter einem Praefix ("S07" wie "s7"). Eine Stelle
+    für Import, Zahlwörter und Text-Telefon; search._by_number rechnet in SQL
+    dasselbe."""
+    return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower())
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
@@ -449,7 +600,7 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
 
 
 def _marker_target(
-    tokens: list[str], i: int, prefixed: set[int]
+    tokens: list[str], i: int, prefixed: set[int], card: CardFormat = NO_PREFIXES
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
     """Was hinter dem Marker an Stelle `i` steht.
 
@@ -471,6 +622,12 @@ def _marker_target(
         span = _scan(tokens, j)
         if span is not None:
             return j, j, span, None
+        # "Nummer S12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
+        for n in range(_MAX_PREFIX_TOKENS, 0, -1):
+            dahinter = _scan(tokens, j + n) if j + n < len(tokens) else None
+            found = card.prefixes_of(tokens[j : j + n]) if dahinter else ()
+            if dahinter is not None and found:
+                return j, j, _Span(j, dahinter.end, dahinter.value, n, found), None
         if (
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
@@ -511,7 +668,12 @@ def _marker_target(
     return j, j, None, None
 
 
-def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[ItemNumber]:
+def _marked(
+    tokens: list[str],
+    glued: set[int],
+    prefixed: set[int],
+    card: CardFormat = NO_PREFIXES,
+) -> list[ItemNumber]:
     spans: list[_Span] = []
     # Ziffern hinter dem Marker, die ausserhalb des Zahlbereichs liegen
     # ("Nummer 1000"): ungültig, und keine spätere Zahl darf nachrücken
@@ -520,7 +682,7 @@ def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[Item
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        _, _, span, bad = _marker_target(tokens, i, prefixed)
+        _, _, span, bad = _marker_target(tokens, i, prefixed, card)
         if span is not None:
             spans.append(span)
         elif bad is not None:
@@ -542,7 +704,7 @@ def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[Item
     later = sorted(
         (
             span
-            for span in _number_spans(tokens)
+            for span in _number_spans(tokens, card)
             if span.start > spans[0].start and not any(span.overlaps(s) for s in spans)
         ),
         key=lambda s: s.start,
@@ -575,12 +737,18 @@ def _marked(tokens: list[str], glued: set[int], prefixed: set[int]) -> list[Item
     for span in spans:
         ref = _ref(tokens, span, marked=True, glued=glued)
         # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
-        if all(canonical_card(r.text) != canonical_card(ref.text) for r in found):
+        if all(_same_cards(r) != _same_cards(ref) for r in found):
             found.append(ref)
     return found
 
 
-def find_marked_item_numbers(text: str) -> list[ItemNumber]:
+def _same_cards(ref: ItemNumber) -> frozenset[str]:
+    return frozenset(canonical_card(c) for c in ref.cards)
+
+
+def find_marked_item_numbers(
+    text: str, card: CardFormat = NO_PREFIXES
+) -> list[ItemNumber]:
     """Alle verschiedenen Nummern hinter "Nummer"/"Nr.", in Satzfolge - auch
     eine zweite Zahl ohne eigenen Marker ("Nummer 23 oder 24").
 
@@ -588,10 +756,12 @@ def find_marked_item_numbers(text: str) -> list[ItemNumber]:
     24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
     nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
     """
-    return _marked(_tokens(text), _glued(text), _prefixed(text))
+    return _marked(_tokens(text), _glued(text), _prefixed(text), card)
 
 
-def find_item_number_ref(text: str) -> ItemNumber | None:
+def find_item_number_ref(
+    text: str, card: CardFormat = NO_PREFIXES
+) -> ItemNumber | None:
     """Wie `find_item_number`, aber mit Kartenschreibweise und Marker.
 
     Zwei verschiedene ausdrücklich genannte Nummern ergeben `None`: die erste
@@ -599,14 +769,14 @@ def find_item_number_ref(text: str) -> ItemNumber | None:
     """
     tokens = _tokens(text)
     glued = _glued(text)
-    marked = _marked(tokens, glued, _prefixed(text))
+    marked = _marked(tokens, glued, _prefixed(text), card)
     if marked:
         return marked[0] if len(marked) == 1 else None
 
     mengen = _quantity_spans(tokens)
     uebrig = [
         span
-        for span in _number_spans(tokens)
+        for span in _number_spans(tokens, card)
         if not any(span.overlaps(menge) for menge in mengen)
     ]
     if len(uebrig) != 1:
@@ -661,7 +831,9 @@ def _too_large(token: str) -> bool:
     return any(word in token for word in _TOO_LARGE)
 
 
-def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
+def sole_item_number(
+    text: str, card: CardFormat = NO_PREFIXES
+) -> tuple[ItemNumber | None, bool]:
     """Regel A: eine Kartennummer nur, wenn der ganze Satz genau eine Nummer ist.
 
     Erlaubt neben der Nummer: "Nummer"/"Nr.", Füllwörter, Zögerlaute,
@@ -678,6 +850,11 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     Eine Regel statt vieler Sonderfälle: jede Satzform, die nicht eindeutig
     eine Nummer ist, wird zur Rückfrage statt zum stillen Fehlgriff
     (Codex-Reviews PR #117, 15 Runden).
+
+    Eine Nummer mit Praefix der Karte ("S12", "Sushi zwölf") zaehlt wie eine
+    Zahl ohne Marker: neben einem Namen entscheidet die Namenssuche, und "die
+    S12 und Pho Bo" bleiben zwei Positionen (T-4.12). Eine Zahl direkt davor
+    ist die Menge, wie in "zwei Nummer 23".
     """
     tokens = _tokens(text)
     glued = _glued(text)
@@ -694,7 +871,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        start, end, span, bad = _marker_target(tokens, i, prefixed)
+        start, end, span, bad = _marker_target(tokens, i, prefixed, card)
         if span is not None:
             marked.append(span)
             marker_at.add(i)
@@ -704,15 +881,17 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
             consumed.update(range(start, end))
             invalid_at.update(range(start, end))
     numbers = list(marked)
-    for span in _number_spans(tokens):
+    spans = _number_spans(tokens, card)
+    prefix_at = {s.start for s in [*spans, *marked] if s.prefixes}
+    for span in spans:
         if any(span.overlaps(m) for m in marked) or any(
             span.overlaps(q) for q in mengen
         ):
             continue
         if any(k in invalid_at for k in range(span.start, span.end)):
             continue
-        if span.end in marker_at:
-            # "zwei Nummer 23": Menge vor dem Marker, gehört nicht zum Rest.
+        if span.end in marker_at or span.end in prefix_at:
+            # "zwei Nummer 23", "zwei S zwölf": Menge vor Marker oder Praefix.
             consumed.update(range(span.start, span.end))
             continue
         numbers.append(span)

@@ -14,9 +14,11 @@ import re
 import unicodedata
 
 _SPACE = re.compile(r"\s+")
-# Nur echte Kartenformen (wie importer._CARD_NUMBER): "23", "23a", "07". Ein Alias
-# wie "7up" ist keine Nummer und bleibt stehen (Codex PR #117).
-_CARD_NUMBER = re.compile(r"\d+[a-f]?")
+# Nur echte Kartenformen (wie importer._CARD_NUMBER): "23", "23a", "25g", "07".
+# Ein Alias wie "7up" ist keine Nummer und bleibt stehen (Codex PR #117). Ein
+# Praefix ("s12") kennt nur die Karte; die Nummer hat search_menu vorher schon
+# ausgewertet (numberwords.CardFormat, T-4.12).
+_CARD_NUMBER = re.compile(r"\d+[a-g]?")
 # Satzzeichen am Rand tragen am Telefon nichts; im Wort ("Wan-Tan") bleiben sie.
 # Dazu die typografischen Anfuehrungszeichen, als Escape geschrieben, damit sie
 # im Quelltext nicht mit Komma oder Apostroph zu verwechseln sind.
@@ -59,7 +61,7 @@ _QUANTITY_NOUNS = frozenset(
 )
 # "2x": Zahl und Mengenzeichen in einem Wort.
 # Abgesetzter Kartenbuchstabe ("23 a"), wie numberwords._SUFFIXES.
-_SUFFIX_LETTERS = frozenset("abcdef")
+_SUFFIX_LETTERS = frozenset("abcdefg")
 _COMPACT_QUANTITY = re.compile(r"\d+x")
 
 

@@ -116,6 +116,19 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 
 **Auflösungsreihenfolge**
 1. Zahl im Text → exakter Treffer auf `menu_items.number` → `match_type: "exact_number"`.
+   Kartennummern tragen Buchstaben: eine Endung a bis g („23a", „25g", auch
+   „fünfundzwanzig G" oder „25 g") und ein Präfix, wenn die Karte es hat
+   („S12", „SM1", T-4.12). Welche Präfixe gelten, liest die Suche aus den
+   aktiven Nummern der Karte (`items.card_format`), nie aus dem Code. Gesagt
+   wird das Präfix als Buchstabe („S 12"), buchstabiert („Es zwölf", „Es Em
+   eins") oder als Kategoriewort („Sushi zwölf"), wenn alle Nummern mit diesem
+   Präfix in einer einwortigen Kategorie stehen. Ein Kategoriewort kann mehrere
+   Präfixe meinen („Sushi" trägt S und SM): die Suche schlägt alle nach, genau
+   ein Treffer ist `exact_number`, zwei sind `ambiguous` („Sushi eins" → S1 oder
+   SM1), keiner `not_found`. Nie wird aus einer Präfixnummer die Zahl allein:
+   „S 13" findet nicht Gericht 13, „Nummer 23g" nicht die 23. Eine Nummer mit
+   Präfix zählt wie eine Zahl ohne Marker, „die S12 und Pho Bo" sind zwei
+   Positionen.
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.

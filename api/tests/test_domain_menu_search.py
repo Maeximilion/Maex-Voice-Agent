@@ -78,6 +78,9 @@ KARTE = {
         # Kompakte Mengen wie in numberwords (Codex PR #117, P2)
         ("2x Pho", "pho"),
         ("2 Stück Pho", "pho"),
+        # Endung g wie a (T-4.12)
+        ("die 25 g", ""),
+        ("die 25g bitte", ""),
         ("2 stk Pho", "pho"),
         ("2 st Pho", "pho"),
         ("Frühlingsrollen (4 Stück)", "frühlingsrollen"),
@@ -863,3 +866,109 @@ def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
     # Je Startstueck hoechstens eine Spanne aus zwei Stuecken.
     assert len(calls) <= len(FRUECHTE) - 1
     assert p95_ms(lambda: position_parts(session, tid, gesagt, now=NOW)) < 300
+
+
+# --- Praefix aus der Karte und Endung g (T-4.12) -----------------------------------
+
+
+@pytest.fixture
+def sushi(session, tenant_id):
+    """Karte wie die Kasse: S und SM in der Warengruppe Sushi, 25 und 25g, dazu
+    die 12 (Wan-Tan-Suppe) und 13 (Pho Bo) ohne Praefix."""
+    zeilen = (
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S07;Gurken Maki;Sushi;3,90;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "SM1;Sushi-Menü klein;Sushi;16,90;;ja\n"
+        "25;Chop Suey;Hauptgerichte;12,50;;ja\n"
+        "25G;Soße Chop Suey;Hauptgerichte;2,00;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + zeilen, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [
+        ("S12", "s12"),
+        ("Nummer S12", "s12"),
+        ("S 12", "s12"),
+        ("S zwölf", "s12"),
+        ("Es zwölf", "s12"),
+        ("die S zwölf bitte", "s12"),
+        ("Sushi zwölf", "s12"),
+        ("SM eins", "sm1"),
+        ("Es Em eins", "sm1"),
+        ("SM1", "sm1"),
+        ("S7", "s07"),
+        ("S sieben", "s07"),
+        ("fünfundzwanzig G", "25g"),
+        ("25 g", "25g"),
+        ("25G", "25g"),
+        ("Nummer 25", "25"),
+        ("die 12", "12"),
+    ],
+)
+def test_praefix_und_endung_g_treffen_exakt(session, sushi, gesagt, nummer):
+    result = suche(session, sushi, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == [nummer]
+
+
+def test_kategoriewort_mit_zwei_treffern_fragt_nach(session, sushi):
+    """ "Sushi eins" ist S1 oder SM1: beide auf der Karte, also nachfragen."""
+    result = suche(session, sushi, "Sushi eins")
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s1", "sm1"]
+    assert "Nummer s1" in result.say and "Nummer sm1" in result.say
+
+
+@pytest.mark.parametrize("gesagt", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
+def test_praefixnummer_die_es_nicht_gibt_ist_nie_die_zahl(session, sushi, gesagt):
+    """Regel 2: "S 13" ist nicht Pho Bo (13), "Nummer 23g" nicht die 23."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, gesagt)
+    assert "Nummer 13 " not in err.value.say and "Nummer 23 " not in err.value.say
+
+
+def test_ohne_praefix_auf_der_karte_ist_s12_nicht_die_12(session, tenant_id):
+    """Das Praefix kommt aus der Karte: ohne S-Nummern gibt es kein S12, und
+    die 12 wird daraus nie still (Regel 2)."""
+    try:
+        result = suche(session, tenant_id, "S zwölf")
+    except (Ambiguous, NotFound):
+        return
+    assert result.match_type != "exact_number"
+
+
+def test_praefixnummer_und_name_sind_zwei_positionen(session, sushi):
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+    assert position_parts(session, sushi, "S12 und Pho Bo", now=NOW) == [
+        "S12",
+        "Pho Bo",
+    ]
+
+
+def test_praefixsuche_bleibt_im_latenzbudget(client, session, tenant_id):
+    """300 ms p95 (docs/04) mit einer Karte in Kassengroesse, Praefixe inklusive."""
+    zeilen = "".join(
+        f"S{i};Sushi Nummer {i};Sushi;4,90;;ja\n" for i in range(1, 54)
+    ) + "".join(
+        f"{100 + i};Testgericht Nummer {i} mit Reis;Test;9,90;;ja\n" for i in range(200)
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + zeilen, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    assert p95_ms(lambda: post(client, tenant_id, "Es zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "Sushi zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300

@@ -64,10 +64,18 @@ _COLUMNS = {
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 # Kartennummern, die search_menu eindeutig auflöst: höchstens drei Stellen ohne
-# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis f
-# (numberwords._SUFFIXES). Geprüft wird die klein geschriebene Nummer: 23a und
-# 23A wären sonst zwei Gerichte, die die Suche nie auseinanderhält.
-_CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
+# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis g
+# dahinter (numberwords._SUFFIXES) und ein Praefix aus ein oder zwei Buchstaben
+# davor ("s12", "sm1", T-4.12). Welche Praefixe es gibt, liest die Suche aus
+# der Karte (numberwords.CardFormat). Geprüft wird die klein geschriebene
+# Nummer: 23a und 23A wären sonst zwei Gerichte, die die Suche nie
+# auseinanderhält.
+_CARD_NUMBER = re.compile(r"(?:[a-z]{1,2})?0*\d{1,3}[a-g]?")
+
+
+def is_card_number(number: str) -> bool:
+    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen."""
+    return _CARD_NUMBER.fullmatch(number) is not None
 
 
 @dataclass(frozen=True)
@@ -239,12 +247,13 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
-        if not _CARD_NUMBER.fullmatch(number):
+        if not is_card_number(number):
             # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
             # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
             plan.errors.append(
                 f"{where}: Kartennummer „{row['number']}“ versteht die Suche nicht "
-                "(erlaubt: bis 999, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
+                "(erlaubt: bis 999, optional ein Buchstabe a bis g dahinter und bis "
+                "zu zwei Buchstaben davor, z. B. 23, 23a, 25g, s12 oder sm1)"
             )
             continue
         # Dublette nach der Form, in der die Suche vergleicht: "7" und "07" sind

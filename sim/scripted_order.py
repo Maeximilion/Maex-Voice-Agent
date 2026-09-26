@@ -15,6 +15,7 @@ from typing import Any
 
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.numberwords import (
+    CardFormat,
     canonical_card,
     find_quantity,
     fold,
@@ -369,11 +370,13 @@ class PickupScript:
         # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
         # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
         # #133, P2).
-        ref, _ = sole_item_number(text)
+        # Praefixe der angebotenen Nummern ("S1 oder SM1?" - "SM eins", T-4.12).
+        offered = CardFormat.from_items((h["number"], "") for h in self._suggestions)
+        ref, _ = sole_item_number(text, offered)
         if ref is not None:
-            card = canonical_card(ref.text)
+            cards = {canonical_card(c) for c in ref.cards}
             by_number = [
-                h for h in self._suggestions if canonical_card(h["number"]) == card
+                h for h in self._suggestions if canonical_card(h["number"]) in cards
             ]
             if len(by_number) == 1:
                 return by_number[0]
