@@ -38,13 +38,15 @@
 ### Kopfzeile, immer sichtbar
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  ● KI nimmt an      Lieferung an      Wartezeit 25 / 50 Min      │
-│  [ KI pausieren ]  [ Lieferung aus ]  [ Wartezeit +15 ] [ +30 ]  │
+│  ● KI nimmt an      Lieferung an                                 │
+│  [ KI pausieren ]  [ Lieferung aus ]                             │
+│  Wartezeit Abholung  25 Min  [ -15 ] [ +15 ]                     │
+│  Wartezeit Lieferung 50 Min  [ -15 ] [ +15 ]                     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 - **Der Punkt hat drei Zustände:** grün „KI nimmt an" (Modus `primary`) · gelb „KI springt ein" (Modus `overflow`, nimmt nur ab, wenn niemand abnimmt) · rot „KI ist aus" (`paused`). Der Text steht immer daneben, Farbe allein reicht nicht.
 - **KI pausieren** ist der Not-Aus. Ein Tap, sofortige Wirkung, alle Anrufe gehen ans Team. Wieder einschalten braucht eine Bestätigung.
-- **Wartezeit +15 / +30** erhöhen die Wartezeit. Immer mit dem Wort „Wartezeit", sonst ist unklar, was der Knopf erhöht. Die neue Zeit gilt für jeden folgenden Anruf.
+- **Wartezeit Abholung und Wartezeit Lieferung getrennt, jede senkbar und erhöhbar** (Anforderung Maxi 26.09.2026 aus der Demo, T-3.6). Immer mit dem Wort „Wartezeit" und dem Service, sonst ist unklar, was der Knopf ändert. Die neue Zeit gilt für jeden folgenden Anruf. Schrittweite und Untergrenze legt T-3.6 fest (Vorschlag: 15 Minuten, nicht unter den Grundwert aus der Adminansicht). Bis T-3.6 gebaut ist, erhöht ein Knopf beide Zeiten zusammen und senken geht nicht.
 
 ### Drei Spalten
 
