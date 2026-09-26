@@ -324,3 +324,29 @@ def test_fehlende_spalte_ist_formatfehler():
         convert(ohne_preis, WARENGRP, ZUTATEN, ZUTGRP)
     with pytest.raises(DbfError, match=r"zutgrp.*ZPREIS"):
         convert(table([artikel("1", "A")]), WARENGRP, ZUTATEN, table([{"ZGRP": "C"}]))
+
+
+def test_extras_doppelt_nach_dem_schluessel_des_imports():
+    """Codex PR #149: "Extra__Ente" und "Extra_Ente" sind für den Import dieselbe Option."""
+    zutaten = table(
+        [
+            {
+                "ZBEZEICH": "Extra__Ente",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "U",
+            },
+            {
+                "ZBEZEICH": "Extra_Ente",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "U",
+            },
+        ]
+    )
+
+    result = run([artikel("50", "Reis")], zutaten=zutaten)
+
+    assert len(result.options) == 1
+    assert any("doppelt" in w for w in result.warnings)
+    assert parse({**result.csv_files(), "item_aliases.csv": None}).ok

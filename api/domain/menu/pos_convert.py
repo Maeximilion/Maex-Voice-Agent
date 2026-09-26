@@ -29,6 +29,7 @@ from api.domain.menu.importer import (
     OPTIONS_FILE,
     is_card_number,
 )
+from api.domain.menu.items import option_key
 from api.domain.menu.numberwords import canonical_card
 from api.domain.menu.pos_dbf import DbfError, Table
 
@@ -188,7 +189,7 @@ def _size_price(base: int, row: dict[str, str], prefix: str, size: int) -> int |
 
 def extra_name(raw: str) -> str:
     """ "B.Mango_Curry" -> "Mango Curry": Präfix sortiert nur in der Kasse."""
-    return _SORT_PREFIX.sub("", raw).replace("_", " ").strip()
+    return " ".join(_SORT_PREFIX.sub("", raw).replace("_", " ").split())
 
 
 @dataclass(frozen=True)
@@ -424,7 +425,9 @@ def _add_extras(
     for extra in extras:
         if extra.groups is not None and group not in extra.groups:
             continue
-        if extra.name.lower() in taken:
+        # Schlüssel wie im Import, sonst lehnt der Import die Datei als
+        # "Option doppelt" ab (Codex PR #149).
+        if option_key(extra.name) in taken:
             result.warnings.append(f"{where}: Extra „{extra.name}“ doppelt")
             continue
         prices = {_size_price(extra.base, extra.row, "ZGRPREIS", s) for s in sizes}
@@ -442,7 +445,7 @@ def _add_extras(
                 f"{where}: Extra „{extra.name}“ mit negativem Preis, nicht übernommen"
             )
             continue
-        taken.add(extra.name.lower())
+        taken.add(option_key(extra.name))
         result.options.append(
             _option(
                 number, EXTRAS_GROUP, extra.name, price, default=False, required=False
