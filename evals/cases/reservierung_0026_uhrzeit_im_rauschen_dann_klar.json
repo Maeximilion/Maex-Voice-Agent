@@ -1,0 +1,38 @@
+{
+  "id": "reservierung_0026",
+  "name": "Uhrzeit im Rauschen, dann klar",
+  "tags": [
+    "reservierung",
+    "rauschen"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer vier Personen morgen um ... krrr."
+    },
+    {
+      "role": "customer",
+      "text": "Um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "escalated": false,
+    "party_size": 4,
+    "customer_name": "Mueller"
+  }
+}

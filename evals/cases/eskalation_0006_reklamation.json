@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0006",
+  "name": "Reklamation",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich moechte etwas reklamieren, die Suppe war kalt."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

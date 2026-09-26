@@ -45,6 +45,10 @@ class CaseResult:
     false_escalation: bool = False
     turns: int = 0
     error: str | None = None
+    # Bekannte Luecke mit Grund und Aufgabe (docs/08 §3): der Fall beschreibt das
+    # Ziel, das der heutige Stand noch nicht kann. Er zaehlt in der Genauigkeit
+    # mit, CI verlangt aber, dass er rot ist, bis die Aufgabe ihn gruen macht.
+    pending: str | None = None
 
 
 @dataclass
@@ -147,7 +151,13 @@ class RunReport:
             "",
             f"Modell: `{self.model}` · Tags: {', '.join(self.tags) or 'alle'}",
         ]
-        failed = [c for c in self.cases if not c.passed]
+        failed = [c for c in self.cases if not c.passed and not c.pending]
+        gaps = [c for c in self.cases if c.pending]
+        if gaps:
+            lines += ["", "## Bekannte Lücken", ""]
+            for c in gaps:
+                state = "grün, pending entfernen" if c.passed else "rot"
+                lines.append(f"- **{c.id}** {c.name}: {c.pending} ({state})")
         if failed:
             lines += ["", "## Rote Fälle", ""]
             for c in failed:

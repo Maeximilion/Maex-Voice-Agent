@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0011",
+  "name": "Storno einer Reservierung",
+  "tags": [
+    "eskalation",
+    "storno"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich moechte meine Reservierung fuer heute stornieren."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

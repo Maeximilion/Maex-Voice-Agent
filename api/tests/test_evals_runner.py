@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
-from api.models import MenuItem, Tenant
+from api.models import AuditLog, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
@@ -63,7 +63,13 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
 
     assert report.total == len(list(CASES.glob("*.json")))
     assert report.verdict == "bestanden", report.to_markdown()
-    assert report.accuracy == 1.0
+    # Jeder Fall ohne `pending` ist gruen. Eine bekannte Luecke muss rot sein wie
+    # ein striktes xfail: wird sie gruen, faellt das hier auf, und `pending`
+    # kommt weg, statt still weiter als Luecke zu gelten (docs/08 §3).
+    red = [c.id for c in report.cases if not c.passed and not c.pending]
+    assert red == [], report.to_markdown()
+    healed = [c.id for c in report.cases if c.passed and c.pending]
+    assert healed == [], f"pending entfernen: {healed}"
     assert report.hard() == {
         "guessed_items": 0,
         "unconfirmed": 0,
@@ -71,7 +77,7 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
     }
     [json_file] = (tmp_path / "reports").glob("*.json")
     data = json.loads(json_file.read_text(encoding="utf-8"))
-    assert data["accuracy"] == 1.0 and data["verdict"] == "bestanden"
+    assert data["accuracy"] == report.accuracy and data["verdict"] == "bestanden"
     assert list((tmp_path / "reports").glob("*.md"))
 
 
@@ -164,6 +170,34 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         {
             "id": "x",
             "now": "2026-09-15T18:00",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "sold_out": "48",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": "get_item_details"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "get_item_details", "nummer": "23"}]},
+        },
+        {
+            "id": "x",
+            "repeat_confirm": "ja",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "pending": " ",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
         },
@@ -438,3 +472,219 @@ def test_ja_vor_dem_entwurf_bestaetigt_nichts():
     rec.next_turn("", {}, "Ja, guten Tag, einmal die 13.")
     rec.next_turn("", {}, _draft_result())
     assert rec.recording.unconfirmed == ["Ja, guten Tag, einmal die 13."]
+
+
+# --- Eval-Suite v1 (T-5.2) -----------------------------------------------------------
+
+BESTELLUNG = [
+    "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+    "Die 48.",
+    "Dann die 13.",
+    "Nein, das wars.",
+    "Auf den Namen Mueller.",
+    "Meine Nummer ist 0721 5551234.",
+    "Ja, passt so.",
+]
+
+
+def test_ausverkauft_aus_dem_fall(migrated_db_url, tmp_path):
+    """`sold_out` setzt "heute aus" nur fuer diesen Fall: die 48 kommt nicht in
+    die Bestellung, im Fall daneben ist sie normal bestellbar."""
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "aus",
+            BESTELLUNG,
+            {"confirmed": True, "items": [{"number": "13", "quantity": 1}]},
+            sold_out=["48"],
+        ),
+        fall(
+            "da",
+            BESTELLUNG,
+            {
+                "confirmed": True,
+                "items": [
+                    {"number": "48", "quantity": 1},
+                    {"number": "13", "quantity": 1},
+                ],
+            },
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {"aus": True, "da": True}
+
+
+def test_ausverkauft_mit_unbekannter_nummer_stuerzt_ab(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c", fall("x", ["Hallo"], {"confirmed": False}, sold_out=["99"])
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert "sold_out" in result.error
+    assert report.verdict == "durchgefallen"
+
+
+def test_bekannte_luecke_im_report(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "luecke",
+            ["Hallo, liefern Sie auch? Die 13 bitte.", "0721 5551234"],
+            {"escalated": False},
+            pending="T-6.5: Lieferung",
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert result.pending == "T-6.5: Lieferung" and not result.passed
+    # Eine bekannte Luecke ist rot, aber keine Regression und kein Absturz.
+    assert report.verdict == "bestanden"
+    markdown = report.to_markdown()
+    assert "## Bekannte Lücken" in markdown and "T-6.5: Lieferung (rot)" in markdown
+    assert "## Rote Fälle" not in markdown
+
+
+def test_ausverkauft_bis_ende_des_betriebstags():
+    """Wie "Heute aus" im Tablet: bis 05:00 des Folgetags, nicht 24 Stunden."""
+    abend = datetime.fromisoformat("2026-09-15T23:30:00+02:00")
+    ende = runner._end_of_business_day(abend)
+    assert ende == datetime.fromisoformat("2026-09-16T05:00:00+02:00")
+    nacht = datetime.fromisoformat("2026-09-16T01:00:00+02:00")
+    assert runner._end_of_business_day(nacht) == ende
+
+
+def test_wiederholter_confirm_wird_wirklich_gesendet(migrated_db_url, tmp_path):
+    """Codex PR #145: das Replay endet mit der Bestaetigung, ein zweites Ja des
+    Gasts kaeme nie an. `repeat_confirm` schickt den letzten confirm des Modells
+    selbst ein zweites Mal - und ohne confirm ist der Fall rot, nicht still gruen."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 23.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("zweimal", zeilen, {"confirmed": True}, repeat_confirm=True),
+        fall("ohne", zeilen[:2], {"confirmed": False}, repeat_confirm=True),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["zweimal"].passed, result["zweimal"].diffs
+    assert not result["ohne"].passed
+    assert any("nie confirm" in d for d in result["ohne"].diffs)
+
+
+def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
+        call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
+        item = session.scalar(
+            select(MenuItem.id).where(
+                MenuItem.tenant_id == tenant.id, MenuItem.number == "23"
+            )
+        )
+        draft = draft_order(
+            session,
+            DraftOrderRequest(
+                call_id=call.call_id,
+                tenant_id=tenant.id,
+                idempotency_key="k1",
+                type="pickup",
+                customer={"name": "Mueller", "phone": "0721 5551234"},
+                items=[{"menu_item_id": item, "quantity": 1}],
+            ),
+            now=runner.DEFAULT_NOW,
+        )
+        req = ConfirmRequest(
+            call_id=call.call_id,
+            tenant_id=tenant.id,
+            entity="order",
+            entity_id=draft.order_id,
+            idempotency_key="c1",
+        )
+        confirm(session, req)
+        confirm(session, req)
+        assert observe(session, call.call_id, confirms=2).duplicate_confirms == 0
+        # Ein nicht idempotentes confirm schriebe einen zweiten Eintrag.
+        session.add(
+            AuditLog(
+                tenant_id=tenant.id,
+                actor="agent",
+                action="order.confirmed",
+                entity="order",
+                entity_id=draft.order_id,
+                payload={},
+            )
+        )
+        session.commit()
+        seen = observe(session, call.call_id, confirms=2)
+        assert seen.duplicate_confirms == 1
+        assert any("doppelt" in d for d in judge({}, seen))
+    engine.dispose()
+
+
+def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
+    """Codex PR #145: der Allergiehinweis zaehlt nur, wenn er gespeichert ist, und
+    eine Allergiefrage nur, wenn das Modell get_item_details gerufen hat."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 13, ich habe eine Erdnussallergie.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    hinweis = "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "hinweis",
+            zeilen,
+            {"items": [{"number": "13", "quantity": 1, "note": hinweis}]},
+        ),
+        fall(
+            "falscher_hinweis",
+            zeilen,
+            {
+                "items": [
+                    {"number": "13", "quantity": 1, "note": "WICHTIG: Keine Karotte."}
+                ]
+            },
+        ),
+        fall("ohne_tool", zeilen, {"confirmed": True, "tools": ["get_item_details"]}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["hinweis"].passed, result["hinweis"].diffs
+    assert not result["falscher_hinweis"].passed
+    assert result["ohne_tool"].diffs == [
+        "tools: kein erfolgreicher Aufruf ['get_item_details']"
+    ]
+
+
+def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
+    """Codex PR #145: ein gescheiterter get_item_details oder einer fuer ein
+    anderes Gericht beantwortet keine Allergiefrage."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "get_item_details", "number": "23"}]
+    assert missing_tools(want, []) == want
+    assert missing_tools(want, [("get_item_details", {"number": "24"})]) == want
+    assert missing_tools(want, [("search_menu", {"number": "23"})]) == want
+    assert missing_tools(want, [("get_item_details", {"number": "23"})]) == []
+    assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
+
+
+def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn("", {}, json.dumps({"tool": "get_item_details", "ok": False}))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
+    )
+    assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]

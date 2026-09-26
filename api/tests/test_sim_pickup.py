@@ -1138,3 +1138,109 @@ def test_bestellung_ist_keine_antwort_auf_wogegen(session, tenant, antwort):
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+# --- Befunde aus der Eval-Suite v1 (T-5.2) -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("gericht", "rueckfrage", "nummer"),
+    [
+        ("Einmal Fruehlingsrollen.", "Ja, genau.", "23"),
+        ("Einmal Ente.", "Die süß-saure.", "48"),
+    ],
+)
+def test_ja_auf_die_einzige_rueckfrage_nimmt_das_gericht(
+    session, tenant, gericht, rueckfrage, nummer
+):
+    """T-5.2: "Meinen Sie Nummer 23?" - ein Ja darauf nimmt genau diesen einen
+    Vorschlag. Vorher suchte das Skript "Ja, genau" als Gericht und fragte
+    endlos dasselbe."""
+    replay(
+        session,
+        case(
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            gericht,
+            rueckfrage,
+            "Ja.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja, passt so.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert [p[0] for p in positions(session, order)] == [nummer]
+
+
+def test_nein_auf_die_einzige_rueckfrage_nimmt_nichts(session, tenant):
+    _, turns = replay(
+        session,
+        case(
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Einmal Fruehlingsrollen.",
+            "Nein, nicht die.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert orders(session) == []
+    assert "Meinen Sie Nummer 23" not in " ".join(turns[-1].say)
+
+
+@pytest.mark.parametrize(
+    "satz",
+    [
+        "Hallo, ich moechte die 13 zum Abholen bestellen.",
+        "Guten Abend, die 13 zum Mitnehmen, bitte.",
+    ],
+)
+def test_nummer_im_ersten_satz_ist_keine_rufnummer(satz):
+    """T-5.2: Nach dem Streichen von "zum Abholen bestellen" blieben Leerzeichen
+    hinter der 13 stehen, und die Rufnummern-Regel nahm "13    " als Nummer weg.
+    Eine Rufnummer hat mindestens sieben Ziffern, wie in `_phone`."""
+    from sim.scripted_llm import _opening_dish
+
+    assert "13" in (_opening_dish(satz) or "")
+
+
+@pytest.mark.parametrize(
+    ("antwort", "ja"),
+    [
+        ("Ja, genau.", True),
+        ("Richtig.", True),
+        ("Das stimmt nicht.", False),
+        ("Nicht richtig.", False),
+        ("Ja, aber lieber was anderes.", False),
+        ("Ich haette gern die Suppe.", False),
+        ("Nein.", False),
+    ],
+)
+def test_ja_zum_einzigen_vorschlag(antwort, ja):
+    from sim.scripted_order import _agrees
+
+    assert _agrees(antwort) is ja
+
+
+def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
+    """Review PR #145: "Ich haette gern die 24" auf "Meinen Sie Nummer 23?" ist
+    eine neue Wahl, kein Ja zur 23."""
+    replay(
+        session,
+        case(
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Einmal Fruehlingsrollen.",
+            "Ich haette gern die 24.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja, passt so.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert [p[0] for p in positions(session, order)] == ["24"]

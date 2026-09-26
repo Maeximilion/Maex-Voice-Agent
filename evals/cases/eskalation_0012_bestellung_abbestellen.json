@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0012",
+  "name": "Bestellung abbestellen",
+  "tags": [
+    "eskalation",
+    "storno"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich muss meine Bestellung von vorhin abbestellen."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

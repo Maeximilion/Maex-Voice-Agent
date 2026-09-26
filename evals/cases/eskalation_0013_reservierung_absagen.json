@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0013",
+  "name": "Reservierung absagen",
+  "tags": [
+    "eskalation",
+    "storno"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich muss unseren Tisch fuer morgen absagen."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

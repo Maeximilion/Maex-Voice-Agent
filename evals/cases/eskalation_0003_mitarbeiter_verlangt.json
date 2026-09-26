@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0003",
+  "name": "Mitarbeiter verlangt",
+  "tags": [
+    "eskalation",
+    "mensch"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Kann ich bitte einen Mitarbeiter sprechen?"
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

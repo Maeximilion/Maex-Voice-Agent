@@ -378,7 +378,16 @@ class PickupScript:
             if len(by_number) == 1:
                 return by_number[0]
         by_name = [h for h in self._suggestions if h["name"].lower() in lowered]
-        return by_name[0] if len(by_name) == 1 else None
+        if len(by_name) == 1:
+            return by_name[0]
+        # "Meinen Sie Nummer 23?" - "Ja, genau": ein Ja nimmt den einen Vorschlag.
+        # Neu gesucht fand "Ja, genau" kein Gericht, und dieselbe Frage kam
+        # endlos zurueck (Eval-Suite T-5.2). Erst nach Nummer und Name, und nie,
+        # wenn der Satz eine andere Nummer nennt: "Ja, aber lieber die 24" meint
+        # die 24. Bei mehreren Vorschlaegen ist ein Ja keine Wahl.
+        if len(self._suggestions) == 1 and ref is None and _agrees(text):
+            return self._suggestions[0]
+        return None
 
     def _answer_allergy(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
@@ -618,6 +627,22 @@ def _finishes(text: str) -> bool:
     lowered = text.lower()
     return any(
         re.search(rf"\b{re.escape(p)}\b", lowered) for p in DONE_PHRASES if p != "nein"
+    )
+
+
+# Kein "gern": "Ich haette gern die 24" ist eine Bestellung, kein Ja.
+_AGREE = re.compile(r"\b(ja|jawohl|genau|richtig|stimmt|korrekt)\b")
+# "stimmt nicht", "nicht richtig", "ja, aber ...": kein Ja zum Vorschlag.
+_DOUBT = re.compile(r"\b(nein|nicht|aber|lieber|sondern|anders)\b")
+
+
+def _agrees(text: str) -> bool:
+    """Ein Ja ohne Zweifel: "Ja, genau" nimmt den Vorschlag, "Das stimmt nicht" nicht."""
+    lowered = text.lower()
+    return (
+        bool(_AGREE.search(lowered))
+        and not _DOUBT.search(lowered)
+        and not _rejects(text)
     )
 
 

@@ -74,7 +74,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r api/requirements.txt
 export DATABASE_URL=postgresql+psycopg://maex:maex@localhost:5432/maex_agent
 pytest -q
-ruff check api scripts evals && ruff format --check api scripts evals
+ruff check api scripts evals printbridge && ruff format --check api scripts evals printbridge
 ```
 
 ## Configuration
@@ -110,7 +110,7 @@ Layers and dependency rules: `docs/11_MODULE.md`.
 make test        # pytest
 make lint        # ruff check
 make fmt         # ruff format
-make eval        # eval suite on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric or an accuracy drop
+make eval        # 107 cases on a throwaway DB (~12 s), optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.replay evals/cases/<case>.json        # replay a transcript

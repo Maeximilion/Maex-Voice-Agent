@@ -1,0 +1,23 @@
+{
+  "id": "eskalation_0014",
+  "name": "Speisekarte vorlesen",
+  "tags": [
+    "eskalation",
+    "ausser_umfang"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Koennen Sie mir die Speisekarte vorlesen?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

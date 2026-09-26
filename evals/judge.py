@@ -17,13 +17,36 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.models import Call, Callback, MenuItem, Order, OrderItem, Reservation
+from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
+from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    MenuItem,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Reservation,
+)
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
-    {"intent", "confirmed", "escalated", "items", "customer_name", "party_size"}
+    {
+        "intent",
+        "confirmed",
+        "escalated",
+        "items",
+        "customer_name",
+        "party_size",
+        # Tools, die das Modell aufgerufen haben muss: eine Allergiefrage
+        # gilt nur mit get_item_details als beantwortet (Codex PR #145, P1).
+        "tools",
+    }
 )
-ITEM_KEYS = frozenset({"number", "quantity", "options"})
+# `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
+# wegfallen (E14, Codex PR #145, P1).
+ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
 
 
 class CaseError(ValueError):
@@ -49,6 +72,53 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     for item in case["expected"].get("items") or []:
         if set(item) - ITEM_KEYS or not {"number", "quantity"} <= set(item):
             raise CaseError(f"{source}: Position {item} braucht number und quantity")
+    sold_out = case.get("sold_out", [])
+    if not isinstance(sold_out, list) or not all(isinstance(n, str) for n in sold_out):
+        raise CaseError(f"{source}: sold_out ist eine Liste von Kartennummern")
+    tools = case["expected"].get("tools", [])
+    if not isinstance(tools, list) or not all(_valid_tool(t) for t in tools):
+        raise CaseError(
+            f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
+        )
+    if not isinstance(case.get("repeat_confirm", False), bool):
+        raise CaseError(f"{source}: repeat_confirm ist true oder false")
+    pending = case.get("pending")
+    if pending is not None and (not isinstance(pending, str) or not pending.strip()):
+        # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
+        raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
+
+
+def _valid_tool(entry: Any) -> bool:
+    if isinstance(entry, str):
+        return True
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("tool"), str)
+        and set(entry) <= {"tool", "number"}
+        and isinstance(entry.get("number", ""), str)
+    )
+
+
+def missing_tools(
+    wanted: list[Any], ok_results: list[tuple[str, dict[str, Any]]]
+) -> list[Any]:
+    """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
+    wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
+    keine Frage nach der 23."""
+    missing = []
+    for entry in wanted:
+        name = entry if isinstance(entry, str) else entry["tool"]
+        number = None if isinstance(entry, str) else entry.get("number")
+        hit = any(
+            tool == name
+            and (
+                number is None or str(data.get("number", "")).lower() == number.lower()
+            )
+            for tool, data in ok_results
+        )
+        if not hit:
+            missing.append(entry)
+    return missing
 
 
 @dataclass
@@ -63,6 +133,10 @@ class Observed:
     party_size: int | None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
+    # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
+    # ein wiederholter confirm darf keinen zweiten Vorgang und keinen zweiten
+    # Bon ausloesen (docs/08 §6, Idempotenz).
+    duplicate_confirms: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -83,15 +157,24 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     items: list[dict[str, Any]] = []
     for order in done_orders:
         rows = session.execute(
-            select(MenuItem.number, OrderItem.quantity, OrderItem.options)
+            select(
+                MenuItem.number, OrderItem.quantity, OrderItem.options, OrderItem.note
+            )
             .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
             .where(OrderItem.order_id == order.id)
             .order_by(OrderItem.created_at)
         ).all()
         items += [
-            {"number": n, "quantity": q, "options": [o["option"] for o in opts]}
-            for n, q, opts in rows
+            {
+                "number": n,
+                "quantity": q,
+                "options": [o["option"] for o in opts],
+                "note": note,
+            }
+            for n, q, opts, note in rows
         ]
+
+    duplicates = _duplicate_confirms(session, orders, reservations)
 
     name = None
     if done_orders:
@@ -106,7 +189,41 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
         confirmed_without_confirm=max(0, booked - confirms),
+        duplicate_confirms=duplicates,
     )
+
+
+def _duplicate_confirms(session: Session, orders, reservations) -> int:
+    """Wie oft ein Vorgang dieses Anrufs mehr als einmal bestaetigt wurde."""
+    ids = [o.id for o in orders] + [r.id for r in reservations]
+    if not ids:
+        return 0
+    audit = session.execute(
+        select(func.count(AuditLog.id))
+        .where(
+            AuditLog.entity_id.in_(ids),
+            AuditLog.action.in_((ORDER_CONFIRMED_ACTION, "reservation.confirmed")),
+        )
+        .group_by(AuditLog.entity_id)
+    ).scalars()
+    keys = [str(i) for i in ids]
+    events = session.execute(
+        select(func.count(OutboxEvent.id))
+        .where(
+            OutboxEvent.event_type.in_((ORDER_CONFIRMED, RESERVATION_CONFIRMED)),
+            func.coalesce(
+                OutboxEvent.payload["order_id"].astext,
+                OutboxEvent.payload["reservation_id"].astext,
+            ).in_(keys),
+        )
+        .group_by(
+            func.coalesce(
+                OutboxEvent.payload["order_id"].astext,
+                OutboxEvent.payload["reservation_id"].astext,
+            )
+        )
+    ).scalars()
+    return sum(n - 1 for n in audit) + sum(n - 1 for n in events)
 
 
 def _matches(want: dict[str, Any], got: dict[str, Any]) -> bool:
@@ -116,7 +233,18 @@ def _matches(want: dict[str, Any], got: dict[str, Any]) -> bool:
         return False
     # Optionen nur, wo die Position sie nennt: "2x 23" legt die Auswahl nicht
     # fest, "47 mit Huhn" schon.
-    return "options" not in want or sorted(want["options"]) == sorted(got["options"])
+    if "options" in want and sorted(want["options"]) != sorted(got["options"]):
+        return False
+    return "note" not in want or _same_text(want["note"], got.get("note"))
+
+
+def _same_text(want: str | None, got: str | None) -> bool:
+    """Wortlaut ohne Unterschied in Gross-/Kleinschreibung und Leerzeichen."""
+
+    def norm(text: str | None) -> str:
+        return " ".join((text or "").split()).casefold()
+
+    return norm(want) == norm(got)
 
 
 def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
@@ -154,4 +282,7 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diff = _compare_items(expected["items"], seen.items)
         if diff:
             diffs.append(diff)
+    # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
+    if seen.duplicate_confirms:
+        diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")
     return diffs

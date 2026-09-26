@@ -1,0 +1,23 @@
+{
+  "id": "lieferung_0001",
+  "name": "Lieferwunsch geht heute an das Team",
+  "tags": [
+    "lieferung",
+    "lieferung"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, liefern Sie auch? Ich haette gern die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

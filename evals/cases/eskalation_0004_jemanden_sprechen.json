@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0004",
+  "name": "Jemanden sprechen",
+  "tags": [
+    "eskalation",
+    "mensch"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, kann ich jemanden sprechen?"
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}
