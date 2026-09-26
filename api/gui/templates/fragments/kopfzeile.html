@@ -39,6 +39,8 @@
     <button hx-post="/gui/kopfzeile/lieferung/an"
             hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
     {% endif %}
+    {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
+    <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
     {% for step in wait_steps %}
     <button hx-post="/gui/kopfzeile/wartezeit/{{ step }}"
             hx-target="#kopfzeile" hx-swap="outerHTML">Wartezeit +{{ step }}</button>

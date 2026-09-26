@@ -43,6 +43,7 @@ from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import sole_item_number
+from api.domain.menu.sold_out import alternatives
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.domain.menu.wishes import (
     classify_wish,
@@ -64,6 +65,8 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
+# Alternative aus derselben Kategorie, nur was heute zu haben ist (T-4.8, D8).
+SAY_ALTERNATIVES = "Stattdessen hätte ich {items}."
 # Mehrere Positionen in einem Satz: der Gast darf das, und er muss nichts
 # wiederholen (Maxi, PR #127). Ueber HTTP fragt der Aufrufer danach je Teil.
 SAY_IN_TURN = "Einen Moment, ich nehme das der Reihe nach auf."
@@ -140,9 +143,21 @@ def _hits(session: Session, items: list[MenuItem], now: datetime) -> list[MenuHi
 def _single(
     session: Session, match_type: str, item: MenuItem, now: datetime
 ) -> SearchResult:
-    say = SAY_SOLD_OUT.format(name=item.name) if _sold_out(item, now) else None
+    say = _sold_out_say(session, item, now) if _sold_out(item, now) else None
     return SearchResult(
         match_type=match_type, results=_hits(session, [item], now), say=say
+    )
+
+
+def _sold_out_say(session: Session, item: MenuItem, now: datetime) -> str:
+    """ "Heute aus" plus bis zu zwei Gerichte derselben Kategorie (docs/06 §3:
+    der Agent nennt eine Alternative). Ohne Alternative nur der erste Satz."""
+    others = alternatives(session, item, now)
+    if not others:
+        return SAY_SOLD_OUT.format(name=item.name)
+    items = " oder ".join(f"Nummer {o.number} {o.name}" for o in others)
+    return (
+        f"{SAY_SOLD_OUT.format(name=item.name)} {SAY_ALTERNATIVES.format(items=items)}"
     )
 
 

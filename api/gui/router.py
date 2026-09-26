@@ -25,6 +25,7 @@ from api.core.logging import get_logger
 from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
+from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
@@ -136,7 +137,13 @@ def _header(session: Session, tenant: Tenant) -> dict:
             "config": None,
         }
     tone, label = MODE_LABELS.get(config.call_mode, ("danger", "KI ist aus"))
-    return {**base, "mode_tone": tone, "mode_label": label, "config": config}
+    return {
+        **base,
+        "mode_tone": tone,
+        "mode_label": label,
+        "config": config,
+        "sold_out_count": dishes.sold_out_count(session, tenant.id),
+    }
 
 
 def _require_htmx(hx_request: str | None = Header(default=None)) -> None:
@@ -561,6 +568,97 @@ def correction_save(
         return _correction_panel(request, order_id, plan, edit, say, 422)
     response = HTMLResponse("")
     response.headers["HX-Trigger"] = ORDERS_CHANGED
+    return response
+
+
+# --- "Gericht aus" (T-4.8) --------------------------------------------------------
+
+DISH_FAILED = "Das hat nicht geklappt. Bitte nochmal tippen."
+# Nach dem Tap holt app.js die Kopfzeile neu: die Zahl an der Kachel stimmt sofort.
+DISHES_CHANGED = "gerichte-geaendert"
+DISH_STATES = {"aus": True, "wieder-da": False}
+
+
+def _dish_list(
+    request: Request,
+    session: Session,
+    tenant: Tenant | None,
+    query: str,
+    template: str = "fragments/gericht_aus_liste.html",
+    problem: str | None = None,
+) -> HTMLResponse:
+    if tenant is None:
+        return templates.TemplateResponse(
+            request,
+            template,
+            {"dishes": [], "query": query, "dish_problem": NO_TENANT},
+            503,
+        )
+    return templates.TemplateResponse(
+        request,
+        template,
+        {
+            "dishes": dishes.list_switches(session, tenant.id, query),
+            "query": query,
+            "dish_problem": problem,
+        },
+    )
+
+
+@router.get("/gericht-aus", response_class=HTMLResponse, include_in_schema=False)
+def dishes_open(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """Der Kasten "Gericht aus" mit Suchfeld und allen aktiven Gerichten."""
+    return _dish_list(
+        request, session, _tenant(session), "", "fragments/gericht_aus.html"
+    )
+
+
+@router.get(
+    "/fragments/gericht-aus", response_class=HTMLResponse, include_in_schema=False
+)
+def dishes_fragment(
+    request: Request, q: str = "", session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Nur die Liste, gefiltert nach dem Suchfeld."""
+    return _dish_list(request, session, _tenant(session), q)
+
+
+@router.post(
+    "/gericht-aus/{menu_item_id}/{state}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def dish_switch(
+    request: Request,
+    menu_item_id: uuid.UUID,
+    state: str,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Ein Tap: heute aus oder wieder da. Die Liste kommt frisch zurueck.
+
+    Ein Gericht, das es nicht (mehr) gibt, ist fuer das Team kein Fehler - die
+    frische Liste zeigt den Stand. Nur ein Datenbankfehler bekommt eine Zeile.
+    """
+    if state not in DISH_STATES:
+        raise HTTPException(status_code=404)
+    tenant = _tenant(session)
+    query = form.get("q", "")
+    if tenant is None:
+        return _dish_list(request, session, None, query)
+    problem = None
+    try:
+        dishes.set_sold_out(
+            session, tenant.id, menu_item_id, DISH_STATES[state], tenant.timezone
+        )
+    except AppError as exc:
+        session.rollback()
+        logger.info("Gericht nicht umgeschaltet: %s", exc.message)
+        if exc.code != "not_found":
+            problem = DISH_FAILED
+    response = _dish_list(request, session, tenant, query, problem=problem)
+    response.headers["HX-Trigger"] = DISHES_CHANGED
     return response
 
 

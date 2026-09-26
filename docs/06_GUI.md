@@ -95,6 +95,8 @@ Beschwerden stehen immer oben und haben einen eigenen Ton.
 ### Der Knopf „Gericht aus"
 Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap = ausverkauft bis Betriebsschluss. Der Agent bietet das Gericht ab sofort nicht mehr an und nennt eine Alternative.
 
+Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Gerichte, die heute aus sind („2 heute aus"). Er öffnet einen eigenen Kasten über den Spalten wie die Korrektur; die Spalten bleiben live. Suchfeld für Nummer ("7" findet 07) oder Namensteil, darunter alle aktiven Gerichte in Kartenreihenfolge. „Heute aus" stellt das Gericht bis zum Ende des Betriebstags (05:00 Ortszeit) auf ausverkauft, am nächsten Morgen ist es von selbst wieder da. Ein zweiter Tap („Wieder da") nimmt es zurück - für den Irrtum und die Nachlieferung. Keine Rückfrage (§1 Regel 6). Jeder Tap schreibt `audit_log` mit Wert davor und danach. Ein anderes Tablet sieht die Änderung über das Ereignis `dishes` im Strom. „Fertig" schließt den Kasten.
+
 ---
 
 ## 4. Adminansicht (PC)
