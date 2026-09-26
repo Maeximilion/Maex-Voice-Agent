@@ -27,6 +27,7 @@ _CODEPAGES = {
     0x58: "cp1252",
 }
 _HEADER_END = 0x0D
+_EOF = 0x1A
 _DELETED = ord("*")
 _STATUS = (ord(" "), _DELETED)
 # dBase IV: Memoblock beginnt mit FF FF 08 00 und der Länge inklusive Kopf.
@@ -102,9 +103,9 @@ def _read(data: bytes, memo: bytes | None) -> Table:
     rest = len(data) - (header_len + count * record_len)
     if rest < 0:
         raise DbfError("Datei kürzer als im Kopf angegeben")
-    if rest > 1 and rest >= record_len:
-        # Mehr als das Endezeichen 0x1A: Kopie mitten im Anhängen, die neue
-        # Zeile fehlte sonst still (Review T-4.11).
+    if rest > 1 or (rest == 1 and data[-1] != _EOF):
+        # Mehr als das Endezeichen 0x1A, auch eine halbe Zeile: Kopie mitten im
+        # Anhängen, die neue Zeile fehlte sonst still (Codex PR #149).
         raise DbfError(
             "Datei länger als im Kopf angegeben, Kopie während einer Änderung?"
         )

@@ -1023,3 +1023,22 @@ def test_hinweis_auf_schalter_nur_ohne_schalter_und_nur_fuer_die_kasse(
 MENU_OHNE_47 = """number;name;category;price_eur
 23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
 """
+
+
+@pytest.mark.parametrize("alias", ["", "bitte"])
+def test_skript_prueft_behaltene_aliase_wie_der_import(tmp_path, capsys, alias):
+    """Codex PR #149: ein Alias, den import_menu ablehnt, macht den ganzen Satz
+    unbrauchbar; dann wird nichts geschrieben."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        f"number;alias\n1;Miso\n1;{alias}\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    err = capsys.readouterr().err
+    assert "item_aliases.csv Zeile 3" in err and "nichts geschrieben" in err.lower()
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE]

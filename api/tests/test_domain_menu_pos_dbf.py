@@ -181,3 +181,20 @@ def test_weicher_zeilenumbruch_im_memo():
     dbf, dbt = write_dbf(fields, [{"ZBEZEICH": "Mango", "WRGSHOW": "001ì\n002"}])
 
     assert read_table(dbf, dbt).rows[0]["WRGSHOW"].split() == ["001", "002"]
+
+
+@pytest.mark.parametrize("rest", [b"\x1a\x1a", b"  ", b" 35"])
+def test_halbe_zeile_hinter_der_satzzahl_ist_fehler(rest):
+    """Codex PR #149: auch ein Teil einer angehängten Zeile ist mehr als das
+    Endezeichen; nur ein einzelnes 0x1A darf folgen."""
+    dbf, dbt = write_dbf(FIELDS, ROWS)
+
+    with pytest.raises(DbfError, match="länger"):
+        read_table(dbf[:-1] + rest, dbt)
+
+
+def test_ohne_oder_mit_einem_endezeichen():
+    dbf, dbt = write_dbf(FIELDS, ROWS)
+
+    assert len(read_table(dbf, dbt).rows) == len(ROWS)
+    assert len(read_table(dbf[:-1], dbt).rows) == len(ROWS)

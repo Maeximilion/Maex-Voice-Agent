@@ -29,7 +29,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from api.domain.menu.importer import ALIASES_FILE
+from api.domain.menu.importer import ALIASES_FILE, FILES, parse
 from api.domain.menu.pos_convert import convert, split_aliases
 from api.domain.menu.pos_dbf import DbfError, Table, read_table
 
@@ -67,6 +67,14 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
 
 class AliasFileError(OSError):
     """Alias-Datei nicht lesbar für den Import: dann wird nichts geschrieben."""
+
+
+class ImportCheckError(Exception):
+    """Der Satz Dateien bestünde die Prüfung von import_menu nicht."""
+
+    def __init__(self, errors: list[str]) -> None:
+        super().__init__("; ".join(errors))
+        self.errors = errors
 
 
 class PartialPublishError(Exception):
@@ -244,7 +252,21 @@ def main(argv: list[str] | None = None) -> int:
     try:
         args.out.mkdir(parents=True, exist_ok=True)
         plan_aliases(args.out, [row["number"] for row in result.menu], output)
+        # Wie import_menu prüfen, bevor etwas getauscht wird: ein Alias, den der
+        # Import ablehnt, machte den ganzen Satz unbrauchbar (Codex PR #149).
+        check = parse({name: output.write.get(name) for name in FILES})
+        if not check.ok:
+            raise ImportCheckError(check.errors)
         publish(args.out, output)
+    except ImportCheckError as exc:
+        print(
+            "Fehler: den Satz lehnte import_menu ab. Nichts geschrieben, der "
+            "Ordner ist auf dem alten Stand.",
+            file=sys.stderr,
+        )
+        for error in exc.errors:
+            print(f"  {error}", file=sys.stderr)
+        return 2
     except PartialPublishError as exc:
         print(
             f"Fehler: {exc}. Der Ordner ist gemischt: nicht importieren, die "
