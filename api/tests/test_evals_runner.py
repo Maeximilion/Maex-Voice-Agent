@@ -197,6 +197,26 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         },
         {
             "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["not-a-date"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-09-21T19:30:00+02:00"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-9-21T19:30"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-02-30T19:30"]},
+        },
+        {
+            "id": "x",
             "repeat_confirm": "ja",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},

@@ -9,6 +9,7 @@ Unbekannte Schlüssel in `expected` sind ein Fehler im Fall, kein stilles Grün:
 ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -49,6 +50,9 @@ EXPECTED_KEYS = frozenset(
         "alternatives",
     }
 )
+# Ortszeit der angebotenen Alternativen in `expected.alternatives`.
+LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
+_LOCAL_MINUTE_RE = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}")
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
 # wegfallen (E14, Codex PR #145, P1).
 ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
@@ -87,15 +91,32 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         )
     alternatives = case["expected"].get("alternatives", [])
     if not isinstance(alternatives, list) or not all(
-        isinstance(a, str) for a in alternatives
+        _local_minute(a) for a in alternatives
     ):
-        raise CaseError(f"{source}: alternatives ist eine Liste von Ortszeiten")
+        # Ein Tippfehler im Fall ist ein kaputter Fall (Exit 2), kein rotes
+        # Verhalten, das als Regression zaehlte (Codex PR #152, P2).
+        raise CaseError(
+            f"{source}: alternatives ist eine Liste von Ortszeiten YYYY-MM-DDTHH:MM"
+        )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
         raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
+
+
+def _local_minute(entry: Any) -> bool:
+    """Genau das Format, das offered_alternatives liefert: YYYY-MM-DDTHH:MM."""
+    if not isinstance(entry, str):
+        return False
+    if not _LOCAL_MINUTE_RE.fullmatch(entry):
+        return False
+    try:
+        datetime.fromisoformat(entry)  # 2026-02-30 oder 25:00 fallen hier heraus
+    except ValueError:
+        return False
+    return True
 
 
 def _valid_tool(entry: Any) -> bool:
@@ -139,7 +160,7 @@ def offered_alternatives(
     if not slots:
         return None
     return [
-        datetime.fromisoformat(a).astimezone(zone).strftime("%Y-%m-%dT%H:%M")
+        datetime.fromisoformat(a).astimezone(zone).strftime(LOCAL_MINUTE)
         for a in slots[-1].get("alternatives", [])
     ]
 
