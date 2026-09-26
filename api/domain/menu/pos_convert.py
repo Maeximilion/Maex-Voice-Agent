@@ -365,14 +365,16 @@ def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
         where = f"Zutat „{row['ZBEZEICH']}“"
         name = extra_name(row["ZBEZEICH"])
         level = row["ZPREIGRP3"]
-        base = cents(levels[level]) if level in levels else None
+        # Leerer ZPREIS ist kein Preis 0: sonst wäre das Extra still gratis.
+        raw_price = levels.get(level, "")
+        base = cents(raw_price) if raw_price else None
         if not name:
             result.errors.append(f"{where}: Name fehlt")
             continue
         if base is None:
             result.errors.append(
-                f"{where}: Preisstufe ZPREIGRP3 „{level}“ nicht in zutgrp, "
-                "nicht übernommen"
+                f"{where}: Preisstufe ZPREIGRP3 „{level}“ fehlt in zutgrp oder hat "
+                "keinen lesbaren Preis, nicht übernommen"
             )
             continue
         if len(row["ZBEZEICH"]) >= EXTRA_NAME_MAX:
@@ -468,3 +470,24 @@ def _add_allergens(
             "confirmed_by": confirmed_by,
         }
     )
+
+
+def split_aliases(
+    text: str, numbers: Iterable[str]
+) -> tuple[str, list[dict[str, str]]]:
+    """Aliase aus dem Chat nach Nummern trennen, die die Kasse liefert.
+
+    Eine Alias-Zeile zu einer Nummer, die nicht in der neuen `menu_items.csv`
+    steht (Getränk, gesperrter Artikel, Nummer, die die Suche nicht versteht),
+    würde den ganzen Import blockieren. Löschen hieße, gewachsenes Wissen zu
+    verlieren. Deshalb: (Text ohne diese Zeilen, die abgetrennten Zeilen).
+    """
+    known = {canonical_card(n) for n in numbers}
+    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+    columns = tuple(reader.fieldnames or ("number", "alias"))
+    kept: list[dict[str, str]] = []
+    dropped: list[dict[str, str]] = []
+    for row in reader:
+        number = (row.get("number") or "").strip()
+        (kept if canonical_card(number) in known else dropped).append(row)
+    return _csv(columns, kept), dropped

@@ -45,7 +45,19 @@ def test_downgrade_nimmt_nur_die_spalte_weg(scratch_db_url):
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
-            conn.execute(text("UPDATE menu_items SET pos_code = '35B'"))
+            # Eigene Daten: der Test darf nicht vom vorigen abhängen (Review T-4.11).
+            conn.execute(text("DELETE FROM menu_items"))
+            tenant = conn.execute(
+                text("INSERT INTO tenants (name) VALUES ('Runter') RETURNING id")
+            ).scalar_one()
+            conn.execute(
+                text(
+                    "INSERT INTO menu_items (tenant_id, number, name, category, "
+                    "price_cents, pos_code) VALUES (:t, '35b', 'Nudeln', 'Haupt', "
+                    "1350, '35B')"
+                ),
+                {"t": tenant},
+            )
         command.downgrade(_config(scratch_db_url), "003")
         assert "pos_code" not in _item_columns(scratch_db_url)
         with engine.connect() as conn:

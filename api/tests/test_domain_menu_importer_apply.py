@@ -560,3 +560,56 @@ def test_skript_meldet_fehler_und_fehlende_datei(tmp_path, capsys):
     assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "x")]) == 2
     assert "zutgrp.dbf fehlt" in capsys.readouterr().err
     assert not (tmp_path / "x").exists()
+
+
+def test_cli_deaktiviert_fehlende_nur_mit_schalter(cli, ordner, session, capsys):
+    """Review T-4.11: der Schalter muss auf der Kommandozeile ankommen."""
+    assert cli(ordner) == 0
+    nur_23 = "\n".join(files()[MENU_FILE].splitlines()[:2]) + "\n"
+    (ordner / MENU_FILE).write_text(nur_23, encoding="utf-8")
+    for name in (OPTIONS_FILE, ALLERGENS_FILE, ALIASES_FILE):
+        (ordner / name).unlink()
+    capsys.readouterr()
+
+    assert cli(ordner, "--dry-run", "--deactivate-missing") == 0
+    assert "würden deaktiviert: 47" in capsys.readouterr().out
+    assert cli(ordner, "--deactivate-missing") == 0
+    session.expire_all()
+    assert (
+        session.scalar(select(MenuItem).where(MenuItem.number == "47")).active is False
+    )
+
+
+def test_skript_legt_verwaiste_aliase_beiseite(tmp_path, capsys):
+    """Review T-4.11: Aliase aus dem Chat zu Nummern, die die Kasse nicht liefert,
+    würden den ganzen Import blockieren. Sie kommen in eine eigene Datei."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Misosuppe\n65;Wasser\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    kept = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "Misosuppe" in kept and "Wasser" not in kept
+    assert "65;Wasser" in (out / "item_aliases.verworfen.csv").read_text(
+        encoding="utf-8"
+    )
+    assert "65" in capsys.readouterr().out
+    plan = parse(import_menu.read_files(out))
+    assert plan.ok, plan.errors
+
+
+def test_skript_kaputte_datei_exit_2(tmp_path, capsys):
+    """Review T-4.11: abgeschnittene Kopie ist eine Meldung, kein Traceback."""
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+    data = (kasse / "artikel.DBF").read_bytes()
+    (kasse / "artikel.DBF").write_bytes(data[:40])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
+    assert "artikel" in capsys.readouterr().err

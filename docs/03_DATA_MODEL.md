@@ -160,7 +160,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | active | BOOL | |
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
-| pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe drucken sie; leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
+| pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
 

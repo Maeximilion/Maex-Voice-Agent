@@ -79,3 +79,19 @@ def test_tabelle_ohne_memo_braucht_keine_dbt():
 
     assert dbt is None
     assert read_table(dbf).live() == [{"W_WRG": "001", "W_BEZEICH": "Suppe"}]
+
+
+@pytest.mark.parametrize("cut", [40, 100, 200])
+def test_kaputter_kopf_ist_dbf_fehler(cut):
+    """Review T-4.11: abgeschnittener Kopf wirft DbfError, keinen IndexError."""
+    dbf, dbt = write_dbf(FIELDS, ROWS)
+
+    with pytest.raises(DbfError):
+        read_table(dbf[:cut], dbt)
+
+
+def test_nicht_dekodierbares_byte_ist_dbf_fehler():
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1], driver=0x03, encoding="cp437")
+
+    with pytest.raises(DbfError, match="Zeichensatz"):
+        read_table(dbf, dbt)  # 0x81 (ü in cp437) ist in cp1252 nicht belegt

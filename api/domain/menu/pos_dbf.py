@@ -58,11 +58,23 @@ class Table:
 
 
 def read_table(data: bytes, memo: bytes | None = None) -> Table:
-    """Tabelle lesen. Alle Werte als Text, rechts ohne Leerzeichen; Memo aufgelöst.
+    """Tabelle lesen. Alle Werte als Text, ohne Rand-Leerzeichen; Memo aufgelöst.
 
     Zahlen bleiben Text ("  6.50" -> "6.50"): Geld wird erst beim Umwandeln zu
-    Cent, nie über float (CLAUDE.md §8).
+    Cent, nie über float (CLAUDE.md §8). Jede kaputte Datei endet in DbfError,
+    damit der Aufrufer eine Meldung statt eines Tracebacks zeigt (Review T-4.11).
     """
+    try:
+        return _read(data, memo)
+    except UnicodeDecodeError as exc:
+        raise DbfError(
+            f"Zeichensatz passt nicht zum Inhalt (Byte 0x{exc.object[exc.start]:02x})"
+        ) from exc
+    except (IndexError, struct.error) as exc:
+        raise DbfError("Datei beschädigt oder abgeschnitten") from exc
+
+
+def _read(data: bytes, memo: bytes | None) -> Table:
     if len(data) < 32:
         raise DbfError("Datei zu kurz für einen dBase-Kopf")
     count, header_len, record_len = struct.unpack("<IHH", data[4:12])
@@ -71,6 +83,8 @@ def read_table(data: bytes, memo: bytes | None = None) -> Table:
     if encoding is None:
         raise DbfError(f"Unbekannter Zeichensatz (Sprachtreiber 0x{driver:02x})")
 
+    if header_len > len(data):
+        raise DbfError("Datei kürzer als im Kopf angegeben")
     fields: list[Field] = []
     offset = 32
     while offset < header_len and data[offset] != _HEADER_END:

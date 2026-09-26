@@ -3,6 +3,7 @@
 Aufruf:
     python -m scripts.import_menu imports/ --dry-run
     python -m scripts.import_menu imports/ [--apply-price-changes] [--tenant-name N]
+    python -m scripts.import_menu imports/ --dry-run --deactivate-missing   # Kasse
 
 Erwartet im Ordner menu_items.csv und optional item_options.csv,
 item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
@@ -46,6 +47,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="geänderte Preise bestehender Gerichte übernehmen",
     )
+    parser.add_argument(
+        "--deactivate-missing",
+        action="store_true",
+        help="Gerichte, die nicht in der Datei stehen, inaktiv setzen (Kasse als Quelle)",
+    )
     args = parser.parse_args(argv)
 
     if not args.folder.is_dir():
@@ -71,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
                 tenant.id,
                 plan,
                 apply_price_changes=args.apply_price_changes,
+                deactivate_missing=args.deactivate_missing,
                 dry_run=args.dry_run,
             )
         except ValueError as exc:

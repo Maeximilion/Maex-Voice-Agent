@@ -296,3 +296,14 @@ def test_extra_name():
     assert extra_name("F.Erdnuss_Sauce") == "Erdnuss Sauce"
     assert extra_name("Extra_Ente") == "Extra Ente"
     assert extra_name("E.Sweet-Sour") == "Sweet-Sour"
+
+
+def test_preisstufe_ohne_preis_ist_fehler_nicht_gratis():
+    """Review T-4.11: leerer ZPREIS wäre sonst ein kostenloses Extra (Regel 1)."""
+    zutgrp = table([{"ZGRP": "V", "ZPREIS": "", "ZGRP3": "V"}])
+    zutaten = table([{"ZBEZEICH": "Tofu", "WRGSHOWALL": "T", "ZPREIGRP3": "V"}])
+
+    result = convert(table([artikel("50", "Reis")]), WARENGRP, zutaten, zutgrp)
+
+    assert result.options == []
+    assert any("Tofu" in e and "Preis" in e for e in result.errors)

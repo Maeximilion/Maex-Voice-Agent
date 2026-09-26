@@ -6,8 +6,9 @@ Aufruf:
 
 Liest nur Kopien: artikel.DBF + .DBT, zutaten.DBF + .DBT, warengrp.dbf,
 zutgrp.DBF (Groß- und Kleinschreibung egal). Schreibt menu_items.csv,
-item_options.csv und item_allergens.csv in den Zielordner; item_aliases.csv aus
-dem Chat bleibt unberührt. Danach wie immer:
+item_options.csv und item_allergens.csv in den Zielordner. item_aliases.csv aus
+dem Chat bleibt, nur Zeilen zu Nummern, die die Kasse nicht liefert, wandern nach
+item_aliases.verworfen.csv (sie würden den Import blockieren). Danach wie immer:
     python -m scripts.import_menu imports --dry-run
 
 Exit-Code: 0 geschrieben, 1 geschrieben, aber Artikel mit Fehlern im Bericht
@@ -16,14 +17,17 @@ Die Logik steckt in api/domain/menu/pos_convert.py.
 """
 
 import argparse
+import csv
 import sys
 from pathlib import Path
 
-from api.domain.menu.pos_convert import convert
+from api.domain.menu.importer import ALIASES_FILE
+from api.domain.menu.pos_convert import convert, split_aliases
 from api.domain.menu.pos_dbf import DbfError, Table, read_table
 
 # Warengruppen, die am Telefon nicht bestellt werden (Getränke, Menüs, Pfand,
 # Interna), Maxi 26.09.2026. Mit --skip-groups überschreibbar.
+ALIASES_DROPPED = "item_aliases.verworfen.csv"
 DEFAULT_SKIP_GROUPS = (
     "015,016,017,018,019,020,021,022,023,024,025,100,101,102,"
     "EXS,FRE,GAH,GEH,GET,OHN,PFA,RTN,SON"
@@ -44,6 +48,30 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         return read_table(data, memo_data)
     except DbfError as exc:
         raise DbfError(f"{table}: {exc}") from exc
+
+
+def _set_aside_aliases(out: Path, numbers: list[str]) -> None:
+    source = out / ALIASES_FILE
+    if not source.is_file():
+        return
+    kept, dropped = split_aliases(source.read_text(encoding="utf-8-sig"), numbers)
+    if not dropped:
+        return
+    target = out / ALIASES_DROPPED
+    new_file = not target.is_file()
+    with target.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(
+            handle, fieldnames=list(dropped[0]), delimiter=";", lineterminator="\n"
+        )
+        if new_file:
+            writer.writeheader()
+        writer.writerows(dropped)
+    source.write_text(kept, encoding="utf-8")
+    listed = ", ".join(sorted({row["number"] for row in dropped}))
+    print(
+        f"Warnung: {len(dropped)} Aliase zu Nummern, die die Kasse nicht liefert "
+        f"({listed}), nach {target.name} verschoben"
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -81,6 +109,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in result.csv_files().items():
         (args.out / name).write_text(text, encoding="utf-8")
     print(result.as_text())
+    _set_aside_aliases(args.out, [row["number"] for row in result.menu])
     print(
         f"Geschrieben nach {args.out}. Weiter: python -m scripts.import_menu "
         f"{args.out} --dry-run"
