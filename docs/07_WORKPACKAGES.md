@@ -76,7 +76,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-3.3 | #42 | Spalte „Heute": Reservierungen mit Live-Aktualisierung über SSE | 06 §3 | T-3.1, T-1.5 | fertig |
 | T-3.4 | #43 | Spalte „Rückrufe" mit Ton und Erledigt-Knopf | 06 §3 | T-3.1, T-1.7 | fertig 18.09.2026: `domain/callbacks/board.py` (offene Rückrufe, Beschwerden oben, dann der älteste; `mark_done` mit Zeilensperre und Audit), `fragments/rueckrufe.html` mit Anrufen (`tel:`) und Erledigt, Ereignis `callbacks` im Strom, Ton aus WebAudio bei neuer Karte, eigener Ton für Beschwerden |
 | T-3.5 | #44 | Bedientest: ein Teammitglied bedient 5 Minuten ohne Erklärung, Protokoll | 06 §1 | T-3.2…T-3.4 | offen |
-| T-3.6 | - | Wartezeit Abholung und Lieferung getrennt in der Kopfzeile, jede senkbar und erhöhbar, mit `audit_log` und Live-Update auf andere Tablets | 06 §3 | T-3.2 | offen (Anforderung Maxi 26.09.2026 aus der Demo; heute erhöht ein Knopf beide, senken geht nur per DB) |
+| T-3.6 | - | Wartezeit Abholung und Lieferung getrennt in der Kopfzeile, jede senkbar und erhöhbar, mit `audit_log` und Live-Update auf andere Tablets | 06 §3 | T-3.2 | fertig 26.09.2026: `domain/status/config.py` `change_wait` (je Service, Schritt ±15, Grenzen 10 und 180 nur in Tipp-Richtung, Zeilensperre, `audit_log` `service_config.wait_changed`), Route `/gui/kopfzeile/wartezeit/<abholung oder lieferung>/<-15 oder 15>`, Kopfzeile mit zwei Zeilen und Knopf aus an der Grenze; Live-Update über das bestehende Ereignis `header`. Im Browser geprüft |
 
 **→ Gate G1** nach T-1.11 und T-3.5: 20 Rollenspiel-Anrufe, Latenz, Kosten, Ausfalltest.
 

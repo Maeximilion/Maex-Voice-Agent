@@ -46,7 +46,7 @@
 ```
 - **Der Punkt hat drei Zustände:** grün „KI nimmt an" (Modus `primary`) · gelb „KI springt ein" (Modus `overflow`, nimmt nur ab, wenn niemand abnimmt) · rot „KI ist aus" (`paused`). Der Text steht immer daneben, Farbe allein reicht nicht.
 - **KI pausieren** ist der Not-Aus. Ein Tap, sofortige Wirkung, alle Anrufe gehen ans Team. Wieder einschalten braucht eine Bestätigung.
-- **Wartezeit Abholung und Wartezeit Lieferung getrennt, jede senkbar und erhöhbar** (Anforderung Maxi 26.09.2026 aus der Demo, T-3.6). Immer mit dem Wort „Wartezeit" und dem Service, sonst ist unklar, was der Knopf ändert. Die neue Zeit gilt für jeden folgenden Anruf. Schrittweite und Untergrenze legt T-3.6 fest (Vorschlag: 15 Minuten, nicht unter den Grundwert aus der Adminansicht). Bis T-3.6 gebaut ist, erhöht ein Knopf beide Zeiten zusammen und senken geht nicht.
+- **Wartezeit Abholung und Wartezeit Lieferung getrennt, jede senkbar und erhöhbar** (Anforderung Maxi 26.09.2026 aus der Demo, gebaut in T-3.6). Immer mit dem Wort „Wartezeit" und dem Service, sonst ist unklar, was der Knopf ändert; `aria-label` sagt es auch dem Vorleser. Schritt 15 Minuten, Grenzen 10 und 180 Minuten (`domain/status/config.py`, Annahme). An der Grenze ist der Knopf aus. Die Grenze gilt nur in Tipp-Richtung: ein Wert, der schon darunter liegt, wird durch „-15" nicht erhöht. Die neue Zeit gilt für jeden folgenden Anruf, jede Änderung steht in `audit_log` (`service_config.wait_changed`).
 
 ### Drei Spalten
 
