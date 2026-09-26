@@ -375,3 +375,22 @@ def test_doppelte_preisstufe_oder_warengruppe_ist_formatfehler():
 
     gleich = table([{"ZGRP": "C", "ZPREIS": "1.20", "ZGRP3": "C"}] * 2)
     assert convert(table([artikel("1", "A")]), WARENGRP, ZUTATEN, gleich).menu
+
+
+def test_extra_mit_abzug_bleibt_erhalten():
+    """Codex PR #149: die Kasse kennt Extras mit Abzug ("ohne Fleisch"); der
+    negative Wert kommt in die Karte, nicht weg."""
+    zutgrp = table([{"ZGRP": "1", "ZPREIS": "0.10", "ZGRP3": "1"}])
+    zutaten = table(
+        [{"ZBEZEICH": "Ohne_Fleisch", "WRGSHOWALL": "T", "WRGSHOW": "",
+          "ZPREIGRP3": "1", "ZGRPREIS1": "-1.10"}]
+    )  # fmt: skip
+
+    result = convert(
+        table([artikel("50", "Suppe", groesse="+-2")]), WARENGRP, zutaten, zutgrp
+    )
+
+    assert [(o["option_name"], o["price_delta_eur"]) for o in result.options] == [
+        ("Ohne Fleisch", "-1,00")
+    ]
+    assert parse({**result.csv_files(), "item_aliases.csv": None}).ok

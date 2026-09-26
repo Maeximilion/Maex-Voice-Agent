@@ -458,11 +458,8 @@ def _add_extras(
             continue
         [price] = prices
         assert price is not None
-        if price < 0:
-            result.warnings.append(
-                f"{where}: Extra „{extra.name}“ mit negativem Preis, nicht übernommen"
-            )
-            continue
+        # Negativ ist ein Abzug der Kasse ("ohne Fleisch") und bleibt; eine
+        # negative Summe des Gerichts lehnt draft_order ab (Codex PR #149).
         taken.add(option_key(extra.name))
         result.options.append(
             _option(

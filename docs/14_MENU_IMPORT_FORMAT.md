@@ -156,7 +156,7 @@ In der Kasse sind „Zutaten" **Extras**: Nach der Artikelnummer tippt das Team 
 - „Mango-Curry-Soße" +2,90 € bei gebratenen Nudeln und gebratenem Reis, nicht bei Suppen
 - „Nudeln statt Reis" +3,50 € bei Reisgerichten
 
-Bei uns wird daraus je Gericht eine Gruppe in `item_options` mit `required` = `nein` und ohne Default: Gruppe „Extras", Option = Zutat, `price_delta_eur` = Aufschlag. Das deckt sich mit D8: der Agent bietet nur an, was hier steht.
+Bei uns wird daraus je Gericht eine Gruppe in `item_options` mit `required` = `nein` und ohne Default: Gruppe „Extras", Option = Zutat, `price_delta_eur` = Aufschlag oder Abzug (negativ). Das deckt sich mit D8: der Agent bietet nur an, was hier steht.
 
 **Geklärt an den echten Dateien (T-4.11):**
 - `zutgrp.DBF` ist keine Gruppe, sondern eine Tabelle von **Preisstufen**: `ZGRP`/`ZGRP3` → `ZPREIS` (`1` = 0,10 … `A` = 1,00, `U` = 3,50, `Z` = 9,40).
