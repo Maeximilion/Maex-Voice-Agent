@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.32.1
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.33.0
 
 ---
 
@@ -91,9 +91,9 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 ### In Claude Code (can start immediately, without vendor)
-1. **First real kitchen print** (T-4.6 variant B built 25.09.2026): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
+1. **First real print of the input slip** (T-4.6 variant B built 25.09.2026; since D2 on 26.09.2026 it goes to the main receipt printer at the register with the header "NICHT IN KASSE – bitte eingeben", that change is still to build): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
 2. **`check_slot` alternatives from the previous day** (found by T-5.2, 26.09.2026): fix with a red unit test first (`/bug`)
-3. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
+3. **Menu from the register** (T-4.11, docs/14 §Quelle Kasse): converter from the `.dbf` copies to the CSV format, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
@@ -105,7 +105,9 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
-  - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: router model, phone provider, handsets
+  - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: handsets
+  - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Number of simultaneous calls unknown (contract or the provider's customer portal). Why it matters for C2: a forward done by the Fritz!Box takes two channels (in and out), so with two channels one forwarded call fills the line; the AI platform itself takes calls in parallel, the line is the bottleneck, not the number of handsets
+  - **Register data (26.09.2026):** <POS System> keeps articles as `.dbf` (dBase); column mapping and open questions in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. Next: copies of `Artikel.dbf` (plus `.fpt`/`.dbt` if present), `WarenGRP.dbf`, `Zutaten.dbf`, `ZutatenGRP.dbf` with all columns into `imports/kasse/`; soups and starters get separate groups in the register
 - **C2** Research voice platform, evaluate, PoC on test number
 
 ---
@@ -115,7 +117,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | # | Question | Who | When needed |
 |---|---|---|---|
 | D1 | Voice platform | Maxi after C2 research | before T-2.x (integration) |
-| D2 | Handoff path to register. Register is **<POS System> (<POS Provider>)**, the in-house shop already feeds into it automatically. Four options: A manual on tablet · B kitchen receipt directly · C via register's existing order intake (partner channel like food delivery services, no public docs) · D register API. Recommendation: start with A+B, C depends on <POS Provider> answer (email draft ready, 16.09.2026) | Maxi, <POS Provider> | A built (T-4.7 tablet), B built 25.09.2026 (T-4.6 print bridge, first real print open); C after the <POS Provider> answer |
+| D2 | ~~Handoff path to register~~ **decided 26.09.2026 (Maxi): receipt and kitchen ticket come only from the register** (<POS System>, TSE). An order is fed into the register, the register books it and sends receipt and kitchen ticket to its own printers. The print bridge stays as an **independent path** and prints on the **main receipt printer at the register** (80 mm), never in the kitchen: until a register interface exists it prints **every** confirmed order as an input slip headed "NICHT IN KASSE – bitte eingeben", the team types it in; with an interface (variant C) only when the register does not accept in time (rule 5). Planning assumption: <POS Provider> does not cooperate, orders are transferred by hand. Asking <POS Provider> stays open (interface, test mode, whether the unused register at Maxi's home may serve as a test system). docs/02 §2a, T-4.6 | Maxi | done; bridge changes open in T-4.6 |
 | D3 | Hosting provider in the EU | C2 | before first deployment |
 | D4 | Voice: natural or audibly synthetic | Maxi | Stage 1, dialog test |
 | D5 | Delivery zones: postal code list or polygons | Maxi | before T-6.x (Stage 3) |
@@ -124,6 +126,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D7 | Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop? recommended: own core if the platform allows | Maxi with C2 | together with D1 |
 | D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2). Maxi asked whether he can be the officer himself: likely not, the managing director decides purposes and means, would monitor himself (Art. 39) and report to himself (Art. 38 Abs. 3); Art. 38 Abs. 6 forbids a conflict of interest. Recommendation: external officer. Case law on this is not in the norm corpus | Maxi | before `shadow` with recording |
 | D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
+| D11 | Which register price applies to a phone order: `VK1_PREIS`, `VK2_PREIS` or `VK3_PREIS` (in the sample all three equal), and what `A_PREIS1` is (e.g. 7,90 at a dish costing 13,50: lunch or promotion price?). Rule 1: the agent must say the price the register will charge. Also: legend of the letters in `ALLERGENE` (LMIV or own?) and meaning of `GROESSE` / `GRPREIS1-6`. docs/14 §Quelle Kasse | Maxi (look in the register) | before T-4.11 |
 
 ---
 
@@ -165,6 +168,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **Read-back sentence after callback** (`SAY_NOTED`): "I've noted your number. The restaurant will call you back as soon as possible." Wording is suggestion, to be refined in dialog test (D4)
 - **Bugfix in `normalize_phone` (17.09.2026):** a bracketed `(0)` after the country code was kept as digit, `+49 (0)7221 5551234` gave `+4907221 5551234` — a number that doesn't exist. Now it's dropped for international format and kept as leading zero for national. Found building T-1.7, red test first (`api/tests/test_domain_phone.py`)
 - **"KI einschalten" restores the mode from before the pause, read from `audit_log`** (`domain/status/config.py`, `_mode_before_pause`): the pause writes `{from, to}` anyway, a separate column would be a second copy of the same fact. Without a readable pause entry (mode set to `paused` directly in the DB) it falls back to `shadow`, the mode in which the AI never picks up itself - never blindly to `primary`. Assumption from 18.09.2026, subject to change
+- **Overturned 26.09.2026 by Maxi (from the demo): pickup and delivery wait separately, and both must be lowerable on the tablet** - new task T-3.6, docs/06 §3. Until built, the old behaviour below stands.
 - **"Wartezeit +15/+30" raises pickup and delivery together, capped at 180 minutes** (`domain/status/config.py`, `MAX_WAIT_MINUTES`): the header has one button, not two, and a full kitchen is full for both (docs/06 §3). The cap stops endless tapping; the number itself is an assumption from 18.09.2026, subject to change. **There is no way to lower the wait time on the tablet** - docs/06 puts the base values in the admin view (§4), which does not exist yet; until then it needs a DB update. Revisit at T-3.5 if the team misses it
 - **Browsers play the callback tone only after the first tap on the page** (`app.js`, autoplay policy): a tablet freshly loaded and never touched stays silent. In operation the first tap happens within minutes; check at T-3.5 whether a "Ton an" hint is needed. Assumption from 18.09.2026
 - **"Erledigt" on a callback that no longer exists returns the fresh list, not an error** (`gui/router.py`): another tablet was faster or the page is stale, the current list is the right answer. Assumption from 18.09.2026
@@ -238,8 +242,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 |---|---|---|
 | Legal check not complete | any processing of real call recordings (C7 / T-7.x) | work through `docs/09_OPERATIONS_LEGAL.md` |
 | No vendor chosen | voice platform integration, real test calls | C2 in chat |
-| <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; A and B are built |
-| Menu data not structured | Stage 2 complete | C1 clarifies format, then T-4.1 import |
+| <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; ask for test mode and whether the unused register at home may be a test system. Planned without it: manual entry from the input slip (D2) |
+| Menu data not structured | Stage 2 complete | format known since 26.09.2026: register `.dbf` (docs/14 §Quelle Kasse); needs all columns of the Zutaten files and D11, then T-4.11 and the import |
 | Docker Hub rate limit on first `make up` possible (occurred 16.09.2026 once, cleared after wait) | image build | `docker login` with free account, see README, section Known Issues |
 
 ---
@@ -303,6 +307,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.33.0 · 26.09.2026:** D2 entschieden (Bons nur ueber die Kasse, Druckbruecke als Eingabezettel), Kassen-.dbf zugeordnet, D11, T-3.6 und T-4.11 angelegt
 - **v1.32.1 · 26.09.2026:** T-5.2 done: Eval-Suite v1 mit 107 Faellen
 - **v1.32.0 · 26.09.2026:** T-4.8 done: Gericht aus am Tablet, Alternativen derselben Kategorie im say von search_menu
 - **v1.31.24 · 25.09.2026:** PR #139: eigenes Review, 13 Befunde behoben (Allergie bei neu gesuchter Wahl, mehrdeutiges Gericht mit Allergie, allgemeine Allergie fragt nach, "vertrage alles", Bestellung statt Zutat, Schluessel in E.164/UTC, Grund bleibt bei alter Optionsdatei, Schema der Wunsch-Felder)
