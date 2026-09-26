@@ -299,6 +299,13 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 
 `alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur unter sechs Stunden Abstand zum Wunsch**. Der Satz nennt die Uhrzeit ohne Tag, und der Gast hört die Deutung, die dem Wunsch am nächsten liegt; unter sechs Stunden ist das die richtige (die andere Hälfte der Uhr liegt ±12 h weg, ein anderer Tag ±24 h). Am Ruhetag gibt es deshalb nichts vom Vortag (Befund T-5.2, `reservierung_0027`), nachts um halb eins keinen Mittag als „halb zwei" (Review PR #152). Ohne Alternative sagt der Satz „auch nicht kurz davor oder danach", nicht „an dem Tag": weiter weg kann noch etwas frei sein. Ist der Tag geschlossen (Ruhetag, geschlossener Sondertag) und liegt der Wunsch nicht im Fenster des Vorabends, heißt es „Am Montag haben wir leider geschlossen."
 
+**Geplant (T-1.14, Anforderung Maxi 26.09.2026, noch nicht gebaut):** Die Sechs-Stunden-Regel ist nur die Grenze für eine eindeutige Ansage. Gäste wollen im selben Service bleiben:
+- Abendwunsch → Alternativen nur am selben Abend; Mittagswunsch → nur am selben Mittag.
+- Kein Reservierungsbeginn kurz vor Ladenschluss: schließt der Service um 22:00, ist 21:30 nicht buchbar. Der Abstand kommt aus der DB, nicht aus dem Code (Wert offen, D12). Heute ist 21:30 buchbar (`test_fensterende_ist_exklusiv_und_ausserhalb_der_oeffnung_nicht_buchbar`).
+- Wunsch vor der ersten Öffnung des Tages (morgens) darf auf einen späteren Service ausweichen, auch abends; der Satz nennt dann die Tageszeit („abends um sieben"), weil der Abstand über sechs Stunden liegt.
+- Wunsch für einen anderen, genannten Tag: keine Sonderlogik, es gilt der Tag des Gastes.
+- **Offen (D12):** Wunsch zwischen zwei Services (15:00 bei 11:30–14:00 und 17:00–22:00) und nach dem letzten Service (23:00). Vorschlag, noch nicht entschieden: zwischen zwei Services zählt der nächstgelegene Service desselben Tages, bei gleichem Abstand der spätere; nach dem letzten Service nur dieser letzte (kein nächster Tag, der müsste genannt werden). Codex PR #153.
+
 ---
 
 ## `create_reservation`
