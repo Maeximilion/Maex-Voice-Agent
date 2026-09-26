@@ -350,3 +350,28 @@ def test_extras_doppelt_nach_dem_schluessel_des_imports():
     assert len(result.options) == 1
     assert any("doppelt" in w for w in result.warnings)
     assert parse({**result.csv_files(), "item_aliases.csv": None}).ok
+
+
+def test_doppelte_preisstufe_oder_warengruppe_ist_formatfehler():
+    """Codex PR #149: zwei aktive Zeilen mit demselben Schlüssel und anderem Wert
+    sind kein Preis, den der Umwandler per Zeilenreihenfolge wählen darf."""
+    zutgrp = table(
+        [
+            {"ZGRP": "U", "ZPREIS": "3.50", "ZGRP3": "U"},
+            {"ZGRP": "U", "ZPREIS": "3.90", "ZGRP3": "U"},
+        ]
+    )
+    with pytest.raises(DbfError, match=r"zutgrp.*U"):
+        convert(table([artikel("1", "A")]), WARENGRP, ZUTATEN, zutgrp)
+
+    warengrp = table(
+        [
+            {"W_WRG": "006", "W_BEZEICH": "Hauptspeisen"},
+            {"W_WRG": "006", "W_BEZEICH": "Wok"},
+        ]
+    )
+    with pytest.raises(DbfError, match=r"warengrp.*006"):
+        convert(table([artikel("1", "A")]), warengrp, ZUTATEN, ZUTGRP)
+
+    gleich = table([{"ZGRP": "C", "ZPREIS": "1.20", "ZGRP3": "C"}] * 2)
+    assert convert(table([artikel("1", "A")]), WARENGRP, ZUTATEN, gleich).menu

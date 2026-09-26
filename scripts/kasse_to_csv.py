@@ -18,6 +18,7 @@ Die Logik steckt in api/domain/menu/pos_convert.py.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -57,6 +58,16 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
+def _write_atomic(path: Path, text: str) -> None:
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
     """Alias-Datei und abgetrennte Zeilen gegen die neue Karte aufteilen."""
     source, side = out / ALIASES_FILE, out / ALIASES_DROPPED
@@ -76,12 +87,16 @@ def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
             f"als {ALIASES_DROPPED}, Aliase unverändert"
         )
         return
-    source.write_text(split.kept, encoding="utf-8")
+    # Erst sichern, dann umschreiben, jede Datei über eine Temp-Datei: scheitert
+    # ein Schreiben, ist keine Alias-Zeile verloren (Codex PR #149). Steht eine
+    # Zeile danach in beiden Dateien, fasst der nächste Lauf sie zusammen.
+    if split.dropped is not None:
+        _write_atomic(side, split.dropped)
+    _write_atomic(source, split.kept)
     if split.dropped is None:
         # Alle Zeilen sind zurück in der Alias-Datei; die Nebendatei ist leer.
         side.unlink(missing_ok=True)
         return
-    side.write_text(split.dropped, encoding="utf-8")
     print(
         "Warnung: Aliase zu Nummern, die die Kasse nicht liefert, liegen in "
         f"{ALIASES_DROPPED} und kommen zurück, sobald das Gericht wieder "
@@ -129,7 +144,15 @@ def main(argv: list[str] | None = None) -> int:
     for name, text in result.csv_files().items():
         (args.out / name).write_text(text, encoding="utf-8")
     print(result.as_text())
-    _reconcile_aliases(args.out, [row["number"] for row in result.menu])
+    try:
+        _reconcile_aliases(args.out, [row["number"] for row in result.menu])
+    except OSError as exc:
+        print(
+            f"Fehler: Aliase nicht abgeglichen ({exc.strerror or exc}), "
+            f"{ALIASES_FILE} unverändert - vor dem Import prüfen.",
+            file=sys.stderr,
+        )
+        return 2
     print(
         f"Geschrieben nach {args.out}. Weiter: python -m scripts.import_menu "
         f"{args.out} --dry-run"

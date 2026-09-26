@@ -704,3 +704,22 @@ def test_skript_unlesbare_datei_exit_2(tmp_path, capsys):
     assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
     assert "zutgrp" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
+
+
+def test_skript_verliert_keine_aliase_wenn_die_nebendatei_nicht_schreibbar_ist(
+    tmp_path, capsys
+):
+    """Codex PR #149: erst die abgetrennten Zeilen sichern, dann die Alias-Datei
+    umschreiben; scheitert das Sichern, bleibt die Alias-Datei unverändert."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    original = "number;alias\n1;Misosuppe\n65;Wasser\n"
+    (out / ALIASES_FILE).write_text(original, encoding="utf-8")
+    (out / "item_aliases.verworfen.csv").mkdir()  # nicht schreibbar
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert (out / ALIASES_FILE).read_text(encoding="utf-8") == original
+    assert "Aliase" in capsys.readouterr().err

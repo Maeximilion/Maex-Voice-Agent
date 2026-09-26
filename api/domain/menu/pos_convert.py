@@ -20,7 +20,7 @@ in der Liste `WRGSHOW`). Preis = Preisstufe `ZPREIGRP3` aus `zutgrp` plus
 import csv
 import io
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 from api.domain.menu.importer import (
@@ -223,7 +223,7 @@ def convert(
             raise DbfError(f"{name}: Spalte fehlt: {', '.join(missing)}")
     result = Conversion()
     skip = {g.strip() for g in skip_groups}
-    categories = {r["W_WRG"]: r["W_BEZEICH"] for r in warengrp.live()}
+    categories = _unique(warengrp, "warengrp", lambda r: r["W_WRG"], "W_BEZEICH")
     extras = _extras(result, zutaten, zutgrp)
 
     candidates: list[dict[str, str]] = []
@@ -367,6 +367,24 @@ def convert(
     return result
 
 
+def _unique(
+    table: Table, name: str, key: Callable[[dict[str, str]], str], column: str
+) -> dict[str, str]:
+    """Schlüssel -> Wert aus den aktiven Zeilen. Derselbe Schlüssel mit anderem
+    Wert ist ein Formatfehler: sonst entschiede die Zeilenreihenfolge über einen
+    Preis oder eine Kategorie (Codex PR #149)."""
+    values: dict[str, str] = {}
+    for row in table.live():
+        k = key(row)
+        if k in values and values[k] != row[column]:
+            raise DbfError(
+                f"{name}: Schlüssel „{k}“ doppelt mit verschiedenem {column} "
+                f"(„{values[k]}“ und „{row[column]}“)"
+            )
+        values[k] = row[column]
+    return values
+
+
 def _option(
     number: str, group: str, name: str, delta: int, *, default: bool, required: bool
 ) -> dict[str, str]:
@@ -381,7 +399,7 @@ def _option(
 
 
 def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
-    levels = {r["ZGRP3"] or r["ZGRP"]: r["ZPREIS"] for r in zutgrp.live()}
+    levels = _unique(zutgrp, "zutgrp", lambda r: r["ZGRP3"] or r["ZGRP"], "ZPREIS")
     extras: list[_Extra] = []
     for row in zutaten.live():
         where = f"Zutat „{row['ZBEZEICH']}“"
