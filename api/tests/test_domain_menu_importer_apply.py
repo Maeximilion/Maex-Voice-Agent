@@ -846,3 +846,25 @@ def test_pos_code_doppelt_mit_einem_gericht_im_bestand(session, tenant_id):
     # Dasselbe Gericht erneut mit seiner Nummer ist kein Konflikt.
     run(session, tenant_id, files=nur(MIT_KASSE))
     assert item(session, tenant_id, "47").pos_code == "47B"
+
+
+def test_skript_ersetzte_aliase_auch_wenn_das_gericht_noch_fehlt(tmp_path):
+    """Codex PR #149: schreibt der Chat die Aliase eines Gerichts neu, das auch im
+    nächsten Lauf noch fehlt, fallen die alten trotzdem weg."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso\n2;Ente kross\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt -> beiseite
+    with (out / ALIASES_FILE).open("a", encoding="utf-8") as handle:
+        handle.write("2;knusprige Ente\n")
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt weiter
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+
+    aliases = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "2;knusprige Ente" in aliases and "Ente kross" not in aliases

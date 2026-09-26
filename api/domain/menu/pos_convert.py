@@ -561,9 +561,9 @@ def split_aliases(
 
     in_source = {key(row) for row in parts[0]}
     rows: list[list[str]] = []
-    for row in parts[0] + [
-        r for r in parts[1] if key(r) not in in_source or key(r) not in known
-    ]:
+    # Hat der Chat für eine Nummer eigene Zeilen, gelten nur diese - auch wenn
+    # das Gericht noch fehlt, sonst kämen die alten später mit zurück (Codex PR #149).
+    for row in parts[0] + [r for r in parts[1] if key(r) not in in_source]:
         if row not in rows:
             rows.append(row)
     kept: list[list[str]] = []
