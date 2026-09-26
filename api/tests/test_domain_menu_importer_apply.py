@@ -16,8 +16,9 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
+from api.tests.dbf_fixture import write_dbf
 from api.tests.test_domain_menu_importer_parse import files
-from scripts import import_menu
+from scripts import import_menu, kasse_to_csv
 from scripts.seed import seed
 
 NOW = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
@@ -411,3 +412,151 @@ def test_cli_meldet_altzeilen_konflikt(cli, ordner, session, tenant_id, capsys):
 
     assert cli(ordner) == 1
     assert "doppelt" in capsys.readouterr().err
+
+
+# --- Kasse als Quelle (T-4.11): pos_code, fehlende Gerichte inaktiv, Umwandler ---
+
+MIT_KASSE = """number;pos_code;name;category;price_eur
+23;23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
+47;47B;Ente knusprig;Hauptgerichte;15,50
+"""
+
+
+def nur(menu: str) -> dict[str, str | None]:
+    """Nur die Karte, ohne Optionen, Allergene und Aliase der Grunddateien."""
+    return {
+        MENU_FILE: menu,
+        OPTIONS_FILE: None,
+        ALLERGENS_FILE: None,
+        ALIASES_FILE: None,
+    }
+
+
+def test_pos_code_wird_gespeichert_und_bleibt_ohne_spalte(session, tenant_id):
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").pos_code == "47B"
+
+    # Alte Datei aus dem Chat ohne Spalte: die Kassennummer bleibt stehen.
+    run(session, tenant_id)
+    assert item(session, tenant_id, "47").pos_code == "47B"
+    assert item(session, tenant_id, "12").pos_code is None
+
+
+def test_pos_code_doppelt_ist_fehler():
+    doppelt = MIT_KASSE.replace("23;23;", "23;47B;")
+
+    plan = parse(files(**{MENU_FILE: doppelt}))
+
+    assert any("pos_code 47B doppelt" in e for e in plan.errors)
+
+
+def test_fehlende_gerichte_nur_mit_schalter_inaktiv(session, tenant_id):
+    run(session, tenant_id)  # 12, 23, 47; 12 schon inaktiv
+    nur_23 = nur("\n".join(MIT_KASSE.splitlines()[:2]))
+
+    ohne = run(session, tenant_id, files=nur_23)
+    assert ohne.items_deactivated == []
+    assert "--deactivate-missing" in ohne.as_text()
+    assert item(session, tenant_id, "47").active is True
+
+    probe = run(session, tenant_id, files=nur_23, deactivate_missing=True, dry_run=True)
+    assert probe.items_deactivated == ["47"]
+    assert "würden deaktiviert: 47" in probe.as_text()
+    assert item(session, tenant_id, "47").active is True
+
+    mit = run(session, tenant_id, files=nur_23, deactivate_missing=True)
+    assert mit.items_deactivated == ["47"]  # 12 war schon inaktiv
+    assert item(session, tenant_id, "47").active is False
+    # Nie gelöscht: order_items verweisen auf das Gericht.
+    assert session.scalar(select(MenuItem).where(MenuItem.number == "47")) is not None
+    eintrag = session.scalars(
+        select(AuditLog).where(AuditLog.action == "menu.imported")
+    ).all()[-1]
+    assert eintrag.payload["items_deactivated"] == ["47"]
+
+    # Steht es wieder in der Kasse, ist es wieder aktiv.
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").active is True
+
+
+ARTIKEL_FIELDS = [
+    ("ARTNR", "C", 5, 0),
+    ("WRG", "C", 3, 0),
+    ("BEZEICH", "C", 40, 0),
+    ("VK1_PREIS", "N", 7, 2),
+    ("VK2_PREIS", "N", 7, 2),
+    ("GROESSE", "C", 15, 0),
+    ("GRPREIS1", "N", 7, 2),
+    ("GRPREIS2", "N", 7, 2),
+    ("ZUTATEN", "M", 10, 0),
+    ("ALLERGENE", "C", 26, 0),
+]
+
+
+def _kasse(folder, artikel_rows):
+    tables = {
+        "artikel": (ARTIKEL_FIELDS, artikel_rows),
+        "WARENGRP": (
+            [("W_WRG", "C", 3, 0), ("W_BEZEICH", "C", 16, 0)],
+            [{"W_WRG": "001", "W_BEZEICH": "Suppe"}],
+        ),
+        "zutaten": (
+            [
+                ("ZBEZEICH", "C", 16, 0),
+                ("WRGSHOWALL", "L", 1, 0),
+                ("WRGSHOW", "M", 10, 0),
+                ("ZPREIGRP3", "C", 3, 0),
+            ],
+            [{"ZBEZEICH": "Extra_Garnelen", "WRGSHOWALL": "T", "ZPREIGRP3": "C"}],
+        ),
+        "zutgrp": (
+            [("ZGRP", "C", 1, 0), ("ZPREIS", "N", 6, 2), ("ZGRP3", "C", 3, 0)],
+            [{"ZGRP": "C", "ZPREIS": "1.20", "ZGRP3": "C"}],
+        ),
+    }
+    for name, (fields, rows) in tables.items():
+        dbf, dbt = write_dbf(fields, rows)
+        (folder / f"{name}.DBF").write_bytes(dbf)
+        if dbt is not None:
+            (folder / f"{name}.DBT").write_bytes(dbt)
+
+
+SUPPE = {
+    "ARTNR": "1",
+    "WRG": "001",
+    "BEZEICH": "Miso Suppe",
+    "VK1_PREIS": "6.50",
+    "VK2_PREIS": "6.50",
+    "GROESSE": "+-23",
+    "GRPREIS2": "4.50",
+}
+
+
+def test_skript_von_dbf_bis_zur_karte(tmp_path, session, tenant_id):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    csv_files = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
+    report = run(
+        session, tenant_id, files={**files(), **csv_files, "item_aliases.csv": None}
+    )
+    assert report.items_new == ["1"]
+    suppe = item(session, tenant_id, "1")
+    assert (suppe.pos_code, suppe.price_cents, suppe.category) == ("1", 650, "Suppe")
+
+
+def test_skript_meldet_fehler_und_fehlende_datei(tmp_path, capsys):
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "S1"}])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 1
+    assert "S1" in capsys.readouterr().out
+
+    (kasse / "zutgrp.DBF").unlink()
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "x")]) == 2
+    assert "zutgrp.dbf fehlt" in capsys.readouterr().err
+    assert not (tmp_path / "x").exists()

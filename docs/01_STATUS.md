@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.1
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.2
 
 ---
 
 ## Summary
+
+**Menu from the register (T-4.11, 26.09.2026): the six `.dbf` copies become the import CSVs.** `python -m scripts.kasse_to_csv imports/kasse --out imports` reads the register tables read-only (own dBase reader, standard library, cp437 from the file header) and writes `menu_items.csv`, `item_options.csv`, `item_allergens.csv`. On the real files: 123 dishes, 751 options (soups as a required group klein/groß, extras such as a sauce change at 3,50 per dish group). Worked out on the real rows: `GRPREIS(n-1)` is the surcharge for size n (mask: klein 6,50, groß 11,00), size names 1 normal, 2 klein, 3 groß, 4 party from the register mask; extras hang on the dish group (`WRGSHOW`), their price is a price level from `zutgrp` (`ZPREIGRP3`); there is no lock column, the register marks a blocked article as deleted. Migration 004 `menu_items.pos_code` keeps the register spelling (`35B`), the import takes it as an optional column; `--deactivate-missing` sets dishes missing from the file inactive, dry-run lists them first. Not taken: 50 dishes whose numbers the search cannot resolve (`25G`, sushi `S1`...`SM6`), four register allergen entries (test entries, need `--allergens-confirmed-by`), size 6 without a name.
 
 **Eval suite v1 (T-5.2, 26.09.2026): 107 cases, every mandatory line of docs/08 §6 covered.** Pickup (by number, name, alias, spoken numbers, quantities, options, ambiguous and sold-out dishes, unknown dishes, abort, read-back, closing time), reservations (times, dates, corrections at read-back, capacity, closed days), escalation (complaint, human, cancellation, noise) and allergens. A run takes about 12 s. With the rule-based stand-in model: 99/107 green, hard metrics 0, false escalation 4.5 %. Eight cases are **known gaps** (`pending` with the task that closes them: T-2.4 real model, T-6.5 delivery); CI demands every other case green and every gap red, so a gap that heals is noticed. The suite found four defects: two in the stand-in (a "yes" to the only offered dish was searched as a dish and asked again forever; a card number in the first sentence was stripped as a phone number), both fixed here; and one in the hot path, `check_slot` offering the previous day's times as alternatives (on closed Monday it offered Sunday 21:30 as "halb zehn"), fixed in its own bug PR; and the number rule for "und die 24" and "ich würde die 13", which is its own task.
 
@@ -93,7 +95,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ### In Claude Code (can start immediately, without vendor)
 1. **First real print of the input slip** (T-4.6 variant B built 25.09.2026; since D2 on 26.09.2026 it goes to the main receipt printer at the register with the header "NICHT IN KASSE – bitte eingeben", that change is still to build): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
 2. **`check_slot` alternatives from the previous day** (found by T-5.2, 26.09.2026): fix with a red unit test first (`/bug`)
-3. **Menu from the register** (T-4.11, docs/14 §Quelle Kasse): converter from the `.dbf` copies to the CSV format, then a real import: `python -m scripts.import_menu imports/ --dry-run`, read the report, then again with `--apply-price-changes` (without it, dishes already in the DB keep their old price). `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
+3. **Card numbers of the register** (found by T-4.11): 50 dishes are not imported because the search only knows numbers up to 999 with a letter a to f - `25G`, `26G` ... `60G` (letter g) and sushi `S1` ... `S53`, `SM1` ... `SM6`. Extend `numberwords` and `importer._CARD_NUMBER` deliberately ("Nummer S zwölf", "25 G"), with eval cases; then the first real import: `python -m scripts.kasse_to_csv imports/kasse --out imports`, `python -m scripts.import_menu imports/ --dry-run --deactivate-missing`, read the report, then again with `--apply-price-changes --deactivate-missing`. Print `pos_code` instead of `number` on the input slip with the T-4.6 slip change
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
@@ -107,7 +109,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: handsets
   - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Number of simultaneous calls unknown (contract or the provider's customer portal). Why it matters for C2: a forward done by the Fritz!Box takes two channels (in and out), so with two channels one forwarded call fills the line; the AI platform itself takes calls in parallel, the line is the bottleneck, not the number of handsets
-  - **Register data (26.09.2026):** <POS System> keeps articles as `.dbf` (dBase); column mapping and open questions in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. Next: the six files `artikel.DBF`, `artikel.DBT`, `zutaten.DBF`, `zutaten.DBT`, `warengrp.dbf`, `zutgrp.DBF` (not the demo folder) into `imports/kasse/` in the T-4.11 session; soups and starters get separate groups in the register; Maxi ticks allergens per article in the register (today none maintained, so the agent gives no allergen information at all)
+  - **Register data (26.09.2026):** converter built (T-4.11), mapping in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. In the register: shorten the four names cut at 40 characters (32B, 35C, 38E, 15C) and the two extras cut at 16 ("Panierte Hühnerb", "Nudeln statt Rei"); remove the allergen test entries (13, 14, 35A, 15C) or confirm them; name size 6 in the mask if the team uses it (today nine dishes, 3,60 to 12,50 cheaper); Maxi ticks allergens per article (today none maintained, so the agent gives no allergen information at all)
 - **C2** Research voice platform, evaluate, PoC on test number
 
 ---
@@ -132,6 +134,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Made Assumptions (subject to change)
 
+- **`+` in `GROESSE` means "extras allowed"** (T-4.11): the converter offers register extras only for such dishes. Only fewer offers if wrong, never more. Extras price from `ZPREIGRP3`, not `ZPREIGRP` - all active extras fit, `Extra_Ente` has no `ZPREIGRP`; to be checked once in the dry-run report against the register. Assumption from 26.09.2026
 - **Spoken allergy sentence for wishes is a draft** (`domain/menu/search.py` `SAY_ALLERGY_NOTE`, T-4.10): "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob … frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist." No promise that a dish is free of anything; checked with the legal check (docs/09) before go-live. The kitchen note itself uses the fixed wording of E14. Assumption from 24.09.2026
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
 - GUI as FastAPI + Jinja2 + HTMX + SSE, one container, no Node build
@@ -243,7 +246,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Legal check not complete | any processing of real call recordings (C7 / T-7.x) | work through `docs/09_OPERATIONS_LEGAL.md` |
 | No vendor chosen | voice platform integration, real test calls | C2 in chat |
 | <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; ask for test mode and whether the unused register at home may be a test system. Planned without it: manual entry from the input slip (D2) |
-| Menu data not structured | Stage 2 complete | format known since 26.09.2026: register `.dbf` (docs/14 §Quelle Kasse); D11 decided; T-4.11 with the six register files, then the import |
+| Menu data not structured | Stage 2 complete | converter built (T-4.11, 26.09.2026); before the first real import the card number format must take `25G` and sushi `S12` (50 dishes) |
 | Docker Hub rate limit on first `make up` possible (occurred 16.09.2026 once, cleared after wait) | image build | `docker login` with free account, see README, section Known Issues |
 
 ---
@@ -252,6 +255,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 26.09.2026 | **T-4.11 menu from the register:** `domain/menu/pos_dbf.py` (dBase IV reader with memo, read-only), `domain/menu/pos_convert.py` (sizes, extras, allergen letter table, report), `scripts/kasse_to_csv.py`; importer takes optional `pos_code`, `--deactivate-missing`; migration 004 `menu_items.pos_code`. Tests with synthetic `.dbf` only (`api/tests/dbf_fixture.py`), real files stay in `imports/kasse/` |
 | 26.09.2026 | **Handover D2, D11, T-4.11 prepared** (PR #148, docs only): receipts only via the register, print bridge as input slip; register `.dbf` mapped in docs/14 incl. allergen letter table a-n to LMIV; next T-4.11 with the six register files. Full block in `docs/00_PCF.md` §13 |
 | 24.09.2026 | **T-4.10 wishes to a dish (D8):** `domain/menu/wishes.py` splits dish and wish, `search_menu` returns `wish` - "die 23 ohne Karotten" finds the 23 again. Removal is a note, an option of the menu comes with its surcharge and reason from `item_options`, an allergy goes to the kitchen as "WICHTIG: Keine <Zutat>. Grund: Allergie" (E14) without a promise, anything else is not offered. The agent repeats the wish with the surcharge. Migration 003 `item_options.price_reason` (optional import column). Keys for `create_reservation` and `draft_order` from the validated request (two open points from PR #127 closed) |
 | 24.09.2026 | **Pickup in the text phone** (branch `feat/sim-pickup-flow`, PR after #127): `sim/scripted_order.py` takes dishes, options and name, `draft_order`, read back, `confirm`, pickup code; eval cases `abholung_0001` and `abholung_0002`. **Caller ID** fills `slots.phone`, the agent no longer asks for the number (Maxi). **Repeat-back** of every clear dish right after it is said: a number as number, a description as the menu name with number, varied lead-ins chosen from the utterance (Maxi). Over HTTP a multi-dish sentence no longer asks the guest to repeat one at a time |
@@ -308,6 +312,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.2 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
 - **v1.34.1 · 26.09.2026:** PR #148: Codex-Befunde - pos_code als eigenes Feld, fehlende Kassenartikel inaktiv, Import mit --apply-price-changes
 - **v1.34.0 · 26.09.2026:** D11 entschieden: VK1 am Telefon, Groesse, Allergen-Umsetztabelle a-n auf LMIV, sechs Kassendateien fuer T-4.11
 - **v1.33.0 · 26.09.2026:** D2 entschieden (Bons nur ueber die Kasse, Druckbruecke als Eingabezettel), Kassen-.dbf zugeordnet, D11, T-3.6 und T-4.11 angelegt

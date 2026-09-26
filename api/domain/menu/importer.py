@@ -12,7 +12,8 @@ angeglichen, Aliase aus einem früheren Import ebenso. Aliase aus Anrufen oder
 von Hand bleiben, sie sind gewachsenes Wissen. Gerichte, die in der Datenbank
 stehen, aber nicht in der Datei, bleiben unangetastet - bestellte Gerichte
 lassen sich nicht löschen, und ein vergessenes Gericht soll nicht still
-verschwinden. Der Bericht nennt sie.
+verschwinden. Der Bericht nennt sie. Mit `deactivate_missing` (Kasse als
+Quelle, T-4.11) werden sie inaktiv, nie gelöscht.
 
 Preise aus der Datei ersetzen einen bestehenden Preis nur mit
 `apply_price_changes`; ohne stehen sie als "Preisänderung" im Bericht.
@@ -70,6 +71,11 @@ _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 _CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
 
 
+def is_card_number(number: str) -> bool:
+    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen."""
+    return _CARD_NUMBER.fullmatch(number) is not None
+
+
 @dataclass(frozen=True)
 class ItemRow:
     number: str
@@ -78,6 +84,9 @@ class ItemRow:
     price_cents: int
     description: str | None
     active: bool
+    # Nummer in der Schreibweise der Kasse (T-4.11). None: die Datei hat die
+    # Spalte nicht, der gespeicherte Wert bleibt; "": Wert gelöscht.
+    pos_code: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +128,8 @@ class Report:
     items_new: list[str] = field(default_factory=list)
     items_updated: list[str] = field(default_factory=list)
     items_not_in_file: list[str] = field(default_factory=list)
+    # Aus items_not_in_file, die noch aktiv waren; nur mit deactivate_missing.
+    items_deactivated: list[str] = field(default_factory=list)
     # (Nummer, alt, neu) in Cent
     price_changes: list[tuple[str, int, int]] = field(default_factory=list)
     price_changes_applied: bool = False
@@ -135,6 +146,7 @@ class Report:
         return bool(
             self.items_new
             or self.items_updated
+            or self.items_deactivated
             or (self.price_changes and self.price_changes_applied)
             or self.options_added
             or self.options_removed
@@ -170,10 +182,22 @@ class Report:
             )
         if self.price_changes and not self.price_changes_applied:
             lines.append("Preise übernehmen mit --apply-price-changes.")
-        if self.items_not_in_file:
+        if self.items_deactivated:
+            state = "würden deaktiviert" if self.dry_run else "deaktiviert"
+            lines.append(
+                f"Nicht in der Datei, {state}: " + ", ".join(self.items_deactivated)
+            )
+        unchanged = [
+            n for n in self.items_not_in_file if n not in self.items_deactivated
+        ]
+        if unchanged:
             lines.append(
                 "In der Datenbank, aber nicht in der Datei (unverändert): "
-                + ", ".join(self.items_not_in_file)
+                + ", ".join(unchanged)
+            )
+            lines.append(
+                "Kasse als Quelle: fehlende aktive Gerichte deaktivieren mit "
+                "--deactivate-missing."
             )
         lines += [f"Warnung: {w}" for w in self.warnings]
         if not self.changed and not self.price_changes:
@@ -233,13 +257,14 @@ def parse(files: Mapping[str, str | None]) -> Plan:
 
     first_line: dict[str, int] = {}
     spelled: dict[str, str] = {}
+    pos_codes: dict[str, int] = {}
     for line, row in _rows(plan, MENU_FILE, files[MENU_FILE]):
         where = f"{MENU_FILE} Zeile {line}"
         number = row["number"].lower()
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
-        if not _CARD_NUMBER.fullmatch(number):
+        if not is_card_number(number):
             # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
             # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
             plan.errors.append(
@@ -270,6 +295,13 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             )
         if active is None:
             problems.append(f"active „{row['active']}“ ist weder ja noch nein")
+        pos_code = row.get("pos_code")
+        if pos_code:
+            if pos_code in pos_codes:
+                problems.append(
+                    f"pos_code {pos_code} doppelt (zuerst in Zeile {pos_codes[pos_code]})"
+                )
+            pos_codes.setdefault(pos_code, line)
         if problems:
             plan.errors.append(f"{where}: {'; '.join(problems)}")
             continue
@@ -280,6 +312,7 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             price_cents=price,
             description=row.get("description") or None,
             active=active,
+            pos_code=pos_code,
         )
 
     _parse_options(plan, files.get(OPTIONS_FILE), spelled)
@@ -446,10 +479,15 @@ def apply(
     plan: Plan,
     *,
     apply_price_changes: bool = False,
+    deactivate_missing: bool = False,
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Report:
-    """Datenbank an den Plan angleichen. Bei dry_run wird am Ende zurückgerollt."""
+    """Datenbank an den Plan angleichen. Bei dry_run wird am Ende zurückgerollt.
+
+    deactivate_missing: Gerichte, die nicht in der Datei stehen, werden inaktiv
+    (Kasse als Master, docs/14). Ohne den Schalter bleiben sie wie sie sind.
+    """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
     now = now or utcnow()
@@ -483,9 +521,14 @@ def apply(
         )
     existing = {key: group[0] for key, group in by_key.items()}
     in_plan = {canonical_card(n) for n in plan.items}
-    report.items_not_in_file = sorted(
-        item.number for key, item in existing.items() if key not in in_plan
-    )
+    missing = [item for key, item in existing.items() if key not in in_plan]
+    report.items_not_in_file = sorted(item.number for item in missing)
+    if deactivate_missing:
+        for item in missing:
+            if item.active:
+                item.active = False
+                report.items_deactivated.append(item.number)
+        report.items_deactivated.sort()
 
     items: dict[str, MenuItem] = {}
     for number, row in plan.items.items():
@@ -499,6 +542,7 @@ def apply(
                 price_cents=row.price_cents,
                 description=row.description,
                 active=row.active,
+                pos_code=row.pos_code or None,
             )
             session.add(item)
             report.items_new.append(number)
@@ -510,6 +554,8 @@ def apply(
                 "description": row.description,
                 "active": row.active,
             }
+            if row.pos_code is not None:
+                fields["pos_code"] = row.pos_code or None
             changed = [k for k, v in fields.items() if getattr(item, k) != v]
             for key in changed:
                 setattr(item, key, fields[key])
@@ -546,6 +592,7 @@ def apply(
                         for n, old, new in report.price_changes
                     ],
                     "price_changes_applied": apply_price_changes,
+                    "items_deactivated": report.items_deactivated,
                     "allergens_changed": report.allergens_changed,
                 },
             )
