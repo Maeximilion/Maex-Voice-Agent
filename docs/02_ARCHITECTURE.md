@@ -49,7 +49,7 @@ Der wichtigste Schnitt im System.
 
 **Regel:** n8n kommt nur dann in den heißen Pfad, wenn ein Messwert belegt, dass die Latenz hält. Erst messen, dann entscheiden.
 
-### 2a. Küchenbon (T-4.6)
+### 2a. Bon über die Druckbrücke (T-4.6)
 
 Der Server steht im Rechenzentrum, der Bondrucker im Lokal. Weder der Server noch n8n erreichen den Drucker, ohne einen Port im Router des Restaurants zu öffnen. Deshalb **holt** eine kleine Druckbrücke (`printbridge/`, nur Python-Standardbibliothek) im Lokal die Bons ab, statt dass jemand sie hineinschiebt:
 
@@ -65,7 +65,16 @@ Wächter (eigener Faden)       ─► 60 s unabgeholt: Karte rot, Alarm, order.h
 - `handover_state` folgt nur dem Bon mit der neuesten Revision; ein überholter Bon wird nicht mehr ausgeliefert (docs/04 §confirm, Vertrag b und c).
 - Rot wird die Karte sofort, wenn die Küche den Bon nicht hat (Druckfehler oder 60 s unabgeholt), nicht erst nach dem letzten Backoff. Der Bon bleibt fällig und wird gedruckt, sobald Drucker oder Brücke zurück sind; die Karte wird dann wieder normal.
 - Die Brücke führt ein Druckprotokoll (nur Bestell-ids und Revisionen) und druckt einen Bon nie zweimal, auch wenn die Rückmeldung verloren ging.
-- Die Kasse (Variante C, D2) bekommt später einen eigenen Weg über n8n; der Küchenbon hängt nicht daran.
+- Die Kasse (Variante C, D2) bekommt später einen eigenen Weg über n8n; die Brücke hängt nicht daran.
+
+**Entscheidung 26.09.2026 (D2): Bons druckt die Kasse.** Eine Bestellung wird in die Kasse eingespielt, die Kasse bucht sie mit TSE und verteilt Quittung und Küchenbon selbst auf ihre Drucker. Die Druckbrücke bleibt als **unabhängiger Weg** bestehen und druckt auf den **Haupt-Bondrucker an der Kasse** (80 mm, 48 Zeichen), nicht in die Küche:
+
+| Phase | Kasse | Druckbrücke |
+|---|---|---|
+| Bis zur Kassenschnittstelle (Annahme: <Kassenanbieter> arbeitet nicht mit) | Team tippt die Bestellung ein, die Kasse druckt Quittung und Küchenbon | druckt **jede** bestätigte Bestellung mit dem Kopf „NICHT IN KASSE – bitte eingeben" |
+| Mit Kassenschnittstelle (Variante C) | Bestellung kommt automatisch, Kasse druckt | druckt nur, wenn die Kasse die Bestellung nicht rechtzeitig annimmt; Kopf wie oben, Team bucht nach (Regel 5) |
+
+Ein Bon der Brücke ist ein Eingabezettel für das Team, kein Küchenbon und kein Beleg. `handover_state` heißt bis zur Schnittstelle „Zettel liegt an der Kasse", danach „Kasse hat angenommen".
 
 ---
 
@@ -117,7 +126,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 | Internet weg | Telefon klingelt beim Team (Rufumleitung des Anbieters greift bei Nichterreichbarkeit) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |
 | Druckbrücke oder Internet im Lokal weg | Bon wartet in der Outbox; nach 60 s ohne Abholung Karte rot und `order.handover_failed` an n8n | Alarm, Team am Tablet |
-| Kassenanbindung defekt | Bestellung bleibt `confirmed`, Übergabe wird wiederholt, GUI markiert sie rot | Team am Tablet |
+| Kassenanbindung defekt | Bestellung bleibt `confirmed`, Übergabe wird wiederholt, GUI markiert sie rot; die Druckbrücke druckt den Eingabezettel auf den Haupt-Bondrucker (§2a) | Team am Tablet und an der Kasse |
 
 **Grundsatz:** Jeder Ausfall endet beim Menschen, nie beim Kunden im Nichts.
 
@@ -128,7 +137,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 | Datum | Master | Kopie |
 |---|---|---|
 | Umsätze und Bons | <Kassensystem> (TSE) | – |
-| Menü und Preise | Kasse, falls exportierbar; sonst Agent-DB | Agent-DB mit wöchentlichem Abgleich-Check |
+| Menü und Preise | Kasse (`.dbf`-Kopie, docs/14 §Quelle Kasse) | Agent-DB mit wöchentlichem Abgleich-Check, Schlüssel ist die Artikelnummer der Kasse |
 | Öffnungszeiten, Wartezeit, Zonen | Agent-DB | GUI zeigt an |
 | Kundenstamm für die Telefonerkennung | Agent-DB | – |
 | Anrufaufnahmen und Transkripte | EU-Server, verschlüsselter Speicher, mit Löschfrist | nie im Repo, nie auf Maxis PC |

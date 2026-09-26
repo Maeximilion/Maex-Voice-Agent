@@ -468,6 +468,49 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 26.09.2026 - D2, D11, Vorbereitung T-4.11 (Kassen-Import)
+Status: Reine Klaerungs- und Doku-Sitzung, kein Code geaendert. D2 und D11 entschieden, die
+       Kasse (<Kassensystem>) ist Quelle fuer Karte und Preise und einziger Weg fuer Quittung
+       und Kuechenbon (TSE). Die Spalten der Kassendateien sind in docs/14 §Quelle Kasse dem
+       Importformat zugeordnet. Laeuft noch nicht: der Umwandler .dbf -> CSV (T-4.11), die
+       Umstellung der Druckbruecke auf den Eingabezettel (T-4.6), getrennte und senkbare
+       Wartezeiten (T-3.6).
+Artifacts: Branch claude/kassensystem-integration-fragen-3gf8zj, PR #148 (docs, CI gruen auf dem
+       ersten Push; drei Codex-P2 in 09cdef9 behoben und aufgeloest). docs/01 (v1.34.1), 02 §2a
+       §5 §6, 06 §3, 07 (T-3.6, T-4.6, T-4.11), 09, 13, 14 §Quelle Kasse.
+Decisions: D2 · Bons druckt nur die Kasse; die Druckbruecke bleibt unabhaengig und druckt bis zur
+       Kassenschnittstelle jede Bestellung als Eingabezettel "NICHT IN KASSE - bitte eingeben"
+       auf den Haupt-Bondrucker an der Kasse (80 mm), danach nur als Notweg (Regel 5).
+       Planungsannahme: <Kassenanbieter> arbeitet nicht mit, Uebertragung von Hand ·
+       D11 · Telefonpreis VK1_PREIS; VK2 (Abholer) und VK3 (Restaurant) heute gleich, Abweichung
+       von VK2 ist ein Fehler im Bericht · A_PREIS sind ungenutzte Aktionspreise · GROESSE ist die
+       Portionsgroesse (Suppen klein/gross) · DETAILS ungenutzt · Kategorie aus W_BEZEICH
+       (feiner, fuer "Gericht aus"-Alternativen) · Zutaten der Kasse = Extras mit Auf- oder
+       Abschlag -> item_options, freiwillig, ohne Default (passt zu D8) · Kassennummer als
+       eigenes Feld menu_items.pos_code (Codex PR #148), im Export fehlende Artikel werden nach
+       --dry-run per Schalter inaktiv, nie geloescht.
+Gate: G0 unveraendert offen (Anbieter, Budget, Rechtspruefung, C1). Block 3: T-4.11 neu, offen.
+Open: T-4.11 in einer neuen Sitzung. Maxi laedt genau diese sechs Dateien hoch, als Kopie nach
+       Kassenschluss: artikel.DBF, artikel.DBT, zutaten.DBF, zutaten.DBT, warengrp.dbf,
+       zutgrp.DBF (DBF und DBT gehoeren paarweise zusammen, ohne DBT sind die langen Felder wie
+       ZUTATEN leer; Demo-Ordner nicht). Ablage imports/kasse/ (gitignored). Zuerst lesen und
+       an den echten Suppenzeilen klaeren: wie GROESSE ("+-16") und GRPREIS1-6 Groessen und
+       Preise kodieren und wo "klein"/"gross" stehen; wie zutaten und zutgrp zusammenhaengen
+       und welche Artikel welche Zutatengruppe erlauben; ob artikel.DBF eine Sperr-Spalte hat.
+       Dann Umwandler (nur lesend, dbf-Lesen mit neuer Abhaengigkeit oder eigenem Leser -
+       entscheiden und begruenden), Migration pos_code, Schalter fuer fehlende Artikel,
+       Tests mit synthetischen .dbf, nie mit echten Daten im Repo.
+Lessons: Allergen-Buchstaben der Kasse laufen a bis n OHNE Luecke, LMIV und unsere DB
+       ueberspringen I, J, K, Q. l/m/n 1:1 uebernommen waere Sellerie/Senf/Sesam statt
+       Sulfite/Lupinen/Weichtiere, und die DB wuerde nicht widersprechen - nur ueber die
+       Umsetztabelle in docs/14 importieren, unbekannter Buchstabe ist Fehler · Allergene und
+       Zusatzstoffe sind in der Kasse heute nicht gepflegt (ein Testeintrag), also ueberall
+       "keine Auskunft", bis Maxi sie in der Kasse anhakt; ZUTATEN nie als Allergenquelle ·
+       BEZEICH ist auf 40 Zeichen abgeschnitten, der Agent liest das vor -> Warnung · Artikel.dbf
+       enthaelt EK_PREIS und Verkaufszaehler: Betriebsdaten, bleiben in imports/ · Telefon:
+       Fritz!Box 6591 Cable, drei Nummern, Zahl paralleler Gespraeche unbekannt; eine
+       Weiterleitung in der Box belegt zwei Kanaele (C2).
+
 ## Handover 23.09.2026 - T-4.5, confirm fuer Bestellungen
 Status: Abholung laeuft ueber HTTP von der Suche bis zum Abholcode: search_menu, get_item_details,
        draft_order (T-4.5, PR #124) und confirm fuer entity: order (PR #125) liegen auf main.
