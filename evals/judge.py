@@ -11,13 +11,15 @@ ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.core.time import to_local
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
+from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
@@ -42,8 +44,14 @@ EXPECTED_KEYS = frozenset(
         # Tools, die das Modell aufgerufen haben muss: eine Allergiefrage
         # gilt nur mit get_item_details als beantwortet (Codex PR #145, P1).
         "tools",
+        # Termine aus dem letzten check_slot, Ortszeit "YYYY-MM-DDTHH:MM": was der
+        # Code anbietet, steht in keiner Tabelle, ist aber kein Wortlaut, sondern
+        # ein Ergebnis (am Ruhetag nie der Vortag, Befund T-5.2).
+        "alternatives",
     }
 )
+# Ortszeit der angebotenen Alternativen in `expected.alternatives`.
+LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
 # wegfallen (E14, Codex PR #145, P1).
 ITEM_KEYS = frozenset({"number", "quantity", "options", "note"})
@@ -80,12 +88,37 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         raise CaseError(
             f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
         )
+    alternatives = case["expected"].get("alternatives", [])
+    if (
+        not isinstance(alternatives, list)
+        or len(alternatives) > MAX_ALTERNATIVES
+        or not all(_local_minute(a) for a in alternatives)
+    ):
+        # Ein Tippfehler im Fall ist ein kaputter Fall (Exit 2), kein rotes
+        # Verhalten, das als Regression zaehlte (Codex PR #152, P2).
+        raise CaseError(
+            f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
+            "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
+        )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
         raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
+
+
+def _local_minute(entry: Any) -> bool:
+    """Genau das Format, das offered_alternatives liefert: YYYY-MM-DDTHH:MM."""
+    if not isinstance(entry, str):
+        return False
+    try:
+        # Hin und zurueck mit demselben Format: faengt "2026-9-21T19:30" (fehlende
+        # Null) wie "2026-02-30T19:30". Die Zone ist nur fuer die Lint-Regel (DTZ007).
+        parsed = datetime.strptime(entry, LOCAL_MINUTE).replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return parsed.strftime(LOCAL_MINUTE) == entry
 
 
 def _valid_tool(entry: Any) -> bool:
@@ -119,6 +152,29 @@ def missing_tools(
         if not hit:
             missing.append(entry)
     return missing
+
+
+def offered_alternatives(
+    ok_results: list[tuple[str, dict[str, Any]]], tz_name: str
+) -> list[str] | None:
+    """Was das letzte abgelehnte check_slot anbot, als Ortszeit, nächstgelegene zuerst.
+
+    Nur abgelehnte (`available: false`): ein freier Wunsch liefert auch [], und
+    ein spaeteres check_slot auf die gewaehlte Alternative ueberdeckte sonst das
+    Angebot davor (Review PR #152). None heisst: nie abgelehnt - ein Fall mit
+    `alternatives: []` wird dann nicht gruen, nur weil der Wunsch frei war.
+    """
+    refused = [
+        data
+        for tool, data in ok_results
+        if tool == "check_slot" and data.get("available") is False
+    ]
+    if not refused:
+        return None
+    return [
+        to_local(datetime.fromisoformat(a), tz_name).strftime(LOCAL_MINUTE)
+        for a in refused[-1].get("alternatives", [])
+    ]
 
 
 @dataclass

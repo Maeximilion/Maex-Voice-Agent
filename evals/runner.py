@@ -42,7 +42,14 @@ from api.agent.llm import LLMClient
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
-from evals.judge import CaseError, judge, missing_tools, observe, validate_case
+from evals.judge import (
+    CaseError,
+    judge,
+    missing_tools,
+    observe,
+    offered_alternatives,
+    validate_case,
+)
 from evals.recorder import RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
 from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
@@ -186,6 +193,15 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
         diffs = judge(expected, seen) + repeated
+        if "alternatives" in expected:
+            # Im try: ein unlesbares Tool-Ergebnis ist ein roter Fall, kein
+            # Abbruch des ganzen Laufs (Review PR #152).
+            offered = offered_alternatives(llm.recording.ok_results, TIMEZONE)
+            if offered != expected["alternatives"]:
+                diffs.append(
+                    f"alternatives: erwartet {expected['alternatives']!r}, "
+                    f"angeboten {offered!r}"
+                )
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
