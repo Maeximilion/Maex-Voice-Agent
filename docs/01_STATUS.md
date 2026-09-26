@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.10
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.11
 
 ---
 
@@ -131,6 +131,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2). Maxi asked whether he can be the officer himself: likely not, the managing director decides purposes and means, would monitor himself (Art. 39) and report to himself (Art. 38 Abs. 3); Art. 38 Abs. 6 forbids a conflict of interest. Recommendation: external officer. Case law on this is not in the norm corpus | Maxi | before `shadow` with recording |
 | D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
 | D11 | ~~Register fields for the import~~ **decided 26.09.2026 (Maxi):** phone price is `VK1_PREIS` (regular; `VK2` pickup and `VK3` restaurant are optional and today equal) · `A_PREIS*` are promotion prices, not used · `GROESSE` is the dish size (soups small and large, different prices) · `DETAILS` (long description) is not used · allergen legend is the EU list, but the register letters run a to n **without gaps**, so from i on they differ from LMIV letters (i Sellerie = L … n Weichtiere = R); mapping table in docs/14. Allergens and additives are not maintained in the register yet, ingredients are | Maxi | done |
+| D12 | Last reservable start before closing (T-1.14): closing at 22:00 means 21:30 is not bookable (Maxi, 26.09.2026). How many minutes before closing, the same for lunch and evening, and does it also cut pickup orders? Value goes into the DB (rule 1), not the code. Also: which service a wish between two services (15:00) or after the last one (23:00) belongs to; proposal in docs/04 §check_slot | Maxi | before T-1.14 |
 
 ---
 
@@ -318,9 +319,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.34.10 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
-- **v1.34.9 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
-- **v1.34.8 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.11 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
+- **v1.34.10 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
+- **v1.34.9 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
+- **v1.34.8 · 26.09.2026:** T-1.14 und D12 angelegt: Alternativen im selben Service, kein Beginn kurz vor Ladenschluss (Anforderung, nicht gebaut)
 - **v1.34.7 · 26.09.2026:** Bug: check_slot bot Uhrzeiten vom Vortag an; Alternativen jetzt nur unter sechs Stunden Abstand, Ruhetag-Satz, Sperre ueber Mitternacht (#eval reservierung_0027, PR #152)
 - **v1.34.6 · 26.09.2026:** PR #151: sichere Grenze ein KI-Anruf gleichzeitig, Weiterleitung braucht einen Kanal
 - **v1.34.5 · 26.09.2026:** C1: Anschluss hat 4 Sprachkanaele, Umleitung ueber die Fritz!Box belegt 2

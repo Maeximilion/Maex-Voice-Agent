@@ -51,6 +51,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.11 | #38 | **Anbieter-Adapter** `telephony/adapters/<anbieter>.py` gegen aufgezeichnete Webhooks | 11 §telephony, 12 S7 | T-1.13, D1 entschieden | blockiert |
 | T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | fertig 17.09.2026: `events/` mit `types.py`, `outbox.py` (enqueue in der Transaktion des Fachvorgangs) und `dispatcher.py`; ein Ereignis je Transaktion mit `FOR UPDATE SKIP LOCKED`, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` plus Alarm als ERROR-Log; eigener Container-Dienst; 12 Tests mit Fake-n8n |
 | T-1.13 | #33 | `telephony/port.py` Interface + `adapters/fake.py`, der Anrufe aus Dateien abspielt | 11 §telephony | T-1.10 | offen |
+| T-1.14 | - | `check_slot`-Alternativen nach Service-Fenster statt nur nach Abstand (Anforderung Maxi 26.09.2026, docs/04 §check_slot „Geplant“): Abendwunsch nur Abend, Mittagswunsch nur Mittag; kein Reservierungsbeginn kurz vor Ladenschluss (Abstand aus der DB, D12); Wunsch vor der ersten Öffnung (morgens) darf auf einen späteren Service desselben Tages ausweichen, dann mit Tageszeit im Satz („abends um sieben“); Wunsch für einen anderen Tag braucht keine Sonderlogik | 04 | T-1.4, D12 | offen, bewusst nicht gebaut (Maxi 26.09.2026) |
 
 ---
 
