@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
@@ -719,7 +720,104 @@ def test_skript_verliert_keine_aliase_wenn_die_nebendatei_nicht_schreibbar_ist(
     (out / ALIASES_FILE).write_text(original, encoding="utf-8")
     (out / "item_aliases.verworfen.csv").mkdir()  # nicht schreibbar
 
-    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 3
 
     assert (out / ALIASES_FILE).read_text(encoding="utf-8") == original
     assert "Aliase" in capsys.readouterr().err
+
+
+def test_skript_gesperrte_zieldatei_tauscht_nichts(tmp_path, capsys, monkeypatch):
+    """Review T-4.11: ist eine der drei Dateien gesperrt (Excel), wird keine
+    getauscht - nie neue Karte neben alten Optionen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_open = Path.open
+
+    def locked(self, mode="r", *args, **kw):
+        if self.name == OPTIONS_FILE and "a" in mode:
+            raise PermissionError(13, "Datei ist geöffnet")
+        return real_open(self, mode, *args, **kw)
+
+    monkeypatch.setattr(Path, "open", locked)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "item_options.csv" in capsys.readouterr().err
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        assert (out / name).read_text(encoding="utf-8") == "alt\n"
+
+
+def test_skript_aliasfehler_ist_exit_3_nicht_nichts_geschrieben(tmp_path, capsys):
+    """Review T-4.11: CSV sind geschrieben, nur die Aliase nicht: eigener Code 3."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;alias\n65;Wasser\n", encoding="utf-8")
+    (out / "item_aliases.verworfen.csv").mkdir()
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 3
+
+    err = capsys.readouterr().err
+    assert "geschrieben" in err and "nichts geschrieben" not in err
+    assert (out / MENU_FILE).is_file()
+
+
+def test_skript_nennt_die_datei_die_nicht_utf8_ist(tmp_path, capsys):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;alias\n1;Miso\n", encoding="utf-8")
+    (out / "item_aliases.verworfen.csv").write_bytes(
+        "number;alias\n65;Wasser groß\n".encode("cp1252")
+    )
+
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+
+    assert "item_aliases.verworfen.csv ist nicht UTF-8" in capsys.readouterr().out
+
+
+def test_skript_holt_keine_ersetzten_aliase_zurueck(tmp_path):
+    """Review T-4.11: hat der Chat die Aliase eines fehlenden Gerichts neu
+    geschrieben, gelten nur die neuen, wenn es zurückkommt."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso\n2;Ente kross\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt -> beiseite
+    with (out / ALIASES_FILE).open("a", encoding="utf-8") as handle:
+        handle.write("2;knusprige Ente\n")  # der Chat schreibt 2 neu
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+
+    aliases = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "2;knusprige Ente" in aliases and "Ente kross" not in aliases
+
+
+def test_cli_verweigert_halbe_karte_und_schalter_kommt_an(cli, ordner, session, capsys):
+    """Review T-4.11: die Kommandozeile reicht --allow-large-deactivation durch
+    und nennt den Schalter; die Fachschicht kennt ihn nicht."""
+    assert cli(ordner) == 0  # 23, 47 aktiv, 12 inaktiv
+    (ordner / MENU_FILE).write_text(
+        files()[MENU_FILE].replace("23;", "99;").replace("47;", "98;"), encoding="utf-8"
+    )
+    for name in (OPTIONS_FILE, ALLERGENS_FILE, ALIASES_FILE):
+        (ordner / name).unlink()
+    capsys.readouterr()
+
+    assert cli(ordner, "--deactivate-missing") == 1
+    assert "--allow-large-deactivation" in capsys.readouterr().err
+    assert cli(ordner, "--deactivate-missing", "--allow-large-deactivation") == 0
+    session.expire_all()
+    assert (
+        session.scalar(select(MenuItem).where(MenuItem.number == "47")).active is False
+    )

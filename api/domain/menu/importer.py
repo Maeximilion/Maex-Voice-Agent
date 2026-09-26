@@ -74,6 +74,11 @@ _CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
 MAX_DEACTIVATE_SHARE = 0.5
 
 
+class MassDeactivationError(ValueError):
+    """Mehr als MAX_DEACTIVATE_SHARE der aktiven Karte würde deaktiviert. Die
+    Oberfläche (CLI, später GUI) sagt, wie man es bewusst erlaubt."""
+
+
 def is_card_number(number: str) -> bool:
     """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen."""
     return _CARD_NUMBER.fullmatch(number) is not None
@@ -544,10 +549,9 @@ def apply(
             and not allow_large_deactivation
         ):
             session.rollback()
-            raise ValueError(
+            raise MassDeactivationError(
                 f"{len(active_missing)} von {active_total} aktiven Gerichten würden "
-                "deaktiviert, mehr als die Hälfte der Karte. Export prüfen; ist es "
-                "gewollt, mit --allow-large-deactivation wiederholen."
+                "deaktiviert, mehr als die Hälfte der Karte. Export prüfen."
             )
         for item in missing:
             if item.active:

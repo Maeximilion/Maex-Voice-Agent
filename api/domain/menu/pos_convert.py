@@ -91,7 +91,7 @@ REQUIRED_COLUMNS = {
     "artikel": ("ARTNR", "BEZEICH", "WRG", "VK1_PREIS", "GROESSE"),
     "warengrp": ("W_WRG", "W_BEZEICH"),
     "zutaten": ("ZBEZEICH", "WRGSHOWALL", "WRGSHOW", "ZPREIGRP3"),
-    "zutgrp": ("ZGRP", "ZPREIS", "ZGRP3"),
+    "zutgrp": ("ZGRP3", "ZPREIS"),
 }
 _MONEY = re.compile(r"^(-?)(\d*)(?:[.,](\d{1,2}))?$")
 _SORT_PREFIX = re.compile(r"^[A-Z]\.")
@@ -399,7 +399,7 @@ def _option(
 
 
 def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
-    levels = _unique(zutgrp, "zutgrp", lambda r: r["ZGRP3"] or r["ZGRP"], "ZPREIS")
+    levels = _unique(zutgrp, "zutgrp", lambda r: r["ZGRP3"], "ZPREIS")
     extras: list[_Extra] = []
     for row in zutaten.live():
         where = f"Zutat „{row['ZBEZEICH']}“"
@@ -521,15 +521,19 @@ class AliasSplit:
     dropped_numbers: list[str]
 
 
-def split_aliases(texts: Iterable[str], numbers: Iterable[str]) -> AliasSplit | None:
+def split_aliases(
+    source: str | None, side: str | None, numbers: Iterable[str]
+) -> AliasSplit | None:
     """Aliase aus dem Chat gegen die Nummern der Kasse abgleichen.
 
     Eine Alias-Zeile zu einer Nummer, die nicht in der neuen `menu_items.csv`
     steht (Getränk, gesperrt, Nummer unlesbar, Fehler im Bericht), würde den
     ganzen Import blockieren; löschen hieße, gewachsenes Wissen zu verlieren.
-    `texts` sind die Alias-Datei und die Datei der abgetrennten Zeilen: beide
-    werden bei jedem Lauf neu aufgeteilt, so kommen Aliase eines Gerichts, das
-    nur einen Lauf lang fehlte, von selbst zurück (Review T-4.11).
+    `source` ist die Alias-Datei, `side` die Datei der abgetrennten Zeilen:
+    beide werden bei jedem Lauf neu aufgeteilt, so kommen Aliase eines
+    Gerichts, das nur einen Lauf lang fehlte, von selbst zurück (Review T-4.11).
+    Hat der Chat für eine Nummer inzwischen eigene Zeilen in `source`, gelten
+    nur diese; die alten aus `side` fallen weg, statt zurückzukommen.
 
     Zeilen bleiben Listen, nicht Dicts: ein Feld zu viel ("1;Miso; warm")
     bleibt, wie es ist. None: eine Datei hat keine Spalte `number` oder andere
@@ -537,21 +541,31 @@ def split_aliases(texts: Iterable[str], numbers: Iterable[str]) -> AliasSplit | 
     """
     known = {canonical_card(n) for n in numbers}
     header: list[str] | None = None
-    rows: list[list[str]] = []
-    for text in texts:
+    parts: list[list[list[str]]] = []
+    for text in (source, side):
+        if text is None:
+            parts.append([])
+            continue
         reader = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
         head = [h.strip() for h in next(reader, [])]
-        if not head:
-            continue
-        if "number" not in head or (header is not None and head != header):
+        if head and ("number" not in head or (header is not None and head != header)):
             return None
-        header = head
-        for row in reader:
-            if any(cell.strip() for cell in row) and row not in rows:
-                rows.append(row)
+        header = header or head or None
+        parts.append([row for row in reader if any(cell.strip() for cell in row)])
     if header is None:
         return None
     index = header.index("number")
+
+    def key(row: list[str]) -> str:
+        return canonical_card(row[index].strip()) if index < len(row) else ""
+
+    in_source = {key(row) for row in parts[0]}
+    rows: list[list[str]] = []
+    for row in parts[0] + [
+        r for r in parts[1] if key(r) not in in_source or key(r) not in known
+    ]:
+        if row not in rows:
+            rows.append(row)
     kept: list[list[str]] = []
     dropped: list[list[str]] = []
     for row in rows:

@@ -13,18 +13,20 @@ Ohne ein einziges Gericht schreibt der Umwandler nichts (Exit 2). Danach wie imm
     python -m scripts.import_menu imports --dry-run
 
 Exit-Code: 0 geschrieben, 1 geschrieben, aber Artikel mit Fehlern im Bericht
-(nicht übernommen), 2 Ordner, Datei oder Format nicht lesbar - nichts geschrieben.
+(nicht übernommen), 2 Ordner, Datei oder Format nicht lesbar oder Ziel nicht
+schreibbar - Import-Dateien nicht (vollständig) geschrieben, nicht importieren,
+3 Import-Dateien geschrieben, Aliase nicht abgeglichen.
 Die Logik steckt in api/domain/menu/pos_convert.py.
 """
 
 import argparse
-import os
 import sys
 from pathlib import Path
 
 from api.domain.menu.importer import ALIASES_FILE
 from api.domain.menu.pos_convert import convert, split_aliases
 from api.domain.menu.pos_dbf import DbfError, Table, read_table
+from scripts.call_log import _replace
 
 # Warengruppen, die am Telefon nicht bestellt werden (Getränke, Menüs, Pfand,
 # Interna), Maxi 26.09.2026. Mit --skip-groups überschreibbar.
@@ -58,29 +60,37 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
-def _write_atomic(path: Path, text: str) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    try:
-        tmp.write_text(text, encoding="utf-8")
-        os.replace(tmp, path)
-    except OSError:
-        tmp.unlink(missing_ok=True)
-        raise
+def _write_outputs(out: Path, files: dict[str, str]) -> None:
+    """Die drei Import-Dateien schreiben: erst prüfen, ob eine gesperrt ist
+    (unter Windows z. B. in Excel offen), dann jede über eine Kopie tauschen.
+    So liegt nie die neue Karte neben alten Optionen (Review T-4.11)."""
+    for name in files:
+        path = out / name
+        if path.exists():
+            try:
+                with path.open("a", encoding="utf-8"):
+                    pass
+            except OSError as exc:
+                raise OSError(exc.errno, exc.strerror, str(path)) from exc
+    for name, text in files.items():
+        _replace(out / name, text)
 
 
 def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
     """Alias-Datei und abgetrennte Zeilen gegen die neue Karte aufteilen."""
     source, side = out / ALIASES_FILE, out / ALIASES_DROPPED
-    try:
-        texts = [
-            p.read_text(encoding="utf-8-sig") for p in (source, side) if p.is_file()
-        ]
-    except UnicodeDecodeError:
-        print(f"Warnung: {ALIASES_FILE} ist nicht UTF-8, Aliase unverändert")
+    texts: dict[Path, str | None] = {}
+    for path in (source, side):
+        try:
+            texts[path] = (
+                path.read_text(encoding="utf-8-sig") if path.is_file() else None
+            )
+        except UnicodeDecodeError:
+            print(f"Warnung: {path.name} ist nicht UTF-8, Aliase unverändert")
+            return
+    if texts[source] is None and texts[side] is None:
         return
-    if not texts:
-        return
-    split = split_aliases(texts, numbers)
+    split = split_aliases(texts[source], texts[side], numbers)
     if split is None:
         print(
             f"Warnung: {ALIASES_FILE} ohne Spalte number oder mit anderen Spalten "
@@ -91,8 +101,8 @@ def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
     # ein Schreiben, ist keine Alias-Zeile verloren (Codex PR #149). Steht eine
     # Zeile danach in beiden Dateien, fasst der nächste Lauf sie zusammen.
     if split.dropped is not None:
-        _write_atomic(side, split.dropped)
-    _write_atomic(source, split.kept)
+        _replace(side, split.dropped)
+    _replace(source, split.kept)
     if split.dropped is None:
         # Alle Zeilen sind zurück in der Alias-Datei; die Nebendatei ist leer.
         side.unlink(missing_ok=True)
@@ -140,19 +150,29 @@ def main(argv: list[str] | None = None) -> int:
         print(result.as_text())
         print("Fehler: kein Gericht übernommen - nichts geschrieben.", file=sys.stderr)
         return 2
-    args.out.mkdir(parents=True, exist_ok=True)
-    for name, text in result.csv_files().items():
-        (args.out / name).write_text(text, encoding="utf-8")
+    try:
+        args.out.mkdir(parents=True, exist_ok=True)
+        _write_outputs(args.out, result.csv_files())
+    except OSError as exc:
+        name = Path(exc.filename).name if exc.filename else args.out
+        print(
+            f"Fehler: {name} nicht schreibbar ({exc.strerror or exc}), Datei "
+            "offen? Import-Dateien nicht vollständig geschrieben - nicht importieren, "
+            "erneut umwandeln.",
+            file=sys.stderr,
+        )
+        return 2
     print(result.as_text())
     try:
         _reconcile_aliases(args.out, [row["number"] for row in result.menu])
     except OSError as exc:
         print(
-            f"Fehler: Aliase nicht abgeglichen ({exc.strerror or exc}), "
-            f"{ALIASES_FILE} unverändert - vor dem Import prüfen.",
+            f"Fehler: Import-Dateien geschrieben, Aliase aber nicht vollständig "
+            f"abgeglichen ({exc.strerror or exc}). {ALIASES_FILE} und "
+            f"{ALIASES_DROPPED} vor dem Import prüfen.",
             file=sys.stderr,
         )
-        return 2
+        return 3
     print(
         f"Geschrieben nach {args.out}. Weiter: python -m scripts.import_menu "
         f"{args.out} --dry-run"
