@@ -130,6 +130,9 @@ def _memo(memo: bytes, pointer: bytes, encoding: str) -> str:
     if len(memo) < 32:
         raise DbfError("Memo-Datei zu kurz")
     # Blockgröße steht bei dBase IV in Byte 20-21; dBase III kennt nur 512.
+    # Little-Endian, an den echten Kassendateien geprüft: Byte 20-21 = 00 04
+    # (1024), Memo-Länge 56 00 00 00 (86). Big-Endian ergäbe 4 und 1,4 Mrd.
+    # (Codex PR #149 schlug Big-Endian vor, widerlegt).
     block_size = struct.unpack("<H", memo[20:22])[0] or 512
     start = int(text) * block_size
     if start >= len(memo):
