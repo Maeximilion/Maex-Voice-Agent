@@ -9,24 +9,28 @@ zutgrp.DBF (Groß- und Kleinschreibung egal). Schreibt menu_items.csv,
 item_options.csv und item_allergens.csv in den Zielordner. item_aliases.csv aus
 dem Chat bleibt; Zeilen zu Nummern, die die Kasse nicht liefert, liegen in
 item_aliases.verworfen.csv und kommen zurück, sobald das Gericht wieder da ist.
-Ohne ein einziges Gericht schreibt der Umwandler nichts (Exit 2). Danach wie immer:
+
+Der Import liest den Ordner als einen Satz Dateien. Deshalb alles oder nichts:
+erst wird alles gelesen und berechnet, dann jede Datei als Kopie daneben
+geschrieben, erst danach werden alle getauscht. Ohne ein einziges Gericht
+schreibt der Umwandler nichts. Danach wie immer:
     python -m scripts.import_menu imports --dry-run
 
 Exit-Code: 0 geschrieben, 1 geschrieben, aber Artikel mit Fehlern im Bericht
-(nicht übernommen), 2 Ordner, Datei oder Format nicht lesbar oder Ziel nicht
-schreibbar - Import-Dateien nicht (vollständig) geschrieben, nicht importieren,
-3 Import-Dateien geschrieben, Aliase nicht abgeglichen.
-Die Logik steckt in api/domain/menu/pos_convert.py.
+(nicht übernommen), 2 nichts geschrieben (Ordner, Datei oder Format nicht
+lesbar, Ziel gesperrt, z. B. in Excel offen). Die Logik steckt in
+api/domain/menu/pos_convert.py.
 """
 
 import argparse
+import os
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from api.domain.menu.importer import ALIASES_FILE
 from api.domain.menu.pos_convert import convert, split_aliases
 from api.domain.menu.pos_dbf import DbfError, Table, read_table
-from scripts.call_log import _replace
 
 # Warengruppen, die am Telefon nicht bestellt werden (Getränke, Menüs, Pfand,
 # Interna), Maxi 26.09.2026. Mit --skip-groups überschreibbar.
@@ -60,24 +64,19 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
-def _write_outputs(out: Path, files: dict[str, str]) -> None:
-    """Die drei Import-Dateien schreiben: erst prüfen, ob eine gesperrt ist
-    (unter Windows z. B. in Excel offen), dann jede über eine Kopie tauschen.
-    So liegt nie die neue Karte neben alten Optionen (Review T-4.11)."""
-    for name in files:
-        path = out / name
-        if path.exists():
-            try:
-                with path.open("a", encoding="utf-8"):
-                    pass
-            except OSError as exc:
-                raise OSError(exc.errno, exc.strerror, str(path)) from exc
-    for name, text in files.items():
-        _replace(out / name, text)
+@dataclass
+class Output:
+    """Was geschrieben und was entfernt wird, dazu Hinweise für den Bericht."""
+
+    write: dict[str, str] = field(default_factory=dict)
+    remove: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
-def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
-    """Alias-Datei und abgetrennte Zeilen gegen die neue Karte aufteilen."""
+def plan_aliases(out: Path, numbers: list[str], output: Output) -> None:
+    """Alias-Datei und abgetrennte Zeilen gegen die neue Karte aufteilen, nur
+    lesen. Ein Lesefehler (gesperrt) geht als OSError an den Aufrufer, bevor
+    irgendeine Datei geschrieben ist."""
     source, side = out / ALIASES_FILE, out / ALIASES_DROPPED
     texts: dict[Path, str | None] = {}
     for path in (source, side):
@@ -86,32 +85,65 @@ def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
                 path.read_text(encoding="utf-8-sig") if path.is_file() else None
             )
         except UnicodeDecodeError:
-            print(f"Warnung: {path.name} ist nicht UTF-8, Aliase unverändert")
+            output.notes.append(
+                f"Warnung: {path.name} ist nicht UTF-8, Aliase unverändert"
+            )
             return
     if texts[source] is None and texts[side] is None:
         return
     split = split_aliases(texts[source], texts[side], numbers)
     if split is None:
-        print(
+        output.notes.append(
             f"Warnung: {ALIASES_FILE} ohne Spalte number oder mit anderen Spalten "
             f"als {ALIASES_DROPPED}, Aliase unverändert"
         )
         return
-    # Erst sichern, dann umschreiben, jede Datei über eine Temp-Datei: scheitert
-    # ein Schreiben, ist keine Alias-Zeile verloren (Codex PR #149). Steht eine
-    # Zeile danach in beiden Dateien, fasst der nächste Lauf sie zusammen.
-    if split.dropped is not None:
-        _replace(side, split.dropped)
-    _replace(source, split.kept)
+    output.write[ALIASES_FILE] = split.kept
     if split.dropped is None:
         # Alle Zeilen sind zurück in der Alias-Datei; die Nebendatei ist leer.
-        side.unlink(missing_ok=True)
+        if side.exists():
+            output.remove.append(ALIASES_DROPPED)
         return
-    print(
+    output.write[ALIASES_DROPPED] = split.dropped
+    output.notes.append(
         "Warnung: Aliase zu Nummern, die die Kasse nicht liefert, liegen in "
         f"{ALIASES_DROPPED} und kommen zurück, sobald das Gericht wieder "
         f"übernommen wird: {', '.join(split.dropped_numbers)}"
     )
+
+
+def publish(out: Path, output: Output) -> None:
+    """Alles oder nichts, so weit das Dateisystem es zulässt (Codex PR #149):
+    1. jede vorhandene Zieldatei probeweise öffnen - gesperrt (Excel) fällt auf,
+       bevor etwas getauscht ist;
+    2. jede Datei als Kopie daneben schreiben - Platte voll fällt auf, bevor
+       etwas getauscht ist;
+    3. erst dann alle tauschen und die leere Nebendatei entfernen.
+    Scheitert Schritt 1 oder 2, werden die Kopien entfernt und der Ordner bleibt
+    wie er war."""
+    targets = [out / name for name in [*output.write, *output.remove]]
+    for path in targets:
+        if path.exists():
+            try:
+                with path.open("a", encoding="utf-8"):
+                    pass
+            except OSError as exc:
+                raise OSError(exc.errno, exc.strerror, str(path)) from exc
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for name, text in output.write.items():
+            path = out / name
+            tmp = path.with_name(path.name + ".tmp")
+            staged.append((tmp, path))
+            tmp.write_text(text, encoding="utf-8")
+    except BaseException:
+        for tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        raise
+    for tmp, path in staged:
+        os.replace(tmp, path)
+    for name in output.remove:
+        (out / name).unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,29 +182,23 @@ def main(argv: list[str] | None = None) -> int:
         print(result.as_text())
         print("Fehler: kein Gericht übernommen - nichts geschrieben.", file=sys.stderr)
         return 2
+
+    output = Output(write=result.csv_files())
     try:
         args.out.mkdir(parents=True, exist_ok=True)
-        _write_outputs(args.out, result.csv_files())
+        plan_aliases(args.out, [row["number"] for row in result.menu], output)
+        publish(args.out, output)
     except OSError as exc:
         name = Path(exc.filename).name if exc.filename else args.out
         print(
-            f"Fehler: {name} nicht schreibbar ({exc.strerror or exc}), Datei "
-            "offen? Import-Dateien nicht vollständig geschrieben - nicht importieren, "
-            "erneut umwandeln.",
+            f"Fehler: {name} nicht les- oder schreibbar ({exc.strerror or exc}), "
+            "Datei offen? Nichts geschrieben, der Ordner ist auf dem alten Stand.",
             file=sys.stderr,
         )
         return 2
     print(result.as_text())
-    try:
-        _reconcile_aliases(args.out, [row["number"] for row in result.menu])
-    except OSError as exc:
-        print(
-            f"Fehler: Import-Dateien geschrieben, Aliase aber nicht vollständig "
-            f"abgeglichen ({exc.strerror or exc}). {ALIASES_FILE} und "
-            f"{ALIASES_DROPPED} vor dem Import prüfen.",
-            file=sys.stderr,
-        )
-        return 3
+    for note in output.notes:
+        print(note)
     print(
         f"Geschrieben nach {args.out}. Weiter: python -m scripts.import_menu "
         f"{args.out} --dry-run"

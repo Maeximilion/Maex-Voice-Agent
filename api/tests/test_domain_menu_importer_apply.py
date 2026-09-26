@@ -720,10 +720,11 @@ def test_skript_verliert_keine_aliase_wenn_die_nebendatei_nicht_schreibbar_ist(
     (out / ALIASES_FILE).write_text(original, encoding="utf-8")
     (out / "item_aliases.verworfen.csv").mkdir()  # nicht schreibbar
 
-    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 3
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
 
     assert (out / ALIASES_FILE).read_text(encoding="utf-8") == original
-    assert "Aliase" in capsys.readouterr().err
+    assert not (out / MENU_FILE).exists()  # alles oder nichts
+    assert "item_aliases.verworfen.csv" in capsys.readouterr().err
 
 
 def test_skript_gesperrte_zieldatei_tauscht_nichts(tmp_path, capsys, monkeypatch):
@@ -751,20 +752,29 @@ def test_skript_gesperrte_zieldatei_tauscht_nichts(tmp_path, capsys, monkeypatch
         assert (out / name).read_text(encoding="utf-8") == "alt\n"
 
 
-def test_skript_aliasfehler_ist_exit_3_nicht_nichts_geschrieben(tmp_path, capsys):
-    """Review T-4.11: CSV sind geschrieben, nur die Aliase nicht: eigener Code 3."""
+def test_skript_aliasfehler_tauscht_keine_datei(tmp_path, capsys, monkeypatch):
+    """Codex PR #149: ist die Alias-Datei nicht lesbar, bleibt der ganze Ordner
+    auf dem alten Stand - der Import liest ihn als ein Satz Dateien."""
     kasse, out = tmp_path / "kasse", tmp_path / "out"
     kasse.mkdir()
     out.mkdir()
     _kasse(kasse, [SUPPE])
+    (out / MENU_FILE).write_text("alt\n", encoding="utf-8")
     (out / ALIASES_FILE).write_text("number;alias\n65;Wasser\n", encoding="utf-8")
-    (out / "item_aliases.verworfen.csv").mkdir()
+    real_read = Path.read_text
 
-    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 3
+    def locked(self, *args, **kw):
+        if self.name == ALIASES_FILE:
+            raise PermissionError(13, "gesperrt", str(self))
+        return real_read(self, *args, **kw)
 
-    err = capsys.readouterr().err
-    assert "geschrieben" in err and "nichts geschrieben" not in err
-    assert (out / MENU_FILE).is_file()
+    monkeypatch.setattr(Path, "read_text", locked)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "item_aliases.csv" in capsys.readouterr().err
+    assert (out / MENU_FILE).read_text(encoding="utf-8") == "alt\n"
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE, MENU_FILE]
 
 
 def test_skript_nennt_die_datei_die_nicht_utf8_ist(tmp_path, capsys):
@@ -821,3 +831,18 @@ def test_cli_verweigert_halbe_karte_und_schalter_kommt_an(cli, ordner, session, 
     assert (
         session.scalar(select(MenuItem).where(MenuItem.number == "47")).active is False
     )
+
+
+def test_pos_code_doppelt_mit_einem_gericht_im_bestand(session, tenant_id):
+    """Codex PR #149: ein Gericht, das nicht in der Datei steht, bleibt - seine
+    Kassennummer darf nicht an ein zweites Gericht gehen."""
+    run(session, tenant_id, files=nur(MIT_KASSE))  # 47 hat pos_code 47B
+    nur_24 = nur("number;pos_code;name;category;price_eur\n24;47B;Neu;Haupt;9,00\n")
+
+    with pytest.raises(ValueError, match="47B"):
+        run(session, tenant_id, files=nur_24)
+    assert item(session, tenant_id, "24") is None
+
+    # Dasselbe Gericht erneut mit seiner Nummer ist kein Konflikt.
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").pos_code == "47B"

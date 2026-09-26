@@ -534,6 +534,22 @@ def apply(
     in_plan = {canonical_card(n) for n in plan.items}
     missing = [item for key, item in existing.items() if key not in in_plan]
     report.items_not_in_file = sorted(item.number for item in missing)
+    # Gerichte außerhalb der Datei bleiben stehen, auch deaktiviert: ihre
+    # Kassennummer darf kein zweites Gericht bekommen, sonst ist die
+    # Kassenübergabe mehrdeutig (Codex PR #149).
+    wanted_codes = {r.pos_code: n for n, r in plan.items.items() if r.pos_code}
+    taken = sorted(
+        f"{item.pos_code} ({item.number}, in der Datei bei {wanted_codes[item.pos_code]})"
+        for item in missing
+        if item.pos_code in wanted_codes
+    )
+    if taken:
+        session.rollback()
+        raise ValueError(
+            "pos_code gehört schon einem Gericht, das nicht in der Datei steht: "
+            + "; ".join(taken)
+            + ". Kassennummer dort erst leeren oder das Gericht mit in die Datei."
+        )
     if deactivate_missing:
         active_missing = [item for item in missing if item.active]
         active_total = sum(item.active for item in existing.values())
