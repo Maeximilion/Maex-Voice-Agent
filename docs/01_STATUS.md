@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.4
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.6
 
 ---
 
@@ -108,7 +108,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: handsets
-  - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Number of simultaneous calls unknown (contract or the provider's customer portal). Why it matters for C2: a forward done by the Fritz!Box takes two channels (in and out), so with two channels one forwarded call fills the line; the AI platform itself takes calls in parallel, the line is the bottleneck, not the number of handsets
+  - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Business cable tariff with **4 voice channels** and up to 10 numbers (provider's service description, table "Telefonleitungen/Sprachkanäle", checked 26.09.2026). A forward done by the Fritz!Box takes two channels (in and out), and a transfer back to the team one more. Two forwarded calls fill all four channels and leave none for `transfer_to_team` (docs/02 §5, docs/05, rule 5), so the **safe limit is one AI call at a time** (2 + 1 for its transfer, one channel left for a ringing call); a second AI call would be possible only by giving up the transfer. The line is the bottleneck, not the AI platform or the handsets. Open for C2: does the provider offer forwarding in its network (no local channels), or does the main number move to the platform or a SIP provider
   - **Register data (26.09.2026):** <POS System> keeps articles as `.dbf` (dBase); column mapping and open questions in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. Next: the six files `artikel.DBF`, `artikel.DBT`, `zutaten.DBF`, `zutaten.DBT`, `warengrp.dbf`, `zutgrp.DBF` (not the demo folder) into `imports/kasse/` in the T-4.11 session; soups and starters get separate groups in the register; Maxi ticks allergens per article in the register (today none maintained, so the agent gives no allergen information at all)
 - **C2** Research voice platform, evaluate, PoC on test number
 
@@ -311,6 +311,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.6 · 26.09.2026:** PR #151: sichere Grenze ein KI-Anruf gleichzeitig, Weiterleitung braucht einen Kanal
+- **v1.34.5 · 26.09.2026:** C1: Anschluss hat 4 Sprachkanaele, Umleitung ueber die Fritz!Box belegt 2
 - **v1.34.4 · 26.09.2026:** Offener Punkt aus PR #147
 - **v1.34.3 · 26.09.2026:** PR #147 Review: fuehrendes und nur am Satzanfang, Fuellwoerter auch fuer die Namenssuche
 - **v1.34.2 · 26.09.2026:** Nummernsatz: fuehrendes und, wuerde/hallo/dazu als Fuellwort (Befund T-5.2)
