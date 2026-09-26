@@ -30,7 +30,7 @@ from api.domain.menu.importer import (
     is_card_number,
 )
 from api.domain.menu.numberwords import canonical_card
-from api.domain.menu.pos_dbf import Table
+from api.domain.menu.pos_dbf import DbfError, Table
 
 # Namen aus der Maske der Kasse ("Größen Bezeichnung ändern"), Maxi 26.09.2026.
 # 5 bis 7 haben dort keinen Namen: solche Größen werden nicht übernommen.
@@ -82,6 +82,16 @@ _CARRIERS = (
     "mandel",
     "tintenfisch",
 )
+# Spalten, die der Umwandler direkt liest. Fehlt eine (andere Kassenversion,
+# falsche Datei), ist das ein Formatfehler statt eines KeyError (Codex PR #149).
+# Optionale Spalten (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
+# ZGRPREIS*) liest er mit Default.
+REQUIRED_COLUMNS = {
+    "artikel": ("ARTNR", "BEZEICH", "WRG", "VK1_PREIS", "GROESSE"),
+    "warengrp": ("W_WRG", "W_BEZEICH"),
+    "zutaten": ("ZBEZEICH", "WRGSHOWALL", "WRGSHOW", "ZPREIGRP3"),
+    "zutgrp": ("ZGRP", "ZPREIS", "ZGRP3"),
+}
 _MONEY = re.compile(r"^(-?)(\d*)(?:[.,](\d{1,2}))?$")
 _SORT_PREFIX = re.compile(r"^[A-Z]\.")
 
@@ -199,6 +209,17 @@ def convert(
     allergens_confirmed_by: str | None = None,
 ) -> Conversion:
     """Die vier Tabellen in Zeilen für die drei CSV-Dateien umwandeln."""
+    tables = {
+        "artikel": artikel,
+        "warengrp": warengrp,
+        "zutaten": zutaten,
+        "zutgrp": zutgrp,
+    }
+    for name, table in tables.items():
+        present = {f.name for f in table.fields}
+        missing = [c for c in REQUIRED_COLUMNS[name] if c not in present]
+        if missing:
+            raise DbfError(f"{name}: Spalte fehlt: {', '.join(missing)}")
     result = Conversion()
     skip = {g.strip() for g in skip_groups}
     categories = {r["W_WRG"]: r["W_BEZEICH"] for r in warengrp.live()}

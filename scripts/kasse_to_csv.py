@@ -96,15 +96,14 @@ def main(argv: list[str] | None = None) -> int:
             "zutaten": load(args.folder, "zutaten", memo=True),
             "zutgrp": load(args.folder, "zutgrp"),
         }
+        result = convert(
+            **tables,
+            skip_groups=args.skip_groups.split(","),
+            allergens_confirmed_by=args.allergens_confirmed_by,
+        )
     except (FileNotFoundError, DbfError) as exc:
         print(f"Fehler: {exc} - nichts geschrieben.", file=sys.stderr)
         return 2
-
-    result = convert(
-        **tables,
-        skip_groups=args.skip_groups.split(","),
-        allergens_confirmed_by=args.allergens_confirmed_by,
-    )
     args.out.mkdir(parents=True, exist_ok=True)
     for name, text in result.csv_files().items():
         (args.out / name).write_text(text, encoding="utf-8")

@@ -95,3 +95,15 @@ def test_nicht_dekodierbares_byte_ist_dbf_fehler():
 
     with pytest.raises(DbfError, match="Zeichensatz"):
         read_table(dbf, dbt)  # 0x81 (ü in cp437) ist in cp1252 nicht belegt
+
+
+def test_kaputter_memo_zeiger_ist_dbf_fehler():
+    """Codex PR #149: ein unlesbarer Memo-Zeiger ist kein leeres Memo."""
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1])
+    # Kopf + Löschmarke + Felder vor ZUTATEN: dort steht der Zeiger der ersten Zeile.
+    pointer = 32 + 32 * len(FIELDS) + 1 + 1 + sum(f[2] for f in FIELDS[:-1])
+    assert dbf[pointer : pointer + 10] == b"         1"
+    kaputt = dbf[:pointer] + b"      x1?!" + dbf[pointer + 10 :]
+
+    with pytest.raises(DbfError, match="Memo"):
+        read_table(kaputt, dbt)

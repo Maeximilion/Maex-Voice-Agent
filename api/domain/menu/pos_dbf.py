@@ -121,8 +121,12 @@ def _read(data: bytes, memo: bytes | None) -> Table:
 
 def _memo(memo: bytes, pointer: bytes, encoding: str) -> str:
     text = pointer.decode("ascii", "replace").strip()
-    if not text.isdigit() or int(text) == 0:
-        return ""
+    if not text or text.strip("0") == "":
+        return ""  # leer oder 0: kein Memo
+    if not text.isdigit():
+        # Kaputter Zeiger ist kein leeres Memo: sonst verschwänden z. B. die
+        # Warengruppen eines Extras still (Codex PR #149).
+        raise DbfError(f"Memo-Zeiger „{text}“ unlesbar")
     if len(memo) < 32:
         raise DbfError("Memo-Datei zu kurz")
     # Blockgröße steht bei dBase IV in Byte 20-21; dBase III kennt nur 512.

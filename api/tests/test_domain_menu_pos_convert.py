@@ -4,7 +4,7 @@ import pytest
 
 from api.domain.menu.importer import ALLERGENS_FILE, MENU_FILE, OPTIONS_FILE, parse
 from api.domain.menu.pos_convert import ALLERGEN_MAP, cents, convert, extra_name
-from api.domain.menu.pos_dbf import Field, Table
+from api.domain.menu.pos_dbf import DbfError, Field, Table
 
 
 def table(rows, deleted=()):
@@ -244,8 +244,13 @@ def test_warnungen_fuer_menschen():
 def test_zutat_mit_unbekannter_preisstufe_und_abgeschnittenem_namen():
     zutaten = table(
         [
-            {"ZBEZEICH": "Nudeln_statt_Rei", "WRGSHOWALL": "T", "ZPREIGRP3": "U"},
-            {"ZBEZEICH": "Tofu", "WRGSHOWALL": "T", "ZPREIGRP3": "X"},
+            {
+                "ZBEZEICH": "Nudeln_statt_Rei",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "U",
+            },
+            {"ZBEZEICH": "Tofu", "WRGSHOWALL": "T", "WRGSHOW": "", "ZPREIGRP3": "X"},
         ]
     )
 
@@ -301,9 +306,21 @@ def test_extra_name():
 def test_preisstufe_ohne_preis_ist_fehler_nicht_gratis():
     """Review T-4.11: leerer ZPREIS wäre sonst ein kostenloses Extra (Regel 1)."""
     zutgrp = table([{"ZGRP": "V", "ZPREIS": "", "ZGRP3": "V"}])
-    zutaten = table([{"ZBEZEICH": "Tofu", "WRGSHOWALL": "T", "ZPREIGRP3": "V"}])
+    zutaten = table(
+        [{"ZBEZEICH": "Tofu", "WRGSHOWALL": "T", "WRGSHOW": "", "ZPREIGRP3": "V"}]
+    )
 
     result = convert(table([artikel("50", "Reis")]), WARENGRP, zutaten, zutgrp)
 
     assert result.options == []
     assert any("Tofu" in e and "Preis" in e for e in result.errors)
+
+
+def test_fehlende_spalte_ist_formatfehler():
+    """Codex PR #149: falsche Tabelle oder andere Kassenversion -> DbfError, kein KeyError."""
+    ohne_preis = table([{"ARTNR": "1", "BEZEICH": "A", "WRG": "006", "GROESSE": "1"}])
+
+    with pytest.raises(DbfError, match=r"artikel.*VK1_PREIS"):
+        convert(ohne_preis, WARENGRP, ZUTATEN, ZUTGRP)
+    with pytest.raises(DbfError, match=r"zutgrp.*ZPREIS"):
+        convert(table([artikel("1", "A")]), WARENGRP, ZUTATEN, table([{"ZGRP": "C"}]))
