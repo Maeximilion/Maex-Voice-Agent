@@ -160,6 +160,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | active | BOOL | |
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
+| pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
 
@@ -329,5 +330,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 001 | `tenants`, `service_config`, `opening_hours`, `special_days`, `capacity`, `reservations`, `calls`, `callbacks`, `outbox`, `audit_log` |
 | 002 | Extension `pg_trgm` · `menu_items`, `item_options`, `item_allergens`, `item_aliases` (Trigram-Index auf `name` und `alias`), `orders`, `order_items` |
 | 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
-| 004 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 005 | `eval_cases`, `eval_runs` |
+| 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
+| 005 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
+| 006 | `eval_cases`, `eval_runs` |

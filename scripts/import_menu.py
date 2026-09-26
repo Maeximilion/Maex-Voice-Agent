@@ -3,6 +3,7 @@
 Aufruf:
     python -m scripts.import_menu imports/ --dry-run
     python -m scripts.import_menu imports/ [--apply-price-changes] [--tenant-name N]
+    python -m scripts.import_menu imports/ --dry-run --deactivate-missing   # Kasse
 
 Erwartet im Ordner menu_items.csv und optional item_options.csv,
 item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
@@ -21,7 +22,7 @@ from sqlalchemy import select
 
 from api.config import settings
 from api.db import SessionLocal
-from api.domain.menu.importer import FILES, apply, parse
+from api.domain.menu.importer import FILES, MassDeactivationError, apply, parse
 from api.models import Tenant
 
 
@@ -45,6 +46,16 @@ def main(argv: list[str] | None = None) -> int:
         "--apply-price-changes",
         action="store_true",
         help="geänderte Preise bestehender Gerichte übernehmen",
+    )
+    parser.add_argument(
+        "--deactivate-missing",
+        action="store_true",
+        help="Gerichte, die nicht in der Datei stehen, inaktiv setzen (Kasse als Quelle)",
+    )
+    parser.add_argument(
+        "--allow-large-deactivation",
+        action="store_true",
+        help="mehr als die Hälfte der aktiven Karte deaktivieren erlauben",
     )
     args = parser.parse_args(argv)
 
@@ -71,8 +82,17 @@ def main(argv: list[str] | None = None) -> int:
                 tenant.id,
                 plan,
                 apply_price_changes=args.apply_price_changes,
+                deactivate_missing=args.deactivate_missing,
+                allow_large_deactivation=args.allow_large_deactivation,
                 dry_run=args.dry_run,
             )
+        except MassDeactivationError as exc:
+            print(
+                f"Fehler: {exc} Ist es gewollt, mit --allow-large-deactivation "
+                "wiederholen.",
+                file=sys.stderr,
+            )
+            return 1
         except ValueError as exc:
             # Bestand passt nicht zum Plan (z. B. 23A und 23a): nichts eingespielt.
             print(f"Fehler: {exc}", file=sys.stderr)
