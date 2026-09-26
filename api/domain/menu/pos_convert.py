@@ -222,6 +222,8 @@ def convert(
         missing = [c for c in REQUIRED_COLUMNS[name] if c not in present]
         if missing:
             raise DbfError(f"{name}: Spalte fehlt: {', '.join(missing)}")
+    # " " ist kein Prüfer: der Import striche den Wert und lehnte ab (Codex PR #149).
+    allergens_confirmed_by = (allergens_confirmed_by or "").strip() or None
     result = Conversion()
     skip = {g.strip() for g in skip_groups}
     categories = _unique(warengrp, "warengrp", lambda r: r["W_WRG"], "W_BEZEICH")
@@ -440,32 +442,39 @@ def _add_extras(
     sizes: list[int],
     extras: list[_Extra],
 ) -> None:
-    taken: set[str] = set()
+    # Erst je Schlüssel (wie im Import, option_key) alle Preise sammeln, dann
+    # entscheiden: gleiche Dubletten zählen einmal, verschiedene Preise sind ein
+    # Fehler - die Zeilenreihenfolge wählt keinen Preis (Codex PR #149).
+    found: dict[str, list[tuple[str, int | None]]] = {}
     for extra in extras:
         if extra.groups is not None and group not in extra.groups:
             continue
-        # Schlüssel wie im Import, sonst lehnt der Import die Datei als
-        # "Option doppelt" ab (Codex PR #149).
-        if option_key(extra.name) in taken:
-            result.warnings.append(f"{where}: Extra „{extra.name}“ doppelt")
-            continue
         prices = {_size_price(extra.base, extra.row, "ZGRPREIS", s) for s in sizes}
-        if len(prices) != 1 or None in prices:
+        price = next(iter(prices)) if len(prices) == 1 else None
+        found.setdefault(option_key(extra.name), []).append((extra.name, price))
+    for candidates in found.values():
+        name = candidates[0][0]
+        prices = {price for _, price in candidates}
+        if None in prices:
             # Unsere Option hat einen Preis je Gericht, nicht je Größe.
             result.warnings.append(
-                f"{where}: Extra „{extra.name}“ kostet je Größe anders, "
-                "nicht übernommen"
+                f"{where}: Extra „{name}“ kostet je Größe anders, nicht übernommen"
             )
             continue
+        if len(prices) > 1:
+            result.errors.append(
+                f"{where}: Extra „{name}“ steht mehrfach mit verschiedenem Preis "
+                "in zutaten, nicht übernommen"
+            )
+            continue
+        if len(candidates) > 1:
+            result.warnings.append(f"{where}: Extra „{name}“ doppelt")
         [price] = prices
         assert price is not None
         # Negativ ist ein Abzug der Kasse ("ohne Fleisch") und bleibt; eine
         # negative Summe des Gerichts lehnt draft_order ab (Codex PR #149).
-        taken.add(option_key(extra.name))
         result.options.append(
-            _option(
-                number, EXTRAS_GROUP, extra.name, price, default=False, required=False
-            )
+            _option(number, EXTRAS_GROUP, name, price, default=False, required=False)
         )
 
 

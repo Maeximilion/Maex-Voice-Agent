@@ -401,3 +401,37 @@ def test_groesse_mit_nicht_ascii_ziffer():
     result = run([artikel("20", "Pho", groesse="+-1²")])
 
     assert [i["number"] for i in result.menu] == ["20"]
+
+
+def test_extras_gleicher_name_verschiedener_preis_ist_fehler():
+    """Codex PR #149: zwei Zutaten, die für den Import dieselbe Option sind,
+    aber verschieden kosten - die Zeilenreihenfolge entscheidet keinen Preis."""
+    zutaten = table(
+        [
+            {
+                "ZBEZEICH": "Extra__Ente",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "U",
+            },
+            {
+                "ZBEZEICH": "Extra_Ente",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "C",
+            },
+        ]
+    )
+
+    result = run([artikel("50", "Reis")], zutaten=zutaten)
+
+    assert result.options == []
+    assert any("Extra Ente" in e and "verschieden" in e for e in result.errors)
+
+
+def test_pruefer_nur_aus_leerzeichen_zaehlt_nicht():
+    """Codex PR #149: " " ist kein Prüfer; der Import würde die Zeile ablehnen."""
+    result = run([artikel("1", "A", ALLERGENE="AG")], allergens_confirmed_by="  ")
+
+    assert result.allergens[0]["allergen_codes"] == ""
+    assert any("geprüft" in e for e in result.errors)
