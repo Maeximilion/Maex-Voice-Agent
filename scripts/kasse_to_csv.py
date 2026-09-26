@@ -64,6 +64,14 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
+class AliasFileError(OSError):
+    """Alias-Datei nicht lesbar für den Import: dann wird nichts geschrieben."""
+
+
+class PartialPublishError(Exception):
+    """Tausch gescheitert und Zurückrollen auch: der Ordner ist gemischt."""
+
+
 @dataclass
 class Output:
     """Was geschrieben und was entfernt wird, dazu Hinweise für den Bericht."""
@@ -84,11 +92,13 @@ def plan_aliases(out: Path, numbers: list[str], output: Output) -> None:
             texts[path] = (
                 path.read_text(encoding="utf-8-sig") if path.is_file() else None
             )
-        except UnicodeDecodeError:
-            output.notes.append(
-                f"Warnung: {path.name} ist nicht UTF-8, Aliase unverändert"
-            )
-            return
+        except UnicodeDecodeError as exc:
+            # import_menu liest die Datei als UTF-8 und bräche daran ab: ein
+            # Satz Dateien, den der Import nicht lesen kann, wird nicht
+            # geschrieben (Codex PR #149).
+            raise AliasFileError(
+                0, f"{path.name} ist nicht UTF-8, als UTF-8 speichern", str(path)
+            ) from exc
     if texts[source] is None and texts[side] is None:
         return
     split = split_aliases(texts[source], texts[side], numbers)
@@ -118,9 +128,10 @@ def publish(out: Path, output: Output) -> None:
        bevor etwas getauscht ist;
     2. jede Datei als Kopie daneben schreiben - Platte voll fällt auf, bevor
        etwas getauscht ist;
-    3. erst dann alle tauschen und die leere Nebendatei entfernen.
-    Scheitert Schritt 1 oder 2, werden die Kopien entfernt und der Ordner bleibt
-    wie er war."""
+    3. erst dann tauschen, jede alte Datei vorher nach .bak; scheitert ein
+       Tausch, wird alles Getauschte zurückgerollt.
+    Der Ordner bleibt also wie er war, außer das Zurückrollen selbst scheitert
+    (PartialPublishError, eigene Meldung)."""
     targets = [out / name for name in [*output.write, *output.remove]]
     for path in targets:
         if path.exists():
@@ -140,10 +151,40 @@ def publish(out: Path, output: Output) -> None:
         for tmp, _ in staged:
             tmp.unlink(missing_ok=True)
         raise
-    for tmp, path in staged:
-        os.replace(tmp, path)
-    for name in output.remove:
-        (out / name).unlink(missing_ok=True)
+    # Jede alte Datei erst nach .bak, dann die neue an ihren Platz. Scheitert
+    # ein Schritt, wird alles Getauschte zurückgerollt (Codex PR #149).
+    moves = [(tmp, path) for tmp, path in staged]
+    moves += [(None, out / name) for name in output.remove]
+    done: list[tuple[Path, Path | None]] = []
+    try:
+        for tmp, path in moves:
+            backup = None
+            if path.exists():
+                backup = path.with_name(path.name + ".bak")
+                os.replace(path, backup)
+            done.append((path, backup))
+            if tmp is not None:
+                os.replace(tmp, path)
+    except BaseException:
+        failed = []
+        for path, backup in reversed(done):
+            try:
+                if backup is not None:
+                    os.replace(backup, path)
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                failed.append(path.name)
+        for tmp, _ in staged:
+            tmp.unlink(missing_ok=True)
+        if failed:
+            raise PartialPublishError(
+                "Zurückrollen gescheitert bei " + ", ".join(failed)
+            ) from None
+        raise
+    for _, backup in done:
+        if backup is not None:
+            backup.unlink(missing_ok=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -188,6 +229,20 @@ def main(argv: list[str] | None = None) -> int:
         args.out.mkdir(parents=True, exist_ok=True)
         plan_aliases(args.out, [row["number"] for row in result.menu], output)
         publish(args.out, output)
+    except PartialPublishError as exc:
+        print(
+            f"Fehler: {exc}. Der Ordner ist gemischt: nicht importieren, die "
+            ".bak-Dateien zurückbenennen oder erneut umwandeln.",
+            file=sys.stderr,
+        )
+        return 2
+    except AliasFileError as exc:
+        print(
+            f"Fehler: {exc.strerror}. Nichts geschrieben, der Ordner ist auf dem "
+            "alten Stand.",
+            file=sys.stderr,
+        )
+        return 2
     except OSError as exc:
         name = Path(exc.filename).name if exc.filename else args.out
         print(

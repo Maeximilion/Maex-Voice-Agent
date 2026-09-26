@@ -689,8 +689,9 @@ def test_skript_alias_datei_mit_extra_feld_oder_falschem_zeichensatz(tmp_path, c
     assert "1;Miso; warm" in (out / ALIASES_FILE).read_text(encoding="utf-8")
 
     (out / ALIASES_FILE).write_bytes("number;alias\n1;Suppe groß\n".encode("cp1252"))
-    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
-    assert "nicht UTF-8" in capsys.readouterr().out
+    capsys.readouterr()
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+    assert "nicht UTF-8" in capsys.readouterr().err
 
 
 def test_skript_unlesbare_datei_exit_2(tmp_path, capsys):
@@ -787,9 +788,11 @@ def test_skript_nennt_die_datei_die_nicht_utf8_ist(tmp_path, capsys):
         "number;alias\n65;Wasser groß\n".encode("cp1252")
     )
 
-    kasse_to_csv.main([str(kasse), "--out", str(out)])
+    # Codex PR #149: der Import läse den Ordner danach nicht - also nichts schreiben.
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
 
-    assert "item_aliases.verworfen.csv ist nicht UTF-8" in capsys.readouterr().out
+    assert "item_aliases.verworfen.csv ist nicht UTF-8" in capsys.readouterr().err
+    assert not (out / MENU_FILE).exists()
 
 
 def test_skript_holt_keine_ersetzten_aliase_zurueck(tmp_path):
@@ -868,3 +871,33 @@ def test_skript_ersetzte_aliase_auch_wenn_das_gericht_noch_fehlt(tmp_path):
 
     aliases = (out / ALIASES_FILE).read_text(encoding="utf-8")
     assert "2;knusprige Ente" in aliases and "Ente kross" not in aliases
+
+
+def test_skript_rollt_zurueck_wenn_ein_spaeterer_tausch_scheitert(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: scheitert der Tausch der zweiten Datei, sind auch die
+    schon getauschten wieder alt - nie neue Karte neben alten Optionen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_replace = kasse_to_csv.os.replace
+
+    def flaky(src, dst):
+        if str(src).endswith(OPTIONS_FILE + ".tmp"):
+            raise OSError(5, "E/A-Fehler", str(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "alten Stand" in capsys.readouterr().err
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        assert (out / name).read_text(encoding="utf-8") == "alt\n", name
+    assert sorted(p.name for p in out.iterdir()) == sorted(
+        [MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE]
+    )
