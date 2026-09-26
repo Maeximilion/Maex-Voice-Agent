@@ -42,7 +42,7 @@ from api.agent.llm import LLMClient
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
-from evals.judge import CaseError, judge, observe, validate_case
+from evals.judge import CaseError, judge, missing_tools, observe, validate_case
 from evals.recorder import RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
 from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
@@ -192,9 +192,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         return result
 
     rec = llm.recording
-    missing_tools = [t for t in expected.get("tools", []) if t not in rec.tool_calls]
-    if missing_tools:
-        diffs.append(f"tools: nie aufgerufen {missing_tools}")
+    missing = missing_tools(expected.get("tools", []), rec.ok_results)
+    if missing:
+        diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)

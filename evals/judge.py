@@ -76,14 +76,49 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     if not isinstance(sold_out, list) or not all(isinstance(n, str) for n in sold_out):
         raise CaseError(f"{source}: sold_out ist eine Liste von Kartennummern")
     tools = case["expected"].get("tools", [])
-    if not isinstance(tools, list) or not all(isinstance(t, str) for t in tools):
-        raise CaseError(f"{source}: tools ist eine Liste von Tool-Namen")
+    if not isinstance(tools, list) or not all(_valid_tool(t) for t in tools):
+        raise CaseError(
+            f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
+        )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
         raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
+
+
+def _valid_tool(entry: Any) -> bool:
+    if isinstance(entry, str):
+        return True
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("tool"), str)
+        and set(entry) <= {"tool", "number"}
+        and isinstance(entry.get("number", ""), str)
+    )
+
+
+def missing_tools(
+    wanted: list[Any], ok_results: list[tuple[str, dict[str, Any]]]
+) -> list[Any]:
+    """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
+    wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
+    keine Frage nach der 23."""
+    missing = []
+    for entry in wanted:
+        name = entry if isinstance(entry, str) else entry["tool"]
+        number = None if isinstance(entry, str) else entry.get("number")
+        hit = any(
+            tool == name
+            and (
+                number is None or str(data.get("number", "")).lower() == number.lower()
+            )
+            for tool, data in ok_results
+        )
+        if not hit:
+            missing.append(entry)
+    return missing
 
 
 @dataclass

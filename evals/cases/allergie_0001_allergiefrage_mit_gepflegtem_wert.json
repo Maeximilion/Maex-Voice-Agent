@@ -44,7 +44,10 @@
       }
     ],
     "tools": [
-      "get_item_details"
+      {
+        "tool": "get_item_details",
+        "number": "23"
+      }
     ]
   }
 }

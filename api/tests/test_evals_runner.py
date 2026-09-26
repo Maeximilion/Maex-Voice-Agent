@@ -186,6 +186,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         },
         {
             "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "get_item_details", "nummer": "23"}]},
+        },
+        {
+            "id": "x",
             "repeat_confirm": "ja",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
@@ -656,4 +661,30 @@ def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
     result = {c.id: c for c in report.cases}
     assert result["hinweis"].passed, result["hinweis"].diffs
     assert not result["falscher_hinweis"].passed
-    assert result["ohne_tool"].diffs == ["tools: nie aufgerufen ['get_item_details']"]
+    assert result["ohne_tool"].diffs == [
+        "tools: kein erfolgreicher Aufruf ['get_item_details']"
+    ]
+
+
+def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
+    """Codex PR #145: ein gescheiterter get_item_details oder einer fuer ein
+    anderes Gericht beantwortet keine Allergiefrage."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "get_item_details", "number": "23"}]
+    assert missing_tools(want, []) == want
+    assert missing_tools(want, [("get_item_details", {"number": "24"})]) == want
+    assert missing_tools(want, [("search_menu", {"number": "23"})]) == want
+    assert missing_tools(want, [("get_item_details", {"number": "23"})]) == []
+    assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
+
+
+def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn("", {}, json.dumps({"tool": "get_item_details", "ok": False}))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
+    )
+    assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]

@@ -72,6 +72,9 @@ class Recording:
     # Argumente des letzten confirm: der Runner schickt ihn fuer `repeat_confirm`
     # ein zweites Mal, wie eine Plattform nach einem Timeout (docs/08 §6).
     last_confirm: dict[str, Any] | None = None
+    # Erfolgreiche Tool-Ergebnisse (Name, Daten): `expected.tools` zaehlt nur,
+    # was wirklich geliefert hat, nicht jeden Versuch (Codex PR #145, P1).
+    ok_results: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
@@ -98,6 +101,10 @@ class RecordingLLM:
         if result is None:
             self.recording.customer_lines.append(user_input)
             return
+        if result.get("ok"):
+            self.recording.ok_results.append(
+                (str(result.get("tool")), result.get("data") or {})
+            )
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 
