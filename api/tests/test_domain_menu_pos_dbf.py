@@ -107,3 +107,14 @@ def test_kaputter_memo_zeiger_ist_dbf_fehler():
 
     with pytest.raises(DbfError, match="Memo"):
         read_table(kaputt, dbt)
+
+
+@pytest.mark.parametrize("memo_iv", [True, False])
+def test_abgeschnittenes_memo_ist_dbf_fehler(memo_iv):
+    """Codex PR #149: ein halbes Memo wäre sonst eine still gekürzte Liste."""
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1], memo_iv=memo_iv)
+    block = 1024 if memo_iv else 512
+    cut = block + 20  # Blockkopf und ein Teil des Textes, Rest fehlt
+
+    with pytest.raises(DbfError, match="Memo"):
+        read_table(dbf, dbt[:cut])

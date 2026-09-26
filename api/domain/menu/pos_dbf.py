@@ -136,8 +136,14 @@ def _memo(memo: bytes, pointer: bytes, encoding: str) -> str:
         raise DbfError(f"Memo-Block {text} fehlt in der .DBT")
     if memo[start : start + 4] == _MEMO_IV:
         length = struct.unpack("<I", memo[start + 4 : start + 8])[0]
+        # Halbes Memo ist kein kürzeres Memo: sonst fehlten z. B. Warengruppen
+        # eines Extras still (Codex PR #149).
+        if length < 8 or start + length > len(memo):
+            raise DbfError(f"Memo-Block {text} abgeschnitten")
         body = memo[start + 8 : start + length]
     else:
         end = memo.find(_MEMO_III_END, start)
-        body = memo[start : end if end != -1 else len(memo)]
+        if end == -1:
+            raise DbfError(f"Memo-Block {text} ohne Ende, .DBT abgeschnitten")
+        body = memo[start:end]
     return body.decode(encoding).strip()
