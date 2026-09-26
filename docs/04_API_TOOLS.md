@@ -120,9 +120,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.
    „Einmal die Nummer 23 bitte" und „zweimal die 23" sind damit `exact_number`,
-   ebenso „Hallo, ich würde gern die 13" und „dazu die 24". Ein „und" vor der
-   ersten Zahl setzt die Bestellung fort („Und noch die 24"), erst zwischen zwei
-   Zahlen („die 23 und die 24") macht es den Satz mehrdeutig.
+   ebenso „Hallo, ich würde gern die 13" und „dazu die 24". Ein „und" ganz vorn
+   setzt die Bestellung fort („Und noch die 24"). Steht davor schon eine Menge
+   („zweimal und die 24") oder ein Marker („Nummer und 24"), folgt ein Zehner
+   („und zwanzig", abgeschnitten aus „drei und zwanzig") oder steht es zwischen
+   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig.
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
    Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")
