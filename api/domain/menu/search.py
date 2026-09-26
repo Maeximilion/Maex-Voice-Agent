@@ -106,7 +106,7 @@ def _active(tenant_id: uuid.UUID) -> tuple:
 
 
 def _by_number(
-    session: Session, tenant_id: uuid.UUID, spoken: tuple[str, ...]
+    session: Session, tenant_id: uuid.UUID, spoken: tuple[str, ...] | list[str]
 ) -> list[MenuItem]:
     """Aktive Gerichte zu gesagten Kartennummern.
 
