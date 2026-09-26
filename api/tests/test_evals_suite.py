@@ -42,6 +42,9 @@ def test_pflichttabelle_ist_lesbar():
 
 
 def test_jeder_pflichtfall_hat_einen_fall():
+    """Auch eine bekannte Luecke zaehlt: sie nennt die Aufgabe, die den Fall
+    gruen macht (Zone und Mindestbestellwert gibt es erst mit T-6.5). Dass sie
+    rot bleibt, bis die Aufgabe da ist, prueft test_evals_runner.py."""
     tags = {tag for _, case in _cases() for tag in case.get("tags", [])}
     missing = [line for line, tag in _pflicht().items() if tag not in tags]
     assert missing == [], f"docs/08 §6 ohne Fall: {missing}"

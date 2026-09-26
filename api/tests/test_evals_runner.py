@@ -70,8 +70,6 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
     assert red == [], report.to_markdown()
     healed = [c.id for c in report.cases if c.passed and c.pending]
     assert healed == [], f"pending entfernen: {healed}"
-    gaps = sum(1 for c in report.cases if c.pending)
-    assert report.passed == report.total - gaps
     assert report.hard() == {
         "guessed_items": 0,
         "unconfirmed": 0,
@@ -528,3 +526,12 @@ def test_bekannte_luecke_im_report(migrated_db_url, tmp_path):
     markdown = report.to_markdown()
     assert "## Bekannte Lücken" in markdown and "T-6.5: Lieferung (rot)" in markdown
     assert "## Rote Fälle" not in markdown
+
+
+def test_ausverkauft_bis_ende_des_betriebstags():
+    """Wie "Heute aus" im Tablet: bis 05:00 des Folgetags, nicht 24 Stunden."""
+    abend = datetime.fromisoformat("2026-09-15T23:30:00+02:00")
+    ende = runner._end_of_business_day(abend)
+    assert ende == datetime.fromisoformat("2026-09-16T05:00:00+02:00")
+    nacht = datetime.fromisoformat("2026-09-16T01:00:00+02:00")
+    assert runner._end_of_business_day(nacht) == ende

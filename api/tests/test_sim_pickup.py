@@ -921,3 +921,42 @@ def test_nummer_im_ersten_satz_ist_keine_rufnummer(satz):
     from sim.scripted_llm import _opening_dish
 
     assert "13" in (_opening_dish(satz) or "")
+
+
+@pytest.mark.parametrize(
+    ("antwort", "ja"),
+    [
+        ("Ja, genau.", True),
+        ("Richtig.", True),
+        ("Das stimmt nicht.", False),
+        ("Nicht richtig.", False),
+        ("Ja, aber lieber was anderes.", False),
+        ("Ich haette gern die Suppe.", False),
+        ("Nein.", False),
+    ],
+)
+def test_ja_zum_einzigen_vorschlag(antwort, ja):
+    from sim.scripted_order import _agrees
+
+    assert _agrees(antwort) is ja
+
+
+def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
+    """Review PR #145: "Ich haette gern die 24" auf "Meinen Sie Nummer 23?" ist
+    eine neue Wahl, kein Ja zur 23."""
+    replay(
+        session,
+        case(
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Einmal Fruehlingsrollen.",
+            "Ich haette gern die 24.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja, passt so.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    [order] = orders(session)
+    assert [p[0] for p in positions(session, order)] == ["24"]

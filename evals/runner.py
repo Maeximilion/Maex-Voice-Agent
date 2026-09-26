@@ -30,7 +30,7 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +38,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMClient
+from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
 from evals.judge import CaseError, judge, observe, validate_case
@@ -117,8 +118,14 @@ def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     return tenant
 
 
+def _end_of_business_day(now: datetime) -> datetime:
+    """Ende des Betriebstags, zu dem `now` gehoert (core/time: Tag ab 05:00)."""
+    day = business_day(now, TIMEZONE)
+    return business_day_bounds_utc(day, TIMEZONE)[1]
+
+
 def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) -> None:
-    """ "Heute aus" wie im Tablet (T-4.8): bis zum Ende des Tages ausverkauft.
+    """ "Heute aus" wie im Tablet (T-4.8): bis zum Ende des Betriebstags (05:00).
 
     Die Evalkarte im Importformat kennt keinen Tagesstand, deshalb setzt ihn der
     Fall selbst (`"sold_out": ["48"]`). Eine unbekannte Nummer ist ein kaputter
@@ -129,7 +136,7 @@ def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) ->
     changed = session.execute(
         update(MenuItem)
         .where(MenuItem.tenant_id == tenant_id, MenuItem.number.in_(numbers))
-        .values(sold_out_until=now + timedelta(days=1))
+        .values(sold_out_until=_end_of_business_day(now))
     ).rowcount
     if changed != len(set(numbers)):
         raise CaseError(
