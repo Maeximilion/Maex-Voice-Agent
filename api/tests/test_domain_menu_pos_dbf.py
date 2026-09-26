@@ -131,3 +131,22 @@ def test_geloeschte_zeile_mit_totem_memo_zeiger_stoert_nicht():
 
     assert table.deleted[0] and table.rows[0]["ZUTATEN"] == ""
     assert [r["ARTNR"] for r in table.live()] == ["1", "99"]
+
+
+def test_dbase_iv_block_ohne_kennung_ist_fehler():
+    """Codex PR #149: das Memo-Format folgt aus der Tabelle, nicht aus jedem
+    Block; ein IV-Block ohne Kennung ist kaputt, kein dBase-III-Text."""
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1])
+    # Ein 0x1A irgendwo dahinter: der alte Rückfall hätte Kopf und Fremdtext gelesen.
+    kaputt = dbt[:1024] + b"\x00\x00\x00\x00" + dbt[1028:] + b"\x1a"
+
+    with pytest.raises(DbfError, match="Memo"):
+        read_table(dbf, kaputt)
+
+
+def test_dbase_iii_memo_ignoriert_bytes_20_21():
+    """dBase III kennt nur 512er-Blöcke; Bytes 20-21 der .DBT sind dort frei."""
+    dbf, dbt = write_dbf(FIELDS, ROWS[:1], memo_iv=False)
+    muell = dbt[:20] + b"\x20\x20" + dbt[22:]
+
+    assert read_table(dbf, muell).rows[0]["ZUTATEN"] == "Gebratene_Nudeln, Ei, Sojasoße"

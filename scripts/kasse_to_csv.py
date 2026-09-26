@@ -182,9 +182,20 @@ def publish(out: Path, output: Output) -> None:
                 "Zurückrollen gescheitert bei " + ", ".join(failed)
             ) from None
         raise
+    # Ab hier ist alles getauscht. Eine .bak, die sich nicht löschen lässt
+    # (Virenscanner, Explorer), ist nur Aufräumarbeit, kein Fehler (Codex PR #149).
+    leftover = []
     for _, backup in done:
         if backup is not None:
-            backup.unlink(missing_ok=True)
+            try:
+                backup.unlink(missing_ok=True)
+            except OSError:
+                leftover.append(backup.name)
+    if leftover:
+        output.notes.append(
+            "Warnung: alles geschrieben, aber nicht löschbar (später von Hand "
+            "entfernen): " + ", ".join(leftover)
+        )
 
 
 def main(argv: list[str] | None = None) -> int:

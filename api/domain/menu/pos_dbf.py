@@ -31,6 +31,10 @@ _DELETED = ord("*")
 # dBase IV: Memoblock beginnt mit FF FF 08 00 und der Länge inklusive Kopf.
 _MEMO_IV = b"\xff\xff\x08\x00"
 _MEMO_III_END = b"\x1a"
+# Versionsbyte der Tabelle -> Memo-Format. Es gilt für jeden Block der .DBT,
+# geraten wird nie pro Block (Codex PR #149).
+_MEMO_III, _MEMO_IV_FORMAT = "III", "IV"
+_MEMO_FORMATS = {0x83: _MEMO_III, 0x8B: _MEMO_IV_FORMAT, 0x8E: _MEMO_IV_FORMAT}
 
 
 class DbfError(ValueError):
@@ -96,9 +100,13 @@ def _read(data: bytes, memo: bytes | None) -> Table:
         raise DbfError("Satzlänge passt nicht zu den Feldern")
     if header_len + count * record_len > len(data):
         raise DbfError("Datei kürzer als im Kopf angegeben")
-    if memo is None and any(f.type == "M" for f in fields):
-        # Ohne .DBT wären die langen Felder still leer (docs/14).
-        raise DbfError("Memo-Datei (.DBT) fehlt")
+    memo_format = _MEMO_FORMATS.get(data[0])
+    if any(f.type == "M" for f in fields):
+        if memo is None:
+            # Ohne .DBT wären die langen Felder still leer (docs/14).
+            raise DbfError("Memo-Datei (.DBT) fehlt")
+        if memo_format is None:
+            raise DbfError(f"Unbekanntes Memo-Format (Version 0x{data[0]:02x})")
 
     rows: list[dict[str, str]] = []
     deleted: list[bool] = []
@@ -116,7 +124,9 @@ def _read(data: bytes, memo: bytes | None) -> Table:
                 # Memo gelöschter Zeilen nie lesen: ihr Zeiger kann ins Leere
                 # zeigen und würde sonst den ganzen Import blockieren.
                 row[field.name] = (
-                    "" if is_deleted else _memo(memo or b"", raw, encoding)
+                    ""
+                    if is_deleted
+                    else _memo(memo or b"", raw, encoding, memo_format or "")
                 )
             else:
                 row[field.name] = raw.decode(encoding).strip()
@@ -124,7 +134,7 @@ def _read(data: bytes, memo: bytes | None) -> Table:
     return Table(tuple(fields), encoding, tuple(rows), tuple(deleted))
 
 
-def _memo(memo: bytes, pointer: bytes, encoding: str) -> str:
+def _memo(memo: bytes, pointer: bytes, encoding: str, memo_format: str) -> str:
     text = pointer.decode("ascii", "replace").strip()
     if not text or text.strip("0") == "":
         return ""  # leer oder 0: kein Memo
@@ -134,15 +144,21 @@ def _memo(memo: bytes, pointer: bytes, encoding: str) -> str:
         raise DbfError(f"Memo-Zeiger „{text}“ unlesbar")
     if len(memo) < 32:
         raise DbfError("Memo-Datei zu kurz")
-    # Blockgröße steht bei dBase IV in Byte 20-21; dBase III kennt nur 512.
+    # Blockgröße steht bei dBase IV in Byte 20-21; dBase III kennt nur 512,
+    # dort sind die Bytes frei und dürfen nicht gelesen werden.
     # Little-Endian, an den echten Kassendateien geprüft: Byte 20-21 = 00 04
     # (1024), Memo-Länge 56 00 00 00 (86). Big-Endian ergäbe 4 und 1,4 Mrd.
     # (Codex PR #149 schlug Big-Endian vor, widerlegt).
-    block_size = struct.unpack("<H", memo[20:22])[0] or 512
+    if memo_format == _MEMO_IV_FORMAT:
+        block_size = struct.unpack("<H", memo[20:22])[0] or 512
+    else:
+        block_size = 512
     start = int(text) * block_size
     if start >= len(memo):
         raise DbfError(f"Memo-Block {text} fehlt in der .DBT")
-    if memo[start : start + 4] == _MEMO_IV:
+    if memo_format == _MEMO_IV_FORMAT:
+        if memo[start : start + 4] != _MEMO_IV:
+            raise DbfError(f"Memo-Block {text} ohne dBase-IV-Kennung, .DBT beschädigt")
         length = struct.unpack("<I", memo[start + 4 : start + 8])[0]
         # Halbes Memo ist kein kürzeres Memo: sonst fehlten z. B. Warengruppen
         # eines Extras still (Codex PR #149).

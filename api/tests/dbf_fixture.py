@@ -24,7 +24,8 @@ def write_dbf(
     header_len = 32 + 32 * len(fields) + 1
     record_len = 1 + sum(length for _, _, length, _ in fields)
     head = bytearray(32)
-    head[0] = 0x8B if has_memo else 0x03
+    # Versionsbyte wie echte Dateien: 0x8B dBase IV mit Memo, 0x83 dBase III mit Memo.
+    head[0] = (0x8B if memo_iv else 0x83) if has_memo else 0x03
     head[4:12] = struct.pack("<IHH", len(rows), header_len, record_len)
     head[29] = driver
     for name, typ, length, dec in fields:

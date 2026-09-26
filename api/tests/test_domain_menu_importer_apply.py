@@ -901,3 +901,30 @@ def test_skript_rollt_zurueck_wenn_ein_spaeterer_tausch_scheitert(
     assert sorted(p.name for p in out.iterdir()) == sorted(
         [MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE]
     )
+
+
+def test_skript_bak_nicht_loeschbar_ist_warnung_nach_erfolg(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: sind alle Dateien getauscht und nur eine .bak bleibt
+    hängen (Virenscanner), ist das kein "nichts geschrieben"."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / MENU_FILE).write_text("alt\n", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def stuck(self, *args, **kw):
+        if self.name.endswith(".bak"):
+            raise PermissionError(13, "in Benutzung", str(self))
+        return real_unlink(self, *args, **kw)
+
+    monkeypatch.setattr(Path, "unlink", stuck)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    captured = capsys.readouterr()
+    assert "nichts geschrieben" not in captured.err
+    assert "menu_items.csv.bak" in captured.out
+    assert "Miso Suppe" in (out / MENU_FILE).read_text(encoding="utf-8")
