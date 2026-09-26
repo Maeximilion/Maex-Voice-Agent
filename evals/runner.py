@@ -33,7 +33,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
@@ -194,6 +193,15 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
         diffs = judge(expected, seen) + repeated
+        if "alternatives" in expected:
+            # Im try: ein unlesbares Tool-Ergebnis ist ein roter Fall, kein
+            # Abbruch des ganzen Laufs (Review PR #152).
+            offered = offered_alternatives(llm.recording.ok_results, TIMEZONE)
+            if offered != expected["alternatives"]:
+                diffs.append(
+                    f"alternatives: erwartet {expected['alternatives']!r}, "
+                    f"angeboten {offered!r}"
+                )
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
@@ -203,12 +211,6 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     missing = missing_tools(expected.get("tools", []), rec.ok_results)
     if missing:
         diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
-    if "alternatives" in expected:
-        offered = offered_alternatives(rec.ok_results, ZoneInfo(TIMEZONE))
-        if offered != expected["alternatives"]:
-            diffs.append(
-                f"alternatives: erwartet {expected['alternatives']!r}, angeboten {offered!r}"
-            )
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)

@@ -6,12 +6,14 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
+from api.domain.reservations import create as reservations_create
 from api.domain.reservations import create_reservation
-from api.models import AuditLog, Call, Reservation
+from api.models import AuditLog, Call, Capacity, OpeningHours, Reservation
 from api.schemas.reservations import CreateReservationRequest
 from scripts.seed import seed
 
@@ -323,3 +325,62 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
 
     assert results.count("ok") == 4, f"erwartet 4 Buchungen, bekam {results}"
     assert booked == 40, f"Fenster mit 40 Plätzen ist mit {booked} Gästen überbucht"
+
+
+def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
+    """Review PR #152: Montag 23:30 und Dienstag 00:30 liegen im selben Fenster
+    18:00-01:00. Haelt ein Anruf die Sperre fuer Montag 23:30, muss ein zweiter fuer
+    Dienstag 00:30 warten; mit einer Sperre je Kalendertag liefe er parallel und
+    ueberbuchte das Fenster. Deterministisch statt mit Threads: B bekommt 300 ms."""
+    engine = create_engine(migrated_db_url)
+    montag = date(2026, 9, 14)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        s.add_all(
+            [
+                OpeningHours(
+                    tenant_id=tenant,
+                    weekday=0,
+                    opens_at=time(18),
+                    closes_at=time(1),
+                    service="dinein",
+                ),
+                Capacity(
+                    tenant_id=tenant,
+                    weekday=0,
+                    slot_start=time(18),
+                    slot_end=time(1),
+                    max_guests=20,
+                ),
+            ]
+        )
+        call = Call(
+            tenant_id=tenant,
+            external_session_id="ext",
+            started_at=NOW,
+            delete_after=DIENSTAG,
+        )
+        s.add(call)
+        s.commit()
+        call = call.id
+
+    with Session(engine) as a, Session(engine) as b:
+        # A prueft gerade Montag 23:30, die Transaktion ist offen.
+        reservations_create._lock_capacity_days(a, tenant, montag)
+        b.execute(text("SET LOCAL statement_timeout = 300"))
+        with pytest.raises(OperationalError):
+            create_reservation(
+                b,
+                request(
+                    tenant,
+                    call,
+                    idempotency_key="nacht-b",
+                    reserved_for=berlin(DIENSTAG, 0, 30),
+                ),
+                now=berlin(montag, 8),
+            )
+        b.rollback()
+        a.rollback()
+    engine.dispose()

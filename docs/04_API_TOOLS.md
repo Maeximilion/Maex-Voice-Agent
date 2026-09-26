@@ -297,7 +297,7 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 }
 ```
 
-`alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur am Betriebstag des Wunschs** (Wechsel um 05:00, `core/time.py`). Der Satz nennt die Uhrzeit ohne Tag, ein Termin von einem anderen Abend klänge wie derselbe. Der Kalendertag reicht nicht, weil 00:30 noch zum Abend davor gehört. Am Ruhetag gibt es deshalb keine Alternative, sondern „an dem Tag auch sonst nicht" (Befund T-5.2, `reservierung_0027`); nachts um halb eins ist der nächste Mittag keine Alternative (Review PR #152).
+`alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur unter sechs Stunden Abstand zum Wunsch**. Der Satz nennt die Uhrzeit ohne Tag, und der Gast hört die Deutung, die dem Wunsch am nächsten liegt; unter sechs Stunden ist das die richtige (die andere Hälfte der Uhr liegt ±12 h weg, ein anderer Tag ±24 h). Am Ruhetag gibt es deshalb nichts vom Vortag (Befund T-5.2, `reservierung_0027`), nachts um halb eins keinen Mittag als „halb zwei" (Review PR #152). Ohne Alternative sagt der Satz „auch nicht kurz davor oder danach", nicht „an dem Tag": weiter weg kann noch etwas frei sein.
 
 ---
 

@@ -1,7 +1,7 @@
 """create_reservation: Entwurf anlegen, Satz zum Vorlesen zurückgeben. Erst confirm macht ihn gültig."""
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
@@ -45,7 +45,9 @@ def create_reservation(
     phone = normalize_phone(req.phone)
     note = (req.note or "").strip() or None
 
-    _lock_business_day(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
+    _lock_capacity_days(
+        session, req.tenant_id, req.reserved_for.astimezone(zone).date()
+    )
     slot = check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
     if not slot.available:
         raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
@@ -93,14 +95,20 @@ def create_reservation(
     return _draft(reservation, zone)
 
 
-def _lock_business_day(session: Session, tenant_id: uuid.UUID, day: date) -> None:
+def _lock_capacity_days(session: Session, tenant_id: uuid.UUID, day: date) -> None:
     """Prüfen und Anlegen laufen je Betrieb und Tag nacheinander, sonst überbuchen
     zwei gleichzeitige Anrufe dasselbe Fenster: beide lesen die Kapazität, bevor
-    einer schreibt. Die Sperre hält bis zum Ende der Transaktion."""
-    session.execute(
-        text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
-        {"key": f"reservations:{tenant_id}:{day.isoformat()}"},
-    )
+    einer schreibt. Die Sperre hält bis zum Ende der Transaktion.
+
+    Gesperrt wird, was check_slot liest: die Fenster von Vortag und Tag. Montag
+    23:30 und Dienstag 00:30 fallen ins selbe Fenster über Mitternacht und teilen
+    sich so die Sperre "Montag" (Review PR #152). Immer aufsteigend, damit zwei
+    Anrufe nicht übers Kreuz aufeinander warten."""
+    for locked in (day - timedelta(days=1), day):
+        session.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+            {"key": f"reservations:{tenant_id}:{locked.isoformat()}"},
+        )
 
 
 def _by_key(session: Session, key: str) -> Reservation | None:

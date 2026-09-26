@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
-from api.core.time import business_day, utcnow
+from api.core.time import utcnow
 from api.domain.reservations.capacity import (
     CapacityWindow,
     booked_guests,
@@ -19,6 +19,13 @@ from api.models import Tenant
 from api.schemas.reservations import SlotCheck
 
 MAX_ALTERNATIVES = 2
+# Eine Alternative wird ohne Tag angesagt ("halb zwei"), der Gast hoert die Deutung,
+# die dem Wunsch am naechsten liegt. Eindeutig ist sie nur unter sechs Stunden
+# Abstand: die andere Haelfte der Uhr (+-12 h) liegt dann weiter weg, jeder andere
+# Tag (+-24 h) sowieso. Sonst kaeme am Ruhetag Sonntag 21:30 als "halb zehn"
+# (Befund T-5.2, reservierung_0027) und nachts um halb eins der Mittag als "halb
+# zwei" (Review PR #152). Keine Oeffnungszeit, sondern eine Regel der Ansage.
+UNAMBIGUOUS = timedelta(hours=6)
 DINEIN = "dinein"
 
 
@@ -60,16 +67,14 @@ def check_slot(
     if fits(local):
         return SlotCheck(available=True)
 
-    # Nur der Betriebstag des Wunschs (Wechsel um 05:00): die Uhrzeit wird ohne Tag
-    # angesagt. Sonst kaeme am Ruhetag Sonntag 21:30 als "halb zehn" (Befund T-5.2,
-    # reservierung_0027), und nachts um halb eins der naechste Mittag als "halb zwoelf".
-    # Der Kalendertag reicht nicht: 00:30 gehoert noch zum Abend davor.
-    wish_day = business_day(local, tenant.timezone)
+    # In UTC gemessen: zwei Zeiten derselben ZoneInfo zieht Python als Wandzeit ab,
+    # an der Zeitumstellung laege die Grenze sonst eine Stunde daneben.
+    wish_utc = local.astimezone(UTC)
     candidates = [
         slot
         for window in windows
         for slot in window.grid()
-        if business_day(slot, tenant.timezone) == wish_day
+        if abs(slot.astimezone(UTC) - wish_utc) < UNAMBIGUOUS
         and slot != local
         and slot > now
         and fits(slot)
@@ -89,6 +94,8 @@ def _window_for(windows: list[CapacityWindow], at: datetime) -> CapacityWindow |
 
 def _say(wish: datetime, alternatives: list[datetime]) -> str:
     if not alternatives:
-        return f"Um {spoken_time(wish)} ist leider nichts frei, und an dem Tag auch sonst nicht."
+        # Nicht "an dem Tag": gesucht wird nur im Abstand, in dem die Ansage
+        # eindeutig ist; ein Termin weiter weg kann noch frei sein (Review PR #152).
+        return f"Um {spoken_time(wish)} ist leider nichts frei, auch nicht kurz davor oder danach."
     options = " oder ".join(spoken_time(a) for a in alternatives)
     return f"Um {spoken_time(wish)} ist leider voll. {options[0].upper() + options[1:]} ginge."

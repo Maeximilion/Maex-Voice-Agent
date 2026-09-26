@@ -5,7 +5,6 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -214,6 +213,17 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"alternatives": ["2026-02-30T19:30"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {
+                "alternatives": [
+                    "2026-09-21T19:00",
+                    "2026-09-21T19:30",
+                    "2026-09-21T20:00",
+                ]
+            },
         },
         {
             "id": "x",
@@ -719,7 +729,7 @@ def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
 # --- Angebotene Alternativen (expected.alternatives) ---------------------------
 
 
-def test_alternativen_des_letzten_check_slot_in_ortszeit():
+def test_alternativen_des_letzten_abgelehnten_check_slot_in_ortszeit():
     results = [
         ("check_slot", {"available": False, "alternatives": ["2026-09-20T19:30:00Z"]}),
         ("search_menu", {"items": []}),
@@ -731,21 +741,35 @@ def test_alternativen_des_letzten_check_slot_in_ortszeit():
             },
         ),
     ]
-    berlin = ZoneInfo("Europe/Berlin")
-    assert offered_alternatives(results, berlin) == [
+    assert offered_alternatives(results, "Europe/Berlin") == [
         "2026-09-22T19:00",
         "2026-09-22T19:30",
     ]
 
 
-def test_alternativen_ohne_check_slot_sind_none_nicht_leer():
-    # None statt []: "nichts angeboten" und "nie gefragt" sind verschieden, ein
-    # Fall mit alternatives: [] darf ohne check_slot nicht gruen werden.
-    assert offered_alternatives([], ZoneInfo("Europe/Berlin")) is None
-    assert (
-        offered_alternatives(
-            [("check_slot", {"available": True, "alternatives": []})],
-            ZoneInfo("Europe/Berlin"),
-        )
-        == []
-    )
+def test_spaeteres_freies_check_slot_ueberdeckt_das_angebot_nicht():
+    """Review PR #152: Gast nimmt die Alternative, das Modell prueft sie nach."""
+    results = [
+        (
+            "check_slot",
+            {
+                "available": False,
+                "alternatives": ["2026-09-22T17:00:00Z", "2026-09-22T17:30:00Z"],
+            },
+        ),
+        ("check_slot", {"available": True, "alternatives": []}),
+    ]
+    assert offered_alternatives(results, "Europe/Berlin") == [
+        "2026-09-22T19:00",
+        "2026-09-22T19:30",
+    ]
+
+
+def test_ohne_abgelehnten_wunsch_ist_das_angebot_none_nicht_leer():
+    """Review PR #152: "nichts angeboten" und "Wunsch war frei" sind verschieden,
+    ein Fall mit alternatives: [] darf nicht gruen werden, nur weil frei war."""
+    assert offered_alternatives([], "Europe/Berlin") is None
+    frei = [("check_slot", {"available": True, "alternatives": []})]
+    assert offered_alternatives(frei, "Europe/Berlin") is None
+    voll = [("check_slot", {"available": False, "alternatives": []})]
+    assert offered_alternatives(voll, "Europe/Berlin") == []

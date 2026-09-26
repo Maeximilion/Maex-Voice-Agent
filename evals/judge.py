@@ -14,12 +14,13 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.core.time import to_local
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
+from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
@@ -90,13 +91,16 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
         )
     alternatives = case["expected"].get("alternatives", [])
-    if not isinstance(alternatives, list) or not all(
-        _local_minute(a) for a in alternatives
+    if (
+        not isinstance(alternatives, list)
+        or len(alternatives) > MAX_ALTERNATIVES
+        or not all(_local_minute(a) for a in alternatives)
     ):
         # Ein Tippfehler im Fall ist ein kaputter Fall (Exit 2), kein rotes
         # Verhalten, das als Regression zaehlte (Codex PR #152, P2).
         raise CaseError(
-            f"{source}: alternatives ist eine Liste von Ortszeiten YYYY-MM-DDTHH:MM"
+            f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
+            "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
         )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
@@ -153,15 +157,25 @@ def missing_tools(
 
 
 def offered_alternatives(
-    ok_results: list[tuple[str, dict[str, Any]]], zone: ZoneInfo
+    ok_results: list[tuple[str, dict[str, Any]]], tz_name: str
 ) -> list[str] | None:
-    """Alternativen des letzten erfolgreichen check_slot als Ortszeit, None ohne Aufruf."""
-    slots = [data for tool, data in ok_results if tool == "check_slot"]
-    if not slots:
+    """Was das letzte abgelehnte check_slot anbot, als Ortszeit, nächstgelegene zuerst.
+
+    Nur abgelehnte (`available: false`): ein freier Wunsch liefert auch [], und
+    ein spaeteres check_slot auf die gewaehlte Alternative ueberdeckte sonst das
+    Angebot davor (Review PR #152). None heisst: nie abgelehnt - ein Fall mit
+    `alternatives: []` wird dann nicht gruen, nur weil der Wunsch frei war.
+    """
+    refused = [
+        data
+        for tool, data in ok_results
+        if tool == "check_slot" and data.get("available") is False
+    ]
+    if not refused:
         return None
     return [
-        datetime.fromisoformat(a).astimezone(zone).strftime(LOCAL_MINUTE)
-        for a in slots[-1].get("alternatives", [])
+        to_local(datetime.fromisoformat(a), tz_name).strftime(LOCAL_MINUTE)
+        for a in refused[-1].get("alternatives", [])
     ]
 
 
