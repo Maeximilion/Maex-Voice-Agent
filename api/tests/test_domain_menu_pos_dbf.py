@@ -198,3 +198,20 @@ def test_ohne_oder_mit_einem_endezeichen():
 
     assert len(read_table(dbf, dbt).rows) == len(ROWS)
     assert len(read_table(dbf[:-1], dbt).rows) == len(ROWS)
+
+
+@pytest.mark.parametrize("wert", ["X", "1", "#"])
+def test_kaputter_logischer_wert_ist_fehler(wert):
+    """Codex PR #149: ein kaputtes WRGSHOWALL darf ein Extra nicht still auf
+    Warengruppen einschränken."""
+    dbf, dbt = write_dbf(FIELDS, [dict(ROWS[1], BONUS=wert)])
+
+    with pytest.raises(DbfError, match="BONUS"):
+        read_table(dbf, dbt)
+
+
+@pytest.mark.parametrize("wert", ["T", "t", "Y", "y", "F", "f", "N", "n", "?", ""])
+def test_gueltige_logische_werte(wert):
+    dbf, dbt = write_dbf(FIELDS, [dict(ROWS[1], BONUS=wert)])
+
+    assert read_table(dbf, dbt).rows[0]["BONUS"] == wert

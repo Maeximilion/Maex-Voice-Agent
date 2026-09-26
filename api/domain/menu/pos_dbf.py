@@ -28,6 +28,8 @@ _CODEPAGES = {
 }
 _HEADER_END = 0x0D
 _EOF = 0x1A
+# Gültige Werte eines Logisch-Felds: wahr, falsch, unbekannt (leer oder ?).
+_LOGICAL = frozenset(["", "?", *"TtYyFfNn"])
 _DELETED = ord("*")
 _STATUS = (ord(" "), _DELETED)
 # dBase IV: Memoblock beginnt mit FF FF 08 00 und der Länge inklusive Kopf.
@@ -142,7 +144,15 @@ def _read(data: bytes, memo: bytes | None) -> Table:
                     else _memo(memo or b"", raw, encoding, memo_format or "")
                 )
             else:
-                row[field.name] = raw.decode(encoding).strip()
+                value = raw.decode(encoding).strip()
+                if field.type == "L" and value not in _LOGICAL:
+                    # Kaputtes WRGSHOWALL schränkte ein Extra sonst still ein
+                    # (Codex PR #149).
+                    raise DbfError(
+                        f"Zeile {index + 1}: {field.name} „{value}“ ist kein "
+                        "logischer Wert"
+                    )
+                row[field.name] = value
         rows.append(row)
     return Table(tuple(fields), encoding, tuple(rows), tuple(deleted))
 
