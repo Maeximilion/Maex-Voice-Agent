@@ -5,6 +5,7 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -17,7 +18,7 @@ from api.models import AuditLog, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
-from evals.judge import CaseError, Observed, judge, observe
+from evals.judge import CaseError, Observed, judge, observe, offered_alternatives
 from evals.recorder import RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
 from sim.session import SimCall
@@ -188,6 +189,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"tools": [{"tool": "get_item_details", "nummer": "23"}]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": "2026-09-21T19:30"},
         },
         {
             "id": "x",
@@ -688,3 +694,38 @@ def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
         json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
     )
     assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]
+
+
+# --- Angebotene Alternativen (expected.alternatives) ---------------------------
+
+
+def test_alternativen_des_letzten_check_slot_in_ortszeit():
+    results = [
+        ("check_slot", {"available": False, "alternatives": ["2026-09-20T19:30:00Z"]}),
+        ("search_menu", {"items": []}),
+        (
+            "check_slot",
+            {
+                "available": False,
+                "alternatives": ["2026-09-22T17:00:00Z", "2026-09-22T17:30:00Z"],
+            },
+        ),
+    ]
+    berlin = ZoneInfo("Europe/Berlin")
+    assert offered_alternatives(results, berlin) == [
+        "2026-09-22T19:00",
+        "2026-09-22T19:30",
+    ]
+
+
+def test_alternativen_ohne_check_slot_sind_none_nicht_leer():
+    # None statt []: "nichts angeboten" und "nie gefragt" sind verschieden, ein
+    # Fall mit alternatives: [] darf ohne check_slot nicht gruen werden.
+    assert offered_alternatives([], ZoneInfo("Europe/Berlin")) is None
+    assert (
+        offered_alternatives(
+            [("check_slot", {"available": True, "alternatives": []})],
+            ZoneInfo("Europe/Berlin"),
+        )
+        == []
+    )

@@ -136,6 +136,27 @@ def test_ruhetag_hat_keine_termine(session, tenant_id):
     assert result.available is False and result.alternatives == []
 
 
+def test_ruhetag_bietet_keine_termine_vom_vortag_an(session, tenant_id):
+    # Befund T-5.2 (reservierung_0027): Die Fenster des Vortags sind nur fuer die
+    # Zeit nach Mitternacht geladen. Am Sonntagmorgen gefragt, lagen Sonntag 21:30
+    # und 21:00 noch in der Zukunft und wurden fuer Montag als "halb zehn" angeboten.
+    sonntag_frueh = berlin(date(2026, 9, 13), 8)
+    result = check_slot(session, tenant_id, berlin(MONTAG, 19), 2, now=sonntag_frueh)
+    assert result.available is False
+    assert result.alternatives == []
+
+
+def test_alternativen_liegen_am_tag_des_wunschs(session, tenant_id, book):
+    # Dienstagabend voll: angeboten wird nur Dienstag, nie der Montag davor
+    # (Ruhetag) oder ein anderer Tag, weil die Uhrzeit ohne Tag angesagt wird.
+    for hh, mm in ((17, 0), (17, 30), (18, 0), (18, 30), (19, 0), (19, 30)):
+        book(berlin(DIENSTAG, hh, mm), 40)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 19), 2, now=NOW)
+    assert result.available is False
+    assert result.alternatives
+    assert all(a.astimezone(BERLIN).date() == DIENSTAG for a in result.alternatives)
+
+
 def test_fensterende_ist_exklusiv_und_ausserhalb_der_oeffnung_nicht_buchbar(
     session, tenant_id
 ):

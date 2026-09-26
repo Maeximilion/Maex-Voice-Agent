@@ -297,6 +297,8 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 }
 ```
 
+`alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur am Kalendertag des Wunschs**. Der Satz nennt die Uhrzeit ohne Tag, ein Termin vom Vortag klänge wie derselbe Tag. Am Ruhetag gibt es deshalb keine Alternative, sondern „an dem Tag auch sonst nicht" (Befund T-5.2, `reservierung_0027`).
+
 ---
 
 ## `create_reservation`

@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -42,6 +43,10 @@ EXPECTED_KEYS = frozenset(
         # Tools, die das Modell aufgerufen haben muss: eine Allergiefrage
         # gilt nur mit get_item_details als beantwortet (Codex PR #145, P1).
         "tools",
+        # Termine aus dem letzten check_slot, Ortszeit "YYYY-MM-DDTHH:MM": was der
+        # Code anbietet, steht in keiner Tabelle, ist aber kein Wortlaut, sondern
+        # ein Ergebnis (am Ruhetag nie der Vortag, Befund T-5.2).
+        "alternatives",
     }
 )
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
@@ -80,6 +85,11 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         raise CaseError(
             f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
         )
+    alternatives = case["expected"].get("alternatives", [])
+    if not isinstance(alternatives, list) or not all(
+        isinstance(a, str) for a in alternatives
+    ):
+        raise CaseError(f"{source}: alternatives ist eine Liste von Ortszeiten")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -119,6 +129,19 @@ def missing_tools(
         if not hit:
             missing.append(entry)
     return missing
+
+
+def offered_alternatives(
+    ok_results: list[tuple[str, dict[str, Any]]], zone: ZoneInfo
+) -> list[str] | None:
+    """Alternativen des letzten erfolgreichen check_slot als Ortszeit, None ohne Aufruf."""
+    slots = [data for tool, data in ok_results if tool == "check_slot"]
+    if not slots:
+        return None
+    return [
+        datetime.fromisoformat(a).astimezone(zone).strftime("%Y-%m-%dT%H:%M")
+        for a in slots[-1].get("alternatives", [])
+    ]
 
 
 @dataclass

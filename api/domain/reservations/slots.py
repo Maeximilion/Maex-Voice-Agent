@@ -60,11 +60,14 @@ def check_slot(
     if fits(local):
         return SlotCheck(available=True)
 
+    # Nur der Tag des Wunschs: die Vortagsfenster sind allein fuer die Zeit nach
+    # Mitternacht geladen, und die Uhrzeit wird ohne Tag angesagt. Sonst kaeme am
+    # Ruhetag Sonntag 21:30 als "halb zehn" (Befund T-5.2, reservierung_0027).
     candidates = [
         slot
         for window in windows
         for slot in window.grid()
-        if slot != local and slot > now and fits(slot)
+        if slot.date() == local.date() and slot != local and slot > now and fits(slot)
     ]
     candidates.sort(key=lambda slot: (abs(slot - local), slot))
     alternatives = [slot.astimezone(UTC) for slot in candidates[:MAX_ALTERNATIVES]]

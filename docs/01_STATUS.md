@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.6
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.7
 
 ---
 
@@ -94,7 +94,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ### In Claude Code (can start immediately, without vendor)
 1. **First real print of the input slip** (T-4.6 variant B built 25.09.2026; since D2 on 26.09.2026 it goes to the main receipt printer at the register with the header "NICHT IN KASSE – bitte eingeben", that change is still to build): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
-2. **`check_slot` alternatives from the previous day** (found by T-5.2, 26.09.2026): fix with a red unit test first (`/bug`)
+2. **T-3.6** wait time for pickup and delivery separately, each lowerable (docs/06 §3)
 3. **Menu from the register** (T-4.11, docs/14 §Quelle Kasse): converter from the `.dbf` copies to the CSV format, then a real import: `python -m scripts.import_menu imports/ --dry-run`, read the report, then again with `--apply-price-changes` (without it, dishes already in the DB keep their old price). `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
@@ -255,6 +255,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 26.09.2026 | **Bug `check_slot` alternatives from the previous day fixed** (found by T-5.2): on the closed Monday it offered Sunday 21:30 as "halb zehn". Alternatives now only on the calendar day of the wish (`domain/reservations/slots.py`); red first as eval `reservierung_0027` (new `expected.alternatives`, docs/08) and unit test. 2272 tests green, eval 102/108, the six red ones are the marked gaps |
 | 26.09.2026 | **Handover D2, D11, T-4.11 prepared** (PR #148, docs only): receipts only via the register, print bridge as input slip; register `.dbf` mapped in docs/14 incl. allergen letter table a-n to LMIV; next T-4.11 with the six register files. Full block in `docs/00_PCF.md` §13 |
 | 24.09.2026 | **T-4.10 wishes to a dish (D8):** `domain/menu/wishes.py` splits dish and wish, `search_menu` returns `wish` - "die 23 ohne Karotten" finds the 23 again. Removal is a note, an option of the menu comes with its surcharge and reason from `item_options`, an allergy goes to the kitchen as "WICHTIG: Keine <Zutat>. Grund: Allergie" (E14) without a promise, anything else is not offered. The agent repeats the wish with the surcharge. Migration 003 `item_options.price_reason` (optional import column). Keys for `create_reservation` and `draft_order` from the validated request (two open points from PR #127 closed) |
 | 24.09.2026 | **Pickup in the text phone** (branch `feat/sim-pickup-flow`, PR after #127): `sim/scripted_order.py` takes dishes, options and name, `draft_order`, read back, `confirm`, pickup code; eval cases `abholung_0001` and `abholung_0002`. **Caller ID** fills `slots.phone`, the agent no longer asks for the number (Maxi). **Repeat-back** of every clear dish right after it is said: a number as number, a description as the menu name with number, varied lead-ins chosen from the utterance (Maxi). Over HTTP a multi-dish sentence no longer asks the guest to repeat one at a time |
@@ -311,6 +312,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.7 · 26.09.2026:** Bug: check_slot bot Uhrzeiten vom Vortag an, jetzt nur am Tag des Wunschs (#eval reservierung_0027)
 - **v1.34.6 · 26.09.2026:** PR #151: sichere Grenze ein KI-Anruf gleichzeitig, Weiterleitung braucht einen Kanal
 - **v1.34.5 · 26.09.2026:** C1: Anschluss hat 4 Sprachkanaele, Umleitung ueber die Fritz!Box belegt 2
 - **v1.34.4 · 26.09.2026:** Offener Punkt aus PR #147
