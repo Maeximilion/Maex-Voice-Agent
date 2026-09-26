@@ -23,6 +23,7 @@ api/domain/menu/pos_convert.py.
 """
 
 import argparse
+import contextlib
 import os
 import sys
 from dataclasses import dataclass, field
@@ -177,8 +178,10 @@ def publish(out: Path, output: Output) -> None:
                     path.unlink(missing_ok=True)
             except OSError:
                 failed.append(path.name)
+        # Aufräumen darf die Meldung "gemischt" nie verdecken (Codex PR #149).
         for tmp, _ in staged:
-            tmp.unlink(missing_ok=True)
+            with contextlib.suppress(OSError):
+                tmp.unlink(missing_ok=True)
         if failed:
             raise PartialPublishError(
                 "Zurückrollen gescheitert bei " + ", ".join(failed)

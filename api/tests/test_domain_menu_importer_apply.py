@@ -903,6 +903,41 @@ def test_skript_rollt_zurueck_wenn_ein_spaeterer_tausch_scheitert(
     )
 
 
+def test_skript_gemischter_ordner_bleibt_gemeldet_wenn_tmp_nicht_loeschbar(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: scheitert das Zurückrollen, darf ein Fehler beim Aufräumen
+    der .tmp die Meldung "gemischt" nicht zu "alter Stand" machen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_replace = kasse_to_csv.os.replace
+    real_unlink = Path.unlink
+
+    def flaky(src, dst):
+        if str(src).endswith(OPTIONS_FILE + ".tmp"):
+            raise OSError(5, "E/A-Fehler", str(dst))
+        if str(src).endswith(MENU_FILE + ".bak"):
+            raise PermissionError(13, "in Benutzung", str(src))
+        return real_replace(src, dst)
+
+    def stuck(self, *args, **kw):
+        if self.name.endswith(".tmp"):
+            raise PermissionError(13, "in Benutzung", str(self))
+        return real_unlink(self, *args, **kw)
+
+    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+    monkeypatch.setattr(Path, "unlink", stuck)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    err = capsys.readouterr().err
+    assert "gemischt" in err and "alten Stand" not in err
+
+
 def test_skript_bak_nicht_loeschbar_ist_warnung_nach_erfolg(
     tmp_path, capsys, monkeypatch
 ):
