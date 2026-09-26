@@ -309,7 +309,23 @@ def test_kartennummer_im_suchformat(nummer):
 
 
 @pytest.mark.parametrize(
-    "nummer", ["23h", "23x", "23ab", "35AE", "12-3", "Nr. 5", "ABC1", "S", "S12AB"]
+    "nummer",
+    [
+        "23h",
+        "23x",
+        "23ab",
+        "35AE",
+        "12-3",
+        "Nr. 5",
+        "ABC1",
+        "S",
+        "S12AB",
+        # Praefixe, die numberwords schon als Menge oder Marker liest (Review PR #155)
+        "X12",
+        "ST1",
+        "NR5",
+        "NO5",
+    ],
 )
 def test_kartennummer_ausserhalb_des_suchformats(nummer):
     """Sonst sucht "Nummer 23h" still die 23: lieber beim Import scheitern."""

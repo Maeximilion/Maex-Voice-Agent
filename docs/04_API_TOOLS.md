@@ -127,8 +127,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    ein Treffer ist `exact_number`, zwei sind `ambiguous` („Sushi eins" → S1 oder
    SM1), keiner `not_found`. Nie wird aus einer Präfixnummer die Zahl allein:
    „S 13" findet nicht Gericht 13, „Nummer 23g" nicht die 23. Eine Nummer mit
-   Präfix zählt wie eine Zahl ohne Marker, „die S12 und Pho Bo" sind zwei
-   Positionen.
+   Präfix ist nie eine Menge: neben einem Namen („S12 Lachs", „die S12 und Pho
+   Bo") oder hinter einer Ziffer bzw. „die 23" fragt die Suche nach der einen
+   Nummer; nur ein Zahlwort davor ist die Menge („zwei S zwölf"). Buchstabiert
+   („Es zwölf") zählt nur am Satzanfang, „nehme ich es zwei" ist kein S2. Präfixe,
+   die schon Menge oder Marker sind (`x`, `st`, `nr`, `no`), lehnt der Import ab.
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.

@@ -144,3 +144,7 @@
 {"say": "Nummer Z12", "expect": "!z12", "why": "Import erlaubt jedes Praefix, die Suche meldet ein unbekanntes als nicht vorhanden (Codex PR #155)"}
 {"say": "Nummer Z 12", "expect": "!z12", "why": "dasselbe abgesetzt (Codex PR #155)"}
 {"say": "Nummer H zwölf", "expect": "!h12", "why": "Buchstabe h bis z vor Zahlwort (Codex PR #155)"}
+{"say": "Dann nehme ich es zwei", "expect": "name", "why": "es als Pronomen ist kein Praefix S (Review PR #155)"}
+{"say": "die 23 S12", "expect": "?", "why": "Zahl vor der Praefixnummer ist hier keine Menge, zwei Nummern (Review PR #155)"}
+{"say": "S12 Lachs", "expect": "?", "why": "Praefixnummer ist nie Menge, neben einem Namen nachfragen (Review PR #155)"}
+{"say": "Nummer n 23", "expect": "?", "why": "umgangssprachliches n (einen) ist kein Praefix (Review PR #155)"}

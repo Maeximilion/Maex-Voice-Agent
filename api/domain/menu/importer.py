@@ -33,7 +33,12 @@ from sqlalchemy.orm import Session
 from api.core.time import utcnow
 from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import (
+    CARD_PARTS,
+    CARD_SUFFIXES,
+    canonical_card,
+    reserved_prefix,
+)
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
 
@@ -70,12 +75,20 @@ _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 # der Karte (numberwords.CardFormat). Geprüft wird die klein geschriebene
 # Nummer: 23a und 23A wären sonst zwei Gerichte, die die Suche nie
 # auseinanderhält.
-_CARD_NUMBER = re.compile(r"(?:[a-z]{1,2})?0*\d{1,3}[a-g]?")
+_CARD_NUMBER = re.compile(
+    r"(?:[a-z]{1,2})?0*\d{1,3}[" + "".join(sorted(CARD_SUFFIXES)) + "]?"
+)
 
 
 def is_card_number(number: str) -> bool:
-    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen."""
-    return _CARD_NUMBER.fullmatch(number) is not None
+    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen.
+
+    Ein Praefix, das numberwords schon als Menge oder Marker liest ("x12",
+    "st1", "nr5"), versteht die Suche nicht eindeutig (Review PR #155)."""
+    if _CARD_NUMBER.fullmatch(number) is None:
+        return False
+    parts = CARD_PARTS.fullmatch(number)
+    return parts is None or not reserved_prefix(parts.group(1))
 
 
 @dataclass(frozen=True)

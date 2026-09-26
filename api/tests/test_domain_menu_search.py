@@ -21,7 +21,12 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import SAY_IN_TURN, position_parts, search_menu
+from api.domain.menu.search import (
+    SAY_IN_TURN,
+    SAY_WHICH_NUMBER,
+    position_parts,
+    search_menu,
+)
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -946,14 +951,42 @@ def test_ohne_praefix_auf_der_karte_ist_s12_nicht_die_12(session, tenant_id):
     assert result.match_type != "exact_number"
 
 
-def test_praefixnummer_und_name_sind_zwei_positionen(session, sushi):
-    with pytest.raises(Ambiguous) as err:
-        suche(session, sushi, "S12 und Pho Bo")
-    assert err.value.say == SAY_IN_TURN
-    assert position_parts(session, sushi, "S12 und Pho Bo", now=NOW) == [
-        "S12",
-        "Pho Bo",
-    ]
+def test_praefixnummer_neben_name_fragt_nach(session, sushi):
+    """Review PR #155: eine Praefixnummer ist nie eine Menge. Neben einem Namen
+    fragt die Suche nach der einen Nummer, statt ueber den Namen zu raten."""
+    for gesagt in ["S12 und Pho Bo", "S12 Lachs"]:
+        with pytest.raises(Ambiguous) as err:
+            suche(session, sushi, gesagt)
+        assert err.value.say == SAY_WHICH_NUMBER
+
+
+def test_kategoriewort_ohne_treffer_nennt_kartennummern(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Sushi 99")
+    assert "s99 oder sm99" in err.value.say
+
+
+def test_by_number_lehnt_blanken_text_ab(session, sushi):
+    """Review PR #155: ein str waere zeichenweise nachgeschlagen worden."""
+    from api.domain.menu.search import _by_number
+
+    with pytest.raises(TypeError):
+        _by_number(session, sushi, "023")
+
+
+def test_kartenformat_einmal_je_suche(session, sushi, monkeypatch):
+    """Review PR #155: position_parts sucht rekursiv, die Karte wird trotzdem
+    nur einmal gelesen."""
+    import api.domain.menu.search as search_mod
+
+    calls = []
+    real = search_mod.card_format
+    monkeypatch.setattr(
+        search_mod, "card_format", lambda *a: calls.append(1) or real(*a)
+    )
+    with pytest.raises(Ambiguous):
+        suche(session, sushi, "die 23 und Pho Bo und die 24")
+    assert len(calls) == 1
 
 
 def test_praefixsuche_bleibt_im_latenzbudget(client, session, tenant_id):

@@ -26,8 +26,8 @@ entscheidet der Aufrufer, nicht dieses Modul.
 """
 
 import re
-from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 from itertools import pairwise, product
 
 # Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
@@ -138,7 +138,7 @@ def fold(text: str) -> str:
 
 # Eine Kartennummer in ihren Teilen: Praefix, Ziffern, Endung. Welche Formen
 # erlaubt sind, prueft der Import (importer.is_card_number), hier nur zerlegen.
-_CARD_PARTS = re.compile(r"([a-z]*)(\d+)([a-z]*)")
+CARD_PARTS = re.compile(r"([a-z]*)(\d+)([a-z]*)")
 
 # Buchstaben, wie die Erkennung sie ausschreibt, wenn der Gast buchstabiert:
 # "Es zwölf" ist S12, "Es Em eins" SM1. Deutsches Alphabet, keine Kartendaten:
@@ -166,7 +166,9 @@ class CardFormat:
     """
 
     prefixes: frozenset[str] = frozenset()
-    words: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # Paare (Wort, Praefixe) statt dict: der Wert bleibt hashbar und
+    # unveraenderlich, NO_PREFIXES teilt keinen veraenderbaren Zustand.
+    words: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     @classmethod
     def from_items(cls, items: Iterable[tuple[str, str]]) -> "CardFormat":
@@ -181,7 +183,7 @@ class CardFormat:
         in_category: dict[str, set[str]] = {}
         categories_of: dict[str, set[str]] = {}
         for number, category in items:
-            parts = _CARD_PARTS.fullmatch(fold(number.strip()))
+            parts = CARD_PARTS.fullmatch(fold(number.strip()))
             if parts is None:
                 continue
             prefix = parts.group(1)
@@ -199,21 +201,37 @@ class CardFormat:
                 and all(categories_of[p] == {name} for p in carried)
             ):
                 words[name] = tuple(sorted(found))
-        return cls(frozenset(prefixes), words)
+        return cls(frozenset(prefixes), tuple(sorted(words.items())))
 
-    def prefixes_of(self, run: list[str]) -> tuple[str, ...]:
-        """Die Praefixe, die diese Token direkt vor einer Zahl meinen koennen."""
+    def prefixes_of(self, run: list[str], spelled: bool = True) -> tuple[str, ...]:
+        """Die Praefixe, die diese Token direkt vor einer Zahl meinen koennen.
+
+        `spelled=False`: Buchstabennamen ("es", "em") zaehlen nicht. Sie sind
+        auch deutsche Woerter - "Dann nehme ich es zwei" ist kein S2 (Review
+        PR #155).
+        """
         if not self.prefixes or not run or any(t in PUNCTUATION for t in run):
             return ()
-        if len(run) == 1 and run[0] in self.words:
-            return self.words[run[0]]
+        words = dict(self.words)
+        if len(run) == 1 and run[0] in words:
+            return words[run[0]]
         spellings = {
             "".join(parts)
             for parts in product(
-                *({t, _LETTER_NAMES[t]} if t in _LETTER_NAMES else {t} for t in run)
+                *(
+                    {t, _LETTER_NAMES[t]} if spelled and t in _LETTER_NAMES else {t}
+                    for t in run
+                )
             )
         }
         return tuple(sorted(spellings & self.prefixes))
+
+
+def reserved_prefix(prefix: str) -> bool:
+    """Liest numberwords diese Buchstaben schon anders - als Menge ("2 x 12",
+    "3 st") oder Marker ("Nr 5")? Dann kann eine Karte sie nicht als Praefix
+    tragen, sonst wuerde aus "2 x 12" die x12 (Review PR #155)."""
+    return prefix in _QUANTITY_NOUNS or prefix in _ITEM_NUMBER_MARKERS
 
 
 NO_PREFIXES = CardFormat()
@@ -311,6 +329,27 @@ def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
     return None
 
 
+# Was vor einem buchstabierten Praefix ("Es zwölf") stehen darf. Davor ein
+# anderes Wort ("nehme ich es zwei"), ist "es" ein Pronomen (Review PR #155).
+_SPELLED_LEAD = frozenset(
+    {"und", "noch", "die", "der", "das", "den", "nummer", "nr", "no", "bitte"}
+)
+
+
+def _clean_lead(tokens: list[str], at: int) -> bool:
+    """Steht vor Position `at` nur Satzzeichen, Zoegerlaut, Artikel, Marker
+    oder eine Menge? Nur dann darf ein Buchstabenname dort ein Praefix sein."""
+    return all(
+        t in PUNCTUATION
+        or t in _SPELLED_LEAD
+        or t in _HESITATIONS
+        or t in _QUANTITY_NOUNS
+        or _word_value(t) is not None
+        or (_QUANTITY_SUFFIX.match(t) is not None and _word_value(t[:-3]) is not None)
+        for t in tokens[:at]
+    )
+
+
 def _number_spans(tokens: list[str], card: CardFormat = NO_PREFIXES) -> list[_Span]:
     """Alle genannten Zahlen mit ihrer Lage.
 
@@ -342,12 +381,13 @@ def _with_prefix(tokens: list[str], span: _Span, card: CardFormat, floor: int) -
     """Die Spanne um ein Kartenpraefix direkt davor erweitert, das laengste zuerst.
 
     Nur Token ab `floor`: was zur Zahl davor gehoert, ist kein Praefix.
+    Buchstabennamen nur mit sauberem Satzanfang davor (`_clean_lead`).
     """
     for n in range(_MAX_PREFIX_TOKENS, 0, -1):
         start = span.start - n
         if start < floor:
             continue
-        found = card.prefixes_of(tokens[start : span.start])
+        found = card.prefixes_of(tokens[start : span.start], _clean_lead(tokens, start))
         if found:
             return _Span(start, span.end, span.value, n, found)
     return span
@@ -414,7 +454,10 @@ def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
     fragen, nimmt `find_item_number_ref` (Codex PR #117, P2).
     """
     ref = find_item_number_ref(text, card)
-    return ref.value if ref is not None and ref.valid else None
+    # Eine Nummer mit Praefix ("S12") hat keine Zahl, mit der sich allein
+    # weiterarbeiten liesse: 12 waere ein anderes Gericht (Review PR #155).
+    plain = ref is not None and ref.valid and ref.text[:1].isdigit()
+    return ref.value if plain and ref is not None else None
 
 
 @dataclass(frozen=True)
@@ -449,7 +492,8 @@ class ItemNumber:
 
 # Kartenendungen: a bis f fuer Varianten, g fuer die Sossen der Kasse (25G bis
 # 60G, T-4.12). Zusammengesetzte Endungen ("35AE") hat die Kasse nicht.
-_SUFFIXES = frozenset("abcdefg")
+CARD_SUFFIXES = frozenset("abcdefg")
+_SUFFIXES = CARD_SUFFIXES
 # Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
 # mehr vom Leerzeichen-Fall ("23 bitte") zu unterscheiden. Deshalb je Token
 # merken, ob der nächste ohne Lücke folgt - nach Position, nicht nach
@@ -504,6 +548,12 @@ def _card_letters(token: str) -> bool:
     )
 
 
+# Einzelbuchstaben, die die Erkennung fuer verschluckte Silben ausgibt: 'n
+# (einen), 's (es, das). Hinter "Nummer" sind sie ein Wort, kein Praefix einer
+# nicht vorhandenen Nummer (Review PR #155).
+_CLITICS = frozenset({"n", "s"})
+
+
 def _prefix_letters(token: str) -> bool:
     """Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix sein koennen.
 
@@ -514,7 +564,8 @@ def _prefix_letters(token: str) -> bool:
     damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
     hat `CardFormat` vorher schon gelesen.
     """
-    return (len(token) == 1 and token.isalpha()) or _card_letters(token)
+    single = len(token) == 1 and token.isalpha() and token not in _CLITICS
+    return single or _card_letters(token)
 
 
 def _long_suffix(token: str) -> bool:
@@ -535,8 +586,8 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     cards = tuple(prefix + ref.text for prefix in span.prefixes)
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
-    said = " ".join(tokens[span.start : span.digits_at])
-    return ItemNumber(ref.value, f"{said} {ref.text}", marked, ref.valid, cards)
+    # Gesagt wird, was nachgeschlagen wird: "s12 oder sm12" (Review PR #155).
+    return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards)
 
 
 def _plain_ref(
@@ -580,7 +631,7 @@ def canonical_card(card: str) -> str:
     Nullen der Zahl, auch hinter einem Praefix ("S07" wie "s7"). Eine Stelle
     für Import, Zahlwörter und Text-Telefon; search._by_number rechnet in SQL
     dasselbe."""
-    return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower())
+    return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower()) or "0"
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
@@ -637,10 +688,10 @@ def _marker_target(
             return j, j, span, None
         # "Nummer S12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
         for n in range(_MAX_PREFIX_TOKENS, 0, -1):
-            dahinter = _scan(tokens, j + n) if j + n < len(tokens) else None
-            found = card.prefixes_of(tokens[j : j + n]) if dahinter else ()
-            if dahinter is not None and found:
-                return j, j, _Span(j, dahinter.end, dahinter.value, n, found), None
+            following = _scan(tokens, j + n) if j + n < len(tokens) else None
+            found = card.prefixes_of(tokens[j : j + n]) if following else ()
+            if following is not None and found:
+                return j, j, _Span(j, following.end, following.value, n, found), None
         if (
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
@@ -795,6 +846,18 @@ def find_item_number_ref(
     if len(uebrig) != 1:
         return None
     ref = _ref(tokens, uebrig[0], marked=False, glued=glued)
+    # "das ist 5g Zucker": g mit einem Wort dahinter ist die Einheit, keine
+    # Kartenendung - sonst meldete die Leiter "Nummer 5g" (Review PR #155).
+    word_at = uebrig[0].end + 1
+    unit = (
+        ref.text.endswith("g")
+        and word_at < len(tokens)
+        and tokens[word_at].isalpha()
+        and tokens[word_at] not in _SENTENCE_FILLER
+        and tokens[word_at] not in _LEAD_FILLER
+    )
+    if unit:
+        return None
     # Ohne "Nummer" ist eine Zahl, die keine saubere Kartenform ergibt, keine
     # genannte Nummer, sondern Text: "einmal 7up bitte", "das ist 5g Zucker".
     # Sonst meldete die Leiter "die Nummer 7up gibt es nicht", waehrend
@@ -896,6 +959,17 @@ def sole_item_number(
     numbers = list(marked)
     spans = _number_spans(tokens, card)
     prefix_at = {s.start for s in [*spans, *marked] if s.prefixes}
+
+    def _quantity_before_prefix(span: _Span) -> bool:
+        """ "zwei S zwölf": ein Zahlwort ohne Artikel vor dem Praefix ist die
+        Menge. Ziffern oder ein Artikel davor ("die 23 S12") sind eine eigene
+        Nummer, dann fragt der Satz nach (Review PR #155)."""
+        return (
+            span.end in prefix_at
+            and not any(tokens[k].isdigit() for k in range(span.start, span.end))
+            and not (span.start > 0 and tokens[span.start - 1] in _LINK_ARTICLES)
+        )
+
     for span in spans:
         if any(span.overlaps(m) for m in marked) or any(
             span.overlaps(q) for q in mengen
@@ -903,7 +977,7 @@ def sole_item_number(
             continue
         if any(k in invalid_at for k in range(span.start, span.end)):
             continue
-        if span.end in marker_at or span.end in prefix_at:
+        if span.end in marker_at or _quantity_before_prefix(span):
             # "zwei Nummer 23", "zwei S zwölf": Menge vor Marker oder Praefix.
             consumed.update(range(span.start, span.end))
             continue
@@ -996,11 +1070,17 @@ def sole_item_number(
     # Marker: in "zwei Fruehlingsrollen, Nummer weiss ich nicht" ist die zwei
     # eine Menge und der Gast sagt gerade, dass er die Nummer nicht kennt -
     # dann entscheidet die Namenssuche.
-    nummer_gemeint = has_marker or any(
-        span.start > i
-        for i, tok in enumerate(tokens)
-        if tok in _ITEM_NUMBER_MARKERS
-        for span in numbers
+    # Eine Nummer mit Praefix ist nie eine Menge ("S12 Lachs"): neben einem
+    # Namen fragt der Satz nach, wie mit Marker (Review PR #155).
+    nummer_gemeint = (
+        has_marker
+        or any(s.prefixes for s in numbers)
+        or any(
+            span.start > i
+            for i, tok in enumerate(tokens)
+            if tok in _ITEM_NUMBER_MARKERS
+            for span in numbers
+        )
     )
     # Ein frei hängendes Verbindungswort ist nur dann eine zurückgenommene
     # Nummer, wenn überhaupt von einer Nummer die Rede war: mit Marker, oder

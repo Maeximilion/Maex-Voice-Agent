@@ -42,7 +42,11 @@ from api.core.time import utcnow
 from api.domain.menu.items import card_format, option_groups
 from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import canonical_card, sole_item_number
+from api.domain.menu.numberwords import (
+    CardFormat,
+    canonical_card,
+    sole_item_number,
+)
 from api.domain.menu.sold_out import alternatives
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.domain.menu.wishes import (
@@ -117,6 +121,9 @@ def _by_number(
     Stelle im Satz (Befund Codex PR #117). Mehrere Nummern kommen aus einem
     Kategoriewort ("Sushi zwölf" ist S12 oder SM12, T-4.12).
     """
+    if isinstance(spoken, str):
+        # Ein str waere zeichenweise nachgeschlagen worden (Review PR #155).
+        raise TypeError("Kartennummern als Folge übergeben, nicht als Text")
     stored = func.regexp_replace(
         func.lower(func.btrim(MenuItem.number)), "^([a-z]*)0*([0-9])", "\\1\\2"
     )
@@ -248,11 +255,12 @@ def position_parts(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+    card: CardFormat | None = None,
 ) -> list[str]:
     """Die Positionen eines Satzes (`_position_parts`). Ein Teil, der mit einer
     eigenen Allergie beginnt ("und einer Sesamallergie"), ist keine neue
     Position, sondern gehoert zur davor (Codex PR #139, P1)."""
-    parts = _position_parts(session, tenant_id, query, now, high, low)
+    parts = _position_parts(session, tenant_id, query, now, high, low, card)
     return _keep_allergy_clauses(query, parts)
 
 
@@ -290,6 +298,7 @@ def _position_parts(
     now: datetime | None,
     high: float | None,
     low: float | None,
+    card: CardFormat | None = None,
 ) -> list[str]:
     """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
     mit der Karte.
@@ -313,8 +322,16 @@ def _position_parts(
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
+    # Die Karte einmal lesen, nicht je Stueck und Spanne (Review PR #155).
     search = partial(
-        search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
+        search_menu,
+        session,
+        tenant_id,
+        now=now,
+        high=high,
+        low=low,
+        split_check=False,
+        card=card if card is not None else card_format(session, tenant_id),
     )
     spans = _spans(query, pieces)
     # Laenger als der laengste Name oder Alias der Karte kann keine Spanne ein
@@ -508,6 +525,7 @@ def _search_with_wish(
     now: datetime,
     high: float,
     low: float,
+    card: CardFormat,
 ) -> SearchResult | None:
     """Das Gericht ohne den Wunsch suchen, den Wunsch dazu einordnen (T-4.10).
 
@@ -521,7 +539,15 @@ def _search_with_wish(
     dish = candidates[0][0]
     try:
         found = search_menu(
-            session, tenant_id, dish, max_results, now, high, low, split_check=False
+            session,
+            tenant_id,
+            dish,
+            max_results,
+            now,
+            high,
+            low,
+            split_check=False,
+            card=card,
         )
     except (Ambiguous, NotFound):
         return None
@@ -562,10 +588,15 @@ def search_menu(
     low: float | None = None,
     *,
     split_check: bool = True,
+    card: CardFormat | None = None,
 ) -> SearchResult:
     """`split_check=False` nur fuer `position_parts`: die Suche je Stueck und ueber
-    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen."""
+    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen.
+    `card`: das Kartenformat, wenn der Aufrufer es schon gelesen hat."""
     now = now or utcnow()
+    # Welche Praefixe eine Nummer tragen kann ("S12"), sagt die Karte (T-4.12);
+    # gelesen einmal je Suche, auch ueber die rekursiven Aufrufe.
+    card = card if card is not None else card_format(session, tenant_id)
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
 
@@ -576,11 +607,11 @@ def search_menu(
     if candidates and not has_number(candidates[0][1]):
         if split_check:
             parts = position_parts(
-                session, tenant_id, query, now=now, high=high, low=low
+                session, tenant_id, query, now=now, high=high, low=low, card=card
             )
         if parts is None or len(parts) <= 1:
             found = _search_with_wish(
-                session, tenant_id, candidates, max_results, now, high, low
+                session, tenant_id, candidates, max_results, now, high, low, card
             )
             if found is not None:
                 return found
@@ -593,8 +624,7 @@ def search_menu(
     # zweite Zahl, ein Name, "oder"), fragt die Suche nach, statt eine Zahl zu
     # wählen. Ohne "Nummer" ist eine Zahl neben einem Namen eine Menge ("zwei
     # Frühlingsrollen") und die Namenssuche entscheidet.
-    # Welche Praefixe eine Nummer tragen kann ("S12"), sagt die Karte (T-4.12).
-    ref, unclear = sole_item_number(query, card_format(session, tenant_id))
+    ref, unclear = sole_item_number(query, card)
     if unclear:
         raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
     if ref is not None:
@@ -620,7 +650,9 @@ def search_menu(
     # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
     if parts is None:
         parts = (
-            position_parts(session, tenant_id, query, now=now, high=high, low=low)
+            position_parts(
+                session, tenant_id, query, now=now, high=high, low=low, card=card
+            )
             if split_check
             else [query]
         )
