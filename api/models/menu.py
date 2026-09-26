@@ -65,6 +65,9 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     # Schalter "Gericht aus" (docs/06 §3): ausverkauft bis zu diesem Zeitpunkt.
     sold_out_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     description: Mapped[str | None] = mapped_column(Text)
+    # Artikelnummer genau wie in der Kasse ("35B"); `number` ist klein für die
+    # Suche. Eingabezettel und Kassenübergabe brauchen diese Schreibweise (T-4.11).
+    pos_code: Mapped[str | None] = mapped_column(Text)
 
 
 class ItemOption(UUIDPrimaryKey, Timestamps, Base):
