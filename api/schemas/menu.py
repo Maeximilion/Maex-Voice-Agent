@@ -2,9 +2,9 @@
 
 import uuid
 from datetime import date
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SerializationInfo, model_serializer
 
 from api.schemas.common import ToolRequest
 
@@ -16,10 +16,23 @@ class SearchMenuRequest(ToolRequest):
     max_results: int = Field(default=3, ge=1, le=5)
 
 
-class OptionOut(BaseModel):
+class _WithoutEmpty(BaseModel):
+    """Leere Felder gehen nicht ans Modell: jede Option jedes Treffers truege
+    sonst "reason": null mit (CLAUDE.md §2 Regel 6, Review PR #139)."""
+
+    # Ohne Rueckgabetyp: sonst ersetzt Pydantic das Schema durch ein freies
+    # dict und die Felder fehlen in der API-Doku (Review PR #139).
+    @model_serializer(mode="wrap")
+    def _drop_none(self, handler: Any, info: SerializationInfo):
+        return {k: v for k, v in handler(self).items() if v is not None}
+
+
+class OptionOut(_WithoutEmpty):
     name: str
     price_delta_cents: int
     default: bool
+    # Warum die Option mehr kostet, aus der Karte (T-4.10). None: nichts gepflegt.
+    reason: str | None = None
 
 
 class OptionGroup(BaseModel):
@@ -37,9 +50,33 @@ class MenuHit(BaseModel):
     option_groups: list[OptionGroup] = Field(default_factory=list)
 
 
+class Wish(_WithoutEmpty):
+    """Ein Wunsch zur Position (T-4.10, domain/menu/wishes.py). `kind`: `note`
+    (Weglassen), `option` (steht auf der Karte, mit Aufpreis und Grund),
+    `allergy` (Hinweis ohne Zusage), `unknown` (nicht angeboten, D8), `open`
+    (erst nach der Wahl des Gerichts einzuordnen)."""
+
+    text: str
+    kind: Literal["note", "option", "allergy", "unknown", "open"]
+    group: str | None = None
+    option: str | None = None
+    price_delta_cents: int | None = None
+    reason: str | None = None
+    # Bei einer Allergie die Zutat aus den Worten des Gastes (E14). None: der
+    # Agent fragt nach, wogegen.
+    ingredient: str | None = None
+    # Weglassen, das zu einer Zugabe gehoert ("ohne Zwiebeln, dafür mit
+    # Nudeln"): geht als Hinweis mit, die Zugabe ist `option` oder `unknown`.
+    note: str | None = None
+    # Bei `open` nach einem Gericht: die Gruppen, in denen die Option steht
+    # (Reis als Beilage und als Extra) - der Agent fragt, welche.
+    groups: list[str] | None = None
+
+
 class SearchResult(BaseModel):
     match_type: MatchType
     results: list[MenuHit]
+    wish: Wish | None = None
     say: str | None = Field(default=None, exclude=True)
 
 

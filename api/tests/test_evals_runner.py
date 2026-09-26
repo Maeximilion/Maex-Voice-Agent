@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
-from api.models import MenuItem, Tenant
+from api.models import AuditLog, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
@@ -176,6 +176,12 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         {
             "id": "x",
             "sold_out": "48",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "repeat_confirm": "ja",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
         },
@@ -535,3 +541,77 @@ def test_ausverkauft_bis_ende_des_betriebstags():
     assert ende == datetime.fromisoformat("2026-09-16T05:00:00+02:00")
     nacht = datetime.fromisoformat("2026-09-16T01:00:00+02:00")
     assert runner._end_of_business_day(nacht) == ende
+
+
+def test_wiederholter_confirm_wird_wirklich_gesendet(migrated_db_url, tmp_path):
+    """Codex PR #145: das Replay endet mit der Bestaetigung, ein zweites Ja des
+    Gasts kaeme nie an. `repeat_confirm` schickt den letzten confirm des Modells
+    selbst ein zweites Mal - und ohne confirm ist der Fall rot, nicht still gruen."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 23.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("zweimal", zeilen, {"confirmed": True}, repeat_confirm=True),
+        fall("ohne", zeilen[:2], {"confirmed": False}, repeat_confirm=True),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["zweimal"].passed, result["zweimal"].diffs
+    assert not result["ohne"].passed
+    assert any("nie confirm" in d for d in result["ohne"].diffs)
+
+
+def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
+        call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
+        item = session.scalar(
+            select(MenuItem.id).where(
+                MenuItem.tenant_id == tenant.id, MenuItem.number == "23"
+            )
+        )
+        draft = draft_order(
+            session,
+            DraftOrderRequest(
+                call_id=call.call_id,
+                tenant_id=tenant.id,
+                idempotency_key="k1",
+                type="pickup",
+                customer={"name": "Mueller", "phone": "0721 5551234"},
+                items=[{"menu_item_id": item, "quantity": 1}],
+            ),
+            now=runner.DEFAULT_NOW,
+        )
+        req = ConfirmRequest(
+            call_id=call.call_id,
+            tenant_id=tenant.id,
+            entity="order",
+            entity_id=draft.order_id,
+            idempotency_key="c1",
+        )
+        confirm(session, req)
+        confirm(session, req)
+        assert observe(session, call.call_id, confirms=2).duplicate_confirms == 0
+        # Ein nicht idempotentes confirm schriebe einen zweiten Eintrag.
+        session.add(
+            AuditLog(
+                tenant_id=tenant.id,
+                actor="agent",
+                action="order.confirmed",
+                entity="order",
+                entity_id=draft.order_id,
+                payload={},
+            )
+        )
+        session.commit()
+        seen = observe(session, call.call_id, confirms=2)
+        assert seen.duplicate_confirms == 1
+        assert any("doppelt" in d for d in judge({}, seen))
+    engine.dispose()

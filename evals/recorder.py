@@ -69,6 +69,9 @@ class Recording:
     # Kundensatz vor jedem confirm, der kein Ja war.
     unconfirmed: list[str] = field(default_factory=list)
     confirms: int = 0
+    # Argumente des letzten confirm: der Runner schickt ihn fuer `repeat_confirm`
+    # ein zweites Mal, wie eine Plattform nach einem Timeout (docs/08 §6).
+    last_confirm: dict[str, Any] | None = None
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
@@ -111,6 +114,7 @@ class RecordingLLM:
                     rec.guessed.append((item_id, last))
         elif name == "confirm":
             rec.confirms += 1
+            rec.last_confirm = dict(args)
             # Das Ja zaehlt nur, wenn es nach dem Entwurf kam, also auf das
             # Vorlesen antwortet. "Ja, guten Tag, einmal die 13" vor Suche,
             # Entwurf und confirm im selben Zug ist keine Zustimmung zum

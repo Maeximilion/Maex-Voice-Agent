@@ -62,6 +62,7 @@ def option_groups(
                 name=option.option_name,
                 price_delta_cents=option.price_delta_cents,
                 default=option.is_default,
+                reason=option.price_reason,
             )
         )
     return {item_id: list(groups.values()) for item_id, groups in by_item.items()}

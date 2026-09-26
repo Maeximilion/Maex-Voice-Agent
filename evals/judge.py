@@ -17,7 +17,18 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.models import Call, Callback, MenuItem, Order, OrderItem, Reservation
+from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
+from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    MenuItem,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Reservation,
+)
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
@@ -52,6 +63,8 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     sold_out = case.get("sold_out", [])
     if not isinstance(sold_out, list) or not all(isinstance(n, str) for n in sold_out):
         raise CaseError(f"{source}: sold_out ist eine Liste von Kartennummern")
+    if not isinstance(case.get("repeat_confirm", False), bool):
+        raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
@@ -70,6 +83,10 @@ class Observed:
     party_size: int | None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
+    # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
+    # ein wiederholter confirm darf keinen zweiten Vorgang und keinen zweiten
+    # Bon ausloesen (docs/08 §6, Idempotenz).
+    duplicate_confirms: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -100,6 +117,8 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
             for n, q, opts in rows
         ]
 
+    duplicates = _duplicate_confirms(session, orders, reservations)
+
     name = None
     if done_orders:
         name = done_orders[-1].customer_name
@@ -113,7 +132,41 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
         confirmed_without_confirm=max(0, booked - confirms),
+        duplicate_confirms=duplicates,
     )
+
+
+def _duplicate_confirms(session: Session, orders, reservations) -> int:
+    """Wie oft ein Vorgang dieses Anrufs mehr als einmal bestaetigt wurde."""
+    ids = [o.id for o in orders] + [r.id for r in reservations]
+    if not ids:
+        return 0
+    audit = session.execute(
+        select(func.count(AuditLog.id))
+        .where(
+            AuditLog.entity_id.in_(ids),
+            AuditLog.action.in_((ORDER_CONFIRMED_ACTION, "reservation.confirmed")),
+        )
+        .group_by(AuditLog.entity_id)
+    ).scalars()
+    keys = [str(i) for i in ids]
+    events = session.execute(
+        select(func.count(OutboxEvent.id))
+        .where(
+            OutboxEvent.event_type.in_((ORDER_CONFIRMED, RESERVATION_CONFIRMED)),
+            func.coalesce(
+                OutboxEvent.payload["order_id"].astext,
+                OutboxEvent.payload["reservation_id"].astext,
+            ).in_(keys),
+        )
+        .group_by(
+            func.coalesce(
+                OutboxEvent.payload["order_id"].astext,
+                OutboxEvent.payload["reservation_id"].astext,
+            )
+        )
+    ).scalars()
+    return sum(n - 1 for n in audit) + sum(n - 1 for n in events)
 
 
 def _matches(want: dict[str, Any], got: dict[str, Any]) -> bool:
@@ -161,4 +214,7 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diff = _compare_items(expected["items"], seen.items)
         if diff:
             diffs.append(diff)
+    # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
+    if seen.duplicate_confirms:
+        diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")
     return diffs

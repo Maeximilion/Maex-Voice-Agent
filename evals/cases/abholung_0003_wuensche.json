@@ -1,0 +1,19 @@
+{
+  "id": "abholung_0003",
+  "name": "Abholung mit Hinweis und Option als Wunsch in einem Satz",
+  "tags": ["abholung", "wunsch", "mehrere_positionen"],
+  "source": "roleplay",
+  "caller_id": "+497215551234",
+  "transcript": [
+    { "role": "customer", "text": "Hallo, ich moechte etwas zum Abholen bestellen." },
+    { "role": "customer", "text": "Die 23 ohne Karotten und die knusprige Ente mit Huhn." },
+    { "role": "customer", "text": "Nein, das wars." },
+    { "role": "customer", "text": "Auf den Namen Mueller." },
+    { "role": "customer", "text": "Ja, passt." }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false
+  }
+}

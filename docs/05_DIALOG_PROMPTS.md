@@ -87,8 +87,17 @@ je Position → search_menu
    exact_number / alias / fuzzy_single → übernehmen
    ambiguous → nachfragen, max. 3 Optionen vorlesen
    not_found → Verständnis-Leiter
+   wish → note / option übernehmen, unknown nicht anbieten, allergy ohne Zusage
 → draft_order → readback vorlesen → Ja → confirm → Abholzeit und Code nennen
 ```
+
+**Wünsche (T-4.10, D8):** Was die Karte als Option kennt, nimmt der Agent auf
+und sagt den Aufpreis gleich mit („Nummer 47 Ente knusprig mit Nudeln, 3 Euro
+Aufpreis"). Weglassen („ohne Karotten") wird notiert und wiederholt. Alles
+andere bietet er am Telefon nicht an. Fragt der Gast, warum etwas mehr kostet,
+nennt er nur den Grund aus der Karte (`reason`) - fehlt er, steht der Preis so
+in der Karte. Er erklärt einmal, sachlich, und verhandelt nicht; besteht der
+Gast darauf, ist es eine Beschwerde und geht ans Team.
 
 ### Lieferung
 Zusätzlich: **Adresse**

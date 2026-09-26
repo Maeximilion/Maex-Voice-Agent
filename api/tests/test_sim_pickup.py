@@ -856,6 +856,290 @@ def test_das_wars_beendet_auch_waehrend_einer_rueckfrage(session, tenant):
     assert positions(session, order) == [("23", 1, [])]
 
 
+# --- Wuensche (T-4.10) -------------------------------------------------------------
+
+
+def _notes(session, order) -> list[str | None]:
+    return list(
+        session.scalars(
+            select(OrderItem.note)
+            .where(OrderItem.order_id == order.id)
+            .order_by(OrderItem.created_at)
+        )
+    )
+
+
+def _bestellung(session, tenant, *zeilen):
+    return replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            *zeilen,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+
+
+def test_hinweis_landet_in_der_bestellung(session, tenant):
+    _, turns = _bestellung(session, tenant, "Die 23 ohne Karotten.")
+    assert "Nummer 23, ohne Karotten" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["ohne Karotten"]
+
+
+def test_option_als_wunsch_erspart_die_rueckfrage(session, tenant):
+    """ "mit Huhn" ist die Option der Pflichtgruppe Fleisch: keine Frage mehr
+    nach Ente oder Huhn, die Wahl steht in der Bestellung."""
+    _, turns = _bestellung(session, tenant, "Die knusprige Ente mit Huhn.")
+    assert "Welche Auswahl bei Fleisch" not in said(turns)
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+
+
+def test_wunsch_nach_der_wahl_aus_vorschlaegen(session, tenant):
+    """ "Ente ohne Zwiebeln" ist mehrdeutig; nach der Wahl gilt der Hinweis."""
+    _bestellung(session, tenant, "Ente ohne Zwiebeln.", "Die 48.")
+    [order] = orders(session)
+    assert positions(session, order)[0][0] == "48"
+    assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_fall_mit_wuenschen_aus_evals(session, tenant):
+    fall = json.loads(
+        (CASE.parent / "abholung_0003_wuensche.json").read_text(encoding="utf-8")
+    )
+    _, turns = replay(session, fall, tenant, now=NOW)
+
+    assert "Welche Auswahl bei Fleisch" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("23", 1, []), ("47", 1, ["Huhn"])]
+    assert _notes(session, order) == ["ohne Karotten", None]
+
+
+def test_allergie_steht_im_festen_wortlaut_in_der_bestellung(session, tenant):
+    """E14: Hinweis an die Kueche im festen Wortlaut, beim Vorlesen wiederholt."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich vertrage keine Erdnüsse.")
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in said(turns)
+
+
+def test_wunsch_nach_der_wahl_wird_gesagt(
+    session,
+    tenant,
+):
+    """Codex PR #139, P2: nach der Wahl aus Vorschlaegen wird der Wunsch
+    eingeordnet und gesagt - Unbekanntes abgelehnt, eine Option wiederholt."""
+    _, turns = _bestellung(session, tenant, "Ente mit Pommes.", "Die 48.")
+    assert "Den Wunsch „mit Pommes“ kann ich leider nicht anbieten" in said(turns)
+
+
+def test_option_nach_der_wahl_wird_wiederholt(session, tenant):
+    _, turns = _bestellung(session, tenant, "Ente mit Huhn.", "Die 47.")
+    assert "Nummer 47 Ente knusprig mit Huhn" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+
+
+def test_unbekannter_wunsch_in_einer_aufzaehlung_wird_gesagt(session, tenant):
+    _, turns = _bestellung(session, tenant, "Die 23 mit Pommes und Pho Bo.")
+    assert "Den Wunsch „mit Pommes“ kann ich leider nicht anbieten" in said(turns)
+
+
+def test_menge_am_ende_mit_wunsch(session, tenant):
+    """(4) "Die 23 ohne Zwiebeln, zweimal." - zwei Portionen, Hinweis ohne "zweimal"."""
+    _bestellung(session, tenant, "Die 23 ohne Zwiebeln, zweimal.")
+    [order] = orders(session)
+    assert positions(session, order) == [("23", 2, [])]
+    assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_weglassen_und_option_zusammen_in_der_bestellung(session, tenant):
+    """(1) Hinweis und Option aus einem Wunsch landen beide in der Bestellung."""
+    _bestellung(session, tenant, "Die knusprige Ente ohne Zwiebeln, dafür mit Huhn.")
+    [order] = orders(session)
+    assert positions(session, order) == [("47", 1, ["Huhn"])]
+    assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+def test_eigene_allergie_ist_kein_rueckruf(session, tenant):
+    """Codex PR #139: "ich habe eine Erdnussallergie" waehrend der Bestellung ist
+    ein Hinweis zur Position (E14), kein Anliegen fuer einen Rueckruf."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Erdnussallergie.")
+    session.expire_all()
+    assert list(session.scalars(select(Callback))) == []
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+
+
+def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
+    """Codex PR #139, P1: "ich habe eine Allergie" - die Frage "Wogegen?" bleibt
+    offen, bis die Antwort kommt; die Zutat geht im festen Wortlaut an die
+    Kueche, statt als Gericht gesucht zu werden."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[1].say)
+    assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Weiß ich nicht.", "Nein."])
+def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
+    """Codex PR #139, P1: auf "Wogegen?" keine Zutat - die Frage bleibt offen,
+    kein Hinweis "Keine Weiß ich nicht" an die Kueche."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
+    """Codex PR #139, P1: zwei Gerichte mit Allergie ohne Zutat in einem Satz -
+    jede Frage bleibt offen, jede Antwort gehoert zu ihrem Gericht."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo mit Allergie und Frühlingsrollen mit Allergie.",
+        "Erdnüsse.",
+        "Sesam.",
+    )
+    erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
+    assert erste.count("Wogegen") == 1
+    assert "bei Pho Bo" in erste
+    assert "bei Frühlingsrollen (4 Stück)" in zweite
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        "WICHTIG: Keine Sesam. Grund: Allergie",
+    ]
+
+
+def test_allergie_und_auswahl_nacheinander(session, tenant):
+    """Codex PR #139, P1: ein mehrdeutiges Gericht und eine Allergie ohne Zutat
+    in einem Satz - erst die Allergie, dann die Auswahl, nie beide Fragen
+    zugleich. Sonst wuerde "Nummer 12" als Zutat notiert."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Eine Suppe und eine Pho Bo mit Allergie.",
+        "Erdnüsse.",
+        "Nummer 12.",
+    )
+    erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
+    assert "Wogegen" in erste
+    assert "Meinen Sie" not in erste
+    assert "Meinen Sie" in zweite
+    [order] = orders(session)
+    assert sorted(p[0] for p in positions(session, order)) == ["12", "13"]
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+
+
+@pytest.mark.parametrize(
+    "antwort",
+    [
+        "Gegen Erdnüsse.",
+        "Ich bin gegen Erdnüsse allergisch.",
+        "Ich habe eine Erdnüsseallergie.",
+        "Erdnüsse.",
+    ],
+)
+def test_ganze_antwort_auf_wogegen(session, tenant, antwort):
+    """Codex PR #139, P1: eine ganze Antwort ("gegen Erdnüsse", "ich bin gegen
+    Erdnüsse allergisch") gibt dieselbe Zutat wie das blosse Wort."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Keine Erdnüsse.", "Kein Erdnüsse bitte."])
+def test_keine_als_antwort_auf_wogegen(session, tenant, antwort):
+    """Codex PR #139, P1: "Keine Erdnüsse" als Antwort ergibt keinen Hinweis
+    "Keine Keine Erdnüsse"."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+def test_allergiefrei_geht_an_das_team(session, tenant):
+    """Codex PR #139, P2: "Frühlingsrollen allergiefrei?" waehrend der Bestellung
+    ist die Frage nach Allergenen (Rueckruf), nicht "Wogegen?"."""
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Sind die Frühlingsrollen allergiefrei?",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert "Wogegen" not in said(turns)
+    # Der Rueckrufpfad fragt nach der Nummer (Rufnummer unterdrueckt).
+    assert "Telefonnummer" in said(turns)
+
+
+def test_mehrdeutige_position_mit_wunsch_fragt_einmal(session, tenant):
+    """Codex PR #139, P2: "eine Ente mit Nudeln und eine Pho Bo" - die Auswahl
+    zur Ente steht im Teil und wird einmal gefragt, nicht doppelt."""
+    _, turns = _bestellung(session, tenant, "Eine Ente mit Nudeln und eine Pho Bo.")
+    assert " ".join(turns[1].say).count("Meinen Sie") == 1
+
+
+def test_allergie_bleibt_wenn_die_wahl_neu_gesucht_wird(session, tenant):
+    """Review PR #139: "Pho" statt der angebotenen "Pho Bo" wird neu gesucht - die
+    Allergie aus der Frage bleibt an diesem Gericht."""
+    _bestellung(session, tenant, "Eine Suppe mit Erdnussallergie.", "Pho.")
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+
+
+def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
+    """Review PR #139: mehrdeutiges Gericht mit Allergie ohne Zutat - erst die Wahl,
+    dann "Wogegen?", nie beides zugleich."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Eine Suppe mit Allergie und die 23.",
+        "Nummer 12.",
+        "Erdnüsse.",
+    )
+    erste = " ".join(turns[1].say)
+    assert "Wogegen" not in erste
+    assert erste.count("Meinen Sie") == 1
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+
+
+def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
+    _, turns = _bestellung(
+        session, tenant, "Eine Suppe mit Erdnussallergie und die 23.", "Nummer 12."
+    )
+    assert " ".join(turns[1].say).count("Meinen Sie") == 1
+
+
+@pytest.mark.parametrize("antwort", ["Eine Cola bitte.", "Nummer 12."])
+def test_bestellung_ist_keine_antwort_auf_wogegen(session, tenant, antwort):
+    """Review PR #139: ein Gericht statt der Zutat wird nicht zur Allergie."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
 # --- Befunde aus der Eval-Suite v1 (T-5.2) -----------------------------------------
 
 

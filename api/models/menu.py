@@ -94,6 +94,9 @@ class ItemOption(UUIDPrimaryKey, Timestamps, Base):
     required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # Warum die Option mehr kostet (Migration 003, T-4.10). Der Agent nennt nur
+    # diesen Satz, nie eine eigene Begruendung.
+    price_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class ItemAllergen(Timestamps, Base):

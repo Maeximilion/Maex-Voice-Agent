@@ -394,3 +394,157 @@ def test_schluessel_vom_modell_wird_ignoriert(session, tenant_id, call_id):
     assert result.ok
     assert result.data["order_id"] != foreign.data["order_id"]
     assert "Fremd" not in result.data["readback"]
+
+
+# --- Wuensche (T-4.10) -------------------------------------------------------------
+
+
+def test_hinweis_wird_mit_wiederholt(session, tenant_id, call_id):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 ohne Karotten"}
+    )
+    assert "Nummer 23, ohne Karotten" in result.say
+    assert result.data["wish"]["kind"] == "note"
+
+
+def test_option_der_karte_mit_aufpreis_wird_mit_wiederholt(session, tenant_id, call_id):
+    """Der Aufpreis kommt aus item_options und wird sofort gesagt (D8)."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Ente knusprig mit Erdnuss"},
+    )
+    assert "Nummer 47 Ente knusprig mit Erdnuss, 0,50 Euro Aufpreis" in result.say
+    assert result.data["wish"]["option"] == "Erdnuss"
+    assert result.data["wish"]["price_delta_cents"] == 50
+
+
+def test_unbekannter_wunsch_hat_seinen_satz_ohne_wiederholung(
+    session, tenant_id, call_id
+):
+    result = run(
+        session, tenant_id, call_id, "search_menu", {"query": "die 23 mit Pommes"}
+    )
+    assert result.say.startswith("Den Wunsch „mit Pommes“ kann ich leider nicht")
+
+
+def test_allergie_wiederholt_das_gericht_und_sagt_den_hinweis(
+    session, tenant_id, call_id
+):
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Pho Bo, ich habe eine Erdnussallergie"},
+    )
+    assert "Nummer 13 Pho Bo" in result.say
+    assert "an die Küche weiter" in result.say
+    assert "Erdnussallergie" not in result.say
+
+
+def test_wunsch_in_einer_aufzaehlung(session, tenant_id, call_id):
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 ohne Karotten und Pho Bo"},
+    )
+    assert result.data["match_type"] == "positions"
+    first, second = result.data["positions"]
+    assert first["wish"]["kind"] == "note"
+    assert second["wish"] is None
+    assert "Nummer 23, ohne Karotten und Nummer 13 Pho Bo" in result.data["say"]
+
+
+def test_wiederholung_mit_leeren_vorgaben_ist_derselbe_entwurf(
+    session, tenant_id, call_id
+):
+    """Offener Punkt aus PR #127 (T-4.10): ein Modell-Retry mit `options: []` und
+    `note: null` statt weggelassener Felder ist dieselbe Bestellung - der
+    Schluessel kommt aus der gepruefen Form, nicht aus den rohen Argumenten."""
+    body = order_body(session, tenant_id)
+    first = run(session, tenant_id, call_id, "draft_order", body)
+    explicit = {
+        **body,
+        "items": [{**i, "options": [], "note": None} for i in body["items"]],
+    }
+    again = run(session, tenant_id, call_id, "draft_order", explicit)
+    assert again.data["order_id"] == first.data["order_id"]
+    assert session.scalar(select(func.count()).select_from(Order)) == 1
+
+
+def test_hinweise_der_teile_stehen_im_satz_der_antwort(session, tenant_id, call_id):
+    """Codex PR #139, P1: in einer Aufzaehlung fielen "kann ich nicht anbieten" und
+    der Hinweis zur Allergie weg - nur die Wiederholung stand im Satz."""
+    unknown = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Pommes und Pho Bo"},
+    )
+    assert unknown.data["match_type"] == "positions"
+    assert "kann ich leider nicht anbieten" in unknown.data["say"]
+    allergy = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Pho Bo, ich habe eine Erdnussallergie und die 23"},
+    )
+    assert allergy.data["match_type"] == "positions"
+    assert "an die Küche weiter" in allergy.data["say"]
+
+
+def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):
+    """(7) Ausverkauft und ein Wunsch dazu: der Satz "heute aus" steht nicht
+    zusaetzlich unter den Pflichtsaetzen der Antwort."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from sqlalchemy import update
+
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(sold_out_until=datetime(2030, 1, 1, tzinfo=ZoneInfo("UTC")))
+    )
+    session.commit()
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "die 23 mit Pommes und Pho Bo"},
+    )
+    assert "heute leider aus" not in (result.data["say"] or "")
+    assert "heute leider aus" in result.data["positions"][0]["say"]
+
+
+def test_eine_position_wird_nur_einmal_zerlegt(
+    session, tenant_id, call_id, monkeypatch
+):
+    """(10) dispatch zerlegt selbst; search_menu prueft danach nicht noch einmal."""
+    import api.domain.menu.search as search_module
+
+    calls = []
+    original = search_module.position_parts
+    monkeypatch.setattr(
+        search_module,
+        "position_parts",
+        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
+    )
+    import sys
+
+    dispatch_module = sys.modules["api.agent.dispatch"]
+    monkeypatch.setattr(
+        dispatch_module,
+        "position_parts",
+        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
+    )
+    run(session, tenant_id, call_id, "search_menu", {"query": "die 23 ohne Karotten"})
+    assert calls.count("die 23 ohne Karotten") == 1

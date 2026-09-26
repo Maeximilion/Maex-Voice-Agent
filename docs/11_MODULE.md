@@ -179,7 +179,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 ### `evals/`
 - `runner.py` (Lauf, Wegwerf-Datenbank, CLI), `judge.py` (Abgleich mit dem Datenbankzustand), `recorder.py` (Beobachter am Modell für geratene Positionen und `confirm` ohne Ja), `report.py` (JSON, Markdown, Vergleich mit dem letzten Lauf), `scratch_db.py` (Wegwerf-Datenbanken, auch für die Tests) — siehe 08
 - `menu/` — Evalkarte im Importformat (docs/14), Testdaten
-- `cases/<bereich>_<nr>_<name>.json` — optional `now`, `caller_id`, `sold_out`, `pending` (bekannte Lücke mit Aufgabe, docs/08 §3)
+- `cases/<bereich>_<nr>_<name>.json` — optional `now`, `caller_id`, `sold_out`, `repeat_confirm`, `pending` (bekannte Lücke mit Aufgabe, docs/08 §3)
 
 ---
 
