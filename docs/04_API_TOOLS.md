@@ -304,6 +304,7 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 - Kein Reservierungsbeginn kurz vor Ladenschluss: schließt der Service um 22:00, ist 21:30 nicht buchbar. Der Abstand kommt aus der DB, nicht aus dem Code (Wert offen, D12). Heute ist 21:30 buchbar (`test_fensterende_ist_exklusiv_und_ausserhalb_der_oeffnung_nicht_buchbar`).
 - Wunsch vor der ersten Öffnung des Tages (morgens) darf auf einen späteren Service ausweichen, auch abends; der Satz nennt dann die Tageszeit („abends um sieben"), weil der Abstand über sechs Stunden liegt.
 - Wunsch für einen anderen, genannten Tag: keine Sonderlogik, es gilt der Tag des Gastes.
+- **Offen (D12):** Wunsch zwischen zwei Services (15:00 bei 11:30–14:00 und 17:00–22:00) und nach dem letzten Service (23:00). Vorschlag, noch nicht entschieden: zwischen zwei Services zählt der nächstgelegene Service desselben Tages, bei gleichem Abstand der spätere; nach dem letzten Service nur dieser letzte (kein nächster Tag, der müsste genannt werden). Codex PR #153.
 
 ---
 
