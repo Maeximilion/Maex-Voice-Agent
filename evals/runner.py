@@ -30,15 +30,16 @@ import argparse
 import json
 import sys
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMClient
 from api.domain.menu.importer import apply, parse
+from api.models import MenuItem
 from evals.judge import CaseError, judge, observe, validate_case
 from evals.recorder import RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
@@ -116,6 +117,27 @@ def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     return tenant
 
 
+def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) -> None:
+    """ "Heute aus" wie im Tablet (T-4.8): bis zum Ende des Tages ausverkauft.
+
+    Die Evalkarte im Importformat kennt keinen Tagesstand, deshalb setzt ihn der
+    Fall selbst (`"sold_out": ["48"]`). Eine unbekannte Nummer ist ein kaputter
+    Fall, kein stilles Nichts.
+    """
+    if not numbers:
+        return
+    changed = session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number.in_(numbers))
+        .values(sold_out_until=now + timedelta(days=1))
+    ).rowcount
+    if changed != len(set(numbers)):
+        raise CaseError(
+            f"sold_out {numbers}: nicht jede Nummer steht auf der Evalkarte"
+        )
+    session.commit()
+
+
 def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
@@ -125,10 +147,12 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         tags=case.get("tags", []),
         passed=False,
         expected_escalation=bool(expected.get("escalated")),
+        pending=case.get("pending"),
     )
     llm = RecordingLLM(make_llm(now))
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
+        _sell_out(session, tenant.id, case.get("sold_out", []), now)
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)

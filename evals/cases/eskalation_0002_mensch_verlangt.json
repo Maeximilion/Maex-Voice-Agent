@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0002",
+  "name": "Mensch verlangt",
+  "tags": [
+    "eskalation",
+    "mensch"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich will mit einem Menschen sprechen."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

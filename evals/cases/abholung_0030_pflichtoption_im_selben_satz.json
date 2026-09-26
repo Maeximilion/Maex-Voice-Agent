@@ -1,0 +1,51 @@
+{
+  "id": "abholung_0030",
+  "name": "Pflichtoption im selben Satz",
+  "tags": [
+    "abholung",
+    "pflichtoption"
+  ],
+  "source": "handcrafted",
+  "pending": "T-4.10: Gericht und Option im selben Satz trennen (search_menu findet \"die 47 mit Huhn\" heute nicht)",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 47 mit Huhn."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "47",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}

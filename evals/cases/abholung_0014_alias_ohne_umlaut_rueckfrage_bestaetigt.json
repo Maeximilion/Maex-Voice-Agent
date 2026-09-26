@@ -1,0 +1,53 @@
+{
+  "id": "abholung_0014",
+  "name": "Alias ohne Umlaut, Rueckfrage bestaetigt",
+  "tags": [
+    "abholung",
+    "menu",
+    "alias",
+    "rueckfrage"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal Fruehlingsrollen."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}

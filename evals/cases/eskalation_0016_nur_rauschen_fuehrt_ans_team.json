@@ -1,0 +1,43 @@
+{
+  "id": "eskalation_0016",
+  "name": "Nur Rauschen fuehrt ans Team",
+  "tags": [
+    "eskalation",
+    "rauschen"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo? ... krrr ... hoeren Sie?"
+    },
+    {
+      "role": "customer",
+      "text": "... chhh ... also ..."
+    },
+    {
+      "role": "customer",
+      "text": "... krrr ..."
+    },
+    {
+      "role": "customer",
+      "text": "... hallo ..."
+    },
+    {
+      "role": "customer",
+      "text": "... chhh ..."
+    },
+    {
+      "role": "customer",
+      "text": "... krrr ... ja ..."
+    },
+    {
+      "role": "customer",
+      "text": "... hallo? ..."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

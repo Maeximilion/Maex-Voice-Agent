@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0015",
+  "name": "Aerger",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich hatte richtig Ärger mit der Lieferung letzte Woche."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

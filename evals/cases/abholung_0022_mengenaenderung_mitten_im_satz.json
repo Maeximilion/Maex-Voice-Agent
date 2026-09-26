@@ -1,0 +1,49 @@
+{
+  "id": "abholung_0022",
+  "name": "Mengenaenderung mitten im Satz",
+  "tags": [
+    "abholung",
+    "menge",
+    "mengenaenderung"
+  ],
+  "source": "handcrafted",
+  "pending": "T-2.4: das Skript-Modell gibt den ganzen Satz an search_menu; ein echtes Modell uebergibt nur Gericht und Menge",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23, ach nein, doch drei."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 3
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}

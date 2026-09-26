@@ -266,6 +266,12 @@ class PickupScript:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
         auf eine der angebotenen passt."""
         lowered = text.lower()
+        # "Meinen Sie Nummer 23?" - "Ja, genau": ein Ja nimmt den einen Vorschlag.
+        # Neu gesucht fand "Ja, genau" kein Gericht, und dieselbe Frage kam
+        # endlos zurueck (Eval-Suite T-5.2). Bei mehreren Vorschlaegen ist ein Ja
+        # keine Wahl, da wird weiter nach Nummer oder Name gefragt.
+        if len(self._suggestions) == 1 and _agrees(text):
+            return self._suggestions[0]
         # Auch gesprochen ("die dreizehn") und mit fuehrender Null (Review PR #133).
         # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
         # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
@@ -439,6 +445,15 @@ def _finishes(text: str) -> bool:
     return any(
         re.search(rf"\b{re.escape(p)}\b", lowered) for p in DONE_PHRASES if p != "nein"
     )
+
+
+_AGREE = re.compile(r"\b(ja|jawohl|genau|richtig|stimmt|korrekt|gerne?)\b")
+
+
+def _agrees(text: str) -> bool:
+    """Ein Ja ohne Nein: "Ja, genau" nimmt den Vorschlag, "Nein, nicht die" nicht."""
+    lowered = text.lower()
+    return bool(_AGREE.search(lowered)) and not _rejects(text) and "nein" not in lowered
 
 
 def _rejects(text: str) -> bool:

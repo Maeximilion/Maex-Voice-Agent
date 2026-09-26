@@ -78,6 +78,12 @@ Danach:
 - Urteil: Exit 1 bei einem abgestürzten Fall, bei einem einzigen harten Verstoß oder wenn ein Fall, der im letzten **bestandenen** Lauf mit demselben Modell und denselben Tags grün war, jetzt rot ist. Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer roter Fall aus `/bug` ist keine Regression und darf rot stehen, bis der Fix da ist; neue grüne Fälle verdecken keinen kaputten. Ein durchgefallener Lauf ist nie Maßstab, sonst verschwände eine Regression beim zweiten Aufruf.
 - Report als JSON und Markdown in `evals/reports/` (nicht im Repo). Tokens und Kosten je Fall bleiben leer, bis T-2.4 ein echtes Modell anschließt; `--model` nimmt bis dahin nur `scripted` und lehnt alles andere ab, statt still auf das Skript zurückzufallen.
 - Die ganze Suite aus `evals/cases/` läuft auch in CI (`api/tests/test_evals_runner.py`), damit Regel 4 aus CLAUDE.md §2 bei jedem Pull Request greift.
+
+**Suite v1 (T-5.2, 26.09.2026):** 105 Fälle in `evals/cases/` (Abholung, Reservierung, Eskalation, Allergie, Lieferung), jede Zeile aus §6 hat mindestens einen. Ein Lauf dauert etwa 12 s. Stand mit dem Skript-Modell: 96 von 105 grün, harte Metriken 0, falsche Eskalation 4,7 %.
+- `"sold_out": ["48"]` setzt „heute aus" nur für diesen Fall (die Evalkarte im Importformat kennt keinen Tagesstand). Eine Nummer, die nicht auf der Evalkarte steht, lässt den Fall abstürzen.
+- `"pending": "T-6.5: …"` markiert eine **bekannte Lücke**: der Fall beschreibt das Ziel, das der heutige Stand noch nicht kann, mit der Aufgabe, die ihn grün macht. Er zählt in der Genauigkeit mit und steht im Report unter „Bekannte Lücken". CI verlangt, dass jeder Fall ohne `pending` grün und jeder mit `pending` rot ist, wie ein striktes xfail: wird eine Lücke grün, fällt CI auf, und das Feld kommt weg. Höchstens jeder zehnte Fall darf eine Lücke sein.
+- Die Evalkarte trägt Allergene für 23 und 24; die 13 hat bewusst keine (Allergiefrage ohne gepflegten Wert).
+
 - Noch offen: den Lauf in `eval_runs` speichern (Tabelle nach docs/03 §Migrationsreihenfolge, Nummer nach PR #139).
 
 Aufruf:
@@ -107,7 +113,7 @@ make eval MODEL=<name>         # Modellvergleich
 
 | Quelle | Menge | Wann |
 |---|---|---|
-| Handgeschrieben | 20–30 | sofort, deckt die Regeln ab |
+| Handgeschrieben | 20–30, gebaut: 101 (T-5.2) | sofort, deckt die Regeln ab |
 | Rollenspiele mit dem Team | 50–80 | vor G1 und G2, mit echtem Küchenlärm |
 | Nachgestellt aus dem Anrufprotokoll (`docs/17`) | laufend | sofort; `source: handcrafted`, eigene Worte, nie der Wortlaut echter Anrufe |
 | Echte Anrufe (Schattenmodus) | laufend | ab Stufe 4, nach Rechtsfreigabe |
@@ -119,21 +125,28 @@ Die letzte Zeile ist die wichtigste. Jeder Fehler, der einmal passiert ist, wird
 
 ## 6. Pflichtabdeckung
 
-Die Suite ist unvollständig, solange einer dieser Fälle fehlt:
+Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag ist verbindlich: `api/tests/test_evals_suite.py` liest diese Tabelle und verlangt zu jedem Tag mindestens einen Fall in `evals/cases/`.
 
-- Bestellung über die Kartennummer · über den Namen · über einen umgangssprachlichen Alias
-- Menge über eins, Mengenänderung mitten im Satz („doch drei")
-- Pflicht-Optionsgruppe nicht genannt → muss nachfragen
-- Ausverkauftes Gericht → Alternative statt Annahme
-- Zwei ähnliche Gerichte → **muss** nachfragen, darf nicht wählen
-- Allergiefrage mit gepflegtem Wert · ohne gepflegten Wert
-- Adresse außerhalb der Zone · Mindestbestellwert unterschritten
-- Kunde bricht mittendrin ab
-- Beschwerde in Satz eins → sofortige Eskalation
-- „Ich will mit jemandem sprechen" → sofortige Eskalation
-- Starkes Rauschen → Verständnis-Leiter statt Raten
-- Bestellung während der Schließzeit
-- Doppelter `confirm` → nur ein Vorgang (Idempotenz)
+| Pflichtfall | Tag |
+|---|---|
+| Bestellung über die Kartennummer | `nummer` |
+| Bestellung über den Namen | `name` |
+| Bestellung über einen umgangssprachlichen Alias | `alias` |
+| Menge über eins | `menge` |
+| Mengenänderung mitten im Satz („doch drei") | `mengenaenderung` |
+| Pflicht-Optionsgruppe nicht genannt → muss nachfragen | `pflichtoption` |
+| Ausverkauftes Gericht → Alternative statt Annahme | `ausverkauft` |
+| Zwei ähnliche Gerichte → **muss** nachfragen, darf nicht wählen | `mehrdeutig` |
+| Allergiefrage mit gepflegtem Wert | `allergie_gepflegt` |
+| Allergiefrage ohne gepflegten Wert | `allergie_ohne_wert` |
+| Adresse außerhalb der Zone | `zone` |
+| Mindestbestellwert unterschritten | `mindestbestellwert` |
+| Kunde bricht mittendrin ab | `abbruch` |
+| Beschwerde in Satz eins → sofortige Eskalation | `beschwerde` |
+| „Ich will mit jemandem sprechen" → sofortige Eskalation | `mensch` |
+| Starkes Rauschen → Verständnis-Leiter statt Raten | `rauschen` |
+| Bestellung während der Schließzeit | `schliesszeit` |
+| Doppelter `confirm` → nur ein Vorgang (Idempotenz) | `doppeltes_confirm` |
 
 ---
 

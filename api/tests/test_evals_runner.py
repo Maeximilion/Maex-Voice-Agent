@@ -63,7 +63,15 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
 
     assert report.total == len(list(CASES.glob("*.json")))
     assert report.verdict == "bestanden", report.to_markdown()
-    assert report.accuracy == 1.0
+    # Jeder Fall ohne `pending` ist gruen. Eine bekannte Luecke muss rot sein wie
+    # ein striktes xfail: wird sie gruen, faellt das hier auf, und `pending`
+    # kommt weg, statt still weiter als Luecke zu gelten (docs/08 §3).
+    red = [c.id for c in report.cases if not c.passed and not c.pending]
+    assert red == [], report.to_markdown()
+    healed = [c.id for c in report.cases if c.passed and c.pending]
+    assert healed == [], f"pending entfernen: {healed}"
+    gaps = sum(1 for c in report.cases if c.pending)
+    assert report.passed == report.total - gaps
     assert report.hard() == {
         "guessed_items": 0,
         "unconfirmed": 0,
@@ -71,7 +79,7 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
     }
     [json_file] = (tmp_path / "reports").glob("*.json")
     data = json.loads(json_file.read_text(encoding="utf-8"))
-    assert data["accuracy"] == 1.0 and data["verdict"] == "bestanden"
+    assert data["accuracy"] == report.accuracy and data["verdict"] == "bestanden"
     assert list((tmp_path / "reports").glob("*.md"))
 
 
@@ -164,6 +172,18 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
         {
             "id": "x",
             "now": "2026-09-15T18:00",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "sold_out": "48",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "pending": " ",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
         },
@@ -438,3 +458,73 @@ def test_ja_vor_dem_entwurf_bestaetigt_nichts():
     rec.next_turn("", {}, "Ja, guten Tag, einmal die 13.")
     rec.next_turn("", {}, _draft_result())
     assert rec.recording.unconfirmed == ["Ja, guten Tag, einmal die 13."]
+
+
+# --- Eval-Suite v1 (T-5.2) -----------------------------------------------------------
+
+BESTELLUNG = [
+    "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+    "Die 48.",
+    "Dann die 13.",
+    "Nein, das wars.",
+    "Auf den Namen Mueller.",
+    "Meine Nummer ist 0721 5551234.",
+    "Ja, passt so.",
+]
+
+
+def test_ausverkauft_aus_dem_fall(migrated_db_url, tmp_path):
+    """`sold_out` setzt "heute aus" nur fuer diesen Fall: die 48 kommt nicht in
+    die Bestellung, im Fall daneben ist sie normal bestellbar."""
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "aus",
+            BESTELLUNG,
+            {"confirmed": True, "items": [{"number": "13", "quantity": 1}]},
+            sold_out=["48"],
+        ),
+        fall(
+            "da",
+            BESTELLUNG,
+            {
+                "confirmed": True,
+                "items": [
+                    {"number": "48", "quantity": 1},
+                    {"number": "13", "quantity": 1},
+                ],
+            },
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {"aus": True, "da": True}
+
+
+def test_ausverkauft_mit_unbekannter_nummer_stuerzt_ab(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c", fall("x", ["Hallo"], {"confirmed": False}, sold_out=["99"])
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert "sold_out" in result.error
+    assert report.verdict == "durchgefallen"
+
+
+def test_bekannte_luecke_im_report(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "luecke",
+            ["Hallo, liefern Sie auch? Die 13 bitte.", "0721 5551234"],
+            {"escalated": False},
+            pending="T-6.5: Lieferung",
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert result.pending == "T-6.5: Lieferung" and not result.passed
+    # Eine bekannte Luecke ist rot, aber keine Regression und kein Absturz.
+    assert report.verdict == "bestanden"
+    markdown = report.to_markdown()
+    assert "## Bekannte Lücken" in markdown and "T-6.5: Lieferung (rot)" in markdown
+    assert "## Rote Fälle" not in markdown

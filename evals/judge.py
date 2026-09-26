@@ -49,6 +49,13 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     for item in case["expected"].get("items") or []:
         if set(item) - ITEM_KEYS or not {"number", "quantity"} <= set(item):
             raise CaseError(f"{source}: Position {item} braucht number und quantity")
+    sold_out = case.get("sold_out", [])
+    if not isinstance(sold_out, list) or not all(isinstance(n, str) for n in sold_out):
+        raise CaseError(f"{source}: sold_out ist eine Liste von Kartennummern")
+    pending = case.get("pending")
+    if pending is not None and (not isinstance(pending, str) or not pending.strip()):
+        # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
+        raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
 
 
 @dataclass

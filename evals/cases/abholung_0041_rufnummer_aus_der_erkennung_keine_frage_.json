@@ -1,0 +1,43 @@
+{
+  "id": "abholung_0041",
+  "name": "Rufnummer aus der Erkennung, keine Frage nach der Nummer",
+  "tags": [
+    "abholung",
+    "rufnummer"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+4972215559876",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 24."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Weber."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "items": [
+      {
+        "number": "24",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Weber"
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "id": "reservierung_0022",
+  "name": "Unmoegliches Datum wird nicht geraten",
+  "tags": [
+    "reservierung",
+    "datum",
+    "rauschen"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer zwei Personen am 31.02. um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Am 30.09. um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "party_size": 2
+  }
+}

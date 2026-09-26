@@ -1,0 +1,44 @@
+{
+  "id": "abholung_0043",
+  "name": "Gericht im ersten Satz mit wuerde",
+  "tags": [
+    "abholung",
+    "erster_satz"
+  ],
+  "source": "handcrafted",
+  "pending": "T-2.4: das Skript-Modell gibt den ganzen Satz an search_menu; ein echtes Modell uebergibt nur Gericht und Menge",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich würde gern die 13 zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}

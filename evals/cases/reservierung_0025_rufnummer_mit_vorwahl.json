@@ -1,0 +1,34 @@
+{
+  "id": "reservierung_0025",
+  "name": "Rufnummer mit Vorwahl",
+  "tags": [
+    "reservierung",
+    "rufnummer"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer drei Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Die Nummer ist +49 721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "escalated": false,
+    "party_size": 3,
+    "customer_name": "Mueller"
+  }
+}
