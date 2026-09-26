@@ -162,3 +162,22 @@ def test_kaputte_loeschmarke_ist_dbf_fehler():
 
     with pytest.raises(DbfError, match="Löschmarke"):
         read_table(kaputt, dbt)
+
+
+def test_zeilen_hinter_der_satzzahl_sind_fehler():
+    """Review T-4.11: Kopie mitten im Anhängen - der Kopf zählt eine Zeile zu
+    wenig, das neue Gericht fehlte sonst still."""
+    dbf, dbt = write_dbf(FIELDS, ROWS)
+    weniger = dbf[:4] + (len(ROWS) - 1).to_bytes(4, "little") + dbf[8:]
+
+    with pytest.raises(DbfError, match="länger"):
+        read_table(weniger, dbt)
+
+
+def test_weicher_zeilenumbruch_im_memo():
+    """Review T-4.11: 0x8D 0x0A ist ein weicher Umbruch des Memo-Editors,
+    kein "ì" am Wort."""
+    fields = [("ZBEZEICH", "C", 16, 0), ("WRGSHOW", "M", 10, 0)]
+    dbf, dbt = write_dbf(fields, [{"ZBEZEICH": "Mango", "WRGSHOW": "001ì\n002"}])
+
+    assert read_table(dbf, dbt).rows[0]["WRGSHOW"].split() == ["001", "002"]

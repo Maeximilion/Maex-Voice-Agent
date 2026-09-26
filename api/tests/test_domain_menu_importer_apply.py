@@ -507,8 +507,18 @@ def _kasse(folder, artikel_rows):
                 ("WRGSHOWALL", "L", 1, 0),
                 ("WRGSHOW", "M", 10, 0),
                 ("ZPREIGRP3", "C", 3, 0),
+                ("ZGRPREIS1", "N", 6, 2),
+                ("ZGRPREIS2", "N", 6, 2),
             ],
-            [{"ZBEZEICH": "Extra_Garnelen", "WRGSHOWALL": "T", "ZPREIGRP3": "C"}],
+            [
+                {
+                    "ZBEZEICH": "Extra_Garnelen",
+                    "WRGSHOWALL": "T",
+                    "ZPREIGRP3": "C",
+                    "ZGRPREIS1": "0.00",
+                    "ZGRPREIS2": "0.00",
+                }
+            ],
         ),
         "zutgrp": (
             [("ZGRP", "C", 1, 0), ("ZPREIS", "N", 6, 2), ("ZGRP3", "C", 3, 0)],
@@ -529,6 +539,7 @@ SUPPE = {
     "VK1_PREIS": "6.50",
     "VK2_PREIS": "6.50",
     "GROESSE": "+-23",
+    "GRPREIS1": "0.00",
     "GRPREIS2": "4.50",
 }
 
@@ -977,3 +988,38 @@ def test_skript_alias_datei_ohne_pflichtspalte_schreibt_nichts(tmp_path, capsys)
 
     assert "alias" in capsys.readouterr().err
     assert not (out / MENU_FILE).exists()
+
+
+def test_beschreibung_bleibt_ohne_spalte(session, tenant_id):
+    """Review T-4.11: die Kasse liefert keine Beschreibung; ihr Import darf die
+    aus dem Chat nicht leeren. Eine leere Spalte löscht weiter."""
+    run(session, tenant_id)
+    assert item(session, tenant_id, "23").description == "mit Gemüsefüllung"
+
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "23").description == "mit Gemüsefüllung"
+
+    leer = "number;name;category;price_eur;description\n23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;\n"
+    run(session, tenant_id, files=nur(leer))
+    assert item(session, tenant_id, "23").description is None
+
+
+def test_hinweis_auf_schalter_nur_ohne_schalter_und_nur_fuer_die_kasse(
+    session, tenant_id
+):
+    """Review T-4.11: kein Hinweis auf --deactivate-missing, wenn er schon
+    gesetzt ist oder die Datei nicht aus der Kasse kommt."""
+    run(session, tenant_id)  # 12 inaktiv
+    nur_23 = nur("\n".join(MIT_KASSE.splitlines()[:2]))
+
+    mit = run(session, tenant_id, files=nur_23, deactivate_missing=True, dry_run=True)
+    assert "unverändert" in mit.as_text()
+    assert "--deactivate-missing" not in mit.as_text()
+
+    chat = run(session, tenant_id, files=nur("\n".join(MENU_OHNE_47.splitlines())))
+    assert "--deactivate-missing" not in chat.as_text()
+
+
+MENU_OHNE_47 = """number;name;category;price_eur
+23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
+"""

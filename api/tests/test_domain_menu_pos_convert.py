@@ -49,6 +49,7 @@ ZUTATEN = table(
             "WRGSHOW": "006\r\n008",
             "ZPREIGRP3": "U",
             "ZGRPREIS1": "-3.50",
+            "ZGRPREIS2": "0.00",
         },
         # überall, in jeder Größe gleich
         {
@@ -56,6 +57,8 @@ ZUTATEN = table(
             "WRGSHOWALL": "T",
             "WRGSHOW": "",
             "ZPREIGRP3": "C",
+            "ZGRPREIS1": "0.00",
+            "ZGRPREIS2": "0.00",
         },
         # gelöscht: nie angeboten
         {"ZBEZEICH": "Ananas", "WRGSHOWALL": "T", "ZPREIGRP3": "C"},
@@ -133,7 +136,9 @@ def test_ohne_plus_keine_extras_und_andere_warengruppe_ohne_sosse():
 
 def test_extra_mit_preis_je_groesse_verschieden_wird_nicht_uebernommen():
     """Unsere Option hat einen Preis je Gericht; Mango kostet in klein 0, in groß 3,50."""
-    result = run([artikel("40", "Curry", groesse="+-23", GRPREIS2="4.00")])
+    result = run(
+        [artikel("40", "Curry", groesse="+-23", GRPREIS1="0.00", GRPREIS2="4.00")]
+    )
 
     names = [o["option_name"] for o in by_number(result.options, "40")]
     assert "Mango Curry" not in names and "Extra Garnelen" in names
@@ -264,7 +269,15 @@ def test_zutat_mit_unbekannter_preisstufe_und_abgeschnittenem_namen():
 def test_ausgabe_besteht_die_pruefung_des_imports():
     result = run(
         [
-            artikel("3B", "Scharfe Suppe", "001", "7.20", "+-23", GRPREIS2="5.00"),
+            artikel(
+                "3B",
+                "Scharfe Suppe",
+                "001",
+                "7.20",
+                "+-23",
+                GRPREIS1="0.00",
+                GRPREIS2="5.00",
+            ),
             artikel("25A", "Ente Thai Curry", ALLERGENE="K"),
         ],
         allergens_confirmed_by="Maxi",
@@ -387,7 +400,10 @@ def test_extra_mit_abzug_bleibt_erhalten():
     )  # fmt: skip
 
     result = convert(
-        table([artikel("50", "Suppe", groesse="+-2")]), WARENGRP, zutaten, zutgrp
+        table([artikel("50", "Suppe", groesse="+-2", GRPREIS1="0.00")]),
+        WARENGRP,
+        zutaten,
+        zutgrp,
     )
 
     assert [(o["option_name"], o["price_delta_eur"]) for o in result.options] == [
@@ -435,3 +451,65 @@ def test_pruefer_nur_aus_leerzeichen_zaehlt_nicht():
 
     assert result.allergens[0]["allergen_codes"] == ""
     assert any("geprüft" in e for e in result.errors)
+
+
+def test_groesse_ohne_aufschlag_ist_fehler_nicht_gratis():
+    """Review T-4.11: leerer GRPREIS einer verkauften Größe ist kein Aufschlag 0."""
+    result = run([artikel("12", "Suppe", groesse="13", GRPREIS1="0.00")])
+
+    assert result.menu == []
+    assert any("Größe groß" in e for e in result.errors)
+
+
+def test_extra_mit_unlesbarem_aufschlag_ist_fehler():
+    zutaten = table(
+        [
+            {
+                "ZBEZEICH": "Extra_Ei",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "C",
+                "ZGRPREIS1": "1.5.0",
+            }
+        ]
+    )
+    rows = [artikel("12", "Suppe", groesse="+12", GRPREIS1="1.00")]
+
+    result = run(rows, zutaten=zutaten)
+
+    assert by_number(result.options, "12")[-1]["group_name"] == "Größe"
+    assert any("Extra_Ei" in e or "Extra Ei" in e for e in result.errors)
+    assert not any("kostet je Größe" in w for w in result.warnings)
+
+
+@pytest.mark.parametrize("wert", ["T", "t", "Y", "y"])
+def test_wrgshowall_alle_dbase_schreibweisen(wert):
+    zutaten = table(
+        [{"ZBEZEICH": "Extra_Ei", "WRGSHOWALL": wert, "WRGSHOW": "", "ZPREIGRP3": "C"}]
+    )
+
+    result = run([artikel("12", "Suppe", groesse="+1")], zutaten=zutaten)
+
+    assert [o["option_name"] for o in by_number(result.options, "12")] == ["Extra Ei"]
+
+
+def test_zutat_ohne_warengruppe_wird_gemeldet():
+    zutaten = table(
+        [{"ZBEZEICH": "Extra_Ei", "WRGSHOWALL": "F", "WRGSHOW": "", "ZPREIGRP3": "C"}]
+    )
+
+    result = run([artikel("12", "Suppe", groesse="+1")], zutaten=zutaten)
+
+    assert any("Extra_Ei" in w and "Warengruppe" in w for w in result.warnings)
+
+
+def test_vk2_null_heisst_nicht_gepflegt():
+    result = run([artikel("12", "Suppe", VK2_PREIS="0.00")])
+
+    assert [r["number"] for r in result.menu] == ["12"]
+
+
+def test_allergene_ohne_pruefer_sagt_dass_der_import_loescht():
+    result = run([artikel("12", "Suppe", ALLERGENE="ac")])
+
+    assert any("löscht" in e for e in result.errors)

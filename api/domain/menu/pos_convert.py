@@ -27,7 +27,9 @@ from api.domain.menu.importer import (
     ALLERGENS_FILE,
     MENU_FILE,
     OPTIONS_FILE,
+    format_eur,
     is_card_number,
+    parse_eur,
 )
 from api.domain.menu.items import option_key
 from api.domain.menu.numberwords import canonical_card
@@ -93,8 +95,9 @@ REQUIRED_COLUMNS = {
     "zutaten": ("ZBEZEICH", "WRGSHOWALL", "WRGSHOW", "ZPREIGRP3"),
     "zutgrp": ("ZGRP3", "ZPREIS"),
 }
-_MONEY = re.compile(r"^(-?)(\d*)(?:[.,](\d{1,2}))?$")
 _SORT_PREFIX = re.compile(r"^[A-Z]\.")
+# dBase-Logisch: T, t, Y und y heißen wahr.
+_TRUE = frozenset("TtYy")
 
 
 @dataclass
@@ -149,30 +152,13 @@ class Conversion:
 
 
 def _csv(columns: tuple[str, ...], rows: Iterable[dict[str, str]]) -> str:
-    out = io.StringIO()
-    writer = csv.DictWriter(out, fieldnames=columns, delimiter=";", lineterminator="\n")
-    writer.writeheader()
-    writer.writerows(rows)
-    return out.getvalue()
+    return _csv_rows(list(columns), [[row[c] for c in columns] for row in rows])
 
 
 def cents(value: str) -> int | None:
     """ "6.50", "-12.5", "7,90" -> Cent. Leer -> 0. None, wenn nicht lesbar."""
     value = value.strip()
-    if not value:
-        return 0
-    match = _MONEY.match(value)
-    if match is None or not (match.group(2) or match.group(3)):
-        return None
-    sign, euros, frac = match.groups()
-    total = int(euros or "0") * 100 + int((frac or "0").ljust(2, "0"))
-    return -total if sign else total
-
-
-def _eur(value: int) -> str:
-    sign = "-" if value < 0 else ""
-    value = abs(value)
-    return f"{sign}{value // 100},{value % 100:02d}"
+    return parse_eur(value.replace(".", ",")) if value else 0
 
 
 def _sizes(code: str) -> list[int]:
@@ -184,7 +170,10 @@ def _size_price(base: int, row: dict[str, str], prefix: str, size: int) -> int |
     """Preis bzw. Aufschlag in Größe `size`: Grundwert plus Spalte size-1."""
     if size == 1:
         return base
-    extra = cents(row.get(f"{prefix}{size - 1}", ""))
+    # Leer oder Spalte fehlt ist kein Aufschlag 0: sonst kostete die Größe
+    # still den Grundpreis (Review T-4.11).
+    raw = row.get(f"{prefix}{size - 1}", "")
+    extra = cents(raw) if raw.strip() else None
     return None if extra is None else base + extra
 
 
@@ -274,7 +263,8 @@ def convert(
             problems.append(f"Warengruppe „{row['WRG']}“ unbekannt")
         if vk1 is None or vk1 < 0:
             problems.append(f"VK1_PREIS „{row['VK1_PREIS']}“ nicht lesbar")
-        elif row.get("VK2_PREIS") and vk2 != vk1:
+        elif row.get("VK2_PREIS") and vk2 not in (0, vk1):
+            # 0 heißt in der Kasse nicht gepflegt, dann gilt VK1 (Review T-4.11).
             # Telefon ist Abholung: die Kasse nähme VK2, der Agent nennt VK1.
             problems.append(
                 f"VK2_PREIS {row['VK2_PREIS']} weicht von VK1_PREIS "
@@ -321,7 +311,7 @@ def convert(
                 "pos_code": pos_code,
                 "name": name,
                 "category": category,
-                "price_eur": _eur(price),
+                "price_eur": format_eur(price),
                 "active": "ja",
             }
         )
@@ -395,7 +385,7 @@ def _option(
         "number": number,
         "group_name": group,
         "option_name": name,
-        "price_delta_eur": _eur(delta),
+        "price_delta_eur": format_eur(delta),
         "is_default": "ja" if default else "nein",
         "required": "ja" if required else "nein",
     }
@@ -427,9 +417,15 @@ def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
             )
         groups = (
             None
-            if row["WRGSHOWALL"] == "T"
+            if row["WRGSHOWALL"] in _TRUE
             else frozenset(g.strip() for g in row["WRGSHOW"].split() if g.strip())
         )
+        if groups == frozenset():
+            result.warnings.append(
+                f"{where}: bei keiner Warengruppe wählbar (WRGSHOWALL nicht T, "
+                "WRGSHOW leer), nicht übernommen"
+            )
+            continue
         extras.append(_Extra(name, groups, base, row))
     return extras
 
@@ -450,6 +446,12 @@ def _add_extras(
         if extra.groups is not None and group not in extra.groups:
             continue
         prices = {_size_price(extra.base, extra.row, "ZGRPREIS", s) for s in sizes}
+        if None in prices:
+            result.errors.append(
+                f"{where}: Extra „{extra.name}“: Aufschlag ZGRPREIS nicht lesbar, "
+                "nicht übernommen"
+            )
+            continue
         price = next(iter(prices)) if len(prices) == 1 else None
         found.setdefault(option_key(extra.name), []).append((extra.name, price))
     for candidates in found.values():
@@ -494,7 +496,8 @@ def _add_allergens(
     if unknown:
         result.errors.append(
             f"{where}: unbekannter Allergen-Buchstabe {', '.join(unknown)} in "
-            f"„{row['ALLERGENE']}“, Gericht ohne Allergenauskunft"
+            f"„{row['ALLERGENE']}“, Gericht ohne Allergenauskunft; der Import "
+            "löscht dort bestätigte Allergene"
         )
         result.allergens.append(empty)
         return
@@ -508,7 +511,8 @@ def _add_allergens(
     if not confirmed_by:
         result.errors.append(
             f"{where}: Allergene {','.join(codes)} nicht übernommen, wer hat sie "
-            "geprüft? (--allergens-confirmed-by)"
+            "geprüft? (--allergens-confirmed-by); ohne löscht der Import dort "
+            "bestätigte Allergene"
         )
         result.allergens.append(empty)
         return
@@ -574,10 +578,12 @@ def split_aliases(
 
     in_source = {key(row) for row in parts[0]}
     rows: list[list[str]] = []
+    unique: set[tuple[str, ...]] = set()
     # Hat der Chat für eine Nummer eigene Zeilen, gelten nur diese - auch wenn
     # das Gericht noch fehlt, sonst kämen die alten später mit zurück (Codex PR #149).
     for row in parts[0] + [r for r in parts[1] if key(r) not in in_source]:
-        if row not in rows:
+        if tuple(row) not in unique:
+            unique.add(tuple(row))
             rows.append(row)
     kept: list[list[str]] = []
     dropped: list[list[str]] = []

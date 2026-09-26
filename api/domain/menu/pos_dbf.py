@@ -99,8 +99,15 @@ def _read(data: bytes, memo: bytes | None) -> Table:
         offset += 32
     if sum(f.length for f in fields) + 1 != record_len:
         raise DbfError("Satzlänge passt nicht zu den Feldern")
-    if header_len + count * record_len > len(data):
+    rest = len(data) - (header_len + count * record_len)
+    if rest < 0:
         raise DbfError("Datei kürzer als im Kopf angegeben")
+    if rest > 1 and rest >= record_len:
+        # Mehr als das Endezeichen 0x1A: Kopie mitten im Anhängen, die neue
+        # Zeile fehlte sonst still (Review T-4.11).
+        raise DbfError(
+            "Datei länger als im Kopf angegeben, Kopie während einer Änderung?"
+        )
     memo_format = _MEMO_FORMATS.get(data[0])
     if any(f.type == "M" for f in fields):
         if memo is None:
@@ -175,4 +182,5 @@ def _memo(memo: bytes, pointer: bytes, encoding: str, memo_format: str) -> str:
         if end == -1:
             raise DbfError(f"Memo-Block {text} ohne Ende, .DBT abgeschnitten")
         body = memo[start:end]
-    return body.decode(encoding).strip()
+    # 0x8D 0x0A ist ein weicher Umbruch des Memo-Editors, kein "ì" (Review T-4.11).
+    return body.replace(b"\x8d\x0a", b"\r\n").decode(encoding).strip()

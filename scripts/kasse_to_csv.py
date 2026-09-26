@@ -156,7 +156,7 @@ def publish(out: Path, output: Output) -> None:
         raise
     # Jede alte Datei erst nach .bak, dann die neue an ihren Platz. Scheitert
     # ein Schritt, wird alles Getauschte zurückgerollt (Codex PR #149).
-    moves = [(tmp, path) for tmp, path in staged]
+    moves: list[tuple[Path | None, Path]] = [*staged]
     moves += [(None, out / name) for name in output.remove]
     done: list[tuple[Path, Path | None]] = []
     try:

@@ -90,6 +90,8 @@ class ItemRow:
     name: str
     category: str
     price_cents: int
+    # None: die Datei hat die Spalte nicht (Kasse), der gespeicherte Text
+    # bleibt; "": Text gelöscht (Review T-4.11).
     description: str | None
     active: bool
     # Nummer in der Schreibweise der Kasse (T-4.11). None: die Datei hat die
@@ -141,6 +143,8 @@ class Report:
     # (Nummer, alt, neu) in Cent
     price_changes: list[tuple[str, int, int]] = field(default_factory=list)
     price_changes_applied: bool = False
+    # Hinweis auf --deactivate-missing nur bei einer Kassendatei ohne den Schalter.
+    suggest_deactivate: bool = False
     options_added: int = 0
     options_removed: int = 0
     options_changed: int = 0
@@ -203,20 +207,26 @@ class Report:
                 "In der Datenbank, aber nicht in der Datei (unverändert): "
                 + ", ".join(unchanged)
             )
-            lines.append(
-                "Kasse als Quelle: fehlende aktive Gerichte deaktivieren mit "
-                "--deactivate-missing."
-            )
+            if self.suggest_deactivate:
+                lines.append(
+                    "Kasse als Quelle: fehlende aktive Gerichte deaktivieren mit "
+                    "--deactivate-missing."
+                )
         lines += [f"Warnung: {w}" for w in self.warnings]
         if not self.changed and not self.price_changes:
             lines.append("Keine Änderung - die Karte ist schon auf diesem Stand.")
         return "\n".join(lines)
 
 
-def _eur(cents: int) -> str:
+def format_eur(cents: int) -> str:
+    """690 -> "6,90", so wie parse_eur es liest."""
     sign = "-" if cents < 0 else ""
     cents = abs(cents)
-    return f"{sign}{cents // 100},{cents % 100:02d} €"
+    return f"{sign}{cents // 100},{cents % 100:02d}"
+
+
+def _eur(cents: int) -> str:
+    return f"{format_eur(cents)} €"
 
 
 def parse_eur(value: str) -> int | None:
@@ -318,7 +328,7 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             name=row["name"],
             category=row["category"],
             price_cents=price,
-            description=row.get("description") or None,
+            description=row.get("description"),
             active=active,
             pos_code=pos_code,
         )
@@ -506,6 +516,8 @@ def apply(
         dry_run=dry_run,
         warnings=list(plan.warnings),
         price_changes_applied=apply_price_changes,
+        suggest_deactivate=not deactivate_missing
+        and any(r.pos_code for r in plan.items.values()),
     )
     rows = list(
         session.scalars(
@@ -585,7 +597,7 @@ def apply(
                 name=row.name,
                 category=row.category,
                 price_cents=row.price_cents,
-                description=row.description,
+                description=row.description or None,
                 active=row.active,
                 pos_code=row.pos_code or None,
             )
@@ -596,9 +608,10 @@ def apply(
                 "number": row.number,
                 "name": row.name,
                 "category": row.category,
-                "description": row.description,
                 "active": row.active,
             }
+            if row.description is not None:
+                fields["description"] = row.description or None
             if row.pos_code is not None:
                 fields["pos_code"] = row.pos_code or None
             changed = [k for k, v in fields.items() if getattr(item, k) != v]
