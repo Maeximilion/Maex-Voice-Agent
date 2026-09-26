@@ -6,7 +6,6 @@
     "erster_satz"
   ],
   "source": "handcrafted",
-  "pending": "T-2.4: das Skript-Modell gibt den ganzen Satz an search_menu; ein echtes Modell uebergibt nur Gericht und Menge",
   "transcript": [
     {
       "role": "customer",

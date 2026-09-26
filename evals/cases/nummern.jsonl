@@ -82,3 +82,36 @@
 {"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
 {"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
 {"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}
+{"say": "und die 24", "expect": "24", "why": "und am Satzanfang fuehrt die Bestellung fort, verbindet keine zweite Zahl (T-5.2)"}
+{"say": "Und noch die 24.", "expect": "24", "why": "naechste Position im Folgesatz (T-5.2, abholung Positionen nacheinander)"}
+{"say": "und dann die 24", "expect": "24", "why": "und dann als Fortsetzung"}
+{"say": "und die zwölf", "expect": "12", "why": "Fortsetzung mit Zahlwort"}
+{"say": "und Nummer 24", "expect": "24", "why": "Fortsetzung mit Marker"}
+{"say": "die 23 und die 24", "expect": "?", "why": "und zwischen zwei Zahlen bleibt eine Aufzaehlung"}
+{"say": "und die 23 und die 24", "expect": "?", "why": "Fortsetzung vorweg, danach trotzdem zwei Zahlen"}
+{"say": "und die 23 und", "expect": "?", "why": "Fortsetzung vorweg, hinten nicht zu Ende gesprochen"}
+{"say": "oder die 24", "expect": "?", "why": "oder vorweg ist eine Alternative zu etwas Ungenanntem, keine Fortsetzung"}
+{"say": "ich würde die 13", "expect": "13", "why": "wuerde ist ein Fuellwort wie moechte (T-5.2, Gericht im ersten Satz mit wuerde)"}
+{"say": "ich wuerde die 13", "expect": "13", "why": "dasselbe ohne Umlaut aus der Erkennung"}
+{"say": "Hallo, ich würde gern die 13", "expect": "13", "why": "Begruessung vor der Bestellung"}
+{"say": "dazu die 24", "expect": "24", "why": "dazu haengt eine Position an, ist kein Gerichtname"}
+{"say": "ich würde gern Pho", "expect": "name", "why": "nur Fuellwoerter und ein Name"}
+{"say": "zwei Portionen und die 24", "expect": "?", "why": "Menge vor dem und gehoert vermutlich zur vorigen Position, nicht zur 24 (Review PR #147)"}
+{"say": "zweimal und die 24", "expect": "?", "why": "dasselbe mit zweimal"}
+{"say": "2x und die 24", "expect": "?", "why": "dasselbe kompakt"}
+{"say": "drei Portionen und Nummer 24", "expect": "?", "why": "Menge vor dem und, Marker danach"}
+{"say": "und zweimal die 24", "expect": "24", "why": "Menge hinter dem fuehrenden und gehoert zur 24"}
+{"say": "Nummer und 24", "expect": "?", "why": "und hinter dem Marker: die erste Nummer ging verloren (Review PR #147)"}
+{"say": "Nummer, äh, und die 24", "expect": "?", "why": "dasselbe mit Zoegerlaut"}
+{"say": "die Nummer und dazu die 24", "expect": "?", "why": "dasselbe mit dazu"}
+{"say": "und zwanzig", "expect": "?", "why": "zweite Haelfte von drei und zwanzig, von der Erkennung abgeschnitten (Review PR #147)"}
+{"say": "und ein und zwanzig", "expect": "21", "why": "Fortsetzung mit auseinander gesprochener Zahl"}
+{"say": "und die zwei und zwanzig", "expect": "22", "why": "Fortsetzung mit Artikel und auseinander gesprochener Zahl"}
+{"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}
+{"say": "Nummer hallo 23", "expect": "?", "why": "Begruessung ist kein Fuellwort zwischen Marker und Zahl (Review PR #147)"}
+{"say": "Nummer dazu 23", "expect": "?", "why": "dazu ist kein Fuellwort zwischen Marker und Zahl"}
+{"say": "Nummer würde 23", "expect": "?", "why": "wuerde ist kein Fuellwort zwischen Marker und Zahl"}
+{"say": "ich würd die 13", "expect": "13", "why": "Kurzform aus der Erkennung (Review PR #147)"}
+{"say": "Guten Tag, die 13", "expect": "13", "why": "Begruessung vor der Bestellung"}
+{"say": "Guten Abend, die 13", "expect": "13", "why": "Begruessung am Abend"}
+{"say": "ich würde gern die 13 bestellen", "expect": "13", "why": "bestellen sagt nichts ueber das Gericht"}
