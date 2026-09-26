@@ -67,9 +67,16 @@ def _matches(item: MenuItem, query: str) -> bool:
     said = query.strip()
     if not said:
         return True
-    if said[0].isdigit():
-        return canonical_card(item.number).startswith(canonical_card(said))
-    return normalize_query(said) in normalize_query(item.name)
+    # Eine Ziffer vorn kann auch ein Name sein ("8 Kostbarkeiten", Codex PR #146).
+    by_number = said[0].isdigit() and canonical_card(item.number).startswith(
+        canonical_card(said)
+    )
+    if by_number:
+        return True
+    # normalize_query streicht Zahlen: "8 Kostbar" wird "kostbar", "2" wird leer
+    # und passt dann nicht auf jeden Namen.
+    name_part = normalize_query(said)
+    return bool(name_part) and name_part in normalize_query(item.name)
 
 
 def list_switches(

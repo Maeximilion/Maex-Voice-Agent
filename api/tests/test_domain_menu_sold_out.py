@@ -200,3 +200,13 @@ def test_ohne_alternative_nur_heute_aus(session, tenant_id):
 )
 def test_kartenreihenfolge(nummern, sortiert):
     assert sorted(nummern, key=number_key) == sortiert
+
+
+def test_name_mit_ziffer_vorn_wird_gefunden(session, tenant_id):
+    """Codex PR #146, P2: "8 Kostbarkeiten" beginnt mit einer Ziffer und ist
+    trotzdem ein Name - das Suchfeld findet es."""
+    item = _item(session, tenant_id, "12")
+    item.name = "8 Kostbarkeiten"
+    session.commit()
+    found = [d.number for d in list_switches(session, tenant_id, "8 Kostbar", now=NOW)]
+    assert found == ["12"]
