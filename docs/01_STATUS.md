@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.33.0
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.1
 
 ---
 
@@ -93,7 +93,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ### In Claude Code (can start immediately, without vendor)
 1. **First real print of the input slip** (T-4.6 variant B built 25.09.2026; since D2 on 26.09.2026 it goes to the main receipt printer at the register with the header "NICHT IN KASSE – bitte eingeben", that change is still to build): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
 2. **`check_slot` alternatives from the previous day** (found by T-5.2, 26.09.2026): fix with a red unit test first (`/bug`)
-3. **Menu from the register** (T-4.11, docs/14 §Quelle Kasse): converter from the `.dbf` copies to the CSV format, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
+3. **Menu from the register** (T-4.11, docs/14 §Quelle Kasse): converter from the `.dbf` copies to the CSV format, then a real import: `python -m scripts.import_menu imports/ --dry-run`, read the report, then again with `--apply-price-changes` (without it, dishes already in the DB keep their old price). `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
@@ -107,7 +107,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. Still missing for any recording: handsets
   - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Number of simultaneous calls unknown (contract or the provider's customer portal). Why it matters for C2: a forward done by the Fritz!Box takes two channels (in and out), so with two channels one forwarded call fills the line; the AI platform itself takes calls in parallel, the line is the bottleneck, not the number of handsets
-  - **Register data (26.09.2026):** <POS System> keeps articles as `.dbf` (dBase); column mapping and open questions in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. Next: copies of `Artikel.dbf` (plus `.fpt`/`.dbt` if present), `WarenGRP.dbf`, `Zutaten.dbf`, `ZutatenGRP.dbf` with all columns into `imports/kasse/`; soups and starters get separate groups in the register
+  - **Register data (26.09.2026):** <POS System> keeps articles as `.dbf` (dBase); column mapping and open questions in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. Next: the six files `artikel.DBF`, `artikel.DBT`, `zutaten.DBF`, `zutaten.DBT`, `warengrp.dbf`, `zutgrp.DBF` (not the demo folder) into `imports/kasse/` in the T-4.11 session; soups and starters get separate groups in the register; Maxi ticks allergens per article in the register (today none maintained, so the agent gives no allergen information at all)
 - **C2** Research voice platform, evaluate, PoC on test number
 
 ---
@@ -126,7 +126,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D7 | Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop? recommended: own core if the platform allows | Maxi with C2 | together with D1 |
 | D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2). Maxi asked whether he can be the officer himself: likely not, the managing director decides purposes and means, would monitor himself (Art. 39) and report to himself (Art. 38 Abs. 3); Art. 38 Abs. 6 forbids a conflict of interest. Recommendation: external officer. Case law on this is not in the norm corpus | Maxi | before `shadow` with recording |
 | D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
-| D11 | Which register price applies to a phone order: `VK1_PREIS`, `VK2_PREIS` or `VK3_PREIS` (in the sample all three equal), and what `A_PREIS1` is (e.g. 7,90 at a dish costing 13,50: lunch or promotion price?). Rule 1: the agent must say the price the register will charge. Also: legend of the letters in `ALLERGENE` (LMIV or own?) and meaning of `GROESSE` / `GRPREIS1-6`. docs/14 §Quelle Kasse | Maxi (look in the register) | before T-4.11 |
+| D11 | ~~Register fields for the import~~ **decided 26.09.2026 (Maxi):** phone price is `VK1_PREIS` (regular; `VK2` pickup and `VK3` restaurant are optional and today equal) · `A_PREIS*` are promotion prices, not used · `GROESSE` is the dish size (soups small and large, different prices) · `DETAILS` (long description) is not used · allergen legend is the EU list, but the register letters run a to n **without gaps**, so from i on they differ from LMIV letters (i Sellerie = L … n Weichtiere = R); mapping table in docs/14. Allergens and additives are not maintained in the register yet, ingredients are | Maxi | done |
 
 ---
 
@@ -243,7 +243,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Legal check not complete | any processing of real call recordings (C7 / T-7.x) | work through `docs/09_OPERATIONS_LEGAL.md` |
 | No vendor chosen | voice platform integration, real test calls | C2 in chat |
 | <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; ask for test mode and whether the unused register at home may be a test system. Planned without it: manual entry from the input slip (D2) |
-| Menu data not structured | Stage 2 complete | format known since 26.09.2026: register `.dbf` (docs/14 §Quelle Kasse); needs all columns of the Zutaten files and D11, then T-4.11 and the import |
+| Menu data not structured | Stage 2 complete | format known since 26.09.2026: register `.dbf` (docs/14 §Quelle Kasse); D11 decided; T-4.11 with the six register files, then the import |
 | Docker Hub rate limit on first `make up` possible (occurred 16.09.2026 once, cleared after wait) | image build | `docker login` with free account, see README, section Known Issues |
 
 ---
@@ -307,6 +307,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.1 · 26.09.2026:** PR #148: Codex-Befunde - pos_code als eigenes Feld, fehlende Kassenartikel inaktiv, Import mit --apply-price-changes
+- **v1.34.0 · 26.09.2026:** D11 entschieden: VK1 am Telefon, Groesse, Allergen-Umsetztabelle a-n auf LMIV, sechs Kassendateien fuer T-4.11
 - **v1.33.0 · 26.09.2026:** D2 entschieden (Bons nur ueber die Kasse, Druckbruecke als Eingabezettel), Kassen-.dbf zugeordnet, D11, T-3.6 und T-4.11 angelegt
 - **v1.32.1 · 26.09.2026:** T-5.2 done: Eval-Suite v1 mit 107 Faellen
 - **v1.32.0 · 26.09.2026:** T-4.8 done: Gericht aus am Tablet, Alternativen derselben Kategorie im say von search_menu

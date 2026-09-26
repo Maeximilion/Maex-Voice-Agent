@@ -71,40 +71,67 @@ Aus der Karte werden die vier Dateien plus je Gericht 2–3 Aliase, wie Kunden e
 
 ---
 
-## Quelle Kasse: `.dbf`-Dateien von <Kassensystem> (Stand 26.09.2026)
+## Quelle Kasse: `.dbf`-Dateien von <Kassensystem> (Stand 26.09.2026, Fragen aus 01 D11 geklärt)
 
 Die Kasse speichert ihre Artikel als dBase-Tabellen. Sie ist Master für Menü und Preise (docs/02 §6), also kommt die Karte von dort statt aus dem Chat. Die Spaltennamen unten stammen aus einem Blick von Maxi in die Dateien; Beispielwerte sind verfremdet.
 
 **Beschaffen, ohne etwas kaputt zu machen**
 - Nur **Kopien**, nach Kassenschluss, nach `imports/kasse/` (liegt im `.gitignore`, kommt nie ins Repo).
 - Gehört zu einer Tabelle eine gleichnamige `.fpt`- oder `.dbt`-Datei, kommt sie mit: darin stehen die langen Textfelder, ohne sie sind sie leer.
+- **Die sechs Dateien** (Schreibweise wie in der Kasse, der Umwandler liest Groß- und Kleinschreibung gleich): `artikel.DBF` + `artikel.DBT`, `zutaten.DBF` + `zutaten.DBT`, `warengrp.dbf`, `zutgrp.DBF`. Der Demo-Ordner der Kasse (Vorlage für China-Restaurants) wird nicht gebraucht: Er zeigt nicht unsere Karte, und fremde Vorlagedaten kommen nicht ins Repo.
 - Nie Kundentabellen der Kasse kopieren, nur Artikel, Warengruppen, Zutaten.
 - `.dbf` statt CSV-Export: Spaltentypen und Zeichensatz stehen in der Datei, Umlaute bleiben heil, der Preisabgleich (T-4.9) kann die Kopie später ohne Handarbeit lesen.
 
-### `Artikel.dbf` → `menu_items.csv`
+### `artikel.DBF` → `menu_items.csv`
 
 | Spalte Kasse | Beispiel | Ziel | Regel |
 |---|---|---|---|
-| `ARTNR` | `35B` | `number` | Schlüssel für Import, Preisabgleich und Kasseneingabe. Buchstabe wird klein gespeichert; für die Kasse wird die Schreibweise der Kasse gebraucht (offen, T-4.11) |
+| `ARTNR` | `35B` | `number` und neues Feld `pos_code` | Schlüssel für Import, Preisabgleich und Kasseneingabe. `number` wird für die Suche klein gespeichert (`35b`, `importer.py`), die Kasse braucht aber ihre Schreibweise. Deshalb bringt T-4.11 ein eigenes Feld `menu_items.pos_code` (Migration, docs/03 dann nachziehen) mit der Nummer genau wie in der Kasse; Eingabezettel und Kassenübergabe drucken `pos_code`, nie `number` |
 | `ARTNR2` | `  35B` | – | dieselbe Nummer, rechtsbündig mit Leerzeichen; nur zur Kontrolle |
-| `WRG` | `008` | `category` über `WarenGRP.dbf` | |
+| `WRG` | `008` | `category` über `warengrp.dbf` | |
 | `K_BEZEICH` | `Geb. Nudeln Huhn` | – | Kurzname für den Bon, Kandidat für Aliase |
 | `BEZEICH` | `Gebr. Nudeln mit Hühnerbrust` | `name` | **höchstens 40 Zeichen**, längere Namen sind abgeschnitten („…Rindfleisc"). Der Agent liest den Namen vor: abgeschnittene Namen in der Kasse korrigieren oder als Warnung im Bericht |
-| `VK1_PREIS` … `VK3_PREIS` | `13,5` | `price_eur` | drei Preisstufen; welche am Telefon gilt, ist offen (01 D11). Bis dahin `VK1_PREIS`, Abweichung zwischen den Stufen als Warnung |
-| `A_PREIS1` … `A_PREIS6` | `7,90` | ? | Bedeutung offen (Aktions- oder Mittagspreis?), 01 D11 |
-| `GROESSE`, `GRPREIS1` … `GRPREIS6` | `+-16`, `-9` | ? | Bedeutung offen; Vermutung: erlaubte Zutatengruppen und Preisstufen je Größe |
-| `DETAILS` | `Gebratene Nudeln mit Ente` | `description` | Beschreibungstext |
-| `ZUTATEN` | `Gebratene_Nudeln, Ei, Sojasoße` | – (vorerst) | Rezeptur, Unterstrich statt Leerzeichen. **Nie Quelle für Allergene** (Regel 1). Nutzen später: Prüfen, ob „ohne Zwiebeln" überhaupt drin ist |
-| `ALLERGENE` | `AG` | `item_allergens.csv` | Buchstaben ohne Trenner. Import erst, wenn die Legende der Kasse bekannt ist (LMIV-Buchstaben oder eigene?) und `confirmed_by` gesetzt. Leer heißt **keine Auskunft** |
-| `ZUSATZ` | `.4.` | – | Zusatzstoffe, Nummern mit Punkt getrennt. Im Datenmodell gibt es dafür noch kein Feld |
+| `VK1_PREIS` | `13,5` | `price_eur` | **regulärer Preis, gilt am Telefon** (D11, Maxi 26.09.2026) |
+| `VK2_PREIS`, `VK3_PREIS` | `13,5` | – | Abholer- und Restaurantpreis, optional in der Kasse, heute überall gleich `VK1_PREIS`. Weicht `VK2_PREIS` ab, ist das ein **Fehler** im Bericht, kein stiller Import: eine telefonische Bestellung ist eine Abholung, die Kasse könnte dann einen anderen Preis nehmen als der Agent nennt (Regel 1) |
+| `A_PREIS1` … `A_PREIS6` | `7,90` | – | Aktionspreise, der Betrieb nutzt keine (D11). Ein Wert ungleich 0 wird im Bericht als Warnung gezeigt |
+| `GROESSE`, `GRPREIS1` … `GRPREIS6` | `+-16`, `-9` | `item_options.csv`, Gruppe „Größe" | **Größe der Speise** (D11): Suppen gibt es klein und groß zu verschiedenen Preisen. Wird eine Pflichtgruppe „Größe" mit Default. Wie `+-16` und `GRPREIS1` … `6` die Größen und ihre Preise kodieren und wo die Namen „klein"/„groß" stehen, klärt T-4.11 an den echten Suppenzeilen; ohne eindeutige Deutung wird das Gericht nicht importiert (Fehler im Bericht), nie geraten |
+| `DETAILS` | `Gebratene Nudeln mit Ente` | – | lange Menübeschreibung, vom Betrieb nicht genutzt (D11); wird nicht übernommen |
+| `ZUTATEN` | `Gebratene_Nudeln, Ei, Sojasoße` | – (vorerst) | Rezeptur, **vom Betrieb vollständig gepflegt**, Unterstrich statt Leerzeichen. **Nie Quelle für Allergene** (Regel 1). Nutzen später: Prüfen, ob „ohne Zwiebeln" überhaupt drin ist |
+| `ALLERGENE` | `ACFG` | `item_allergens.csv` | Kassenbuchstaben ohne Trenner, **nur über die Umsetztabelle unten**. Heute in der Kasse nicht gepflegt (Ausnahme: ein Testeintrag), also überall **keine Auskunft** |
+| `ZUSATZ` | `.4.` | – | Zusatzstoffe 1 bis 11 (Legende unten), Nummern zwischen Punkten. Nicht gepflegt, im Datenmodell kein Feld; nicht Teil von T-4.11 |
 | `DRUCKER` | leer | – | Druckerzuordnung der Kasse; wir drucken nicht nach Artikel |
 | Rest (`BONUS`, `PUNKTE`, `BON_*`, `ERSTELLT`, `LT_*`, `ANZ_ORDER`, `EK_PREIS`, `LAGER`, `L_*`, `SPMNU`, `POCKETVS` …) | | – | nicht gebraucht |
 
 Sonderfälle: Die Zeile mit `ARTNR` `000` ohne Name und Preis ist ein Platzhalter und fällt heraus. Varianten sind eigene Artikel (`35A` bis `35E`), keine Optionen; so bleiben sie auch bei uns, jede Position hat genau eine Artikelnummer der Kasse.
 
-**Stichprobe 26.09.2026:** Von fünf Artikeln mit Ei und Sojasoße in `ZUTATEN` hat einer `AG` in `ALLERGENE`, vier sind leer. Das Feld ist also nicht durchgehend gepflegt. Der Umwandler warnt deshalb, wenn `ZUTATEN` einen typischen Allergenträger nennt und `ALLERGENE` leer ist; die Warnung ist nur für Menschen, der Agent sagt weiter „keine Auskunft".
+**Stand 26.09.2026:** Allergene und Zusatzstoffe sind in der Kasse nicht gepflegt, die Zutaten schon. Einmal gepflegt, ist die Kasse auch hier die einzige Quelle (docs/02 §6): Maxi hakt die Allergene je Artikel in der Kasse an, der nächste Export bringt sie mit. `confirmed_by` setzt der Umwandler aus einem Aufrufparameter (wer die Liste geprüft hat), nie von selbst. Der Umwandler warnt, wenn `ZUTATEN` einen typischen Allergenträger nennt (Ei, Soja, Weizen …) und `ALLERGENE` leer ist; die Warnung ist nur für Menschen, der Agent sagt weiter „keine Auskunft".
 
-### `WarenGRP.dbf` → `category`
+**Umsetztabelle Allergene: Kasse → Datenbank.** Die Kasse zählt die 14 Hauptallergene der EU (LMIV Anhang II) von a bis n **ohne Lücke** durch. Die übliche Kennzeichnung und unsere Datenbank (docs/03 `item_allergens`) überspringen I, J, K und Q. Ab dem neunten Allergen bedeuten dieselben Buchstaben also etwas anderes. Eine 1:1-Übernahme würde aus Sulfiten Sellerie machen (`l`), aus Lupinen Senf (`m`) und aus Weichtieren Sesam (`n`), ohne dass die Datenbank widerspricht. Deshalb nur über diese Tabelle, und jeder unbekannte Buchstabe ist ein Fehler:
+
+| Kasse | Allergen | DB |
+|---|---|---|
+| a | Glutenhaltiges Getreide | A |
+| b | Krebstiere | B |
+| c | Eier | C |
+| d | Fische | D |
+| e | Erdnüsse | E |
+| f | Sojabohnen | F |
+| g | Milch inkl. Laktose | G |
+| h | Schalenfrüchte | H |
+| **i** | Sellerie | **L** |
+| **j** | Senf | **M** |
+| **k** | Sesamsamen | **N** |
+| **l** | Schwefeldioxid und Sulphite | **O** |
+| **m** | Lupinen | **P** |
+| **n** | Weichtiere | **R** |
+
+Gespeichert sind die Buchstaben groß (`AG`), die Maske der Kasse zeigt sie klein. Zusatzstoffe laut Maske: 1 Farbstoff, 2 Konservierungsstoff, 3 Antioxidationsmittel, 4 Geschmacksverstärker, 5 Schwefeldioxid, 6 Schwärzungsmittel, 7 Phosphat, 8 Milcheiweiß, 9 koffeinhaltig, 10 chininhaltig, 11 Süßungsmittel.
+
+**Kasse als Master heißt auch: was dort fehlt, ist bei uns aus.** Der heutige Import lässt ein Gericht, das nicht in der Datei steht, unverändert aktiv und nennt es nur im Bericht („In der Datenbank, aber nicht in der Datei"). Für die Kasse als Quelle reicht das nicht, sonst bietet der Agent einen gestrichenen Artikel weiter an. T-4.11 baut deshalb: ein Artikel, der im Export fehlt oder in der Kasse gesperrt ist (ob `artikel.DBF` dafür eine Spalte hat, klärt T-4.11 an der echten Datei), wird bei uns `active = nein`. Wie Preisänderungen erst nach Sicht: `--dry-run` listet die Kandidaten, ein eigener Schalter übernimmt sie. Nie gelöscht, `order_items` verweisen auf das Gericht.
+
+**Ablauf eines Kassenimports:** Kopien ziehen → Umwandler → `python -m scripts.import_menu imports/ --dry-run` → Bericht lesen (Preisänderungen, fehlende Artikel, Warnungen) → erneut mit `--apply-price-changes` und dem Schalter für fehlende Artikel. Ohne `--apply-price-changes` bleibt bei schon vorhandenen Gerichten der alte Preis stehen, und der Agent nennt einen anderen Preis als die Kasse.
+
+### `warengrp.dbf` → `category`
 
 | Spalte | Beispiel | Regel |
 |---|---|---|
@@ -113,7 +140,7 @@ Sonderfälle: Die Zeile mit `ARTNR` `000` ohne Name und Preis ist ein Platzhalte
 | `W_LBEZEICH` | `Vorspeisen` | gröbere Gruppe, nicht gebraucht |
 | `W_MWST`, `W_MWST2` | `A` | Steuer rechnet die Kasse, nicht gebraucht |
 
-### `Zutaten.dbf` und `ZutatenGRP.dbf` → `item_options.csv`
+### `zutaten.DBF` und `zutgrp.DBF` → `item_options.csv`
 
 In der Kasse sind „Zutaten" **Extras**: Nach der Artikelnummer tippt das Team auf „+" und wählt, was der Gast dazu- oder abbestellt, mit Aufschlag oder Abzug. Gedacht war das für Pizzerien. Eine Zutatengruppe legt fest, bei welchen Gerichten eine Zutat wählbar ist. Beispiele von Maxi:
 - „Mango-Curry-Soße" +2,90 € bei gebratenen Nudeln und gebratenem Reis, nicht bei Suppen
@@ -121,5 +148,5 @@ In der Kasse sind „Zutaten" **Extras**: Nach der Artikelnummer tippt das Team 
 
 Bei uns wird daraus je Gericht eine Gruppe in `item_options` mit `required` = `nein` und ohne Default: Gruppe = Zutatengruppe, Option = Zutat, `price_delta_eur` = Aufschlag oder Abzug. Das deckt sich mit D8: der Agent bietet nur an, was hier steht.
 
-**Offen, bis alle Spalten vorliegen:** wie eine Zutat zu ihrer Gruppe und ihrem Preis kommt (die gezeigten Spalten `ZBEZEICH`, `PUBLIC`, `ZGRP`, `ZPREIS`, `ZGRP3` verbinden das nicht; `ZPREIS` 0,10 / 0,20 / 0,30 sieht eher nach Preisstufen aus) und wie ein Artikel seine erlaubten Gruppen findet (Vermutung `GROESSE`). Präfix „A.", „B." in `ZBEZEICH` ist vermutlich eine Sortierung und wird beim Vorlesen entfernt, ebenso der Unterstrich.
+**Offen, klärt T-4.11 an den echten Dateien:** wie eine Zutat zu ihrer Gruppe und ihrem Preis kommt (die gezeigten Spalten `ZBEZEICH`, `PUBLIC`, `ZGRP`, `ZPREIS`, `ZGRP3` verbinden das nicht; `ZPREIS` 0,10 / 0,20 / 0,30 sieht eher nach Preisstufen aus) und wie ein Artikel seine erlaubten Gruppen findet (Vermutung `GROESSE`). Präfix „A.", „B." in `ZBEZEICH` ist vermutlich eine Sortierung und wird beim Vorlesen entfernt, ebenso der Unterstrich.
 
