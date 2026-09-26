@@ -1,0 +1,27 @@
+{
+  "id": "eskalation_0009",
+  "name": "Beschwerde mitten in der Bestellung",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Und uebrigens, letztes Mal war ich sehr unzufrieden."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

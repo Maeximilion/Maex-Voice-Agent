@@ -69,6 +69,12 @@ class Recording:
     # Kundensatz vor jedem confirm, der kein Ja war.
     unconfirmed: list[str] = field(default_factory=list)
     confirms: int = 0
+    # Argumente des letzten confirm: der Runner schickt ihn fuer `repeat_confirm`
+    # ein zweites Mal, wie eine Plattform nach einem Timeout (docs/08 §6).
+    last_confirm: dict[str, Any] | None = None
+    # Erfolgreiche Tool-Ergebnisse (Name, Daten): `expected.tools` zaehlt nur,
+    # was wirklich geliefert hat, nicht jeden Versuch (Codex PR #145, P1).
+    ok_results: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
@@ -95,6 +101,10 @@ class RecordingLLM:
         if result is None:
             self.recording.customer_lines.append(user_input)
             return
+        if result.get("ok"):
+            self.recording.ok_results.append(
+                (str(result.get("tool")), result.get("data") or {})
+            )
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 
@@ -111,6 +121,7 @@ class RecordingLLM:
                     rec.guessed.append((item_id, last))
         elif name == "confirm":
             rec.confirms += 1
+            rec.last_confirm = dict(args)
             # Das Ja zaehlt nur, wenn es nach dem Entwurf kam, also auf das
             # Vorlesen antwortet. "Ja, guten Tag, einmal die 13" vor Suche,
             # Entwurf und confirm im selben Zug ist keine Zustimmung zum

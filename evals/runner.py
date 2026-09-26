@@ -34,12 +34,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
+from api.agent.dispatch import dispatch
 from api.agent.llm import LLMClient
+from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
-from evals.judge import CaseError, judge, observe, validate_case
+from api.models import MenuItem
+from evals.judge import CaseError, judge, missing_tools, observe, validate_case
 from evals.recorder import RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
 from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
@@ -116,6 +119,53 @@ def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     return tenant
 
 
+def _end_of_business_day(now: datetime) -> datetime:
+    """Ende des Betriebstags, zu dem `now` gehoert (core/time: Tag ab 05:00)."""
+    day = business_day(now, TIMEZONE)
+    return business_day_bounds_utc(day, TIMEZONE)[1]
+
+
+def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) -> None:
+    """ "Heute aus" wie im Tablet (T-4.8): bis zum Ende des Betriebstags (05:00).
+
+    Die Evalkarte im Importformat kennt keinen Tagesstand, deshalb setzt ihn der
+    Fall selbst (`"sold_out": ["48"]`). Eine unbekannte Nummer ist ein kaputter
+    Fall, kein stilles Nichts.
+    """
+    if not numbers:
+        return
+    changed = session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number.in_(numbers))
+        .values(sold_out_until=_end_of_business_day(now))
+    ).rowcount
+    if changed != len(set(numbers)):
+        raise CaseError(
+            f"sold_out {numbers}: nicht jede Nummer steht auf der Evalkarte"
+        )
+    session.commit()
+
+
+def _repeat_confirm(session: Session, case, call, tenant, llm, now) -> list[str]:
+    """`"repeat_confirm": true`: den letzten confirm des Modells ein zweites Mal
+    senden, wie eine Plattform, die nach einem Timeout wiederholt. Das Replay
+    endet mit der Bestaetigung, ein zweites Ja des Gasts kaeme nie beim Modell
+    an (Codex PR #145). Gezaehlt wird danach im Abgleich (`duplicate_confirms`).
+    """
+    if not case.get("repeat_confirm"):
+        return []
+    args = llm.recording.last_confirm
+    if args is None:
+        return ["repeat_confirm: das Modell hat nie confirm gerufen"]
+    result = dispatch(session, call.call_id, tenant.id, "confirm", args, now=now)
+    session.commit()
+    return (
+        []
+        if result.ok
+        else [f"repeat_confirm: zweiter confirm scheiterte ({result.say})"]
+    )
+
+
 def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
@@ -125,20 +175,26 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         tags=case.get("tags", []),
         passed=False,
         expected_escalation=bool(expected.get("escalated")),
+        pending=case.get("pending"),
     )
     llm = RecordingLLM(make_llm(now))
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
+        _sell_out(session, tenant.id, case.get("sold_out", []), now)
         call, turns = replay(session, case, tenant, now=now, llm=llm)
+        repeated = _repeat_confirm(session, case, call, tenant, llm, now)
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
-        diffs = judge(expected, seen)
+        diffs = judge(expected, seen) + repeated
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
         return result
 
     rec = llm.recording
+    missing = missing_tools(expected.get("tools", []), rec.ok_results)
+    if missing:
+        diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)

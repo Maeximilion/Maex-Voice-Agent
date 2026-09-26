@@ -1,0 +1,23 @@
+{
+  "id": "eskalation_0008",
+  "name": "Beschwerde im zweiten Satz",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo."
+    },
+    {
+      "role": "customer",
+      "text": "Ich moechte mich beschweren."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

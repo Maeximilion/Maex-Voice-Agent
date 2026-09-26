@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.32.0
+> Status: 26.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.32.1
 
 ---
 
 ## Summary
+
+**Eval suite v1 (T-5.2, 26.09.2026): 107 cases, every mandatory line of docs/08 §6 covered.** Pickup (by number, name, alias, spoken numbers, quantities, options, ambiguous and sold-out dishes, unknown dishes, abort, read-back, closing time), reservations (times, dates, corrections at read-back, capacity, closed days), escalation (complaint, human, cancellation, noise) and allergens. A run takes about 12 s. With the rule-based stand-in model: 99/107 green, hard metrics 0, false escalation 4.5 %. Eight cases are **known gaps** (`pending` with the task that closes them: T-2.4 real model, T-6.5 delivery); CI demands every other case green and every gap red, so a gap that heals is noticed. The suite found four defects: two in the stand-in (a "yes" to the only offered dish was searched as a dish and asked again forever; a card number in the first sentence was stripped as a phone number), both fixed here; and one in the hot path, `check_slot` offering the previous day's times as alternatives (on closed Monday it offered Sunday 21:30 as "halb zehn"), fixed in its own bug PR; and the number rule for "und die 24" and "ich würde die 13", which is its own task.
 
 **"Gericht aus" on the tablet (T-4.8, 26.09.2026): the team takes a dish off, the agent stops offering it.** A button in the header (with "2 heute aus" next to it) opens a box above the columns with a search field and big switches. One tap marks a dish sold out until the end of the business day (05:00 local time), so it is back by itself the next morning; a second tap ("Wieder da") undoes it. Every tap is locked on the row and written to `audit_log`; other tablets follow over a new event `dishes`. `search_menu` then says "Frühlingsrollen ist heute leider aus. Stattdessen hätte ich Nummer 24 Sommerrollen." - up to two available dishes of the same category, never anything off the menu (D8). No migration: `sold_out_until` exists since 002. Clicked through in the browser against the eval menu.
 
@@ -90,7 +92,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ### In Claude Code (can start immediately, without vendor)
 1. **First real kitchen print** (T-4.6 variant B built 25.09.2026): decide which machine in the restaurant runs `printbridge/` (the register PC with Python and pywin32, or a small computer of its own), check the printer port (USB or network, `printbridge/README.md`), set `KITCHEN_BRIDGE_TOKEN`, print a test slip with `python -m printbridge --test` with Maxi on site. Variant C (register intake) waits for the <POS Provider> answer
-2. **T-5.2** eval suite v1 with at least 100 cases (docs/08 §6 mandatory coverage); the runner is ready (T-5.1 done 25.09.2026)
+2. **`check_slot` alternatives from the previous day** (found by T-5.2, 26.09.2026): fix with a red unit test first (`/bug`)
 3. **Menu CSVs from the chat (C1)**, then a real import: `python -m scripts.import_menu imports/ --dry-run`, then without. `search_menu` and `get_item_details` (T-4.3, T-4.4) run against test data until then
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
@@ -216,6 +218,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | `python -m printbridge --once` exits 0 after a failed run (`printbridge/bridge.py` `main`) | Codex PR #143 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): the one-shot run is meant as an installation check, but the loop's catch-all logs the error and `--once` still returns 0, so a script cannot tell a failed check from a good one. Fix: return 1 from the `--once` branch after a caught error; daemon mode keeps retrying | before the first real print on site |
 | Index for `outbox.payload->>'order_id'` (T-4.6) | Own review PR #143 (P2): `send_ticket` and the print bridge look up a ticket's newest revision by scanning the outbox for the order id; fine at pilot volume, but the outbox has no retention yet. An expression index needs a migration, and PR #139 is renumbering 003/004 | with the next migration after PR #139 |
 | Machine for the print bridge and first real print (T-4.6) | The printers are Epson TM-T20II at the register ("Küche", "Receipt"); unknown yet whether USB or network. USB means the bridge runs on the register PC (Python plus pywin32, installing software there is Maxi's call because of the register vendor) or the printer is shared; network means any small computer in the restaurant. Code and tests cover both paths against simulated printers only | before the first test call with a real order |
+| Scripted model takes a whole pickup order while pickup is closed (`sim/scripted_order.py`) | Eval suite T-5.2: at closing time or on the closed day the stand-in asks for dishes, name and phone and only `draft_order` says "Abholung ist gerade leider nicht möglich"; the outcome is right (nothing booked), the conversation is long. `get_service_status` already knows it is closed. The real model (T-2.4) gets it from the prompt | with T-2.4 |
+| Turn-level assertions in eval cases (`evals/`) | Codex PR #145 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): cases judge only the final database state, and `sim/replay.py` feeds every customer line unconditionally; the mandatory `pflichtoption` case would also pass if the agent never asked which Fleisch option is wanted and just consumed "Mit Huhn bitte". Fix: an optional per-turn expectation (a tool call or a question kind after a given line) in the case format | before T-5.3 model comparison |
 | Store eval runs in `eval_runs` (T-5.1) | docs/08 §3 asks for it; the table needs a migration, and PR #139 is renumbering 003/004. Until then the reports in `evals/reports/` are the history, and the regression rule reads them | with the migration after PR #139, latest before G2 |
 | Reminder for orders waiting for release (T-4.7) | Design review (UX, minor): an order outside `primary` only cooks after "Passt". Today one tone and a blink; after N minutes without release the tone should repeat and the card should say how long it waits. Needs a value in `service_config` | with T-8.2 (overflow approval flow) |
 | Change the option of an existing position (T-4.7) | Design review (UX, minor): today "Tauschen" with the same number re-picks the options (base price stays frozen). A direct "Ändern" on an option line would be one tap shorter | at the T-3.5 operating test, if the team stumbles |
@@ -299,6 +303,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.32.1 · 26.09.2026:** T-5.2 done: Eval-Suite v1 mit 107 Faellen
 - **v1.32.0 · 26.09.2026:** T-4.8 done: Gericht aus am Tablet, Alternativen derselben Kategorie im say von search_menu
 - **v1.31.24 · 25.09.2026:** PR #139: eigenes Review, 13 Befunde behoben (Allergie bei neu gesuchter Wahl, mehrdeutiges Gericht mit Allergie, allgemeine Allergie fragt nach, "vertrage alles", Bestellung statt Zutat, Schluessel in E.164/UTC, Grund bleibt bei alter Optionsdatei, Schema der Wunsch-Felder)
 - **v1.31.23 · 25.09.2026:** PR #139: letzte Codex-Runde - jede Allergie in "Nuss- und Sesamallergie" (P1), Intoleranz, wiederholte und bindestrichlose Allergien, ganze Antworten auf "Wogegen" behoben; sieben P2 als offene Punkte (Regel A)

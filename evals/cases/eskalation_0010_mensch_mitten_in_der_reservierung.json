@@ -1,0 +1,23 @@
+{
+  "id": "eskalation_0010",
+  "name": "Mensch mitten in der Reservierung",
+  "tags": [
+    "eskalation",
+    "mensch"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer vier Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Koennte ich lieber mit einem Menschen sprechen?"
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

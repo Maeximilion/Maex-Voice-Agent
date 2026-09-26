@@ -552,8 +552,16 @@ def _opening_dish(text: str) -> str | None:
     und Rufnummer im selben Satz sind kein Gericht: sie kommen in den
     state_patch, nicht in die Suche (Review PR #133)."""
     rest = _PICKUP_WORDS.sub(" ", text)
-    rest = _PHONE.sub(" ", _NAME_CLAUSE.sub(" ", rest)).strip(" .,!?")
+    rest = _PHONE.sub(_drop_phone, _NAME_CLAUSE.sub(" ", rest)).strip(" .,!?")
     return rest if normalize_query(rest) or re.search(r"\d", rest) else None
+
+
+def _drop_phone(match: re.Match[str]) -> str:
+    """Nur eine echte Rufnummer (sieben Ziffern, wie in `_phone`) faellt weg. Nach
+    dem Streichen von "zum Abholen bestellen" stehen Leerzeichen hinter der 13, und
+    "13    " sah sonst aus wie eine Nummer (Eval-Suite T-5.2)."""
+    raw = match.group(1)
+    return " " if sum(c.isdigit() for c in raw) >= 7 else match.group(0)
 
 
 def _join(*parts: str | None) -> str | None:

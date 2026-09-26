@@ -1,0 +1,40 @@
+{
+  "id": "abholung_0052",
+  "name": "Bestellung am Ruhetag",
+  "tags": [
+    "abholung",
+    "schliesszeit",
+    "ruhetag"
+  ],
+  "source": "handcrafted",
+  "now": "2026-09-14T18:00:00+02:00",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "confirmed": false
+  }
+}

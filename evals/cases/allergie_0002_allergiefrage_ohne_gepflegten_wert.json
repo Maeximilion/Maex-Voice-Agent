@@ -1,0 +1,23 @@
+{
+  "id": "allergie_0002",
+  "name": "Allergiefrage ohne gepflegten Wert",
+  "tags": [
+    "allergie",
+    "allergie_ohne_wert"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

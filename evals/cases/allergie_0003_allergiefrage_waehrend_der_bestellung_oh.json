@@ -1,0 +1,31 @@
+{
+  "id": "allergie_0003",
+  "name": "Allergiefrage waehrend der Bestellung ohne gepflegten Wert",
+  "tags": [
+    "allergie",
+    "allergie_ohne_wert"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 12."
+    },
+    {
+      "role": "customer",
+      "text": "Welche Allergene sind in der Suppe? Ich vertrage keinen Sellerie."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

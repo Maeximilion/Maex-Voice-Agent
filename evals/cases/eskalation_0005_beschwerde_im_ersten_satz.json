@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0005",
+  "name": "Beschwerde im ersten Satz",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich habe eine Beschwerde wegen gestern."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "id": "eskalation_0007",
+  "name": "Unzufrieden",
+  "tags": [
+    "eskalation",
+    "beschwerde"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich bin ziemlich unzufrieden mit meiner letzten Bestellung."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}
