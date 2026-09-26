@@ -496,22 +496,60 @@ def _add_allergens(
     )
 
 
-def split_aliases(
-    text: str, numbers: Iterable[str]
-) -> tuple[str, list[dict[str, str]]]:
-    """Aliase aus dem Chat nach Nummern trennen, die die Kasse liefert.
+@dataclass(frozen=True)
+class AliasSplit:
+    kept: str
+    dropped: str | None  # None: keine Zeile abgetrennt
+    dropped_numbers: list[str]
+
+
+def split_aliases(texts: Iterable[str], numbers: Iterable[str]) -> AliasSplit | None:
+    """Aliase aus dem Chat gegen die Nummern der Kasse abgleichen.
 
     Eine Alias-Zeile zu einer Nummer, die nicht in der neuen `menu_items.csv`
-    steht (Getränk, gesperrter Artikel, Nummer, die die Suche nicht versteht),
-    würde den ganzen Import blockieren. Löschen hieße, gewachsenes Wissen zu
-    verlieren. Deshalb: (Text ohne diese Zeilen, die abgetrennten Zeilen).
+    steht (Getränk, gesperrt, Nummer unlesbar, Fehler im Bericht), würde den
+    ganzen Import blockieren; löschen hieße, gewachsenes Wissen zu verlieren.
+    `texts` sind die Alias-Datei und die Datei der abgetrennten Zeilen: beide
+    werden bei jedem Lauf neu aufgeteilt, so kommen Aliase eines Gerichts, das
+    nur einen Lauf lang fehlte, von selbst zurück (Review T-4.11).
+
+    Zeilen bleiben Listen, nicht Dicts: ein Feld zu viel ("1;Miso; warm")
+    bleibt, wie es ist. None: eine Datei hat keine Spalte `number` oder andere
+    Spalten als die andere - dann wird nichts angefasst.
     """
     known = {canonical_card(n) for n in numbers}
-    reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
-    columns = tuple(reader.fieldnames or ("number", "alias"))
-    kept: list[dict[str, str]] = []
-    dropped: list[dict[str, str]] = []
-    for row in reader:
-        number = (row.get("number") or "").strip()
-        (kept if canonical_card(number) in known else dropped).append(row)
-    return _csv(columns, kept), dropped
+    header: list[str] | None = None
+    rows: list[list[str]] = []
+    for text in texts:
+        reader = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
+        head = [h.strip() for h in next(reader, [])]
+        if not head:
+            continue
+        if "number" not in head or (header is not None and head != header):
+            return None
+        header = head
+        for row in reader:
+            if any(cell.strip() for cell in row) and row not in rows:
+                rows.append(row)
+    if header is None:
+        return None
+    index = header.index("number")
+    kept: list[list[str]] = []
+    dropped: list[list[str]] = []
+    for row in rows:
+        number = row[index].strip() if index < len(row) else ""
+        (kept if number and canonical_card(number) in known else dropped).append(row)
+    numbers_dropped = sorted({r[index].strip() for r in dropped if index < len(r)})
+    return AliasSplit(
+        _csv_rows(header, kept),
+        _csv_rows(header, dropped) if dropped else None,
+        numbers_dropped,
+    )
+
+
+def _csv_rows(header: list[str], rows: list[list[str]]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\n")
+    writer.writerow(header)
+    writer.writerows(rows)
+    return out.getvalue()

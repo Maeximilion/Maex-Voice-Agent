@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Gerichte, die nicht in der Datei stehen, inaktiv setzen (Kasse als Quelle)",
     )
+    parser.add_argument(
+        "--allow-large-deactivation",
+        action="store_true",
+        help="mehr als die Hälfte der aktiven Karte deaktivieren erlauben",
+    )
     args = parser.parse_args(argv)
 
     if not args.folder.is_dir():
@@ -78,6 +83,7 @@ def main(argv: list[str] | None = None) -> int:
                 plan,
                 apply_price_changes=args.apply_price_changes,
                 deactivate_missing=args.deactivate_missing,
+                allow_large_deactivation=args.allow_large_deactivation,
                 dry_run=args.dry_run,
             )
         except ValueError as exc:

@@ -105,14 +105,19 @@ def _read(data: bytes, memo: bytes | None) -> Table:
     for index in range(count):
         start = header_len + index * record_len
         record = data[start : start + record_len]
-        deleted.append(record[0] == _DELETED)
+        is_deleted = record[0] == _DELETED
+        deleted.append(is_deleted)
         row: dict[str, str] = {}
         pos = 1
         for field in fields:
             raw = record[pos : pos + field.length]
             pos += field.length
             if field.type == "M":
-                row[field.name] = _memo(memo or b"", raw, encoding)
+                # Memo gelöschter Zeilen nie lesen: ihr Zeiger kann ins Leere
+                # zeigen und würde sonst den ganzen Import blockieren.
+                row[field.name] = (
+                    "" if is_deleted else _memo(memo or b"", raw, encoding)
+                )
             else:
                 row[field.name] = raw.decode(encoding).strip()
         rows.append(row)

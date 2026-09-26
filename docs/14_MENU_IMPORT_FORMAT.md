@@ -57,7 +57,7 @@
   Suche fiele darauf nie zurück, der Alias wäre gespeichert und unerreichbar.
   Eine Ziffer im Wort ist erlaubt, solange etwas übrig bleibt („7up“)
 - Bestehendes Gericht mit anderem Preis → im Bericht als „Preisänderung", erst mit `--apply-price-changes` übernommen
-- Gericht in der Datenbank, aber nicht in der Datei → im Bericht; mit `--deactivate-missing` wird es `active = nein`, nie gelöscht (Kasse als Quelle, T-4.11)
+- Gericht in der Datenbank, aber nicht in der Datei → im Bericht; mit `--deactivate-missing` wird es `active = nein`, nie gelöscht (Kasse als Quelle, T-4.11). Eine Datei ohne Gerichte oder mehr als die Hälfte der aktiven Karte weg → verweigert, außer mit `--allow-large-deactivation`: ein kaputter Export schaltet nie die Karte ab
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.
 
@@ -79,7 +79,7 @@ Die Kasse speichert ihre Artikel als dBase-Tabellen. Sie ist Master für Menü u
 
 **Format:** dBase IV mit Memo-Dateien (`.DBT`, 1024-Byte-Blöcke), Zeichensatz laut Kopf German OEM (cp437). Gelesen mit eigenem Leser `api/domain/menu/pos_dbf.py` (nur Standardbibliothek, nur lesend); ein unbekannter Zeichensatz ist ein Fehler statt einer geratenen Codepage.
 
-**Umwandler:** `python -m scripts.kasse_to_csv imports/kasse --out imports [--allergens-confirmed-by <Name>]` schreibt `menu_items.csv` (mit `pos_code`), `item_options.csv` und `item_allergens.csv`; `item_aliases.csv` aus dem Chat bleibt; nur Zeilen zu Nummern, die die Kasse nicht liefert (Getränk, gesperrt, Nummer unlesbar), verschiebt er nach `item_aliases.verworfen.csv`, weil der Import sonst ganz abbricht. Eine leere Preisstufe in `zutgrp` ist ein Fehler, kein Gratis-Extra; eine kaputte Datei (abgeschnitten, unlesbarer Memo-Zeiger, fehlende Spalte einer anderen Kassenversion) endet mit Exit 2 und nennt die Stelle, nicht mit einem Traceback. Regeln in `api/domain/menu/pos_convert.py`. Exit 0 geschrieben, 1 geschrieben mit Fehlern im Bericht (diese Artikel fehlen in der CSV), 2 nicht lesbar, nichts geschrieben.
+**Umwandler:** `python -m scripts.kasse_to_csv imports/kasse --out imports [--allergens-confirmed-by <Name>]` schreibt `menu_items.csv` (mit `pos_code`), `item_options.csv` und `item_allergens.csv`; `item_aliases.csv` aus dem Chat bleibt; Zeilen zu Nummern, die die Kasse in diesem Lauf nicht liefert (Getränk, gesperrt, Nummer unlesbar, Fehler im Bericht), legt er in `item_aliases.verworfen.csv`, weil der Import sonst ganz abbricht. Beide Dateien werden bei jedem Lauf neu aufgeteilt: kommt ein Gericht zurück, kommen seine Aliase von selbst zurück. Ohne ein einziges übernommenes Gericht schreibt der Umwandler nichts (Exit 2). Eine leere Preisstufe in `zutgrp` ist ein Fehler, kein Gratis-Extra; eine kaputte Datei (abgeschnitten, unlesbarer Memo-Zeiger, fehlende Spalte einer anderen Kassenversion) endet mit Exit 2 und nennt die Stelle, nicht mit einem Traceback. Regeln in `api/domain/menu/pos_convert.py`. Exit 0 geschrieben, 1 geschrieben mit Fehlern im Bericht (diese Artikel fehlen in der CSV), 2 nicht lesbar, nichts geschrieben.
 
 **Beschaffen, ohne etwas kaputt zu machen**
 - Nur **Kopien**, nach Kassenschluss, nach `imports/kasse/` (liegt im `.gitignore`, kommt nie ins Repo).

@@ -7,8 +7,9 @@ Aufruf:
 Liest nur Kopien: artikel.DBF + .DBT, zutaten.DBF + .DBT, warengrp.dbf,
 zutgrp.DBF (Groß- und Kleinschreibung egal). Schreibt menu_items.csv,
 item_options.csv und item_allergens.csv in den Zielordner. item_aliases.csv aus
-dem Chat bleibt, nur Zeilen zu Nummern, die die Kasse nicht liefert, wandern nach
-item_aliases.verworfen.csv (sie würden den Import blockieren). Danach wie immer:
+dem Chat bleibt; Zeilen zu Nummern, die die Kasse nicht liefert, liegen in
+item_aliases.verworfen.csv und kommen zurück, sobald das Gericht wieder da ist.
+Ohne ein einziges Gericht schreibt der Umwandler nichts (Exit 2). Danach wie immer:
     python -m scripts.import_menu imports --dry-run
 
 Exit-Code: 0 geschrieben, 1 geschrieben, aber Artikel mit Fehlern im Bericht
@@ -17,7 +18,6 @@ Die Logik steckt in api/domain/menu/pos_convert.py.
 """
 
 import argparse
-import csv
 import sys
 from pathlib import Path
 
@@ -50,27 +50,35 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
-def _set_aside_aliases(out: Path, numbers: list[str]) -> None:
-    source = out / ALIASES_FILE
-    if not source.is_file():
+def _reconcile_aliases(out: Path, numbers: list[str]) -> None:
+    """Alias-Datei und abgetrennte Zeilen gegen die neue Karte aufteilen."""
+    source, side = out / ALIASES_FILE, out / ALIASES_DROPPED
+    try:
+        texts = [
+            p.read_text(encoding="utf-8-sig") for p in (source, side) if p.is_file()
+        ]
+    except UnicodeDecodeError:
+        print(f"Warnung: {ALIASES_FILE} ist nicht UTF-8, Aliase unverändert")
         return
-    kept, dropped = split_aliases(source.read_text(encoding="utf-8-sig"), numbers)
-    if not dropped:
+    if not texts:
         return
-    target = out / ALIASES_DROPPED
-    new_file = not target.is_file()
-    with target.open("a", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(
-            handle, fieldnames=list(dropped[0]), delimiter=";", lineterminator="\n"
+    split = split_aliases(texts, numbers)
+    if split is None:
+        print(
+            f"Warnung: {ALIASES_FILE} ohne Spalte number oder mit anderen Spalten "
+            f"als {ALIASES_DROPPED}, Aliase unverändert"
         )
-        if new_file:
-            writer.writeheader()
-        writer.writerows(dropped)
-    source.write_text(kept, encoding="utf-8")
-    listed = ", ".join(sorted({row["number"] for row in dropped}))
+        return
+    source.write_text(split.kept, encoding="utf-8")
+    if split.dropped is None:
+        # Alle Zeilen sind zurück in der Alias-Datei; die Nebendatei ist leer.
+        side.unlink(missing_ok=True)
+        return
+    side.write_text(split.dropped, encoding="utf-8")
     print(
-        f"Warnung: {len(dropped)} Aliase zu Nummern, die die Kasse nicht liefert "
-        f"({listed}), nach {target.name} verschoben"
+        "Warnung: Aliase zu Nummern, die die Kasse nicht liefert, liegen in "
+        f"{ALIASES_DROPPED} und kommen zurück, sobald das Gericht wieder "
+        f"übernommen wird: {', '.join(split.dropped_numbers)}"
     )
 
 
@@ -104,11 +112,17 @@ def main(argv: list[str] | None = None) -> int:
     except (FileNotFoundError, DbfError) as exc:
         print(f"Fehler: {exc} - nichts geschrieben.", file=sys.stderr)
         return 2
+    if not result.menu:
+        # Falsche Warengruppen, falscher Ordner, Kopie mitten in einer Änderung:
+        # eine leere Karte würde beim Import alles deaktivieren (Review T-4.11).
+        print(result.as_text())
+        print("Fehler: kein Gericht übernommen - nichts geschrieben.", file=sys.stderr)
+        return 2
     args.out.mkdir(parents=True, exist_ok=True)
     for name, text in result.csv_files().items():
         (args.out / name).write_text(text, encoding="utf-8")
     print(result.as_text())
-    _set_aside_aliases(args.out, [row["number"] for row in result.menu])
+    _reconcile_aliases(args.out, [row["number"] for row in result.menu])
     print(
         f"Geschrieben nach {args.out}. Weiter: python -m scripts.import_menu "
         f"{args.out} --dry-run"

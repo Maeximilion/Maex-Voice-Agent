@@ -69,6 +69,9 @@ _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 # (numberwords._SUFFIXES). Geprüft wird die klein geschriebene Nummer: 23a und
 # 23A wären sonst zwei Gerichte, die die Suche nie auseinanderhält.
 _CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
+# Mehr als dieser Anteil der aktiven Karte fällt nur mit ausdrücklichem
+# Schalter weg: ein kaputter Export soll nie die Karte abschalten (T-4.11).
+MAX_DEACTIVATE_SHARE = 0.5
 
 
 def is_card_number(number: str) -> bool:
@@ -480,6 +483,7 @@ def apply(
     *,
     apply_price_changes: bool = False,
     deactivate_missing: bool = False,
+    allow_large_deactivation: bool = False,
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Report:
@@ -487,6 +491,8 @@ def apply(
 
     deactivate_missing: Gerichte, die nicht in der Datei stehen, werden inaktiv
     (Kasse als Master, docs/14). Ohne den Schalter bleiben sie wie sie sind.
+    Eine Datei ohne Gerichte oder mehr als die Hälfte der aktiven Karte weg
+    wird verweigert, außer mit allow_large_deactivation.
     """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
@@ -524,6 +530,25 @@ def apply(
     missing = [item for key, item in existing.items() if key not in in_plan]
     report.items_not_in_file = sorted(item.number for item in missing)
     if deactivate_missing:
+        active_missing = [item for item in missing if item.active]
+        active_total = sum(item.active for item in existing.values())
+        if not plan.items:
+            session.rollback()
+            raise ValueError(
+                "Datei enthält keine Gerichte - fehlende Gerichte werden nicht "
+                "deaktiviert. Export und Umwandler prüfen."
+            )
+        if (
+            active_missing
+            and len(active_missing) > MAX_DEACTIVATE_SHARE * active_total
+            and not allow_large_deactivation
+        ):
+            session.rollback()
+            raise ValueError(
+                f"{len(active_missing)} von {active_total} aktiven Gerichten würden "
+                "deaktiviert, mehr als die Hälfte der Karte. Export prüfen; ist es "
+                "gewollt, mit --allow-large-deactivation wiederholen."
+            )
         for item in missing:
             if item.active:
                 item.active = False

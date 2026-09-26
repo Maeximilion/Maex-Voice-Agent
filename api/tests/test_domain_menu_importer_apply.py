@@ -613,3 +613,80 @@ def test_skript_kaputte_datei_exit_2(tmp_path, capsys):
 
     assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
     assert "artikel" in capsys.readouterr().err
+
+
+def test_deaktivieren_verweigert_leere_oder_halbe_karte(session, tenant_id):
+    """Review T-4.11: ein leerer oder kaputter Export schaltet nie die Karte ab."""
+    run(session, tenant_id)  # 23, 47 aktiv, 12 inaktiv
+    leer = nur(files()[MENU_FILE].splitlines()[0] + "\n")
+    with pytest.raises(ValueError, match="keine Gerichte"):
+        run(session, tenant_id, files=leer, deactivate_missing=True)
+
+    extra = files()[MENU_FILE] + "30;Reis;Beilagen;3,00;;\n"
+    run(session, tenant_id, files=nur(extra))  # 23, 30, 47 aktiv
+    nur_23 = nur("\n".join(files()[MENU_FILE].splitlines()[:2]))
+    with pytest.raises(ValueError, match="Hälfte"):
+        run(session, tenant_id, files=nur_23, deactivate_missing=True)
+    assert item(session, tenant_id, "47").active is True
+
+    report = run(
+        session,
+        tenant_id,
+        files=nur_23,
+        deactivate_missing=True,
+        allow_large_deactivation=True,
+    )
+    assert report.items_deactivated == ["30", "47"]
+
+
+def test_skript_ohne_gericht_schreibt_nichts(tmp_path, capsys):
+    """Review T-4.11: 0 Gerichte (falsche Warengruppen, falscher Ordner) -> Exit 2."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;alias\n1;Misosuppe\n", encoding="utf-8")
+
+    assert (
+        kasse_to_csv.main([str(kasse), "--out", str(out), "--skip-groups", "001"]) == 2
+    )
+
+    assert "kein Gericht" in capsys.readouterr().err
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE]
+    assert "Misosuppe" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+
+def test_skript_holt_aliase_zurueck_wenn_das_gericht_wiederkommt(tmp_path):
+    """Review T-4.11: ein Gericht fehlt nur einen Lauf lang -> Aliase kommen zurück."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Misosuppe\n2;Pekingsuppe\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+    assert "Pekingsuppe" not in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    assert "2;Pekingsuppe" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert not (out / "item_aliases.verworfen.csv").exists()
+
+
+def test_skript_alias_datei_mit_extra_feld_oder_falschem_zeichensatz(tmp_path, capsys):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso; warm\n\n65;Wasser\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+    assert "1;Miso; warm" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+    (out / ALIASES_FILE).write_bytes("number;alias\n1;Suppe groß\n".encode("cp1252"))
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+    assert "nicht UTF-8" in capsys.readouterr().out

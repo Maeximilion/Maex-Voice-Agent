@@ -118,3 +118,16 @@ def test_abgeschnittenes_memo_ist_dbf_fehler(memo_iv):
 
     with pytest.raises(DbfError, match="Memo"):
         read_table(dbf, dbt[:cut])
+
+
+def test_geloeschte_zeile_mit_totem_memo_zeiger_stoert_nicht():
+    """Review T-4.11: Memo gelöschter Zeilen wird nie gelesen, ein toter Zeiger
+    dort darf den Import nicht blockieren."""
+    dbf, dbt = write_dbf(FIELDS, ROWS, deleted=(0,))
+    pointer = 32 + 32 * len(FIELDS) + 1 + 1 + sum(f[2] for f in FIELDS[:-1])
+    tot = dbf[:pointer] + b"       999" + dbf[pointer + 10 :]
+
+    table = read_table(tot, dbt)
+
+    assert table.deleted[0] and table.rows[0]["ZUTATEN"] == ""
+    assert [r["ARTNR"] for r in table.live()] == ["1", "99"]
