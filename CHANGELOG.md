@@ -5,6 +5,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 ## [Unreleased]
 
 ### Added
+- "Gericht aus" on the tablet (T-4.8): a button in the header with the number of dishes sold out today opens a box with a search field and big switches. One tap marks a dish sold out until the end of the business day, a second tap brings it back; every tap is written to `audit_log`, other tablets follow over the event stream. `search_menu` then names up to two available dishes of the same category as an alternative
 - Project skeleton: FastAPI app with /health, token auth, uniform response envelope
 - `api/db.py`: engine with connection ping, session per request via `get_db`, tests against real Postgres
 - `api/core/`: response envelope, error classes with eight codes from docs/04, token auth, JSON logging with `request_id`/`call_id`, time helpers with business day

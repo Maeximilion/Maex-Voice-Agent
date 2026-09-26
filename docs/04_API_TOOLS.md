@@ -176,6 +176,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    - mehrere → `match_type: "ambiguous"`, bis zu 3 Vorschläge, der Agent **muss** nachfragen
    - keiner → `ok: false`, `error.code: "not_found"`
 
+**Heute aus (T-4.8).** Ein Treffer, den das Team am Tablet auf „Gericht aus" gestellt hat, kommt mit `sold_out: true` und einem `say`: „Frühlingsrollen ist heute leider aus. Stattdessen hätte ich Nummer 24 Sommerrollen." Die Alternativen sind bis zu zwei aktive, nicht ausverkaufte Gerichte derselben Kategorie, die nächsten Nummern nach dem ausverkauften, dann von vorn; gibt es keine, bleibt nur der erste Satz. Nie etwas, das nicht auf der Karte steht (D8). `get_item_details` und `draft_order` nennen weiter nur „heute aus".
+
 **Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
 vorzuschlagen gibt:
 

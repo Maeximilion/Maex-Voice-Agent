@@ -2,8 +2,9 @@
 
 Der Strom schickt keine Daten, nur ein Signal: "an der Spalte Heute hat sich etwas
 geändert" (`today`), "die Kopfzeile ist umgeschaltet" (`header`), "an den
-offenen Rückrufen hat sich etwas geändert" (`callbacks`) oder "an den neuen
-Bestellungen" (`orders`). Die Seite
+offenen Rückrufen hat sich etwas geändert" (`callbacks`), "an den neuen
+Bestellungen" (`orders`) oder "ein Gericht ist aus oder wieder da" (`dishes`,
+T-4.8). Die Seite
 holt das Fragment danach selbst. Das hält die Nutzlast klein und die Darstellung
 an genau einer Stelle - im Jinja2-Template.
 
@@ -26,6 +27,7 @@ from sqlalchemy.orm import Session
 from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.domain.callbacks import open_change_token
+from api.domain.menu.sold_out import sold_out_change_token
 from api.domain.ordering.board import new_orders_change_token
 from api.domain.reservations import today_change_token
 from api.domain.status.config import config_change_token
@@ -56,6 +58,10 @@ def _orders_token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
     return new_orders_change_token(session, tenant_id, tz_name)
 
 
+def _dishes_token(session: Session, tenant_id: uuid.UUID) -> str:
+    return sold_out_change_token(session, tenant_id)
+
+
 def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
     """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse.
 
@@ -72,6 +78,7 @@ def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
             "today": _token(session, tenant_id, tz_name),
             "callbacks": _callbacks_token(session, tenant_id),
             "orders": _orders_token(session, tenant_id, tz_name),
+            "dishes": _dishes_token(session, tenant_id),
         }
     finally:
         session.close()
