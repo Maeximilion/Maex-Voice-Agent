@@ -972,3 +972,13 @@ def test_praefixsuche_bleibt_im_latenzbudget(client, session, tenant_id):
     assert p95_ms(lambda: post(client, tenant_id, "Es zwölf")) < 300
     assert p95_ms(lambda: post(client, tenant_id, "Sushi zwölf")) < 300
     assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300
+
+
+@pytest.mark.parametrize("gesagt", ["Nummer Z12", "Nummer Z 12", "Nummer H zwölf"])
+def test_unbekanntes_praefix_hinter_marker_ist_nicht_vorhanden(session, sushi, gesagt):
+    """Codex PR #155, P2: der Import erlaubt jedes Praefix; eines, das die Karte
+    nicht hat, ist eine genannte Nummer, die es nicht gibt - keine Rueckfrage
+    und nie die Zahl allein."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, gesagt)
+    assert "Nummer 12 " not in err.value.say

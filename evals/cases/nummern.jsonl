@@ -80,7 +80,7 @@
 {"say": "das ist 5g Zucker", "expect": "name", "why": "Einheit hinter einer Zahl, keine Kartennummer"}
 {"say": "Nummer so 23", "expect": "?", "why": "kurzes Alltagswort, kein Kartenbuchstabe"}
 {"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
-{"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
+{"say": "Nummer V12", "expect": "!v12", "why": "Praefix V ist erlaubt (T-4.12), aber nicht auf dieser Karte: nicht vorhanden statt Rueckfrage (Codex PR #155)"}
 {"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}
 {"say": "und die 24", "expect": "24", "why": "und am Satzanfang fuehrt die Bestellung fort, verbindet keine zweite Zahl (T-5.2)"}
 {"say": "Und noch die 24.", "expect": "24", "why": "naechste Position im Folgesatz (T-5.2, abholung Positionen nacheinander)"}
@@ -140,4 +140,7 @@
 {"say": "Sushi Nummer zwölf", "expect": "?", "why": "Kategoriewort vor dem Marker: S12 oder 12? nachfragen (T-4.12)"}
 {"say": "Sushi", "expect": "name", "why": "Kategoriewort ohne Zahl ist Namenssuche (T-4.12)"}
 {"say": "zwei Sushi", "expect": "name", "why": "Menge vor dem Kategoriewort, keine Nummer (T-4.12)"}
-{"say": "Nummer X12", "expect": "?", "why": "X ist kein Praefix der Karte und keine Endung: Nummer neben Wort"}
+{"say": "Nummer X12", "expect": "!x12", "why": "einzelner Buchstabe ohne Praefix auf der Karte: genannte Nummer, die es nicht gibt (Codex PR #155)"}
+{"say": "Nummer Z12", "expect": "!z12", "why": "Import erlaubt jedes Praefix, die Suche meldet ein unbekanntes als nicht vorhanden (Codex PR #155)"}
+{"say": "Nummer Z 12", "expect": "!z12", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer H zwölf", "expect": "!h12", "why": "Buchstabe h bis z vor Zahlwort (Codex PR #155)"}

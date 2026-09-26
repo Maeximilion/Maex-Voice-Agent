@@ -504,6 +504,19 @@ def _card_letters(token: str) -> bool:
     )
 
 
+def _prefix_letters(token: str) -> bool:
+    """Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix sein koennen.
+
+    Jeder einzelne Buchstabe: der Import erlaubt jedes Praefix (T-4.12), und
+    "Nummer Z12" ist dann eine genannte Nummer, die es nicht gibt - `not_found`
+    statt Rueckfrage (Codex PR #155, P2). Zwei Buchstaben nur aus a bis g
+    (`_card_letters`): "Nummer so 23" bleibt ein Wort neben der Nummer und
+    damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
+    hat `CardFormat` vorher schon gelesen.
+    """
+    return (len(token) == 1 and token.isalpha()) or _card_letters(token)
+
+
 def _long_suffix(token: str) -> bool:
     """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
 
@@ -654,7 +667,7 @@ def _marker_target(
     # beides (Codex PR #117, P1). Nur Kartenbuchstaben zählen: "Nummer so 23"
     # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
     # vorhandene Nummer "so23" (Codex PR #117, P2).
-    if _card_letters(word):
+    if _prefix_letters(word):
         dahinter = _scan(tokens, j + 1)
         if dahinter is not None:
             return (
@@ -663,7 +676,7 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(dahinter.value), True, valid=False),
             )
-    if j in prefixed and _card_letters(word):
+    if j in prefixed and _prefix_letters(word):
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None
 
