@@ -44,7 +44,9 @@ logger = get_logger("api.gui.router")
 NO_TENANT = "Keine Betriebsdaten gefunden. Bitte das Team benachrichtigen."
 SWITCH_FAILED = "Umschalten hat nicht geklappt. Bitte nochmal tippen."
 # Die Knoepfe der Kopfzeile (docs/06 §3). Nur diese Schritte kommen vom Tablet.
-WAIT_STEPS = (15, 30)
+WAIT_STEP = 15
+# Adresse in der Kopfzeile -> Service in service_config (T-3.6).
+WAIT_SERVICES = {"abholung": "pickup", "lieferung": "delivery"}
 
 # Der Punkt der Kopfzeile: Farbe allein reicht nie, der Text steht daneben
 # (docs/06 §1 Regel 4, §3 Kopfzeile).
@@ -128,7 +130,12 @@ def _order_rows(session: Session, tenant: Tenant) -> list[dict]:
 def _header(session: Session, tenant: Tenant) -> dict:
     """Werte der Kopfzeile, immer frisch aus service_config."""
     config = session.get(ServiceConfig, tenant.id)
-    base = {"tenant": tenant, "wait_steps": WAIT_STEPS}
+    base = {
+        "tenant": tenant,
+        "wait_step": WAIT_STEP,
+        "wait_min": switches.MIN_WAIT_MINUTES,
+        "wait_max": switches.MAX_WAIT_MINUTES,
+    }
     if config is None:
         return {
             **base,
@@ -279,17 +286,21 @@ def lieferung(
 
 
 @router.post(
-    "/kopfzeile/wartezeit/{step}",
+    "/kopfzeile/wartezeit/{service}/{step}",
     response_class=HTMLResponse,
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
 def wartezeit(
-    request: Request, step: int, session: Session = Depends(get_db)
+    request: Request, service: str, step: int, session: Session = Depends(get_db)
 ) -> HTMLResponse:
-    if step not in WAIT_STEPS:
+    if service not in WAIT_SERVICES or step not in (-WAIT_STEP, WAIT_STEP):
         raise HTTPException(status_code=404)
-    return _switch(request, session, lambda t: switches.raise_wait(session, t, step))
+    return _switch(
+        request,
+        session,
+        lambda t: switches.change_wait(session, t, WAIT_SERVICES[service], step),
+    )
 
 
 @router.get(
