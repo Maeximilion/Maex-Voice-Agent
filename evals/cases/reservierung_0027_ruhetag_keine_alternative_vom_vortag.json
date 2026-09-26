@@ -1,0 +1,32 @@
+{
+  "id": "reservierung_0027",
+  "name": "Ruhetag: keine Alternative vom Vortag",
+  "tags": [
+    "reservierung",
+    "schliesszeit",
+    "ruhetag"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer zwei Personen am Montag um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Dann lieber nicht, danke."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "alternatives": []
+  }
+}
