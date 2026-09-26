@@ -43,6 +43,9 @@ FILLER = frozenset(
         # dazu die übrigen Zögerlaute aus numberwords._HESITATIONS
         "haette", "haetten", "moechte", "moechten", "aeh", "aehm", "aehh",
         "hmm", "ehm", "oehm",
+        # wie numberwords._LEAD_FILLER (Review PR #147)
+        "würde", "würden", "würd", "wuerde", "wuerden", "wuerd", "hallo",
+        "guten", "tag", "abend", "dazu", "bestellen", "bestelle",
     }
 )  # fmt: skip
 

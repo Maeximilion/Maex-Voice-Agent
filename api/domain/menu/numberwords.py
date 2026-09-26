@@ -629,6 +629,20 @@ _SENTENCE_FILLER = frozenset(
         "eine", "einen", "einem", "einer", "von", "vom", "ist", "war", "waere",
     }
 )  # fmt: skip
+# Nur im Satz, nicht zwischen Marker und Zahl: "ich wuerde die 13", "Guten Tag,
+# die 13", "dazu die 24" fielen ohne diese Woerter als Rest in die Namenssuche
+# (T-5.2). Zwischen "Nummer" und Zahl machen sie den Satz weiter unklar -
+# "Nummer dazu 23" ist keine 23 (Review PR #147). Dieselben Woerter stehen in
+# normalize.FILLER, sonst suchte die Namenssuche nach "wuerde pho".
+_LEAD_FILLER = frozenset(
+    {
+        "wuerde", "wuerden", "wuerd", "hallo", "guten", "tag", "abend", "dazu",
+        "bestellen", "bestelle",
+    }
+)  # fmt: skip
+# Womit ein Satz die Bestellung aus dem vorigen fortsetzt: "Und noch die 24",
+# "Und dann dazu die 24".
+_OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 
 
 def _too_large(token: str) -> bool:
@@ -740,11 +754,35 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
     # der Gast zurückgenommen oder nicht zu Ende gesprochen. Es ist dann kein
     # Gerichtname - es gehört also nicht in den Rest, sondern macht den Satz
     # für sich unklar (Codex PR #117, P1).
+    #
+    # Ausnahme: ein "und", das den Satz eröffnet. "Und noch die 24" setzt die
+    # Bestellung aus dem vorigen Satz fort und verbindet keine zweite Zahl in
+    # diesem (T-5.2). Nur ganz vorn: steht davor schon eine Menge ("zweimal und
+    # die 24") oder ein Marker ("Nummer und 24"), verbindet es etwas in diesem
+    # Satz, das fehlt. Und nie vor einem Zehner: "und zwanzig" ist die zweite
+    # Hälfte von "drei und zwanzig", die Erkennung hat nur abgeschnitten
+    # (Review PR #147). Nur "und": ein "oder" oder "nein" vorweg bezieht sich
+    # auf etwas, das dieser Satz nicht nennt, und bleibt eine Rückfrage.
+    def _opens(k: int) -> bool:
+        if tokens[k] != "und" or (k + 1 < len(tokens) and tokens[k + 1] in TENS):
+            return False
+        return all(
+            t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
+        )
+
     loose = any(
-        t in _CONNECTORS and not _connects(k)
+        t in _CONNECTORS and not _connects(k) and not _opens(k)
         for k, t in enumerate(tokens)
         if k not in consumed
     )
+    # Token zwischen einem Marker und der nächsten Zahl: dort gilt _LEAD_FILLER
+    # nicht, "Nummer dazu 23" bleibt unklar (Review PR #147).
+    after_marker = {
+        k
+        for i, tok in enumerate(tokens)
+        if tok in _ITEM_NUMBER_MARKERS
+        for k in range(i + 1, min((n.start for n in numbers if n.start > i), default=0))
+    }
     # Was daneben übrig bleibt und ein Gerichtname sein könnte.
     residue = [
         t
@@ -753,6 +791,7 @@ def sole_item_number(text: str) -> tuple[ItemNumber | None, bool]:
         and t not in PUNCTUATION
         and t not in _CONNECTORS
         and t not in _SENTENCE_FILLER
+        and (t not in _LEAD_FILLER or k in after_marker)
         and t not in _HESITATIONS
         and t not in _ITEM_NUMBER_MARKERS
         and not _QUANTITY_SUFFIX.match(t)

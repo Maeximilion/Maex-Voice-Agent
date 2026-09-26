@@ -86,6 +86,13 @@ KARTE = {
         ("ich haette gern Pho", "pho"),
         ("ich moechte Pho", "pho"),
         ("aeh Pho", "pho"),
+        # Dieselben Fuellwoerter wie im Nummernsatz, sonst sucht der Name nach
+        # "wuerde pho" (Review PR #147).
+        ("ich würde gern Pho", "pho"),
+        ("ich wuerde gern Pho", "pho"),
+        ("Hallo, die knusprige Ente", "knusprige ente"),
+        ("dazu Pho", "pho"),
+        ("Guten Abend, ich würd gern Pho bestellen", "pho"),
         # Der Gerichtname selbst wird nie umgeschrieben.
         ("Frühlingsrollen", "frühlingsrollen"),
     ],
