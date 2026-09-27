@@ -1244,3 +1244,15 @@ def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
     )
     [order] = orders(session)
     assert [p[0] for p in positions(session, order)] == ["24"]
+
+
+@pytest.mark.parametrize("antwort", ["S12.", "SM1", "die 25g"])
+def test_praefixnummer_ist_keine_zutat(session, tenant, antwort):
+    """Codex PR #155: auf "Wogegen?" ist eine Kartennummer mit Buchstaben eine
+    Bestellung, keine Zutat - kein "Keine S12" an die Kueche."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
