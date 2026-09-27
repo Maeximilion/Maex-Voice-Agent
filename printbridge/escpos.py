@@ -103,8 +103,18 @@ def render(
     width: int = DEFAULT_WIDTH,
     printed_at: datetime | None = None,
 ) -> bytes:
-    """Ein Bon aus dem Ereignis `order.confirmed` (docs/04 §confirm)."""
+    """Ein Eingabezettel aus dem Ereignis `order.confirmed` (docs/04 §confirm).
+
+    Kein Kuechenbon und kein Beleg: Quittung und Kuechenbon druckt die Kasse (TSE,
+    D2, docs/02 §2a). Der Zettel liegt am Haupt-Bondrucker, bis jemand die
+    Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
+    """
     out = [INIT, CODEPAGE]
+    # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen die
+    # Steuerzeichen am Anfang der naechsten Zeile.
+    banner = printable(" NICHT IN KASSE ").encode(ENCODING)
+    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, BIG_OFF, b"\n"]
+    out.append(_line("Bitte in die Kasse eingeben."))
     reason = ticket.get("correction_reason")
     if reason:
         out += [BIG_ON, INVERT_ON, _line(" KORREKTUR "), INVERT_OFF, BIG_OFF]

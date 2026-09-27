@@ -99,7 +99,7 @@ def test_gueltige_karte():
     assert plan.items["23"].price_cents == 690
     assert plan.items["47"].active is True  # leer heisst ja
     assert plan.items["12"].active is False
-    assert plan.items["47"].description is None
+    assert plan.items["47"].description == ""  # leer: Text löschen; None: Spalte fehlt
     assert [o.option_name for o in plan.options["47"]] == ["Huhn", "Ente", "klein"]
     assert plan.options["47"][2].price_delta_cents == -100
     assert plan.allergens["23"].codes == ("A", "F")

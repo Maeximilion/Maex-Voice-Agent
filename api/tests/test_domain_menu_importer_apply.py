@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
@@ -16,8 +17,9 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
+from api.tests.dbf_fixture import write_dbf
 from api.tests.test_domain_menu_importer_parse import files
-from scripts import import_menu
+from scripts import import_menu, kasse_to_csv
 from scripts.seed import seed
 
 NOW = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
@@ -411,3 +413,632 @@ def test_cli_meldet_altzeilen_konflikt(cli, ordner, session, tenant_id, capsys):
 
     assert cli(ordner) == 1
     assert "doppelt" in capsys.readouterr().err
+
+
+# --- Kasse als Quelle (T-4.11): pos_code, fehlende Gerichte inaktiv, Umwandler ---
+
+MIT_KASSE = """number;pos_code;name;category;price_eur
+23;23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
+47;47B;Ente knusprig;Hauptgerichte;15,50
+"""
+
+
+def nur(menu: str) -> dict[str, str | None]:
+    """Nur die Karte, ohne Optionen, Allergene und Aliase der Grunddateien."""
+    return {
+        MENU_FILE: menu,
+        OPTIONS_FILE: None,
+        ALLERGENS_FILE: None,
+        ALIASES_FILE: None,
+    }
+
+
+def test_pos_code_wird_gespeichert_und_bleibt_ohne_spalte(session, tenant_id):
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").pos_code == "47B"
+
+    # Alte Datei aus dem Chat ohne Spalte: die Kassennummer bleibt stehen.
+    run(session, tenant_id)
+    assert item(session, tenant_id, "47").pos_code == "47B"
+    assert item(session, tenant_id, "12").pos_code is None
+
+
+def test_pos_code_doppelt_ist_fehler():
+    doppelt = MIT_KASSE.replace("23;23;", "23;47B;")
+
+    plan = parse(files(**{MENU_FILE: doppelt}))
+
+    assert any("pos_code 47B doppelt" in e for e in plan.errors)
+
+
+def test_fehlende_gerichte_nur_mit_schalter_inaktiv(session, tenant_id):
+    run(session, tenant_id)  # 12, 23, 47; 12 schon inaktiv
+    nur_23 = nur("\n".join(MIT_KASSE.splitlines()[:2]))
+
+    ohne = run(session, tenant_id, files=nur_23)
+    assert ohne.items_deactivated == []
+    assert "--deactivate-missing" in ohne.as_text()
+    assert item(session, tenant_id, "47").active is True
+
+    probe = run(session, tenant_id, files=nur_23, deactivate_missing=True, dry_run=True)
+    assert probe.items_deactivated == ["47"]
+    assert "würden deaktiviert: 47" in probe.as_text()
+    assert item(session, tenant_id, "47").active is True
+
+    mit = run(session, tenant_id, files=nur_23, deactivate_missing=True)
+    assert mit.items_deactivated == ["47"]  # 12 war schon inaktiv
+    assert item(session, tenant_id, "47").active is False
+    # Nie gelöscht: order_items verweisen auf das Gericht.
+    assert session.scalar(select(MenuItem).where(MenuItem.number == "47")) is not None
+    eintrag = session.scalars(
+        select(AuditLog).where(AuditLog.action == "menu.imported")
+    ).all()[-1]
+    assert eintrag.payload["items_deactivated"] == ["47"]
+
+    # Steht es wieder in der Kasse, ist es wieder aktiv.
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").active is True
+
+
+ARTIKEL_FIELDS = [
+    ("ARTNR", "C", 5, 0),
+    ("WRG", "C", 3, 0),
+    ("BEZEICH", "C", 40, 0),
+    ("VK1_PREIS", "N", 7, 2),
+    ("VK2_PREIS", "N", 7, 2),
+    ("GROESSE", "C", 15, 0),
+    ("GRPREIS1", "N", 7, 2),
+    ("GRPREIS2", "N", 7, 2),
+    ("ZUTATEN", "M", 10, 0),
+    ("ALLERGENE", "C", 26, 0),
+]
+
+
+def _kasse(folder, artikel_rows):
+    tables = {
+        "artikel": (ARTIKEL_FIELDS, artikel_rows),
+        "WARENGRP": (
+            [("W_WRG", "C", 3, 0), ("W_BEZEICH", "C", 16, 0)],
+            [{"W_WRG": "001", "W_BEZEICH": "Suppe"}],
+        ),
+        "zutaten": (
+            [
+                ("ZBEZEICH", "C", 16, 0),
+                ("WRGSHOWALL", "L", 1, 0),
+                ("WRGSHOW", "M", 10, 0),
+                ("ZPREIGRP3", "C", 3, 0),
+                ("ZGRPREIS1", "N", 6, 2),
+                ("ZGRPREIS2", "N", 6, 2),
+            ],
+            [
+                {
+                    "ZBEZEICH": "Extra_Garnelen",
+                    "WRGSHOWALL": "T",
+                    "ZPREIGRP3": "C",
+                    "ZGRPREIS1": "0.00",
+                    "ZGRPREIS2": "0.00",
+                }
+            ],
+        ),
+        "zutgrp": (
+            [("ZGRP", "C", 1, 0), ("ZPREIS", "N", 6, 2), ("ZGRP3", "C", 3, 0)],
+            [{"ZGRP": "C", "ZPREIS": "1.20", "ZGRP3": "C"}],
+        ),
+    }
+    for name, (fields, rows) in tables.items():
+        dbf, dbt = write_dbf(fields, rows)
+        (folder / f"{name}.DBF").write_bytes(dbf)
+        if dbt is not None:
+            (folder / f"{name}.DBT").write_bytes(dbt)
+
+
+SUPPE = {
+    "ARTNR": "1",
+    "WRG": "001",
+    "BEZEICH": "Miso Suppe",
+    "VK1_PREIS": "6.50",
+    "VK2_PREIS": "6.50",
+    "GROESSE": "+-23",
+    "GRPREIS1": "0.00",
+    "GRPREIS2": "4.50",
+}
+
+
+def test_skript_von_dbf_bis_zur_karte(tmp_path, session, tenant_id):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    csv_files = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
+    report = run(
+        session, tenant_id, files={**files(), **csv_files, "item_aliases.csv": None}
+    )
+    assert report.items_new == ["1"]
+    suppe = item(session, tenant_id, "1")
+    assert (suppe.pos_code, suppe.price_cents, suppe.category) == ("1", 650, "Suppe")
+
+
+def test_skript_meldet_fehler_und_fehlende_datei(tmp_path, capsys):
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "X1"}])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 1
+    assert "X1" in capsys.readouterr().out
+
+    (kasse / "zutgrp.DBF").unlink()
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "x")]) == 2
+    assert "zutgrp.dbf fehlt" in capsys.readouterr().err
+    assert not (tmp_path / "x").exists()
+
+
+def test_cli_deaktiviert_fehlende_nur_mit_schalter(cli, ordner, session, capsys):
+    """Review T-4.11: der Schalter muss auf der Kommandozeile ankommen."""
+    assert cli(ordner) == 0
+    nur_23 = "\n".join(files()[MENU_FILE].splitlines()[:2]) + "\n"
+    (ordner / MENU_FILE).write_text(nur_23, encoding="utf-8")
+    for name in (OPTIONS_FILE, ALLERGENS_FILE, ALIASES_FILE):
+        (ordner / name).unlink()
+    capsys.readouterr()
+
+    assert cli(ordner, "--dry-run", "--deactivate-missing") == 0
+    assert "würden deaktiviert: 47" in capsys.readouterr().out
+    assert cli(ordner, "--deactivate-missing") == 0
+    session.expire_all()
+    assert (
+        session.scalar(select(MenuItem).where(MenuItem.number == "47")).active is False
+    )
+
+
+def test_skript_legt_verwaiste_aliase_beiseite(tmp_path, capsys):
+    """Review T-4.11: Aliase aus dem Chat zu Nummern, die die Kasse nicht liefert,
+    würden den ganzen Import blockieren. Sie kommen in eine eigene Datei."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Misosuppe\n65;Wasser\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    kept = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "Misosuppe" in kept and "Wasser" not in kept
+    assert "65;Wasser" in (out / "item_aliases.verworfen.csv").read_text(
+        encoding="utf-8"
+    )
+    assert "65" in capsys.readouterr().out
+    plan = parse(import_menu.read_files(out))
+    assert plan.ok, plan.errors
+
+
+def test_skript_kaputte_datei_exit_2(tmp_path, capsys):
+    """Review T-4.11: abgeschnittene Kopie ist eine Meldung, kein Traceback."""
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+    data = (kasse / "artikel.DBF").read_bytes()
+    (kasse / "artikel.DBF").write_bytes(data[:40])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
+    assert "artikel" in capsys.readouterr().err
+
+
+def test_deaktivieren_verweigert_leere_oder_halbe_karte(session, tenant_id):
+    """Review T-4.11: ein leerer oder kaputter Export schaltet nie die Karte ab."""
+    run(session, tenant_id)  # 23, 47 aktiv, 12 inaktiv
+    leer = nur(files()[MENU_FILE].splitlines()[0] + "\n")
+    with pytest.raises(ValueError, match="keine Gerichte"):
+        run(session, tenant_id, files=leer, deactivate_missing=True)
+
+    extra = files()[MENU_FILE] + "30;Reis;Beilagen;3,00;;\n"
+    run(session, tenant_id, files=nur(extra))  # 23, 30, 47 aktiv
+    nur_23 = nur("\n".join(files()[MENU_FILE].splitlines()[:2]))
+    with pytest.raises(ValueError, match="Hälfte"):
+        run(session, tenant_id, files=nur_23, deactivate_missing=True)
+    assert item(session, tenant_id, "47").active is True
+
+    report = run(
+        session,
+        tenant_id,
+        files=nur_23,
+        deactivate_missing=True,
+        allow_large_deactivation=True,
+    )
+    assert report.items_deactivated == ["30", "47"]
+
+
+def test_skript_ohne_gericht_schreibt_nichts(tmp_path, capsys):
+    """Review T-4.11: 0 Gerichte (falsche Warengruppen, falscher Ordner) -> Exit 2."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;alias\n1;Misosuppe\n", encoding="utf-8")
+
+    assert (
+        kasse_to_csv.main([str(kasse), "--out", str(out), "--skip-groups", "001"]) == 2
+    )
+
+    assert "kein Gericht" in capsys.readouterr().err
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE]
+    assert "Misosuppe" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+
+def test_skript_holt_aliase_zurueck_wenn_das_gericht_wiederkommt(tmp_path):
+    """Review T-4.11: ein Gericht fehlt nur einen Lauf lang -> Aliase kommen zurück."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Misosuppe\n2;Pekingsuppe\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+    assert "Pekingsuppe" not in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    assert "2;Pekingsuppe" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert not (out / "item_aliases.verworfen.csv").exists()
+
+
+def test_skript_alias_datei_mit_extra_feld_oder_falschem_zeichensatz(tmp_path, capsys):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso; warm\n\n65;Wasser\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+    assert "1;Miso; warm" in (out / ALIASES_FILE).read_text(encoding="utf-8")
+
+    (out / ALIASES_FILE).write_bytes("number;alias\n1;Suppe groß\n".encode("cp1252"))
+    capsys.readouterr()
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+    assert "nicht UTF-8" in capsys.readouterr().err
+
+
+def test_skript_unlesbare_datei_exit_2(tmp_path, capsys):
+    """Codex PR #149: gesperrte oder unlesbare Kopie (z. B. von der Kasse noch
+    geöffnet) ist eine Meldung mit Exit 2, kein Traceback."""
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE])
+    (kasse / "zutgrp.DBF").unlink()
+    (kasse / "zutgrp.DBF").mkdir()  # read_bytes() wirft dann einen OSError
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 2
+    assert "zutgrp" in capsys.readouterr().err
+    assert not (tmp_path / "out").exists()
+
+
+def test_skript_verliert_keine_aliase_wenn_die_nebendatei_nicht_schreibbar_ist(
+    tmp_path, capsys
+):
+    """Codex PR #149: erst die abgetrennten Zeilen sichern, dann die Alias-Datei
+    umschreiben; scheitert das Sichern, bleibt die Alias-Datei unverändert."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    original = "number;alias\n1;Misosuppe\n65;Wasser\n"
+    (out / ALIASES_FILE).write_text(original, encoding="utf-8")
+    (out / "item_aliases.verworfen.csv").mkdir()  # nicht schreibbar
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert (out / ALIASES_FILE).read_text(encoding="utf-8") == original
+    assert not (out / MENU_FILE).exists()  # alles oder nichts
+    assert "item_aliases.verworfen.csv" in capsys.readouterr().err
+
+
+def test_skript_gesperrte_zieldatei_tauscht_nichts(tmp_path, capsys, monkeypatch):
+    """Review T-4.11: ist eine der drei Dateien gesperrt (Excel), wird keine
+    getauscht - nie neue Karte neben alten Optionen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_open = Path.open
+
+    def locked(self, mode="r", *args, **kw):
+        if self.name == OPTIONS_FILE and "a" in mode:
+            raise PermissionError(13, "Datei ist geöffnet")
+        return real_open(self, mode, *args, **kw)
+
+    monkeypatch.setattr(Path, "open", locked)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "item_options.csv" in capsys.readouterr().err
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        assert (out / name).read_text(encoding="utf-8") == "alt\n"
+
+
+def test_skript_aliasfehler_tauscht_keine_datei(tmp_path, capsys, monkeypatch):
+    """Codex PR #149: ist die Alias-Datei nicht lesbar, bleibt der ganze Ordner
+    auf dem alten Stand - der Import liest ihn als ein Satz Dateien."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / MENU_FILE).write_text("alt\n", encoding="utf-8")
+    (out / ALIASES_FILE).write_text("number;alias\n65;Wasser\n", encoding="utf-8")
+    real_read = Path.read_text
+
+    def locked(self, *args, **kw):
+        if self.name == ALIASES_FILE:
+            raise PermissionError(13, "gesperrt", str(self))
+        return real_read(self, *args, **kw)
+
+    monkeypatch.setattr(Path, "read_text", locked)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "item_aliases.csv" in capsys.readouterr().err
+    assert (out / MENU_FILE).read_text(encoding="utf-8") == "alt\n"
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE, MENU_FILE]
+
+
+def test_skript_nennt_die_datei_die_nicht_utf8_ist(tmp_path, capsys):
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;alias\n1;Miso\n", encoding="utf-8")
+    (out / "item_aliases.verworfen.csv").write_bytes(
+        "number;alias\n65;Wasser groß\n".encode("cp1252")
+    )
+
+    # Codex PR #149: der Import läse den Ordner danach nicht - also nichts schreiben.
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "item_aliases.verworfen.csv ist nicht UTF-8" in capsys.readouterr().err
+    assert not (out / MENU_FILE).exists()
+
+
+def test_skript_holt_keine_ersetzten_aliase_zurueck(tmp_path):
+    """Review T-4.11: hat der Chat die Aliase eines fehlenden Gerichts neu
+    geschrieben, gelten nur die neuen, wenn es zurückkommt."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso\n2;Ente kross\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt -> beiseite
+    with (out / ALIASES_FILE).open("a", encoding="utf-8") as handle:
+        handle.write("2;knusprige Ente\n")  # der Chat schreibt 2 neu
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+
+    aliases = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "2;knusprige Ente" in aliases and "Ente kross" not in aliases
+
+
+def test_cli_verweigert_halbe_karte_und_schalter_kommt_an(cli, ordner, session, capsys):
+    """Review T-4.11: die Kommandozeile reicht --allow-large-deactivation durch
+    und nennt den Schalter; die Fachschicht kennt ihn nicht."""
+    assert cli(ordner) == 0  # 23, 47 aktiv, 12 inaktiv
+    (ordner / MENU_FILE).write_text(
+        files()[MENU_FILE].replace("23;", "99;").replace("47;", "98;"), encoding="utf-8"
+    )
+    for name in (OPTIONS_FILE, ALLERGENS_FILE, ALIASES_FILE):
+        (ordner / name).unlink()
+    capsys.readouterr()
+
+    assert cli(ordner, "--deactivate-missing") == 1
+    assert "--allow-large-deactivation" in capsys.readouterr().err
+    assert cli(ordner, "--deactivate-missing", "--allow-large-deactivation") == 0
+    session.expire_all()
+    assert (
+        session.scalar(select(MenuItem).where(MenuItem.number == "47")).active is False
+    )
+
+
+def test_pos_code_doppelt_mit_einem_gericht_im_bestand(session, tenant_id):
+    """Codex PR #149: ein Gericht, das nicht in der Datei steht, bleibt - seine
+    Kassennummer darf nicht an ein zweites Gericht gehen."""
+    run(session, tenant_id, files=nur(MIT_KASSE))  # 47 hat pos_code 47B
+    nur_24 = nur("number;pos_code;name;category;price_eur\n24;47B;Neu;Haupt;9,00\n")
+
+    with pytest.raises(ValueError, match="47B"):
+        run(session, tenant_id, files=nur_24)
+    assert item(session, tenant_id, "24") is None
+
+    # Dasselbe Gericht erneut mit seiner Nummer ist kein Konflikt.
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "47").pos_code == "47B"
+
+
+def test_skript_ersetzte_aliase_auch_wenn_das_gericht_noch_fehlt(tmp_path):
+    """Codex PR #149: schreibt der Chat die Aliase eines Gerichts neu, das auch im
+    nächsten Lauf noch fehlt, fallen die alten trotzdem weg."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    (out / ALIASES_FILE).write_text(
+        "number;alias\n1;Miso\n2;Ente kross\n", encoding="utf-8"
+    )
+    _kasse(kasse, [SUPPE])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt -> beiseite
+    with (out / ALIASES_FILE).open("a", encoding="utf-8") as handle:
+        handle.write("2;knusprige Ente\n")
+    kasse_to_csv.main([str(kasse), "--out", str(out)])  # 2 fehlt weiter
+
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Peking Suppe"}])
+    kasse_to_csv.main([str(kasse), "--out", str(out)])
+
+    aliases = (out / ALIASES_FILE).read_text(encoding="utf-8")
+    assert "2;knusprige Ente" in aliases and "Ente kross" not in aliases
+
+
+def test_skript_rollt_zurueck_wenn_ein_spaeterer_tausch_scheitert(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: scheitert der Tausch der zweiten Datei, sind auch die
+    schon getauschten wieder alt - nie neue Karte neben alten Optionen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_replace = kasse_to_csv.os.replace
+
+    def flaky(src, dst):
+        if str(src).endswith(OPTIONS_FILE + ".tmp"):
+            raise OSError(5, "E/A-Fehler", str(dst))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "alten Stand" in capsys.readouterr().err
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        assert (out / name).read_text(encoding="utf-8") == "alt\n", name
+    assert sorted(p.name for p in out.iterdir()) == sorted(
+        [MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE]
+    )
+
+
+def test_skript_gemischter_ordner_bleibt_gemeldet_wenn_tmp_nicht_loeschbar(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: scheitert das Zurückrollen, darf ein Fehler beim Aufräumen
+    der .tmp die Meldung "gemischt" nicht zu "alter Stand" machen."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
+        (out / name).write_text("alt\n", encoding="utf-8")
+    real_replace = kasse_to_csv.os.replace
+    real_unlink = Path.unlink
+
+    def flaky(src, dst):
+        if str(src).endswith(OPTIONS_FILE + ".tmp"):
+            raise OSError(5, "E/A-Fehler", str(dst))
+        if str(src).endswith(MENU_FILE + ".bak"):
+            raise PermissionError(13, "in Benutzung", str(src))
+        return real_replace(src, dst)
+
+    def stuck(self, *args, **kw):
+        if self.name.endswith(".tmp"):
+            raise PermissionError(13, "in Benutzung", str(self))
+        return real_unlink(self, *args, **kw)
+
+    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+    monkeypatch.setattr(Path, "unlink", stuck)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    err = capsys.readouterr().err
+    assert "gemischt" in err and "alten Stand" not in err
+
+
+def test_skript_bak_nicht_loeschbar_ist_warnung_nach_erfolg(
+    tmp_path, capsys, monkeypatch
+):
+    """Codex PR #149: sind alle Dateien getauscht und nur eine .bak bleibt
+    hängen (Virenscanner), ist das kein "nichts geschrieben"."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / MENU_FILE).write_text("alt\n", encoding="utf-8")
+    real_unlink = Path.unlink
+
+    def stuck(self, *args, **kw):
+        if self.name.endswith(".bak"):
+            raise PermissionError(13, "in Benutzung", str(self))
+        return real_unlink(self, *args, **kw)
+
+    monkeypatch.setattr(Path, "unlink", stuck)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    captured = capsys.readouterr()
+    assert "nichts geschrieben" not in captured.err
+    assert "menu_items.csv.bak" in captured.out
+    assert "Miso Suppe" in (out / MENU_FILE).read_text(encoding="utf-8")
+
+
+def test_skript_alias_datei_ohne_pflichtspalte_schreibt_nichts(tmp_path, capsys):
+    """Codex PR #149: der Import läse die Alias-Datei danach nicht."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text("number;name\n1;Miso\n", encoding="utf-8")
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    assert "alias" in capsys.readouterr().err
+    assert not (out / MENU_FILE).exists()
+
+
+def test_beschreibung_bleibt_ohne_spalte(session, tenant_id):
+    """Review T-4.11: die Kasse liefert keine Beschreibung; ihr Import darf die
+    aus dem Chat nicht leeren. Eine leere Spalte löscht weiter."""
+    run(session, tenant_id)
+    assert item(session, tenant_id, "23").description == "mit Gemüsefüllung"
+
+    run(session, tenant_id, files=nur(MIT_KASSE))
+    assert item(session, tenant_id, "23").description == "mit Gemüsefüllung"
+
+    leer = "number;name;category;price_eur;description\n23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;\n"
+    run(session, tenant_id, files=nur(leer))
+    assert item(session, tenant_id, "23").description is None
+
+
+def test_hinweis_auf_schalter_nur_ohne_schalter_und_nur_fuer_die_kasse(
+    session, tenant_id
+):
+    """Review T-4.11: kein Hinweis auf --deactivate-missing, wenn er schon
+    gesetzt ist oder die Datei nicht aus der Kasse kommt."""
+    run(session, tenant_id)  # 12 inaktiv
+    nur_23 = nur("\n".join(MIT_KASSE.splitlines()[:2]))
+
+    mit = run(session, tenant_id, files=nur_23, deactivate_missing=True, dry_run=True)
+    assert "unverändert" in mit.as_text()
+    assert "--deactivate-missing" not in mit.as_text()
+
+    chat = run(session, tenant_id, files=nur("\n".join(MENU_OHNE_47.splitlines())))
+    assert "--deactivate-missing" not in chat.as_text()
+
+
+MENU_OHNE_47 = """number;name;category;price_eur
+23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
+"""
+
+
+@pytest.mark.parametrize("alias", ["", "bitte"])
+def test_skript_prueft_behaltene_aliase_wie_der_import(tmp_path, capsys, alias):
+    """Codex PR #149: ein Alias, den import_menu ablehnt, macht den ganzen Satz
+    unbrauchbar; dann wird nichts geschrieben."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    out.mkdir()
+    _kasse(kasse, [SUPPE])
+    (out / ALIASES_FILE).write_text(
+        f"number;alias\n1;Miso\n1;{alias}\n", encoding="utf-8"
+    )
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
+
+    err = capsys.readouterr().err
+    assert "item_aliases.csv Zeile 3" in err and "nichts geschrieben" in err.lower()
+    assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE]
