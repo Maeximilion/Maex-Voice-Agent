@@ -11,6 +11,7 @@ import uuid
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
@@ -21,7 +22,12 @@ from api.domain.reservations.capacity import (
     capacity_windows,
 )
 from api.domain.reservations.spoken import WEEKDAYS, spoken_daytime, spoken_time
-from api.domain.status.hours import Window, load_hours, windows_for_day
+from api.domain.status.hours import (
+    Window,
+    load_hours,
+    open_window_at,
+    windows_for_day,
+)
 from api.models import ServiceConfig, Tenant
 from api.schemas.reservations import SlotCheck
 
@@ -45,10 +51,15 @@ def check_slot(
     party_size: int,
     now: datetime | None = None,
 ) -> SlotCheck:
-    tenant = session.get(Tenant, tenant_id)
-    config = session.get(ServiceConfig, tenant_id)
-    if tenant is None or config is None:
+    # Eine Abfrage statt zwei: der heisse Pfad braucht Zeitzone und Abstaende (D12).
+    row = session.execute(
+        select(Tenant, ServiceConfig)
+        .join(ServiceConfig, ServiceConfig.tenant_id == Tenant.id)
+        .where(Tenant.id == tenant_id)
+    ).first()
+    if row is None:
         raise NotFound("Mandant unbekannt")
+    tenant, config = row
     now = now or utcnow()
     if reserved_for <= now:
         raise InvalidInput(
@@ -94,7 +105,7 @@ def check_slot(
             if slot != local and slot > now and fits(slot, service)
         ]
 
-    service = next((s for s in services if s[0] <= local < s[1]), None)
+    service = open_window_at(hours, local, DINEIN, zone)
     if service is not None and fits(local, service):
         return SlotCheck(available=True)
 
@@ -139,6 +150,13 @@ def check_slot(
                         chosen,
                     ),
                 )
+        # Der ganze Tag ist voll: das soll der Gast hoeren, nicht nur "geschlossen"
+        # und dann bei jeder genannten Uhrzeit "nichts frei" (Review PR #158).
+        return _unavailable(
+            [],
+            f"Um {spoken_time(local)} haben wir noch geschlossen, "
+            "und an dem Tag ist leider nichts mehr frei.",
+        )
 
     # D12: zwischen zwei Services und nach dem letzten keine Alternative aus einem
     # anderen Service, der Gast nennt selbst eine Uhrzeit.

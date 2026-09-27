@@ -91,7 +91,7 @@ def test_volles_fenster_liefert_zwei_naechste_alternativen_desselben_services(
 ):
     # Abend in zwei Turns: 17:00-19:00 und 19:00-22:00 mit je 20 Plaetzen. Der
     # zweite Turn ist voll, mittags ist frei, angeboten wird nur der Abend (T-1.14).
-    _abend_in_zwei_turns(session, tenant_id)
+    _evening_in_two_turns(session, tenant_id)
     book(berlin(DIENSTAG, 19, 0), 20)
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 19, 30), 2, now=NOW)
     assert result.available is False
@@ -186,7 +186,7 @@ def test_alternativen_im_langen_service_nur_unter_sechs_stunden_abstand(
     # Ein Service 11:00-23:00 in zwei Turns, der spaete ist voll. Wunsch 21:00:
     # 15:30 liegt 5,5 h davor und ist als "halb vier" eindeutig, 15:00 liegt genau
     # 6 h davor, "drei Uhr" koennte auch 03:00 sein.
-    _nur_ein_service(session, tenant_id, time(11), time(23), split=time(16))
+    _single_service(session, tenant_id, time(11), time(23), split=time(16))
     book(berlin(DIENSTAG, 21, 0), 20)
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 21), 2, now=NOW)
     assert result.available is False
@@ -216,7 +216,9 @@ def _nachtfenster(session, tenant_id, weekday: int) -> None:
     session.commit()
 
 
-def _dinein_dienstag(session, tenant_id, rows: list[tuple[time, time, int]]) -> None:
+def _replace_tuesday_capacity(
+    session, tenant_id, rows: list[tuple[time, time, int]]
+) -> None:
     """Ersetzt Oeffnung (dinein) und Kapazitaet am Dienstag, Kapazitaet aus `rows`."""
     session.query(OpeningHours).filter_by(
         tenant_id=tenant_id, weekday=1, service="dinein"
@@ -237,7 +239,7 @@ def _dinein_dienstag(session, tenant_id, rows: list[tuple[time, time, int]]) -> 
     session.commit()
 
 
-def _oeffnung_dienstag(session, tenant_id, windows: list[tuple[time, time]]) -> None:
+def _add_tuesday_hours(session, tenant_id, windows: list[tuple[time, time]]) -> None:
     session.add_all(
         [
             OpeningHours(
@@ -253,16 +255,16 @@ def _oeffnung_dienstag(session, tenant_id, windows: list[tuple[time, time]]) -> 
     session.commit()
 
 
-def _mittag_ab_elf(session, tenant_id) -> None:
+def _lunch_from_eleven(session, tenant_id) -> None:
     """Dienstag Mittag 11:00-14:00 wie im Pilotbetrieb (D12), Abend wie im Seed."""
-    _dinein_dienstag(
+    _replace_tuesday_capacity(
         session, tenant_id, [(time(11), time(14), 30), (time(17), time(22), 40)]
     )
-    _oeffnung_dienstag(session, tenant_id, [(time(11), time(14)), (time(17), time(22))])
+    _add_tuesday_hours(session, tenant_id, [(time(11), time(14)), (time(17), time(22))])
 
 
-def _abend_in_zwei_turns(session, tenant_id) -> None:
-    _dinein_dienstag(
+def _evening_in_two_turns(session, tenant_id) -> None:
+    _replace_tuesday_capacity(
         session,
         tenant_id,
         [
@@ -271,14 +273,16 @@ def _abend_in_zwei_turns(session, tenant_id) -> None:
             (time(19), time(22), 20),
         ],
     )
-    _oeffnung_dienstag(
+    _add_tuesday_hours(
         session, tenant_id, [(time(11, 30), time(14)), (time(17), time(22))]
     )
 
 
-def _nur_ein_service(session, tenant_id, opens: time, closes: time, split: time):
-    _dinein_dienstag(session, tenant_id, [(opens, split, 20), (split, closes, 20)])
-    _oeffnung_dienstag(session, tenant_id, [(opens, closes)])
+def _single_service(session, tenant_id, opens: time, closes: time, split: time):
+    _replace_tuesday_capacity(
+        session, tenant_id, [(opens, split, 20), (split, closes, 20)]
+    )
+    _add_tuesday_hours(session, tenant_id, [(opens, closes)])
 
 
 def test_ruhetag_bietet_nicht_die_nacht_des_vortags_an(session, tenant_id):
@@ -328,18 +332,18 @@ def test_wunsch_nach_ladenschluss_nachts_ist_geschlossen(session, tenant_id):
     )
 
 
-def _frei(session, tenant_id, at: datetime) -> bool:
+def _is_free(session, tenant_id, at: datetime) -> bool:
     return check_slot(session, tenant_id, at, 2, now=NOW).available
 
 
 def test_beginn_frueh_und_spaet_nach_oeffnung_und_schluss(session, tenant_id):
     # D12: Mittag 11-14 und Abend 17-22 -> Beginn 11:15-13:30 und 17:15-21:30,
     # im 30-Minuten-Raster angeboten ab 11:30 und 17:30.
-    _mittag_ab_elf(session, tenant_id)
+    _lunch_from_eleven(session, tenant_id)
     for hh, mm in ((11, 15), (11, 30), (13, 30), (17, 15), (17, 30), (21, 30)):
-        assert _frei(session, tenant_id, berlin(DIENSTAG, hh, mm)), (hh, mm)
+        assert _is_free(session, tenant_id, berlin(DIENSTAG, hh, mm)), (hh, mm)
     for hh, mm in ((11, 0), (11, 10), (13, 45), (17, 0), (21, 45), (22, 0)):
-        assert not _frei(session, tenant_id, berlin(DIENSTAG, hh, mm)), (hh, mm)
+        assert not _is_free(session, tenant_id, berlin(DIENSTAG, hh, mm)), (hh, mm)
 
 
 def test_zu_frueh_im_service_bekommt_alternativen_desselben_services(
@@ -359,10 +363,65 @@ def test_zu_frueh_im_service_bekommt_alternativen_desselben_services(
 
 def test_kurz_vor_schluss_bekommt_die_letzten_termine(session, tenant_id):
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 21, 45), 2, now=NOW)
+    assert result.available is False
     assert result.alternatives == [
         berlin(DIENSTAG, 21, 30).astimezone(UTC),
         berlin(DIENSTAG, 21, 0).astimezone(UTC),
     ]
+    assert result.say == (
+        "Um viertel vor zehn können wir leider keinen Tisch reservieren. "
+        "Halb zehn oder neun Uhr ginge."
+    )
+
+
+def test_zu_frueh_im_vollen_service_fragt_nach_anderer_uhrzeit(
+    session, tenant_id, book
+):
+    # Review PR #158: Abend voll, Wunsch 17:00 vor dem fruehesten Beginn.
+    book(berlin(DIENSTAG, 19, 0), 40)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 17, 0), 2, now=NOW)
+    assert result.available is False
+    assert result.alternatives == []
+    assert result.say == (
+        "Um fünf Uhr können wir leider keinen Tisch reservieren. "
+        "Zu welcher anderen Uhrzeit passt es Ihnen?"
+    )
+
+
+def test_morgens_ganzer_tag_voll_sagt_das(session, tenant_id, book):
+    # Review PR #158: Mittag und Abend voll. Der Gast hoert, dass heute nichts
+    # mehr frei ist, statt nur "geschlossen" und eine Frage nach der Uhrzeit.
+    book(berlin(DIENSTAG, 12, 0), 30)
+    book(berlin(DIENSTAG, 19, 0), 40)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 9), 2, now=NOW)
+    assert result.available is False
+    assert result.alternatives == []
+    assert result.say == (
+        "Um neun Uhr haben wir noch geschlossen, und an dem Tag ist leider nichts mehr frei."
+    )
+
+
+def test_schlusszeit_ist_auch_als_alternative_kein_beginn(session, tenant_id, book):
+    # Review PR #158: Kapazitaet reicht ueber den Schluss 22:00 hinaus, Abstand 0.
+    # 22:00 liegt im Raster, ist aber kein Beginn; angeboten wird nur 21:30.
+    _replace_tuesday_capacity(
+        session,
+        tenant_id,
+        [
+            (time(11, 30), time(14), 30),
+            (time(17), time(21, 30), 20),
+            (time(21, 30), time(23), 20),
+        ],
+    )
+    _add_tuesday_hours(
+        session, tenant_id, [(time(11, 30), time(14)), (time(17), time(22))]
+    )
+    config = session.get(ServiceConfig, tenant_id)
+    config.reservation_last_start_minutes = 0
+    session.commit()
+    book(berlin(DIENSTAG, 19, 0), 20)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 21), 2, now=NOW)
+    assert result.alternatives == [berlin(DIENSTAG, 21, 30).astimezone(UTC)]
 
 
 def test_abstand_kommt_aus_der_db(session, tenant_id):
@@ -370,25 +429,25 @@ def test_abstand_kommt_aus_der_db(session, tenant_id):
     config.reservation_lead_minutes = 0
     config.reservation_last_start_minutes = 60
     session.commit()
-    assert _frei(session, tenant_id, berlin(DIENSTAG, 17, 0))
-    assert _frei(session, tenant_id, berlin(DIENSTAG, 21, 0))
-    assert not _frei(session, tenant_id, berlin(DIENSTAG, 21, 30))
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 17, 0))
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 21, 0))
+    assert not _is_free(session, tenant_id, berlin(DIENSTAG, 21, 30))
 
 
-@pytest.mark.parametrize(("hh", "gesagt"), [(15, "drei Uhr"), (23, "elf Uhr")])
-def test_zwischen_und_nach_den_services_geschlossen(session, tenant_id, hh, gesagt):
+@pytest.mark.parametrize(("hh", "spoken"), [(15, "drei Uhr"), (23, "elf Uhr")])
+def test_zwischen_und_nach_den_services_geschlossen(session, tenant_id, hh, spoken):
     # D12: keine Alternative aus einem anderen Service, der Gast nennt eine Uhrzeit.
     result = check_slot(session, tenant_id, berlin(DIENSTAG, hh), 2, now=NOW)
     assert result.available is False
     assert result.alternatives == []
     assert result.say == (
-        f"Um {gesagt} haben wir leider geschlossen. "
+        f"Um {spoken} haben wir leider geschlossen. "
         "Zu welcher anderen Uhrzeit passt es Ihnen?"
     )
 
 
 def test_morgens_vor_der_oeffnung_bietet_den_mittag_an(session, tenant_id):
-    _mittag_ab_elf(session, tenant_id)
+    _lunch_from_eleven(session, tenant_id)
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 9), 2, now=NOW)
     assert result.available is False
     assert result.alternatives == [
@@ -417,11 +476,11 @@ def test_frueh_morgens_zaehlt_der_echte_schluss_des_vorabends(session, tenant_id
     # Review PR #158 (Codex): Mitternacht nur ohne Schluss am Vortag. Montag ist
     # Ruhetag, also Mittwoch: Dienstag schliesst 22:00, Mittwoch oeffnet 11:30.
     # 05:00 liegt 6,5 h vor der Oeffnung und 7 h nach dem Schluss: Morgen.
-    mittwoch = date(2026, 9, 16)
-    result = check_slot(session, tenant_id, berlin(mittwoch, 5), 2, now=NOW)
+    wednesday = date(2026, 9, 16)
+    result = check_slot(session, tenant_id, berlin(wednesday, 5), 2, now=NOW)
     assert result.alternatives == [
-        berlin(mittwoch, 12, 0).astimezone(UTC),
-        berlin(mittwoch, 12, 30).astimezone(UTC),
+        berlin(wednesday, 12, 0).astimezone(UTC),
+        berlin(wednesday, 12, 30).astimezone(UTC),
     ]
     assert result.say == (
         "Um fünf Uhr haben wir noch geschlossen. Mittags um zwölf oder um halb eins ginge."
@@ -434,7 +493,7 @@ def test_letzter_beginn_null_heisst_bis_vor_schluss(session, tenant_id):
     config = session.get(ServiceConfig, tenant_id)
     config.reservation_last_start_minutes = 0
     session.commit()
-    assert _frei(session, tenant_id, berlin(DIENSTAG, 21, 45))
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 21, 45))
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 22), 2, now=NOW)
     assert result.available is False
     assert result.say.startswith("Um zehn Uhr haben wir leider geschlossen.")
@@ -468,10 +527,10 @@ def test_sondertag_verschiebt_beginn_und_letzten_termin(session, tenant_id):
         )
     )
     session.commit()
-    assert not _frei(session, tenant_id, berlin(DIENSTAG, 12, 0))
-    assert _frei(session, tenant_id, berlin(DIENSTAG, 12, 30))
-    assert _frei(session, tenant_id, berlin(DIENSTAG, 19, 30))
-    assert not _frei(session, tenant_id, berlin(DIENSTAG, 20, 0))
+    assert not _is_free(session, tenant_id, berlin(DIENSTAG, 12, 0))
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 12, 30))
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 19, 30))
+    assert not _is_free(session, tenant_id, berlin(DIENSTAG, 20, 0))
 
 
 def test_alternativen_liegen_nie_in_der_vergangenheit(session, tenant_id):

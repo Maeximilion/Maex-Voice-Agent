@@ -15,7 +15,7 @@
 ## check_slot
 **Wann:** bevor eine Reservierung angelegt wird, und erneut nach jedem neuen Terminwunsch.
 **Eingabe:** `reserved_for` (Datum/Uhrzeit), `party_size`.
-**Liefert:** `available`; bei „nein" bis zu zwei `alternatives`.
+**Liefert:** `available`; bei „nein" bis zu zwei `alternatives` aus demselben Service und einen `say`. Ohne `alternatives` den `say` vorlesen: außerhalb der Öffnung fragt er nach einer anderen Uhrzeit.
 
 ## create_reservation
 **Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet.
