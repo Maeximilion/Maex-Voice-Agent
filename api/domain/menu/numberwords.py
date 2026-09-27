@@ -713,6 +713,14 @@ def _marker_target(
             found = card.prefixes_of(tokens[j : j + n], spelled) if following else ()
             if following is not None and found:
                 return j, j, _Span(j, following.end, following.value, n, found), None
+            # "Nummer S 1000", "Nummer S tausend": bekanntes Praefix, aber die
+            # Zahl liegt ueber dem Kartenbereich - genannt, nicht vorhanden
+            # (Codex PR #155).
+            after = tokens[j + n] if j + n < len(tokens) else ""
+            found = card.prefixes_of(tokens[j : j + n], spelled)
+            if found and (after.isdigit() or _too_large(after)):
+                text = " oder ".join(p + after for p in found)
+                return j, j + n + 1, None, ItemNumber(0, text, True, valid=False)
         if (
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
@@ -745,8 +753,10 @@ def _marker_target(
             # Eine Endung gehoert zur genannten Nummer ("Nummer Z12g"), sonst
             # bliebe "g" als Rest und der Satz waere unklar (Codex PR #155).
             end = following.end
+            # Auch eine falsche Endung ("Nummer Z12h") gehoert dazu, wie bei
+            # Nummern ohne Praefix (Codex PR #155).
             suffix = tokens[end] if end < len(tokens) else ""
-            if suffix in CARD_SUFFIXES:
+            if suffix.isalpha() and (len(suffix) == 1 or _long_suffix(suffix)):
                 end += 1
             else:
                 suffix = ""

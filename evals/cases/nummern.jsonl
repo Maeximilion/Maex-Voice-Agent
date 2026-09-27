@@ -152,3 +152,8 @@
 {"say": "Nummer zz 12", "expect": "?", "why": "abgesetzt bleibt es ein Wort neben der Nummer (Codex PR #117)"}
 {"say": "Nummer Z12g", "expect": "!z12g", "why": "unbekanntes Praefix mit Endung: die ganze genannte Nummer, nicht Rest g (Codex PR #155)"}
 {"say": "Nummer Z 12 g", "expect": "!z12g", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer Z12h", "expect": "!z12h", "why": "unbekanntes Praefix mit falscher Endung: ganze genannte Nummer (Codex PR #155)"}
+{"say": "Nummer ZZ12h", "expect": "!zz12h", "why": "dasselbe mit zwei Buchstaben (Codex PR #155)"}
+{"say": "Nummer Z 12 h", "expect": "!z12h", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer S 1000", "expect": "!s1000", "why": "bekanntes Praefix, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "Nummer S tausend", "expect": "!stausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
