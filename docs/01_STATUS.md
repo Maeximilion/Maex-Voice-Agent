@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.14
+> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.15
 
 ---
 
@@ -96,7 +96,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ### In Claude Code (can start immediately, without vendor)
 1. **Check the first input slip on paper** (T-4.6): the test slip reached the Windows queue of the main receipt printer on 27.09.2026 00:29 via TeamViewer (`EPSON TM-T20II Receipt`, port ESDPRT001 = Epson APD, RAW), but nobody has seen the paper yet: umlauts, 48 characters, cut. A second job from 00:27 was still in the queue, check it is gone before service. Header "NICHT IN KASSE" built 26.09.2026; `pos_code` on the slip after T-4.11 (#149)
-2. **T-1.14** alternatives within the same service and no start shortly before closing, once D12 is decided (docs/04 §check_slot)
+2. **T-1.14 done 27.09.2026** (docs/04 §check_slot): alternatives only within the same service, earliest and latest start from the DB (D12); nothing left to build
 3. **Card numbers of the register** (found by T-4.11): 50 dishes are not imported because the search only knows numbers up to 999 with a letter a to f - `25G`, `26G` ... `60G` (letter g) and sushi `S1` ... `S53`, `SM1` ... `SM6`. Extend `numberwords` and `importer._CARD_NUMBER` deliberately ("Nummer S zwölf", "25 G"), with eval cases; then the first real import: `python -m scripts.kasse_to_csv imports/kasse --out imports`, `python -m scripts.import_menu imports/ --dry-run --deactivate-missing`, read the report, then again with `--apply-price-changes --deactivate-missing`. Print `pos_code` instead of `number` on the input slip with the T-4.6 slip change
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals
@@ -131,12 +131,13 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D9 | Appoint a data protection officer: the DSFA draft of 24.09.2026 rates the processing as DSFA-bound, which makes an officer mandatory regardless of team size (§ 38 Abs. 1 S. 2 BDSG); the DSFA also needs the officer's advice (Art. 35 Abs. 2). Maxi asked whether he can be the officer himself: likely not, the managing director decides purposes and means, would monitor himself (Art. 39) and report to himself (Art. 38 Abs. 3); Art. 38 Abs. 6 forbids a conflict of interest. Recommendation: external officer. Case law on this is not in the norm corpus | Maxi | before `shadow` with recording |
 | D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
 | D11 | ~~Register fields for the import~~ **decided 26.09.2026 (Maxi):** phone price is `VK1_PREIS` (regular; `VK2` pickup and `VK3` restaurant are optional and today equal) · `A_PREIS*` are promotion prices, not used · `GROESSE` is the dish size (soups small and large, different prices) · `DETAILS` (long description) is not used · allergen legend is the EU list, but the register letters run a to n **without gaps**, so from i on they differ from LMIV letters (i Sellerie = L … n Weichtiere = R); mapping table in docs/14. Allergens and additives are not maintained in the register yet, ingredients are | Maxi | done |
-| D12 | Last reservable start before closing (T-1.14): closing at 22:00 means 21:30 is not bookable (Maxi, 26.09.2026). How many minutes before closing, the same for lunch and evening, and does it also cut pickup orders? Value goes into the DB (rule 1), not the code. Also: which service a wish between two services (15:00) or after the last one (23:00) belongs to; proposal in docs/04 §check_slot | Maxi | before T-1.14 |
+| D12 | ~~Last reservable start before closing~~ **decided 27.09.2026 (Maxi):** earliest start opening + 15 min, latest start closing - 30 min, both bookable, values in `service_config` (migration 005) · lunch 11-14 and evening 17-22 give 11:30-13:30 and 17:30-21:30 on the 30-minute grid · outside opening (15:00, 23:00) the guest hears "closed" plus a question for another time, no alternative from another service · booking ahead is allowed. Built with T-1.14 on 27.09.2026 | Maxi | done |
 
 ---
 
 ## Made Assumptions (subject to change)
 
+- **D12 applies to reservations only** (T-1.14): pickup and delivery keep the full opening window. **Morning** means before the first opening of the day and closer to it than to the last closing before (so 01:00 after a night window is "closed", 09:00 is morning). **11:15 is bookable** when asked for directly (opening + 15), only the offered grid starts at 11:30. Assumptions from 27.09.2026
 - **`+` in `GROESSE` means "extras allowed"** (T-4.11): the converter offers register extras only for such dishes. Only fewer offers if wrong, never more. Extras price from `ZPREIGRP3`, not `ZPREIGRP` - all active extras fit, `Extra_Ente` has no `ZPREIGRP`; to be checked once in the dry-run report against the register. Assumption from 26.09.2026
 - **Spoken allergy sentence for wishes is a draft** (`domain/menu/search.py` `SAY_ALLERGY_NOTE`, T-4.10): "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob … frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist." No promise that a dish is free of anything; checked with the legal check (docs/09) before go-live. The kitchen note itself uses the fixed wording of E14. Assumption from 24.09.2026
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
@@ -322,6 +323,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.15 · 27.09.2026:** T-1.14 done: Alternativen im selben Service, Beginn aus service_config (D12), Migration 005
 - **v1.34.14 · 27.09.2026:** Offener Punkt aus PR #149: zwei Schreibweisen einer Kassendatei
 - **v1.34.13 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
 - **v1.34.12 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
