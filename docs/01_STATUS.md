@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.13
+> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.14
 
 ---
 
@@ -322,6 +322,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.14 · 27.09.2026:** Offener Punkt aus PR #149: zwei Schreibweisen einer Kassendatei
 - **v1.34.13 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
 - **v1.34.12 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
 - **v1.34.11 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
