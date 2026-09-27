@@ -456,7 +456,7 @@ def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
     ref = find_item_number_ref(text, card)
     # Eine Nummer mit Praefix ("S12") hat keine Zahl, mit der sich allein
     # weiterarbeiten liesse: 12 waere ein anderes Gericht (Review PR #155).
-    plain = ref is not None and ref.valid and ref.text[:1].isdigit()
+    plain = ref is not None and ref.valid and not ref.choices and ref.text[:1].isdigit()
     return ref.value if plain and ref is not None else None
 
 

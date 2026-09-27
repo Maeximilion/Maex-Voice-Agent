@@ -892,3 +892,10 @@ def test_kartenformat_ist_hashbar():
 def test_canonical_card_leer_ist_null():
     assert canonical_card("") == "0"
     assert canonical_card("000") == "0"
+
+
+def test_find_item_number_mit_kandidaten_ist_keine_blanke_zahl():
+    """Codex PR #155: "Sushi 99" mit 99 und S99 in derselben Kategorie ist
+    keine blanke 99 - welche es ist, entscheidet die Suche an der Karte."""
+    karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi")])
+    assert find_item_number("Sushi 99", karte) is None
