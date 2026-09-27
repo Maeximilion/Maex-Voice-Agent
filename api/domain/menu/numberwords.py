@@ -549,12 +549,13 @@ def _card_letters(token: str) -> bool:
 
 
 # Einzelbuchstaben, die die Erkennung fuer verschluckte Silben ausgibt: 'n
-# (einen), 's (es, das). Hinter "Nummer" sind sie ein Wort, kein Praefix einer
-# nicht vorhandenen Nummer (Review PR #155).
+# (einen), 's (es, das). Abgesetzt hinter "Nummer" sind sie ein Wort, kein
+# Praefix einer nicht vorhandenen Nummer (Review PR #155); an die Ziffer
+# geklebt ("Nummer N12") sind sie ein Praefix (Codex PR #155).
 _CLITICS = frozenset({"n", "s"})
 
 
-def _prefix_letters(token: str) -> bool:
+def _prefix_letters(token: str, glued: bool = False) -> bool:
     """Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix sein koennen.
 
     Jeder einzelne Buchstabe: der Import erlaubt jedes Praefix (T-4.12), und
@@ -564,7 +565,7 @@ def _prefix_letters(token: str) -> bool:
     damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
     hat `CardFormat` vorher schon gelesen.
     """
-    single = len(token) == 1 and token.isalpha() and token not in _CLITICS
+    single = len(token) == 1 and token.isalpha() and (glued or token not in _CLITICS)
     return single or _card_letters(token)
 
 
@@ -718,7 +719,7 @@ def _marker_target(
     # beides (Codex PR #117, P1). Nur Kartenbuchstaben zählen: "Nummer so 23"
     # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
     # vorhandene Nummer "so23" (Codex PR #117, P2).
-    if _prefix_letters(word):
+    if _prefix_letters(word, glued=j in prefixed):
         dahinter = _scan(tokens, j + 1)
         if dahinter is not None:
             return (
@@ -727,7 +728,7 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(dahinter.value), True, valid=False),
             )
-    if j in prefixed and _prefix_letters(word):
+    if j in prefixed and _prefix_letters(word, glued=True):
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None
 

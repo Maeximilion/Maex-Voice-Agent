@@ -899,3 +899,13 @@ def test_find_item_number_mit_kandidaten_ist_keine_blanke_zahl():
     keine blanke 99 - welche es ist, entscheidet die Suche an der Karte."""
     karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi")])
     assert find_item_number("Sushi 99", karte) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "card"), [("Nummer N12", "n12"), ("Nummer S12", "s12")]
+)
+def test_geklebter_klitik_buchstabe_ist_praefix(text, card):
+    """Codex PR #155: 'n und 's sind nur abgesetzt ein Wort. Geklebt an die
+    Ziffer ("Nummer N12") ist es ein Praefix, das die Karte nicht hat."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid and ref.text == card
