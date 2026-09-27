@@ -918,3 +918,11 @@ def test_geklebtes_praefix_aus_zwei_buchstaben_ist_nummer(text):
     ref, unclear = sole_item_number(text)
     assert not unclear and ref is not None and not ref.valid
     assert find_item_number(text) is None
+
+
+@pytest.mark.parametrize("text", ["ES12", "Nummer ES12", "Nummer EM1"])
+def test_geklebter_buchstabenname_ist_kein_buchstabiertes_praefix(text):
+    """Codex PR #155: "ES12" geklebt ist das Praefix ES, nicht "Es zwölf" -
+    nie still S12 (oder SM1 aus "EM1")."""
+    ref, _ = sole_item_number(text, KARTE)
+    assert ref is None or (not ref.valid and ref.cards[0] in ("es12", "em1"))

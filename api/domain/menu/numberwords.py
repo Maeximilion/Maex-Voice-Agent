@@ -350,7 +350,11 @@ def _clean_lead(tokens: list[str], at: int) -> bool:
     )
 
 
-def _number_spans(tokens: list[str], card: CardFormat = NO_PREFIXES) -> list[_Span]:
+def _number_spans(
+    tokens: list[str],
+    card: CardFormat = NO_PREFIXES,
+    prefixed: set[int] | frozenset[int] = frozenset(),
+) -> list[_Span]:
     """Alle genannten Zahlen mit ihrer Lage.
 
     Ein bloßer Artikel zählt nicht mit ("ein Tisch"), eine Zahl, die mit einem
@@ -372,22 +376,31 @@ def _number_spans(tokens: list[str], card: CardFormat = NO_PREFIXES) -> list[_Sp
             i += 1
             continue
         floor = spans[-1].end if spans else 0
-        spans.append(_with_prefix(tokens, span, card, floor))
+        spans.append(_with_prefix(tokens, span, card, floor, prefixed))
         i = max(span.end, i + 1)
     return spans
 
 
-def _with_prefix(tokens: list[str], span: _Span, card: CardFormat, floor: int) -> _Span:
+def _with_prefix(
+    tokens: list[str],
+    span: _Span,
+    card: CardFormat,
+    floor: int,
+    prefixed: set[int] | frozenset[int] = frozenset(),
+) -> _Span:
     """Die Spanne um ein Kartenpraefix direkt davor erweitert, das laengste zuerst.
 
     Nur Token ab `floor`: was zur Zahl davor gehoert, ist kein Praefix.
-    Buchstabennamen nur mit sauberem Satzanfang davor (`_clean_lead`).
+    Buchstabennamen nur mit sauberem Satzanfang davor (`_clean_lead`) und nie
+    an die Ziffer geklebt: "ES12" ist das Praefix ES, nicht "Es zwölf" (Codex
+    PR #155).
     """
     for n in range(_MAX_PREFIX_TOKENS, 0, -1):
         start = span.start - n
         if start < floor:
             continue
-        found = card.prefixes_of(tokens[start : span.start], _clean_lead(tokens, start))
+        spelled = _clean_lead(tokens, start) and span.start - 1 not in prefixed
+        found = card.prefixes_of(tokens[start : span.start], spelled)
         if found:
             return _Span(start, span.end, span.value, n, found)
     return span
@@ -694,7 +707,10 @@ def _marker_target(
         # "Nummer S12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
         for n in range(_MAX_PREFIX_TOKENS, 0, -1):
             following = _scan(tokens, j + n) if j + n < len(tokens) else None
-            found = card.prefixes_of(tokens[j : j + n]) if following else ()
+            # Geklebt ("Nummer ES12") zaehlt der Buchstabenname nicht (Codex
+            # PR #155).
+            spelled = j + n - 1 not in prefixed
+            found = card.prefixes_of(tokens[j : j + n], spelled) if following else ()
             if following is not None and found:
                 return j, j, _Span(j, following.end, following.value, n, found), None
         if (
@@ -773,7 +789,7 @@ def _marked(
     later = sorted(
         (
             span
-            for span in _number_spans(tokens, card)
+            for span in _number_spans(tokens, card, prefixed)
             if span.start > spans[0].start and not any(span.overlaps(s) for s in spans)
         ),
         key=lambda s: s.start,
@@ -838,14 +854,15 @@ def find_item_number_ref(
     """
     tokens = _tokens(text)
     glued = _glued(text)
-    marked = _marked(tokens, glued, _prefixed(text), card)
+    prefixed = _prefixed(text)
+    marked = _marked(tokens, glued, prefixed, card)
     if marked:
         return marked[0] if len(marked) == 1 else None
 
     mengen = _quantity_spans(tokens)
     uebrig = [
         span
-        for span in _number_spans(tokens, card)
+        for span in _number_spans(tokens, card, prefixed)
         if not any(span.overlaps(menge) for menge in mengen)
     ]
     if len(uebrig) != 1:
@@ -962,7 +979,7 @@ def sole_item_number(
             consumed.update(range(start, end))
             invalid_at.update(range(start, end))
     numbers = list(marked)
-    spans = _number_spans(tokens, card)
+    spans = _number_spans(tokens, card, prefixed)
     prefix_at = {s.start for s in [*spans, *marked] if s.prefixes}
 
     def _quantity_before_prefix(span: _Span) -> bool:

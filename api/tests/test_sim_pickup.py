@@ -1258,3 +1258,13 @@ def test_praefixnummer_ist_keine_zutat(session, tenant, antwort):
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Fünf-Gewürze-Pulver.", "Zwei Sachen: Milch."])
+def test_zutat_mit_zahlwort_ist_keine_bestellung(session, tenant, antwort):
+    """Codex PR #155: ein Zahlwort in einer Zutat macht die Antwort nicht zur
+    Bestellung - der Hinweis wird notiert, die Frage nicht wiederholt."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    assert "Wogegen" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert len(_notes(session, order)) == 1
