@@ -721,7 +721,9 @@ def _marker_target(
             if found and (after.isdigit() or _too_large(after)):
                 text = " oder ".join(p + after for p in found)
                 return j, j + n + 1, None, ItemNumber(0, text, True, valid=False)
-        if (
+        # An die Ziffer geklebt ("Nummer JA12", "Nummer HM12") ist ein Wort kein
+        # Fuellwort, sondern ein Praefix - nie still die 12 (Codex PR #155).
+        if j not in prefixed and (
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
             or tokens[j] in _SENTENCE_FILLER
@@ -884,6 +886,10 @@ def find_item_number_ref(
         if not any(span.overlaps(menge) for menge in mengen)
     ]
     if len(uebrig) != 1:
+        return None
+    if not uebrig[0].prefixes and uebrig[0].start - 1 in prefixed:
+        # "JA12", "A12" ohne Marker: Buchstaben kleben an der Zahl, das ist nicht
+        # die blanke 12 (Codex PR #155).
         return None
     ref = _ref(tokens, uebrig[0], marked=False, glued=glued)
     # "das ist 5g Zucker": g mit einem Wort dahinter ist die Einheit, keine
@@ -1089,18 +1095,24 @@ def sole_item_number(
         if tok in _ITEM_NUMBER_MARKERS
         for k in range(i + 1, min((n.start for n in numbers if n.start > i), default=0))
     }
-    # Was daneben übrig bleibt und ein Gerichtname sein könnte.
+    # Was daneben übrig bleibt und ein Gerichtname sein könnte. Ein Wort, das an
+    # der Ziffer klebt ("JA12"), ist nie Fuellwort (Codex PR #155).
     residue = [
         t
         for k, t in enumerate(tokens)
         if k not in consumed
-        and t not in PUNCTUATION
-        and t not in _CONNECTORS
-        and t not in _SENTENCE_FILLER
-        and (t not in _LEAD_FILLER or k in after_marker)
-        and t not in _HESITATIONS
-        and t not in _ITEM_NUMBER_MARKERS
-        and not _QUANTITY_SUFFIX.match(t)
+        and (
+            k in prefixed
+            or (
+                t not in PUNCTUATION
+                and t not in _CONNECTORS
+                and t not in _SENTENCE_FILLER
+                and (t not in _LEAD_FILLER or k in after_marker)
+                and t not in _HESITATIONS
+                and t not in _ITEM_NUMBER_MARKERS
+                and not _QUANTITY_SUFFIX.match(t)
+            )
+        )
     ]
     has_marker = bool(marked or invalid)
     # Ein Marker, der selbst keine Zahl gefasst hat, zaehlt trotzdem - aber nur

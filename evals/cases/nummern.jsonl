@@ -157,3 +157,8 @@
 {"say": "Nummer Z 12 h", "expect": "!z12h", "why": "dasselbe abgesetzt (Codex PR #155)"}
 {"say": "Nummer S 1000", "expect": "!s1000", "why": "bekanntes Praefix, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
 {"say": "Nummer S tausend", "expect": "!stausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer JA12", "expect": "!ja12", "why": "geklebtes Praefix, das zugleich Fuellwort ist: nie still die 12 (Codex PR #155)"}
+{"say": "Nummer HM12", "expect": "!hm12", "why": "geklebtes Praefix, das zugleich Zoegerlaut ist (Codex PR #155)"}
+{"say": "Nummer ja 12", "expect": "12", "why": "abgesetzt bleibt ja ein Fuellwort"}
+{"say": "JA12", "expect": "name", "why": "ohne Marker: geklebte Buchstaben sind kein Fuellwort, nie still die 12 (Codex PR #155)"}
+{"say": "die HM12", "expect": "name", "why": "dasselbe mit Artikel (Codex PR #155)"}
