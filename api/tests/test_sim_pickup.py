@@ -1247,7 +1247,8 @@ def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
 
 
 @pytest.mark.parametrize(
-    "antwort", ["S12.", "SM1", "die 25g", "S zwölf.", "SM eins.", "Sushi zwölf."]
+    "antwort",
+    ["S12.", "SM1", "die 25g", "S0001", "S zwölf.", "SM eins.", "Sushi zwölf."],
 )
 def test_praefixnummer_ist_keine_zutat(session, tenant, antwort):
     """Codex PR #155: auf "Wogegen?" ist eine Kartennummer mit Buchstaben eine

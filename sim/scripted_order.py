@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from api.agent.llm import LLMTurn, ToolCall
+from api.domain.menu.importer import is_card_number
 from api.domain.menu.numberwords import (
     ARTICLES,
     CardFormat,
@@ -545,14 +546,12 @@ def _wish_sentence(
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
-# Eine Kartennummer mit Buchstaben im Satz ("S12", "SM1", "25g", T-4.12). Das
-# Text-Telefon kennt die Karte nicht, darum jede Form, die der Import erlaubt,
+# Eine Kartennummer mit Buchstaben im Satz ("S12", "SM1", "25g", "S0001",
+# T-4.12). Das Text-Telefon kennt die Karte nicht, darum jede Form, die der
+# Import erlaubt (importer.is_card_number, dieselbe Grammatik),
 # und ein Zahlwort am Ende der Antwort ("S zwölf", "Sushi zwölf bitte"). Ein
 # Zahlwort vor einem Wort gehoert zur Zutat ("Fünf-Gewürze-Pulver", "zwei
 # Sachen: Milch") (Codex PR #155).
-_CARD_TOKEN = re.compile(r"[a-z]{0,2}\d{1,3}[a-g]?")
-
-
 _AFTER_NUMBER = frozenset({"bitte", "danke"})
 
 
@@ -569,7 +568,7 @@ def _ends_with_number(words: list[str]) -> bool:
 def _orders_something(text: str) -> bool:
     words = re.findall(r"[^\W_]+", text.lower())
     return (
-        any(_CARD_TOKEN.fullmatch(w) for w in words)
+        any(is_card_number(w) for w in words)
         or _ends_with_number(words)
         or sole_item_number(text)[0] is not None
         or (bool(words) and words[0] in _ORDER_LEADS)
