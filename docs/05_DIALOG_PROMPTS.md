@@ -77,8 +77,10 @@ PR #127). Das gilt für Reservierung und Abholung.
 → check_slot
    frei      → create_reservation → vorlesen → Ja → confirm
    belegt    → Alternativen aus dem Tool anbieten (max. 2) → erneut check_slot
+   geschlossen → `say` vorlesen (fragt nach anderer Uhrzeit, keine Alternative) → erneut check_slot
    nichts    → create_callback
 ```
+`check_slot` bietet nur Termine im selben Service an (T-1.14, docs/04 §check_slot). Außerhalb der Öffnung gibt es keine Alternative: der Satz sagt "geschlossen" und fragt nach einer anderen Uhrzeit, das ist kein Fall für `create_callback`. Morgens vor der ersten Öffnung kommen Termine aus einem späteren Service desselben Tages, ab sechs Stunden Abstand mit Tageszeit ("abends um sieben").
 
 ### Abholung
 Pflicht: **Positionen mit menu_item_id · Name · Rufnummer**

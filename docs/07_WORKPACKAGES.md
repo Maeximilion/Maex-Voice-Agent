@@ -51,7 +51,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-1.11 | #38 | **Anbieter-Adapter** `telephony/adapters/<anbieter>.py` gegen aufgezeichnete Webhooks | 11 §telephony, 12 S7 | T-1.13, D1 entschieden | blockiert |
 | T-1.12 | #32 | `events/`: Outbox schreiben in `confirm`, Dispatcher mit Backoff, Fake-n8n im Test, Alarm bei `failed` | 11 §events, 03 | T-1.6 | fertig 17.09.2026: `events/` mit `types.py`, `outbox.py` (enqueue in der Transaktion des Fachvorgangs) und `dispatcher.py`; ein Ereignis je Transaktion mit `FOR UPDATE SKIP LOCKED`, Backoff 5 s / 30 s / 2 min / 10 min, danach `failed` plus Alarm als ERROR-Log; eigener Container-Dienst; 12 Tests mit Fake-n8n |
 | T-1.13 | #33 | `telephony/port.py` Interface + `adapters/fake.py`, der Anrufe aus Dateien abspielt | 11 §telephony | T-1.10 | offen |
-| T-1.14 | - | `check_slot`-Alternativen nach Service-Fenster statt nur nach Abstand (Anforderung Maxi 26.09.2026, docs/04 §check_slot „Geplant“): Abendwunsch nur Abend, Mittagswunsch nur Mittag; kein Reservierungsbeginn kurz vor Ladenschluss (Abstand aus der DB, D12); Wunsch vor der ersten Öffnung (morgens) darf auf einen späteren Service desselben Tages ausweichen, dann mit Tageszeit im Satz („abends um sieben“); Wunsch für einen anderen Tag braucht keine Sonderlogik | 04 | T-1.4, D12 | offen, bewusst nicht gebaut (Maxi 26.09.2026) |
+| T-1.14 | - | `check_slot`-Alternativen nach Service-Fenster statt nur nach Abstand (Anforderung Maxi 26.09.2026, docs/04 §check_slot „Geplant“): Abendwunsch nur Abend, Mittagswunsch nur Mittag; kein Reservierungsbeginn kurz vor Ladenschluss (Abstand aus der DB, D12); Wunsch vor der ersten Öffnung (morgens) darf auf einen späteren Service desselben Tages ausweichen, dann mit Tageszeit im Satz („abends um sieben“); Wunsch für einen anderen Tag braucht keine Sonderlogik | 04 | T-1.4, D12 | fertig 27.09.2026: `domain/reservations/slots.py` (Service-Fenster, frühester und spätester Beginn aus `service_config`, geschlossen mit Frage, morgens späterer Service mit Tageszeit), `spoken_daytime`, Migration 005, 11 neue Slot-Tests, 3 Migrationstests, Latenztest Morgen-Pfad, Eval `reservierung_0028`, p95 rund 10 ms |
 
 ---
 
@@ -109,7 +109,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
-| T-6.1 | #57 | Migration 005 (Kunden, Adressen, Zonen) | 03 | T-4.1 | offen |
+| T-6.1 | #57 | Migration 006 (Kunden, Adressen, Zonen; 005 ging an T-1.14) | 03 | T-4.1 | offen |
 | T-6.2 | #58 | Tool `find_customer` mit Normalisierung der Rufnummer | 04 | T-6.1 | offen |
 | T-6.3 | #59 | Tool `check_delivery`, PLZ-Variante | 04 | T-6.1, D5 | offen |
 | T-6.9 | #60 | `scripts/seed_zones.py`: Lieferzonen aus der bestehenden Liefergebietsliste des Pilotbetriebs | 03, 04 | T-6.1, D5 | offen |

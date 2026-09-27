@@ -37,7 +37,17 @@ class Tenant(UUIDPrimaryKey, Timestamps, Base):
 
 class ServiceConfig(Timestamps, Base):
     __tablename__ = "service_config"
-    __table_args__ = (_in("call_mode", CALL_MODES, "ck_service_config_call_mode"),)
+    __table_args__ = (
+        _in("call_mode", CALL_MODES, "ck_service_config_call_mode"),
+        CheckConstraint(
+            "reservation_lead_minutes >= 0",
+            name="ck_service_config_reservation_lead_minutes",
+        ),
+        CheckConstraint(
+            "reservation_last_start_minutes >= 0",
+            name="ck_service_config_reservation_last_start_minutes",
+        ),
+    )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id", ondelete="RESTRICT"), primary_key=True
@@ -57,6 +67,14 @@ class ServiceConfig(Timestamps, Base):
     team_phone: Mapped[str] = mapped_column(Text, nullable=False)
     max_call_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="420"
+    )
+    # Reservierungsbeginn je Service-Fenster: frühestens so viele Minuten nach
+    # Öffnung, spätestens so viele vor Schluss (T-1.14, D12). Nur Reservierungen.
+    reservation_lead_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="15"
+    )
+    reservation_last_start_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="30"
     )
 
 

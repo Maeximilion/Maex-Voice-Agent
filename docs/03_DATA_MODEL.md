@@ -37,6 +37,8 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
 | team_phone | TEXT | Durchwahl für `transfer_to_team` |
 | max_call_seconds | INT | Kostenbremse, Default 420 |
+| reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
+| reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -331,5 +333,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 002 | Extension `pg_trgm` · `menu_items`, `item_options`, `item_allergens`, `item_aliases` (Trigram-Index auf `name` und `alias`), `orders`, `order_items` |
 | 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
 | 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
-| 005 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 006 | `eval_cases`, `eval_runs` |
+| 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
+| 006 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
+| 007 | `eval_cases`, `eval_runs` |
