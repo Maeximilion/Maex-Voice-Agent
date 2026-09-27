@@ -79,7 +79,7 @@
 {"say": "einmal 7up bitte", "expect": "name", "why": "Alias mit Ziffer im Satz"}
 {"say": "das ist 5g Zucker", "expect": "name", "why": "Einheit hinter einer Zahl, keine Kartennummer"}
 {"say": "Nummer so 23", "expect": "?", "why": "kurzes Alltagswort, kein Kartenbuchstabe"}
-{"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
+{"say": "Nummer so23", "expect": "!so23", "why": "geklebt ist es eine genannte Nummer: der Import erlaubt zwei Buchstaben davor (T-4.12), die Karte hat sie nicht (Codex PR #155)"}
 {"say": "Nummer V12", "expect": "!v12", "why": "Praefix V ist erlaubt (T-4.12), aber nicht auf dieser Karte: nicht vorhanden statt Rueckfrage (Codex PR #155)"}
 {"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}
 {"say": "und die 24", "expect": "24", "why": "und am Satzanfang fuehrt die Bestellung fort, verbindet keine zweite Zahl (T-5.2)"}
@@ -148,3 +148,5 @@
 {"say": "die 23 S12", "expect": "?", "why": "Zahl vor der Praefixnummer ist hier keine Menge, zwei Nummern (Review PR #155)"}
 {"say": "S12 Lachs", "expect": "?", "why": "Praefixnummer ist nie Menge, neben einem Namen nachfragen (Review PR #155)"}
 {"say": "Nummer n 23", "expect": "?", "why": "umgangssprachliches n (einen) ist kein Praefix (Review PR #155)"}
+{"say": "Nummer ZZ12", "expect": "!zz12", "why": "geklebtes Praefix aus zwei Buchstaben ausserhalb a-g, nicht auf der Karte (Codex PR #155)"}
+{"say": "Nummer zz 12", "expect": "?", "why": "abgesetzt bleibt es ein Wort neben der Nummer (Codex PR #117)"}

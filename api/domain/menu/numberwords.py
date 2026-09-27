@@ -561,11 +561,15 @@ def _prefix_letters(token: str, glued: bool = False) -> bool:
     Jeder einzelne Buchstabe: der Import erlaubt jedes Praefix (T-4.12), und
     "Nummer Z12" ist dann eine genannte Nummer, die es nicht gibt - `not_found`
     statt Rueckfrage (Codex PR #155, P2). Zwei Buchstaben nur aus a bis g
-    (`_card_letters`): "Nummer so 23" bleibt ein Wort neben der Nummer und
-    damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
+    (`_card_letters`), wenn abgesetzt: "Nummer so 23" bleibt ein Wort neben
+    der Nummer und damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
     hat `CardFormat` vorher schon gelesen.
     """
-    single = len(token) == 1 and token.isalpha() and (glued or token not in _CLITICS)
+    if glued:
+        # An die Ziffer geklebt ("Nummer ZZ12", "Nummer so23") ist jedes
+        # Praefix, das der Import erlaubt, eine genannte Nummer (Codex PR #155).
+        return token.isalpha() and len(token) <= _MAX_CARD_LETTERS
+    single = len(token) == 1 and token.isalpha() and token not in _CLITICS
     return single or _card_letters(token)
 
 

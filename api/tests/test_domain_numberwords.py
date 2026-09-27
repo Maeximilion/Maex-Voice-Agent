@@ -909,3 +909,12 @@ def test_geklebter_klitik_buchstabe_ist_praefix(text, card):
     Ziffer ("Nummer N12") ist es ein Praefix, das die Karte nicht hat."""
     ref, unclear = sole_item_number(text)
     assert not unclear and ref is not None and not ref.valid and ref.text == card
+
+
+@pytest.mark.parametrize("text", ["Nummer ZZ12", "Nummer so23"])
+def test_geklebtes_praefix_aus_zwei_buchstaben_ist_nummer(text):
+    """Codex PR #155: geklebt an die Ziffer ist jedes Praefix, das der Import
+    erlaubt, eine genannte Nummer - nie die blanke Zahl, nie eine Rueckfrage."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid
+    assert find_item_number(text) is None
