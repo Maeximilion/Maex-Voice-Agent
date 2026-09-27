@@ -17,6 +17,7 @@ from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.numberwords import (
     CardFormat,
     canonical_card,
+    find_numbers,
     find_quantity,
     fold,
     parse_cardinal,
@@ -545,7 +546,8 @@ _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "no
 
 
 # Eine Kartennummer mit Buchstaben im Satz ("S12", "SM1", "25g", T-4.12). Das
-# Text-Telefon kennt die Karte nicht, darum jede Form, die der Import erlaubt
+# Text-Telefon kennt die Karte nicht, darum jede Form, die der Import erlaubt,
+# und jedes Zahlwort ("S zwölf", "Sushi zwölf"): eine Zutat nennt keine Zahl
 # (Codex PR #155).
 _CARD_TOKEN = re.compile(r"[a-z]{0,2}\d{1,3}[a-g]?")
 
@@ -554,6 +556,7 @@ def _orders_something(text: str) -> bool:
     words = re.findall(r"[^\W_]+", text.lower())
     return (
         any(_CARD_TOKEN.fullmatch(w) for w in words)
+        or bool(find_numbers(text))
         or sole_item_number(text)[0] is not None
         or (bool(words) and words[0] in _ORDER_LEADS)
     )
