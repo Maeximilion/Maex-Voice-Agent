@@ -303,7 +303,7 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 - Beginn frühestens `service_config.reservation_lead_minutes` nach Öffnung (15) und spätestens `reservation_last_start_minutes` vor Schluss (30), beide Grenzen buchbar. Mittag 11–14 und Abend 17–22 ergeben 11:15–13:30 und 17:15–21:30, im 30-Minuten-Raster angeboten ab 11:30 und 17:30. Gilt nur für Reservierungen (Annahme D12).
 - Abendwunsch → Alternativen nur am selben Abend, Mittagswunsch → nur am selben Mittag, weiter unter sechs Stunden Abstand. Liegt der Wunsch im Service, aber vor dem frühesten oder nach dem spätesten Beginn (17:00, 21:45): „Um fünf Uhr können wir leider keinen Tisch reservieren. Halb sechs oder sechs Uhr ginge."
 - Außerhalb der Öffnung (15:00 zwischen zwei Services, 23:00 nach dem letzten, 01:00 nach einem Nachtfenster): keine Alternative, „Um drei Uhr haben wir leider geschlossen. Zu welcher anderen Uhrzeit passt es Ihnen?"
-- Morgens vor der ersten Öffnung des Tages (näher an ihr als am letzten Schluss davor): Alternativen aus dem ersten Service desselben Tages mit freiem Platz, auch abends. Ab sechs Stunden Abstand nennt der Satz die Tageszeit: „Um neun Uhr haben wir noch geschlossen. Abends um halb sechs oder um sechs ginge."
+- Morgens vor der ersten Öffnung des Tages (näher an ihr als am letzten Schluss davor; ohne Fenster am Vortag gilt Mitternacht als Schluss): Alternativen aus dem ersten Service desselben Tages mit freiem Platz, auch abends. Ab sechs Stunden Abstand nennt der Satz die Tageszeit: „Um neun Uhr haben wir noch geschlossen. Abends um halb sechs oder um sechs ginge."
 - Wunsch für einen anderen, genannten Tag: keine Sonderlogik, es gilt der Tag des Gastes.
 
 ---

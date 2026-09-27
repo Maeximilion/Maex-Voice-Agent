@@ -8,7 +8,7 @@ der ersten Öffnung darf ein späterer Service desselben Tages einspringen.
 """
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -150,16 +150,20 @@ def _is_morning(local: datetime, services: list[Window], today: list[Window]) ->
     """Vor der ersten Öffnung des Tages und näher an ihr als am letzten Schluss davor.
 
     Dienstag 01:00 nach einem Montagabend bis 01:00 ist Nacht, kein Morgen (D12).
+    Ohne Fenster am Vortag (Ruhetag) zählt Mitternacht als letzter Schluss, sonst
+    wäre 01:00 nach dem Ruhetag ein Morgen (Review PR #158). Gerechnet in UTC wie
+    `distance`, sonst läge die Grenze an der Zeitumstellung eine Stunde daneben.
     """
-    first_open = today[0][0]
-    if local >= first_open:
+    wish = local.astimezone(UTC)
+    first_open = today[0][0].astimezone(UTC)
+    if wish >= first_open:
         return False
-    closed_before = [closes for _, closes in services if closes <= local]
-    if not closed_before:
-        return True
-    to_open = first_open.astimezone(UTC) - local.astimezone(UTC)
-    since_close = local.astimezone(UTC) - max(closed_before).astimezone(UTC)
-    return to_open < since_close
+    midnight = datetime.combine(local.date(), time(0), tzinfo=local.tzinfo)
+    last_close = max(
+        [c.astimezone(UTC) for _, c in services if c.astimezone(UTC) <= wish]
+        + [midnight.astimezone(UTC)]
+    )
+    return first_open - wish < wish - last_close
 
 
 def _window_for(windows: list[CapacityWindow], at: datetime) -> CapacityWindow | None:

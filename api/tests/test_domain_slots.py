@@ -400,6 +400,19 @@ def test_morgens_vor_der_oeffnung_bietet_den_mittag_an(session, tenant_id):
     )
 
 
+def test_nachts_nach_dem_ruhetag_ist_kein_morgen(session, tenant_id):
+    # Review PR #158: ohne Fenster am Vortag zaehlt Mitternacht als letzter Schluss.
+    # Dienstag 01:00 nach dem Ruhetag heisst "geschlossen" wie nach jedem Abend.
+    result = check_slot(
+        session, tenant_id, berlin(DIENSTAG, 1, 0), 2, now=berlin(MONTAG, 20)
+    )
+    assert result.alternatives == []
+    assert result.say == (
+        "Um ein Uhr haben wir leider geschlossen. "
+        "Zu welcher anderen Uhrzeit passt es Ihnen?"
+    )
+
+
 def test_morgens_mittag_voll_bietet_den_abend_mit_tageszeit_an(
     session, tenant_id, book
 ):
