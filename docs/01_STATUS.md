@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.13
+> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.14
 
 ---
 
@@ -214,6 +214,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 |---|---|---|
 | Register import, smaller review points (T-4.11) | Own review xhigh: `pos_code` unique only per file, not in the DB; NUL-padded text fields would keep `\x00`; size names hardcoded in `pos_convert.SIZE_NAMES` although the register mask can rename them; German parameter names in `convert()`; allergen-carrier warning only matches word starts. None changes a price or allergen the agent says today (VK2 0.00, the `--deactivate-missing` hint, `WRGSHOWALL` spellings and the duplicated money helpers are fixed in PR #149) | with the card-number task or the first real register import |
 | dBase III memo end search not bounded (`api/domain/menu/pos_dbf.py` `_memo`) | Codex PR #149 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): a dBase III memo that lost its 0x1A terminator is read up to the terminator of a later memo, so a damaged `WRGSHOW` could pick up another extra's group list. The register writes dBase IV (length in the block header, checked), so the real files never take this path. Fix: stop the search at the next memo block referenced by the table and raise `DbfError` when no terminator lies before it | with the first dBase III source or the next reader change |
+| Two spellings of the same register file (`scripts/kasse_to_csv.py` `_find`) | Codex PR #149 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): on a case-sensitive file system `artikel.DBF` and `artikel.dbf` can both sit in the input folder; `_find` takes whichever `iterdir()` returns first, and table and memo are looked up separately, so a stale table could be paired with a newer memo. On Windows (the register PC and today's workflow) both names are one file. Fix: collect all case-insensitive matches and fail unless exactly one exists | with the first run on Linux or the next converter change |
 | Register import, second review round (T-4.11) | Own review xhigh on the head: the blanket IndexError catch in `pos_dbf.read_table` would report reader bugs as a corrupt file; exit 1 on every real run today (item errors), so `kasse_to_csv && import_menu` never chains; alias reading duplicates `importer._rows`. Real files read correctly (dBase IV, all markers present) | with the first real register import |
 | Filler between leading "und" and a tens word (`api/domain/menu/numberwords.py` `sole_item_number`, `_opens`) | Codex PR #147 (P2, rule A: recorded, not blocking): the tens-word gate only looks at the token directly after "und". "und zwanzig" asks back, but "und äh zwanzig" and "und bitte zwanzig" return 20 - the cut-off half of "drei und zwanzig" with a hesitation in between becomes item 20. Fix: skip only punctuation, hesitations and non-number words after the "und" (never `ein`/`und`, they belong to a number), then read the whole number span there with `_scan`; ask back only if that span is a bare tens word. "und ein und zwanzig" scans as 21 and must stay 21 (existing line in `evals/cases/nummern.jsonl`, Codex PR #150). First as lines in `nummern.jsonl` ("und äh zwanzig", "und bitte zwanzig" -> "?") | with the next change to numberwords, latest before G1 |
 | Wish and allergy in one sentence (`api/domain/menu/wishes.py` `_starts`) | Codex PR #139 (P2, rule A): "ohne Zwiebeln, ich habe eine Erdnussallergie" - the allergy clause wins, the removal before it is dropped. The allergy itself is kept. Fix: split the allergy clause off and keep the preceding wish as `note` | with the next wish change, latest before G1 |
@@ -321,6 +322,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.14 · 27.09.2026:** Offener Punkt aus PR #149: zwei Schreibweisen einer Kassendatei
 - **v1.34.13 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen
 - **v1.34.12 · 26.09.2026:** T-4.11 Review: Schalter --deactivate-missing, Gratis-Extra, verwaiste Aliase, kaputte Dateien
 - **v1.34.11 · 26.09.2026:** T-4.11 done: Kassen-.dbf -> CSV, pos_code (Migration 004), --deactivate-missing
