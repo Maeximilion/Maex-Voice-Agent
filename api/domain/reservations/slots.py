@@ -74,8 +74,9 @@ def check_slot(
     last = timedelta(minutes=config.reservation_last_start_minutes)
 
     def startable(at: datetime, service: Window) -> bool:
+        # Die Schlusszeit selbst ist nie ein Beginn, auch bei 0 Minuten Abstand.
         opens, closes = service
-        return opens + lead <= at <= closes - last
+        return opens + lead <= at <= closes - last and at < closes
 
     def fits(at: datetime, service: Window) -> bool:
         if not startable(at, service):
@@ -158,11 +159,14 @@ def _is_morning(local: datetime, services: list[Window], today: list[Window]) ->
     first_open = today[0][0].astimezone(UTC)
     if wish >= first_open:
         return False
-    midnight = datetime.combine(local.date(), time(0), tzinfo=local.tzinfo)
-    last_close = max(
-        [c.astimezone(UTC) for _, c in services if c.astimezone(UTC) <= wish]
-        + [midnight.astimezone(UTC)]
-    )
+    closed_before = [
+        c.astimezone(UTC) for _, c in services if c.astimezone(UTC) <= wish
+    ]
+    if closed_before:
+        last_close = max(closed_before)
+    else:
+        midnight = datetime.combine(local.date(), time(0), tzinfo=local.tzinfo)
+        last_close = midnight.astimezone(UTC)
     return first_open - wish < wish - last_close
 
 

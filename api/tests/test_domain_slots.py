@@ -413,6 +413,33 @@ def test_nachts_nach_dem_ruhetag_ist_kein_morgen(session, tenant_id):
     )
 
 
+def test_frueh_morgens_zaehlt_der_echte_schluss_des_vorabends(session, tenant_id):
+    # Review PR #158 (Codex): Mitternacht nur ohne Schluss am Vortag. Montag ist
+    # Ruhetag, also Mittwoch: Dienstag schliesst 22:00, Mittwoch oeffnet 11:30.
+    # 05:00 liegt 6,5 h vor der Oeffnung und 7 h nach dem Schluss: Morgen.
+    mittwoch = date(2026, 9, 16)
+    result = check_slot(session, tenant_id, berlin(mittwoch, 5), 2, now=NOW)
+    assert result.alternatives == [
+        berlin(mittwoch, 12, 0).astimezone(UTC),
+        berlin(mittwoch, 12, 30).astimezone(UTC),
+    ]
+    assert result.say == (
+        "Um fünf Uhr haben wir noch geschlossen. Mittags um zwölf oder um halb eins ginge."
+    )
+
+
+def test_letzter_beginn_null_heisst_bis_vor_schluss(session, tenant_id):
+    # Review PR #158 (Codex): 0 Minuten vor Schluss macht die Schlusszeit nicht zum
+    # Beginn; um 22:00 ist geschlossen, 21:45 ist buchbar.
+    config = session.get(ServiceConfig, tenant_id)
+    config.reservation_last_start_minutes = 0
+    session.commit()
+    assert _frei(session, tenant_id, berlin(DIENSTAG, 21, 45))
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 22), 2, now=NOW)
+    assert result.available is False
+    assert result.say.startswith("Um zehn Uhr haben wir leider geschlossen.")
+
+
 def test_morgens_mittag_voll_bietet_den_abend_mit_tageszeit_an(
     session, tenant_id, book
 ):
