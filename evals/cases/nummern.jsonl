@@ -150,3 +150,5 @@
 {"say": "Nummer n 23", "expect": "?", "why": "umgangssprachliches n (einen) ist kein Praefix (Review PR #155)"}
 {"say": "Nummer ZZ12", "expect": "!zz12", "why": "geklebtes Praefix aus zwei Buchstaben ausserhalb a-g, nicht auf der Karte (Codex PR #155)"}
 {"say": "Nummer zz 12", "expect": "?", "why": "abgesetzt bleibt es ein Wort neben der Nummer (Codex PR #117)"}
+{"say": "Nummer Z12g", "expect": "!z12g", "why": "unbekanntes Praefix mit Endung: die ganze genannte Nummer, nicht Rest g (Codex PR #155)"}
+{"say": "Nummer Z 12 g", "expect": "!z12g", "why": "dasselbe abgesetzt (Codex PR #155)"}

@@ -740,13 +740,21 @@ def _marker_target(
     # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
     # vorhandene Nummer "so23" (Codex PR #117, P2).
     if _prefix_letters(word, glued=j in prefixed):
-        dahinter = _scan(tokens, j + 1)
-        if dahinter is not None:
+        following = _scan(tokens, j + 1)
+        if following is not None:
+            # Eine Endung gehoert zur genannten Nummer ("Nummer Z12g"), sonst
+            # bliebe "g" als Rest und der Satz waere unklar (Codex PR #155).
+            end = following.end
+            suffix = tokens[end] if end < len(tokens) else ""
+            if suffix in CARD_SUFFIXES:
+                end += 1
+            else:
+                suffix = ""
             return (
                 j,
-                dahinter.end,
+                end,
                 None,
-                ItemNumber(0, word + str(dahinter.value), True, valid=False),
+                ItemNumber(0, word + str(following.value) + suffix, True, valid=False),
             )
     if j in prefixed and _prefix_letters(word, glued=True):
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
