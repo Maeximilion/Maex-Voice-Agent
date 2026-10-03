@@ -52,6 +52,11 @@
     ],
     "customer_name": "Braun",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "12",
+      "city": "Musterdorf"
+    }
   }
 }

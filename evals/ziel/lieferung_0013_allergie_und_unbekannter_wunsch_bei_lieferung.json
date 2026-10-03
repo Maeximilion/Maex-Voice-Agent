@@ -63,6 +63,11 @@
     ],
     "customer_name": "Arnold",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "30",
+      "city": "Musterdorf"
+    }
   }
 }

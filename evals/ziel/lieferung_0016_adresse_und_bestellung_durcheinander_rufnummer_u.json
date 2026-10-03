@@ -74,6 +74,11 @@
     ],
     "customer_name": "Sommer",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "16",
+      "city": "Musterdorf"
+    }
   }
 }

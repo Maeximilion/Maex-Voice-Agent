@@ -80,6 +80,11 @@
     ],
     "customer_name": "Keller",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "8",
+      "city": "Musterdorf"
+    }
   }
 }

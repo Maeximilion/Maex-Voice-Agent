@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.core.time import to_local
+from api.domain.menu.numberwords import fold
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
 from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
@@ -30,6 +31,7 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     Reservation,
+    Tenant,
 )
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
@@ -48,8 +50,16 @@ EXPECTED_KEYS = frozenset(
         # Code anbietet, steht in keiner Tabelle, ist aber kein Wortlaut, sondern
         # ein Ergebnis (am Ruhetag nie der Vortag, Befund T-5.2).
         "alternatives",
+        # Beginn der bestaetigten Reservierung als Ortszeit "YYYY-MM-DDTHH:MM": eine
+        # Korrektur von Tag oder Uhrzeit muss im Ergebnis ankommen (Codex PR #162).
+        "reserved_for",
+        # Lieferadresse {street, house_number, postal_code, city}, nur die genannten
+        # Felder. Beobachtbar erst mit der Tabelle addresses (T-6.1); bis dahin ist
+        # ein Fall mit Adresse immer rot, statt die Korrektur still zu uebergehen.
+        "address",
     }
 )
+ADDRESS_KEYS = ("street", "house_number", "postal_code", "city")
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
 LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
@@ -100,6 +110,17 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
             "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
         )
+    reserved = case["expected"].get("reserved_for")
+    if reserved is not None and not _local_minute(reserved):
+        raise CaseError(f"{source}: reserved_for ist eine Ortszeit YYYY-MM-DDTHH:MM")
+    address = case["expected"].get("address")
+    if address is not None and (
+        not isinstance(address, dict)
+        or not address
+        or set(address) - set(ADDRESS_KEYS)
+        or not all(isinstance(v, str) and v.strip() for v in address.values())
+    ):
+        raise CaseError(f"{source}: address nennt nur Felder aus {ADDRESS_KEYS}")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -187,6 +208,8 @@ class Observed:
     items: list[dict[str, Any]]
     customer_name: str | None
     party_size: int | None
+    reserved_for: str | None = None
+    address: dict[str, str] | None = None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
     # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
@@ -244,9 +267,28 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         items=items,
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
+        reserved_for=_reserved_local(session, call, done_res),
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
     )
+
+
+def _reserved_local(session: Session, call, done_res) -> str | None:
+    if not done_res or call is None:
+        return None
+    zone = session.get(Tenant, call.tenant_id).timezone
+    return to_local(done_res[-1].reserved_for, zone).strftime(LOCAL_MINUTE)
+
+
+def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | None:
+    """Nur die genannten Felder; Strasse und Ort ohne Unterschied bei ss/ß und Umlaut."""
+
+    def norm(value: str | None) -> str:
+        return " ".join(fold(value or "").split())
+
+    if got is not None and all(norm(want[k]) == norm(got.get(k)) for k in want):
+        return None
+    return f"address: erwartet {want!r}, gebucht {got!r}"
 
 
 def _duplicate_confirms(session: Session, orders, reservations) -> int:
@@ -336,6 +378,15 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
             diffs.append(f"customer_name: erwartet {want!r}, gebucht {got!r}")
     if "items" in expected:
         diff = _compare_items(expected["items"], seen.items)
+        if diff:
+            diffs.append(diff)
+    if "reserved_for" in expected and expected["reserved_for"] != seen.reserved_for:
+        diffs.append(
+            f"reserved_for: erwartet {expected['reserved_for']!r}, "
+            f"gebucht {seen.reserved_for!r}"
+        )
+    if "address" in expected:
+        diff = _address_diff(expected["address"], seen.address)
         if diff:
             diffs.append(diff)
     # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.

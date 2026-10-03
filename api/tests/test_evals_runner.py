@@ -237,6 +237,16 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"reserved_for": "Freitag 19:30"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"address": {"strasse": "Gartenweg"}},
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -378,6 +388,44 @@ def test_vergleich_nur_felder_aus_expected():
         {"items": [{"number": "47", "quantity": 1, "options": ["Ente"]}]}, seen
     )
     assert diffs and "items" in diffs[0]
+
+
+def _reservation_seen(**extra) -> Observed:
+    return Observed(
+        intent="reservation",
+        confirmed=True,
+        escalated=False,
+        items=[],
+        customer_name="Meyer",
+        party_size=7,
+        **extra,
+    )
+
+
+def test_korrigierter_termin_muss_im_ergebnis_stehen():
+    # Codex PR #162: Samstag 20:00 -> Freitag 19:30 darf nicht ungeprueft bleiben.
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, seen) == []
+    diffs = judge({"reserved_for": "2026-09-19T20:00"}, seen)
+    assert diffs and diffs[0].startswith("reserved_for")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, _reservation_seen())
+
+
+def test_adresse_ist_bis_t61_nie_still_gruen():
+    want = {"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    assert judge({"address": want}, _reservation_seen())  # address noch None
+    seen = _reservation_seen(
+        address={"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    )
+    assert judge({"address": want}, seen) == []
+    # Hausnummer 14 statt der korrigierten 41 ist rot; ss und ß gelten gleich.
+    wrong = _reservation_seen(address={**want, "house_number": "14"})
+    assert judge({"address": want}, wrong)
+    strasse = _reservation_seen(address={"street": "Lindenstraße", "house_number": "4"})
+    assert (
+        judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, strasse)
+        == []
+    )
 
 
 def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):

@@ -61,6 +61,11 @@
     ],
     "customer_name": "Frank",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Ahornweg",
+      "house_number": "19",
+      "city": "Musterdorf"
+    }
   }
 }

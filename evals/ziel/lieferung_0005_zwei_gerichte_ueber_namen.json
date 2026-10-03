@@ -49,6 +49,11 @@
     ],
     "customer_name": "Kaya",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Am Markt",
+      "house_number": "3",
+      "city": "Musterdorf"
+    }
   }
 }

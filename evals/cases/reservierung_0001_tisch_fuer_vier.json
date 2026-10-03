@@ -28,6 +28,7 @@
   "expected": {
     "intent": "reservation",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "reserved_for": "2026-09-16T19:00"
   }
 }

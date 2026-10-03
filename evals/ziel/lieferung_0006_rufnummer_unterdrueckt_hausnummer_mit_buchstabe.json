@@ -52,6 +52,11 @@
     ],
     "customer_name": "Yilmaz",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Bahnhofstrasse",
+      "house_number": "7b",
+      "city": "Musterdorf"
+    }
   }
 }

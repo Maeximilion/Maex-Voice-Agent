@@ -31,6 +31,7 @@
     "party_size": 5,
     "customer_name": "Schmitt",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "reserved_for": "2026-09-18T19:30"
   }
 }

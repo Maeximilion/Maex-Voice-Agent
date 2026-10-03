@@ -57,6 +57,11 @@
     ],
     "customer_name": "Lange",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Gartenweg",
+      "house_number": "41",
+      "city": "Musterdorf"
+    }
   }
 }

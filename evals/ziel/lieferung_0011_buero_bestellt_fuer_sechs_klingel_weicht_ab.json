@@ -86,6 +86,11 @@
     ],
     "customer_name": "Schuster",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Industriestrasse",
+      "house_number": "20",
+      "city": "Musterdorf"
+    }
   }
 }

@@ -61,6 +61,11 @@
     ],
     "customer_name": "Vogel",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "address": {
+      "street": "Ringstrasse",
+      "house_number": "2",
+      "city": "Musterdorf"
+    }
   }
 }

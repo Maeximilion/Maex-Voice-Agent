@@ -37,6 +37,7 @@
     "party_size": 7,
     "customer_name": "Meyer",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "reserved_for": "2026-09-18T19:30"
   }
 }
