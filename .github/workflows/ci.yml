@@ -7,9 +7,11 @@ on:
     branches: [main]
   pull_request:
 
-# Neuer Push auf denselben PR bricht den alten Lauf ab; auf main laeuft jeder Lauf zu Ende.
+# Neuer Push auf denselben PR bricht den alten Lauf ab. Auf main bekommt jeder Lauf
+# eine eigene Gruppe (run_id): in einer gemeinsamen Gruppe haelt GitHub nur einen
+# wartenden Lauf und ersetzt ihn, ein Zwischen-Commit bliebe ungetestet (Codex PR #161).
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
