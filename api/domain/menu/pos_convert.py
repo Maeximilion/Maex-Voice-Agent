@@ -335,7 +335,9 @@ def convert(
 
     if bad_numbers:
         result.errors.append(
-            "Nummer versteht die Suche nicht (bis 999, optional Buchstabe a bis f), "
+            "Nummer versteht die Suche nicht (bis 999, optional a bis g dahinter und "
+            "bis zu zwei Buchstaben davor, aber kein Praefix wie x, st, nr, no, ja, "
+            "es), "
             f"{len(bad_numbers)} Gerichte nicht übernommen: " + ", ".join(bad_numbers)
         )
     for size, numbers in sorted(unnamed_sizes.items()):

@@ -319,9 +319,9 @@ def test_dieselbe_nummer_zweimal_ist_eindeutig():
 @pytest.mark.parametrize(
     ("text", "card"),
     [
-        ("Nummer 23g", "23g"),
+        ("Nummer 23h", "23h"),
         ("Nummer 23ab", "23ab"),
-        ("Nummer 23 g", "23g"),
+        ("Nummer 23 h", "23h"),
     ],
 )
 def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
@@ -330,9 +330,11 @@ def test_ungueltige_endung_macht_die_nummer_ungueltig(text, card):
     assert ref is not None and ref.text == card and ref.valid is False
 
 
-@pytest.mark.parametrize("text", ["die 23g", "einmal 7up bitte", "das ist 5g Zucker"])
+@pytest.mark.parametrize(
+    "text", ["die 23h", "einmal 7up bitte", "das ist 5mg Zucker", "das ist 5g Zucker"]
+)
 def test_ohne_marker_ist_eine_unsaubere_form_keine_nummer(text):
-    """Ohne "Nummer" ist "23g" oder "7up" Text, keine genannte Kartennummer.
+    """Ohne "Nummer" ist "23h" oder "7up" Text, keine genannte Kartennummer.
 
     Die 23 darf daraus nie werden - aber die Leiter soll auch nicht nach einer
     Nummer fragen, die der Gast gar nicht genannt hat: search_menu findet den
@@ -704,3 +706,257 @@ def test_freihaengendes_verbindungswort_fragt_nach(text):
 )
 def test_sole_item_number_kein_nummernsatz(text):
     assert sole_item_number(text) == (None, False)
+
+
+# --- Kartenformat aus der Karte: Praefix S/SM, Endung a bis g (T-4.12) ---------
+
+from api.domain.menu.numberwords import (  # noqa: E402
+    CardFormat,
+    canonical_card,
+    reserved_prefix,
+)
+
+# Wie die Kasse (Stand 26.09.2026): S1 bis S53 und SM1 bis SM6 in der
+# Warengruppe Sushi, dazu Nummern ohne Praefix und 25G.
+KARTE = CardFormat.from_items(
+    [
+        ("s1", "Sushi"),
+        ("s12", "Sushi"),
+        ("sm1", "Sushi"),
+        ("12", "Suppen"),
+        ("25", "Hauptspeisen"),
+        ("25g", "Hauptspeisen"),
+    ]
+)
+
+
+def test_kartenformat_aus_den_nummern():
+    """Welche Praefixe gelten, sagt die Karte, nicht der Code (Regel 1)."""
+    assert KARTE.prefixes == frozenset({"s", "sm"})
+    assert dict(KARTE.words) == {"sushi": ("s", "sm")}
+    assert CardFormat().prefixes == frozenset()
+
+
+def test_kategoriewort_nur_ohne_fremde_praefixe():
+    """Traegt ein Praefix zwei Kategorien, ist kein Kategoriewort eindeutig."""
+    karte = CardFormat.from_items([("m1", "Menü"), ("m2", "Menü Sushi")])
+    assert karte.prefixes == frozenset({"m"})
+    assert dict(karte.words) == {}
+
+
+def test_kategoriewort_nur_ohne_nummern_ohne_praefix():
+    """Codex PR #155: steht in der Kategorie auch eine Nummer ohne Praefix,
+    gibt es kein Kategoriewort. Sonst faende "Sushi zwölf" die 12 einer
+    anderen Kategorie (Suppen), sobald S12 fehlt."""
+    karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi"), ("12", "Suppen")])
+    assert dict(karte.words) == {}
+    ref, _ = sole_item_number("Sushi zwölf", karte)
+    assert ref is None or "12" not in ref.cards
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("S12", ("s12",)),
+        ("s12", ("s12",)),
+        ("Nummer S12", ("s12",)),
+        ("S 12", ("s12",)),
+        ("S zwölf", ("s12",)),
+        ("Es zwölf", ("s12",)),
+        ("ess zwölf", ("s12",)),
+        ("Sushi zwölf", ("s12", "sm12")),
+        ("Nummer Sushi zwölf", ("s12", "sm12")),
+        ("SM eins", ("sm1",)),
+        ("Es Em eins", ("sm1",)),
+        ("S M 1", ("sm1",)),
+        ("zweimal SM1", ("sm1",)),
+        ("zwei S zwölf", ("s12",)),
+        ("fünfundzwanzig G", ("25g",)),
+        ("25 g", ("25g",)),
+        ("25G", ("25g",)),
+        ("Nummer 25g", ("25g",)),
+        ("die 12", ("12",)),
+    ],
+)
+def test_praefix_und_endung_g(text, cards):
+    ref, unclear = sole_item_number(text, KARTE)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == cards
+
+
+def test_praefixnummer_behaelt_wert_und_marker():
+    ref, _ = sole_item_number("Nummer S zwölf", KARTE)
+    assert ref is not None and ref.value == 12 and ref.marked and ref.text == "s12"
+    ref, _ = sole_item_number("Sushi zwölf", KARTE)
+    assert ref is not None and ref.text == "s12 oder sm12" and not ref.marked
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["S12 oder S13", "Nummer S12 oder 13", "Sushi Nummer zwölf", "S12, nein, S13"],
+)
+def test_praefixnummer_unklar(text):
+    assert sole_item_number(text, KARTE) == (None, True)
+
+
+@pytest.mark.parametrize("text", ["Sushi", "zwei Sushi", "S 12 Stück"])
+def test_praefix_ohne_nummernsatz(text):
+    """Ohne reine Nummer entscheidet die Namenssuche, wie bei "23 Lachs"."""
+    assert sole_item_number(text, KARTE) == (None, False)
+
+
+@pytest.mark.parametrize("text", ["S12", "S zwölf", "Es zwölf", "Sushi zwölf"])
+def test_ohne_praefix_in_der_karte_keine_praefixnummer(text):
+    """Eine Karte ohne S kennt kein S12: kein Treffer auf die 12 (Regel 2)."""
+    ref, _ = sole_item_number(text)
+    assert ref is None or ref.text != "12"
+
+
+def test_nummer_23g_ist_nie_die_23():
+    """Codex PR #117: g ist jetzt Kartenendung, bleibt aber 23g, nie 23."""
+    for text in ["Nummer 23g", "die 23 g", "Nummer dreiundzwanzig g"]:
+        ref, unclear = sole_item_number(text, KARTE)
+        assert not unclear and ref is not None and ref.cards == ("23g",)
+
+
+def test_unbekanntes_praefix_nach_marker_bleibt_ungueltig():
+    ref, _ = sole_item_number("Nummer A12", KARTE)
+    assert ref is not None and not ref.valid and ref.text == "a12"
+
+
+@pytest.mark.parametrize(
+    ("card", "canonical"),
+    [("07", "7"), ("S07", "s7"), ("sm01", "sm1"), ("0", "0"), ("25G", "25g")],
+)
+def test_canonical_card_mit_praefix(card, canonical):
+    assert canonical_card(card) == canonical
+
+
+def test_find_item_number_ref_mit_praefix():
+    ref = find_item_number_ref("S zwölf", KARTE)
+    assert ref is not None and ref.text == "s12" and ref.valid
+    # Die blanke Zahl waere Gericht 12, nicht S12 (Review PR #155).
+    assert find_item_number("S zwölf", KARTE) is None
+    assert find_item_number("Sushi zwölf", KARTE) is None
+    assert find_item_number("Nummer 23", KARTE) == 23
+
+
+# --- Review PR #155 -----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text", ["Dann nehme ich es zwei", "ja genau, es zwei", "ich hole es 18 ab"]
+)
+def test_pronomen_es_ist_kein_praefix(text):
+    """ "es" als Pronomen vor einer Zahl ist nicht S (Regel 2)."""
+    ref, _ = sole_item_number(text, KARTE)
+    assert ref is None or not ref.text.startswith("s")
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Es zwölf", "und Es zwölf", "zweimal Es zwölf", "Nummer es zwölf", "die Es zwölf"],
+)
+def test_buchstabiertes_es_am_satzanfang_bleibt_s(text):
+    ref, unclear = sole_item_number(text, KARTE)
+    assert not unclear and ref is not None and ref.cards == ("s12",)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["die 23 S12", "23 S12", "die 23 S zwölf", "2 S12", "S12 Lachs", "Pho Bo S12"],
+)
+def test_praefixnummer_neben_zahl_oder_name_fragt_nach(text):
+    """Eine Zahl vor dem Praefix ist nicht stillschweigend die Menge, und neben
+    einem Namen ist eine Praefixnummer keine Menge - also nachfragen."""
+    assert sole_item_number(text, KARTE) == (None, True)
+
+
+@pytest.mark.parametrize("text", ["Nummer n 23", "Nummer, n 23"])
+def test_umgangssprachliches_n_ist_kein_praefix(text):
+    """'n (einen) hinter dem Marker ist keine Nummer "n23"."""
+    assert sole_item_number(text, KARTE) == (None, True)
+
+
+def test_einheit_g_ohne_marker_ist_keine_nummer_fuer_die_leiter():
+    assert find_item_number_ref("die 25g bitte").cards == ("25g",)
+
+
+def test_kartenformat_ist_hashbar():
+    assert hash(KARTE) == hash(
+        CardFormat.from_items(
+            [
+                ("s1", "Sushi"),
+                ("sm1", "Sushi"),
+                ("s12", "Sushi"),
+                ("12", "Suppen"),
+                ("25", "Hauptspeisen"),
+                ("25g", "Hauptspeisen"),
+            ]
+        )
+    )
+
+
+def test_canonical_card_leer_ist_null():
+    assert canonical_card("") == "0"
+    assert canonical_card("000") == "0"
+
+
+def test_find_item_number_mit_kandidaten_ist_keine_blanke_zahl():
+    """Codex PR #155: "Sushi 99" mit den Kandidaten S99 und SM99 ist keine
+    blanke 99 - welche es ist, entscheidet die Suche an der Karte."""
+    karte = CardFormat.from_items([("s1", "Sushi"), ("sm1", "Sushi")])
+    assert find_item_number("Sushi 99", karte) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "card"), [("Nummer N12", "n12"), ("Nummer S12", "s12")]
+)
+def test_geklebter_klitik_buchstabe_ist_praefix(text, card):
+    """Codex PR #155: 'n und 's sind nur abgesetzt ein Wort. Geklebt an die
+    Ziffer ("Nummer N12") ist es ein Praefix, das die Karte nicht hat."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid and ref.text == card
+
+
+@pytest.mark.parametrize("text", ["Nummer ZZ12", "Nummer so23"])
+def test_geklebtes_praefix_aus_zwei_buchstaben_ist_nummer(text):
+    """Codex PR #155: geklebt an die Ziffer ist jedes Praefix, das der Import
+    erlaubt, eine genannte Nummer - nie die blanke Zahl, nie eine Rueckfrage."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and not ref.valid
+    assert find_item_number(text) is None
+
+
+@pytest.mark.parametrize("text", ["ES12", "Nummer ES12", "Nummer EM1"])
+def test_geklebter_buchstabenname_ist_kein_buchstabiertes_praefix(text):
+    """Codex PR #155: "ES12" geklebt ist das Praefix ES, nicht "Es zwölf" -
+    nie still S12 (oder SM1 aus "EM1")."""
+    ref, _ = sole_item_number(text, KARTE)
+    assert ref is None or (not ref.valid and ref.cards[0] in ("es12", "em1"))
+
+
+# --- Code-Review PR #155 ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text", ["Ich haette gern Es zwoelf", "hallo, Es zwoelf", "ich moechte Es zwoelf"]
+)
+def test_buchstabiertes_es_nach_satzanfang_mit_fuellwort(text):
+    ref, unclear = sole_item_number(text, KARTE)
+    assert not unclear and ref is not None and ref.cards == ("s12",)
+
+
+def test_ungueltige_nummer_als_wort_mit_leerzeichen():
+    """ "Nummer S tausend" wird vorgelesen: "s tausend", nicht "stausend"."""
+    ref, _ = sole_item_number("Nummer S tausend", KARTE)
+    assert ref is not None and ref.text == "s tausend"
+
+
+@pytest.mark.parametrize("prefix", ["ja", "es", "so", "um", "zu", "hm"])
+def test_gesprochene_woerter_sind_reservierte_praefixe(prefix):
+    assert reserved_prefix(prefix)
+
+
+def test_praefix_s_bleibt_erlaubt():
+    assert not reserved_prefix("s") and not reserved_prefix("sm")

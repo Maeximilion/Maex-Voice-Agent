@@ -29,7 +29,7 @@ from api.core.errors import NotFound
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.items import is_sold_out
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import CARD_PARTS, canonical_card
 from api.models import AuditLog, MenuItem
 
 ACTOR_TABLET = "gui:tablet"
@@ -47,10 +47,17 @@ class DishSwitch:
     sold_out: bool
 
 
-def number_key(number: str) -> tuple[int, str]:
-    """Kartenreihenfolge: 2 vor 12, 23 vor 23a. Nummern sind Text (docs/14)."""
-    match = re.match(r"\d+", number)
-    return (int(match.group()), number[match.end() :]) if match else (10**9, number)
+# Eine Nummer im Suchfeld: Ziffer vorn, auch hinter einem Praefix ("s1", T-4.12).
+_NUMBER_START = re.compile(r"[a-z]{0,2}\d")
+
+
+def number_key(number: str) -> tuple[str, int, str]:
+    """Kartenreihenfolge: 2 vor 12, 23 vor 23a, Nummern ohne Praefix vor S2 vor
+    S12 vor SM1. Nummern sind Text (docs/14)."""
+    match = CARD_PARTS.fullmatch(number.lower())
+    if match is None:
+        return ("\uffff", 10**9, number)
+    return (match.group(1), int(match.group(2)), match.group(3))
 
 
 def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
@@ -68,9 +75,9 @@ def _matches(item: MenuItem, query: str) -> bool:
     if not said:
         return True
     # Eine Ziffer vorn kann auch ein Name sein ("8 Kostbarkeiten", Codex PR #146).
-    by_number = said[0].isdigit() and canonical_card(item.number).startswith(
-        canonical_card(said)
-    )
+    by_number = bool(_NUMBER_START.match(said.lower())) and canonical_card(
+        item.number
+    ).startswith(canonical_card(said))
     if by_number:
         return True
     # normalize_query streicht Zahlen: "8 Kostbar" wird "kostbar", "2" wird leer

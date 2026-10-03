@@ -18,7 +18,7 @@
 {"say": "drei Portionen von der 23", "expect": "23", "why": "Mengenwort und Praeposition"}
 {"say": "einmal die Nummer dreiundzwanzig", "expect": "23", "why": "voller Satz, eine Nummer"}
 {"say": "Ich hätte gern die 23, bitte", "expect": "23", "why": "Fuellwoerter rundherum"}
-{"say": "Nummer 23g", "expect": "!23g", "why": "Endung, die es auf keiner Karte gibt"}
+{"say": "Nummer 23g", "expect": "23g", "why": "g ist eine Kartenendung (Kasse 25G bis 60G, T-4.12); ob es 23g gibt, entscheidet die Karte, nie still die 23"}
 {"say": "Nummer 23x", "expect": "!23x", "why": "x ist hier keine Menge, sondern eine falsche Endung"}
 {"say": "Nummer 23 x", "expect": "!23x", "why": "dasselbe abgesetzt gesprochen"}
 {"say": "Nummer 1000", "expect": "!1000", "why": "ueber dem Kartenbereich"}
@@ -52,7 +52,7 @@
 {"say": "die knusprige Ente", "expect": "name", "why": "gar keine Zahl"}
 {"say": "Nummer weiß ich nicht", "expect": "name", "why": "Marker ohne Zahl dahinter"}
 {"say": "7up", "expect": "name", "why": "Alias mit Ziffer, keine Kartenform"}
-{"say": "die 23g", "expect": "name", "why": "ohne Marker bleibt die falsche Endung Text"}
+{"say": "die 23g", "expect": "23g", "why": "g ist Kartenendung wie a (T-4.12), also wie die 23a"}
 {"say": "A12", "expect": "name", "why": "ohne Marker ein moeglicher Alias"}
 {"say": "die A12", "expect": "name", "why": "ohne Marker ein moeglicher Alias"}
 {"say": "Reis oder Nudeln", "expect": "name", "why": "Gerichtname darf ein oder enthalten"}
@@ -79,8 +79,8 @@
 {"say": "einmal 7up bitte", "expect": "name", "why": "Alias mit Ziffer im Satz"}
 {"say": "das ist 5g Zucker", "expect": "name", "why": "Einheit hinter einer Zahl, keine Kartennummer"}
 {"say": "Nummer so 23", "expect": "?", "why": "kurzes Alltagswort, kein Kartenbuchstabe"}
-{"say": "Nummer so23", "expect": "?", "why": "dasselbe geklebt"}
-{"say": "Nummer V12", "expect": "?", "why": "Buchstabe ausserhalb a-f, keine Kartenform"}
+{"say": "Nummer so23", "expect": "!so23", "why": "geklebt ist es eine genannte Nummer: der Import erlaubt zwei Buchstaben davor (T-4.12), die Karte hat sie nicht (Codex PR #155)"}
+{"say": "Nummer V12", "expect": "!v12", "why": "Praefix V ist erlaubt (T-4.12), aber nicht auf dieser Karte: nicht vorhanden statt Rueckfrage (Codex PR #155)"}
 {"say": "Nummer C3", "expect": "!c3", "why": "Kartenbuchstabe a-f vor der Ziffer"}
 {"say": "und die 24", "expect": "24", "why": "und am Satzanfang fuehrt die Bestellung fort, verbindet keine zweite Zahl (T-5.2)"}
 {"say": "Und noch die 24.", "expect": "24", "why": "naechste Position im Folgesatz (T-5.2, abholung Positionen nacheinander)"}
@@ -115,3 +115,67 @@
 {"say": "Guten Tag, die 13", "expect": "13", "why": "Begruessung vor der Bestellung"}
 {"say": "Guten Abend, die 13", "expect": "13", "why": "Begruessung am Abend"}
 {"say": "ich würde gern die 13 bestellen", "expect": "13", "why": "bestellen sagt nichts ueber das Gericht"}
+{"say": "Nummer 23h", "expect": "!23h", "why": "Endung hinter g gibt es auf keiner Karte"}
+{"say": "Nummer 23 h", "expect": "!23h", "why": "dasselbe abgesetzt gesprochen"}
+{"say": "die 23h", "expect": "name", "why": "ohne Marker bleibt die falsche Endung Text"}
+{"say": "25G", "expect": "25g", "why": "Kassenschreibweise mit grossem G (T-4.12)"}
+{"say": "25 g", "expect": "25g", "why": "g abgesetzt aus der Erkennung (T-4.12)"}
+{"say": "fünfundzwanzig G", "expect": "25g", "why": "Zahlwort mit Endung g (T-4.12)"}
+{"say": "Nummer fünfundzwanzig g", "expect": "25g", "why": "mit Marker (T-4.12)"}
+{"say": "S12", "expect": "s12", "why": "Kartenpraefix S aus der Karte (Sushi, T-4.12)"}
+{"say": "Nummer S12", "expect": "s12", "why": "Praefix mit Marker (T-4.12)"}
+{"say": "S 12", "expect": "s12", "why": "Praefix abgesetzt (T-4.12)"}
+{"say": "S zwölf", "expect": "s12", "why": "Praefix und Zahlwort (T-4.12)"}
+{"say": "Es zwölf", "expect": "s12", "why": "Buchstabe S, wie die Erkennung ihn schreibt (T-4.12)"}
+{"say": "die S zwölf bitte", "expect": "s12", "why": "Fuellwoerter rundherum (T-4.12)"}
+{"say": "zweimal S12", "expect": "s12", "why": "Menge vor der Praefixnummer (T-4.12)"}
+{"say": "zwei S zwölf", "expect": "s12", "why": "Zahlwort vor dem Praefix ist die Menge, wie zwei Nummer 23 (T-4.12)"}
+{"say": "Sushi zwölf", "expect": "s12|sm12", "why": "Kategoriewort Sushi traegt S und SM; welche es gibt, sagt die Karte (T-4.12)"}
+{"say": "SM eins", "expect": "sm1", "why": "zweibuchstabiges Praefix (T-4.12)"}
+{"say": "SM1", "expect": "sm1", "why": "zusammengeschrieben (T-4.12)"}
+{"say": "Nummer SM 1", "expect": "sm1", "why": "mit Marker, abgesetzt (T-4.12)"}
+{"say": "Es Em eins", "expect": "sm1", "why": "Buchstaben einzeln gesprochen (T-4.12)"}
+{"say": "S12 oder S13", "expect": "?", "why": "zwei Praefixnummern, nicht entscheidbar (T-4.12)"}
+{"say": "Nummer S12 oder 13", "expect": "?", "why": "zweite Nummer als Alternative (T-4.12)"}
+{"say": "Sushi Nummer zwölf", "expect": "?", "why": "Kategoriewort vor dem Marker: S12 oder 12? nachfragen (T-4.12)"}
+{"say": "Sushi", "expect": "name", "why": "Kategoriewort ohne Zahl ist Namenssuche (T-4.12)"}
+{"say": "zwei Sushi", "expect": "name", "why": "Menge vor dem Kategoriewort, keine Nummer (T-4.12)"}
+{"say": "Nummer X12", "expect": "!x12", "why": "einzelner Buchstabe ohne Praefix auf der Karte: genannte Nummer, die es nicht gibt (Codex PR #155)"}
+{"say": "Nummer Z12", "expect": "!z12", "why": "Import erlaubt jedes Praefix, die Suche meldet ein unbekanntes als nicht vorhanden (Codex PR #155)"}
+{"say": "Nummer Z 12", "expect": "!z12", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer H zwölf", "expect": "!h12", "why": "Buchstabe h bis z vor Zahlwort (Codex PR #155)"}
+{"say": "Dann nehme ich es zwei", "expect": "name", "why": "es als Pronomen ist kein Praefix S (Review PR #155)"}
+{"say": "die 23 S12", "expect": "?", "why": "Zahl vor der Praefixnummer ist hier keine Menge, zwei Nummern (Review PR #155)"}
+{"say": "S12 Lachs", "expect": "?", "why": "Praefixnummer ist nie Menge, neben einem Namen nachfragen (Review PR #155)"}
+{"say": "Nummer n 23", "expect": "?", "why": "umgangssprachliches n (einen) ist kein Praefix (Review PR #155)"}
+{"say": "Nummer ZZ12", "expect": "!zz12", "why": "geklebtes Praefix aus zwei Buchstaben ausserhalb a-g, nicht auf der Karte (Codex PR #155)"}
+{"say": "Nummer zz 12", "expect": "?", "why": "abgesetzt bleibt es ein Wort neben der Nummer (Codex PR #117)"}
+{"say": "Nummer Z12g", "expect": "!z12g", "why": "unbekanntes Praefix mit Endung: die ganze genannte Nummer, nicht Rest g (Codex PR #155)"}
+{"say": "Nummer Z 12 g", "expect": "!z12g", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer Z12h", "expect": "!z12h", "why": "unbekanntes Praefix mit falscher Endung: ganze genannte Nummer (Codex PR #155)"}
+{"say": "Nummer ZZ12h", "expect": "!zz12h", "why": "dasselbe mit zwei Buchstaben (Codex PR #155)"}
+{"say": "Nummer Z 12 h", "expect": "!z12h", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer S 1000", "expect": "!s1000", "why": "bekanntes Praefix, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "Nummer S tausend", "expect": "!s tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer JA12", "expect": "!ja12", "why": "geklebtes Praefix, das zugleich Fuellwort ist: nie still die 12 (Codex PR #155)"}
+{"say": "Nummer HM12", "expect": "!hm12", "why": "geklebtes Praefix, das zugleich Zoegerlaut ist (Codex PR #155)"}
+{"say": "Nummer ja 12", "expect": "12", "why": "abgesetzt bleibt ja ein Fuellwort"}
+{"say": "JA12", "expect": "name", "why": "ohne Marker: geklebte Buchstaben sind kein Fuellwort, nie still die 12 (Codex PR #155)"}
+{"say": "die HM12", "expect": "name", "why": "dasselbe mit Artikel (Codex PR #155)"}
+{"say": "Nummer S1000g", "expect": "!s1000g", "why": "Endung hinter zu grosser Praefixnummer gehoert dazu (Codex PR #155)"}
+{"say": "Nummer S 1000g", "expect": "!s1000g", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer S tausend g", "expect": "!s tausend g", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer 1000g", "expect": "!1000g", "why": "ohne Praefix dasselbe: Endung gehoert zur genannten Nummer"}
+{"say": "Nummer Z 1000", "expect": "!z1000", "why": "unbekanntes Praefix vor zu grosser Zahl: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "Nummer Z tausend", "expect": "!z tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "S1000", "expect": "!s1000", "why": "bekanntes Praefix ohne Marker, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "S 1000", "expect": "!s1000", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "die S tausend bitte", "expect": "!s tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Sushi 1000", "expect": "!s1000 oder sm1000", "why": "Kategoriewort vor zu grosser Zahl: genannte Nummer (Codex PR #155)"}
+{"say": "S1000 Lachs", "expect": "?", "why": "zu grosse Praefixnummer neben einem Namen: nachfragen (Codex PR #155)"}
+{"say": "Ich haette gern Es zwoelf", "expect": "s12", "why": "Fuellwoerter am Satzanfang, Es ist der Buchstabe (Code-Review PR #155)"}
+{"say": "S12 und Pho Bo", "expect": "name", "why": "mit und getrennt zwei Positionen, die Suche zerlegt (Code-Review PR #155)"}
+{"say": "Nummer Z12zz", "expect": "!z12zz", "why": "geklebte Kartennummer als Ganzes, auch mit Endung ausserhalb a bis g (Codex PR #155)"}
+{"say": "Nummer Z1000zz", "expect": "!z1000zz", "why": "dasselbe ueber dem Kartenbereich (Codex PR #155)"}
+{"say": "Nummer 1000zz", "expect": "!1000zz", "why": "ohne Praefix dasselbe (Codex PR #155)"}
+{"say": "Nummer S12zz", "expect": "!s12zz", "why": "bekanntes Praefix, falsche geklebte Endung: genannt, nicht vorhanden (Code-Review PR #155)"}

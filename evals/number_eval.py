@@ -19,6 +19,12 @@ Erwartungswerte in `cases/nummern.jsonl`:
               die Suche weicht nie auf aehnliche Namen aus (CLAUDE.md §2 Regel 2)
     "?"       nicht eindeutig -> ambiguous mit der Frage nach der einen Nummer
     "name"    kein Nummernsatz -> Alias- und Trigram-Suche entscheiden
+    "s12|sm12" mehrere Kartennummern moeglich ("Sushi zwoelf"), die Suche
+              schlaegt alle nach; welche es gibt, sagt die Karte
+
+Welche Praefixe eine Nummer tragen kann ("S12", "SM1"), steht nicht im Code,
+sondern folgt aus den Nummern der Karte (T-4.12). Dieser Satz nimmt dafuer die
+Evalkarte `evals/menu/menu_items.csv`, dieselbe wie die Gespraechs-Evals.
 
 Aufruf:
 
@@ -34,18 +40,33 @@ rote Fall, dann der Fix).
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from api.domain.menu.numberwords import (
+    CardFormat,
     find_item_number,
     find_item_number_ref,
     sole_item_number,
 )
 
 CASES = Path(__file__).parent / "cases" / "nummern.jsonl"
+MENU_ITEMS = Path(__file__).parent / "menu" / "menu_items.csv"
+
+
+def eval_card(path: Path = MENU_ITEMS) -> CardFormat:
+    """Kartenformat der Evalkarte: Praefixe und Kategoriewoerter aus den Nummern."""
+    with path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter=";"))
+    return CardFormat.from_items(
+        (r["number"], r["category"]) for r in rows if r.get("active", "ja") != "nein"
+    )
+
+
+CARD = eval_card()
 
 
 @dataclass(frozen=True)
@@ -69,12 +90,12 @@ def load(path: Path = CASES) -> list[Case]:
 
 def resolve(say: str) -> str:
     """Das Ergebnis von `sole_item_number` in der Sprache der Erwartungswerte."""
-    ref, unclear = sole_item_number(say)
+    ref, unclear = sole_item_number(say, CARD)
     if unclear:
         return "?"
     if ref is None:
         return "name"
-    return ref.text if ref.valid else f"!{ref.text}"
+    return "|".join(ref.cards) if ref.valid else f"!{ref.text}"
 
 
 def disagreement(say: str) -> str | None:
@@ -87,12 +108,12 @@ def disagreement(say: str) -> str | None:
     Genau so war "Nummer A12" in der Suche richtig und ueber `find_item_number`
     Gericht 12 (Codex PR #117, P2).
     """
-    ref, unclear = sole_item_number(say)
-    other = find_item_number_ref(say)
+    ref, unclear = sole_item_number(say, CARD)
+    other = find_item_number_ref(say, CARD)
     if ref is not None and not ref.valid:
         # Die Suche kennt die Nummer nicht. Dann darf sie auf dem anderen Weg
         # auch keine Zahl werden.
-        wert = find_item_number(say)
+        wert = find_item_number(say, CARD)
         if wert is not None:
             return f"ungueltig als {ref.text!r}, aber find_item_number gibt {wert}"
         return None

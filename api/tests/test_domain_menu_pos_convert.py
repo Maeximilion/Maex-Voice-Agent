@@ -179,14 +179,17 @@ def test_nummern_die_die_suche_nicht_versteht_und_dubletten():
         [
             artikel("S12", "Maki"),
             artikel("25G", "Chop Suey"),
+            artikel("35AE", "Kombination"),
+            artikel("X12", "Praefix wie Menge"),
             artikel("35b", "A"),
             artikel("35B", "B"),
             artikel("36", "C"),
         ]
     )
 
-    assert [i["number"] for i in result.menu] == ["36"]
-    assert any("S12, 25G" in e and "2 Gerichte" in e for e in result.errors)
+    # S12 und 25G versteht die Suche seit T-4.12, 35AE und X12 nicht.
+    assert [i["number"] for i in result.menu] == ["s12", "25g", "36"]
+    assert any("35AE, X12" in e and "2 Gerichte" in e for e in result.errors)
     assert sum("doppelt" in e for e in result.errors) == 2
 
 

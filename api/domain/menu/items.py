@@ -12,6 +12,7 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.domain.menu.numberwords import CardFormat
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
 
@@ -29,6 +30,22 @@ def option_key(text: str) -> str:
 def is_sold_out(item: MenuItem, now: datetime) -> bool:
     """Ausverkauft bis `sold_out_until` (docs/06 §3). Kein Wert heisst verfuegbar."""
     return item.sold_out_until is not None and item.sold_out_until > now
+
+
+def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:
+    """Praefixe und Kategoriewoerter der aktiven Karte (T-4.12).
+
+    Welche Buchstaben vor einer Nummer stehen koennen ("S12", "SM1"), folgt aus
+    den Nummern in der Datenbank, nie aus dem Code (CLAUDE.md §2 Regel 1). Eine
+    Abfrage ueber Nummer und Kategorie; bei einer Karte von ein paar hundert
+    Zeilen ist das ein Index-Scan.
+    """
+    rows = session.execute(
+        select(MenuItem.number, MenuItem.category).where(
+            MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True)
+        )
+    )
+    return CardFormat.from_items((number, category) for number, category in rows)
 
 
 def option_groups(

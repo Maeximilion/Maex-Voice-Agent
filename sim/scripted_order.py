@@ -14,7 +14,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from api.agent.llm import LLMTurn, ToolCall
+from api.domain.menu.importer import is_card_number
 from api.domain.menu.numberwords import (
+    ARTICLES,
+    CardFormat,
     canonical_card,
     find_quantity,
     fold,
@@ -369,11 +372,13 @@ class PickupScript:
         # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
         # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
         # #133, P2).
-        ref, _ = sole_item_number(text)
+        # Praefixe der angebotenen Nummern ("S1 oder SM1?" - "SM eins", T-4.12).
+        offered = CardFormat.from_items((h["number"], "") for h in self._suggestions)
+        ref, _ = sole_item_number(text, offered)
         if ref is not None:
-            card = canonical_card(ref.text)
+            cards = {canonical_card(c) for c in ref.cards}
             by_number = [
-                h for h in self._suggestions if canonical_card(h["number"]) == card
+                h for h in self._suggestions if canonical_card(h["number"]) in cards
             ]
             if len(by_number) == 1:
                 return by_number[0]
@@ -541,10 +546,33 @@ def _wish_sentence(
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
+# Eine Kartennummer mit Buchstaben im Satz ("S12", "SM1", "25g", "S0001",
+# T-4.12). Das Text-Telefon kennt die Karte nicht, darum jede Form, die der
+# Import erlaubt (importer.is_card_number, dieselbe Grammatik),
+# und ein Zahlwort am Ende der Antwort ("S zwölf", "Sushi zwölf bitte"). Ein
+# Zahlwort vor einem Wort gehoert zur Zutat ("Fünf-Gewürze-Pulver", "zwei
+# Sachen: Milch") (Codex PR #155).
+_AFTER_NUMBER = frozenset({"bitte", "danke"})
+# Zusatzstoffe ("E621", "E220") haben die Form einer Kartennummer, sind auf
+# "Wogegen?" aber die Zutat (Code-Review PR #155).
+_ADDITIVE = re.compile(r"e\d{3,4}[a-z]?")
+
+
+def _ends_with_number(words: list[str]) -> bool:
+    """Endet die Antwort mit einem Zahlwort, hoechstens "bitte" dahinter?"""
+    rest = [w for w in words if w not in _AFTER_NUMBER]
+    return (
+        bool(rest)
+        and rest[-1] not in ARTICLES
+        and parse_cardinal(fold(rest[-1])) is not None
+    )
+
+
 def _orders_something(text: str) -> bool:
     words = re.findall(r"[^\W_]+", text.lower())
     return (
-        any(w.isdigit() for w in words)
+        any(is_card_number(w) and not _ADDITIVE.fullmatch(w) for w in words)
+        or _ends_with_number(words)
         or sole_item_number(text)[0] is not None
         or (bool(words) and words[0] in _ORDER_LEADS)
     )

@@ -34,7 +34,12 @@ from sqlalchemy.orm import Session
 from api.core.time import utcnow
 from api.domain.menu.items import option_key
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import (
+    CARD_PARTS,
+    CARD_SUFFIXES,
+    canonical_card,
+    reserved_prefix,
+)
 from api.models import AuditLog, ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.menu import ALLERGEN_CODES
 
@@ -65,10 +70,15 @@ _COLUMNS = {
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 # Kartennummern, die search_menu eindeutig auflöst: höchstens drei Stellen ohne
-# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis f
-# (numberwords._SUFFIXES). Geprüft wird die klein geschriebene Nummer: 23a und
-# 23A wären sonst zwei Gerichte, die die Suche nie auseinanderhält.
-_CARD_NUMBER = re.compile(r"0*\d{1,3}[a-f]?")
+# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis g
+# dahinter (numberwords._SUFFIXES) und ein Praefix aus ein oder zwei Buchstaben
+# davor ("s12", "sm1", T-4.12). Welche Praefixe es gibt, liest die Suche aus
+# der Karte (numberwords.CardFormat). Geprüft wird die klein geschriebene
+# Nummer: 23a und 23A wären sonst zwei Gerichte, die die Suche nie
+# auseinanderhält.
+_CARD_NUMBER = re.compile(
+    r"(?:[a-z]{1,2})?0*\d{1,3}[" + "".join(sorted(CARD_SUFFIXES)) + "]?"
+)
 # Mehr als dieser Anteil der aktiven Karte fällt nur mit ausdrücklichem
 # Schalter weg: ein kaputter Export soll nie die Karte abschalten (T-4.11).
 MAX_DEACTIVATE_SHARE = 0.5
@@ -80,8 +90,14 @@ class MassDeactivationError(ValueError):
 
 
 def is_card_number(number: str) -> bool:
-    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen."""
-    return _CARD_NUMBER.fullmatch(number) is not None
+    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen.
+
+    Ein Praefix, das numberwords schon als Menge oder Marker liest ("x12",
+    "st1", "nr5"), versteht die Suche nicht eindeutig (Review PR #155)."""
+    if _CARD_NUMBER.fullmatch(number) is None:
+        return False
+    parts = CARD_PARTS.fullmatch(number)
+    return parts is None or not reserved_prefix(parts.group(1))
 
 
 @dataclass(frozen=True)
@@ -282,12 +298,23 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
+        parts = CARD_PARTS.fullmatch(number)
+        if parts is not None and reserved_prefix(parts.group(1)):
+            # Sonst sagte die Meldung "bis zu zwei Buchstaben davor" und der
+            # Betreiber saehe nicht, was falsch ist (Code-Review PR #155).
+            plan.errors.append(
+                f"{where}: Kartennummer „{row['number']}“ hat das Praefix "
+                f"„{parts.group(1)}“, das am Telefon schon etwas anderes heisst "
+                "(Menge, Marker oder gesprochenes Wort wie x, st, nr, no, ja, es)"
+            )
+            continue
         if not is_card_number(number):
             # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
             # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
             plan.errors.append(
                 f"{where}: Kartennummer „{row['number']}“ versteht die Suche nicht "
-                "(erlaubt: bis 999, optional ein Buchstabe a bis f, z. B. 23 oder 23a)"
+                "(erlaubt: bis 999, optional ein Buchstabe a bis g dahinter und bis "
+                "zu zwei Buchstaben davor, z. B. 23, 23a, 25g, s12 oder sm1)"
             )
             continue
         # Dublette nach der Form, in der die Suche vergleicht: "7" und "07" sind

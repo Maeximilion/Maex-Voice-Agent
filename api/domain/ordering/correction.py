@@ -165,7 +165,7 @@ def find_by_number(
     text = number.strip().lower()
     if not text:
         return None
-    items = _by_number(session, tenant_id, text)
+    items = _by_number(session, tenant_id, (text,))
     return items[0] if len(items) == 1 else None
 
 

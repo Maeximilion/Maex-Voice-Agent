@@ -26,6 +26,7 @@ from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu import get_item_details, search_menu
+from api.domain.menu.items import card_format
 from api.domain.menu.search import (
     CLEAR_MATCHES,
     allergy_question,
@@ -213,11 +214,19 @@ def _search_menu(
     Ein Teil ohne Treffer bleibt mit error_code und say sichtbar, statt still
     wegzufallen."""
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    parts = position_parts(session, tenant_id, req.query, now=now)
+    # Die Karte einmal je Werkzeugaufruf lesen, nicht je Teil (Code-Review PR #155).
+    card = card_format(session, tenant_id)
+    parts = position_parts(session, tenant_id, req.query, now=now, card=card)
     if len(parts) <= 1:
         # Schon zerlegt: search_menu prueft nicht noch einmal (Review PR #139).
         found = search_menu(
-            session, tenant_id, req.query, req.max_results, now=now, split_check=False
+            session,
+            tenant_id,
+            req.query,
+            req.max_results,
+            now=now,
+            split_check=False,
+            card=card,
         )
         if _repeats(found):
             echo = say_understood(
@@ -237,7 +246,9 @@ def _search_menu(
     allergies: list[str] = []
     for part in parts:
         try:
-            found = search_menu(session, tenant_id, part, req.max_results, now=now)
+            found = search_menu(
+                session, tenant_id, part, req.max_results, now=now, card=card
+            )
         except AppError as exc:
             positions.append(
                 PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)

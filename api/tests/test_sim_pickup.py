@@ -1244,3 +1244,36 @@ def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
     )
     [order] = orders(session)
     assert [p[0] for p in positions(session, order)] == ["24"]
+
+
+@pytest.mark.parametrize(
+    "antwort",
+    ["S12.", "SM1", "die 25g", "S0001", "S zwölf.", "SM eins.", "Sushi zwölf."],
+)
+def test_praefixnummer_ist_keine_zutat(session, tenant, antwort):
+    """Codex PR #155: auf "Wogegen?" ist eine Kartennummer mit Buchstaben eine
+    Bestellung, keine Zutat - kein "Keine S12" an die Kueche."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("antwort", ["Fünf-Gewürze-Pulver.", "Zwei Sachen: Milch."])
+def test_zutat_mit_zahlwort_ist_keine_bestellung(session, tenant, antwort):
+    """Codex PR #155: ein Zahlwort in einer Zutat macht die Antwort nicht zur
+    Bestellung - der Hinweis wird notiert, die Frage nicht wiederholt."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
+    assert "Wogegen" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert len(_notes(session, order)) == 1
+
+
+def test_zusatzstoff_ist_eine_zutat(session, tenant):
+    """Code-Review PR #155: "E621" auf "Wogegen?" ist ein Zusatzstoff, keine
+    Kartennummer - die Allergie wird notiert."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", "Gegen E621.")
+    [order] = orders(session)
+    assert any("E621" in (note or "") for note in _notes(session, order))
