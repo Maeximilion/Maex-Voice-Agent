@@ -593,12 +593,13 @@ def _card_letters(token: str) -> bool:
 # Einzelbuchstaben, die die Erkennung fuer verschluckte Silben ausgibt: 'n
 # (einen), 's (es, das). Abgesetzt hinter "Nummer" sind sie ein Wort, kein
 # Praefix einer nicht vorhandenen Nummer (Review PR #155); an die Ziffer
-# geklebt ("Nummer N12") sind sie ein Praefix (Codex PR #155).
+# geklebt ("Nummer N12") sind sie ein Praefix (`_glued_card`).
 _CLITICS = frozenset({"n", "s"})
 
 
-def _prefix_letters(token: str, glued: bool = False) -> bool:
-    """Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix sein koennen.
+def _prefix_letters(token: str) -> bool:
+    """Abgesetzte Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix
+    sein koennen. Geklebte ("Nummer ZZ12") liest `_glued_card` als Ganzes.
 
     Jeder einzelne Buchstabe: der Import erlaubt jedes Praefix (T-4.12), und
     "Nummer Z12" ist dann eine genannte Nummer, die es nicht gibt - `not_found`
@@ -607,10 +608,6 @@ def _prefix_letters(token: str, glued: bool = False) -> bool:
     der Nummer und damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
     hat `CardFormat` vorher schon gelesen.
     """
-    if glued:
-        # An die Ziffer geklebt ("Nummer ZZ12", "Nummer so23") ist jedes
-        # Praefix, das der Import erlaubt, eine genannte Nummer (Codex PR #155).
-        return token.isalpha() and len(token) <= _MAX_CARD_LETTERS
     single = len(token) == 1 and token.isalpha() and token not in _CLITICS
     return single or _card_letters(token)
 
@@ -756,8 +753,34 @@ def _oversized_after_prefix(
     return at + 1 + bool(suffix), ItemNumber(0, text, marked, valid=False)
 
 
+def _glued_card(
+    tokens: list[str], j: int, glued: set[int], card: CardFormat
+) -> tuple[int, int, _Span | None, ItemNumber | None]:
+    """Hinter "Nummer" eine zusammen geschriebene Kartennummer: Praefix, Ziffern
+    und Endung ohne Luecke ("S12", "S12a", "Z12h", "ZZ1000zz", "JA12").
+
+    Ein Stueck, wie geschrieben, statt dass jede Kombination aus bekanntem oder
+    unbekanntem Praefix, Kartenbereich und Endung einzeln wieder
+    zusammengesetzt wird (Code-Review PR #155). Kennt die Karte das Praefix und
+    liegt die Zahl im Bereich, ist es eine Nummer - die Endung prueft `_ref`
+    wie bei jeder Zahl. Sonst ist das ganze Stueck eine genannte Nummer, die es
+    nicht gibt. Rueckgabe wie `_marker_target`.
+    """
+    prefix, digits = tokens[j], tokens[j + 1]
+    value = _word_value(digits)
+    if prefix in card.prefixes and value is not None:
+        return j, j, _Span(j, j + 2, value, 1, (prefix,)), None
+    suffix = tokens[j + 2] if j + 1 in glued else ""
+    bad = ItemNumber(0, prefix + digits + suffix, True, valid=False)
+    return j, j + 2 + bool(suffix), None, bad
+
+
 def _marker_target(
-    tokens: list[str], i: int, prefixed: set[int], card: CardFormat = NO_PREFIXES
+    tokens: list[str],
+    i: int,
+    prefixed: set[int],
+    card: CardFormat = NO_PREFIXES,
+    glued: set[int] | frozenset[int] = frozenset(),
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
     """Was hinter dem Marker an Stelle `i` steht.
 
@@ -779,7 +802,9 @@ def _marker_target(
         span = _scan(tokens, j)
         if span is not None:
             return j, j, span, None
-        # "Nummer S12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
+        if j in prefixed and len(tokens[j]) <= _MAX_CARD_LETTERS:
+            return _glued_card(tokens, j, glued, card)
+        # "Nummer S 12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
         for n in range(_MAX_PREFIX_TOKENS, 0, -1):
             following = _scan(tokens, j + n) if j + n < len(tokens) else None
             # Geklebt ("Nummer ES12") zaehlt der Buchstabenname nicht (Codex
@@ -813,7 +838,9 @@ def _marker_target(
     # Bereich, `value` bleibt dann 0 und wird nie gelesen, weil `valid=False`
     # den Aufrufer vorher abbiegen lässt.
     if word.isdigit() or _too_large(word):
-        suffix = _suffix_at(tokens, j + 1)
+        # Geklebt ("Nummer 1000zz") gehoert jede Endung dazu, abgesetzt nur eine,
+        # die nach Endung aussieht (Codex PR #155).
+        suffix = tokens[j + 1] if j in glued else _suffix_at(tokens, j + 1)
         value = int(word) if word.isdigit() else 0
         bad = ItemNumber(value, _said("", word, suffix), True, valid=False)
         return j, j + 1 + bool(suffix), None, bad
@@ -823,7 +850,7 @@ def _marker_target(
     # beides (Codex PR #117, P1). Nur Kartenbuchstaben zählen: "Nummer so 23"
     # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
     # vorhandene Nummer "so23" (Codex PR #117, P2).
-    if _prefix_letters(word, glued=j in prefixed):
+    if _prefix_letters(word):
         following = _scan(tokens, j + 1)
         if following is not None:
             # Eine Endung gehoert zur genannten Nummer ("Nummer Z12g"), sonst
@@ -864,7 +891,7 @@ def _marked(
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        _, _, span, bad = _marker_target(tokens, i, prefixed, card)
+        _, _, span, bad = _marker_target(tokens, i, prefixed, card, glued)
         if span is not None:
             spans.append(span)
         elif bad is not None:
@@ -1103,7 +1130,7 @@ def sole_item_number(
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
             continue
-        start, end, span, bad = _marker_target(tokens, i, prefixed, card)
+        start, end, span, bad = _marker_target(tokens, i, prefixed, card, glued)
         if span is not None:
             marked.append(span)
             marker_at.add(i)
@@ -1163,7 +1190,7 @@ def sole_item_number(
             or (
                 span in marked
                 and after.isalpha()
-                and (span.start in glued or len(after) == 1)
+                and (span.digits_at in glued or len(after) == 1)
             )
         ):
             consumed.add(nxt)

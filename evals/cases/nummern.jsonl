@@ -175,3 +175,7 @@
 {"say": "S1000 Lachs", "expect": "?", "why": "zu grosse Praefixnummer neben einem Namen: nachfragen (Codex PR #155)"}
 {"say": "Ich haette gern Es zwoelf", "expect": "s12", "why": "Fuellwoerter am Satzanfang, Es ist der Buchstabe (Code-Review PR #155)"}
 {"say": "S12 und Pho Bo", "expect": "name", "why": "mit und getrennt zwei Positionen, die Suche zerlegt (Code-Review PR #155)"}
+{"say": "Nummer Z12zz", "expect": "!z12zz", "why": "geklebte Kartennummer als Ganzes, auch mit Endung ausserhalb a bis g (Codex PR #155)"}
+{"say": "Nummer Z1000zz", "expect": "!z1000zz", "why": "dasselbe ueber dem Kartenbereich (Codex PR #155)"}
+{"say": "Nummer 1000zz", "expect": "!1000zz", "why": "ohne Praefix dasselbe (Codex PR #155)"}
+{"say": "Nummer S12zz", "expect": "!s12zz", "why": "bekanntes Praefix, falsche geklebte Endung: genannt, nicht vorhanden (Code-Review PR #155)"}
