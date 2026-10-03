@@ -144,11 +144,12 @@ def test_schluessel_eines_anderen_anrufs_ist_conflict(session, tenant_id, call_i
         )
 
 
-def test_voller_slot_ist_conflict_mit_alternativen(session, tenant_id, call_id):
+def test_voller_abend_ist_conflict_ohne_mittag(session, tenant_id, call_id):
+    # T-1.14: Alternativen nur im selben Service; der Abend ist ganz voll.
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     with pytest.raises(Conflict) as exc:
         create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
-    assert "halb sieben ist leider voll" in exc.value.say
+    assert "halb sieben ist leider nichts frei" in exc.value.say
     assert session.scalar(select(func.count()).select_from(Reservation)) == 1
 
 

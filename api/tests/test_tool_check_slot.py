@@ -93,3 +93,17 @@ def test_latenz_p95_unter_300_ms(client):
     p95 = p95_ms(lambda: _call(http, tenant_id), n=20)
     print(f"\ncheck_slot p95 = {p95:.1f} ms")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
+
+
+def test_latenz_p95_morgens_ohne_freien_service_unter_300_ms(client):
+    # Teuerster Weg (T-1.14): Wunsch morgens vor der Oeffnung, die Gruppe passt in
+    # keinen Service, gesucht wird ueber Mittag und Abend ohne Treffer.
+    http, tenant_id = client
+    morgens = _next_tuesday_1830().replace(hour=7).isoformat()
+    r = _call(http, tenant_id, reserved_for=morgens, party_size=41)
+    assert r.json()["data"]["alternatives"] == []
+    p95 = p95_ms(
+        lambda: _call(http, tenant_id, reserved_for=morgens, party_size=41), n=20
+    )
+    print(f"\ncheck_slot morgens p95 = {p95:.1f} ms")
+    assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"

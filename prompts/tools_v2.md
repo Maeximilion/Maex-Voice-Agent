@@ -15,7 +15,7 @@
 ## check_slot
 **Wann:** bevor eine Reservierung angelegt wird, und erneut nach jedem neuen Terminwunsch.
 **Eingabe:** `reserved_for` (Datum/Uhrzeit), `party_size`.
-**Liefert:** `available`; bei „nein" bis zu zwei `alternatives`.
+**Liefert:** `available`; bei „nein" bis zu zwei `alternatives` aus demselben Service und einen `say`. Ohne `alternatives` den `say` vorlesen: außerhalb der Öffnung fragt er nach einer anderen Uhrzeit, kein `create_callback`.
 
 ## create_reservation
 **Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet. Nach jeder Änderung erneut `check_slot`, dann `create_reservation` — nie `draft_order`.
@@ -48,7 +48,7 @@
 **Schreibend:** braucht `idempotency_key`. Ein zweiter Aufruf auf denselben Vorgang ist unschädlich.
 
 ## create_callback
-**Wann:** Verständnis-Leiter Stufe 6, `check_slot` findet nichts, eine Allergenauskunft ist nicht gepflegt, oder ein Anliegen liegt außerhalb dessen, was das System heute kann (Lieferung).
+**Wann:** Verständnis-Leiter Stufe 6, `check_slot` findet nichts frei (nicht bei „geschlossen"), eine Allergenauskunft ist nicht gepflegt, oder ein Anliegen liegt außerhalb dessen, was das System heute kann (Lieferung).
 **Eingabe:** `phone`, `reason` (`complaint` · `not_understood` · `human_requested` · `out_of_scope`), `summary` (ein Satz).
 **Liefert:** `callback_id`, Status `open`.
 **Schreibend:** kein `idempotency_key` nötig, ein Anruf hat höchstens einen offenen Rückruf.

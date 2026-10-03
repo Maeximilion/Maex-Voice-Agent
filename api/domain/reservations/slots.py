@@ -1,9 +1,17 @@
-"""check_slot: Ist der Wunschtermin frei, und wenn nicht, welche zwei Termine liegen am nächsten?"""
+"""check_slot: Ist der Wunschtermin frei, und wenn nicht, welche zwei Termine im selben Service?
+
+Ein Service ist ein Öffnungsfenster für `dinein` (Mittag, Abend). Buchbar ist ein Beginn
+frühestens `reservation_lead_minutes` nach Öffnung und spätestens
+`reservation_last_start_minutes` vor Schluss (T-1.14, D12). Alternativen kommen nur aus
+dem Service des Wunsches; außerhalb der Öffnung heißt es „geschlossen", nur morgens vor
+der ersten Öffnung darf ein späterer Service desselben Tages einspringen.
+"""
 
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
@@ -13,9 +21,14 @@ from api.domain.reservations.capacity import (
     booked_guests,
     capacity_windows,
 )
-from api.domain.reservations.spoken import WEEKDAYS, spoken_time
-from api.domain.status.hours import load_hours, windows_for_day
-from api.models import Tenant
+from api.domain.reservations.spoken import WEEKDAYS, spoken_daytime, spoken_time
+from api.domain.status.hours import (
+    Window,
+    load_hours,
+    open_window_at,
+    windows_for_day,
+)
+from api.models import ServiceConfig, Tenant
 from api.schemas.reservations import SlotCheck
 
 MAX_ALTERNATIVES = 2
@@ -25,8 +38,10 @@ MAX_ALTERNATIVES = 2
 # Tag (+-24 h) sowieso. Sonst kaeme am Ruhetag Sonntag 21:30 als "halb zehn"
 # (Befund T-5.2, reservierung_0027) und nachts um halb eins der Mittag als "halb
 # zwei" (Review PR #152). Keine Oeffnungszeit, sondern eine Regel der Ansage.
+# Weiter weg (morgens auf den Abend) nennt der Satz die Tageszeit.
 UNAMBIGUOUS = timedelta(hours=6)
 DINEIN = "dinein"
+ASK_OTHER_TIME = "Zu welcher anderen Uhrzeit passt es Ihnen?"
 
 
 def check_slot(
@@ -36,9 +51,15 @@ def check_slot(
     party_size: int,
     now: datetime | None = None,
 ) -> SlotCheck:
-    tenant = session.get(Tenant, tenant_id)
-    if tenant is None:
+    # Eine Abfrage statt zwei: der heisse Pfad braucht Zeitzone und Abstaende (D12).
+    row = session.execute(
+        select(Tenant, ServiceConfig)
+        .join(ServiceConfig, ServiceConfig.tenant_id == Tenant.id)
+        .where(Tenant.id == tenant_id)
+    ).first()
+    if row is None:
         raise NotFound("Mandant unbekannt")
+    tenant, config = row
     now = now or utcnow()
     if reserved_for <= now:
         raise InvalidInput(
@@ -49,61 +70,164 @@ def check_slot(
     zone = ZoneInfo(tenant.timezone)
     local = reserved_for.astimezone(zone)
     # Fenster des Vortags reichen über Mitternacht (18:00 bis 01:00), deshalb beide Tage.
-    days = (local.date() - timedelta(days=1), local.date())
+    yesterday, today = local.date() - timedelta(days=1), local.date()
 
-    hours = load_hours(session, tenant_id, days[0], days=2)
-    open_windows = [w for d in days for w in windows_for_day(hours, d, DINEIN, zone)]
-    windows = [w for d in days for w in capacity_windows(session, tenant_id, d, zone)]
+    hours = load_hours(session, tenant_id, yesterday, days=2)
+    today_services = windows_for_day(hours, today, DINEIN, zone)
+    services = windows_for_day(hours, yesterday, DINEIN, zone) + today_services
+    windows = [
+        w
+        for d in (yesterday, today)
+        for w in capacity_windows(session, tenant_id, d, zone)
+    ]
     booked = booked_guests(session, tenant_id, windows)
+    lead = timedelta(minutes=config.reservation_lead_minutes)
+    last = timedelta(minutes=config.reservation_last_start_minutes)
 
-    def fits(at: datetime) -> bool:
-        if not any(opens <= at < closes for opens, closes in open_windows):
+    def startable(at: datetime, service: Window) -> bool:
+        # Die Schlusszeit selbst ist nie ein Beginn, auch bei 0 Minuten Abstand.
+        opens, closes = service
+        return opens + lead <= at <= closes - last and at < closes
+
+    def fits(at: datetime, service: Window) -> bool:
+        if not startable(at, service):
             return False
         window = _window_for(windows, at)
         if window is None:
             return False
         return booked[window] + party_size <= window.max_guests
 
-    if fits(local):
+    def free_slots(service: Window) -> list[datetime]:
+        return [
+            slot
+            for window in windows
+            for slot in window.grid()
+            if slot != local and slot > now and fits(slot, service)
+        ]
+
+    service = open_window_at(hours, local, DINEIN, zone)
+    if service is not None and fits(local, service):
         return SlotCheck(available=True)
 
     # In UTC gemessen: zwei Zeiten derselben ZoneInfo zieht Python als Wandzeit ab,
     # an der Zeitumstellung laege die Grenze sonst eine Stunde daneben.
     wish_utc = local.astimezone(UTC)
-    candidates = [
-        slot
-        for window in windows
-        for slot in window.grid()
-        if abs(slot.astimezone(UTC) - wish_utc) < UNAMBIGUOUS
-        and slot != local
-        and slot > now
-        and fits(slot)
-    ]
-    candidates.sort(key=lambda slot: (abs(slot.astimezone(UTC) - wish_utc), slot))
-    alternatives = [slot.astimezone(UTC) for slot in candidates[:MAX_ALTERNATIVES]]
+
+    def distance(slot: datetime) -> timedelta:
+        return abs(slot.astimezone(UTC) - wish_utc)
+
+    if service is not None:
+        candidates = [s for s in free_slots(service) if distance(s) < UNAMBIGUOUS]
+        candidates.sort(key=lambda slot: (distance(slot), slot))
+        chosen = candidates[:MAX_ALTERNATIVES]
+        if startable(local, service):
+            say = _say_full(local, chosen)
+        else:
+            say = _say_with_options(
+                f"Um {spoken_time(local)} können wir leider keinen Tisch reservieren.",
+                local,
+                chosen,
+            )
+        return _unavailable(chosen, say)
+
     # Ruhetag oder geschlossener Sondertag: der Gast soll das hoeren, statt es mit
     # anderen Uhrzeiten am selben Tag zu versuchen (Review PR #152). Nicht, wenn der
     # Wunsch noch im Fenster des Vorabends liegt (Montag 00:30 nach Sonntag).
-    closed_day = not windows_for_day(hours, local.date(), DINEIN, zone) and not any(
-        opens <= local < closes for opens, closes in open_windows
+    if not today_services:
+        return _unavailable(
+            [], f"Am {WEEKDAYS[local.weekday()]} haben wir leider geschlossen."
+        )
+
+    if _is_morning(local, services, today_services):
+        for later in today_services:
+            chosen = free_slots(later)[:MAX_ALTERNATIVES]
+            if chosen:
+                return _unavailable(
+                    chosen,
+                    _say_with_options(
+                        f"Um {spoken_time(local)} haben wir noch geschlossen.",
+                        local,
+                        chosen,
+                    ),
+                )
+        # Der ganze Tag ist voll: das soll der Gast hoeren, nicht nur "geschlossen"
+        # und dann bei jeder genannten Uhrzeit "nichts frei" (Review PR #158).
+        return _unavailable(
+            [],
+            f"Um {spoken_time(local)} haben wir noch geschlossen, "
+            "und an dem Tag ist leider nichts mehr frei.",
+        )
+
+    # D12: zwischen zwei Services und nach dem letzten keine Alternative aus einem
+    # anderen Service, der Gast nennt selbst eine Uhrzeit.
+    return _unavailable(
+        [], f"Um {spoken_time(local)} haben wir leider geschlossen. {ASK_OTHER_TIME}"
     )
-    return SlotCheck(
-        available=False,
-        alternatives=alternatives,
-        say=_say(local, candidates[:MAX_ALTERNATIVES], closed_day),
-    )
+
+
+def _is_morning(local: datetime, services: list[Window], today: list[Window]) -> bool:
+    """Vor der ersten Öffnung des Tages und näher an ihr als am letzten Schluss davor.
+
+    Dienstag 01:00 nach einem Montagabend bis 01:00 ist Nacht, kein Morgen (D12).
+    Ohne Fenster am Vortag (Ruhetag) zählt Mitternacht als letzter Schluss, sonst
+    wäre 01:00 nach dem Ruhetag ein Morgen (Review PR #158). Gerechnet in UTC wie
+    `distance`, sonst läge die Grenze an der Zeitumstellung eine Stunde daneben.
+    """
+    wish = local.astimezone(UTC)
+    first_open = today[0][0].astimezone(UTC)
+    if wish >= first_open:
+        return False
+    closed_before = [
+        c.astimezone(UTC) for _, c in services if c.astimezone(UTC) <= wish
+    ]
+    if closed_before:
+        last_close = max(closed_before)
+    else:
+        midnight = datetime.combine(local.date(), time(0), tzinfo=local.tzinfo)
+        last_close = midnight.astimezone(UTC)
+    return first_open - wish < wish - last_close
 
 
 def _window_for(windows: list[CapacityWindow], at: datetime) -> CapacityWindow | None:
     return next((w for w in windows if w.contains(at)), None)
 
 
-def _say(wish: datetime, alternatives: list[datetime], closed_day: bool) -> str:
-    if not alternatives and closed_day:
-        return f"Am {WEEKDAYS[wish.weekday()]} haben wir leider geschlossen."
+def _unavailable(chosen: list[datetime], say: str) -> SlotCheck:
+    return SlotCheck(
+        available=False,
+        alternatives=[slot.astimezone(UTC) for slot in chosen],
+        say=say,
+    )
+
+
+def _say_full(wish: datetime, alternatives: list[datetime]) -> str:
     if not alternatives:
         # Nicht "an dem Tag": gesucht wird nur im Abstand, in dem die Ansage
         # eindeutig ist; ein Termin weiter weg kann noch frei sein (Review PR #152).
         return f"Um {spoken_time(wish)} ist leider nichts frei, auch nicht kurz davor oder danach."
-    options = " oder ".join(spoken_time(a) for a in alternatives)
-    return f"Um {spoken_time(wish)} ist leider voll. {options[0].upper() + options[1:]} ginge."
+    return _say_with_options(
+        f"Um {spoken_time(wish)} ist leider voll.", wish, alternatives
+    )
+
+
+def _say_with_options(
+    lead_in: str, wish: datetime, alternatives: list[datetime]
+) -> str:
+    if not alternatives:
+        return f"{lead_in} {ASK_OTHER_TIME}"
+    options = " oder ".join(_spoken_options(wish, alternatives))
+    return f"{lead_in} {options[0].upper() + options[1:]} ginge."
+
+
+def _spoken_options(wish: datetime, alternatives: list[datetime]) -> list[str]:
+    """Ab sechs Stunden Abstand mit Tageszeit, gleiche Tageszeit nur einmal."""
+    parts, previous = [], None
+    for slot in alternatives:
+        if abs(slot.astimezone(UTC) - wish.astimezone(UTC)) < UNAMBIGUOUS:
+            parts.append(spoken_time(slot))
+            previous = None
+            continue
+        daytime, clock = spoken_daytime(slot).split(" ", 1)
+        parts.append(clock if daytime == previous else f"{daytime} {clock}")
+        previous = daytime
+    return parts
