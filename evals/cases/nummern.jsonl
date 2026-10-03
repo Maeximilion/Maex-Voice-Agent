@@ -156,7 +156,7 @@
 {"say": "Nummer ZZ12h", "expect": "!zz12h", "why": "dasselbe mit zwei Buchstaben (Codex PR #155)"}
 {"say": "Nummer Z 12 h", "expect": "!z12h", "why": "dasselbe abgesetzt (Codex PR #155)"}
 {"say": "Nummer S 1000", "expect": "!s1000", "why": "bekanntes Praefix, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
-{"say": "Nummer S tausend", "expect": "!stausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer S tausend", "expect": "!s tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
 {"say": "Nummer JA12", "expect": "!ja12", "why": "geklebtes Praefix, das zugleich Fuellwort ist: nie still die 12 (Codex PR #155)"}
 {"say": "Nummer HM12", "expect": "!hm12", "why": "geklebtes Praefix, das zugleich Zoegerlaut ist (Codex PR #155)"}
 {"say": "Nummer ja 12", "expect": "12", "why": "abgesetzt bleibt ja ein Fuellwort"}
@@ -164,12 +164,14 @@
 {"say": "die HM12", "expect": "name", "why": "dasselbe mit Artikel (Codex PR #155)"}
 {"say": "Nummer S1000g", "expect": "!s1000g", "why": "Endung hinter zu grosser Praefixnummer gehoert dazu (Codex PR #155)"}
 {"say": "Nummer S 1000g", "expect": "!s1000g", "why": "dasselbe abgesetzt (Codex PR #155)"}
-{"say": "Nummer S tausend g", "expect": "!stausendg", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer S tausend g", "expect": "!s tausend g", "why": "dasselbe als Zahlwort (Codex PR #155)"}
 {"say": "Nummer 1000g", "expect": "!1000g", "why": "ohne Praefix dasselbe: Endung gehoert zur genannten Nummer"}
 {"say": "Nummer Z 1000", "expect": "!z1000", "why": "unbekanntes Praefix vor zu grosser Zahl: genannte Nummer, keine Namenssuche (Codex PR #155)"}
-{"say": "Nummer Z tausend", "expect": "!ztausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer Z tausend", "expect": "!z tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
 {"say": "S1000", "expect": "!s1000", "why": "bekanntes Praefix ohne Marker, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
 {"say": "S 1000", "expect": "!s1000", "why": "dasselbe abgesetzt (Codex PR #155)"}
-{"say": "die S tausend bitte", "expect": "!stausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "die S tausend bitte", "expect": "!s tausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
 {"say": "Sushi 1000", "expect": "!s1000 oder sm1000", "why": "Kategoriewort vor zu grosser Zahl: genannte Nummer (Codex PR #155)"}
 {"say": "S1000 Lachs", "expect": "?", "why": "zu grosse Praefixnummer neben einem Namen: nachfragen (Codex PR #155)"}
+{"say": "Ich haette gern Es zwoelf", "expect": "s12", "why": "Fuellwoerter am Satzanfang, Es ist der Buchstabe (Code-Review PR #155)"}
+{"say": "S12 und Pho Bo", "expect": "name", "why": "mit und getrennt zwei Positionen, die Suche zerlegt (Code-Review PR #155)"}

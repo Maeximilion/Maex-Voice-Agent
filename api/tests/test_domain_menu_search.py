@@ -952,12 +952,19 @@ def test_ohne_praefix_auf_der_karte_ist_s12_nicht_die_12(session, tenant_id):
 
 
 def test_praefixnummer_neben_name_fragt_nach(session, sushi):
-    """Review PR #155: eine Praefixnummer ist nie eine Menge. Neben einem Namen
-    fragt die Suche nach der einen Nummer, statt ueber den Namen zu raten."""
-    for gesagt in ["S12 und Pho Bo", "S12 Lachs"]:
-        with pytest.raises(Ambiguous) as err:
-            suche(session, sushi, gesagt)
-        assert err.value.say == SAY_WHICH_NUMBER
+    """Review PR #155: eine Praefixnummer ist nie eine Menge. Direkt neben einem
+    Namen fragt die Suche nach der einen Nummer, statt ueber den Namen zu raten."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 Lachs")
+    assert err.value.say == SAY_WHICH_NUMBER
+
+
+def test_praefixnummer_und_name_sind_zwei_positionen(session, sushi):
+    """Code-Review PR #155: mit "und" getrennt sind es zwei Positionen wie bei
+    "die 23 und Pho Bo", nicht die Frage nach der einen Nummer."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
 
 
 def test_kategoriewort_ohne_treffer_nennt_kartennummern(session, sushi):
@@ -1015,3 +1022,12 @@ def test_unbekanntes_praefix_hinter_marker_ist_nicht_vorhanden(session, sushi, g
     with pytest.raises(NotFound) as err:
         suche(session, sushi, gesagt)
     assert "Nummer 12 " not in err.value.say
+
+
+def test_gewicht_bleibt_im_namen():
+    """Code-Review PR #155: "250g" ist im Namen ein Gewicht, keine Kartennummer -
+    sonst sind "Rumpsteak 200g" und "Rumpsteak 300g" nicht mehr zu trennen."""
+    from api.domain.menu.normalize import normalize_query
+
+    assert normalize_query("Rumpsteak 250g") == "rumpsteak 250g"
+    assert normalize_query("Rumpsteak 250 g") == "rumpsteak g"

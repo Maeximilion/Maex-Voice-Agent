@@ -129,11 +129,17 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    „S 13" findet nicht Gericht 13, „Nummer 23g" nicht die 23. Ein Präfix vor
    einer Zahl über 999 („S1000", „Sushi tausend") ist auch ohne „Nummer" eine
    genannte Nummer und `not_found`, nie eine Namenssuche. Eine Nummer mit
-   Präfix ist nie eine Menge: neben einem Namen („S12 Lachs", „die S12 und Pho
-   Bo") oder hinter einer Ziffer bzw. „die 23" fragt die Suche nach der einen
-   Nummer; nur ein Zahlwort davor ist die Menge („zwei S zwölf"). Buchstabiert
-   („Es zwölf") zählt nur am Satzanfang, „nehme ich es zwei" ist kein S2. Präfixe,
-   die schon Menge oder Marker sind (`x`, `st`, `nr`, `no`), lehnt der Import ab.
+   Präfix ist nie eine Menge: direkt neben einem Namen („S12 Lachs") oder
+   hinter einer Ziffer bzw. „die 23" fragt die Suche nach der einen Nummer; mit
+   „und" oder Komma getrennt („S12 und Pho Bo") sind es zwei Positionen wie bei
+   einer Zahl ohne Präfix. Nur ein Zahlwort davor ist die Menge („zwei S
+   zwölf"). Buchstabiert („Es zwölf") zählt nur am Satzanfang, auch nach Wunsch
+   oder Gruß („Ich hätte gern Es zwölf", „Hallo, Es zwölf"), nie nach einem Verb
+   („nehme ich es zwei" ist kein S2). Eine genannte, nicht vorhandene Nummer
+   als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
+   Marker oder gesprochenes Wort sind (`x`, `st`, `nr`, `no`, `hm`, `ja`, `es`,
+   `so`, `um`, `zu`, `da`, `du`, `er`, `ob`), lehnt der Import mit eigener
+   Meldung ab.
    Eine Zahl wird nur dann direkt als Kartennummer genommen, wenn der ganze Satz
    genau diese eine Nummer ist (Regel A): Marker („Nummer", „Nr."), Füllwörter,
    Zögerlaute und **eine** Menge dürfen daneben stehen, sonst nichts.

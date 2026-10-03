@@ -13,14 +13,20 @@ Alias aus der Karte ist schon die gewünschte Kurzform.
 import re
 import unicodedata
 
-from api.domain.menu.numberwords import CARD_SUFFIXES
+from api.domain.menu.numberwords import CARD_SUFFIXES, parse_cardinal
 
 _SPACE = re.compile(r"\s+")
-# Nur echte Kartenformen (wie importer._CARD_NUMBER): "23", "23a", "25g", "07".
-# Ein Alias wie "7up" ist keine Nummer und bleibt stehen (Codex PR #117). Ein
+# Endungen, die im Namen zur Nummer gehoeren. Ohne g: neben einem Namen ist
+# "250g" ein Gewicht ("Rumpsteak 250g") und trennt zwei Gerichte; allein ("die
+# 25g") war es die Kartennummer, die search_menu vorher ausgewertet hat
+# (Code-Review PR #155).
+_NAME_SUFFIXES = CARD_SUFFIXES - {"g"}
+_WEIGHT = re.compile(r"\d+g")
+# Nur echte Kartenformen (wie importer._CARD_NUMBER): "23", "23a", "07". Ein
+# Alias wie "7up" ist keine Nummer und bleibt stehen (Codex PR #117). Ein
 # Praefix ("s12") kennt nur die Karte; die Nummer hat search_menu vorher schon
 # ausgewertet (numberwords.CardFormat, T-4.12).
-_CARD_NUMBER = re.compile(r"\d+[" + "".join(sorted(CARD_SUFFIXES)) + "]?")
+_CARD_NUMBER = re.compile(r"\d+[" + "".join(sorted(_NAME_SUFFIXES)) + "]?")
 # Satzzeichen am Rand tragen am Telefon nichts; im Wort ("Wan-Tan") bleiben sie.
 # Dazu die typografischen Anfuehrungszeichen, als Escape geschrieben, damit sie
 # im Quelltext nicht mit Komma oder Apostroph zu verwechseln sind.
@@ -63,14 +69,11 @@ _QUANTITY_NOUNS = frozenset(
 )
 # "2x": Zahl und Mengenzeichen in einem Wort.
 # Abgesetzter Kartenbuchstabe ("23 a"), wie numberwords._SUFFIXES.
-_SUFFIX_LETTERS = CARD_SUFFIXES
+_SUFFIX_LETTERS = _NAME_SUFFIXES
 _COMPACT_QUANTITY = re.compile(r"\d+x")
 
 
 def _is_number_word(token: str) -> bool:
-    # Import hier, weil numberwords normalize nicht kennt und nicht kennen soll.
-    from api.domain.menu.numberwords import parse_cardinal
-
     # "23a": Kartennummer mit Buchstabe, kein Teil des Gerichtnamens.
     if _CARD_NUMBER.fullmatch(token) or _COMPACT_QUANTITY.fullmatch(token):
         return True
@@ -89,6 +92,7 @@ def normalize_query(text: str) -> str:
     Die Zahl selbst wertet search_menu vorher aus (Nummer oder Menge).
     """
     kept: list[str] = []
+    weights = 0
     after_number = False
     for raw in normalize_alias(text).split(" "):
         token = raw.strip(_EDGE_PUNCT)
@@ -100,10 +104,15 @@ def normalize_query(text: str) -> str:
         if after_number and (token in _QUANTITY_NOUNS or token in _SUFFIX_LETTERS):
             # "2 Stück", "die 23 a": gehört zur Zahl, nicht zum Gerichtnamen.
             continue
+        weight = _WEIGHT.fullmatch(token) is not None or (after_number and token == "g")
         after_number = False
-        if token not in FILLER:
+        if weight:
+            weights += 1
             kept.append(token)
-    return " ".join(kept)
+        elif token not in FILLER:
+            kept.append(token)
+    # Ohne Namen daneben war "25g" die Kartennummer, kein Gewicht.
+    return "" if weights == len(kept) else " ".join(kept)
 
 
 def normalize_alias(text: str) -> str:

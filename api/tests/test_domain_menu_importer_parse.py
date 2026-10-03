@@ -325,6 +325,9 @@ def test_kartennummer_im_suchformat(nummer):
         "ST1",
         "NR5",
         "NO5",
+        # Gesprochene Woerter als Praefix (Code-Review PR #155)
+        "JA1",
+        "ES1",
     ],
 )
 def test_kartennummer_ausserhalb_des_suchformats(nummer):
@@ -450,3 +453,9 @@ def test_praefix_und_ohne_praefix_sind_zwei_nummern():
         }
     )
     assert plan.ok, plan.errors
+
+
+def test_reserviertes_praefix_hat_eigene_meldung():
+    """Code-Review PR #155: "NO5" sagt, warum - nicht "bis zu zwei Buchstaben"."""
+    plan = parse({MENU_FILE: "number;name;category;price_eur\nNO5;Gericht;Test;1,00\n"})
+    assert not plan.ok and "Praefix" in plan.errors[0] and "no" in plan.errors[0]

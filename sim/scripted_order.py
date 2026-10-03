@@ -553,6 +553,9 @@ _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "no
 # Zahlwort vor einem Wort gehoert zur Zutat ("Fünf-Gewürze-Pulver", "zwei
 # Sachen: Milch") (Codex PR #155).
 _AFTER_NUMBER = frozenset({"bitte", "danke"})
+# Zusatzstoffe ("E621", "E220") haben die Form einer Kartennummer, sind auf
+# "Wogegen?" aber die Zutat (Code-Review PR #155).
+_ADDITIVE = re.compile(r"e\d{3,4}[a-z]?")
 
 
 def _ends_with_number(words: list[str]) -> bool:
@@ -568,7 +571,7 @@ def _ends_with_number(words: list[str]) -> bool:
 def _orders_something(text: str) -> bool:
     words = re.findall(r"[^\W_]+", text.lower())
     return (
-        any(is_card_number(w) for w in words)
+        any(is_card_number(w) and not _ADDITIVE.fullmatch(w) for w in words)
         or _ends_with_number(words)
         or sole_item_number(text)[0] is not None
         or (bool(words) and words[0] in _ORDER_LEADS)

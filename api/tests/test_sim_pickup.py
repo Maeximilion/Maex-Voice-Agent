@@ -1269,3 +1269,11 @@ def test_zutat_mit_zahlwort_ist_keine_bestellung(session, tenant, antwort):
     assert "Wogegen" not in " ".join(turns[2].say)
     [order] = orders(session)
     assert len(_notes(session, order)) == 1
+
+
+def test_zusatzstoff_ist_eine_zutat(session, tenant):
+    """Code-Review PR #155: "E621" auf "Wogegen?" ist ein Zusatzstoff, keine
+    Kartennummer - die Allergie wird notiert."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", "Gegen E621.")
+    [order] = orders(session)
+    assert any("E621" in (note or "") for note in _notes(session, order))

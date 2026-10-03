@@ -710,7 +710,11 @@ def test_sole_item_number_kein_nummernsatz(text):
 
 # --- Kartenformat aus der Karte: Praefix S/SM, Endung a bis g (T-4.12) ---------
 
-from api.domain.menu.numberwords import CardFormat, canonical_card  # noqa: E402
+from api.domain.menu.numberwords import (  # noqa: E402
+    CardFormat,
+    canonical_card,
+    reserved_prefix,
+)
 
 # Wie die Kasse (Stand 26.09.2026): S1 bis S53 und SM1 bis SM6 in der
 # Warengruppe Sushi, dazu Nummern ohne Praefix und 25G.
@@ -930,3 +934,29 @@ def test_geklebter_buchstabenname_ist_kein_buchstabiertes_praefix(text):
     nie still S12 (oder SM1 aus "EM1")."""
     ref, _ = sole_item_number(text, KARTE)
     assert ref is None or (not ref.valid and ref.cards[0] in ("es12", "em1"))
+
+
+# --- Code-Review PR #155 ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text", ["Ich haette gern Es zwoelf", "hallo, Es zwoelf", "ich moechte Es zwoelf"]
+)
+def test_buchstabiertes_es_nach_satzanfang_mit_fuellwort(text):
+    ref, unclear = sole_item_number(text, KARTE)
+    assert not unclear and ref is not None and ref.cards == ("s12",)
+
+
+def test_ungueltige_nummer_als_wort_mit_leerzeichen():
+    """ "Nummer S tausend" wird vorgelesen: "s tausend", nicht "stausend"."""
+    ref, _ = sole_item_number("Nummer S tausend", KARTE)
+    assert ref is not None and ref.text == "s tausend"
+
+
+@pytest.mark.parametrize("prefix", ["ja", "es", "so", "um", "zu", "hm"])
+def test_gesprochene_woerter_sind_reservierte_praefixe(prefix):
+    assert reserved_prefix(prefix)
+
+
+def test_praefix_s_bleibt_erlaubt():
+    assert not reserved_prefix("s") and not reserved_prefix("sm")

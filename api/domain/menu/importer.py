@@ -298,6 +298,16 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         if not number:
             plan.errors.append(f"{where}: Nummer fehlt")
             continue
+        parts = CARD_PARTS.fullmatch(number)
+        if parts is not None and reserved_prefix(parts.group(1)):
+            # Sonst sagte die Meldung "bis zu zwei Buchstaben davor" und der
+            # Betreiber saehe nicht, was falsch ist (Code-Review PR #155).
+            plan.errors.append(
+                f"{where}: Kartennummer „{row['number']}“ hat das Praefix "
+                f"„{parts.group(1)}“, das am Telefon schon etwas anderes heisst "
+                "(Menge, Marker oder gesprochenes Wort wie x, st, nr, no, ja, es)"
+            )
+            continue
         if not is_card_number(number):
             # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
             # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
