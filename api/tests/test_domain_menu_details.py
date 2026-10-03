@@ -334,6 +334,7 @@ def test_tool_ohne_allergenfrage_schweigt_zum_rueckruf(client, session, tenant_i
     assert body["say"] is None
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client, session, tenant_id):
     item = gericht(session, tenant_id, "23")
 

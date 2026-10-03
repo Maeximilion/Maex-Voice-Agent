@@ -238,6 +238,7 @@ def test_ohne_wunsch_bleibt_alles_wie_bisher(session, tenant_id):
     assert result.wish is None and result.say is None
 
 
+@pytest.mark.latency
 def test_wunsch_bleibt_im_latenzbudget(session, tenant_id):
     assert (
         p95_ms(

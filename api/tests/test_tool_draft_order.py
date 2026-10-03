@@ -140,6 +140,7 @@ def test_ohne_token(client):
     assert res.status_code == 401
 
 
+@pytest.mark.latency
 def test_latenz(client):
     http, tenant_id, call_id, ids = client
     items = [
@@ -190,6 +191,7 @@ def test_entwurf_bestaetigen_ueber_http(client):
     }
 
 
+@pytest.mark.latency
 def test_latenz_confirm_bestellung(client):
     http, tenant_id, call_id, ids = client
     drafts = iter(

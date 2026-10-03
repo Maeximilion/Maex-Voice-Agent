@@ -315,6 +315,7 @@ def test_http_token_und_huelle(http, session, tenant_id, order_id, monkeypatch):
     assert http.post("/v1/kitchen/claim", json=body, headers=empty).status_code == 401
 
 
+@pytest.mark.latency
 def test_http_abholen_unter_300_ms(http, tenant_id):
     auth = {"Authorization": "Bearer bruecke-geheim"}
     body = {"tenant_id": str(tenant_id)}
