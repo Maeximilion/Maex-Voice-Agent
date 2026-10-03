@@ -87,7 +87,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --b
 
 ## 6. CI
 
-`.github/workflows/ci.yml`: bei jedem Push `ruff check`, `ruff format --check`, `pytest` gegen einen Postgres-Service. Evals laufen nicht in CI (kosten Tokens), sondern vor dem Merge lokal — Ergebnis in die Commit-Nachricht.
+`.github/workflows/ci.yml`: bei jedem Pull Request und jedem Push auf `main` `ruff check`, `ruff format --check`, `pytest -n auto` gegen einen Postgres-Service. Ein neuer Push auf denselben PR bricht den alten Lauf ab. Jeder Test bekommt eine Kopie einer einmal migrierten Vorlage-Datenbank (`migrated_template_url`), statt Alembic je Test laufen zu lassen; lokal fiel die Suite damit von 8:40 auf 3:01 min, mit 4 Workern auf 1:22 min (03.10.2026). Evals laufen nicht in CI (kosten Tokens), sondern vor dem Merge lokal — Ergebnis in die Commit-Nachricht.
 
 ---
 

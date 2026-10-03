@@ -114,6 +114,7 @@ make eval MODEL=<name>         # Modellvergleich
 
 | Anlass | Umfang |
 |---|---|
+| Fix-Commit in einem offenen PR | nur die betroffenen Tags (z. B. `reservierung`) |
 | Vor jedem Merge nach `main` | vollständig |
 | Nach jeder Prompt-Änderung | vollständig, Ergebnis in den Commit |
 | Nach Menü- oder Preisänderung | Tag `menu` |
