@@ -44,6 +44,20 @@
   "expected": {
     "intent": "pickup",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 2
+      },
+      {
+        "number": "47",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      }
+    ],
+    "customer_name": "Mueller"
   }
 }

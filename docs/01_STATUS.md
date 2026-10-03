@@ -325,7 +325,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.34.18 · 03.10.2026:** Eval-Suite v2: 46 Faelle in Stufen 1-5, evals/cases (CI) und evals/ziel (make eval-ziel)
+- **v1.34.18 · 03.10.2026:** Eval-Suite v2: 48 Faelle in Stufen 1-5, evals/cases (CI) und evals/ziel (make eval-ziel)
 - **v1.34.17 · 03.10.2026:** Latenztests seriell in CI nach der parallelen Suite (Marker latency), offener Punkt test_migration_001 unter xdist
 - **v1.34.16 · 03.10.2026:** CI schneller: Vorlage-Datenbank je Testlauf, pytest parallel, kein doppelter Lauf je Push
 - **v1.34.15 · 27.09.2026:** T-1.14 done: Alternativen im selben Service, Beginn aus service_config (D12), Migration 005

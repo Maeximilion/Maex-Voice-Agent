@@ -110,7 +110,7 @@ Layers and dependency rules: `docs/11_MODULE.md`.
 make test        # pytest
 make lint        # ruff check
 make fmt         # ruff format
-make eval        # 19 CI cases (difficulty 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
+make eval        # 21 CI cases (difficulty 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-ziel   # 27 target cases (difficulty 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
 
 python -m sim.cli                                   # conversation in the terminal
