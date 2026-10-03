@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.16
+> Status: 03.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.34.17
 
 ---
 
@@ -263,6 +263,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 03.10.2026 | **Bug migration tests depend on test order fixed:** the `conn` fixture of `test_migration_001.py` used the module-wide empty `scratch_db_url` and only found tables because the upgrade tests had run first in the same process. Under `pytest -n auto` on 32 cores (or `-n 4`) they land on other workers: 5 failed with `relation "tenants" does not exist` (red reproduced on 89da15e). `scratch_db_url` is now one empty database per test; `conn` in 001 and 002 gets its own database at 001 or head per module (`scratch_db_at` in `api/tests/conftest.py`), rolled back per test. Same pattern found in 004 and 005, there silently: after the downgrade test the database was already at head, `upgrade("003")`/`upgrade("004")` was a no-op and the upgrade tests never ran the migration they claim to check. Migration tests green with `-n 32`, `-n 4`, serial and in reverse order, same duration as before (about 12 s serial); whole suite `-n auto` 2420 passed |
 | 26.09.2026 | **T-4.11 menu from the register:** `domain/menu/pos_dbf.py` (dBase IV reader with memo, read-only), `domain/menu/pos_convert.py` (sizes, extras, allergen letter table, report), `scripts/kasse_to_csv.py`; importer takes optional `pos_code`, `--deactivate-missing`; migration 004 `menu_items.pos_code`. Tests with synthetic `.dbf` only (`api/tests/dbf_fixture.py`), real files stay in `imports/kasse/` |
 | 26.09.2026 | **T-4.6 input slip:** every slip from the bridge starts with "NICHT IN KASSE" (big, inverted) and "Bitte in die Kasse eingeben."; the tablet says "Zettel wird gedruckt" / "Zettel liegt an der Kasse" / "Zettel nicht gedruckt" / "Noch nicht an der Kasse" instead of "Küche" (D2). Printer setup on the register PC: Python and pywin32 installed by Maxi, test slip reached the Windows queue |
 | 26.09.2026 | **T-3.6 wait time per service:** the header has one row each for pickup and delivery with "-15" and "+15"; a button is off at its limit, `aria-label` names wait time and service. `change_wait` replaces `raise_wait`, audit action `service_config.wait_changed` with service, step, from, to. Clicked through in the browser (Chromium, 1024 px) |
@@ -323,6 +324,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.34.17 · 03.10.2026:** Bug: Migrationstests unabhaengig von Reihenfolge und xdist-Worker
 - **v1.34.16 · 03.10.2026:** CI schneller: Vorlage-Datenbank je Testlauf, pytest parallel, kein doppelter Lauf je Push
 - **v1.34.15 · 27.09.2026:** T-1.14 done: Alternativen im selben Service, Beginn aus service_config (D12), Migration 005
 - **v1.34.14 · 27.09.2026:** Offener Punkt aus PR #149: zwei Schreibweisen einer Kassendatei

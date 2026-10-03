@@ -1,9 +1,11 @@
 """Gemeinsame Fixtures: Wegwerf-Datenbanken, damit die Entwicklungsdaten unberührt bleiben."""
 
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import pytest
+from alembic import command
 
 # Von hier importieren die Migrationstests weiterhin alembic_config.
 from evals.scratch_db import (  # noqa: F401
@@ -46,9 +48,26 @@ def p95_ms(
     return p95
 
 
-@pytest.fixture(scope="module")
+@contextmanager
+def scratch_db_at(revision: str) -> Iterator[str]:
+    """Eigene Wegwerf-Datenbank, auf `revision` migriert, danach gelöscht."""
+    url = create_scratch_db()
+    try:
+        command.upgrade(alembic_config(url), revision)
+        yield url
+    finally:
+        drop_scratch_db(url)
+
+
+@pytest.fixture
 def scratch_db_url():
-    """Leere Datenbank ohne Schema, für Migrationstests."""
+    """Leere Datenbank ohne Schema, für Migrationstests; je Test eine eigene.
+
+    Je Test, nicht je Modul: unter pytest-xdist landen die Tests einer Datei auf
+    verschiedenen Workern, und ein Test, der auf der Revision eines vorigen
+    aufbaut, sieht dort eine leere Datenbank. Umgekehrt ist `upgrade` auf eine
+    ältere Revision still ein No-op, ein Upgrade-Test prüfte dann nichts.
+    """
     url = create_scratch_db()
     try:
         yield url

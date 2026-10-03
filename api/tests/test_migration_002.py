@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from api.models import Base
 from api.tests.conftest import alembic_config as _config
+from api.tests.conftest import scratch_db_at
 from api.tests.test_migration_001 import STUFE_1_TABELLEN
 
 STUFE_2_TABELLEN = {
@@ -74,10 +75,16 @@ def test_downgrade_auf_001_laesst_stufe1_samt_daten_stehen(scratch_db_url):
     assert _table_names(scratch_db_url) >= STUFE_2_TABELLEN
 
 
+@pytest.fixture(scope="module")
+def schema_head_url():
+    # Einmal je Modul migriert; jeder Test rollt seine Daten zurueck.
+    with scratch_db_at("head") as url:
+        yield url
+
+
 @pytest.fixture
-def conn(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "head")
-    engine = create_engine(scratch_db_url)
+def conn(schema_head_url):
+    engine = create_engine(schema_head_url)
     with engine.connect() as connection:
         yield connection
         connection.rollback()
