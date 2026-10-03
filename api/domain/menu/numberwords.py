@@ -681,6 +681,17 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
 
 
+def _suffix_at(tokens: list[str], at: int) -> str:
+    """Eine Endung an Stelle `at`, gueltig oder nicht ("g", "h", "ab"), sonst "".
+
+    Sie gehoert zu einer genannten, nicht vorhandenen Nummer ("Nummer 1000g",
+    "Nummer Z12h"), sonst bliebe sie als Rest und der Satz waere unklar
+    (Codex PR #155).
+    """
+    token = tokens[at] if at < len(tokens) else ""
+    return token if token.isalpha() and (len(token) == 1 or _long_suffix(token)) else ""
+
+
 def _marker_target(
     tokens: list[str], i: int, prefixed: set[int], card: CardFormat = NO_PREFIXES
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
@@ -719,8 +730,10 @@ def _marker_target(
             after = tokens[j + n] if j + n < len(tokens) else ""
             found = card.prefixes_of(tokens[j : j + n], spelled)
             if found and (after.isdigit() or _too_large(after)):
-                text = " oder ".join(p + after for p in found)
-                return j, j + n + 1, None, ItemNumber(0, text, True, valid=False)
+                suffix = _suffix_at(tokens, j + n + 1)
+                text = " oder ".join(p + after + suffix for p in found)
+                end = j + n + 1 + bool(suffix)
+                return j, end, None, ItemNumber(0, text, True, valid=False)
         # An die Ziffer geklebt ("Nummer JA12", "Nummer HM12") ist ein Wort kein
         # Fuellwort, sondern ein Praefix - nie still die 12 (Codex PR #155).
         if j not in prefixed and (
@@ -739,10 +752,11 @@ def _marker_target(
     # ein Zahlwort darüber ("tausend", "eintausend") hat keinen im erlaubten
     # Bereich, `value` bleibt dann 0 und wird nie gelesen, weil `valid=False`
     # den Aufrufer vorher abbiegen lässt.
-    if word.isdigit():
-        return j, j + 1, None, ItemNumber(int(word), word, True, valid=False)
-    if _too_large(word):
-        return j, j + 1, None, ItemNumber(0, word, True, valid=False)
+    if word.isdigit() or _too_large(word):
+        suffix = _suffix_at(tokens, j + 1)
+        value = int(word) if word.isdigit() else 0
+        bad = ItemNumber(value, word + suffix, True, valid=False)
+        return j, j + 1 + bool(suffix), None, bad
     # "Nummer A12", "Nummer A 12", "Nummer AB 12", "Nummer A zwölf": Buchstaben
     # vor der Zahl. Keine Kartenform - eine Endung steht hinter der Zahl, nie
     # davor. Die Zahl darf dabei auch als Wort kommen, die Erkennung liefert
@@ -757,11 +771,8 @@ def _marker_target(
             end = following.end
             # Auch eine falsche Endung ("Nummer Z12h") gehoert dazu, wie bei
             # Nummern ohne Praefix (Codex PR #155).
-            suffix = tokens[end] if end < len(tokens) else ""
-            if suffix.isalpha() and (len(suffix) == 1 or _long_suffix(suffix)):
-                end += 1
-            else:
-                suffix = ""
+            suffix = _suffix_at(tokens, end)
+            end += bool(suffix)
             return (
                 j,
                 end,

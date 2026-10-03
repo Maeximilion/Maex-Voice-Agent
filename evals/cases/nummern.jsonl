@@ -162,3 +162,7 @@
 {"say": "Nummer ja 12", "expect": "12", "why": "abgesetzt bleibt ja ein Fuellwort"}
 {"say": "JA12", "expect": "name", "why": "ohne Marker: geklebte Buchstaben sind kein Fuellwort, nie still die 12 (Codex PR #155)"}
 {"say": "die HM12", "expect": "name", "why": "dasselbe mit Artikel (Codex PR #155)"}
+{"say": "Nummer S1000g", "expect": "!s1000g", "why": "Endung hinter zu grosser Praefixnummer gehoert dazu (Codex PR #155)"}
+{"say": "Nummer S 1000g", "expect": "!s1000g", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "Nummer S tausend g", "expect": "!stausendg", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Nummer 1000g", "expect": "!1000g", "why": "ohne Praefix dasselbe: Endung gehoert zur genannten Nummer"}
