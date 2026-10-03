@@ -25,12 +25,18 @@ def alembic_config(url: str) -> Config:
     return cfg
 
 
-def create_scratch_db(prefix: str = "maex_test") -> str:
+def create_scratch_db(prefix: str = "maex_test", template: str | None = None) -> str:
+    """Neue leere Datenbank, oder eine Kopie von `template` (URL einer migrierten DB).
+
+    Die Kopie per TEMPLATE dauert Millisekunden, Alembic von 001 an fast eine halbe
+    Sekunde; das war rund 90 % der Testzeit (CI-Analyse 03.10.2026).
+    """
     base_url = make_url(settings.database_url)
     name = f"{prefix}_{uuid.uuid4().hex[:8]}"
+    copy = f' TEMPLATE "{make_url(template).database}"' if template else ""
     admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
     with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
+        conn.execute(text(f'CREATE DATABASE "{name}"{copy}'))
     admin.dispose()
     # str(URL) maskiert das Passwort als "***", deshalb explizit rendern.
     return base_url.set(database=name).render_as_string(hide_password=False)

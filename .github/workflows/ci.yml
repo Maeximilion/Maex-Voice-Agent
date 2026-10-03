@@ -1,9 +1,18 @@
 name: ci
 
+# Branches laufen ueber pull_request; ein zusaetzlicher push-Trigger fuer task/** und
+# dev/** liess jeden Push auf einen PR-Branch doppelt laufen (CI-Analyse 03.10.2026).
 on:
   push:
-    branches: [main, "task/**", "dev/**"]
+    branches: [main]
   pull_request:
+
+# Neuer Push auf denselben PR bricht den alten Lauf ab. Auf main bekommt jeder Lauf
+# eine eigene Gruppe (run_id): in einer gemeinsamen Gruppe haelt GitHub nur einen
+# wartenden Lauf und ersetzt ihn, ein Zwischen-Commit bliebe ungetestet (Codex PR #161).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
@@ -46,7 +55,8 @@ jobs:
       - run: pip install -r api/requirements.txt
       - run: ruff check api scripts evals printbridge
       - run: ruff format --check api scripts evals printbridge
-      - run: pytest -q
+      # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
+      - run: pytest -q -n auto
 
   docker-smoke:
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.09.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.0
+> Status: 03.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.0
 
 ---
 
@@ -328,7 +328,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.35.0 · 26.09.2026:** T-4.12: Kartennummern mit Praefix (S, SM) und Endung g, Praefixe aus der Karte
+- **v1.35.0 · 03.10.2026:** T-4.12: Kartennummern mit Praefix (S, SM) und Endung g, Praefixe aus der Karte
+- **v1.34.16 · 03.10.2026:** CI schneller: Vorlage-Datenbank je Testlauf, pytest parallel, kein doppelter Lauf je Push
 - **v1.34.15 · 27.09.2026:** T-1.14 done: Alternativen im selben Service, Beginn aus service_config (D12), Migration 005
 - **v1.34.14 · 27.09.2026:** Offener Punkt aus PR #149: zwei Schreibweisen einer Kassendatei
 - **v1.34.13 · 26.09.2026:** T-4.11 Review 2: Schutz gegen leere Karte, Aliase kommen zurueck, Memo nur aktiver Zeilen

@@ -56,12 +56,22 @@ def scratch_db_url():
         drop_scratch_db(url)
 
 
-@pytest.fixture
-def migrated_db_url():
-    """Frische Datenbank auf dem aktuellen Schema, je Test eine eigene."""
-    url = create_scratch_db()
+@pytest.fixture(scope="session")
+def migrated_template_url():
+    """Einmal je Testlauf migriert; jeder Test bekommt davon eine Kopie."""
+    url = create_scratch_db(prefix="maex_tmpl")
     try:
         migrate(url)
+        yield url
+    finally:
+        drop_scratch_db(url)
+
+
+@pytest.fixture
+def migrated_db_url(migrated_template_url):
+    """Frische Datenbank auf dem aktuellen Schema, je Test eine eigene."""
+    url = create_scratch_db(template=migrated_template_url)
+    try:
         yield url
     finally:
         drop_scratch_db(url)
