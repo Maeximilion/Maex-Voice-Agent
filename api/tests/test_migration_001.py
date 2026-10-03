@@ -42,6 +42,10 @@ def test_upgrade_erzeugt_alle_stufe1_tabellen(scratch_db_url):
 
 
 def test_downgrade_entfernt_alles_und_upgrade_geht_erneut(scratch_db_url):
+    # Erst hoch: auf einer frischen Datenbank ohne Revision liefe der Downgrade
+    # gar nicht, der Test pruefte dann nur eine leere Datenbank (Codex PR #164).
+    command.upgrade(_config(scratch_db_url), "001")
+    assert _table_names(scratch_db_url) == STUFE_1_TABELLEN | {"alembic_version"}
     command.downgrade(_config(scratch_db_url), "base")
     assert _table_names(scratch_db_url) <= {"alembic_version"}
     command.upgrade(_config(scratch_db_url), "001")
