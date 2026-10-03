@@ -137,6 +137,7 @@ def test_ohne_token_401(client):
     assert r.status_code == 401
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     """Je Messreihe eine andere Woche: sonst misst eine Wiederholung ab Gast 41 nur
     die Absage wegen voller Kapazität statt des Schreibpfads."""

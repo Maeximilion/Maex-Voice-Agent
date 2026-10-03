@@ -1,5 +1,6 @@
 """Gemeinsame Fixtures: Wegwerf-Datenbanken, damit die Entwicklungsdaten unberührt bleiben."""
 
+import os
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
@@ -19,6 +20,33 @@ from evals.scratch_db import (  # noqa: F401
 LATENZ_BUDGET_MS = 300
 LATENZ_RUNDEN = 3
 
+# Gesetzt von _latenz_messung, solange ein Test mit @pytest.mark.latency läuft.
+_latenz_test_aktiv = False
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "latency: misst das Latenzbudget mit echter Uhr; läuft in CI seriell, "
+        "nicht unter xdist (docs/13 §6)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _latenz_messung(request):
+    """Latenztests messen nur seriell: unter xdist-Workern messen sie die Last."""
+    global _latenz_test_aktiv
+    if request.node.get_closest_marker("latency") is None:
+        yield
+        return
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        pytest.skip("Latenz misst nur seriell: pytest -m latency")
+    _latenz_test_aktiv = True
+    try:
+        yield
+    finally:
+        _latenz_test_aktiv = False
+
 
 def p95_ms(
     call: Callable[[], object],
@@ -34,7 +62,16 @@ def p95_ms(
     Ausreißer durch Last auf einem geteilten CI-Runner verteilen sich so auf mehr
     Stichproben (bei 60 Aufrufen bis zu 3), ein Überschreiten auch nur in jedem
     dritten Aufruf bleibt rot. Das Budget selbst wird nicht gelockert.
+
+    Mit echter Uhr nur in Tests mit @pytest.mark.latency; die laufen in CI seriell
+    nach der parallelen Suite, sonst misst p95 die Konkurrenz der xdist-Worker.
     """
+    # Jede Uhr aus dem Modul time ist echt (perf_counter, monotonic, ...); Fakes nicht.
+    if getattr(clock, "__module__", None) == "time" and not _latenz_test_aktiv:
+        pytest.fail(
+            "p95_ms mit echter Uhr braucht @pytest.mark.latency am Test",
+            pytrace=False,
+        )
     samples: list[float] = []
     for _ in range(rounds):
         for _ in range(n):

@@ -127,6 +127,7 @@ def test_unbekanntes_gericht_zeigt_die_liste(client, tenant_id):
     assert "nicht geklappt" not in response.text
 
 
+@pytest.mark.latency
 def test_schalter_antwortet_schnell(client, db, tenant_id):
     rolls = item(db, tenant_id, "23")
     p95 = p95_ms(lambda: client.post(f"/gui/gericht-aus/{rolls}/aus", headers=HX))

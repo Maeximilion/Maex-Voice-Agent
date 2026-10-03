@@ -56,7 +56,11 @@ jobs:
       - run: ruff check api scripts evals printbridge
       - run: ruff format --check api scripts evals printbridge
       # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
-      - run: pytest -q -n auto
+      # Latenztests nicht: unter parallelen Workern messen sie die Last, nicht den Code.
+      - run: pytest -q -n auto -m "not latency"
+      # Latenzbudget < 300 ms (CLAUDE.md §7) seriell auf dem ruhigen Runner.
+      - name: Latenztests seriell
+        run: pytest -q -m latency
 
   docker-smoke:
     runs-on: ubuntu-latest

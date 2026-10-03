@@ -166,6 +166,7 @@ def test_eigene_dateien_werden_ausgeliefert(client):
     assert htmx.status_code == 200 and len(htmx.content) > 10_000
 
 
+@pytest.mark.latency
 def test_fragment_bleibt_schnell(client, engine, tenant_id):
     for i in range(20):
         reservierung(engine, tenant_id, name=f"Gast {i}", hh=17 + i % 5)
@@ -332,6 +333,7 @@ def test_fehlende_konfiguration_rote_leiste(client, engine, tenant_id):
     assert "Traceback" not in response.text
 
 
+@pytest.mark.latency
 def test_schalten_bleibt_schnell(client, tenant_id):
     assert p95_ms(lambda: client.post("/gui/kopfzeile/lieferung/aus", headers=HX)) < 300
     assert p95_ms(lambda: client.get("/gui/fragments/kopfzeile")) < 300
@@ -448,6 +450,7 @@ def test_rueckrufe_ohne_mandant_klartext(client):
     assert response.status_code == 503 and "Keine Betriebsdaten" in response.text
 
 
+@pytest.mark.latency
 def test_rueckrufe_bleiben_schnell(client, engine, tenant_id):
     for i in range(20):
         rueckruf(engine, tenant_id, summary=f"Gast {i}")
