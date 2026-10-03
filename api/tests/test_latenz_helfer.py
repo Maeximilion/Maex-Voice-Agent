@@ -66,3 +66,14 @@ def test_p95_gilt_ueber_alle_reihen():
 
     assert p95_ms(fake.call, n=20, clock=fake.clock) == pytest.approx(560.0)
     assert fake.calls == 60
+
+
+def test_echte_messung_ohne_latency_marker_bricht_ab():
+    """Echte Uhr ohne Marker liefe im parallelen CI-Schritt und mäße die Last."""
+    with pytest.raises(pytest.fail.Exception, match="latency"):
+        p95_ms(lambda: None, n=1)
+
+
+@pytest.mark.latency
+def test_echte_messung_mit_latency_marker_misst():
+    assert p95_ms(lambda: None, n=1) < LATENZ_BUDGET_MS

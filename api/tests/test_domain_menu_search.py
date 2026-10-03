@@ -363,6 +363,7 @@ def test_tool_prueft_eingaben(client, tenant_id, extra):
     assert response.json()["error"]["code"] == "invalid_input"
 
 
+@pytest.mark.latency
 def test_tool_bleibt_schnell_mit_grosser_karte(client, session, tenant_id):
     """Latenzbudget 300 ms p95 (docs/04), auch mit 200 Gerichten und unscharfer Suche."""
     zeilen = "".join(
@@ -758,6 +759,7 @@ def test_zusammengesetztes_gericht_in_einer_aufzaehlung(
     assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == teile
 
 
+@pytest.mark.latency
 def test_aufzaehlung_ohne_mengen_bleibt_im_latenzbudget(session, zusammen_tenant):
     """Das Zusammenfassen benachbarter Stuecke sucht je Spanne einmal. Fuenf
     Gerichte ohne Menge sind der teure Fall; das Budget von 300 ms gilt auch hier."""
@@ -827,6 +829,7 @@ FRUECHTE = [
 ]
 
 
+@pytest.mark.latency
 def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
     session, monkeypatch
 ):

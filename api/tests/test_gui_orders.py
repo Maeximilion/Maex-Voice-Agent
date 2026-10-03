@@ -236,6 +236,7 @@ def test_veralteter_stand_und_kaputter_stand(client, db, tenant_id):
     assert _fresh(db, order_id).total_cents == 1380
 
 
+@pytest.mark.latency
 def test_spalte_antwortet_schnell(client, db, tenant_id):
     for _ in range(10):
         _order(db, tenant_id)
