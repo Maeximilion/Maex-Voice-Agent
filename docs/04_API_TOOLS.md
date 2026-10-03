@@ -122,7 +122,7 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    aktiven Nummern der Karte (`items.card_format`), nie aus dem Code. Gesagt
    wird das Präfix als Buchstabe („S 12"), buchstabiert („Es zwölf", „Es Em
    eins") oder als Kategoriewort („Sushi zwölf"), wenn alle Nummern mit diesem
-   Präfix in einer einwortigen Kategorie stehen. Ein Kategoriewort kann mehrere
+   Präfix in einer einwortigen Kategorie stehen und diese Kategorie keine Nummer ohne Präfix hat. Ein Kategoriewort kann mehrere
    Präfixe meinen („Sushi" trägt S und SM): die Suche schlägt alle nach, genau
    ein Treffer ist `exact_number`, zwei sind `ambiguous` („Sushi eins" → S1 oder
    SM1), keiner `not_found`. Nie wird aus einer Präfixnummer die Zahl allein:

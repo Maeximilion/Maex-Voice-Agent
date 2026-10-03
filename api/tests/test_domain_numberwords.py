@@ -740,10 +740,14 @@ def test_kategoriewort_nur_ohne_fremde_praefixe():
     assert dict(karte.words) == {}
 
 
-def test_kategoriewort_mit_nummern_ohne_praefix():
-    """Stehen in der Kategorie auch Nummern ohne Praefix, sind sie Kandidat."""
-    karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi")])
-    assert dict(karte.words) == {"sushi": ("", "s")}
+def test_kategoriewort_nur_ohne_nummern_ohne_praefix():
+    """Codex PR #155: steht in der Kategorie auch eine Nummer ohne Praefix,
+    gibt es kein Kategoriewort. Sonst faende "Sushi zwölf" die 12 einer
+    anderen Kategorie (Suppen), sobald S12 fehlt."""
+    karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi"), ("12", "Suppen")])
+    assert dict(karte.words) == {}
+    ref, _ = sole_item_number("Sushi zwölf", karte)
+    assert ref is None or "12" not in ref.cards
 
 
 @pytest.mark.parametrize(
@@ -895,9 +899,9 @@ def test_canonical_card_leer_ist_null():
 
 
 def test_find_item_number_mit_kandidaten_ist_keine_blanke_zahl():
-    """Codex PR #155: "Sushi 99" mit 99 und S99 in derselben Kategorie ist
-    keine blanke 99 - welche es ist, entscheidet die Suche an der Karte."""
-    karte = CardFormat.from_items([("s1", "Sushi"), ("99", "Sushi")])
+    """Codex PR #155: "Sushi 99" mit den Kandidaten S99 und SM99 ist keine
+    blanke 99 - welche es ist, entscheidet die Suche an der Karte."""
+    karte = CardFormat.from_items([("s1", "Sushi"), ("sm1", "Sushi")])
     assert find_item_number("Sushi 99", karte) is None
 
 

@@ -160,8 +160,8 @@ class CardFormat:
 
     `prefixes`: Buchstaben vor der Zahl, die auf der Karte vorkommen ("s",
     "sm"). `words`: ein Kategoriewort, das der Gast statt des Praefixes sagt
-    ("Sushi zwölf"), mit allen Praefixen, die es meinen kann - "" steht fuer
-    Nummern ohne Praefix derselben Kategorie. Kommt aus der Datenbank
+    ("Sushi zwölf"), mit allen Praefixen, die es meinen kann - nur fuer
+    Kategorien, in denen jede Nummer ein Praefix traegt. Kommt aus der Datenbank
     (`items.card_format`), nie aus dem Code (CLAUDE.md §2 Regel 1).
     """
 
@@ -195,8 +195,12 @@ class CardFormat:
         words: dict[str, tuple[str, ...]] = {}
         for name, found in in_category.items():
             carried = found - {""}
+            # Nur Kategorien, deren Nummern alle ein Praefix tragen: der leere
+            # Kandidat haette keinen Bezug mehr zur Kategorie, "Sushi zwölf"
+            # faende sonst die 12 der Suppen (Codex PR #155).
             if (
                 carried
+                and "" not in found
                 and name.isalpha()
                 and all(categories_of[p] == {name} for p in carried)
             ):
@@ -779,6 +783,14 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(following.value) + suffix, True, valid=False),
             )
+        # "Nummer Z 1000", "Nummer Z tausend": Zahl ueber dem Kartenbereich
+        # hinter einem unbekannten Praefix - genannt, nicht vorhanden, keine
+        # Namenssuche auf "z" (Codex PR #155).
+        after = tokens[j + 1] if j + 1 < len(tokens) else ""
+        if after.isdigit() or _too_large(after):
+            suffix = _suffix_at(tokens, j + 2)
+            bad = ItemNumber(0, word + after + suffix, True, valid=False)
+            return j, j + 2 + bool(suffix), None, bad
     if j in prefixed and _prefix_letters(word, glued=True):
         return j, j + 2, None, ItemNumber(0, word + tokens[j + 1], True, valid=False)
     return j, j, None, None

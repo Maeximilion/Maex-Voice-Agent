@@ -166,3 +166,5 @@
 {"say": "Nummer S 1000g", "expect": "!s1000g", "why": "dasselbe abgesetzt (Codex PR #155)"}
 {"say": "Nummer S tausend g", "expect": "!stausendg", "why": "dasselbe als Zahlwort (Codex PR #155)"}
 {"say": "Nummer 1000g", "expect": "!1000g", "why": "ohne Praefix dasselbe: Endung gehoert zur genannten Nummer"}
+{"say": "Nummer Z 1000", "expect": "!z1000", "why": "unbekanntes Praefix vor zu grosser Zahl: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "Nummer Z tausend", "expect": "!ztausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
