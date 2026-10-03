@@ -88,6 +88,7 @@ def test_vergangenheit_ist_invalid_input_mit_say(client):
     assert r.json()["say"] == "Dieser Zeitpunkt ist schon vorbei."
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     http, tenant_id = client
     p95 = p95_ms(lambda: _call(http, tenant_id), n=20)
@@ -95,6 +96,7 @@ def test_latenz_p95_unter_300_ms(client):
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
 
 
+@pytest.mark.latency
 def test_latenz_p95_morgens_ohne_freien_service_unter_300_ms(client):
     # Teuerster Weg (T-1.14): Wunsch morgens vor der Oeffnung, die Gruppe passt in
     # keinen Service, gesucht wird ueber Mittag und Abend ohne Treffer.
