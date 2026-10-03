@@ -64,9 +64,11 @@ def p95_ms(
     Mit echter Uhr nur in Tests mit @pytest.mark.latency; die laufen in CI seriell
     nach der parallelen Suite, sonst misst p95 die Konkurrenz der xdist-Worker.
     """
-    if clock is time.perf_counter and not _latenz_test_aktiv:
+    # Jede Uhr aus dem Modul time ist echt (perf_counter, monotonic, ...); Fakes nicht.
+    if getattr(clock, "__module__", None) == "time" and not _latenz_test_aktiv:
         pytest.fail(
-            "p95_ms mit echter Uhr braucht @pytest.mark.latency am Test", pytrace=False
+            "p95_ms mit echter Uhr braucht @pytest.mark.latency am Test",
+            pytrace=False,
         )
     samples: list[float] = []
     for _ in range(rounds):

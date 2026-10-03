@@ -1,5 +1,7 @@
 """Latenz-Helfer p95_ms: Messreihen, Abbruch unter Budget, echtes Überschreiten bleibt rot."""
 
+import time
+
 import pytest
 
 from api.tests.conftest import LATENZ_BUDGET_MS, p95_ms
@@ -68,10 +70,13 @@ def test_p95_gilt_ueber_alle_reihen():
     assert fake.calls == 60
 
 
-def test_echte_messung_ohne_latency_marker_bricht_ab():
+@pytest.mark.parametrize(
+    "clock", [time.perf_counter, time.monotonic, time.time, time.process_time]
+)
+def test_echte_messung_ohne_latency_marker_bricht_ab(clock):
     """Echte Uhr ohne Marker liefe im parallelen CI-Schritt und mäße die Last."""
     with pytest.raises(pytest.fail.Exception, match="latency"):
-        p95_ms(lambda: None, n=1)
+        p95_ms(lambda: None, n=1, clock=clock)
 
 
 @pytest.mark.latency
