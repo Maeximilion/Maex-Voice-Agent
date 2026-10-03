@@ -18,7 +18,7 @@
     },
     {
       "role": "customer",
-      "text": "Vier Portionen Fruehlingsrollen, zweimal Gyoza, dreimal die 32, zwei mit Huhn, eine mit Tofu, und die 40 ohne Zwiebeln."
+      "text": "Drei Portionen Fruehlingsrollen, zweimal Gyoza, dreimal die 32, zwei mit Huhn, eine mit Tofu, und die 40 ohne Zwiebeln."
     },
     {
       "role": "customer",
@@ -50,7 +50,7 @@
     "items": [
       {
         "number": "23",
-        "quantity": 4
+        "quantity": 3
       },
       {
         "number": "22",

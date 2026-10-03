@@ -110,6 +110,14 @@ def _menu_numbers() -> set[str]:
         return {row["number"].lower() for row in csv.DictReader(f, delimiter=";")}
 
 
+def _menu_options() -> dict[str, set[str]]:
+    with (runner.MENU / "item_options.csv").open(encoding="utf-8") as f:
+        options: dict[str, set[str]] = {}
+        for row in csv.DictReader(f, delimiter=";"):
+            options.setdefault(row["number"].lower(), set()).add(row["option_name"])
+        return options
+
+
 @pytest.mark.parametrize("path", sorted(ZIEL.glob("*.json")), ids=lambda p: p.stem)
 def test_zielfall_ist_gueltig(path):
     """CI spielt ziel/ nicht ab; ein kaputter Zielfall fiele sonst erst mit T-2.4 auf."""
@@ -119,6 +127,16 @@ def test_zielfall_ist_gueltig(path):
     wanted = [i["number"] for i in case["expected"].get("items", [])]
     wanted += case.get("sold_out", [])
     assert [n for n in wanted if n.lower() not in numbers] == [], path.name
+    # Review PR #162: eine Option, die das Gericht nicht hat, macht das Ziel
+    # unerreichbar ("Erdnuss" statt "Erdnusssauce").
+    options = _menu_options()
+    unknown = [
+        (i["number"], o)
+        for i in case["expected"].get("items", [])
+        for o in i.get("options", [])
+        if o not in options.get(i["number"].lower(), set())
+    ]
+    assert unknown == [], path.name
 
 
 def test_jeder_fallordner_hat_seine_eigene_baseline():

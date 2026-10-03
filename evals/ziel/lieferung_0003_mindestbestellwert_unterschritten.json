@@ -11,11 +11,23 @@
   "transcript": [
     {
       "role": "customer",
-      "text": "Hallo, bitte einmal die 12 liefern, Beispielweg 3."
+      "text": "Hallo, bitte einmal die 12 liefern, Beispielweg 3 in Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lang."
     },
     {
       "role": "customer",
       "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Dann lass ich es, danke."
     }
   ],
   "expected": {

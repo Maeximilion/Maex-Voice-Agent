@@ -56,6 +56,39 @@ def run(migrated_db_url, cases_dir, report_dir, **kw) -> RunReport:
 # --- Ganzer Lauf -------------------------------------------------------------------
 
 
+ZIEL = Path(runner.__file__).parent / "ziel"
+
+
+def _tags(folder: Path) -> set[str]:
+    return {
+        tag
+        for path in folder.glob("*.json")
+        for tag in json.loads(path.read_text(encoding="utf-8"))["tags"]
+    }
+
+
+def test_pflichtfaelle_nur_im_ziel_bleiben_rot_bis_sie_umziehen(
+    migrated_db_url, tmp_path
+):
+    """Review PR #162: CI spielt ziel/ nicht ab. Pflichtfaelle, die es nur dort gibt
+    (Allergie mit Wert, Mengenaenderung, Zone, Mindestbestellwert), laufen hier
+    trotzdem mit, wie ein striktes xfail: wird einer gruen, gehoert er nach cases/."""
+    from api.tests.test_evals_suite import _pflicht
+
+    only_ziel = set(_pflicht().values()) - _tags(CASES)
+    assert only_ziel, "kein Pflichtfall mehr nur im Ziel: Test vereinfachen"
+    cases = tmp_path / "pflicht_ziel"
+    cases.mkdir()
+    for path in ZIEL.glob("*.json"):
+        if only_ziel & set(json.loads(path.read_text(encoding="utf-8"))["tags"]):
+            shutil.copy(path, cases / path.name)
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.total >= len(only_ziel)
+    green = [c.id for c in report.cases if c.passed]
+    assert green == [], f"jetzt gruen, nach evals/cases/ verschieben: {green}"
+    assert not [c.id for c in report.cases if c.error], "Zielfall abgestuerzt"
+
+
 def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
     cases = tmp_path / "cases"
     shutil.copytree(CASES, cases, ignore=shutil.ignore_patterns("*.jsonl"))
@@ -254,6 +287,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
                 "tools": [{"tool": "check_delivery", "number": "1", "error": "x"}]
             },
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "check_delivery", "error": " "}]},
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -433,6 +471,36 @@ def test_adresse_ist_bis_t61_nie_still_gruen():
         judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, strasse)
         == []
     )
+
+
+def test_zweite_bestaetigte_reservierung_ist_immer_rot():
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30", extra_reservations=1)
+    diffs = judge({"reserved_for": "2026-09-18T19:30"}, seen)
+    assert diffs == ["mehr als eine Reservierung bestaetigt: 1 zusaetzlich"]
+
+
+def test_adresse_ohne_leerzeichen_und_abkuerzung():
+    seen = _reservation_seen(
+        address={"street": "Lindenstr.", "house_number": "7 b", "city": "Musterdorf"}
+    )
+    want = {"street": "Lindenstraße", "house_number": "7b"}
+    assert judge({"address": want}, seen) == []
+    assert judge({"address": {**want, "house_number": "7c"}}, seen)
+
+
+def test_run_waehlt_den_report_ordner_je_fallordner(
+    migrated_db_url, monkeypatch, tmp_path
+):
+    """Review PR #162: auch run() ohne report_dir trennt die Baselines, nicht nur
+    die Kommandozeile."""
+    monkeypatch.setattr(runner, "REPORTS", tmp_path / "reports")
+    cases = write_cases(
+        tmp_path / "ziel",
+        fall("eins", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
+    )
+    runner.run(cases_dir=cases, db_url=migrated_db_url, stamp=datetime.now(UTC))
+    assert list((tmp_path / "reports" / "ziel").glob("eval_*.json"))
+    assert not list((tmp_path / "reports").glob("eval_*.json"))
 
 
 def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):

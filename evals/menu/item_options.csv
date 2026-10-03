@@ -1,7 +1,7 @@
 number;group_name;option_name;price_delta_eur;is_default;required
 47;Fleisch;Ente;0,00;ja;ja
 47;Fleisch;Huhn;-1,00;nein;ja
-47;Sauce;Erdnuss;0,50;nein;nein
+47;Sauce;Erdnusssauce;0,50;nein;nein
 30;Fleisch;Huhn;0,00;ja;ja
 30;Fleisch;Rind;1,00;nein;ja
 30;Fleisch;Tofu;0,00;nein;ja

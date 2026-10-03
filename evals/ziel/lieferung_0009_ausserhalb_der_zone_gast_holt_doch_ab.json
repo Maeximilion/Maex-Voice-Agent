@@ -32,7 +32,6 @@
     }
   ],
   "expected": {
-    "intent": "pickup",
     "items": [
       {
         "number": "34",

@@ -211,8 +211,12 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     missing = missing_tools(
         expected.get("tools", []), rec.ok_results, rec.error_results
     )
-    if missing:
-        diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
+    rejected = [m for m in missing if isinstance(m, dict) and "error" in m]
+    succeeded = [m for m in missing if m not in rejected]
+    if succeeded:
+        diffs.append(f"tools: kein erfolgreicher Aufruf {succeeded}")
+    if rejected:
+        diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
@@ -234,13 +238,16 @@ def run(
     cases_dir: Path = CASES,
     tags: list[str] | None = None,
     model: str = "scripted",
-    report_dir: Path = REPORTS,
+    report_dir: Path | None = None,
     db_url: str | None = None,
     keep_db: bool = False,
     stamp: datetime | None = None,
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests)."""
     tags = sorted(tags or [])
+    # Ohne Angabe je Fallordner ein eigener Report-Ordner: ein Lauf ueber ziel/
+    # darf nie Baseline der CI-Suite werden (Review PR #162).
+    report_dir = report_dir or default_report_dir(cases_dir)
     make_llm = model_factory(model)
     cases = load_cases(cases_dir, tags)
     if not cases:
@@ -287,8 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
     parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
     parser.add_argument("--cases", type=Path, default=CASES)
-    # Ohne Angabe je Fallordner ein eigener Report-Ordner: die Baseline fuer die
-    # Regressionsregel gilt nur innerhalb desselben Ordners (cases/ gegen ziel/).
+    # Ohne Angabe waehlt run() den Report-Ordner je Fallordner.
     parser.add_argument("--report-dir", type=Path, default=None)
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"
@@ -304,7 +310,7 @@ def main(argv: list[str] | None = None) -> int:
             cases_dir=args.cases,
             tags=tags,
             model=args.model,
-            report_dir=args.report_dir or default_report_dir(args.cases),
+            report_dir=args.report_dir,
             keep_db=args.keep_db,
         )
     except (CaseError, UsageError) as exc:

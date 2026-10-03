@@ -20,10 +20,6 @@
     },
     {
       "role": "customer",
-      "text": "Ach so, dann noch die 31 mit Rind."
-    },
-    {
-      "role": "customer",
       "text": "Nein, das wars."
     },
     {
@@ -33,6 +29,14 @@
     {
       "role": "customer",
       "text": "Auf den Namen Roth."
+    },
+    {
+      "role": "customer",
+      "text": "Ach so, dann noch die 31 mit Rind."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
     },
     {
       "role": "customer",

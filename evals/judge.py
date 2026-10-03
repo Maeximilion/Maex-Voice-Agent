@@ -152,7 +152,10 @@ def _valid_tool(entry: Any) -> bool:
         and set(entry) <= {"tool", "number", "error"}
         and not {"number", "error"} <= set(entry)
         and isinstance(entry.get("number", ""), str)
-        and isinstance(entry.get("error", ""), str)
+        and (
+            "error" not in entry
+            or (isinstance(entry["error"], str) and bool(entry["error"].strip()))
+        )
     )
 
 
@@ -227,6 +230,9 @@ class Observed:
     # ein wiederholter confirm darf keinen zweiten Vorgang und keinen zweiten
     # Bon ausloesen (docs/08 §6, Idempotenz).
     duplicate_confirms: int = 0
+    # Mehr als eine bestaetigte Reservierung in einem Anruf: nach einer Korrektur
+    # stuende der alte Termin noch im Buch (Review PR #162).
+    extra_reservations: int = 0
     notes: list[str] = field(default_factory=list)
 
 
@@ -235,7 +241,9 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     call = session.get(Call, call_id)
     orders = session.scalars(select(Order).where(Order.call_id == call_id)).all()
     reservations = session.scalars(
-        select(Reservation).where(Reservation.call_id == call_id)
+        select(Reservation)
+        .where(Reservation.call_id == call_id)
+        .order_by(Reservation.created_at)
     ).all()
     callbacks = session.scalar(
         select(func.count(Callback.id)).where(Callback.call_id == call_id)
@@ -281,6 +289,7 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         reserved_for=_reserved_local(session, call, done_res),
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
+        extra_reservations=max(0, len(done_res) - 1),
     )
 
 
@@ -292,10 +301,13 @@ def _reserved_local(session: Session, call, done_res) -> str | None:
 
 
 def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | None:
-    """Nur die genannten Felder; Strasse und Ort ohne Unterschied bei ss/ß und Umlaut."""
+    """Nur die genannten Felder. Gleich ist, was sich nur in Umlaut-Schreibweise,
+    ss/ß, Leerzeichen, Satzzeichen oder "str." fuer "strasse" unterscheidet ("7 b"
+    und "7b", "Lindenstr." und "Lindenstraße")."""
 
     def norm(value: str | None) -> str:
-        return " ".join(fold(value or "").split())
+        text = fold(value or "").replace("str.", "strasse")
+        return "".join(ch for ch in text if ch.isalnum())
 
     if got is not None and all(norm(want[k]) == norm(got.get(k)) for k in want):
         return None
@@ -403,4 +415,8 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
     # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
     if seen.duplicate_confirms:
         diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")
+    if seen.extra_reservations:
+        diffs.append(
+            f"mehr als eine Reservierung bestaetigt: {seen.extra_reservations} zusaetzlich"
+        )
     return diffs
