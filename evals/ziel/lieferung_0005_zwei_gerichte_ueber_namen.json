@@ -55,6 +55,10 @@
       "house_number": "3",
       "city": "Musterdorf",
       "postal_code": "12345"
-    }
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
   }
 }

@@ -86,6 +86,10 @@
       "house_number": "8",
       "city": "Musterdorf",
       "postal_code": "12345"
-    }
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
   }
 }

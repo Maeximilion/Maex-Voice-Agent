@@ -35,6 +35,7 @@
     "escalated": false,
     "intent": "delivery",
     "tools": [
+      "check_delivery",
       {
         "tool": "draft_order",
         "error": "below_minimum"

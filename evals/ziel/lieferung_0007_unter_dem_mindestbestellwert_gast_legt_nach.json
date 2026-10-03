@@ -68,10 +68,12 @@
       "postal_code": "12345"
     },
     "tools": [
+      "check_delivery",
       {
         "tool": "draft_order",
         "error": "below_minimum"
       }
-    ]
+    ],
+    "order_type": "delivery"
   }
 }

@@ -33,6 +33,7 @@ from api.models import (
     Reservation,
     Tenant,
 )
+from api.models.orders import ORDER_TYPES
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
@@ -57,6 +58,9 @@ EXPECTED_KEYS = frozenset(
         # Felder. Beobachtbar erst mit der Tabelle addresses (T-6.1); bis dahin ist
         # ein Fall mit Adresse immer rot, statt die Korrektur still zu uebergehen.
         "address",
+        # Art der bestaetigten Bestellung: wechselt der Gast nach "ausserhalb der
+        # Zone" zur Abholung, muss auch eine Abholung entstehen (Codex PR #162).
+        "order_type",
     }
 )
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city")
@@ -111,6 +115,9 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
             "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
         )
+    order_type = case["expected"].get("order_type")
+    if order_type is not None and order_type not in ORDER_TYPES:
+        raise CaseError(f"{source}: order_type ist eins von {ORDER_TYPES}")
     reserved = case["expected"].get("reserved_for")
     if reserved is not None and not _local_minute(reserved):
         raise CaseError(f"{source}: reserved_for ist eine Ortszeit YYYY-MM-DDTHH:MM")
@@ -224,6 +231,7 @@ class Observed:
     party_size: int | None
     reserved_for: str | None = None
     address: dict[str, str] | None = None
+    order_type: str | None = None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
     # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
@@ -239,7 +247,9 @@ class Observed:
 def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     session.expire_all()
     call = session.get(Call, call_id)
-    orders = session.scalars(select(Order).where(Order.call_id == call_id)).all()
+    orders = session.scalars(
+        select(Order).where(Order.call_id == call_id).order_by(Order.created_at)
+    ).all()
     reservations = session.scalars(
         select(Reservation)
         .where(Reservation.call_id == call_id)
@@ -287,6 +297,7 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
         reserved_for=_reserved_local(session, call, done_res),
+        order_type=done_orders[-1].type if done_orders else None,
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
         extra_reservations=max(0, len(done_res) - 1),
@@ -390,7 +401,7 @@ def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
 def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
     """Abweichungen in Worten; leer heisst bestanden. Nur Felder aus `expected`."""
     diffs: list[str] = []
-    for key in ("intent", "confirmed", "escalated", "party_size"):
+    for key in ("intent", "confirmed", "escalated", "party_size", "order_type"):
         if key in expected and expected[key] != getattr(seen, key):
             diffs.append(
                 f"{key}: erwartet {expected[key]!r}, gebucht {getattr(seen, key)!r}"

@@ -54,7 +54,8 @@
       },
       {
         "number": "13",
-        "quantity": 1
+        "quantity": 1,
+        "note": null
       },
       {
         "number": "24",
@@ -69,6 +70,10 @@
       "house_number": "30",
       "city": "Musterdorf",
       "postal_code": "12345"
-    }
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
   }
 }

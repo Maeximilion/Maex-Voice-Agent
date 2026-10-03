@@ -292,6 +292,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"tools": [{"tool": "check_delivery", "error": " "}]},
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"order_type": "lieferung"},
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -486,6 +491,27 @@ def test_adresse_ohne_leerzeichen_und_abkuerzung():
     want = {"street": "Lindenstraße", "house_number": "7b"}
     assert judge({"address": want}, seen) == []
     assert judge({"address": {**want, "house_number": "7c"}}, seen)
+
+
+def test_bestellart_und_abgelehnter_wunsch_ohne_notiz():
+    """Codex PR #162: Abholung statt Lieferung muss als Abholung ankommen, und ein
+    abgelehnter Wunsch ("extra scharf") darf nicht als Kuechennotiz landen."""
+    seen = Observed(
+        intent="delivery",
+        confirmed=True,
+        escalated=False,
+        items=[{"number": "34", "quantity": 1, "options": [], "note": "extra scharf"}],
+        customer_name="Peters",
+        party_size=None,
+        order_type="delivery",
+    )
+    assert judge({"order_type": "pickup"}, seen) == [
+        "order_type: erwartet 'pickup', gebucht 'delivery'"
+    ]
+    want = {"number": "34", "quantity": 1, "note": None}
+    assert judge({"items": [want]}, seen)
+    clean = Observed(**{**seen.__dict__, "items": [{**seen.items[0], "note": None}]})
+    assert judge({"items": [want]}, clean) == []
 
 
 def test_run_waehlt_den_report_ordner_je_fallordner(

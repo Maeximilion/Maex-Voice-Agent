@@ -53,6 +53,7 @@
         "tool": "check_delivery",
         "error": "out_of_zone"
       }
-    ]
+    ],
+    "order_type": "pickup"
   }
 }

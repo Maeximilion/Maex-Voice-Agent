@@ -44,7 +44,8 @@
         "quantity": 1,
         "options": [
           "Garnelen"
-        ]
+        ],
+        "note": null
       },
       {
         "number": "42",

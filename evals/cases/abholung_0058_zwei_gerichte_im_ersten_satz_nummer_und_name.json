@@ -43,6 +43,7 @@
     ],
     "customer_name": "Schulz",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "order_type": "pickup"
   }
 }
