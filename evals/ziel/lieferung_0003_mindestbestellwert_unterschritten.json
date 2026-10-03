@@ -20,6 +20,13 @@
   ],
   "expected": {
     "confirmed": false,
-    "escalated": false
+    "escalated": false,
+    "intent": "delivery",
+    "tools": [
+      {
+        "tool": "draft_order",
+        "error": "below_minimum"
+      }
+    ]
   }
 }

@@ -96,7 +96,8 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     tools = case["expected"].get("tools", [])
     if not isinstance(tools, list) or not all(_valid_tool(t) for t in tools):
         raise CaseError(
-            f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
+            f"{source}: tools ist eine Liste aus Namen, {{tool, number}} "
+            "oder {tool, error}"
         )
     alternatives = case["expected"].get("alternatives", [])
     if (
@@ -148,19 +149,29 @@ def _valid_tool(entry: Any) -> bool:
     return (
         isinstance(entry, dict)
         and isinstance(entry.get("tool"), str)
-        and set(entry) <= {"tool", "number"}
+        and set(entry) <= {"tool", "number", "error"}
+        and not {"number", "error"} <= set(entry)
         and isinstance(entry.get("number", ""), str)
+        and isinstance(entry.get("error", ""), str)
     )
 
 
 def missing_tools(
-    wanted: list[Any], ok_results: list[tuple[str, dict[str, Any]]]
+    wanted: list[Any],
+    ok_results: list[tuple[str, dict[str, Any]]],
+    error_results: list[tuple[str, str]] = (),
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
-    keine Frage nach der 23."""
+    keine Frage nach der 23. Mit `error` muss das Tool genau so abgelehnt haben
+    (`check_delivery` mit `out_of_zone`): "nichts gebucht" allein beweist nicht,
+    dass die Regel gegriffen hat (Codex PR #162)."""
     missing = []
     for entry in wanted:
+        if isinstance(entry, dict) and "error" in entry:
+            if (entry["tool"], entry["error"]) not in error_results:
+                missing.append(entry)
+            continue
         name = entry if isinstance(entry, str) else entry["tool"]
         number = None if isinstance(entry, str) else entry.get("number")
         hit = any(

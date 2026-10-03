@@ -48,6 +48,12 @@
     ],
     "customer_name": "Peters",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "tools": [
+      {
+        "tool": "check_delivery",
+        "error": "out_of_zone"
+      }
+    ]
   }
 }

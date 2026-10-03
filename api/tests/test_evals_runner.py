@@ -247,6 +247,13 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"address": {"strasse": "Gartenweg"}},
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {
+                "tools": [{"tool": "check_delivery", "number": "1", "error": "x"}]
+            },
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -761,6 +768,33 @@ def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
     assert missing_tools(want, [("search_menu", {"number": "23"})]) == want
     assert missing_tools(want, [("get_item_details", {"number": "23"})]) == []
     assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
+
+
+def test_abgelehnte_pruefung_muss_genau_so_abgelehnt_haben():
+    """Codex PR #162: "nichts gebucht" allein beweist keine Zonenpruefung."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "check_delivery", "error": "out_of_zone"}]
+    assert missing_tools(want, []) == want
+    # Erfolgreich geprueft ist das Gegenteil der erwarteten Ablehnung.
+    assert missing_tools(want, [("check_delivery", {"zone": "A"})]) == want
+    assert missing_tools(want, [], [("check_delivery", "invalid_input")]) == want
+    assert missing_tools(want, [], [("draft_order", "out_of_zone")]) == want
+    assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
+
+
+def test_recorder_merkt_abgelehnte_ergebnisse_mit_code():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    llm.next_turn("", {}, json.dumps({"tool": "search_menu", "ok": False}))
+    assert llm.recording.error_results == [("check_delivery", "out_of_zone")]
+    assert llm.recording.ok_results == []
 
 
 def test_recorder_merkt_nur_erfolgreiche_ergebnisse():

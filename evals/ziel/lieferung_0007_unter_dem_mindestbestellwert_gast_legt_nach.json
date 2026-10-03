@@ -61,6 +61,12 @@
       "street": "Lindenstrasse",
       "house_number": "4",
       "city": "Musterdorf"
-    }
+    },
+    "tools": [
+      {
+        "tool": "draft_order",
+        "error": "below_minimum"
+      }
+    ]
   }
 }

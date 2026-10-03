@@ -208,7 +208,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         return result
 
     rec = llm.recording
-    missing = missing_tools(expected.get("tools", []), rec.ok_results)
+    missing = missing_tools(
+        expected.get("tools", []), rec.ok_results, rec.error_results
+    )
     if missing:
         diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
     result.turns = len(turns)

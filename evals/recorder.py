@@ -75,6 +75,10 @@ class Recording:
     # Erfolgreiche Tool-Ergebnisse (Name, Daten): `expected.tools` zaehlt nur,
     # was wirklich geliefert hat, nicht jeden Versuch (Codex PR #145, P1).
     ok_results: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
+    # Abgelehnte Tool-Ergebnisse (Name, error_code): eine Lieferung ausserhalb der
+    # Zone ist nur dann richtig behandelt, wenn die Pruefung sie abgelehnt hat
+    # (Codex PR #162).
+    error_results: list[tuple[str, str]] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
@@ -104,6 +108,10 @@ class RecordingLLM:
         if result.get("ok"):
             self.recording.ok_results.append(
                 (str(result.get("tool")), result.get("data") or {})
+            )
+        elif result.get("error_code"):
+            self.recording.error_results.append(
+                (str(result.get("tool")), str(result["error_code"]))
             )
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
