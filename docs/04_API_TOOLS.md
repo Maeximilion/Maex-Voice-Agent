@@ -126,7 +126,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Präfixe meinen („Sushi" trägt S und SM): die Suche schlägt alle nach, genau
    ein Treffer ist `exact_number`, zwei sind `ambiguous` („Sushi eins" → S1 oder
    SM1), keiner `not_found`. Nie wird aus einer Präfixnummer die Zahl allein:
-   „S 13" findet nicht Gericht 13, „Nummer 23g" nicht die 23. Eine Nummer mit
+   „S 13" findet nicht Gericht 13, „Nummer 23g" nicht die 23. Ein Präfix vor
+   einer Zahl über 999 („S1000", „Sushi tausend") ist auch ohne „Nummer" eine
+   genannte Nummer und `not_found`, nie eine Namenssuche. Eine Nummer mit
    Präfix ist nie eine Menge: neben einem Namen („S12 Lachs", „die S12 und Pho
    Bo") oder hinter einer Ziffer bzw. „die 23" fragt die Suche nach der einen
    Nummer; nur ein Zahlwort davor ist die Menge („zwei S zwölf"). Buchstabiert

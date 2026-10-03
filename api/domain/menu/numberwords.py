@@ -976,6 +976,43 @@ def _too_large(token: str) -> bool:
     return any(word in token for word in _TOO_LARGE)
 
 
+def _prefixed_too_large(
+    tokens: list[str], card: CardFormat, prefixed: set[int], taken: set[int]
+) -> list[tuple[int, int, ItemNumber]]:
+    """ "S1000", "S tausend", "Sushi 1000" ohne Marker: ein Praefix der Karte
+    vor einer Zahl ueber dem Kartenbereich. Genannt, nicht vorhanden - keine
+    Namenssuche, die ueber "sushi" ein Gericht faende (Codex PR #155).
+
+    Rueckgabe je Fundstelle `(start, end, bad)`. Token in `taken` gehoeren
+    schon zu einer Nummer hinter einem Marker.
+    """
+    found_all: list[tuple[int, int, ItemNumber]] = []
+    i = 0
+    while i < len(tokens):
+        hit = None
+        for n in range(_MAX_PREFIX_TOKENS, 0, -1):
+            at = i + n
+            if at >= len(tokens) or any(k in taken for k in range(i, at + 1)):
+                continue
+            after = tokens[at]
+            if not (after.isdigit() or _too_large(after)) or _scan(tokens, at):
+                continue
+            spelled = _clean_lead(tokens, i) and at - 1 not in prefixed
+            found = card.prefixes_of(tokens[i:at], spelled)
+            if found:
+                suffix = _suffix_at(tokens, at + 1)
+                text = " oder ".join(p + after + suffix for p in found)
+                bad = ItemNumber(0, text, False, valid=False)
+                hit = (i, at + 1 + bool(suffix), bad)
+                break
+        if hit is None:
+            i += 1
+            continue
+        found_all.append(hit)
+        i = hit[1]
+    return found_all
+
+
 def sole_item_number(
     text: str, card: CardFormat = NO_PREFIXES
 ) -> tuple[ItemNumber | None, bool]:
@@ -1025,6 +1062,11 @@ def sole_item_number(
             marker_at.add(i)
             consumed.update(range(start, end))
             invalid_at.update(range(start, end))
+    taken = invalid_at | {k for s in marked for k in range(s.start, s.end)}
+    for start, end, bad in _prefixed_too_large(tokens, card, prefixed, taken):
+        invalid.append(bad)
+        consumed.update(range(start, end))
+        invalid_at.update(range(start, end))
     numbers = list(marked)
     spans = _number_spans(tokens, card, prefixed)
     prefix_at = {s.start for s in [*spans, *marked] if s.prefixes}

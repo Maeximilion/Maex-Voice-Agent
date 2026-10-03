@@ -168,3 +168,8 @@
 {"say": "Nummer 1000g", "expect": "!1000g", "why": "ohne Praefix dasselbe: Endung gehoert zur genannten Nummer"}
 {"say": "Nummer Z 1000", "expect": "!z1000", "why": "unbekanntes Praefix vor zu grosser Zahl: genannte Nummer, keine Namenssuche (Codex PR #155)"}
 {"say": "Nummer Z tausend", "expect": "!ztausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "S1000", "expect": "!s1000", "why": "bekanntes Praefix ohne Marker, Zahl ueber dem Kartenbereich: genannte Nummer, keine Namenssuche (Codex PR #155)"}
+{"say": "S 1000", "expect": "!s1000", "why": "dasselbe abgesetzt (Codex PR #155)"}
+{"say": "die S tausend bitte", "expect": "!stausend", "why": "dasselbe als Zahlwort (Codex PR #155)"}
+{"say": "Sushi 1000", "expect": "!s1000 oder sm1000", "why": "Kategoriewort vor zu grosser Zahl: genannte Nummer (Codex PR #155)"}
+{"say": "S1000 Lachs", "expect": "?", "why": "zu grosse Praefixnummer neben einem Namen: nachfragen (Codex PR #155)"}
