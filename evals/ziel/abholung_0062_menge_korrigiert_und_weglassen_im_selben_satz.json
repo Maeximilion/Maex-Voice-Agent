@@ -1,0 +1,54 @@
+{
+  "id": "abholung_0062",
+  "name": "Menge korrigiert und Weglassen im selben Satz",
+  "tags": [
+    "abholung",
+    "mengenaenderung",
+    "wunsch",
+    "schwer-3"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Abend, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Dreimal die Fruehlingsrollen, ach nee, doch nur zwei, und einmal das rote Curry mit Tofu, aber ohne Bambus."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Becker."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "23",
+        "quantity": 2
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Tofu"
+        ],
+        "note": "ohne Bambus"
+      }
+    ],
+    "customer_name": "Becker",
+    "confirmed": true,
+    "escalated": false
+  }
+}

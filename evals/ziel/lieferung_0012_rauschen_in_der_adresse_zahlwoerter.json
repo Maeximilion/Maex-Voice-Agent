@@ -1,0 +1,66 @@
+{
+  "id": "lieferung_0012",
+  "name": "Rauschen in der Adresse, Zahlwoerter",
+  "tags": [
+    "lieferung",
+    "rauschen",
+    "zahlwort",
+    "schwer-4"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo? ... krrr ... ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Die fuenfunddreissig b, zweimal, und die neunundvierzig mit Nudeln statt Reis."
+    },
+    {
+      "role": "customer",
+      "text": "Und drei Mochi."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ahornweg ... chhh ... Ahornweg neunzehn, Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Frank."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "35b",
+        "quantity": 2
+      },
+      {
+        "number": "49",
+        "quantity": 1,
+        "options": [
+          "Nudeln statt Reis"
+        ]
+      },
+      {
+        "number": "61",
+        "quantity": 3
+      }
+    ],
+    "customer_name": "Frank",
+    "confirmed": true,
+    "escalated": false
+  }
+}

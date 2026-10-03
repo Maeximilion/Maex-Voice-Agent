@@ -1,0 +1,25 @@
+{
+  "id": "lieferung_0002",
+  "name": "Adresse ausserhalb der Zone",
+  "tags": [
+    "lieferung",
+    "zone",
+    "schwer-1"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte die 13 geliefert haben, nach Musterstadt, Hauptstrasse 1."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": false
+  }
+}

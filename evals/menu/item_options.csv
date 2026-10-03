@@ -2,3 +2,36 @@ number;group_name;option_name;price_delta_eur;is_default;required
 47;Fleisch;Ente;0,00;ja;ja
 47;Fleisch;Huhn;-1,00;nein;ja
 47;Sauce;Erdnuss;0,50;nein;nein
+30;Fleisch;Huhn;0,00;ja;ja
+30;Fleisch;Rind;1,00;nein;ja
+30;Fleisch;Tofu;0,00;nein;ja
+30;Fleisch;Garnelen;2,50;nein;ja
+31;Fleisch;Huhn;0,00;ja;ja
+31;Fleisch;Rind;1,00;nein;ja
+31;Fleisch;Tofu;0,00;nein;ja
+31;Fleisch;Garnelen;2,50;nein;ja
+32;Fleisch;Huhn;0,00;ja;ja
+32;Fleisch;Rind;1,00;nein;ja
+32;Fleisch;Tofu;0,00;nein;ja
+32;Fleisch;Ente;2,50;nein;ja
+33;Fleisch;Huhn;0,00;ja;ja
+33;Fleisch;Rind;1,00;nein;ja
+33;Fleisch;Tofu;0,00;nein;ja
+33;Fleisch;Ente;2,50;nein;ja
+34;Fleisch;Huhn;0,00;ja;ja
+34;Fleisch;Tofu;0,00;nein;ja
+34;Fleisch;Garnelen;2,50;nein;ja
+30;Extras;Spiegelei;1,50;nein;nein
+30;Extras;extra Gemüse;1,50;nein;nein
+31;Extras;Spiegelei;1,50;nein;nein
+31;Extras;extra Gemüse;1,50;nein;nein
+32;Extras;Nudeln statt Reis;3,50;nein;nein
+32;Extras;extra Gemüse;1,50;nein;nein
+33;Extras;Nudeln statt Reis;3,50;nein;nein
+33;Extras;extra Gemüse;1,50;nein;nein
+34;Extras;Spiegelei;1,50;nein;nein
+40;Extras;Nudeln statt Reis;3,50;nein;nein
+41;Extras;Nudeln statt Reis;3,50;nein;nein
+42;Extras;Nudeln statt Reis;3,50;nein;nein
+42;Extras;Erdnusssauce;0,50;nein;nein
+49;Extras;Nudeln statt Reis;3,50;nein;nein

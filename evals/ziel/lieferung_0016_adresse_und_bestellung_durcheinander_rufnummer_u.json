@@ -1,0 +1,79 @@
+{
+  "id": "lieferung_0016",
+  "name": "Adresse und Bestellung durcheinander, Rufnummer unterdrueckt",
+  "tags": [
+    "lieferung",
+    "mehrere_positionen",
+    "rufnummer",
+    "korrektur",
+    "zahlwort",
+    "schwer-5"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ja, also ich wohn in der Lindenstrasse, wollte was liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Die dreissig mit Rind, zweimal, eine mit Spiegelei, dann die einundvierzig, die zweiundvierzig, aeh, und dreimal Edamame."
+    },
+    {
+      "role": "customer",
+      "text": "Die Hausnummer ist sechzehn. Ach, und von den Edamame nur zwei."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Sommer."
+    },
+    {
+      "role": "customer",
+      "text": "Null sieben zwei eins, fuenf fuenf fuenf, vier vier drei drei."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Rind",
+          "Spiegelei"
+        ]
+      },
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      },
+      {
+        "number": "41",
+        "quantity": 1
+      },
+      {
+        "number": "42",
+        "quantity": 1
+      },
+      {
+        "number": "20",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Sommer",
+    "confirmed": true,
+    "escalated": false
+  }
+}

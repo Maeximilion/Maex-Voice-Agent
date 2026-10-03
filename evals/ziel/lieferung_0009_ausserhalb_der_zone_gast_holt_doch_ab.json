@@ -1,0 +1,53 @@
+{
+  "id": "lieferung_0009",
+  "name": "Ausserhalb der Zone, Gast holt doch ab",
+  "tags": [
+    "lieferung",
+    "zone",
+    "schwer-3"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen, nach Fernstadt."
+    },
+    {
+      "role": "customer",
+      "text": "Dann hol ich es ab. Die 34 mit Tofu und zweimal die 20."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Peters."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "34",
+        "quantity": 1,
+        "options": [
+          "Tofu"
+        ]
+      },
+      {
+        "number": "20",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Peters",
+    "confirmed": true,
+    "escalated": false
+  }
+}

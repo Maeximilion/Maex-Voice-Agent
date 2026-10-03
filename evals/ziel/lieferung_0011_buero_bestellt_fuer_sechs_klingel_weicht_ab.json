@@ -1,0 +1,91 @@
+{
+  "id": "lieferung_0011",
+  "name": "Buero bestellt fuer sechs, Klingel weicht ab",
+  "tags": [
+    "lieferung",
+    "mehrere_positionen",
+    "wunsch",
+    "schwer-4"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja hallo, wir sind ein Buero und wollen fuer sechs Leute bestellen, mit Lieferung."
+    },
+    {
+      "role": "customer",
+      "text": "Dreimal die 30, zwei mit Huhn, eine mit Garnelen, zweimal das gruene Curry mit Rind, eins davon mit Nudeln statt Reis, und die 42 mit Erdnusssauce."
+    },
+    {
+      "role": "customer",
+      "text": "Und zwei Portionen Fruehlingsrollen fuer alle."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Industriestrasse 20 in Musterdorf, klingeln bei Firma Nord, dritter Stock."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schuster."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "30",
+        "quantity": 2,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Garnelen"
+        ]
+      },
+      {
+        "number": "33",
+        "quantity": 1,
+        "options": [
+          "Rind",
+          "Nudeln statt Reis"
+        ]
+      },
+      {
+        "number": "33",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      },
+      {
+        "number": "42",
+        "quantity": 1,
+        "options": [
+          "Erdnusssauce"
+        ]
+      },
+      {
+        "number": "23",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Schuster",
+    "confirmed": true,
+    "escalated": false
+  }
+}

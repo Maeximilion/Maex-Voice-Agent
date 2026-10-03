@@ -1,0 +1,48 @@
+{
+  "id": "abholung_0058",
+  "name": "Zwei Gerichte im ersten Satz, Nummer und Name",
+  "tags": [
+    "abholung",
+    "nummer",
+    "name",
+    "menge",
+    "erster_satz",
+    "schwer-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich haette gern zweimal die 23 und eine Pho Bo zum Abholen."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schulz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "23",
+        "quantity": 2
+      },
+      {
+        "number": "13",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Schulz",
+    "confirmed": true,
+    "escalated": false
+  }
+}

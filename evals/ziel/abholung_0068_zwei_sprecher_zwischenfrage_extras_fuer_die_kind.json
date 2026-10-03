@@ -1,0 +1,91 @@
+{
+  "id": "abholung_0068",
+  "name": "Zwei Sprecher, Zwischenfrage, Extras fuer die Kinder",
+  "tags": [
+    "abholung",
+    "mehrere_positionen",
+    "wunsch",
+    "menge",
+    "schwer-5"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja hallo, wir wollen was zum Abholen bestellen, Moment, meine Frau sagt auch noch was."
+    },
+    {
+      "role": "customer",
+      "text": "Also ich nehm die 40 mit Nudeln statt Reis und die 11, und sie, wie? ... ja, sie nimmt die 41, aber ohne Koriander."
+    },
+    {
+      "role": "customer",
+      "text": "Und fuer die Kinder dreimal die 30, zweimal mit Huhn und einmal mit Tofu, alle mit Spiegelei, und zwei Banane."
+    },
+    {
+      "role": "customer",
+      "text": "Sind bei den Sommerrollen Garnelen drin? Ach, steht ja im Namen, dann zweimal die 24."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars, danke."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Zimmermann."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "40",
+        "quantity": 1,
+        "options": [
+          "Nudeln statt Reis"
+        ]
+      },
+      {
+        "number": "11",
+        "quantity": 1
+      },
+      {
+        "number": "41",
+        "quantity": 1,
+        "note": "ohne Koriander"
+      },
+      {
+        "number": "30",
+        "quantity": 2,
+        "options": [
+          "Huhn",
+          "Spiegelei"
+        ]
+      },
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Tofu",
+          "Spiegelei"
+        ]
+      },
+      {
+        "number": "60",
+        "quantity": 2
+      },
+      {
+        "number": "24",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Zimmermann",
+    "confirmed": true,
+    "escalated": false
+  }
+}

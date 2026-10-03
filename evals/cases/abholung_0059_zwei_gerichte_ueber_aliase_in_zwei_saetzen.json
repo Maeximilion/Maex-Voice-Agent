@@ -1,16 +1,14 @@
 {
-  "id": "abholung_0001",
-  "name": "Abholung mit zwei Gerichten in einem Satz und einer Pflichtoption",
+  "id": "abholung_0059",
+  "name": "Zwei Gerichte ueber Aliase in zwei Saetzen",
   "tags": [
     "abholung",
-    "durchstich",
-    "mehrere_positionen",
-    "pflichtoption",
     "alias",
-    "menge",
-    "schwer-2"
+    "mehrere_positionen",
+    "schwer-1"
   ],
-  "source": "roleplay",
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
   "transcript": [
     {
       "role": "customer",
@@ -18,11 +16,11 @@
     },
     {
       "role": "customer",
-      "text": "Zweimal die 23 und einmal die knusprige Ente."
+      "text": "Einmal Sommerrollen, bitte."
     },
     {
       "role": "customer",
-      "text": "Huhn bitte."
+      "text": "Und die Teigtaschen."
     },
     {
       "role": "customer",
@@ -30,11 +28,7 @@
     },
     {
       "role": "customer",
-      "text": "Auf den Namen Mueller."
-    },
-    {
-      "role": "customer",
-      "text": "Meine Nummer ist 0721 5551234."
+      "text": "Auf den Namen Weber."
     },
     {
       "role": "customer",
@@ -43,6 +37,17 @@
   ],
   "expected": {
     "intent": "pickup",
+    "items": [
+      {
+        "number": "24",
+        "quantity": 1
+      },
+      {
+        "number": "22",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Weber",
     "confirmed": true,
     "escalated": false
   }

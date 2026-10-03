@@ -1,0 +1,61 @@
+{
+  "id": "lieferung_0007",
+  "name": "Unter dem Mindestbestellwert, Gast legt nach",
+  "tags": [
+    "lieferung",
+    "mindestbestellwert",
+    "schwer-2"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die Miso-Suppe."
+    },
+    {
+      "role": "customer",
+      "text": "Ach so, dann noch die 31 mit Rind."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Lindenstrasse 4 in Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Roth."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "10",
+        "quantity": 1
+      },
+      {
+        "number": "31",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      }
+    ],
+    "customer_name": "Roth",
+    "confirmed": true,
+    "escalated": false
+  }
+}

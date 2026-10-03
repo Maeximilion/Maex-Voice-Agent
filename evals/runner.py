@@ -273,12 +273,21 @@ def run(
     return report
 
 
+def default_report_dir(cases_dir: Path) -> Path:
+    """`evals/reports/` fuer die CI-Suite, `evals/reports/<ordner>/` fuer jeden anderen."""
+    if cases_dir.resolve() == CASES.resolve():
+        return REPORTS
+    return REPORTS / cases_dir.resolve().name
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eval-Suite laufen lassen (docs/08)")
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
     parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
     parser.add_argument("--cases", type=Path, default=CASES)
-    parser.add_argument("--report-dir", type=Path, default=REPORTS)
+    # Ohne Angabe je Fallordner ein eigener Report-Ordner: die Baseline fuer die
+    # Regressionsregel gilt nur innerhalb desselben Ordners (cases/ gegen ziel/).
+    parser.add_argument("--report-dir", type=Path, default=None)
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"
     )
@@ -293,7 +302,7 @@ def main(argv: list[str] | None = None) -> int:
             cases_dir=args.cases,
             tags=tags,
             model=args.model,
-            report_dir=args.report_dir,
+            report_dir=args.report_dir or default_report_dir(args.cases),
             keep_db=args.keep_db,
         )
     except (CaseError, UsageError) as exc:

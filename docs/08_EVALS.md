@@ -34,6 +34,18 @@ Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung.
 
 **Grundsatz:** Erwartet wird das **Ergebnis**, nicht der Wortlaut. Wie der Agent formuliert, ist ihm überlassen. Was er bucht, nicht.
 
+**Schwierigkeit (Suite v2, Maxi 03.10.2026):** Jeder Fall trägt genau einen Tag `schwer-1` bis `schwer-5`. Gäste bestellen meist mehrere Gerichte auf einmal, bis zu 12.
+
+| Stufe | Typisch |
+|---|---|
+| 1 | ein bis zwei Gerichte, klar gesagt, Nummer oder Name |
+| 2 | eine Rückfrage nötig (Pflichtoption, mehrdeutig, ausverkauft), ein Wunsch |
+| 3 | drei bis sechs Gerichte im Satz, Mengen, eine Option, eine Selbstkorrektur |
+| 4 | sieben bis neun Gerichte, mehrere Extras, geteilte Menge („eine davon mit Spiegelei"), mehrere Personen, Füllwörter, Rauschen |
+| 5 | bis 12 Gerichte in wenigen Sätzen, viele Extras, Korrekturen mitten im Satz, zwei Sprecher, Zwischenfrage, unbekannter Wunsch, eigene Allergie |
+
+**Zwei Ordner:** `evals/cases/` ist die CI-Suite (Stufe 1–2, muss grün sein, §3). `evals/ziel/` hält Stufe 3–5, alle Lieferfälle und bekannte Lücken: das Ziel für T-2.4 (echtes Modell) und T-6.5 (Lieferung), rot erlaubt, `make eval-ziel`. Jeder Ordner hat seine eigene Baseline für die Regressionsregel (`evals/reports/` und `evals/reports/ziel/`). Ein Zielfall wandert nach `cases/`, sobald er mit dem Modell im Betrieb dauerhaft grün ist; die ids sind über beide Ordner eindeutig.
+
 ---
 
 ## 2. Metriken
@@ -77,7 +89,9 @@ Danach:
 - Jeder Fall bekommt einen eigenen Mandanten mit Evalkarte: Kapazität, Abholcodes und offene Rückrufe eines Falls beeinflussen keinen anderen, das Ergebnis hängt nicht an Reihenfolge oder Tag-Filter.
 - Urteil: Exit 1 bei einem abgestürzten Fall, bei einem einzigen harten Verstoß oder wenn ein Fall, der im letzten **bestandenen** Lauf mit demselben Modell und denselben Tags grün war, jetzt rot ist. Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer roter Fall aus `/bug` ist keine Regression und darf rot stehen, bis der Fix da ist; neue grüne Fälle verdecken keinen kaputten. Ein durchgefallener Lauf ist nie Maßstab, sonst verschwände eine Regression beim zweiten Aufruf.
 - Report als JSON und Markdown in `evals/reports/` (nicht im Repo). Tokens und Kosten je Fall bleiben leer, bis T-2.4 ein echtes Modell anschließt; `--model` nimmt bis dahin nur `scripted` und lehnt alles andere ab, statt still auf das Skript zurückzufallen.
-- Die ganze Suite aus `evals/cases/` läuft auch in CI (`api/tests/test_evals_runner.py`), damit Regel 4 aus CLAUDE.md §2 bei jedem Pull Request greift.
+- Die ganze Suite aus `evals/cases/` läuft auch in CI (`api/tests/test_evals_runner.py`), damit Regel 4 aus CLAUDE.md §2 bei jedem Pull Request greift. `evals/ziel/` spielt CI nicht ab, prüft aber jeden Zielfall auf Gültigkeit und Nummern der Evalkarte (`api/tests/test_evals_suite.py`).
+
+**Suite v2 (03.10.2026):** 46 Fälle statt 107, menschlicher und von Stufe 1 bis 5 (§1). `cases/` 19 (Abholung 6, Reservierung 6, Eskalation 5, Allergie 2), `ziel/` 27 (Abholung 9, Lieferung 15, Reservierung 2, Allergie 1). Behalten wurden die Pflichtfälle, die Fälle aus Befunden (z. B. `reservierung_0027`) und die drei, die `test_sim_pickup.py` liest. Die Evalkarte hat 26 erfundene aktive Gerichte mit Pflichtgruppe „Fleisch" und Gruppe „Extras" wie in der Kasse (docs/14 §Quelle Kasse). Stand mit dem Skript-Modell: `cases/` 19 von 19 grün, falsche Eskalation 0 %; `ziel/` 1 von 27 grün, harte Metriken in beiden 0. Schon Stufe 2 mit zwei Aliasen in einem Satz („Sommerrollen und die Teigtaschen") liest das Skript als eine Suche; das ist Ziel für T-2.4.
 
 **Suite v1 (T-5.2, 26.09.2026):** 107 Fälle in `evals/cases/` (Abholung, Reservierung, Eskalation, Allergie, Lieferung), jede Zeile aus §6 hat mindestens einen. Ein Lauf dauert etwa 12 s. Stand mit dem Skript-Modell: 101 von 107 grün (99 bei T-5.2, zwei Lücken durch die Nummernregel für „Und noch die 24“ und „ich würde die 13“ geschlossen), harte Metriken 0, falsche Eskalation 4,5 %.
 - `"sold_out": ["48"]` setzt „heute aus" nur für diesen Fall (die Evalkarte im Importformat kennt keinen Tagesstand). Eine Nummer, die nicht auf der Evalkarte steht, lässt den Fall abstürzen.
@@ -103,7 +117,7 @@ make eval MODEL=<name>         # Modellvergleich
 | Vor jedem Merge nach `main` | vollständig |
 | Nach jeder Prompt-Änderung | vollständig, Ergebnis in den Commit |
 | Nach Menü- oder Preisänderung | Tag `menu` |
-| Nach Modellwechsel | vollständig plus Kostenvergleich |
+| Nach Modellwechsel | vollständig plus `make eval-ziel` und Kostenvergleich |
 | Wöchentlich automatisch | vollständig, Trend in die GUI |
 
 **Regressionsregel:** Ist ein Fall rot, der im letzten bestandenen Lauf mit demselben Modell und denselben Tags grün war, wird nicht gemerged. Kein „ist nur ein Fall". Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer, noch roter Fall aus `/bug` ist keine Regression, und neue grüne Fälle verdecken keinen kaputten (§3, T-5.1).
@@ -114,7 +128,7 @@ make eval MODEL=<name>         # Modellvergleich
 
 | Quelle | Menge | Wann |
 |---|---|---|
-| Handgeschrieben | 20–30, gebaut: 102 (T-5.2) | sofort, deckt die Regeln ab |
+| Handgeschrieben | 20–30, gebaut: 102 (T-5.2), 46 in Suite v2 | sofort, deckt die Regeln ab |
 | Rollenspiele mit dem Team | 50–80 | vor G1 und G2, mit echtem Küchenlärm |
 | Nachgestellt aus dem Anrufprotokoll (`docs/17`) | laufend | sofort; `source: handcrafted`, eigene Worte, nie der Wortlaut echter Anrufe |
 | Echte Anrufe (Schattenmodus) | laufend | ab Stufe 4, nach Rechtsfreigabe |
@@ -126,7 +140,7 @@ Die letzte Zeile ist die wichtigste. Jeder Fehler, der einmal passiert ist, wird
 
 ## 6. Pflichtabdeckung
 
-Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag ist verbindlich: `api/tests/test_evals_suite.py` liest diese Tabelle und verlangt zu jedem Tag mindestens einen Fall in `evals/cases/`.
+Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag ist verbindlich: `api/tests/test_evals_suite.py` liest diese Tabelle und verlangt zu jedem Tag mindestens einen Fall in `evals/cases/` oder `evals/ziel/`.
 
 | Pflichtfall | Tag |
 |---|---|
