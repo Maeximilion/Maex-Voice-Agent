@@ -25,7 +25,7 @@
     },
     {
       "role": "customer",
-      "text": "Ringstrasse 2."
+      "text": "Ringstrasse 2, Postleitzahl 12345."
     },
     {
       "role": "customer",
@@ -65,7 +65,8 @@
     "address": {
       "street": "Ringstrasse",
       "house_number": "2",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

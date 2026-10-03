@@ -22,7 +22,7 @@
     },
     {
       "role": "customer",
-      "text": "Die Hausnummer ist sechzehn. Ach, und von den Edamame nur zwei."
+      "text": "Die Hausnummer ist sechzehn, Postleitzahl zwoelf drei fuenfundvierzig, Musterdorf. Ach, und von den Edamame nur zwei."
     },
     {
       "role": "customer",
@@ -78,7 +78,8 @@
     "address": {
       "street": "Lindenstrasse",
       "house_number": "16",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

@@ -29,7 +29,7 @@
     },
     {
       "role": "customer",
-      "text": "Ahornweg ... chhh ... Ahornweg neunzehn, Musterdorf."
+      "text": "Ahornweg ... chhh ... Ahornweg neunzehn, Postleitzahl eins zwei drei vier fuenf, Musterdorf."
     },
     {
       "role": "customer",
@@ -65,7 +65,8 @@
     "address": {
       "street": "Ahornweg",
       "house_number": "19",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

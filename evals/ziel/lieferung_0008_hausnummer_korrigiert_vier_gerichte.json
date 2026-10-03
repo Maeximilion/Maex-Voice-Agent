@@ -25,7 +25,7 @@
     },
     {
       "role": "customer",
-      "text": "Gartenweg 14, nein, 41, in Musterdorf."
+      "text": "12345 Musterdorf, Gartenweg 14, nein, 41."
     },
     {
       "role": "customer",
@@ -61,7 +61,8 @@
     "address": {
       "street": "Gartenweg",
       "house_number": "41",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

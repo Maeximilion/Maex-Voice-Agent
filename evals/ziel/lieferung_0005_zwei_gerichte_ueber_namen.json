@@ -24,7 +24,7 @@
     },
     {
       "role": "customer",
-      "text": "Am Markt 3 in Musterdorf."
+      "text": "Am Markt 3, 12345 Musterdorf."
     },
     {
       "role": "customer",
@@ -53,7 +53,8 @@
     "address": {
       "street": "Am Markt",
       "house_number": "3",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

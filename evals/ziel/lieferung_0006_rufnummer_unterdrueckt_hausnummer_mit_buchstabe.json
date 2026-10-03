@@ -23,7 +23,7 @@
     },
     {
       "role": "customer",
-      "text": "Bahnhofstrasse 7b in Musterdorf."
+      "text": "Bahnhofstrasse 7b, 12345 Musterdorf."
     },
     {
       "role": "customer",
@@ -56,7 +56,8 @@
     "address": {
       "street": "Bahnhofstrasse",
       "house_number": "7b",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

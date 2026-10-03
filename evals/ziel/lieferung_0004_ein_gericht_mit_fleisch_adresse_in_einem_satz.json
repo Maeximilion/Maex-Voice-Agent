@@ -24,7 +24,7 @@
     },
     {
       "role": "customer",
-      "text": "Lindenstrasse 12 in Musterdorf."
+      "text": "12345 Musterdorf, Lindenstrasse 12."
     },
     {
       "role": "customer",
@@ -56,7 +56,8 @@
     "address": {
       "street": "Lindenstrasse",
       "house_number": "12",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

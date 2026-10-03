@@ -11,7 +11,7 @@
   "transcript": [
     {
       "role": "customer",
-      "text": "Hallo, bitte einmal die 12 liefern, Beispielweg 3 in Musterdorf."
+      "text": "Hallo, bitte einmal die 12 liefern, Beispielweg 3, 12345 Musterdorf."
     },
     {
       "role": "customer",

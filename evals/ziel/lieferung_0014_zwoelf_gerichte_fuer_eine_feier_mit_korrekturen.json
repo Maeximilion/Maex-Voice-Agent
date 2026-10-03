@@ -34,7 +34,7 @@
     },
     {
       "role": "customer",
-      "text": "Festplatz 1 in Musterdorf."
+      "text": "Festplatz 1, 12345 Musterdorf."
     },
     {
       "role": "customer",
@@ -96,7 +96,8 @@
     "address": {
       "street": "Festplatz",
       "house_number": "1",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     }
   }
 }

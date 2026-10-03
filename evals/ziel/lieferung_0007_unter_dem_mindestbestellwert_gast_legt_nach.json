@@ -24,7 +24,7 @@
     },
     {
       "role": "customer",
-      "text": "Lindenstrasse 4 in Musterdorf."
+      "text": "Lindenstrasse 4, 12345 Musterdorf."
     },
     {
       "role": "customer",
@@ -64,7 +64,8 @@
     "address": {
       "street": "Lindenstrasse",
       "house_number": "4",
-      "city": "Musterdorf"
+      "city": "Musterdorf",
+      "postal_code": "12345"
     },
     "tools": [
       {

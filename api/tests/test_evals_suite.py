@@ -105,6 +105,15 @@ def test_offene_luecken_bleiben_eine_minderheit():
     assert gaps * 10 <= len(cases), gaps
 
 
+def test_lieferziel_mit_adresse_nennt_die_postleitzahl():
+    """Codex PR #162: check_delivery verlangt die PLZ, der Dialog fragt sie zuerst
+    (docs/04, docs/05). Ein Ziel ohne PLZ waere fuer T-6.5 unerreichbar."""
+    for path, case in _cases(ZIEL):
+        address = case["expected"].get("address")
+        if address is not None:
+            assert "postal_code" in address, path.name
+
+
 def _menu_numbers() -> set[str]:
     with (runner.MENU / "menu_items.csv").open(encoding="utf-8") as f:
         return {row["number"].lower() for row in csv.DictReader(f, delimiter=";")}
