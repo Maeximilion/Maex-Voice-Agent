@@ -208,9 +208,15 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         return result
 
     rec = llm.recording
-    missing = missing_tools(expected.get("tools", []), rec.ok_results)
-    if missing:
-        diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
+    missing = missing_tools(
+        expected.get("tools", []), rec.ok_results, rec.error_results
+    )
+    rejected = [m for m in missing if isinstance(m, dict) and "error" in m]
+    succeeded = [m for m in missing if m not in rejected]
+    if succeeded:
+        diffs.append(f"tools: kein erfolgreicher Aufruf {succeeded}")
+    if rejected:
+        diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
@@ -232,13 +238,16 @@ def run(
     cases_dir: Path = CASES,
     tags: list[str] | None = None,
     model: str = "scripted",
-    report_dir: Path = REPORTS,
+    report_dir: Path | None = None,
     db_url: str | None = None,
     keep_db: bool = False,
     stamp: datetime | None = None,
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests)."""
     tags = sorted(tags or [])
+    # Ohne Angabe je Fallordner ein eigener Report-Ordner: ein Lauf ueber ziel/
+    # darf nie Baseline der CI-Suite werden (Review PR #162).
+    report_dir = report_dir or default_report_dir(cases_dir)
     make_llm = model_factory(model)
     cases = load_cases(cases_dir, tags)
     if not cases:
@@ -273,12 +282,20 @@ def run(
     return report
 
 
+def default_report_dir(cases_dir: Path) -> Path:
+    """`evals/reports/` fuer die CI-Suite, `evals/reports/<ordner>/` fuer jeden anderen."""
+    if cases_dir.resolve() == CASES.resolve():
+        return REPORTS
+    return REPORTS / cases_dir.resolve().name
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eval-Suite laufen lassen (docs/08)")
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
     parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
     parser.add_argument("--cases", type=Path, default=CASES)
-    parser.add_argument("--report-dir", type=Path, default=REPORTS)
+    # Ohne Angabe waehlt run() den Report-Ordner je Fallordner.
+    parser.add_argument("--report-dir", type=Path, default=None)
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"
     )

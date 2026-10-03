@@ -1,20 +1,21 @@
 {
-  "id": "allergie_0005",
-  "name": "Eigene Allergie wird Hinweis zur Position",
+  "id": "allergie_0001",
+  "name": "Allergiefrage mit gepflegtem Wert",
   "tags": [
     "allergie",
-    "allergie_hinweis",
+    "allergie_gepflegt",
     "schwer-2"
   ],
   "source": "handcrafted",
+  "pending": "T-2.4: Allergene aus get_item_details beantworten; das Skript-Modell gibt jede Allergiefrage ans Team",
   "transcript": [
     {
       "role": "customer",
-      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+      "text": "Guten Tag, ich habe eine Glutenallergie. Ist in den Fruehlingsrollen Gluten?"
     },
     {
       "role": "customer",
-      "text": "Die 13, ich habe eine Erdnussallergie."
+      "text": "Gut, dann bitte einmal die 23 zum Abholen."
     },
     {
       "role": "customer",
@@ -39,11 +40,15 @@
     "escalated": false,
     "items": [
       {
-        "number": "13",
-        "quantity": 1,
-        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+        "number": "23",
+        "quantity": 1
       }
     ],
-    "customer_name": "Mueller"
+    "tools": [
+      {
+        "tool": "get_item_details",
+        "number": "23"
+      }
+    ]
   }
 }

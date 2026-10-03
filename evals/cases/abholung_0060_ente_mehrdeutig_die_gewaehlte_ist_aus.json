@@ -1,14 +1,17 @@
 {
-  "id": "abholung_0003",
-  "name": "Abholung mit Hinweis und Option als Wunsch in einem Satz",
+  "id": "abholung_0060",
+  "name": "Ente mehrdeutig, die gewaehlte ist aus",
   "tags": [
     "abholung",
-    "wunsch",
-    "mehrere_positionen",
+    "mehrdeutig",
+    "ausverkauft",
     "schwer-2"
   ],
-  "source": "roleplay",
+  "source": "handcrafted",
   "caller_id": "+497215551234",
+  "sold_out": [
+    "48"
+  ],
   "transcript": [
     {
       "role": "customer",
@@ -16,7 +19,15 @@
     },
     {
       "role": "customer",
-      "text": "Die 23 ohne Karotten und die knusprige Ente mit Huhn."
+      "text": "Einmal Ente."
+    },
+    {
+      "role": "customer",
+      "text": "Die suess-saure."
+    },
+    {
+      "role": "customer",
+      "text": "Dann die 49."
     },
     {
       "role": "customer",
@@ -28,11 +39,18 @@
     },
     {
       "role": "customer",
-      "text": "Ja, passt."
+      "text": "Ja, passt so."
     }
   ],
   "expected": {
     "intent": "pickup",
+    "items": [
+      {
+        "number": "49",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller",
     "confirmed": true,
     "escalated": false
   }

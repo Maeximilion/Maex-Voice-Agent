@@ -1,0 +1,37 @@
+{
+  "id": "reservierung_0029",
+  "name": "Personenzahl korrigiert, ungefaehre Uhrzeit",
+  "tags": [
+    "reservierung",
+    "personen",
+    "korrektur",
+    "schwer-3"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich wollt nen Tisch reservieren, fuer, aeh, vier, nee fuenf Leute, am Freitag so um halb acht."
+    },
+    {
+      "role": "customer",
+      "text": "Auf Schmitt, mit Doppel-t."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "party_size": 5,
+    "customer_name": "Schmitt",
+    "confirmed": true,
+    "escalated": false,
+    "reserved_for": "2026-09-18T19:30"
+  }
+}

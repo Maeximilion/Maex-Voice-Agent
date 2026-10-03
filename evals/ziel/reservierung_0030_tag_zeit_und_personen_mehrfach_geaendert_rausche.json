@@ -1,0 +1,43 @@
+{
+  "id": "reservierung_0030",
+  "name": "Tag, Zeit und Personen mehrfach geaendert, Rauschen",
+  "tags": [
+    "reservierung",
+    "personen",
+    "korrektur",
+    "rauschen",
+    "datum",
+    "schwer-5"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja hallo, ... krrr ... einen Tisch, fuer sechs, oder warten Sie, sieben, am Samstag, nee, Freitag, um acht, oder halb acht ginge auch."
+    },
+    {
+      "role": "customer",
+      "text": "Halb acht ist besser."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Meyer, M, E, Y, E, R."
+    },
+    {
+      "role": "customer",
+      "text": "Die Nummer ist null sieben zwei eins, fuenf fuenf fuenf, eins zwei drei vier."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "party_size": 7,
+    "customer_name": "Meyer",
+    "confirmed": true,
+    "escalated": false,
+    "reserved_for": "2026-09-18T19:30"
+  }
+}

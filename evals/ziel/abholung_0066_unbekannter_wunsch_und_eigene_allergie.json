@@ -1,0 +1,64 @@
+{
+  "id": "abholung_0066",
+  "name": "Unbekannter Wunsch und eigene Allergie",
+  "tags": [
+    "abholung",
+    "unbekannt",
+    "allergie_hinweis",
+    "wunsch",
+    "schwer-4"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 34 mit Garnelen, aber extra scharf bitte."
+    },
+    {
+      "role": "customer",
+      "text": "Ok, dann normal. Und die 42, ich habe eine Erdnussallergie. Dazu dreimal die Edamame."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Krueger."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "34",
+        "quantity": 1,
+        "options": [
+          "Garnelen"
+        ],
+        "note": null
+      },
+      {
+        "number": "42",
+        "quantity": 1,
+        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+      },
+      {
+        "number": "20",
+        "quantity": 3
+      }
+    ],
+    "customer_name": "Krueger",
+    "confirmed": true,
+    "escalated": false
+  }
+}

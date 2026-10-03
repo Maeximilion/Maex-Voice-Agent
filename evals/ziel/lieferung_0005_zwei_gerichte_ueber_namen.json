@@ -1,0 +1,64 @@
+{
+  "id": "lieferung_0005",
+  "name": "Zwei Gerichte ueber Namen",
+  "tags": [
+    "lieferung",
+    "name",
+    "schwer-2"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, liefern Sie heute noch?"
+    },
+    {
+      "role": "customer",
+      "text": "Dann bitte eine Pho Bo und zweimal Gyoza."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, danke."
+    },
+    {
+      "role": "customer",
+      "text": "Am Markt 3, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf Kaya."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1
+      },
+      {
+        "number": "22",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Kaya",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Am Markt",
+      "house_number": "3",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

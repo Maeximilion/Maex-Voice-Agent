@@ -1,0 +1,45 @@
+{
+  "id": "lieferung_0003",
+  "name": "Mindestbestellwert unterschritten",
+  "tags": [
+    "lieferung",
+    "mindestbestellwert",
+    "schwer-1"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, bitte einmal die 12 liefern, Beispielweg 3, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lang."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Dann lass ich es, danke."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": false,
+    "intent": "delivery",
+    "tools": [
+      "check_delivery",
+      {
+        "tool": "draft_order",
+        "error": "below_minimum"
+      }
+    ]
+  }
+}
