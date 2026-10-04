@@ -557,7 +557,8 @@ def test_run_picks_the_report_folder_per_case_folder(
         fall("one", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
     )
     runner.run(cases_dir=cases, db_url=migrated_db_url, stamp=datetime.now(UTC))
-    assert list((tmp_path / "reports" / "targets").glob("eval_*.json"))
+    assert list(runner.default_report_dir(cases).glob("eval_*.json"))
+    assert runner.default_report_dir(cases).parent == tmp_path / "reports"
     assert not list((tmp_path / "reports").glob("eval_*.json"))
 
 

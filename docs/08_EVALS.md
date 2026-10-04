@@ -44,7 +44,7 @@ Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung.
 | 4 | seven to nine dishes, several extras, a split quantity ("eine davon mit Spiegelei"), several people, filler words, noise |
 | 5 | up to 12 dishes in a few sentences, many extras, corrections mid-sentence, two speakers, a side question, an unknown wish, the guest's own allergy |
 
-**Two folders:** `evals/cases/` is the CI suite (level 1–2, must be green, §3). `evals/targets/` holds level 3–5, all delivery cases and known gaps: the target for T-2.4 (real model) and T-6.5 (delivery), red allowed, `make eval-targets`. Each folder has its own baseline for the regression rule (`evals/reports/` and `evals/reports/targets/`). A target case moves to `cases/` once it stays green with the model in operation; ids are unique across both folders.
+**Two folders:** `evals/cases/` is the CI suite (level 1–2, must be green, §3). `evals/targets/` holds level 3–5, all delivery cases and known gaps: the target for T-2.4 (real model) and T-6.5 (delivery), red allowed, `make eval-targets`. Each folder has its own baseline for the regression rule (`evals/reports/` and `evals/reports/targets/`). A case folder outside `evals/` gets `evals/reports/<name>_<hash of its path>/`, so a folder that merely has the same name never shares a baseline. A target case moves to `cases/` once it stays green with the model in operation; ids are unique across both folders.
 
 ---
 

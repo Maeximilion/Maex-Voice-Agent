@@ -149,6 +149,16 @@ def test_target_case_is_valid(path):
     assert unknown == [], path.name
 
 
+def test_folder_with_the_same_name_elsewhere_has_another_baseline(tmp_path):
+    """Codex PR #162: `/tmp/targets` must not share the baseline of the repository's
+    target suite; cases with matching ids would show false regressions."""
+    elsewhere = runner.default_report_dir(tmp_path / "targets")
+    assert elsewhere != runner.REPORTS / "targets"
+    assert elsewhere.parent == runner.REPORTS
+    assert elsewhere == runner.default_report_dir(tmp_path / "targets")
+    assert elsewhere != runner.default_report_dir(tmp_path / "other" / "targets")
+
+
 def test_each_case_folder_has_its_own_baseline():
     """The regression rule compares with the last passing run; a run over targets/
     must never become the baseline of the CI suite (and vice versa)."""

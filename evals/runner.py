@@ -27,6 +27,7 @@ Abhängigkeiten: nur das Projekt selbst (Datenbank aus DATABASE_URL).
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Callable
@@ -283,10 +284,16 @@ def run(
 
 
 def default_report_dir(cases_dir: Path) -> Path:
-    """`evals/reports/` for the CI suite, `evals/reports/<folder>/` for any other."""
-    if cases_dir.resolve() == CASES.resolve():
+    """`evals/reports/` for the CI suite, `evals/reports/<folder>/` for a folder in
+    `evals/`, and `evals/reports/<folder>_<hash>/` for a folder anywhere else: a
+    `/tmp/targets` must not share the baseline of `evals/targets` (Codex PR #162)."""
+    folder = cases_dir.resolve()
+    if folder == CASES.resolve():
         return REPORTS
-    return REPORTS / cases_dir.resolve().name
+    if folder.parent == HERE:
+        return REPORTS / folder.name
+    digest = hashlib.sha256(str(folder).encode("utf-8")).hexdigest()[:8]
+    return REPORTS / f"{folder.name}_{digest}"
 
 
 def build_parser() -> argparse.ArgumentParser:
