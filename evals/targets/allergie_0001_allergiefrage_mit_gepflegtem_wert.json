@@ -4,7 +4,7 @@
   "tags": [
     "allergie",
     "allergie_gepflegt",
-    "schwer-2"
+    "level-2"
   ],
   "source": "handcrafted",
   "pending": "T-2.4: Allergene aus get_item_details beantworten; das Skript-Modell gibt jede Allergiefrage ans Team",

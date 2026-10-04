@@ -75,9 +75,8 @@ class Recording:
     # Erfolgreiche Tool-Ergebnisse (Name, Daten): `expected.tools` zaehlt nur,
     # was wirklich geliefert hat, nicht jeden Versuch (Codex PR #145, P1).
     ok_results: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
-    # Abgelehnte Tool-Ergebnisse (Name, error_code): eine Lieferung ausserhalb der
-    # Zone ist nur dann richtig behandelt, wenn die Pruefung sie abgelehnt hat
-    # (Codex PR #162).
+    # Rejected tool results (name, error_code): a delivery outside the zone is
+    # only handled correctly when the check rejected it (Codex PR #162).
     error_results: list[tuple[str, str]] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.

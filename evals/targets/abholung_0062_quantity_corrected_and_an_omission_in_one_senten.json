@@ -1,11 +1,11 @@
 {
   "id": "abholung_0062",
-  "name": "Menge korrigiert und Weglassen im selben Satz",
+  "name": "Quantity corrected and an omission in one sentence",
   "tags": [
     "abholung",
     "mengenaenderung",
     "wunsch",
-    "schwer-3"
+    "level-3"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

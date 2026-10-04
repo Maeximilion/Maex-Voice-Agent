@@ -1,15 +1,15 @@
 {
   "id": "lieferung_0014",
-  "name": "Zwoelf Gerichte fuer eine Feier mit Korrekturen",
+  "name": "Twelve dishes for a party with corrections",
   "tags": [
     "lieferung",
     "mehrere_positionen",
     "mengenaenderung",
     "wunsch",
-    "schwer-5"
+    "level-5"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {

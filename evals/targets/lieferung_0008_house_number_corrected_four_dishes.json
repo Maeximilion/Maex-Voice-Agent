@@ -1,22 +1,23 @@
 {
-  "id": "lieferung_0004",
-  "name": "Ein Gericht mit Fleisch, Adresse in einem Satz",
+  "id": "lieferung_0008",
+  "name": "House number corrected, four dishes",
   "tags": [
     "lieferung",
-    "pflichtoption",
-    "schwer-1"
+    "korrektur",
+    "mehrere_positionen",
+    "level-3"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {
       "role": "customer",
-      "text": "Guten Tag, ich moechte etwas liefern lassen."
+      "text": "Hallo, ich moechte was liefern lassen."
     },
     {
       "role": "customer",
-      "text": "Einmal die 30 mit Huhn und zweimal die 23."
+      "text": "Zweimal die 32 mit Huhn, einmal die 40 und, aeh, eine Wan-Tan-Suppe."
     },
     {
       "role": "customer",
@@ -24,38 +25,42 @@
     },
     {
       "role": "customer",
-      "text": "12345 Musterdorf, Lindenstrasse 12."
+      "text": "12345 Musterdorf, Gartenweg 14, nein, 41."
     },
     {
       "role": "customer",
-      "text": "Auf den Namen Braun."
+      "text": "Auf den Namen Lange."
     },
     {
       "role": "customer",
-      "text": "Ja, passt."
+      "text": "Ja, genau."
     }
   ],
   "expected": {
     "intent": "delivery",
     "items": [
       {
-        "number": "30",
-        "quantity": 1,
+        "number": "32",
+        "quantity": 2,
         "options": [
           "Huhn"
         ]
       },
       {
-        "number": "23",
-        "quantity": 2
+        "number": "40",
+        "quantity": 1
+      },
+      {
+        "number": "12",
+        "quantity": 1
       }
     ],
-    "customer_name": "Braun",
+    "customer_name": "Lange",
     "confirmed": true,
     "escalated": false,
     "address": {
-      "street": "Lindenstrasse",
-      "house_number": "12",
+      "street": "Gartenweg",
+      "house_number": "41",
       "city": "Musterdorf",
       "postal_code": "12345"
     },

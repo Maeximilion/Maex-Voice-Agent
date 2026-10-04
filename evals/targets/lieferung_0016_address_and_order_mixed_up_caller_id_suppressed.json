@@ -1,16 +1,16 @@
 {
   "id": "lieferung_0016",
-  "name": "Adresse und Bestellung durcheinander, Rufnummer unterdrueckt",
+  "name": "Address and order mixed up, caller ID suppressed",
   "tags": [
     "lieferung",
     "mehrere_positionen",
     "rufnummer",
     "korrektur",
     "zahlwort",
-    "schwer-5"
+    "level-5"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "transcript": [
     {
       "role": "customer",

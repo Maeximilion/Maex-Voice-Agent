@@ -1,12 +1,12 @@
 {
   "id": "abholung_0065",
-  "name": "Zahlwoerter mit Buchstabe, Rauschen und Korrektur",
+  "name": "Number words with a letter, noise and a correction",
   "tags": [
     "abholung",
     "rauschen",
     "zahlwort",
     "korrektur",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-ziel eval-nummern backup
+.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern backup
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -27,8 +27,8 @@ fmt:
 eval:     ## Eval-Suite, optional TAGS=menu,noise
 	docker compose exec api python -m evals.runner $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
 
-eval-ziel: ## Zielfaelle Stufe 3-5 und Lieferung, nicht in CI, rot erlaubt (docs/08 §1)
-	docker compose exec api python -m evals.runner --cases evals/ziel $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
+eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (docs/08 §1)
+	docker compose exec api python -m evals.runner --cases evals/targets $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
 
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval

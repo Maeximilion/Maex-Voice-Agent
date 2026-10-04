@@ -1,10 +1,10 @@
-"""Eval-Suite v2: Umfang, Stufen und Pflichtabdeckung aus docs/08, ohne Datenbank.
+"""Eval suite v2: size, difficulty levels and mandatory coverage from docs/08, no database.
 
-Zwei Ordner (docs/08 §1, Maxi 03.10.2026): `evals/cases/` laeuft in CI und muss gruen
-sein (Stufe 1-2), `evals/ziel/` haelt Stufe 3-5, Lieferung und bekannte Luecken und
-laeuft per `make eval-ziel`. Ob die CI-Faelle gruen sind, prueft
-`test_evals_runner.py` mit dem ganzen Lauf. Hier steht, dass die Suite vollstaendig
-bleibt und jeder Zielfall wenigstens gueltig ist, obwohl CI ihn nicht abspielt.
+Two folders (docs/08 §1, Maxi 03.10.2026): `evals/cases/` runs in CI and must be green
+(level 1-2). `evals/targets/` holds level 3-5, delivery and known gaps and runs with
+`make eval-targets`. Whether the CI cases are green is checked by
+`test_evals_runner.py` with a full run. This file checks that the suite stays complete
+and that every target case is at least valid, although CI does not play it.
 """
 
 import csv
@@ -18,11 +18,11 @@ from evals import runner
 from evals.judge import validate_case
 
 CASES = runner.CASES
-ZIEL = runner.HERE / "ziel"
+TARGETS = runner.HERE / "targets"
 DOCS_08 = Path(runner.__file__).parents[1] / "docs" / "08_EVALS.md"
 MIN_CI = 15
 MIN_TOTAL = 40
-LEVEL = re.compile(r"^schwer-([1-5])$")
+LEVEL = re.compile(r"^level-([1-5])$")
 
 
 def _cases(folder: Path) -> list[tuple[Path, dict]]:
@@ -33,82 +33,83 @@ def _cases(folder: Path) -> list[tuple[Path, dict]]:
 
 
 def _all() -> list[tuple[Path, dict]]:
-    return _cases(CASES) + _cases(ZIEL)
+    return _cases(CASES) + _cases(TARGETS)
 
 
 def _level(case: dict) -> int:
     levels = [int(m.group(1)) for t in case["tags"] if (m := LEVEL.match(t))]
-    assert len(levels) == 1, f"{case['id']}: genau ein Tag schwer-1 bis schwer-5"
+    assert len(levels) == 1, f"{case['id']}: exactly one tag level-1 to level-5"
     return levels[0]
 
 
-def test_umfang():
+def test_suite_size():
     assert len(_cases(CASES)) >= MIN_CI
     assert len(_all()) >= MIN_TOTAL
 
 
-def _pflicht() -> dict[str, str]:
-    """docs/08 §6 ist die Quelle: Pflichtfall -> Tag aus der Tabelle."""
+def _mandatory() -> dict[str, str]:
+    """docs/08 §6 is the source: mandatory case -> tag from the table."""
     doc = DOCS_08.read_text(encoding="utf-8")
     section = doc.split("## 6. Pflichtabdeckung", 1)[1].split("\n## ", 1)[0]
     rows = re.findall(r"^\| (.+?) \| `([a-z_]+)` \|$", section, re.MULTILINE)
     return dict(rows)
 
 
-def test_pflichttabelle_ist_lesbar():
-    # 18 Pflichtfaelle stehen in docs/08 §6; eine kaputte Tabelle waere sonst leer.
-    assert len(_pflicht()) >= 18
+def test_mandatory_table_is_readable():
+    # docs/08 §6 lists 18 mandatory cases; a broken table would otherwise be empty.
+    assert len(_mandatory()) >= 18
 
 
-def test_jeder_pflichtfall_hat_einen_fall():
-    """In cases/ oder ziel/: Zone und Mindestbestellwert gibt es erst mit T-6.5,
-    sie stehen als Zielfaelle bereit."""
+def test_every_mandatory_case_has_a_case():
+    """In cases/ or targets/: zone and minimum order value only exist with T-6.5,
+    they are ready as target cases."""
     tags = {tag for _, case in _all() for tag in case.get("tags", [])}
-    missing = [line for line, tag in _pflicht().items() if tag not in tags]
-    assert missing == [], f"docs/08 §6 ohne Fall: {missing}"
+    missing = [line for line, tag in _mandatory().items() if tag not in tags]
+    assert missing == [], f"docs/08 §6 without a case: {missing}"
 
 
-def test_dateiname_passt_zur_id():
+def test_file_name_matches_id():
     for path, case in _all():
         assert path.stem.startswith(case["id"] + "_"), path.name
 
 
-def test_ids_sind_ueber_beide_ordner_eindeutig():
-    """Ein Zielfall wandert spaeter nach cases/; die id darf dort nicht schon stehen."""
+def test_ids_are_unique_across_both_folders():
+    """A target case moves to cases/ later; its id must not exist there already."""
     ids = [case["id"] for _, case in _all()]
     assert len(ids) == len(set(ids)), sorted({i for i in ids if ids.count(i) > 1})
 
 
-def test_ci_suite_haelt_nur_stufe_eins_und_zwei():
+def test_ci_suite_holds_only_level_one_and_two():
     for path, case in _cases(CASES):
         assert _level(case) <= 2, path.name
 
 
-def test_zielfall_ist_schwer_lieferung_oder_luecke():
-    for path, case in _cases(ZIEL):
+def test_target_case_is_hard_delivery_or_known_gap():
+    for path, case in _cases(TARGETS):
         assert _level(case) >= 3 or "lieferung" in case["tags"] or "pending" in case, (
             path.name
         )
 
 
-def test_bekannte_luecke_nennt_ihre_aufgabe():
+def test_known_gap_names_its_task():
     for path, case in _all():
         if "pending" in case:
             assert re.search(r"\bT-\d+\.\d+\b", case["pending"]), path.name
 
 
-def test_offene_luecken_bleiben_eine_minderheit():
-    """Die CI-Suite misst vor allem, was heute geht: hoechstens jeder zehnte Fall
-    darf eine bekannte Luecke sein, sonst verdeckt sie Rueckschritte."""
+def test_open_gaps_stay_a_minority():
+    """The CI suite measures mostly what works today: at most every tenth case may
+    be a known gap, otherwise it hides regressions."""
     cases = [case for _, case in _cases(CASES)]
     gaps = sum(1 for case in cases if "pending" in case)
     assert gaps * 10 <= len(cases), gaps
 
 
-def test_lieferziel_mit_adresse_nennt_die_postleitzahl():
-    """Codex PR #162: check_delivery verlangt die PLZ, der Dialog fragt sie zuerst
-    (docs/04, docs/05). Ein Ziel ohne PLZ waere fuer T-6.5 unerreichbar."""
-    for path, case in _cases(ZIEL):
+def test_delivery_target_with_address_names_the_postal_code():
+    """Codex PR #162: check_delivery requires the postal code and the dialogue asks
+    for it first (docs/04, docs/05). A target without one would be unreachable for
+    T-6.5."""
+    for path, case in _cases(TARGETS):
         address = case["expected"].get("address")
         if address is not None:
             assert "postal_code" in address, path.name
@@ -127,17 +128,17 @@ def _menu_options() -> dict[str, set[str]]:
         return options
 
 
-@pytest.mark.parametrize("path", sorted(ZIEL.glob("*.json")), ids=lambda p: p.stem)
-def test_zielfall_ist_gueltig(path):
-    """CI spielt ziel/ nicht ab; ein kaputter Zielfall fiele sonst erst mit T-2.4 auf."""
+@pytest.mark.parametrize("path", sorted(TARGETS.glob("*.json")), ids=lambda p: p.stem)
+def test_target_case_is_valid(path):
+    """CI does not play targets/; a broken target would only show up with T-2.4."""
     case = json.loads(path.read_text(encoding="utf-8"))
     validate_case(case, path.name)
     numbers = _menu_numbers()
     wanted = [i["number"] for i in case["expected"].get("items", [])]
     wanted += case.get("sold_out", [])
     assert [n for n in wanted if n.lower() not in numbers] == [], path.name
-    # Review PR #162: eine Option, die das Gericht nicht hat, macht das Ziel
-    # unerreichbar ("Erdnuss" statt "Erdnusssauce").
+    # Review PR #162: an option the dish does not have makes the target unreachable
+    # ("Erdnuss" instead of "Erdnusssauce").
     options = _menu_options()
     unknown = [
         (i["number"], o)
@@ -148,12 +149,12 @@ def test_zielfall_ist_gueltig(path):
     assert unknown == [], path.name
 
 
-def test_jeder_fallordner_hat_seine_eigene_baseline():
-    """Die Regressionsregel vergleicht mit dem letzten bestandenen Lauf; ein Lauf
-    ueber ziel/ darf nie die Baseline der CI-Suite werden (und umgekehrt)."""
+def test_each_case_folder_has_its_own_baseline():
+    """The regression rule compares with the last passing run; a run over targets/
+    must never become the baseline of the CI suite (and vice versa)."""
     assert runner.default_report_dir(CASES) == runner.REPORTS
-    assert runner.default_report_dir(ZIEL) == runner.REPORTS / "ziel"
-    relative = Path("evals") / "ziel"
-    assert runner.default_report_dir(ZIEL.parent / ".." / relative) == (
-        runner.REPORTS / "ziel"
+    assert runner.default_report_dir(TARGETS) == runner.REPORTS / "targets"
+    relative = Path("evals") / "targets"
+    assert runner.default_report_dir(TARGETS.parent / ".." / relative) == (
+        runner.REPORTS / "targets"
     )

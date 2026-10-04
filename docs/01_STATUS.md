@@ -99,7 +99,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 2. **T-1.14 done 27.09.2026** (docs/04 §check_slot): alternatives only within the same service, earliest and latest start from the DB (D12); nothing left to build
 3. **Card numbers of the register** (found by T-4.11): 50 dishes are not imported because the search only knows numbers up to 999 with a letter a to f - `25G`, `26G` ... `60G` (letter g) and sushi `S1` ... `S53`, `SM1` ... `SM6`. Extend `numberwords` and `importer._CARD_NUMBER` deliberately ("Nummer S zwölf", "25 G"), with eval cases; then the first real import: `python -m scripts.kasse_to_csv imports/kasse --out imports`, `python -m scripts.import_menu imports/ --dry-run --deactivate-missing`, read the report, then again with `--apply-price-changes --deactivate-missing`. Print `pos_code` instead of `number` on the input slip with the T-4.6 slip change
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
-5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals; `make eval-ziel` (27 cases, difficulty 3-5 and delivery, 1 green with the stand-in) is the target it has to reach
+5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals; `make eval-targets` (27 cases, level 3-5 and delivery, 1 green with the stand-in) is the target it has to reach
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
 7. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
@@ -325,7 +325,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.34.19 · 03.10.2026:** Eval-Suite v2: 48 Faelle in Stufen 1-5, evals/cases (CI) und evals/ziel (make eval-ziel)
+- **v1.34.19 · 03.10.2026:** Eval suite v2: 48 cases in levels 1-5, evals/cases (CI) and evals/targets (make eval-targets)
 - **v1.34.18 · 03.10.2026:** Bug: Migrationstests unabhaengig von Reihenfolge und xdist-Worker, offener Punkt test_migration_001 geschlossen
 - **v1.34.17 · 03.10.2026:** Latenztests seriell in CI nach der parallelen Suite (Marker latency), offener Punkt test_migration_001 unter xdist
 - **v1.34.16 · 03.10.2026:** CI schneller: Vorlage-Datenbank je Testlauf, pytest parallel, kein doppelter Lauf je Push

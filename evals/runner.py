@@ -245,8 +245,8 @@ def run(
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests)."""
     tags = sorted(tags or [])
-    # Ohne Angabe je Fallordner ein eigener Report-Ordner: ein Lauf ueber ziel/
-    # darf nie Baseline der CI-Suite werden (Review PR #162).
+    # Without an explicit folder every case folder gets its own report folder: a
+    # run over targets/ must never become the baseline of the CI suite.
     report_dir = report_dir or default_report_dir(cases_dir)
     make_llm = model_factory(model)
     cases = load_cases(cases_dir, tags)
@@ -283,7 +283,7 @@ def run(
 
 
 def default_report_dir(cases_dir: Path) -> Path:
-    """`evals/reports/` fuer die CI-Suite, `evals/reports/<ordner>/` fuer jeden anderen."""
+    """`evals/reports/` for the CI suite, `evals/reports/<folder>/` for any other."""
     if cases_dir.resolve() == CASES.resolve():
         return REPORTS
     return REPORTS / cases_dir.resolve().name
@@ -294,7 +294,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
     parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
     parser.add_argument("--cases", type=Path, default=CASES)
-    # Ohne Angabe waehlt run() den Report-Ordner je Fallordner.
+    # Without a value run() picks the report folder per case folder.
     parser.add_argument("--report-dir", type=Path, default=None)
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"

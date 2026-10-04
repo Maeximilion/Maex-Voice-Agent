@@ -1,12 +1,12 @@
 {
   "id": "abholung_0066",
-  "name": "Unbekannter Wunsch und eigene Allergie",
+  "name": "Unknown wish and the guest's own allergy",
   "tags": [
     "abholung",
     "unbekannt",
     "allergie_hinweis",
     "wunsch",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

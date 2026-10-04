@@ -1,12 +1,12 @@
 {
   "id": "abholung_0061",
-  "name": "Drei Gerichte, Menge und Fleisch im selben Satz",
+  "name": "Three dishes, quantity and meat in one sentence",
   "tags": [
     "abholung",
     "mehrere_positionen",
     "menge",
     "pflichtoption",
-    "schwer-3"
+    "level-3"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

@@ -1,13 +1,13 @@
 {
   "id": "abholung_0069",
-  "name": "Mehrdeutig, ausverkauft, Stueck statt Portion, Rauschen",
+  "name": "Ambiguous, sold out, pieces versus portion, noise",
   "tags": [
     "abholung",
     "mehrdeutig",
     "ausverkauft",
     "rauschen",
     "mengenaenderung",
-    "schwer-5"
+    "level-5"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

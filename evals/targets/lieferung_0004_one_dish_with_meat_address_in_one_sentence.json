@@ -1,23 +1,22 @@
 {
-  "id": "lieferung_0008",
-  "name": "Hausnummer korrigiert, vier Gerichte",
+  "id": "lieferung_0004",
+  "name": "One dish with meat, address in one sentence",
   "tags": [
     "lieferung",
-    "korrektur",
-    "mehrere_positionen",
-    "schwer-3"
+    "pflichtoption",
+    "level-1"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {
       "role": "customer",
-      "text": "Hallo, ich moechte was liefern lassen."
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
     },
     {
       "role": "customer",
-      "text": "Zweimal die 32 mit Huhn, einmal die 40 und, aeh, eine Wan-Tan-Suppe."
+      "text": "Einmal die 30 mit Huhn und zweimal die 23."
     },
     {
       "role": "customer",
@@ -25,42 +24,38 @@
     },
     {
       "role": "customer",
-      "text": "12345 Musterdorf, Gartenweg 14, nein, 41."
+      "text": "12345 Musterdorf, Lindenstrasse 12."
     },
     {
       "role": "customer",
-      "text": "Auf den Namen Lange."
+      "text": "Auf den Namen Braun."
     },
     {
       "role": "customer",
-      "text": "Ja, genau."
+      "text": "Ja, passt."
     }
   ],
   "expected": {
     "intent": "delivery",
     "items": [
       {
-        "number": "32",
-        "quantity": 2,
+        "number": "30",
+        "quantity": 1,
         "options": [
           "Huhn"
         ]
       },
       {
-        "number": "40",
-        "quantity": 1
-      },
-      {
-        "number": "12",
-        "quantity": 1
+        "number": "23",
+        "quantity": 2
       }
     ],
-    "customer_name": "Lange",
+    "customer_name": "Braun",
     "confirmed": true,
     "escalated": false,
     "address": {
-      "street": "Gartenweg",
-      "house_number": "41",
+      "street": "Lindenstrasse",
+      "house_number": "12",
       "city": "Musterdorf",
       "postal_code": "12345"
     },

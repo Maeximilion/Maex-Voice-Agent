@@ -1,15 +1,15 @@
 {
   "id": "lieferung_0013",
-  "name": "Allergie und unbekannter Wunsch bei Lieferung",
+  "name": "Allergy and an unknown wish on a delivery",
   "tags": [
     "lieferung",
     "allergie_hinweis",
     "unbekannt",
     "mehrere_positionen",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {

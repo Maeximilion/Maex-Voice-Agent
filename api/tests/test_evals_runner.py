@@ -56,7 +56,7 @@ def run(migrated_db_url, cases_dir, report_dir, **kw) -> RunReport:
 # --- Ganzer Lauf -------------------------------------------------------------------
 
 
-ZIEL = Path(runner.__file__).parent / "ziel"
+TARGETS = Path(runner.__file__).parent / "targets"
 
 
 def _tags(folder: Path) -> set[str]:
@@ -67,26 +67,26 @@ def _tags(folder: Path) -> set[str]:
     }
 
 
-def test_pflichtfaelle_nur_im_ziel_bleiben_rot_bis_sie_umziehen(
+def test_mandatory_cases_only_in_targets_stay_red_until_they_move(
     migrated_db_url, tmp_path
 ):
-    """Review PR #162: CI spielt ziel/ nicht ab. Pflichtfaelle, die es nur dort gibt
-    (Allergie mit Wert, Mengenaenderung, Zone, Mindestbestellwert), laufen hier
-    trotzdem mit, wie ein striktes xfail: wird einer gruen, gehoert er nach cases/."""
-    from api.tests.test_evals_suite import _pflicht
+    """Review PR #162: CI does not play targets/. Mandatory cases that exist only
+    there (allergy with a value, quantity change, zone, minimum order value) run
+    here anyway, like a strict xfail: once one is green it belongs in cases/."""
+    from api.tests.test_evals_suite import _mandatory
 
-    only_ziel = set(_pflicht().values()) - _tags(CASES)
-    assert only_ziel, "kein Pflichtfall mehr nur im Ziel: Test vereinfachen"
-    cases = tmp_path / "pflicht_ziel"
+    only_targets = set(_mandatory().values()) - _tags(CASES)
+    assert only_targets, "no mandatory case left only in targets: simplify this test"
+    cases = tmp_path / "mandatory_targets"
     cases.mkdir()
-    for path in ZIEL.glob("*.json"):
-        if only_ziel & set(json.loads(path.read_text(encoding="utf-8"))["tags"]):
+    for path in TARGETS.glob("*.json"):
+        if only_targets & set(json.loads(path.read_text(encoding="utf-8"))["tags"]):
             shutil.copy(path, cases / path.name)
     report = run(migrated_db_url, cases, tmp_path / "r")
-    assert report.total >= len(only_ziel)
+    assert report.total >= len(only_targets)
     green = [c.id for c in report.cases if c.passed]
-    assert green == [], f"jetzt gruen, nach evals/cases/ verschieben: {green}"
-    assert not [c.id for c in report.cases if c.error], "Zielfall abgestuerzt"
+    assert green == [], f"green now, move to evals/cases/: {green}"
+    assert not [c.id for c in report.cases if c.error], "a target case crashed"
 
 
 def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
@@ -457,8 +457,8 @@ def _reservation_seen(**extra) -> Observed:
     )
 
 
-def test_korrigierter_termin_muss_im_ergebnis_stehen():
-    # Codex PR #162: Samstag 20:00 -> Freitag 19:30 darf nicht ungeprueft bleiben.
+def test_corrected_slot_has_to_be_in_the_result():
+    # Codex PR #162: Saturday 20:00 -> Friday 19:30 must not go unchecked.
     seen = _reservation_seen(reserved_for="2026-09-18T19:30")
     assert judge({"reserved_for": "2026-09-18T19:30"}, seen) == []
     diffs = judge({"reserved_for": "2026-09-19T20:00"}, seen)
@@ -466,30 +466,30 @@ def test_korrigierter_termin_muss_im_ergebnis_stehen():
     assert judge({"reserved_for": "2026-09-18T19:30"}, _reservation_seen())
 
 
-def test_adresse_ist_bis_t61_nie_still_gruen():
+def test_address_is_never_silently_green_before_t61():
     want = {"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
-    assert judge({"address": want}, _reservation_seen())  # address noch None
+    assert judge({"address": want}, _reservation_seen())  # address still None
     seen = _reservation_seen(
         address={"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
     )
     assert judge({"address": want}, seen) == []
-    # Hausnummer 14 statt der korrigierten 41 ist rot; ss und ß gelten gleich.
+    # House number 14 instead of the corrected 41 is red; ss and ß count as equal.
     wrong = _reservation_seen(address={**want, "house_number": "14"})
     assert judge({"address": want}, wrong)
-    strasse = _reservation_seen(address={"street": "Lindenstraße", "house_number": "4"})
+    eszett = _reservation_seen(address={"street": "Lindenstraße", "house_number": "4"})
     assert (
-        judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, strasse)
+        judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, eszett)
         == []
     )
 
 
-def test_zweite_bestaetigte_reservierung_ist_immer_rot():
+def test_second_confirmed_reservation_is_always_red():
     seen = _reservation_seen(reserved_for="2026-09-18T19:30", extra_reservations=1)
     diffs = judge({"reserved_for": "2026-09-18T19:30"}, seen)
     assert diffs == ["mehr als eine Reservierung bestaetigt: 1 zusaetzlich"]
 
 
-def test_adresse_ohne_leerzeichen_und_abkuerzung():
+def test_address_ignores_spaces_and_abbreviation():
     seen = _reservation_seen(
         address={"street": "Lindenstr.", "house_number": "7 b", "city": "Musterdorf"}
     )
@@ -498,9 +498,9 @@ def test_adresse_ohne_leerzeichen_und_abkuerzung():
     assert judge({"address": {**want, "house_number": "7c"}}, seen)
 
 
-def test_bestellart_und_abgelehnter_wunsch_ohne_notiz():
-    """Codex PR #162: Abholung statt Lieferung muss als Abholung ankommen, und ein
-    abgelehnter Wunsch ("extra scharf") darf nicht als Kuechennotiz landen."""
+def test_order_type_and_rejected_wish_without_note():
+    """Codex PR #162: pickup instead of delivery has to arrive as a pickup, and a
+    rejected wish ("extra scharf") must not end up as a kitchen note."""
     seen = Observed(
         intent="delivery",
         confirmed=True,
@@ -519,9 +519,9 @@ def test_bestellart_und_abgelehnter_wunsch_ohne_notiz():
     assert judge({"items": [want]}, clean) == []
 
 
-def test_genannte_rufnummer_und_klingelhinweis_werden_geprueft():
-    """Codex PR #162: eine andere gueltige Nummer oder ein verworfener
-    Klingelhinweis darf nicht gruen sein."""
+def test_spoken_phone_number_and_bell_note_are_checked():
+    """Codex PR #162: another valid number or a dropped bell note must not be
+    green."""
     seen = _reservation_seen(
         phone="+497215559876",
         address={
@@ -546,18 +546,18 @@ def test_genannte_rufnummer_und_klingelhinweis_werden_geprueft():
         assert judge({"address": note}, joined) == [], stored
 
 
-def test_run_waehlt_den_report_ordner_je_fallordner(
+def test_run_picks_the_report_folder_per_case_folder(
     migrated_db_url, monkeypatch, tmp_path
 ):
-    """Review PR #162: auch run() ohne report_dir trennt die Baselines, nicht nur
-    die Kommandozeile."""
+    """Review PR #162: run() without report_dir separates the baselines too, not
+    only the command line."""
     monkeypatch.setattr(runner, "REPORTS", tmp_path / "reports")
     cases = write_cases(
-        tmp_path / "ziel",
-        fall("eins", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
+        tmp_path / "targets",
+        fall("one", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
     )
     runner.run(cases_dir=cases, db_url=migrated_db_url, stamp=datetime.now(UTC))
-    assert list((tmp_path / "reports" / "ziel").glob("eval_*.json"))
+    assert list((tmp_path / "reports" / "targets").glob("eval_*.json"))
     assert not list((tmp_path / "reports").glob("eval_*.json"))
 
 
@@ -896,20 +896,20 @@ def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
     assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
 
 
-def test_abgelehnte_pruefung_muss_genau_so_abgelehnt_haben():
-    """Codex PR #162: "nichts gebucht" allein beweist keine Zonenpruefung."""
+def test_expected_rejection_needs_exactly_that_rejection():
+    """Codex PR #162: "nothing booked" alone does not prove a zone check."""
     from evals.judge import missing_tools
 
     want = [{"tool": "check_delivery", "error": "out_of_zone"}]
     assert missing_tools(want, []) == want
-    # Erfolgreich geprueft ist das Gegenteil der erwarteten Ablehnung.
+    # A successful check is the opposite of the expected rejection.
     assert missing_tools(want, [("check_delivery", {"zone": "A"})]) == want
     assert missing_tools(want, [], [("check_delivery", "invalid_input")]) == want
     assert missing_tools(want, [], [("draft_order", "out_of_zone")]) == want
     assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
 
 
-def test_recorder_merkt_abgelehnte_ergebnisse_mit_code():
+def test_recorder_keeps_rejected_results_with_their_code():
     llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
     llm.next_turn(
         "",

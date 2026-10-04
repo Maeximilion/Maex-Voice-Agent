@@ -1,13 +1,13 @@
 {
   "id": "abholung_0058",
-  "name": "Zwei Gerichte im ersten Satz, Nummer und Name",
+  "name": "Two dishes in the first sentence, number and name",
   "tags": [
     "abholung",
     "nummer",
     "name",
     "menge",
     "erster_satz",
-    "schwer-1"
+    "level-1"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

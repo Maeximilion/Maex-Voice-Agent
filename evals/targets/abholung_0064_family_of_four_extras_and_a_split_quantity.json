@@ -1,12 +1,12 @@
 {
   "id": "abholung_0064",
-  "name": "Familie bestellt fuer vier, Extras und geteilte Menge",
+  "name": "Family of four, extras and a split quantity",
   "tags": [
     "abholung",
     "mehrere_positionen",
     "wunsch",
     "menge",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",

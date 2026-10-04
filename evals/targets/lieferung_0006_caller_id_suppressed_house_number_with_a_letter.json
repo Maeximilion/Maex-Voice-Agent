@@ -1,13 +1,13 @@
 {
   "id": "lieferung_0006",
-  "name": "Rufnummer unterdrueckt, Hausnummer mit Buchstabe",
+  "name": "Caller ID suppressed, house number with a letter",
   "tags": [
     "lieferung",
     "rufnummer",
-    "schwer-2"
+    "level-2"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "transcript": [
     {
       "role": "customer",

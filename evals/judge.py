@@ -52,24 +52,24 @@ EXPECTED_KEYS = frozenset(
         # Code anbietet, steht in keiner Tabelle, ist aber kein Wortlaut, sondern
         # ein Ergebnis (am Ruhetag nie der Vortag, Befund T-5.2).
         "alternatives",
-        # Beginn der bestaetigten Reservierung als Ortszeit "YYYY-MM-DDTHH:MM": eine
-        # Korrektur von Tag oder Uhrzeit muss im Ergebnis ankommen (Codex PR #162).
+        # Start of the confirmed reservation as local time "YYYY-MM-DDTHH:MM": a
+        # corrected day or time has to arrive in the result (Codex PR #162).
         "reserved_for",
-        # Lieferadresse {street, house_number, postal_code, city}, nur die genannten
-        # Felder. Beobachtbar erst mit der Tabelle addresses (T-6.1); bis dahin ist
-        # ein Fall mit Adresse immer rot, statt die Korrektur still zu uebergehen.
+        # Delivery address, only the fields the case names (ADDRESS_KEYS). It can be
+        # observed once the addresses table exists (T-6.1); until then a case with
+        # an address is always red instead of silently skipping the correction.
         "address",
-        # Art der bestaetigten Bestellung: wechselt der Gast nach "ausserhalb der
-        # Zone" zur Abholung, muss auch eine Abholung entstehen (Codex PR #162).
+        # Type of the confirmed order: when the guest switches to pickup after
+        # "outside the zone", a pickup order has to result (Codex PR #162).
         "order_type",
-        # Rufnummer des bestaetigten Vorgangs in E.164: bei unterdrueckter Nummer
-        # zaehlt die genannte, keine andere gueltige (Codex PR #162).
+        # Phone number of the confirmed transaction in E.164: with a suppressed
+        # caller ID the spoken number counts, not any other valid one (Codex PR #162).
         "phone",
     }
 )
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
-# Freitext ("2. OG, Klingel Müller"): jedes erwartete Wort muss vorkommen, der
-# Wortlaut darum herum ist frei (Codex PR #162).
+# Free text ("2. OG, Klingel Müller"): every expected word has to occur, the
+# wording around it is free (Codex PR #162).
 ADDRESS_WORD_KEYS = frozenset({"floor_note"})
 PHONE = re.compile(r"^\+[1-9]\d{6,14}$")
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
@@ -184,9 +184,11 @@ def missing_tools(
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
-    keine Frage nach der 23. Mit `error` muss das Tool genau so abgelehnt haben
-    (`check_delivery` mit `out_of_zone`): "nichts gebucht" allein beweist nicht,
-    dass die Regel gegriffen hat (Codex PR #162)."""
+    keine Frage nach der 23.
+
+    With `error` the tool has to have rejected with exactly that code
+    (`check_delivery` with `out_of_zone`): "nothing booked" alone does not prove
+    that the rule was applied (Codex PR #162)."""
     missing = []
     for entry in wanted:
         if isinstance(entry, dict) and "error" in entry:
@@ -250,8 +252,8 @@ class Observed:
     # ein wiederholter confirm darf keinen zweiten Vorgang und keinen zweiten
     # Bon ausloesen (docs/08 §6, Idempotenz).
     duplicate_confirms: int = 0
-    # Mehr als eine bestaetigte Reservierung in einem Anruf: nach einer Korrektur
-    # stuende der alte Termin noch im Buch (Review PR #162).
+    # More than one confirmed reservation in a call: after a correction the old
+    # slot would still be booked (review PR #162).
     extra_reservations: int = 0
     notes: list[str] = field(default_factory=list)
 
@@ -326,9 +328,9 @@ def _reserved_local(session: Session, call, done_res) -> str | None:
 
 
 def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | None:
-    """Nur die genannten Felder. Gleich ist, was sich nur in Umlaut-Schreibweise,
-    ss/ß, Leerzeichen, Satzzeichen oder "str." fuer "strasse" unterscheidet ("7 b"
-    und "7b", "Lindenstr." und "Lindenstraße")."""
+    """Only the fields the case names. Values are equal when they differ only in
+    umlaut spelling, ss/ß, spaces, punctuation or "str." for "strasse" ("7 b" and
+    "7b", "Lindenstr." and "Lindenstraße")."""
 
     def norm(value: str | None) -> str:
         text = fold(value or "").replace("str.", "strasse")

@@ -1,11 +1,11 @@
 {
-  "id": "abholung_0063",
-  "name": "Ausverkauftes Gericht mitten in der Bestellung",
+  "id": "abholung_0060",
+  "name": "Duck is ambiguous, the chosen one is sold out",
   "tags": [
     "abholung",
+    "mehrdeutig",
     "ausverkauft",
-    "mehrere_positionen",
-    "schwer-3"
+    "level-2"
   ],
   "source": "handcrafted",
   "caller_id": "+497215551234",
@@ -15,15 +15,19 @@
   "transcript": [
     {
       "role": "customer",
-      "text": "Hallo, ich moechte was zum Abholen bestellen."
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
     },
     {
       "role": "customer",
-      "text": "Einmal die 21, die 48 und zwei Pho Ga."
+      "text": "Einmal Ente."
     },
     {
       "role": "customer",
-      "text": "Oh schade, dann nehm ich die 49."
+      "text": "Die suess-saure."
+    },
+    {
+      "role": "customer",
+      "text": "Dann die 49."
     },
     {
       "role": "customer",
@@ -31,7 +35,7 @@
     },
     {
       "role": "customer",
-      "text": "Auf den Namen Wolf."
+      "text": "Auf den Namen Mueller."
     },
     {
       "role": "customer",
@@ -42,19 +46,11 @@
     "intent": "pickup",
     "items": [
       {
-        "number": "21",
-        "quantity": 1
-      },
-      {
         "number": "49",
         "quantity": 1
-      },
-      {
-        "number": "14",
-        "quantity": 2
       }
     ],
-    "customer_name": "Wolf",
+    "customer_name": "Mueller",
     "confirmed": true,
     "escalated": false
   }

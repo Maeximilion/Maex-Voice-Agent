@@ -1,14 +1,14 @@
 {
   "id": "lieferung_0011",
-  "name": "Buero bestellt fuer sechs, Klingel weicht ab",
+  "name": "Office orders for six, bell name differs",
   "tags": [
     "lieferung",
     "mehrere_positionen",
     "wunsch",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {

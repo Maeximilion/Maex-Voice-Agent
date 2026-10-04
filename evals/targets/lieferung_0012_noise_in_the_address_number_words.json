@@ -1,14 +1,14 @@
 {
   "id": "lieferung_0012",
-  "name": "Rauschen in der Adresse, Zahlwoerter",
+  "name": "Noise in the address, number words",
   "tags": [
     "lieferung",
     "rauschen",
     "zahlwort",
-    "schwer-4"
+    "level-4"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {

@@ -1,13 +1,13 @@
 {
   "id": "reservierung_0030",
-  "name": "Tag, Zeit und Personen mehrfach geaendert, Rauschen",
+  "name": "Day, time and party size changed several times, noise",
   "tags": [
     "reservierung",
     "personen",
     "korrektur",
     "rauschen",
     "datum",
-    "schwer-5"
+    "level-5"
   ],
   "source": "handcrafted",
   "transcript": [

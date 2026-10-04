@@ -1,13 +1,13 @@
 {
   "id": "lieferung_0007",
-  "name": "Unter dem Mindestbestellwert, Gast legt nach",
+  "name": "Below the minimum order value, guest adds a dish",
   "tags": [
     "lieferung",
     "mindestbestellwert",
-    "schwer-2"
+    "level-2"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: Lieferung mit Adresse, Zone und Mindestbestellwert",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {
