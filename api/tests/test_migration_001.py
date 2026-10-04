@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import IntegrityError
 
 from api.tests.conftest import alembic_config as _config
+from api.tests.conftest import scratch_db_at
 
 STUFE_1_TABELLEN = {
     "tenants",
@@ -41,15 +42,27 @@ def test_upgrade_erzeugt_alle_stufe1_tabellen(scratch_db_url):
 
 
 def test_downgrade_entfernt_alles_und_upgrade_geht_erneut(scratch_db_url):
+    # Erst hoch: auf einer frischen Datenbank ohne Revision liefe der Downgrade
+    # gar nicht, der Test pruefte dann nur eine leere Datenbank (Codex PR #164).
+    command.upgrade(_config(scratch_db_url), "001")
+    assert _table_names(scratch_db_url) == STUFE_1_TABELLEN | {"alembic_version"}
     command.downgrade(_config(scratch_db_url), "base")
     assert _table_names(scratch_db_url) <= {"alembic_version"}
     command.upgrade(_config(scratch_db_url), "001")
     assert _table_names(scratch_db_url) == STUFE_1_TABELLEN | {"alembic_version"}
 
 
+@pytest.fixture(scope="module")
+def schema_001_url():
+    # Eigene Datenbank auf 001: die Constraint-Tests duerfen nicht davon abhaengen,
+    # dass die Upgrade-Tests vorher im selben Prozess liefen (pytest-xdist).
+    with scratch_db_at("001") as url:
+        yield url
+
+
 @pytest.fixture
-def conn(scratch_db_url):
-    engine = create_engine(scratch_db_url)
+def conn(schema_001_url):
+    engine = create_engine(schema_001_url)
     with engine.connect() as connection:
         yield connection
         connection.rollback()

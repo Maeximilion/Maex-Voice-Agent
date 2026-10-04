@@ -1,9 +1,12 @@
 """Gemeinsame Fixtures: Wegwerf-Datenbanken, damit die Entwicklungsdaten unberührt bleiben."""
 
+import os
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 
 import pytest
+from alembic import command
 
 # Von hier importieren die Migrationstests weiterhin alembic_config.
 from evals.scratch_db import (  # noqa: F401
@@ -16,6 +19,33 @@ from evals.scratch_db import (  # noqa: F401
 
 LATENZ_BUDGET_MS = 300
 LATENZ_RUNDEN = 3
+
+# Gesetzt von _latenz_messung, solange ein Test mit @pytest.mark.latency läuft.
+_latenz_test_aktiv = False
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers",
+        "latency: misst das Latenzbudget mit echter Uhr; läuft in CI seriell, "
+        "nicht unter xdist (docs/13 §6)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _latenz_messung(request):
+    """Latenztests messen nur seriell: unter xdist-Workern messen sie die Last."""
+    global _latenz_test_aktiv
+    if request.node.get_closest_marker("latency") is None:
+        yield
+        return
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        pytest.skip("Latenz misst nur seriell: pytest -m latency")
+    _latenz_test_aktiv = True
+    try:
+        yield
+    finally:
+        _latenz_test_aktiv = False
 
 
 def p95_ms(
@@ -32,7 +62,16 @@ def p95_ms(
     Ausreißer durch Last auf einem geteilten CI-Runner verteilen sich so auf mehr
     Stichproben (bei 60 Aufrufen bis zu 3), ein Überschreiten auch nur in jedem
     dritten Aufruf bleibt rot. Das Budget selbst wird nicht gelockert.
+
+    Mit echter Uhr nur in Tests mit @pytest.mark.latency; die laufen in CI seriell
+    nach der parallelen Suite, sonst misst p95 die Konkurrenz der xdist-Worker.
     """
+    # Jede Uhr aus dem Modul time ist echt (perf_counter, monotonic, ...); Fakes nicht.
+    if getattr(clock, "__module__", None) == "time" and not _latenz_test_aktiv:
+        pytest.fail(
+            "p95_ms mit echter Uhr braucht @pytest.mark.latency am Test",
+            pytrace=False,
+        )
     samples: list[float] = []
     for _ in range(rounds):
         for _ in range(n):
@@ -46,9 +85,26 @@ def p95_ms(
     return p95
 
 
-@pytest.fixture(scope="module")
+@contextmanager
+def scratch_db_at(revision: str) -> Iterator[str]:
+    """Eigene Wegwerf-Datenbank, auf `revision` migriert, danach gelöscht."""
+    url = create_scratch_db()
+    try:
+        command.upgrade(alembic_config(url), revision)
+        yield url
+    finally:
+        drop_scratch_db(url)
+
+
+@pytest.fixture
 def scratch_db_url():
-    """Leere Datenbank ohne Schema, für Migrationstests."""
+    """Leere Datenbank ohne Schema, für Migrationstests; je Test eine eigene.
+
+    Je Test, nicht je Modul: unter pytest-xdist landen die Tests einer Datei auf
+    verschiedenen Workern, und ein Test, der auf der Revision eines vorigen
+    aufbaut, sieht dort eine leere Datenbank. Umgekehrt ist `upgrade` auf eine
+    ältere Revision still ein No-op, ein Upgrade-Test prüfte dann nichts.
+    """
     url = create_scratch_db()
     try:
         yield url
