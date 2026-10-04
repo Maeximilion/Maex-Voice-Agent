@@ -65,7 +65,7 @@ Was nicht hineingehört: Marketingtext, Emojis, Feature-Versprechen, Screenshots
 
 ## Stil
 
-- Deutsch, Sätze statt Stichwortsalat, kein Ausrufezeichen
+- Englisch, Sätze statt Stichwortsalat, kein Ausrufezeichen
 - Präsens und Ist-Zustand: „Die API antwortet auf /health", nicht „wird antworten"
 - Befehle in Codeblöcken, genau so, wie sie eingegeben werden
 - Wenn etwas nicht funktioniert, steht es unter „Bekannte Probleme", nicht in einem Nebensatz

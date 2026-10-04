@@ -60,7 +60,7 @@ Each issue carries exactly one type label. Priority and status only when they ac
 ## Code Style
 
 - `ruff` decides on format and linting, config in repository.
-- English identifiers, German comments and error messages.
+- Everything is English: identifiers, comments, error messages, docs, commits and PR text. German only for what the agent says to callers and for caller sentences in `evals/` (`CLAUDE.md` §8).
 - Comments explain the why, not the what. No emojis in code, docs, commits, or UI.
 - Money always as integer cents, phone numbers in E.164, times stored UTC and displayed in local time.
 - Domain logic belongs in `api/domain/`, never in `api/tools/` or `api/gui/`. Dependency direction is in `docs/11_MODULE.md`.
