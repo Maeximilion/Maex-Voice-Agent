@@ -40,7 +40,7 @@ Importing the file again overwrites the workflow with the same id, including the
 
 ## The channel node
 
-The placeholder is a "Stop and Error" node: it fails on purpose, so no event counts as delivered while nobody is notified. Which channel replaces it (push or SMS) is an open decision, see `docs/01_STATUS.md`.
+The placeholder is a "Stop and Error" node: it fails on purpose, so no event counts as delivered while nobody is notified. Decided 04.10.2026 (D13 in `docs/01_STATUS.md`): a self-hosted push service on the EU server replaces it. Neither the service nor the node is built yet.
 
 The replacement
 

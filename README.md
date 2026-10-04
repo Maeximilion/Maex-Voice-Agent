@@ -43,7 +43,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
-- The n8n workflow for team events (`n8n/team_events.json`, import in `n8n/README.md`) notifies nobody yet: its channel node is a placeholder until the channel is decided (D13)
+- The n8n workflow for team events (`n8n/team_events.json`, import in `n8n/README.md`) notifies nobody yet: its channel node is a placeholder until the self-hosted push service is set up (D13)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
 
 ## Requirements
