@@ -163,8 +163,28 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
 | pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
+| lunch_only | BOOL | Lunch menu: only sold inside the lunch window of `lunch_hours` (migration 006, T-4.13). Set by the import (docs/14), default `false` |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
+
+### `lunch_hours`
+When lunch menus (`menu_items.lunch_only`) are sold (T-4.13). Local time of the tenant, never a time from the code (CLAUDE.md §2 rule 1).
+
+| Field | Type | Note |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| weekday | SMALLINT | 0 = Monday … 6 = Sunday, like `opening_hours` |
+| starts_at | TIME | first minute in which a lunch menu is sold |
+| ends_at | TIME | from this minute on no longer; `starts_at < ends_at`, the window does not cross midnight |
+
+One row per weekday and tenant (`(tenant_id, weekday)` unique). **A weekday without a row has no lunch menus**; the table is empty after migration 006, so no lunch menu is sold by phone until the window is entered. What counts is the moment of the call, not the pickup time. Until the admin view exists the rows are entered by hand, for example Tuesday to Friday:
+
+```sql
+INSERT INTO lunch_hours (tenant_id, weekday, starts_at, ends_at)
+SELECT id, d, '11:30', '14:00' FROM tenants, generate_series(1, 4) AS d
+WHERE name = '<Pilotbetrieb>';
+```
 
 ### `item_options`
 Varianten und Extras mit Preisdifferenz.
@@ -334,5 +354,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
 | 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
 | 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
-| 006 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 007 | `eval_cases`, `eval_runs` |
+| 006 | `menu_items.lunch_only`, `lunch_hours`: lunch menus only inside the lunch window (T-4.13) |
+| 007 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
+| 008 | `eval_cases`, `eval_runs` |

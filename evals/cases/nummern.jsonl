@@ -179,3 +179,18 @@
 {"say": "Nummer Z1000zz", "expect": "!z1000zz", "why": "dasselbe ueber dem Kartenbereich (Codex PR #155)"}
 {"say": "Nummer 1000zz", "expect": "!1000zz", "why": "ohne Praefix dasselbe (Codex PR #155)"}
 {"say": "Nummer S12zz", "expect": "!s12zz", "why": "bekanntes Praefix, falsche geklebte Endung: genannt, nicht vorhanden (Code-Review PR #155)"}
+{"say": "M vier A", "expect": "m4a", "why": "lunch menu: prefix M and suffix a spoken apart (T-4.13)"}
+{"say": "Em vier A", "expect": "m4a", "why": "prefix M spelled as a letter name (T-4.13)"}
+{"say": "VM fünf C", "expect": "vm5c", "why": "two-letter prefix VM with suffix c (T-4.13)"}
+{"say": "Vau Em fünf C", "expect": "vm5c", "why": "prefix VM spelled letter by letter (T-4.13)"}
+{"say": "M4A", "expect": "m4a", "why": "written in one piece, as the recognition often delivers it (T-4.13)"}
+{"say": "Nummer VM5C", "expect": "vm5c", "why": "marker in front of the glued lunch number (T-4.13)"}
+{"say": "zweimal M vier B", "expect": "m4b", "why": "quantity in front of the lunch number (T-4.13)"}
+{"say": "Menü eins", "expect": "m1|vm1", "why": "category word of a group with sub-groups: Menü, Menü Vegetarisch and Menü Sushi carry M and VM; the menu says which exists (T-4.13)"}
+{"say": "Menü vier A", "expect": "m4a|vm4a", "why": "category word with suffix (T-4.13)"}
+{"say": "Menü acht", "expect": "m8|vm8", "why": "M8 and VM8 are in the sub-group Menü Sushi (T-4.13)"}
+{"say": "zweimal Menü vier B", "expect": "m4b|vm4b", "why": "quantity in front of the category word (T-4.13)"}
+{"say": "Menü Nummer eins", "expect": "?", "why": "category word in front of the marker: M1 or 1? ask back, like Sushi Nummer zwölf (T-4.13)"}
+{"say": "Menü", "expect": "name", "why": "category word without a number is a name search (T-4.13)"}
+{"say": "Menü 1000", "expect": "!m1000 oder vm1000", "why": "category word in front of a number above the card range: named, not on the menu (T-4.13)"}
+{"say": "Sushi acht", "expect": "s8|sm8", "why": "the sub-group Menü Sushi does not add M or VM to the word Sushi (T-4.13)"}

@@ -738,10 +738,80 @@ def test_card_format_from_the_numbers():
 
 
 def test_category_word_only_without_shared_prefixes():
-    """If a prefix spans two categories, no category word is unambiguous."""
-    card_format = CardFormat.from_items([("m1", "Menü"), ("m2", "Menü Sushi")])
+    """If a prefix spans two unrelated categories, no category word is
+    unambiguous."""
+    card_format = CardFormat.from_items([("m1", "Menü"), ("m2", "Mittag")])
     assert card_format.prefixes == frozenset({"m"})
     assert dict(card_format.words) == {}
+
+
+# Like the lunch menus of the register (T-4.13): M in Menü, VM in Menü
+# Vegetarisch, both in Menü Sushi.
+LUNCH_CARD = CardFormat.from_items(
+    [
+        ("m1", "Menü"),
+        ("m4a", "Menü"),
+        ("vm1", "Menü Vegetarisch"),
+        ("vm5c", "Menü  vegetarisch"),
+        ("m8", "Menü Sushi"),
+        ("vm8", "Menü Sushi"),
+        ("s1", "Sushi"),
+        ("sm1", "Sushi"),
+        ("12", "Suppen"),
+    ]
+)
+
+
+def test_category_word_covers_its_sub_groups():
+    """A one-word category names its sub-groups as well: "Menü" stands for the
+    prefixes of Menü, Menü Vegetarisch and Menü Sushi. The word Sushi keeps S
+    and SM; "Menü Sushi" does not start with it."""
+    assert dict(LUNCH_CARD.words) == {"menue": ("m", "vm"), "sushi": ("s", "sm")}
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("M vier A", ("m4a",)),
+        ("Em vier A", ("m4a",)),
+        ("VM fünf C", ("vm5c",)),
+        ("Vau Em fünf C", ("vm5c",)),
+        ("Menü eins", ("m1", "vm1")),
+        ("Menue vier A", ("m4a", "vm4a")),
+        ("zweimal Menü acht", ("m8", "vm8")),
+        ("Sushi eins", ("s1", "sm1")),
+    ],
+)
+def test_lunch_numbers_and_category_word(text, cards):
+    ref, unclear = sole_item_number(text, LUNCH_CARD)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == cards
+
+
+def test_no_category_word_without_the_one_word_category():
+    """Only sub-groups, no category "Menü" itself: nothing ties the word to
+    them, the name search decides."""
+    card_format = CardFormat.from_items(
+        [("vm1", "Menü Vegetarisch"), ("m8", "Menü Sushi")]
+    )
+    assert dict(card_format.words) == {}
+    assert sole_item_number("Menü eins", card_format) == (None, False)
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        # A sub-group with a plain number: "Menü zwölf" could be that 12.
+        ("12", "Menü Klassiker"),
+        # The prefix of a sub-group also outside the group.
+        ("vm2", "Vorspeisen"),
+    ],
+)
+def test_category_word_needs_the_whole_group_clean(extra):
+    card_format = CardFormat.from_items(
+        [("m1", "Menü"), ("vm1", "Menü Vegetarisch"), extra]
+    )
+    assert "menue" not in dict(card_format.words)
 
 
 def test_category_word_only_without_plain_numbers():

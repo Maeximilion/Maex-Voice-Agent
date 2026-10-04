@@ -28,6 +28,7 @@ from api.core import time as clock
 from api.core.errors import NotFound
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.items import is_sold_out
+from api.domain.menu.lunch import Lunch
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import CARD_PARTS, canonical_card
 from api.models import AuditLog, MenuItem
@@ -191,13 +192,16 @@ def set_sold_out(
 
 def alternatives(session: Session, item: MenuItem, now: datetime) -> list[MenuItem]:
     """Up to two dishes of the same category that are available today - the
-    next ones after the number of the sold-out dish, then from the start."""
+    next ones after the number of the sold-out dish, then from the start. A
+    lunch menu outside the lunch window is not offered (T-4.13)."""
+    lunch = Lunch(session, item.tenant_id, now)
     same = [
         other
         for other in _active(session, item.tenant_id)
         if other.category == item.category
         and other.id != item.id
         and not is_sold_out(other, now)
+        and not lunch.closed(other)
     ]
     key = number_key(item.number)
     after = [o for o in same if number_key(o.number) > key]

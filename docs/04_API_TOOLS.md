@@ -204,6 +204,14 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
 
 **Heute aus (T-4.8).** Ein Treffer, den das Team am Tablet auf „Gericht aus" gestellt hat, kommt mit `sold_out: true` und einem `say`: „Frühlingsrollen ist heute leider aus. Stattdessen hätte ich Nummer 24 Sommerrollen." Die Alternativen sind bis zu zwei aktive, nicht ausverkaufte Gerichte derselben Kategorie, die nächsten Nummern nach dem ausverkauften, dann von vorn; gibt es keine, bleibt nur der erste Satz. Nie etwas, das nicht auf der Karte steht (D8). `get_item_details` und `draft_order` nennen weiter nur „heute aus".
 
+**Lunch menus (T-4.13, Maxi 04.10.2026).** A dish with `menu_items.lunch_only` is only sold inside the lunch window of `lunch_hours` (one row per weekday, local time, docs/03; a weekday without a row has no lunch menus). The moment of the call decides, not the pickup time. Inside the window a lunch menu is a dish like any other. Outside it `search_menu` never delivers one, so its `menu_item_id` cannot enter an order:
+- Named by number, category word or alias: `ok: false`, code `closed`, with a `say` from the code: „Menü Ente knusprig ist ein Mittagsmenü. Das gibt es heute nur von halb zwölf bis zwei Uhr." On a day without a window: „… Das gibt es heute leider nicht." Several candidates („Menü eins" is M1 or VM1) are not named: „Die Mittagsmenüs gibt es heute nur von halb zwölf bis zwei Uhr." A lunch number that is not on the menu stays `not_found`.
+- Name search: lunch menus are looked past. „Ente süß-sauer" in the evening is dish 48, not a question about the lunch menu of the same name. Only when a lunch menu is the best hit by name (above the high threshold and better than every regular dish, „Menü Ente knusprig"), or nothing else fits, the answer is `closed` as above - never the regular dish in its place.
+- In a sentence with several positions the closed lunch menu is a part of its own with `ok: false`, code `closed` and its sentence; the other parts are unaffected.
+- The alternatives for a sold-out dish never contain a lunch menu outside the window.
+
+**Category word with sub-groups (T-4.13).** A one-word category also names the categories whose name starts with it: Menü, Menü Vegetarisch and Menü Sushi carry M and VM, so „Menü eins" looks up M1 and VM1 (`ambiguous` if both exist) and „Menü vier A" finds M4A. As before, the word only counts if every number of the group carries a prefix and each of these prefixes occurs only inside the group; without a category called exactly „Menü" there is no such word.
+
 **Formen von „nicht eindeutig".** Sie unterscheiden sich darin, ob es etwas
 vorzuschlagen gibt:
 
@@ -396,6 +404,7 @@ Verstoß → `ok: false` mit passendem Code und `say`.
 | Abholung gerade nicht offen | `closed` |
 | Gericht unbekannt, inaktiv oder von einem anderen Mandanten | `not_found` |
 | Gericht ausverkauft | `conflict`, `say` wie bei `search_menu` |
+| Lunch menu outside the lunch window (T-4.13; the window can close during the call) | `closed`, `say` as from `search_menu` |
 | Option gibt es an diesem Gericht nicht, doppelt, oder Pflichtgruppe mehrfach | `invalid_input` mit `say` |
 | Pflichtgruppe ohne Wahl | `invalid_input`, `say` fragt nach der Gruppe. Die Voreinstellung wird **nicht** still eingesetzt - sie wäre geraten |
 | Menge über 30 oder mehr als 30 Positionen | `invalid_input` (Schutz gegen Hörfehler, nicht gegen Großbestellungen) |

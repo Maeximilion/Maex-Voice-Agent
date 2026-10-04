@@ -65,6 +65,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `aliases.py` | Alias anlegen, Treffer zählen, Vorschläge aus Anrufen |
 | `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine" |
 | `sold_out.py` | Schalter „Gericht aus": bis Ende des Betriebstags, `audit_log`, Alternativen derselben Kategorie (T-4.8) |
+| `lunch.py` | Lunch menus (`menu_items.lunch_only`) only inside the window of `lunch_hours` at the moment of the call; the sentence why not, from the code (T-4.13). Used by `search`, `sold_out` and `ordering/validation` |
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht; mit `deactivate_missing` werden fehlende Gerichte inaktiv |
 | `pos_dbf.py` | dBase-Tabellen der Kasse lesen, nur lesend, Bytes rein, Zeilen raus (T-4.11) |
 | `pos_convert.py` | Kassenartikel in die CSV nach 14: Größen, Extras, Allergen-Umsetztabelle, Bericht (T-4.11) |

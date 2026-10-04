@@ -17,6 +17,10 @@ an article of its own).
 Extras: `zutaten` are attached to the article through article groups
 (`WRGSHOWALL`, or `WRG` in the list `WRGSHOW`). Price = price level
 `ZPREIGRP3` from `zutgrp` plus `ZGRPREIS(n-1)` for size n from 2 on.
+
+Lunch menus: the articles of `lunch_groups` come over with `lunch_only` set
+(T-4.13). When they are sold is not decided here; that is the lunch window in
+the database (`lunch_hours`).
 """
 
 import csv
@@ -112,12 +116,21 @@ class Conversion:
     skipped_placeholder: int = 0
     skipped_deleted: int = 0
     skipped_groups: int = 0
+    lunch_menus: int = 0
     allergens_found: list[str] = field(default_factory=list)
 
     def csv_files(self) -> dict[str, str]:
         return {
             MENU_FILE: _csv(
-                ("number", "pos_code", "name", "category", "price_eur", "active"),
+                (
+                    "number",
+                    "pos_code",
+                    "name",
+                    "category",
+                    "price_eur",
+                    "active",
+                    "lunch_only",
+                ),
                 self.menu,
             ),
             OPTIONS_FILE: _csv(
@@ -143,6 +156,10 @@ class Conversion:
             f"Warengruppe ohne Telefonbestellung {self.skipped_groups}, "
             f"Platzhalter {self.skipped_placeholder}",
         ]
+        if self.lunch_menus:
+            lines.append(
+                f"Lunch menus, only sold inside the lunch window: {self.lunch_menus}"
+            )
         if self.allergens_found:
             lines.append(
                 "Allergene aus der Kasse (bitte prüfen): "
@@ -199,9 +216,14 @@ def convert(
     zutgrp: Table,
     *,
     skip_groups: Iterable[str] = (),
+    lunch_groups: Iterable[str] = (),
     allergens_confirmed_by: str | None = None,
 ) -> Conversion:
-    """Die vier Tabellen in Zeilen für die drei CSV-Dateien umwandeln."""
+    """Die vier Tabellen in Zeilen für die drei CSV-Dateien umwandeln.
+
+    `lunch_groups`: article groups whose dishes are lunch menus (`lunch_only`).
+    A group that is in `skip_groups` as well is not taken over at all.
+    """
     tables = {
         "artikel": artikel,
         "warengrp": warengrp,
@@ -217,6 +239,9 @@ def convert(
     allergens_confirmed_by = (allergens_confirmed_by or "").strip() or None
     result = Conversion()
     skip = {g.strip() for g in skip_groups}
+    # "" comes from an empty --lunch-groups and must not match an article
+    # without a group.
+    lunch = {g.strip() for g in lunch_groups} - {""}
     categories = _unique(warengrp, "warengrp", lambda r: r["W_WRG"], "W_BEZEICH")
     extras = _extras(result, zutaten, zutgrp)
 
@@ -316,8 +341,10 @@ def convert(
                 "category": category,
                 "price_eur": format_eur(price),
                 "active": "ja",
+                "lunch_only": "ja" if row["WRG"] in lunch else "nein",
             }
         )
+        result.lunch_menus += row["WRG"] in lunch
         if len(named) > 1:
             for size in named:
                 size_price = prices[size]

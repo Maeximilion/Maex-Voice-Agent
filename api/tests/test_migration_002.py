@@ -35,7 +35,8 @@ def _table_names(url: str) -> set[str]:
 def test_upgrade_erzeugt_stufe2_tabellen(scratch_db_url):
     command.upgrade(_config(scratch_db_url), "head")
     assert _table_names(scratch_db_url) == (
-        STUFE_1_TABELLEN | STUFE_2_TABELLEN | {"alembic_version"}
+        # lunch_hours: migration 006 (T-4.13).
+        STUFE_1_TABELLEN | STUFE_2_TABELLEN | {"lunch_hours", "alembic_version"}
     )
 
 

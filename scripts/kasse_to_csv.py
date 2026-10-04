@@ -33,13 +33,17 @@ from api.domain.menu.importer import ALIASES_FILE, FILES, parse
 from api.domain.menu.pos_convert import convert, split_aliases
 from api.domain.menu.pos_dbf import DbfError, Table, read_table
 
-# Warengruppen, die am Telefon nicht bestellt werden (Getränke, Menüs, Pfand,
+# Warengruppen, die am Telefon nicht bestellt werden (Getränke, Pfand,
 # Interna), Maxi 26.09.2026. Mit --skip-groups überschreibbar.
 ALIASES_DROPPED = "item_aliases.verworfen.csv"
 DEFAULT_SKIP_GROUPS = (
-    "015,016,017,018,019,020,021,022,023,024,025,100,101,102,"
-    "EXS,FRE,GAH,GEH,GET,OHN,PFA,RTN,SON"
+    "015,016,017,018,019,020,021,022,023,024,025,EXS,FRE,GAH,GEH,GET,OHN,PFA,RTN,SON"
 )
+# Article groups of the lunch menus (M1 ... VM9), Maxi 04.10.2026: sold by
+# phone only inside the lunch window. The converter only marks them
+# (`lunch_only`); the window itself is in the database (`lunch_hours`).
+# Override with --lunch-groups; "" takes them over as regular dishes.
+DEFAULT_LUNCH_GROUPS = "100,101,102"
 
 
 def _find(folder: Path, name: str) -> Path:
@@ -221,6 +225,11 @@ def main(argv: list[str] | None = None) -> int:
         help="wer die Allergene in der Kasse geprüft hat; ohne: keine übernommen",
     )
     parser.add_argument("--skip-groups", default=DEFAULT_SKIP_GROUPS)
+    parser.add_argument(
+        "--lunch-groups",
+        default=DEFAULT_LUNCH_GROUPS,
+        help="article groups of the lunch menus, only sold inside the lunch window",
+    )
     args = parser.parse_args(argv)
 
     if not args.folder.is_dir():
@@ -236,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         result = convert(
             **tables,
             skip_groups=args.skip_groups.split(","),
+            lunch_groups=args.lunch_groups.split(","),
             allergens_confirmed_by=args.allergens_confirmed_by,
         )
     except (FileNotFoundError, DbfError) as exc:

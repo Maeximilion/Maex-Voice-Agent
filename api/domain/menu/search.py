@@ -18,6 +18,13 @@ Only active dishes are searched. Sold-out ones come back with `sold_out: true`
 and a sentence: the agent should say it is out today instead of acting as if
 the dish did not exist.
 
+A lunch menu outside the lunch window (`domain/menu/lunch.py`, T-4.13) is not
+delivered at all: named by number or alias it is `closed` with the sentence
+when lunch menus are sold, and the name search looks past it - "Ente
+süß-sauer" in the evening is the dish, not a question about the lunch menu of
+the same name. Only if a lunch menu is the best hit by name is that `closed`
+as well.
+
 The fuzzy search runs in two steps: first a prefilter with the operators `%`
 and `<%`, which uses the GIN indexes on `menu_items.name` and
 `item_aliases.alias`, then the exact scores only on the hits. The prefilter
@@ -37,10 +44,11 @@ from sqlalchemy import func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import Ambiguous, NotFound
+from api.core.errors import Ambiguous, Closed, NotFound
 from api.core.time import utcnow
 from api.domain.menu.items import card_format, option_groups
 from api.domain.menu.items import is_sold_out as _sold_out
+from api.domain.menu.lunch import MESSAGE_CLOSED, Lunch
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import (
     CardFormat,
@@ -362,6 +370,12 @@ def _position_parts(
             piece = pieces[i]
             try:
                 found = search(piece)
+            except Closed:
+                # A lunch menu outside its window is a position of its own;
+                # the search per part says why it is not sold (T-4.13).
+                positions.append(piece)
+                i += 1
+                continue
             except (Ambiguous, NotFound):
                 return [query]
             if found.match_type not in CLEAR_MATCHES or not found.results:
@@ -431,7 +445,7 @@ def _whole_dish(
         return {item.id for item in by_alias}
     try:
         found = search(query)
-    except (Ambiguous, NotFound):
+    except (Ambiguous, Closed, NotFound):
         return set()
     said = normalize_query(query)
     return {
@@ -526,6 +540,7 @@ def _search_with_wish(
     high: float,
     low: float,
     card: CardFormat,
+    lunch: Lunch,
 ) -> SearchResult | None:
     """Search the dish without the wish, then classify the wish for it (T-4.10).
 
@@ -561,6 +576,7 @@ def _search_with_wish(
     named = _named_dish(session, tenant_id, f"{dish} {candidates[0][2]}")
     clear = found.match_type in CLEAR_MATCHES
     if named is not None and (not clear or named.id != hit.menu_item_id):
+        lunch.without_closed([named])
         found = _single(session, "alias", named, now)
         hit, first = found.results[0], 1
     elif not clear:
@@ -599,6 +615,8 @@ def search_menu(
     card = card if card is not None else card_format(session, tenant_id)
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
+    # Reads the lunch window only once a lunch menu is among the hits.
+    lunch = Lunch(session, tenant_id, now)
 
     # The positions of the sentence are determined at most once, even if there
     # is a wish in it (review PR #139).
@@ -611,7 +629,7 @@ def search_menu(
             )
         if parts is None or len(parts) <= 1:
             found = _search_with_wish(
-                session, tenant_id, candidates, max_results, now, high, low, card
+                session, tenant_id, candidates, max_results, now, high, low, card, lunch
             )
             if found is not None:
                 return found
@@ -635,6 +653,9 @@ def search_menu(
                 f"Nummer {ref.text} nicht auf der Karte",
                 say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
+        # A lunch menu outside its window is `closed` with the sentence when
+        # it is sold (T-4.13).
+        items = lunch.without_closed(items)
         if len(items) > 1:
             # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
             # ask back instead of choosing.
@@ -665,7 +686,7 @@ def search_menu(
     # So both sides are compared without filler words. In Python instead of
     # SQL: normalize_query exists only here, and a menu has a few hundred
     # aliases - that is one index scan and a loop, not a load.
-    by_alias = _alias_items(session, tenant_id, query)
+    by_alias = lunch.without_closed(_alias_items(session, tenant_id, query))
     if len(by_alias) == 1:
         return _single(session, "alias", by_alias[0], now)
     if by_alias:
@@ -718,7 +739,7 @@ def search_menu(
         .exists()
     )
     total = func.greatest(score(MenuItem.name), func.coalesce(alias_score, 0))
-    rows = session.execute(
+    matches = (
         select(MenuItem, total.label("score"))
         .where(
             *_active(tenant_id),
@@ -730,7 +751,24 @@ def search_menu(
         )
         .order_by(total.desc(), MenuItem.number)
         .limit(AMBIGUOUS_LIMIT + 1)
-    ).all()
+    )
+    rows = session.execute(matches).all()
+    closed = [(item, value) for item, value in rows if lunch.closed(item)]
+    if closed:
+        # Outside the lunch window the name search looks past the lunch menus:
+        # they would crowd the regular dishes out of the hits, or turn "Ente
+        # süß-sauer" into a question about the lunch menu of the same name. A
+        # second query instead of filtering the rows above, so the limit counts
+        # regular dishes only. If a lunch menu is the best hit by name, the
+        # guest meant it and hears why it is not sold - never the regular dish
+        # in its place (CLAUDE.md §2 rule 2).
+        rows = session.execute(matches.where(MenuItem.lunch_only.is_(False))).all()
+        best = closed[0][1]
+        if not rows or (best >= high and best > rows[0][1]):
+            # Named only if one lunch menu is clearly meant: the single best
+            # one next to regular dishes, or the only one that fits at all.
+            meant = [item for item, value in closed if not rows or value == best]
+            raise Closed(MESSAGE_CLOSED, say=lunch.say(meant))
     if not rows:
         raise NotFound(f"Kein Treffer für „{text}“", say=SAY_NOT_FOUND)
     strong = [item for item, value in rows if value >= high]

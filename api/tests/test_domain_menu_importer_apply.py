@@ -1042,3 +1042,73 @@ def test_skript_prueft_behaltene_aliase_wie_der_import(tmp_path, capsys, alias):
     err = capsys.readouterr().err
     assert "item_aliases.csv Zeile 3" in err and "nichts geschrieben" in err.lower()
     assert sorted(p.name for p in out.iterdir()) == [ALIASES_FILE]
+
+
+# --- lunch menus (T-4.13): optional column lunch_only -----------------------------
+
+MIT_MITTAG = """number;name;category;price_eur;lunch_only
+23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;nein
+47;Ente knusprig;Hauptgerichte;15,50;
+m4a;Menü Ente knusprig;Menü;11,90;ja
+"""
+OHNE_SPALTE = """number;name;category;price_eur
+23;Frühlingsrollen (4 Stück);Vorspeisen;6,90
+47;Ente knusprig;Hauptgerichte;15,50
+m4a;Menü Ente knusprig;Menü;11,90
+"""
+
+
+def test_lunch_only_is_stored_and_stays_without_the_column(session, tenant_id):
+    report = run(session, tenant_id, files=nur(MIT_MITTAG))
+
+    assert "m4a" in report.items_new
+    assert item(session, tenant_id, "m4a").lunch_only is True
+    # Empty counts as nein, like a dish from a file without the column.
+    assert item(session, tenant_id, "47").lunch_only is False
+
+    # An old file from the chat without the column: the flag stays.
+    report = run(session, tenant_id, files=nur(OHNE_SPALTE))
+    assert report.items_updated == []
+    assert item(session, tenant_id, "m4a").lunch_only is True
+
+
+def test_lunch_only_can_be_taken_back(session, tenant_id):
+    run(session, tenant_id, files=nur(MIT_MITTAG))
+
+    report = run(
+        session, tenant_id, files=nur(MIT_MITTAG.replace("11,90;ja", "11,90;nein"))
+    )
+
+    assert report.items_updated == ["m4a"]
+    assert item(session, tenant_id, "m4a").lunch_only is False
+
+
+def test_lunch_only_other_than_ja_or_nein_is_an_error():
+    plan = parse(nur(MIT_MITTAG.replace("11,90;ja", "11,90;mittags")))
+
+    assert any(
+        "Zeile 4" in e and 'lunch_only "mittags" is neither ja nor nein' in e
+        for e in plan.errors
+    )
+
+
+def test_register_lunch_groups_reach_the_menu_marked(tmp_path, session, tenant_id):
+    """Groups 100 to 102 are no longer skipped: they come over as lunch menus
+    (default of --lunch-groups); the window itself is not in the file."""
+    kasse, out = tmp_path / "kasse", tmp_path / "out"
+    kasse.mkdir()
+    menu = {**SUPPE, "ARTNR": "M4A", "WRG": "100", "BEZEICH": "Menü Suppe"}
+    menu["GROESSE"] = "1"
+    _kasse(kasse, [SUPPE, menu])
+    dbf, _ = write_dbf(
+        [("W_WRG", "C", 3, 0), ("W_BEZEICH", "C", 16, 0)],
+        [{"W_WRG": "001", "W_BEZEICH": "Suppe"}, {"W_WRG": "100", "W_BEZEICH": "Menü"}],
+    )
+    (kasse / "WARENGRP.DBF").write_bytes(dbf)
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 0
+
+    csv_files = {p.name: p.read_text(encoding="utf-8") for p in out.iterdir()}
+    run(session, tenant_id, files={**files(), **csv_files, "item_aliases.csv": None})
+    assert item(session, tenant_id, "m4a").lunch_only is True
+    assert item(session, tenant_id, "1").lunch_only is False

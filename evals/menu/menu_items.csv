@@ -1,4 +1,4 @@
-number;name;category;price_eur;description;active
+number;name;category;price_eur;description;active;lunch_only
 20;Edamame;Vorspeisen;4,50;;ja
 21;Wan-Tan frittiert (6 Stück);Vorspeisen;6,50;;ja
 22;Gyoza (6 Stück);Vorspeisen;6,90;;ja
@@ -31,3 +31,10 @@ number;name;category;price_eur;description;active
 S1;Lachs Nigiri (2 Stück);Sushi;4,50;;ja
 S12;Thunfisch Maki (6 Stück);Sushi;5,90;;ja
 SM1;Sushi-Menü klein;Sushi;16,90;;ja
+M1;Menü Hühnersuppe und gebratene Nudeln;Menü;9,50;;ja;ja
+M4A;Menü Ente knusprig;Menü;11,90;;ja;ja
+M4B;Menü Ente süß-sauer;Menü;11,90;;ja;ja
+VM1;Menü Miso-Suppe und Gemüse mit Tofu;Menü Vegetarisch;8,90;;ja;ja
+VM5C;Menü Gemüse-Curry;Menü Vegetarisch;9,90;;ja;ja
+M8;Menü Maki-Auswahl;Menü Sushi;12,50;;ja;ja
+VM8;Menü Gurken-Maki;Menü Sushi;10,50;;ja;ja

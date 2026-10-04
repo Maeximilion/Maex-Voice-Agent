@@ -3,7 +3,13 @@
 from api.models.audit import AuditLog
 from api.models.base import Base
 from api.models.calls import Call, Callback
-from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
+from api.models.menu import (
+    ItemAlias,
+    ItemAllergen,
+    ItemOption,
+    LunchHours,
+    MenuItem,
+)
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
 from api.models.reservations import Reservation
@@ -18,6 +24,7 @@ __all__ = [
     "ItemAlias",
     "ItemAllergen",
     "ItemOption",
+    "LunchHours",
     "MenuItem",
     "OpeningHours",
     "Order",

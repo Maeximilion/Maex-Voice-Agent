@@ -1,4 +1,5 @@
 """Prüfungen vor der Summe: offen, aktiv, nicht aus, Optionen gültig, Pflichtgruppen gewählt.
+A lunch menu is only taken inside the lunch window (T-4.13).
 
 Im Code, nicht im Modell (docs/04 §draft_order). Eine fehlende Pflichtwahl wird
 nicht mit der Voreinstellung gefüllt, sondern erfragt - die Voreinstellung wäre
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Closed, Conflict, InvalidInput, NotFound, ServiceUnavailable
 from api.domain.menu.items import is_sold_out, option_key
+from api.domain.menu.lunch import Lunch
 from api.domain.menu.search import SAY_SOLD_OUT
 from api.domain.ordering.pricing import Line
 from api.domain.status.hours import load_hours, open_window_at
@@ -99,9 +101,13 @@ def validated_lines(
             )
         group[name] = opt
 
+    lunch = Lunch(session, tenant_id, now)
     lines = []
     for wanted in items:
         item = menu[wanted.menu_item_id]
+        # The search does not deliver a lunch menu outside its window, but the
+        # window can close during the call (T-4.13).
+        lunch.without_closed([item])
         if is_sold_out(item, now):
             raise Conflict(
                 "Gericht ausverkauft", say=SAY_SOLD_OUT.format(name=item.name)

@@ -174,10 +174,14 @@ class CardFormat:
     def from_items(cls, items: Iterable[tuple[str, str]]) -> "CardFormat":
         """From (number, category) of the active dishes.
 
-        A category word only counts if the category is one word and each of
-        its prefixes occurs only in it: the group "Sushi" holds S1 to S53 and
-        SM1 to SM6, so "Sushi zwölf" means S12 or SM12, and which of them
-        exists is decided by the search against the menu.
+        A category word is the name of a one-word category. It stands for the
+        prefixes of that category and of its sub-groups, the categories whose
+        name starts with the word: the group "Sushi" holds S1 to S53 and SM1
+        to SM6, so "Sushi zwölf" means S12 or SM12; "Menü" with "Menü
+        Vegetarisch" and "Menü Sushi" holds M and VM, so "Menü eins" means M1
+        or VM1 (T-4.13). Which of them exists is decided by the search against
+        the menu. The word only counts if every number of the group carries a
+        prefix and each of these prefixes occurs only in it.
         """
         prefixes: set[str] = set()
         in_category: dict[str, set[str]] = {}
@@ -187,23 +191,21 @@ class CardFormat:
             if parts is None:
                 continue
             prefix = parts.group(1)
-            name = fold(category.strip())
+            name = " ".join(fold(category).split())
             if prefix:
                 prefixes.add(prefix)
                 categories_of.setdefault(prefix, set()).add(name)
             in_category.setdefault(name, set()).add(prefix)
         words: dict[str, tuple[str, ...]] = {}
-        for name, found in in_category.items():
-            carried = found - {""}
-            # Only categories whose numbers all carry a prefix: the empty
+        for name in in_category:
+            if not name.isalpha():
+                continue
+            group = {c for c in in_category if c == name or c.startswith(name + " ")}
+            found = set().union(*(in_category[c] for c in group))
+            # Only groups whose numbers all carry a prefix: the empty
             # candidate would have no tie to the category, and "Sushi zwölf"
             # would find the soups' 12 (Codex PR #155).
-            if (
-                carried
-                and "" not in found
-                and name.isalpha()
-                and all(categories_of[p] == {name} for p in carried)
-            ):
+            if "" not in found and all(categories_of[p] <= group for p in found):
                 words[name] = tuple(sorted(found))
         return cls(frozenset(prefixes), tuple(sorted(words.items())))
 

@@ -101,6 +101,7 @@ def test_suppe_klein_und_gross_als_pflichtgruppe():
         "category": "Suppe",
         "price_eur": "7,20",
         "active": "ja",
+        "lunch_only": "nein",
     }
     sizes = [o for o in result.options if o["group_name"] == "Größe"]
     assert [
@@ -516,3 +517,55 @@ def test_allergene_ohne_pruefer_sagt_dass_der_import_loescht():
     result = run([artikel("12", "Suppe", ALLERGENE="ac")])
 
     assert any("löscht" in e for e in result.errors)
+
+
+# --- lunch menus (T-4.13) ---------------------------------------------------------
+
+LUNCH_GROUPS = table(
+    [
+        {"W_WRG": "006", "W_BEZEICH": "Hauptspeisen"},
+        {"W_WRG": "100", "W_BEZEICH": "Menü"},
+        {"W_WRG": "101", "W_BEZEICH": "Menü Vegetarisch"},
+    ]
+)
+LUNCH_ROWS = [
+    artikel("47", "Ente knusprig"),
+    artikel("M4A", "Menü Ente knusprig", "100", "11.90", "1"),
+    artikel("VM5C", "Menü Gemüse-Curry", "101", "9.90", "1"),
+]
+
+
+def run_lunch(**kw):
+    return convert(table(LUNCH_ROWS), LUNCH_GROUPS, ZUTATEN, ZUTGRP, **kw)
+
+
+def test_lunch_groups_come_over_marked():
+    result = run_lunch(lunch_groups=("100", "101"))
+
+    assert result.errors == []
+    assert {r["number"]: r["lunch_only"] for r in result.menu} == {
+        "47": "nein",
+        "m4a": "ja",
+        "vm5c": "ja",
+    }
+    assert result.lunch_menus == 2
+    assert "Lunch menus, only sold inside the lunch window: 2" in result.as_text()
+    # What the converter writes, the import reads.
+    plan = parse({MENU_FILE: result.csv_files()[MENU_FILE]})
+    assert plan.ok, plan.errors
+    assert plan.items["m4a"].lunch_only is True
+    assert plan.items["47"].lunch_only is False
+
+
+def test_without_lunch_groups_they_are_regular_dishes():
+    result = run_lunch(lunch_groups=[""])
+
+    assert {r["lunch_only"] for r in result.menu} == {"nein"}
+    assert "Lunch menus" not in result.as_text()
+
+
+def test_skipped_group_wins_over_lunch_group():
+    result = run_lunch(skip_groups=("100",), lunch_groups=("100", "101"))
+
+    assert [r["number"] for r in result.menu] == ["47", "vm5c"]
+    assert result.skipped_groups == 1 and result.lunch_menus == 1

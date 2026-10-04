@@ -31,18 +31,18 @@ import hashlib
 import json
 import sys
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, update
+from sqlalchemy import create_engine, delete, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
 from api.agent.llm import LLMClient
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
-from api.models import MenuItem
+from api.models import LunchHours, MenuItem
 from evals.judge import (
     CaseError,
     judge,
@@ -70,6 +70,11 @@ TIMEZONE = "Europe/Berlin"
 # Ein Dienstag im Abendfenster: Abholung und Reservierung offen. Ein Fall kann
 # mit "now" einen eigenen Zeitpunkt setzen (Schliesszeit, Tageswechsel).
 DEFAULT_NOW = datetime.fromisoformat("2026-09-15T18:00:00+02:00")
+# Lunch window of the eval tenant (T-4.13): Tuesday to Friday, half past eleven
+# to two. Eval configuration like the seed's opening hours, not a real value;
+# in operation the window is whatever `lunch_hours` holds.
+LUNCH_WEEKDAYS = (1, 2, 3, 4)
+LUNCH_WINDOW = (time(11, 30), time(14, 0))
 MODELS = ("scripted",)
 
 
@@ -124,6 +129,14 @@ def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     """
     seed(session, tenant_name=name, timezone=TIMEZONE)
     tenant = resolve_tenant(session, name)
+    start, end = LUNCH_WINDOW
+    # Like the seed with its opening hours: replace, so a second call for the
+    # same tenant does not hit the unique weekday.
+    session.execute(delete(LunchHours).where(LunchHours.tenant_id == tenant.id))
+    session.add_all(
+        LunchHours(tenant_id=tenant.id, weekday=day, starts_at=start, ends_at=end)
+        for day in LUNCH_WEEKDAYS
+    )
     apply(session, tenant.id, plan, now=now)
     return tenant
 

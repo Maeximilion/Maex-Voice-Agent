@@ -11,7 +11,7 @@ Position hat zwei Eltern und muss beide im selben Mandanten halten.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
 from sqlalchemy import (
     Boolean,
@@ -20,7 +20,9 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    SmallInteger,
     Text,
+    Time,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -68,6 +70,30 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     # Artikelnummer genau wie in der Kasse ("35B"); `number` ist klein für die
     # Suche. Eingabezettel und Kassenübergabe brauchen diese Schreibweise (T-4.11).
     pos_code: Mapped[str | None] = mapped_column(Text)
+    # Lunch menu: only sold inside the lunch window of `lunch_hours` (T-4.13).
+    lunch_only: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+
+
+class LunchHours(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """The lunch window per weekday in the tenant's local time (T-4.13).
+
+    A weekday without a row has no lunch menus. One window per weekday that
+    does not cross midnight: the agent says it in one sentence.
+    """
+
+    __tablename__ = "lunch_hours"
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="ck_lunch_hours_weekday"),
+        CheckConstraint("starts_at < ends_at", name="ck_lunch_hours_window"),
+        UniqueConstraint("tenant_id", "weekday", name="uq_lunch_hours_tenant_weekday"),
+    )
+
+    # 0 = Monday, like opening_hours.
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    starts_at: Mapped[time] = mapped_column(Time, nullable=False)
+    ends_at: Mapped[time] = mapped_column(Time, nullable=False)
 
 
 class ItemOption(UUIDPrimaryKey, Timestamps, Base):

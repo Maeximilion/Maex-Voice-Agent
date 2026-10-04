@@ -115,6 +115,9 @@ class ItemRow:
     # Number in the register's spelling (T-4.11). None: the file does not have
     # the column, the stored value stays; "": value deleted.
     pos_code: str | None = None
+    # Lunch menu, only sold inside the lunch window (T-4.13). None: the file
+    # does not have the column, the stored value stays; empty counts as nein.
+    lunch_only: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -351,6 +354,13 @@ def parse(files: Mapping[str, str | None]) -> Plan:
                     f"pos_code {pos_code} doppelt (zuerst in Zeile {pos_codes[pos_code]})"
                 )
             pos_codes.setdefault(pos_code, line)
+        lunch_only = None
+        if "lunch_only" in row:
+            lunch_only = _bool(row["lunch_only"], default=False)
+            if lunch_only is None:
+                problems.append(
+                    f'lunch_only "{row["lunch_only"]}" is neither ja nor nein'
+                )
         if problems:
             plan.errors.append(f"{where}: {'; '.join(problems)}")
             continue
@@ -362,6 +372,7 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             description=row.get("description"),
             active=active,
             pos_code=pos_code,
+            lunch_only=lunch_only,
         )
 
     _parse_options(plan, files.get(OPTIONS_FILE), spelled)
@@ -630,6 +641,7 @@ def apply(
                 description=row.description or None,
                 active=row.active,
                 pos_code=row.pos_code or None,
+                lunch_only=bool(row.lunch_only),
             )
             session.add(item)
             report.items_new.append(number)
@@ -644,6 +656,8 @@ def apply(
                 fields["description"] = row.description or None
             if row.pos_code is not None:
                 fields["pos_code"] = row.pos_code or None
+            if row.lunch_only is not None:
+                fields["lunch_only"] = row.lunch_only
             changed = [k for k, v in fields.items() if getattr(item, k) != v]
             for key in changed:
                 setattr(item, key, fields[key])
