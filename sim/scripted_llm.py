@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from sim.scripted_order import MenuNumbers, PickupScript
+from sim.scripted_order import CLEAR_MATCHES, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -275,8 +275,8 @@ class ScriptedLLM:
             request, self._opening_allergy = self._opening_allergy, None
             if not _allergy_on_a_dish(result):
                 # The allergy reached no position (no dish, not on the menu,
-                # sold out): it must not get lost, the team calls back as
-                # before the order (review PR #178).
+                # sold out, several to choose from): it must not get lost, the
+                # team calls back as before the order (review PR #178).
                 prefix, self._opening_prefix = self._opening_prefix, None
                 self._out_of_scope_request = request
                 turn = self._out_of_scope(slots, {})
@@ -473,11 +473,14 @@ def _as_tool_result(text: str) -> dict[str, Any] | None:
 
 
 def _allergy_on_a_dish(result: dict[str, Any]) -> bool:
-    """Did the search put the guest's allergy on a dish that can be ordered?"""
+    """Did the search put the guest's allergy on one dish that can be ordered?
+    Several hits are not enough: the choice can still be rejected, and the
+    allergy would go with it (Codex PR #178)."""
     data = result.get("data") or {}
     return bool(result.get("ok")) and any(
         (part.get("wish") or {}).get("kind") == "allergy"
-        and any(not hit.get("sold_out") for hit in part.get("results") or [])
+        and part.get("match_type") in CLEAR_MATCHES
+        and any(not hit.get("sold_out") for hit in (part.get("results") or [])[:1])
         for part in data.get("positions") or [data]
     )
 

@@ -1672,3 +1672,21 @@ def test_allergy_on_a_sold_out_dish_goes_to_the_team(session, tenant):
     )
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+
+
+def test_allergy_on_an_ambiguous_dish_goes_to_the_team(session, tenant):
+    """Codex PR #178: "Suppe" is two dishes. The choice can still be rejected,
+    and the allergy would go with it - so it is not noted yet, the team calls
+    back as before the order."""
+    replay(
+        session,
+        case(
+            "Ich moechte eine Suppe mit Erdnussallergie zum Abholen.",
+            "0721 5551234",
+        ),
+        tenant,
+        now=NOW,
+    )
+    session.expire_all()
+    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert orders(session) == []
