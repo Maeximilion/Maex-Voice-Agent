@@ -10,13 +10,13 @@ never from this module.
 """
 
 import re
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
 from api.agent.llm import LLMTurn, ToolCall
-from api.domain.menu.importer import is_card_number
 from api.domain.menu.numberwords import (
-    ARTICLES,
+    NO_PREFIXES,
     CardFormat,
     canonical_card,
     find_quantity,
@@ -63,10 +63,35 @@ class CartItem:
     note: str | None = None
 
 
-class PickupScript:
-    """Ein Objekt je Anruf, gehalten vom `ScriptedLLM`."""
+@dataclass(frozen=True)
+class MenuNumbers:
+    """What the script knows about the card numbers of the active menu: the
+    format for spoken forms ("S zwölf", "Sushi zwölf") and the numbers
+    themselves, as search_menu compares them (`canonical_card`). Read from the
+    database by the caller (`sim/session.py`), never from this module."""
 
-    def __init__(self) -> None:
+    card: CardFormat = NO_PREFIXES
+    numbers: frozenset[str] = frozenset()
+
+    @classmethod
+    def from_items(cls, items: Iterable[tuple[str, str]]) -> "MenuNumbers":
+        """From (number, category) of the active dishes."""
+        rows = list(items)
+        return cls(
+            CardFormat.from_items(rows),
+            frozenset(canonical_card(number) for number, _ in rows),
+        )
+
+
+class PickupScript:
+    """Ein Objekt je Anruf, gehalten vom `ScriptedLLM`.
+
+    `menu` reads the card numbers of the active menu when an answer has to be
+    told apart from an order. Without it the script knows no menu: only plain
+    numbers by rule A count ("Nummer 12", "die 25g")."""
+
+    def __init__(self, menu: Callable[[], MenuNumbers] | None = None) -> None:
+        self._menu = menu or MenuNumbers
         self.cart: list[CartItem] = []
         self.phase = "dishes"  # dishes · choose · option · more · customer
         self._suggestions: list[dict[str, Any]] = []
@@ -406,7 +431,7 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
-        if wish.kind != "allergy" and _orders_something(text):
+        if wish.kind != "allergy" and _orders_something(text, self._menu()):
             # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
             # stays open instead of noting "Keine Eine Cola" (review PR #139).
             return LLMTurn(
@@ -550,34 +575,31 @@ def _wish_sentence(
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
-# A card number with letters in the sentence ("S12", "SM1", "25g", "S0001",
-# T-4.12). The text phone does not know the menu, so it takes every form the
-# import allows (importer.is_card_number, the same grammar) and a number word
-# at the end of the answer ("S zwölf", "Sushi zwölf bitte"). A number word
-# before another word belongs to the ingredient ("Fünf-Gewürze-Pulver", "zwei
-# Sachen: Milch") (Codex PR #155).
-_AFTER_NUMBER = frozenset({"bitte", "danke"})
-# Additives ("E621", "E220") have the shape of a card number, but as an answer
-# to "Wogegen?" they are the ingredient (code review PR #155).
-_ADDITIVE = re.compile(r"e\d{3,4}[a-z]?")
+def _orders_something(text: str, menu: MenuNumbers) -> bool:
+    """Is the answer to "Wogegen?" an order instead of an ingredient?
 
+    The active menu decides what a card number is, not the import grammar
+    (Codex PR #155, P2): "S12" and "Sushi zwölf" are numbers only where the
+    menu has the prefix S, so "B12", "Vitamin B12" and the additives "E621"
+    and "E 621" stay the ingredient. An order is
 
-def _ends_with_number(words: list[str]) -> bool:
-    """Does the answer end with a number word, with at most "bitte" after it?"""
-    rest = [w for w in words if w not in _AFTER_NUMBER]
-    return (
-        bool(rest)
-        and rest[-1] not in ARTICLES
-        and parse_cardinal(fold(rest[-1])) is not None
-    )
+    - a sentence that names a number by rule A in the menu's card format
+      ("S12", "S zwölf", "Nummer 12", "die 25g", also one the menu lacks or a
+      number next to more: "S13", "12 oder 13", "S12 Lachs"),
+    - any word that is a number on the menu ("die 12 mit Reis", "Milch und
+      S12"), or
+    - a sentence that opens like an order ("Eine Cola bitte").
 
-
-def _orders_something(text: str) -> bool:
+    A number word or a number the menu does not have, next to another word,
+    belongs to the ingredient ("Fünf-Gewürze-Pulver", "Zwei Sachen: Milch",
+    "Gegen E 621").
+    """
     words = re.findall(r"[^\W_]+", text.lower())
+    ref, unclear = sole_item_number(text, menu.card)
     return (
-        any(is_card_number(w) and not _ADDITIVE.fullmatch(w) for w in words)
-        or _ends_with_number(words)
-        or sole_item_number(text)[0] is not None
+        ref is not None
+        or unclear
+        or any(canonical_card(w) in menu.numbers for w in words)
         or (bool(words) and words[0] in _ORDER_LEADS)
     )
 

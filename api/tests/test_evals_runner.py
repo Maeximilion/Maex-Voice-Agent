@@ -884,6 +884,36 @@ def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
     ]
 
 
+def test_scripted_model_knows_the_menu_of_the_case(migrated_db_url, tmp_path):
+    """The runner hands the scripted model the card numbers of the case's
+    tenant, as the text phone does: on "Wogegen?" the answer "S12" (on the
+    eval menu) is an order and the question stays open, "B12" is the
+    ingredient (Codex PR #155, P2)."""
+
+    def lines(*answers: str) -> list[str]:
+        return [
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Die 13, ich habe eine Allergie.",
+            *answers,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "Meine Nummer ist 0721 5551234.",
+            "Ja, passt so.",
+        ]
+
+    def note(ingredient: str) -> dict:
+        text = f"WICHTIG: Keine {ingredient}. Grund: Allergie"
+        return {"items": [{"number": "13", "quantity": 1, "note": text}]}
+
+    cases = write_cases(
+        tmp_path / "c",
+        fall("card_number", lines("S12.", "Erdnüsse."), note("Erdnüsse")),
+        fall("ingredient", lines("B12."), note("B12")),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert [(c.id, c.diffs, c.error) for c in report.cases if not c.passed] == []
+
+
 def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
     """Codex PR #145: ein gescheiterter get_item_details oder einer fuer ein
     anderes Gericht beantwortet keine Allergiefrage."""
