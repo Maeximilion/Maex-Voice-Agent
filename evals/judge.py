@@ -9,6 +9,7 @@ Unbekannte Schlüssel in `expected` sind ein Fehler im Fall, kein stilles Grün:
 ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -61,9 +62,16 @@ EXPECTED_KEYS = frozenset(
         # Art der bestaetigten Bestellung: wechselt der Gast nach "ausserhalb der
         # Zone" zur Abholung, muss auch eine Abholung entstehen (Codex PR #162).
         "order_type",
+        # Rufnummer des bestaetigten Vorgangs in E.164: bei unterdrueckter Nummer
+        # zaehlt die genannte, keine andere gueltige (Codex PR #162).
+        "phone",
     }
 )
-ADDRESS_KEYS = ("street", "house_number", "postal_code", "city")
+ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
+# Freitext ("2. OG, Klingel Müller"): jedes erwartete Wort muss vorkommen, der
+# Wortlaut darum herum ist frei (Codex PR #162).
+ADDRESS_WORD_KEYS = frozenset({"floor_note"})
+PHONE = re.compile(r"^\+[1-9]\d{6,14}$")
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
 LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
@@ -115,6 +123,9 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
             "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
         )
+    phone = case["expected"].get("phone")
+    if phone is not None and not (isinstance(phone, str) and PHONE.match(phone)):
+        raise CaseError(f"{source}: phone ist eine Rufnummer in E.164 (+49...)")
     order_type = case["expected"].get("order_type")
     if order_type is not None and order_type not in ORDER_TYPES:
         raise CaseError(f"{source}: order_type ist eins von {ORDER_TYPES}")
@@ -232,6 +243,7 @@ class Observed:
     reserved_for: str | None = None
     address: dict[str, str] | None = None
     order_type: str | None = None
+    phone: str | None = None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
     # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
@@ -289,7 +301,9 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         name = done_orders[-1].customer_name
     elif done_res:
         name = done_res[-1].guest_name
+    done = done_orders or done_res
     return Observed(
+        phone=done[-1].phone if done else None,
         intent=call.intent if call else None,
         confirmed=booked > 0,
         escalated=bool(callbacks) or bool(call and call.transfer_reason),
@@ -320,7 +334,15 @@ def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | Non
         text = fold(value or "").replace("str.", "strasse")
         return "".join(ch for ch in text if ch.isalnum())
 
-    if got is not None and all(norm(want[k]) == norm(got.get(k)) for k in want):
+    def words(value: str | None) -> set[str]:
+        return {norm(word) for word in (value or "").split()} - {""}
+
+    def same(key: str) -> bool:
+        if key in ADDRESS_WORD_KEYS:
+            return words(want[key]) <= words(got.get(key))
+        return norm(want[key]) == norm(got.get(key))
+
+    if got is not None and all(same(k) for k in want):
         return None
     return f"address: erwartet {want!r}, gebucht {got!r}"
 
@@ -401,7 +423,14 @@ def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
 def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
     """Abweichungen in Worten; leer heisst bestanden. Nur Felder aus `expected`."""
     diffs: list[str] = []
-    for key in ("intent", "confirmed", "escalated", "party_size", "order_type"):
+    for key in (
+        "intent",
+        "confirmed",
+        "escalated",
+        "party_size",
+        "order_type",
+        "phone",
+    ):
         if key in expected and expected[key] != getattr(seen, key):
             diffs.append(
                 f"{key}: erwartet {expected[key]!r}, gebucht {getattr(seen, key)!r}"

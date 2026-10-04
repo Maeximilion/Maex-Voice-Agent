@@ -62,6 +62,7 @@
     "tools": [
       "check_delivery"
     ],
-    "order_type": "delivery"
+    "order_type": "delivery",
+    "phone": "+497215559876"
   }
 }

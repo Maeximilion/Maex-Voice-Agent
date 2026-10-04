@@ -29,6 +29,7 @@
     "intent": "reservation",
     "confirmed": true,
     "escalated": false,
-    "reserved_for": "2026-09-16T19:00"
+    "reserved_for": "2026-09-16T19:00",
+    "phone": "+497215551234"
   }
 }

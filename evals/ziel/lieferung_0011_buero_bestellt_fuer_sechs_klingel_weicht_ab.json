@@ -91,7 +91,8 @@
       "street": "Industriestrasse",
       "house_number": "20",
       "city": "Musterdorf",
-      "postal_code": "12345"
+      "postal_code": "12345",
+      "floor_note": "Firma Nord dritter Stock"
     },
     "tools": [
       "check_delivery"

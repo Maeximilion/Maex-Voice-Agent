@@ -297,6 +297,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"order_type": "lieferung"},
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"phone": "0721 5551234"},
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -512,6 +517,28 @@ def test_bestellart_und_abgelehnter_wunsch_ohne_notiz():
     assert judge({"items": [want]}, seen)
     clean = Observed(**{**seen.__dict__, "items": [{**seen.items[0], "note": None}]})
     assert judge({"items": [want]}, clean) == []
+
+
+def test_genannte_rufnummer_und_klingelhinweis_werden_geprueft():
+    """Codex PR #162: eine andere gueltige Nummer oder ein verworfener
+    Klingelhinweis darf nicht gruen sein."""
+    seen = _reservation_seen(
+        phone="+497215559876",
+        address={
+            "street": "Industriestrasse",
+            "house_number": "20",
+            "floor_note": "3. OG, klingeln bei Firma Nord, dritter Stock",
+        },
+    )
+    assert judge({"phone": "+497215559876"}, seen) == []
+    assert judge({"phone": "+497215551234"}, seen) == [
+        "phone: erwartet '+497215551234', gebucht '+497215559876'"
+    ]
+    note = {"floor_note": "Firma Nord dritter Stock"}
+    assert judge({"address": note}, seen) == []
+    assert judge({"address": {"floor_note": "Firma Sued"}}, seen)
+    without = _reservation_seen(address={"street": "Industriestrasse"})
+    assert judge({"address": note}, without)
 
 
 def test_run_waehlt_den_report_ordner_je_fallordner(
