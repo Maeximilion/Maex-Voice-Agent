@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.1
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.2
 
 ---
 
@@ -103,7 +103,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals; `make eval-targets` (27 cases, level 3-5 and delivery, 1 green with the stand-in) is the target it has to reach
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
-7. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
+7. **Follow-ups of T-4.12, one worktree each** (handover 04.10.2026, `docs/00_PCF.md` §13): the text phone's allergy guard from the menu's `CardFormat` (`fix/sim-allergy-guard`), lunch menus `M`/`VM` (needs Maxi's decision first), the translation sweep (`docs/english-code-comments`, running), dependabot PRs #159 and #160 (rebase after #163)
+8. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -139,6 +140,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Made Assumptions (subject to change)
 
+- **Card numbers stay as built, no further polishing of exotic forms** (Maxi, 04.10.2026): most restaurants use digits or digits with a letter behind them, at most three or four characters; a letter in front (`S20`) is rare and exists here only because Sushi joined the menu later. Forms like `S2000` or `Z194` are not a real use case. The handling built in T-4.12 stays because removing it would cost more than it saves and it only ever answers `not_found` or asks back. Review findings about such forms are recorded, not fixed, unless they can pick a wrong dish.
 - **D12 applies to reservations only** (T-1.14): pickup and delivery keep the full opening window. **Morning** means before the first opening of the day and closer to it than to the last closing before (so 01:00 after a night window is "closed", 09:00 is morning; after a closed day midnight counts as the last closing, so 01:00 is "closed" there too). **11:15 is bookable** when asked for directly (opening + 15), only the offered grid starts at 11:30. Assumptions from 27.09.2026
 - **`+` in `GROESSE` means "extras allowed"** (T-4.11): the converter offers register extras only for such dishes. Only fewer offers if wrong, never more. Extras price from `ZPREIGRP3`, not `ZPREIGRP` - all active extras fit, `Extra_Ente` has no `ZPREIGRP`; to be checked once in the dry-run report against the register. Assumption from 26.09.2026
 - **Spoken allergy sentence for wishes is a draft** (`domain/menu/search.py` `SAY_ALLERGY_NOTE`, T-4.10): "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob … frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist." No promise that a dish is free of anything; checked with the legal check (docs/09) before go-live. The kitchen note itself uses the fixed wording of E14. Assumption from 24.09.2026
@@ -270,6 +272,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 04.10.2026 | **T-4.12 card numbers with prefix and suffix g (PR #155, `26aaf8e`):** prefixes S and SM from the menu (`numberwords.CardFormat`, `items.card_format`), suffix a to g, import accepts `s12`, `sm1`, `25g`, tablet sorts and finds them; number eval 181/181, `cases/` 26/26. Handover in `docs/00_PCF.md` §13: open are the first real import, the text phone's allergy guard, lunch menus M/VM, the translation sweep and the two dependabot PRs, one worktree each |
 | 03.10.2026 | **Bug migration tests depend on test order fixed:** the `conn` fixture of `test_migration_001.py` used the module-wide empty `scratch_db_url` and only found tables because the upgrade tests had run first in the same process. Under `pytest -n auto` on 32 cores (or `-n 4`) they land on other workers: 5 failed with `relation "tenants" does not exist` (red reproduced on 89da15e). `scratch_db_url` is now one empty database per test; `conn` in 001 and 002 gets its own database at 001 or head per module (`scratch_db_at` in `api/tests/conftest.py`), rolled back per test. Same pattern found in 004 and 005, there silently: after the downgrade test the database was already at head, `upgrade("003")`/`upgrade("004")` was a no-op and the upgrade tests never ran the migration they claim to check. Migration tests green with `-n 32`, `-n 4`, serial and in reverse order, same duration as before (about 12 s serial); whole suite `-n auto` 2420 passed. **Codex review PR #164 (P2) fixed same-day:** with a fresh database per test the 001 downgrade test downgraded an empty database, so a broken `001.downgrade()` passed; it now upgrades to 001 first (checked: with `downgrade()` made a no-op the old test passes, the new one fails) |
 | 03.10.2026 | **Latenztests seriell in CI:** die 21 Tests mit `p95_ms` und echter Uhr tragen `@pytest.mark.latency`; CI läuft `pytest -n auto -m "not latency"`, danach `pytest -m latency` seriell (rund 25 s). Seit PR #161 maßen sie unter xdist die Last (302 bis 306 ms auf `main`, PR #159, PR #155). `p95_ms` mit echter Uhr ohne Marker bricht ab, unter einem xdist-Worker wird ein Latenztest übersprungen. docs/13 §6 |
 | 26.09.2026 | **T-4.11 menu from the register:** `domain/menu/pos_dbf.py` (dBase IV reader with memo, read-only), `domain/menu/pos_convert.py` (sizes, extras, allergen letter table, report), `scripts/kasse_to_csv.py`; importer takes optional `pos_code`, `--deactivate-missing`; migration 004 `menu_items.pos_code`. Tests with synthetic `.dbf` only (`api/tests/dbf_fixture.py`), real files stay in `imports/kasse/` |
@@ -332,6 +335,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.35.2 · 04.10.2026:** Handover T-4.12: merged as 26aaf8e, follow-ups split into one worktree each
 - **v1.35.1 · 04.10.2026:** T-4.12 follows the English rule (CLAUDE.md §8, PR #166): the eleven source files it touches are English throughout, its new tests and its new import message too; the rest of the repo follows in its own sweep
 - **v1.35.0 · 03.10.2026:** T-4.12: Kartennummern mit Praefix (S, SM) und Endung g, Praefixe aus der Karte
 - **v1.34.20 · 04.10.2026:** Open point from PR #162: rejected tool calls matched by name and code only
