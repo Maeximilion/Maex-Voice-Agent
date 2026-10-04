@@ -511,9 +511,12 @@ Open: one worktree, branch and chat per item, independent of each other:
        Waits on Maxi, not on code: the real register import (steps in docs/01 "What's
        next"), the paper check of the input slip (T-4.6), the tablet test (T-3.5), the voice
        platform (C2, blocks T-2.4).
-       Cleanup, Maxi's call: the worktrees of merged branches can go (sim-allergy-guard,
-       lunch-menus-m-vm, real-menu-import-dry-run, latency-serial, infallible-grothendieck,
-       Maex-Voice-Agent-wt-skip-posix-mode, this handover's worktree after its merge).
+       Cleanup done 04.10.: the worktrees of five merged branches are removed
+       (sim-allergy-guard, lunch-menus-m-vm, real-menu-import-dry-run, latency-serial,
+       Maex-Voice-Agent-wt-skip-posix-mode); their local branches remain. Left on purpose:
+       infallible-grothendieck-a345ac (PR #145 merged, but it holds a .env with its own
+       values that is in no other place; Maxi decides) and this handover's worktree until
+       its PR is merged.
 Lessons: docs/01_STATUS.md conflicts on every parallel PR: each one bumps the same version
        line and adds a changelog line at the same place. PR #168 was merged with main four
        times, and each merge moves the head past the commit Codex reviewed. Merge main right
