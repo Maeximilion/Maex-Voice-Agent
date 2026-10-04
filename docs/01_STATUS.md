@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.4
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.5
 
 ---
 
@@ -113,7 +113,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026)
 5. **T-2.4** `agent/llm.py` against a real model with token counting; `sim/scripted_llm.py` is the rule-based stand-in until then and stays as the deterministic client for evals; `make eval-targets` (27 cases, level 3-5 and delivery, 1 green with the stand-in) is the target it has to reach
 6. An n8n workflow for the other events (`reservation.confirmed`, `callback.created`, `order.handover_failed` as a push or SMS to the team; export to `n8n/`); until then the cold path runs to nowhere, the kitchen ticket itself does not depend on it
-7. **Follow-ups of T-4.12, one worktree each** (handover 04.10.2026, `docs/00_PCF.md` §13): lunch menus `M`/`VM` (decided 04.10.2026: not by phone, nothing to build), the translation sweep (`docs/english-code-comments`, running), dependabot PRs #159 and #160 (rebase after #163)
+7. **Next sessions, one worktree and chat each** (handover 04.10.2026, text phone allergy guard, `docs/00_PCF.md` §13): backup and restore (T-9.3, first: the real import in item 3 must not run without a backup; full scope in docs/13 §4: scripts, daily cron, encrypted second storage, rehearsed restore), the n8n workflow from item 6, the remaining text phone points under "Open Points from Reviews", the translation sweep (`docs/english-code-comments`, running, no PR yet). Done from the T-4.12 follow-ups: the allergy guard (PR #168), the import dry run (PR #169), lunch menus (decided: not by phone), dependabot PRs #159 and #160 (merged)
 8. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
@@ -285,6 +285,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 04.10.2026 | **Session handover (text phone allergy guard):** PR #168 squash-merged to `main` (`67b3bcd`) after the Codex review of the merged head; PR #170 (file-mode tests skip on Windows) came out of the same session. Full block in `docs/00_PCF.md` §13. Next: backup and restore scripts (T-9.3) before the real register import, then the n8n workflow; one worktree and chat each |
 | 04.10.2026 | **Bug text phone: ingredient that looks like a card number fixed (open point from Codex PR #155, P2x2):** on "Wogegen?" the answers "B12", "Vitamin B12" and "Gegen E 621" counted as an order, the question was asked again and no allergy note recorded. `sim/scripted_order.py` `_orders_something` took every form the import grammar allows (`importer.is_card_number`), so any word of letters plus digits and any bare number passed; only compact E-numbers were excluded. Now the active menu decides: `SimCall` hands the scripted model `MenuNumbers` (card format and active numbers, read through the new `domain/menu/items.active_numbers`, which `card_format` uses too), and an answer is an order only if the sentence names a number by rule A in the menu's card format (`sole_item_number(text, card)`: "S12", "S zwölf", "Sushi zwölf", "Nummer 12", "die 25g", also "S13" the menu lacks), if a word is a number on the menu ("die 12 mit Reis", "Milch und S12"), or if it opens like an order ("Eine Cola bitte"). `_ADDITIVE` and `_ends_with_number` are gone. The eval runner wires the same source per case. Red first: three tests next to `test_additive_is_an_ingredient` failed on `main`; the prefix tests now run on a menu that has S and SM. Still asks again, failing safe: a spaced name whose bare number is a dish on the menu ("Vitamin B 12" next to dish 12). Evals `cases/` 26/26, hard metrics 0 |
 | 04.10.2026 | **Real register menu, import dry run; bug dry run never sent options, allergens and aliases to the database fixed:** converter and `import_menu --dry-run --deactivate-missing` run on the register copies (173 dishes, 797 options, see summary), output only in a scratch directory. `scripts/import_menu.py` uses `SessionLocal` with autoflush off, and `importer.apply` rolled a dry run back after flushing the dishes only: a row the database rejects in `item_options`, `item_allergens` or `item_aliases` passed the dry run and would have failed in the real import. Red test first with synthetic data (an option the database cannot store), then `session.flush()` before the rollback. The real data passes with the flush as well. Review of PR #169 (own review, 12 findings, and Codex P1): backup before the migration and against the database of `DATABASE_URL`, backup and restore commands run once for real; `import_menu` turns a database rejection into a message and exit 1; `apply` rolls back when the dry-run flush fails; `parse` rejects a NUL character with file and line. 9 new tests |
 | 04.10.2026 | **T-4.12 card numbers with prefix and suffix g (PR #155, `26aaf8e`):** prefixes S and SM from the menu (`numberwords.CardFormat`, `items.card_format`), suffix a to g, import accepts `s12`, `sm1`, `25g`, tablet sorts and finds them; number eval 181/181, `cases/` 26/26. Handover in `docs/00_PCF.md` §13: open are the first real import, the text phone's allergy guard, lunch menus M/VM, the translation sweep and the two dependabot PRs, one worktree each |
@@ -350,6 +351,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.36.5 · 04.10.2026:** Handover text phone allergy guard: PR #168 merged as 67b3bcd, next T-9.3 backup and restore, then n8n workflow
 - **v1.36.4 · 04.10.2026:** Bug text phone: on Wogegen the active menu decides what a card number is, open point from PR #155 closed
 - **v1.36.3 · 04.10.2026:** Open point from PR #169 (Codex P2): import_menu claims nothing was stored for every database error
 - **v1.36.2 · 04.10.2026:** Lunch menus M/VM: decided not to offer them by phone; the build from PR #171 stays unmerged
