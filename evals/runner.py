@@ -59,7 +59,8 @@ from scripts.import_menu import read_files
 from scripts.seed import seed
 from sim.replay import customer_lines, replay
 from sim.scripted_llm import ScriptedLLM
-from sim.session import resolve_tenant
+from sim.scripted_order import MenuNumbers
+from sim.session import menu_numbers, resolve_tenant
 
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "cases"
@@ -98,9 +99,13 @@ def load_cases(folder: Path, tags: list[str]) -> list[dict[str, Any]]:
     return [c for c in cases if not tags or set(tags) & set(c.get("tags", []))]
 
 
-def model_factory(model: str) -> Callable[[datetime], LLMClient]:
+def model_factory(
+    model: str,
+) -> Callable[[datetime, Callable[[], MenuNumbers]], LLMClient]:
+    """`menu` reads the card numbers of the case's tenant: the scripted model
+    gets them as in the text phone (`sim/session.py`)."""
     if model == "scripted":
-        return lambda now: ScriptedLLM(now=now, timezone=TIMEZONE)
+        return lambda now, menu: ScriptedLLM(now=now, timezone=TIMEZONE, menu=menu)
     # Ein echtes Modell kommt mit T-2.4 (agent/llm.py); bis dahin kein stilles
     # Zurückfallen auf das Skript, sonst verglich ein Modellvergleich das Skript
     # mit sich selbst.
@@ -186,9 +191,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         expected_escalation=bool(expected.get("escalated")),
         pending=case.get("pending"),
     )
-    llm = RecordingLLM(make_llm(now))
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
+        llm = RecordingLLM(make_llm(now, lambda: menu_numbers(session, tenant.id)))
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)

@@ -13,12 +13,17 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
-from api.domain.menu.importer import apply, parse
+from api.domain.menu.importer import MENU_FILE, apply, parse
 from api.models import Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
 from sim.replay import replay
-from sim.scripted_order import PickupScript, _quantity
+from sim.scripted_order import (
+    MenuNumbers,
+    PickupScript,
+    _orders_something,
+    _quantity,
+)
 from sim.session import resolve_tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -1246,15 +1251,37 @@ def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
     assert [p[0] for p in positions(session, order)] == ["24"]
 
 
+def _add_dishes(session, tenant, rows: str) -> None:
+    plan = parse({**KARTE, MENU_FILE: KARTE[MENU_FILE] + rows})
+    assert plan.ok, plan.errors
+    apply(session, tenant.id, plan, now=NOW)
+
+
+@pytest.fixture
+def sushi(session, tenant):
+    """A menu like the register (T-4.12): S and SM in the group Sushi, 25 and
+    25g, next to the numbers without a prefix."""
+    _add_dishes(
+        session,
+        tenant,
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "SM1;Sushi-Menü klein;Sushi;16,90;;ja\n"
+        "25;Chop Suey;Hauptgerichte;12,50;;ja\n"
+        "25G;Soße Chop Suey;Hauptgerichte;2,00;;ja\n",
+    )
+    return tenant
+
+
 @pytest.mark.parametrize(
     "answer",
     ["S12.", "SM1", "die 25g", "S0001", "S zwölf.", "SM eins.", "Sushi zwölf."],
 )
-def test_prefixed_number_is_not_an_ingredient(session, tenant, answer):
+def test_prefixed_number_is_not_an_ingredient(session, sushi, answer):
     """Codex PR #155: as an answer to "Wogegen?", a card number with letters
     is an order, not an ingredient - no "Keine S12" for the kitchen."""
     _, turns = _bestellung(
-        session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
+        session, sushi, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
@@ -1277,3 +1304,109 @@ def test_additive_is_an_ingredient(session, tenant):
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", "Gegen E621.")
     [order] = orders(session)
     assert any("E621" in (note or "") for note in _notes(session, order))
+
+
+@pytest.mark.parametrize(
+    ("answer", "ingredient"),
+    [("B12.", "B12"), ("Vitamin B12.", "Vitamin B12"), ("Gegen E 621.", "E 621")],
+)
+def test_compact_ingredient_is_not_a_card_number(session, tenant, answer, ingredient):
+    """Codex PR #155 (P2): the menu decides what a card number is, not the
+    import grammar. This menu has no prefix B and no prefix E, so "B12",
+    "Vitamin B12" and the spaced additive "E 621" are the ingredient - the
+    note is recorded and the question not repeated."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
+    assert "Wogegen" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == [f"WICHTIG: Keine {ingredient}. Grund: Allergie"]
+
+
+def test_the_menu_decides_what_a_card_number_is(session, tenant):
+    """The same answer "B12" is an order on a menu whose numbers carry the
+    prefix B: the question stays open, no "Keine B12" for the kitchen."""
+    _add_dishes(session, tenant, "B12;Gebratener Reis;Beilagen;4,50;;ja\n")
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", "B12.", "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("answer", ["Die 12 mit Reis.", "Sesam, und die 12."])
+def test_number_on_the_menu_in_a_sentence_is_an_order(session, tenant, answer):
+    """A number the menu has, next to other words, is still an order: the
+    question stays open instead of "Keine die 12 mit Reis" for the kitchen."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+SUSHI_MENU = MenuNumbers.from_items(
+    [
+        ("12", "Suppen"),
+        ("13", "Suppen"),
+        ("S1", "Sushi"),
+        ("S12", "Sushi"),
+        ("SM1", "Sushi"),
+        ("25G", "Hauptgerichte"),
+    ]
+)
+
+
+@pytest.mark.parametrize(
+    ("answer", "order"),
+    [
+        # On the menu, in every spelling.
+        ("S12", True),
+        ("s012", True),
+        ("S zwölf bitte", True),
+        ("Sushi zwölf", True),
+        ("Nummer 12", True),
+        ("Milch und S12", True),
+        ("Ich nehme noch die 13", True),
+        # A form the menu has, a number it lacks: ask again, note nothing.
+        ("S13", True),
+        ("S1000", True),
+        ("12 oder 13", True),
+        ("Nummer 99 mit Reis", True),
+        ("Eine Cola bitte", True),
+        # Neither a prefix nor a number of this menu.
+        ("B12", False),
+        ("Vitamin B12", False),
+        ("Vitamin B 99", False),
+        ("Gegen E621", False),
+        ("Gegen E 621", False),
+        ("Glutamat 621", False),
+        ("Q10", False),
+        ("Fünf-Gewürze-Pulver", False),
+        ("Zwei Sachen: Milch", False),
+        ("Erdnüsse", False),
+    ],
+)
+def test_order_or_ingredient_follows_the_menu(answer, order):
+    assert _orders_something(answer, SUSHI_MENU) is order
+
+
+@pytest.mark.parametrize(
+    ("answer", "order"),
+    [("S12", False), ("Sushi zwölf", False), ("Nummer 12", True), ("die 25g", True)],
+)
+def test_without_a_menu_only_plain_numbers_are_orders(answer, order):
+    """A menu without prefixes knows no "S12"; a plain number by rule A stays
+    an order."""
+    assert _orders_something(answer, MenuNumbers()) is order
+
+
+def test_text_phone_reads_the_numbers_of_the_active_menu(session, sushi):
+    """`SimCall` hands the scripted model the tenant's menu: active dishes
+    only, compared like search_menu (`canonical_card`)."""
+    from sim.session import menu_numbers
+
+    menu = menu_numbers(session, sushi.id)
+    assert menu.card.prefixes == {"s", "sm"}
+    assert {"s12", "sm1", "25g", "13"} <= menu.numbers
+    assert "50" not in menu.numbers  # "Altes Gericht" is inactive

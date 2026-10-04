@@ -20,6 +20,7 @@ from api.agent.state import initial_state
 from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.domain.calls import end_call, start_call
+from api.domain.menu.items import active_numbers
 from api.models import Call, Tenant
 from api.schemas.calls import (
     CallEnded,
@@ -29,6 +30,7 @@ from api.schemas.calls import (
     StartCallRequest,
 )
 from sim.scripted_llm import ScriptedLLM
+from sim.scripted_order import MenuNumbers
 
 # Der Ausgang des Anrufs folgt dem Gesprächszustand, nicht dem Gefühl des Modells
 # (docs/03 §calls). Alles, was weder bestätigt noch übergeben noch als Rückruf
@@ -76,6 +78,13 @@ def resolve_tenant(session: Session, name: str | None) -> Tenant:
     return tenants[0]
 
 
+def menu_numbers(session: Session, tenant_id: uuid.UUID) -> MenuNumbers:
+    """The card numbers of the active menu for the scripted model: it tells an
+    order from an ingredient by the menu, not by the import grammar (Codex PR
+    #155, P2)."""
+    return MenuNumbers.from_items(active_numbers(session, tenant_id))
+
+
 class SimCall:
     """Ein Anruf im Text-Telefon: hält Anruf-Zeile, Zustand und Loop zusammen."""
 
@@ -109,7 +118,12 @@ class SimCall:
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
         self._loop = ConversationLoop(
             session,
-            llm or ScriptedLLM(now=self._now, timezone=tenant.timezone),
+            llm
+            or ScriptedLLM(
+                now=self._now,
+                timezone=tenant.timezone,
+                menu=lambda: menu_numbers(session, tenant.id),
+            ),
             build_system_prompt(),
             now=self._now,
         )

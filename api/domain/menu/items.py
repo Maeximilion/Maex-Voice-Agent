@@ -32,20 +32,24 @@ def is_sold_out(item: MenuItem, now: datetime) -> bool:
     return item.sold_out_until is not None and item.sold_out_until > now
 
 
-def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:
-    """Prefixes and category words of the active menu (T-4.12).
-
-    Which letters can stand in front of a number ("S12", "SM1") follows from
-    the numbers in the database, never from the code (CLAUDE.md §2 rule 1).
-    One query over number and category; for a menu of a few hundred rows that
-    is one index scan.
-    """
+def active_numbers(session: Session, tenant_id: uuid.UUID) -> list[tuple[str, str]]:
+    """Number and category of every active dish. One query; for a menu of a
+    few hundred rows that is one index scan."""
     rows = session.execute(
         select(MenuItem.number, MenuItem.category).where(
             MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True)
         )
     )
-    return CardFormat.from_items((number, category) for number, category in rows)
+    return [(number, category) for number, category in rows]
+
+
+def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:
+    """Prefixes and category words of the active menu (T-4.12).
+
+    Which letters can stand in front of a number ("S12", "SM1") follows from
+    the numbers in the database, never from the code (CLAUDE.md §2 rule 1).
+    """
+    return CardFormat.from_items(active_numbers(session, tenant_id))
 
 
 def option_groups(

@@ -16,6 +16,7 @@ auch hier ausschließlich aus den Tool-Ergebnissen, nie aus diesem Modul
 
 import json
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -24,7 +25,7 @@ from zoneinfo import ZoneInfo
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from sim.scripted_order import PickupScript
+from sim.scripted_order import MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -103,10 +104,19 @@ class ScriptedLLM:
 
     `now` und `timezone` kommen von außen, damit ein Replay denselben Satz zweimal
     gleich versteht ("morgen um 19 Uhr" ist sonst vom Kalender des Rechners abhängig).
+    `menu` reads the card numbers of the active menu for the pickup script
+    (`MenuNumbers`); the caller has the database, this module does not.
     """
 
-    def __init__(self, *, now: datetime, timezone: str):
+    def __init__(
+        self,
+        *,
+        now: datetime,
+        timezone: str,
+        menu: Callable[[], MenuNumbers] | None = None,
+    ):
         self._now = now
+        self._menu = menu
         self._zone = ZoneInfo(timezone)
         self._status_checked = False
         self._greeted = False
@@ -153,7 +163,7 @@ class ScriptedLLM:
 
         started_pickup = False
         if self._pickup is None and _wants_pickup(text):
-            self._pickup = PickupScript()
+            self._pickup = PickupScript(self._menu)
             started_pickup = True
             if not self._status_checked:
                 self._opening_query = _opening_dish(text)
