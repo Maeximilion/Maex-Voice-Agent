@@ -1,20 +1,22 @@
-"""Artikel der Kasse in die CSV-Dateien nach docs/14 umwandeln (T-4.11).
+"""Convert the register's articles into the CSV files described in docs/14 (T-4.11).
 
-Die Kasse ist Master für Karte und Preise (docs/02 §6). Hier entsteht aus ihren
-Tabellen, was `importer.parse` erwartet; eingespielt wird weiter nur über den
-einen Import. Jede Deutung stammt aus den echten Dateien und der Maske der Kasse
-(docs/14 §Quelle Kasse). Was sich nicht eindeutig deuten lässt, wird nicht
-übernommen und steht als Fehler im Bericht - nie geraten (CLAUDE.md §2).
+The register is the master for menu and prices (docs/02 §6). This turns its
+tables into what `importer.parse` expects; importing still happens only
+through the one import. Every interpretation comes from the real files and the
+register's screens (docs/14 §Quelle Kasse). What cannot be interpreted
+unambiguously is not taken over and appears as an error in the report - never
+guessed (CLAUDE.md §2).
 
-Größen: `GROESSE` ist eine Zeichenfolge. `+` erlaubt Extras, `-` Weglassen, die
-Ziffern sind die Größen, in denen der Artikel verkauft wird. Größe 1 kostet
-`VK1_PREIS`, Größe n ab 2 kostet `VK1_PREIS + GRPREIS(n-1)`. Belegt an der Maske
-(Suppe 1: klein 6,50, groß 11,00 bei VK1 6,50, GRPREIS1 0, GRPREIS2 4,50) und am
-Wein (6,50 + 23,50 = 30,00, so viel kostet die Flasche als eigener Artikel).
+Sizes: `GROESSE` is a string. `+` allows extras, `-` allows leaving things out,
+the digits are the sizes the article is sold in. Size 1 costs `VK1_PREIS`,
+size n from 2 on costs `VK1_PREIS + GRPREIS(n-1)`. Verified on the register's
+screen (Suppe 1: small 6.50, large 11.00 with VK1 6.50, GRPREIS1 0, GRPREIS2
+4.50) and on the wine (6.50 + 23.50 = 30.00, which is what the bottle costs as
+an article of its own).
 
-Extras: `zutaten` hängen über Warengruppen am Artikel (`WRGSHOWALL` oder `WRG`
-in der Liste `WRGSHOW`). Preis = Preisstufe `ZPREIGRP3` aus `zutgrp` plus
-`ZGRPREIS(n-1)` für Größe n ab 2.
+Extras: `zutaten` are attached to the article through article groups
+(`WRGSHOWALL`, or `WRG` in the list `WRGSHOW`). Price = price level
+`ZPREIGRP3` from `zutgrp` plus `ZGRPREIS(n-1)` for size n from 2 on.
 """
 
 import csv
@@ -35,17 +37,17 @@ from api.domain.menu.items import option_key
 from api.domain.menu.numberwords import canonical_card
 from api.domain.menu.pos_dbf import DbfError, Table
 
-# Namen aus der Maske der Kasse ("Größen Bezeichnung ändern"), Maxi 26.09.2026.
-# 5 bis 7 haben dort keinen Namen: solche Größen werden nicht übernommen.
+# Names from the register's screen ("Größen Bezeichnung ändern"), Maxi
+# 26.09.2026. 5 to 7 have no name there: such sizes are not taken over.
 SIZE_NAMES = {1: "normal", 2: "klein", 3: "groß", 4: "party"}
 SIZE_GROUP = "Größe"
 EXTRAS_GROUP = "Extras"
 PLACEHOLDER = "000"
-NAME_MAX = 40  # BEZEICH C40: volle Länge heißt vermutlich abgeschnitten
+NAME_MAX = 40  # BEZEICH C40: full length probably means cut off
 EXTRA_NAME_MAX = 16  # ZBEZEICH C16
 
-# Kasse zählt die 14 Hauptallergene a bis n ohne Lücke, LMIV und docs/03
-# überspringen I, J, K, Q. Nie 1:1 übernehmen (docs/14, Umsetztabelle).
+# The register counts the 14 main allergens a to n without a gap; LMIV and
+# docs/03 skip I, J, K, Q. Never take them over 1:1 (docs/14, mapping table).
 ALLERGEN_MAP = {
     "A": "A",
     "B": "B",
@@ -62,8 +64,8 @@ ALLERGEN_MAP = {
     "M": "P",
     "N": "R",
 }
-# Nur für die Warnung an Menschen (docs/14): Rezeptur nennt einen typischen
-# Allergenträger, ALLERGENE ist leer. Der Agent sagt weiter "keine Auskunft".
+# Only for the warning to people (docs/14): the recipe names a typical allergen
+# carrier while ALLERGENE is empty. The agent still says "keine Auskunft".
 _CARRIERS = (
     "eier",
     "soja",
@@ -85,10 +87,10 @@ _CARRIERS = (
     "mandel",
     "tintenfisch",
 )
-# Spalten, die der Umwandler direkt liest. Fehlt eine (andere Kassenversion,
-# falsche Datei), ist das ein Formatfehler statt eines KeyError (Codex PR #149).
-# Optionale Spalten (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
-# ZGRPREIS*) liest er mit Default.
+# Columns the converter reads directly. If one is missing (other register
+# version, wrong file), that is a format error instead of a KeyError (Codex PR
+# #149). Optional columns (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
+# ZGRPREIS*) are read with a default.
 REQUIRED_COLUMNS = {
     "artikel": ("ARTNR", "BEZEICH", "WRG", "VK1_PREIS", "GROESSE"),
     "warengrp": ("W_WRG", "W_BEZEICH"),
@@ -96,7 +98,7 @@ REQUIRED_COLUMNS = {
     "zutgrp": ("ZGRP3", "ZPREIS"),
 }
 _SORT_PREFIX = re.compile(r"^[A-Z]\.")
-# dBase-Logisch: T, t, Y und y heißen wahr.
+# dBase logical: T, t, Y and y mean true.
 _TRUE = frozenset("TtYy")
 
 
@@ -162,7 +164,7 @@ def cents(value: str) -> int | None:
 
 
 def _sizes(code: str) -> list[int]:
-    # Nur ASCII 1-9: "²" ist für isdigit() eine Ziffer, für int() nicht.
+    # ASCII 1-9 only: "²" is a digit for isdigit(), but not for int().
     return sorted({int(c) for c in code if c in "123456789"})
 
 
@@ -170,22 +172,22 @@ def _size_price(base: int, row: dict[str, str], prefix: str, size: int) -> int |
     """Preis bzw. Aufschlag in Größe `size`: Grundwert plus Spalte size-1."""
     if size == 1:
         return base
-    # Leer oder Spalte fehlt ist kein Aufschlag 0: sonst kostete die Größe
-    # still den Grundpreis (Review T-4.11).
+    # Empty or a missing column is not a surcharge of 0: otherwise the size
+    # would silently cost the base price (review T-4.11).
     raw = row.get(f"{prefix}{size - 1}", "")
     extra = cents(raw) if raw.strip() else None
     return None if extra is None else base + extra
 
 
 def extra_name(raw: str) -> str:
-    """ "B.Mango_Curry" -> "Mango Curry": Präfix sortiert nur in der Kasse."""
+    """ "B.Mango_Curry" -> "Mango Curry": the prefix only sorts in the register."""
     return " ".join(_SORT_PREFIX.sub("", raw).replace("_", " ").split())
 
 
 @dataclass(frozen=True)
 class _Extra:
     name: str
-    groups: frozenset[str] | None  # None: bei allen Warengruppen
+    groups: frozenset[str] | None  # None: for all article groups
     base: int
     row: dict[str, str]
 
@@ -211,7 +213,7 @@ def convert(
         missing = [c for c in REQUIRED_COLUMNS[name] if c not in present]
         if missing:
             raise DbfError(f"{name}: Spalte fehlt: {', '.join(missing)}")
-    # " " ist kein Prüfer: der Import striche den Wert und lehnte ab (Codex PR #149).
+    # " " is not a checker: the import would strip the value and reject (Codex PR #149).
     allergens_confirmed_by = (allergens_confirmed_by or "").strip() or None
     result = Conversion()
     skip = {g.strip() for g in skip_groups}
@@ -264,8 +266,9 @@ def convert(
         if vk1 is None or vk1 < 0:
             problems.append(f"VK1_PREIS „{row['VK1_PREIS']}“ nicht lesbar")
         elif row.get("VK2_PREIS") and vk2 not in (0, vk1):
-            # 0 heißt in der Kasse nicht gepflegt, dann gilt VK1 (Review T-4.11).
-            # Telefon ist Abholung: die Kasse nähme VK2, der Agent nennt VK1.
+            # 0 means not maintained in the register, then VK1 applies (review
+            # T-4.11). Phone is pickup: the register would take VK2, the agent
+            # quotes VK1.
             problems.append(
                 f"VK2_PREIS {row['VK2_PREIS']} weicht von VK1_PREIS "
                 f"{row['VK1_PREIS']} ab"
@@ -335,7 +338,9 @@ def convert(
 
     if bad_numbers:
         result.errors.append(
-            "Nummer versteht die Suche nicht (bis 999, optional Buchstabe a bis f), "
+            "Nummer versteht die Suche nicht (bis 999, optional a bis g dahinter und "
+            "bis zu zwei Buchstaben davor, aber kein Praefix wie x, st, nr, no, ja, "
+            "es), "
             f"{len(bad_numbers)} Gerichte nicht übernommen: " + ", ".join(bad_numbers)
         )
     for size, numbers in sorted(unnamed_sizes.items()):
@@ -363,9 +368,9 @@ def convert(
 def _unique(
     table: Table, name: str, key: Callable[[dict[str, str]], str], column: str
 ) -> dict[str, str]:
-    """Schlüssel -> Wert aus den aktiven Zeilen. Derselbe Schlüssel mit anderem
-    Wert ist ein Formatfehler: sonst entschiede die Zeilenreihenfolge über einen
-    Preis oder eine Kategorie (Codex PR #149)."""
+    """Key -> value from the active rows. The same key with a different value
+    is a format error: otherwise the row order would decide a price or a
+    category (Codex PR #149)."""
     values: dict[str, str] = {}
     for row in table.live():
         k = key(row)
@@ -398,7 +403,7 @@ def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
         where = f"Zutat „{row['ZBEZEICH']}“"
         name = extra_name(row["ZBEZEICH"])
         level = row["ZPREIGRP3"]
-        # Leerer ZPREIS ist kein Preis 0: sonst wäre das Extra still gratis.
+        # An empty ZPREIS is not a price of 0: otherwise the extra would silently be free.
         raw_price = levels.get(level, "")
         base = cents(raw_price) if raw_price else None
         if not name:
@@ -438,9 +443,9 @@ def _add_extras(
     sizes: list[int],
     extras: list[_Extra],
 ) -> None:
-    # Erst je Schlüssel (wie im Import, option_key) alle Preise sammeln, dann
-    # entscheiden: gleiche Dubletten zählen einmal, verschiedene Preise sind ein
-    # Fehler - die Zeilenreihenfolge wählt keinen Preis (Codex PR #149).
+    # First collect all prices per key (as in the import, option_key), then
+    # decide: identical duplicates count once, different prices are an error -
+    # the row order does not pick a price (Codex PR #149).
     found: dict[str, list[tuple[str, int | None]]] = {}
     for extra in extras:
         if extra.groups is not None and group not in extra.groups:
@@ -458,7 +463,7 @@ def _add_extras(
         name = candidates[0][0]
         prices = {price for _, price in candidates}
         if None in prices:
-            # Unsere Option hat einen Preis je Gericht, nicht je Größe.
+            # Our option has one price per dish, not per size.
             result.warnings.append(
                 f"{where}: Extra „{name}“ kostet je Größe anders, nicht übernommen"
             )
@@ -473,8 +478,8 @@ def _add_extras(
             result.warnings.append(f"{where}: Extra „{name}“ doppelt")
         [price] = prices
         assert price is not None
-        # Negativ ist ein Abzug der Kasse ("ohne Fleisch") und bleibt; eine
-        # negative Summe des Gerichts lehnt draft_order ab (Codex PR #149).
+        # A negative value is a deduction in the register ("ohne Fleisch") and
+        # stays; draft_order rejects a negative total for the dish (Codex PR #149).
         result.options.append(
             _option(number, EXTRAS_GROUP, name, price, default=False, required=False)
         )
@@ -528,27 +533,27 @@ def _add_allergens(
 @dataclass(frozen=True)
 class AliasSplit:
     kept: str
-    dropped: str | None  # None: keine Zeile abgetrennt
+    dropped: str | None  # None: no row split off
     dropped_numbers: list[str]
 
 
 def split_aliases(
     source: str | None, side: str | None, numbers: Iterable[str]
 ) -> AliasSplit | None:
-    """Aliase aus dem Chat gegen die Nummern der Kasse abgleichen.
+    """Match the aliases from the chat against the register's numbers.
 
-    Eine Alias-Zeile zu einer Nummer, die nicht in der neuen `menu_items.csv`
-    steht (Getränk, gesperrt, Nummer unlesbar, Fehler im Bericht), würde den
-    ganzen Import blockieren; löschen hieße, gewachsenes Wissen zu verlieren.
-    `source` ist die Alias-Datei, `side` die Datei der abgetrennten Zeilen:
-    beide werden bei jedem Lauf neu aufgeteilt, so kommen Aliase eines
-    Gerichts, das nur einen Lauf lang fehlte, von selbst zurück (Review T-4.11).
-    Hat der Chat für eine Nummer inzwischen eigene Zeilen in `source`, gelten
-    nur diese; die alten aus `side` fallen weg, statt zurückzukommen.
+    An alias row for a number that is not in the new `menu_items.csv` (drink,
+    blocked, number unreadable, error in the report) would block the whole
+    import; deleting it would lose knowledge that has grown. `source` is the
+    alias file, `side` the file of the rows split off: both are divided anew
+    on every run, so the aliases of a dish that was missing for just one run
+    come back by themselves (review T-4.11). If the chat has its own rows for
+    a number in `source` by now, only those apply; the old ones from `side`
+    are dropped instead of coming back.
 
-    Zeilen bleiben Listen, nicht Dicts: ein Feld zu viel ("1;Miso; warm")
-    bleibt, wie es ist. None: eine Datei hat keine Spalte `number` oder andere
-    Spalten als die andere - dann wird nichts angefasst.
+    Rows stay lists, not dicts: one field too many ("1;Miso; warm") stays as
+    it is. None: one file has no column `number`, or other columns than the
+    other one - then nothing is touched.
     """
     known = {canonical_card(n) for n in numbers}
     header: list[str] | None = None
@@ -559,8 +564,8 @@ def split_aliases(
             continue
         reader = csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
         head = [h.strip() for h in next(reader, [])]
-        # Beide Pflichtspalten des Imports, sonst läse import_menu die Datei
-        # nicht (Codex PR #149).
+        # Both mandatory columns of the import, otherwise import_menu would not
+        # read the file (Codex PR #149).
         if head and (
             "number" not in head
             or "alias" not in head
@@ -579,8 +584,8 @@ def split_aliases(
     in_source = {key(row) for row in parts[0]}
     rows: list[list[str]] = []
     unique: set[tuple[str, ...]] = set()
-    # Hat der Chat für eine Nummer eigene Zeilen, gelten nur diese - auch wenn
-    # das Gericht noch fehlt, sonst kämen die alten später mit zurück (Codex PR #149).
+    # If the chat has its own rows for a number, only those apply - even if the
+    # dish is still missing, otherwise the old ones would come back later (Codex PR #149).
     for row in parts[0] + [r for r in parts[1] if key(r) not in in_source]:
         if tuple(row) not in unique:
             unique.add(tuple(row))

@@ -21,7 +21,12 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.search import SAY_IN_TURN, position_parts, search_menu
+from api.domain.menu.search import (
+    SAY_IN_TURN,
+    SAY_WHICH_NUMBER,
+    position_parts,
+    search_menu,
+)
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -78,6 +83,9 @@ KARTE = {
         # Kompakte Mengen wie in numberwords (Codex PR #117, P2)
         ("2x Pho", "pho"),
         ("2 Stück Pho", "pho"),
+        # Suffix g like a (T-4.12)
+        ("die 25 g", ""),
+        ("die 25g bitte", ""),
         ("2 stk Pho", "pho"),
         ("2 st Pho", "pho"),
         ("Frühlingsrollen (4 Stück)", "frühlingsrollen"),
@@ -866,3 +874,164 @@ def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
     # Je Startstueck hoechstens eine Spanne aus zwei Stuecken.
     assert len(calls) <= len(FRUECHTE) - 1
     assert p95_ms(lambda: position_parts(session, tid, gesagt, now=NOW)) < 300
+
+
+# --- Prefix from the menu and suffix g (T-4.12) ------------------------------------
+
+
+@pytest.fixture
+def sushi(session, tenant_id):
+    """A menu like the register: S and SM in the group Sushi, 25 and 25g, plus
+    the 12 (Wan-Tan-Suppe) and 13 (Pho Bo) without a prefix."""
+    rows = (
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S07;Gurken Maki;Sushi;3,90;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "SM1;Sushi-Menü klein;Sushi;16,90;;ja\n"
+        "25;Chop Suey;Hauptgerichte;12,50;;ja\n"
+        "25G;Soße Chop Suey;Hauptgerichte;2,00;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("S12", "s12"),
+        ("Nummer S12", "s12"),
+        ("S 12", "s12"),
+        ("S zwölf", "s12"),
+        ("Es zwölf", "s12"),
+        ("die S zwölf bitte", "s12"),
+        ("Sushi zwölf", "s12"),
+        ("SM eins", "sm1"),
+        ("Es Em eins", "sm1"),
+        ("SM1", "sm1"),
+        ("S7", "s07"),
+        ("S sieben", "s07"),
+        ("fünfundzwanzig G", "25g"),
+        ("25 g", "25g"),
+        ("25G", "25g"),
+        ("Nummer 25", "25"),
+        ("die 12", "12"),
+    ],
+)
+def test_prefix_and_suffix_g_match_exactly(session, sushi, said, number):
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "exact_number" and nummern(result) == [number]
+
+
+def test_category_word_with_two_hits_asks_back(session, sushi):
+    """ "Sushi eins" is S1 or SM1: both are on the menu, so ask back."""
+    result = suche(session, sushi, "Sushi eins")
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s1", "sm1"]
+    assert "Nummer s1" in result.say and "Nummer sm1" in result.say
+
+
+@pytest.mark.parametrize("said", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
+def test_missing_prefixed_number_is_never_the_bare_number(session, sushi, said):
+    """Rule 2: "S 13" is not Pho Bo (13), "Nummer 23g" is not the 23."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, said)
+    assert "Nummer 13 " not in err.value.say and "Nummer 23 " not in err.value.say
+
+
+def test_without_prefix_on_the_menu_s12_is_not_12(session, tenant_id):
+    """The prefix comes from the menu: without S numbers there is no S12, and
+    it never silently becomes the 12 (rule 2)."""
+    try:
+        result = suche(session, tenant_id, "S zwölf")
+    except (Ambiguous, NotFound):
+        return
+    assert result.match_type != "exact_number"
+
+
+def test_prefixed_number_next_to_name_asks_back(session, sushi):
+    """Review PR #155: a prefixed number is never a quantity. Directly next to a
+    name the search asks for the one number instead of guessing via the name."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 Lachs")
+    assert err.value.say == SAY_WHICH_NUMBER
+
+
+def test_prefixed_number_and_name_are_two_positions(session, sushi):
+    """Code review PR #155: separated by "und" these are two positions as with
+    "die 23 und Pho Bo", not the question for the one number."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+
+
+def test_category_word_without_hit_names_card_numbers(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Sushi 99")
+    assert "s99 oder sm99" in err.value.say
+
+
+def test_by_number_rejects_a_bare_str(session, sushi):
+    """Review PR #155: a str would be looked up character by character."""
+    from api.domain.menu.search import _by_number
+
+    with pytest.raises(TypeError):
+        _by_number(session, sushi, "023")
+
+
+def test_card_format_read_once_per_search(session, sushi, monkeypatch):
+    """Review PR #155: position_parts searches recursively, the menu is still
+    read only once."""
+    import api.domain.menu.search as search_mod
+
+    calls = []
+    real = search_mod.card_format
+    monkeypatch.setattr(
+        search_mod, "card_format", lambda *a: calls.append(1) or real(*a)
+    )
+    with pytest.raises(Ambiguous):
+        suche(session, sushi, "die 23 und Pho Bo und die 24")
+    assert len(calls) == 1
+
+
+@pytest.mark.latency
+def test_prefix_search_stays_within_latency_budget(client, session, tenant_id):
+    """300 ms p95 (docs/04) with a menu the size of the register, prefixes included."""
+    rows = "".join(
+        f"S{i};Sushi Nummer {i};Sushi;4,90;;ja\n" for i in range(1, 54)
+    ) + "".join(
+        f"{100 + i};Testgericht Nummer {i} mit Reis;Test;9,90;;ja\n" for i in range(200)
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    assert p95_ms(lambda: post(client, tenant_id, "Es zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "Sushi zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300
+
+
+@pytest.mark.parametrize("said", ["Nummer Z12", "Nummer Z 12", "Nummer H zwölf"])
+def test_unknown_prefix_after_marker_is_not_found(session, sushi, said):
+    """Codex PR #155, P2: the import allows every prefix; one the menu does not
+    have is a named number that does not exist - no follow-up question and
+    never the bare number."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, said)
+    assert "Nummer 12 " not in err.value.say
+
+
+def test_weight_stays_in_the_name():
+    """Code review PR #155: in a name "250g" is a weight, not a card number -
+    otherwise "Rumpsteak 200g" and "Rumpsteak 300g" cannot be told apart."""
+    from api.domain.menu.normalize import normalize_query
+
+    assert normalize_query("Rumpsteak 250g") == "rumpsteak 250g"
+    assert normalize_query("Rumpsteak 250 g") == "rumpsteak g"

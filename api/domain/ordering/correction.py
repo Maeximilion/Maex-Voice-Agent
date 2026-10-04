@@ -1,23 +1,22 @@
-"""Korrektur einer bestaetigten Bestellung im Tablet (docs/06 §3 "Korrigieren", T-4.7).
+"""Correcting a confirmed order on the tablet (docs/06 §3 "Korrigieren", T-4.7).
 
-Das Team aendert Mengen, entfernt Positionen, tauscht ein Gericht gegen ein
-anderes (Menge und Hinweis bleiben) oder nimmt eines dazu, und nennt einen
-Grund. Jede Korrektur ist Rohstoff fuer die Genauigkeits-KPI (T-8.4): sie steht
-als `order.corrected` im audit_log, mit Grund und vorher/nachher, ohne Name,
-Telefon oder Hinweistext - das audit_log bleibt laenger als die Bestellung, und
-ein Hinweis kann eine Allergie tragen.
+The team changes quantities, removes positions, swaps a dish for another one
+(quantity and note stay) or adds one, and gives a reason. Every correction is
+raw material for the accuracy KPI (T-8.4): it is written to the audit_log as
+`order.corrected`, with reason and before/after, without name, phone or note
+text - the audit_log outlives the order, and a note can carry an allergy.
 
-Vorschau und Speichern rechnen mit derselben Funktion (`_plan`). Preise kommen
-aus der Datenbank, nie aus dem Tablet (CLAUDE.md §2 Regel 1): eine behaltene
-Position behaelt ihren eingefrorenen Grundpreis, eine getauschte oder neue
-bekommt den Grundpreis der Karte von jetzt; die Summe entsteht neu ueber die
-Positionen, die danach in der Datenbank stehen. Eine Pflichtauswahl wird
-gewaehlt, nie mit der Voreinstellung gefuellt (Regel 2).
+Preview and save compute with the same function (`_plan`). Prices come from
+the database, never from the tablet (CLAUDE.md §2 rule 1): a kept position
+keeps its frozen base price, a swapped or new one gets the menu's base price
+as of now; the total is rebuilt from the positions that are in the database
+afterwards. A mandatory choice is chosen, never filled with the default
+(rule 2).
 
-Ein Hinweis an einer Position ("WICHTIG: Keine Erdnuesse. Grund: Allergie", E14)
-geht nie still verloren: eine Position mit Hinweis faellt nur mit
-ausdruecklichem `drop_note` weg. "Falsches Gericht" korrigiert das Team mit
-Tauschen, dann bleibt der Hinweis an der Position.
+A note on a position ("WICHTIG: Keine Erdnuesse. Grund: Allergie", E14) is
+never lost silently: a position with a note is only dropped with an explicit
+`drop_note`. "Falsches Gericht" is corrected by the team with a swap, then the
+note stays on the position.
 """
 
 import hashlib
@@ -33,8 +32,8 @@ from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.menu.items import is_sold_out, option_groups, option_key
 
-# Dieselbe Nummernsuche wie search_menu ("7" findet "07", "23A" findet "23a").
-# Privat importiert, bis PR #139 search.py nicht mehr anfasst.
+# The same number lookup as search_menu ("7" finds "07", "23A" finds "23a").
+# Imported privately until PR #139 no longer touches search.py.
 from api.domain.menu.search import _by_number
 from api.domain.ordering.labels import ACTION_CORRECTED, labels_for_rows
 from api.domain.ordering.pricing import row_cents
@@ -42,11 +41,11 @@ from api.domain.ordering.ticket import send_ticket
 from api.models import AuditLog, MenuItem, Order, OrderItem
 from api.schemas.menu import OptionGroup
 
-# Dieselbe Obergrenze wie beim Agenten (draft_order).
+# The same upper limit as for the agent (draft_order).
 from api.schemas.orders import MAX_QUANTITY
 
 ACTOR_TABLET = "gui:tablet"
-# Gruende aus docs/06 §3. "Falsche Adresse" gibt es nur bei Lieferungen.
+# Reasons from docs/06 §3. "Falsche Adresse" exists only for deliveries.
 REASONS = {
     "wrong_item": "falsches Gericht",
     "wrong_quantity": "falsche Menge",
@@ -109,11 +108,11 @@ class PlannedLine:
     options: list[dict]
     note: str | None
     menu_item_id: uuid.UUID
-    # Nur fuer getauschte und neue Positionen: Auswahl, die das Tablet anbietet.
+    # Only for swapped and new positions: the choice the tablet offers.
     groups: list[OptionGroup] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     sold_out: bool = False
-    # Bestehende Position, auf die sich die Zeile bezieht; None bei neuen.
+    # Existing position the row refers to; None for new ones.
     order_item_id: uuid.UUID | None = None
 
     @property
@@ -131,16 +130,16 @@ class CorrectionPlan:
     items_total_cents: int
     total_cents: int
     changed: bool
-    # Warum nicht gespeichert werden kann, in Worten fuer das Team.
+    # Why it cannot be saved, in words for the team.
     blockers: list[str]
     reasons: dict[str, str]
 
 
 def order_version(rows: list[OrderItem]) -> str:
-    """Fingerabdruck der Positionen: der Stand, auf den sich eine Korrektur bezieht.
+    """Fingerprint of the positions: the state a correction refers to.
 
-    Bewusst nicht updated_at: Uebergabe und Freigabe aendern die Zeile, aber
-    nicht die Positionen; eine Korrektur waere sonst grundlos veraltet.
+    Not updated_at on purpose: handover and release change the row but not the
+    positions; a correction would otherwise be stale for no reason.
     """
     data = [
         [
@@ -165,7 +164,7 @@ def find_by_number(
     text = number.strip().lower()
     if not text:
         return None
-    items = _by_number(session, tenant_id, text)
+    items = _by_number(session, tenant_id, (text,))
     return items[0] if len(items) == 1 else None
 
 
@@ -179,8 +178,8 @@ def preview_correction(
     """Vorschau fuer das Tablet. Schreibt nichts."""
     order = _order(session, tenant_id, order_id, lock=False)
     if order.status not in EDITABLE:
-        # Storniert oder noch Entwurf: gar nicht erst bearbeiten lassen, statt
-        # erst beim Speichern abzulehnen.
+        # Cancelled or still a draft: do not allow editing at all, instead of
+        # rejecting only on save.
         raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     rows = _rows(session, order)
     if req is None:
@@ -205,7 +204,7 @@ def apply_correction(
     if order.status not in EDITABLE:
         raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     if req.edit_id and _already_saved(session, order, req.edit_id):
-        # Derselbe Tap kam zweimal an: die erste Korrektur gilt, keine zweite.
+        # The same tap arrived twice: the first correction applies, no second one.
         session.commit()
         return
     if reason not in _reasons(order):
@@ -232,7 +231,7 @@ def apply_correction(
             row.menu_item_id = line.menu_item_id
             row.unit_price_cents = line.unit_price_cents
             row.options = line.options
-    # Neue Positionen hinter die letzte: die Reihenfolge ist created_at (draft.py).
+    # New positions go after the last one: the order is created_at (draft.py).
     last = max(r.created_at for r in rows)
     for k, line in enumerate(plan.added, start=1):
         session.add(
@@ -257,7 +256,7 @@ def apply_correction(
     )
     order.items_total_cents = items_total
     order.total_cents = items_total + order.delivery_fee_cents
-    # Auch bei gleicher Summe: der Ereignisstrom erkennt die Korrektur daran.
+    # Even with the same total: the event stream recognises the correction by this.
     order.updated_at = func.clock_timestamp()
 
     session.add(
@@ -288,15 +287,15 @@ def apply_correction(
     )
     session.flush()
     if order.handover_state is not None:
-        # Der neue Stand geht an die Kueche (ticket.py). "KORREKTUR" nur, wenn
-        # sie schon einen Bon hat oder bekommt; nach "failed" hat sie keinen.
+        # The new state goes to the kitchen (ticket.py). "KORREKTUR" only if it
+        # already has a ticket or gets one; after "failed" it has none.
         reached = order.handover_state in ("pending", "sent")
         send_ticket(session, order, correction_reason=reason if reached else None)
         order.handover_state = "pending"
     session.commit()
 
 
-# --- Bausteine ---------------------------------------------------------------------
+# --- Building blocks ---------------------------------------------------------------
 
 
 def _order(
@@ -411,7 +410,7 @@ def _plan(
                 now,
             )
             if edit.swap_to == row.menu_item_id:
-                # Nur die Auswahl getauscht: der Grundpreis bleibt eingefroren.
+                # Only the choice was swapped: the base price stays frozen.
                 line.unit_price_cents = row.unit_price_cents
         else:
             kind = "changed" if quantity != row.quantity else "kept"
@@ -523,14 +522,14 @@ def _new_line(
         number=item.number,
         name=item.name,
         quantity=quantity,
-        # Grundpreis ohne Optionen, wie draft_order ihn ablegt (pricing.row_cents).
+        # Base price without options, as draft_order stores it (pricing.row_cents).
         unit_price_cents=item.price_cents,
         options=options,
         note=note,
         menu_item_id=item.id,
         groups=offered,
         missing=missing,
-        # Das Team darf ein Gericht nehmen, das heute aus ist - es sieht den Hinweis.
+        # The team may take a dish that is sold out today - it sees the notice.
         sold_out=is_sold_out(item, now),
     )
 

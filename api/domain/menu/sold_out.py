@@ -1,18 +1,18 @@
-"""Schalter "Gericht aus" (T-4.8, docs/06 §3).
+"""Switch "Gericht aus" (T-4.8, docs/06 §3).
 
-Ein Tap am Tablet stellt ein Gericht bis zum Ende des Betriebstags auf
-ausverkauft (`menu_items.sold_out_until`). Ab dann liefert `search_menu` es mit
-`sold_out: true` und dem Satz "heute aus", `draft_order` lehnt es ab, und der
-Agent nennt bis zu zwei Gerichte derselben Kategorie als Alternative - nur, was
-auf der Karte steht und heute zu haben ist (D8).
+One tap on the tablet marks a dish as sold out until the end of the business
+day (`menu_items.sold_out_until`). From then on `search_menu` returns it with
+`sold_out: true` and the sentence "heute aus", `draft_order` rejects it, and
+the agent names up to two dishes of the same category as an alternative - only
+what is on the menu and available today (D8).
 
-Betriebsschluss ist hier das Ende des Betriebstags (05:00 Ortszeit, core/time):
-danach bestellt niemand mehr, und am naechsten Morgen ist das Gericht von
-selbst wieder da, ohne dass jemand daran denken muss. Ein zweiter Tap nimmt den
-Schalter zurueck ("Wieder da"), fuer den Irrtum und die Nachlieferung.
+Closing time here is the end of the business day (05:00 local time,
+core/time): nobody orders after that, and the next morning the dish is back by
+itself without anyone having to remember. A second tap takes the switch back
+("Wieder da"), for a mistake or a late delivery.
 
-Jede Aenderung sperrt die Zeile und schreibt audit_log mit Wert davor und
-danach, wie die Schalter der Kopfzeile (domain/status/config.py).
+Every change locks the row and writes audit_log with the value before and
+after, like the switches in the header (domain/status/config.py).
 """
 
 import hashlib
@@ -29,12 +29,12 @@ from api.core.errors import NotFound
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.items import is_sold_out
 from api.domain.menu.normalize import normalize_query
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import CARD_PARTS, canonical_card
 from api.models import AuditLog, MenuItem
 
 ACTOR_TABLET = "gui:tablet"
 ACTION_SOLD_OUT = "menu_item.sold_out_changed"
-# Mehr als zwei Vorschlaege merkt sich am Telefon niemand (wie bei check_slot).
+# Nobody remembers more than two suggestions on the phone (as with check_slot).
 MAX_ALTERNATIVES = 2
 
 
@@ -47,10 +47,17 @@ class DishSwitch:
     sold_out: bool
 
 
-def number_key(number: str) -> tuple[int, str]:
-    """Kartenreihenfolge: 2 vor 12, 23 vor 23a. Nummern sind Text (docs/14)."""
-    match = re.match(r"\d+", number)
-    return (int(match.group()), number[match.end() :]) if match else (10**9, number)
+# A number in the search field: a digit first, also after a prefix ("s1", T-4.12).
+_NUMBER_START = re.compile(r"[a-z]{0,2}\d")
+
+
+def number_key(number: str) -> tuple[str, int, str]:
+    """Menu order: 2 before 12, 23 before 23a, numbers without a prefix before
+    S2 before S12 before SM1. Numbers are text (docs/14)."""
+    match = CARD_PARTS.fullmatch(number.lower())
+    if match is None:
+        return ("\uffff", 10**9, number)
+    return (match.group(1), int(match.group(2)), match.group(3))
 
 
 def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
@@ -67,14 +74,14 @@ def _matches(item: MenuItem, query: str) -> bool:
     said = query.strip()
     if not said:
         return True
-    # Eine Ziffer vorn kann auch ein Name sein ("8 Kostbarkeiten", Codex PR #146).
-    by_number = said[0].isdigit() and canonical_card(item.number).startswith(
-        canonical_card(said)
-    )
+    # A leading digit can also be a name ("8 Kostbarkeiten", Codex PR #146).
+    by_number = bool(_NUMBER_START.match(said.lower())) and canonical_card(
+        item.number
+    ).startswith(canonical_card(said))
     if by_number:
         return True
-    # normalize_query streicht Zahlen: "8 Kostbar" wird "kostbar", "2" wird leer
-    # und passt dann nicht auf jeden Namen.
+    # normalize_query drops numbers: "8 Kostbar" becomes "kostbar", "2" becomes
+    # empty - and an empty text must not match every name.
     name_part = normalize_query(said)
     return bool(name_part) and name_part in normalize_query(item.name)
 
@@ -125,9 +132,9 @@ def _sold_out_ids(
 def sold_out_change_token(
     session: Session, tenant_id: uuid.UUID, now: datetime | None = None
 ) -> str:
-    """Fingerabdruck fuer den Ereignisstrom: aendert sich, sobald ein Gericht
-    aus- oder wieder angeschaltet wird - auch am Morgen, wenn der Schalter
-    von selbst ablaeuft."""
+    """Fingerprint for the event stream: changes as soon as a dish is switched
+    off or on again - also in the morning, when the switch expires by
+    itself."""
     ids = _sold_out_ids(session, tenant_id, now or clock.utcnow())
     return hashlib.sha1(",".join(map(str, ids)).encode()).hexdigest()[:12]
 
@@ -141,8 +148,8 @@ def set_sold_out(
     now: datetime | None = None,
     actor: str = ACTOR_TABLET,
 ) -> MenuItem:
-    """Aus bis zum Ende des Betriebstags, oder wieder da. Ein Tap, keine
-    Rueckfrage (docs/06 §1 Regel 6: nur Loeschen und Stornieren fragen nach)."""
+    """Off until the end of the business day, or back again. One tap, no
+    confirmation (docs/06 §1 rule 6: only delete and cancel ask back)."""
     now = now or clock.utcnow()
     item = session.scalars(
         select(MenuItem)
@@ -183,8 +190,8 @@ def set_sold_out(
 
 
 def alternatives(session: Session, item: MenuItem, now: datetime) -> list[MenuItem]:
-    """Bis zu zwei Gerichte derselben Kategorie, die heute zu haben sind -
-    die naechsten nach der Nummer des ausverkauften, dann von vorn."""
+    """Up to two dishes of the same category that are available today - the
+    next ones after the number of the sold-out dish, then from the start."""
     same = [
         other
         for other in _active(session, item.tenant_id)

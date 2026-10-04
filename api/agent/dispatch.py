@@ -1,9 +1,10 @@
-"""Tool-Name → `domain`-Funktion, mit Zeitmessung (docs/11 §agent).
+"""Tool name → `domain` function, with timing (docs/11 §agent).
 
-Die direkte Entsprechung zu `api/tools/*.py`, aber ohne HTTP-Umweg: `agent/` darf
-`domain/` benutzen, nie `tools/` (docs/11 §2). Validierung, Fehlerübersetzung und
-der Eintrag in `calls.tool_calls` (docs/04 §Gemeinsame Regeln) laufen deshalb hier
-noch einmal, statt über FastAPI und `core/tool_log.py`s Middleware zu gehen.
+The direct counterpart to `api/tools/*.py`, but without the HTTP detour:
+`agent/` may use `domain/`, never `tools/` (docs/11 §2). Validation, error
+translation and the entry in `calls.tool_calls` (docs/04 §Gemeinsame Regeln)
+therefore run here once more, instead of going through FastAPI and the
+middleware in `core/tool_log.py`.
 """
 
 import json
@@ -26,6 +27,7 @@ from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu import get_item_details, search_menu
+from api.domain.menu.items import card_format
 from api.domain.menu.search import (
     CLEAR_MATCHES,
     allergy_question,
@@ -78,7 +80,7 @@ def _check_slot(
     return check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
 
 
-# Platzhalter, bis der Schluessel aus der geprueften Anfrage feststeht.
+# Placeholder until the key from the validated request is known.
 _PENDING = "pending"
 _KEY_EXCLUDE = {"idempotency_key", "call_id", "tenant_id"}
 
@@ -86,11 +88,11 @@ _KEY_EXCLUDE = {"idempotency_key", "call_id", "tenant_id"}
 def _with_derived_key[R: (CreateReservationRequest, DraftOrderRequest)](
     req: R, tool: str
 ) -> R:
-    """Der Schluessel aus der **geprueften** Anfrage desselben Anrufs, nie vom
-    Modell. Aus jedem gespeicherten Feld: eine geaenderte Notiz ("mit
-    Hochstuhl") ist ein neuer Entwurf. Aus der kanonischen Form: `options: []`
-    und ein weggelassenes Feld sind dasselbe, ein Modell-Retry legt keinen
-    zweiten Entwurf an (offene Punkte aus PR #127, T-4.10)."""
+    """The key from the **validated** request of the same call, never from the
+    model. Built from every stored field: a changed note ("mit Hochstuhl") is
+    a new draft. Built from the canonical form: `options: []` and an omitted
+    field are the same, so a model retry does not create a second draft (open
+    points from PR #127, T-4.10)."""
     canonical = json.dumps(
         _canonical(req).model_dump(mode="json", exclude=_KEY_EXCLUDE), sort_keys=True
     )
@@ -99,8 +101,8 @@ def _with_derived_key[R: (CreateReservationRequest, DraftOrderRequest)](
 
 
 def _canonical[R: (CreateReservationRequest, DraftOrderRequest)](req: R) -> R:
-    """Gleiche Angaben, gleiche Form: Rufnummer in E.164, Zeit in UTC - sonst
-    waere "07221 5551234" ein zweiter Entwurf (Review PR #139)."""
+    """Same details, same form: phone number in E.164, time in UTC - otherwise
+    "07221 5551234" would be a second draft (review PR #139)."""
     if isinstance(req, CreateReservationRequest):
         return req.model_copy(
             update={
@@ -126,11 +128,11 @@ def _create_reservation(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    # Der Schlüssel entscheidet Code, nie das Modell (CLAUDE.md §2 Regel 1): immer
-    # aus denselben Eingaben desselben Anrufs abgeleitet, damit ein Modell-Retry mit
-    # identischen Angaben nicht doppelt bucht. Einen Schlüssel vom Modell gibt es
-    # nicht - erfunden oder wiederverwendet holte er einen fremden Vorgang
-    # (Codex PR #127, P1).
+    # The code decides the key, never the model (CLAUDE.md §2 rule 1): always
+    # derived from the same inputs of the same call, so a model retry with
+    # identical details does not book twice. There is no key from the model -
+    # invented or reused, it would fetch someone else's transaction (Codex PR
+    # #127, P1).
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
     req = _with_derived_key(
         CreateReservationRequest(
@@ -148,7 +150,7 @@ def _confirm(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    # Der Schluessel wandert nur ins Protokoll; trotzdem vom Code, nie vom Modell.
+    # The key only goes into the log; still from the code, never from the model.
     key = idempotency_key(call_id, "confirm", args.get("entity"), args.get("entity_id"))
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
     req = ConfirmRequest(
@@ -186,7 +188,7 @@ class PositionResult(BaseModel):
     ok: bool
     match_type: str | None = None
     results: list[dict[str, Any]] = Field(default_factory=list)
-    # Wunsch zu diesem Teil (T-4.10): "ohne Karotten", eine Option der Karte, ...
+    # Wish for this part (T-4.10): "ohne Karotten", an option of the menu, ...
     wish: dict[str, Any] | None = None
     error_code: str | None = None
     say: str | None = None
@@ -195,8 +197,8 @@ class PositionResult(BaseModel):
 class PositionsResult(BaseModel):
     match_type: str = "positions"
     positions: list[PositionResult]
-    # Wiederholt sofort, was eindeutig verstanden wurde (Maxi, PR #127). Offene
-    # Teile behalten ihr eigenes say, der Agent fragt sie nacheinander.
+    # Repeats at once what was clearly understood (Maxi, PR #127). Open parts
+    # keep their own say; the agent asks about them one after the other.
     say: str | None = None
 
 
@@ -207,37 +209,47 @@ def _search_menu(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    """Ein Satz, eine Position (docs/04 §search_menu): nennt der Gast mehrere, wird
-    der Satz hier zerlegt und je Teil gesucht. Ueber HTTP antwortet search_menu
-    darauf mit ambiguous; der Agent bekommt stattdessen alle Teile in einem Zug.
-    Ein Teil ohne Treffer bleibt mit error_code und say sichtbar, statt still
-    wegzufallen."""
+    """One sentence, one position (docs/04 §search_menu): if the guest names
+    several, the sentence is split here and each part is searched. Over HTTP,
+    search_menu answers that with ambiguous; the agent gets all parts in one go
+    instead. A part without a hit stays visible with error_code and say instead
+    of silently dropping out."""
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    parts = position_parts(session, tenant_id, req.query, now=now)
+    # Read the menu once per tool call, not per part (code review PR #155).
+    card = card_format(session, tenant_id)
+    parts = position_parts(session, tenant_id, req.query, now=now, card=card)
     if len(parts) <= 1:
-        # Schon zerlegt: search_menu prueft nicht noch einmal (Review PR #139).
+        # Already split: search_menu does not check again (review PR #139).
         found = search_menu(
-            session, tenant_id, req.query, req.max_results, now=now, split_check=False
+            session,
+            tenant_id,
+            req.query,
+            req.max_results,
+            now=now,
+            split_check=False,
+            card=card,
         )
         if _repeats(found):
             echo = say_understood(
                 [(found.match_type, found.results[0], found.wish)], req.query
             )
-            # Eine Allergie wird mit wiederholt, ihr Satz aus der Domain folgt.
+            # An allergy is repeated as well; its sentence from the domain follows.
             return found.model_copy(update={"say": _join(echo, found.say)})
         return found
     positions = []
     understood = []
-    # Pflichtsaetze der Teile: "kann ich nicht anbieten" und der Hinweis zur
-    # Allergie gehoeren in den Satz der Antwort, sonst fielen sie in einer
-    # Aufzaehlung weg (Codex PR #139, P1).
+    # Mandatory sentences of the parts: "kann ich nicht anbieten" and the note
+    # about the allergy belong in the answer's sentence, otherwise they would
+    # be lost in a list (Codex PR #139, P1).
     notices: list[str] = []
-    # Gerichte, zu denen "Wogegen?" offen ist: gefragt wird nach dem ersten, die
-    # anderen folgen einzeln (Codex PR #139, P1).
+    # Dishes for which "Wogegen?" is open: the first one is asked about, the
+    # others follow one by one (Codex PR #139, P1).
     allergies: list[str] = []
     for part in parts:
         try:
-            found = search_menu(session, tenant_id, part, req.max_results, now=now)
+            found = search_menu(
+                session, tenant_id, part, req.max_results, now=now, card=card
+            )
         except AppError as exc:
             positions.append(
                 PositionResult(query=part, ok=False, error_code=exc.code, say=exc.say)
@@ -245,12 +257,12 @@ def _search_menu(
             continue
         if _repeats(found):
             understood.append((found.match_type, found.results[0], found.wish))
-        # Ausverkauft hat seinen eigenen Satz im Teil; hier nur die Saetze der
-        # Wuensche, sonst stuende "heute aus" zweimal da (Review PR #139).
+        # Sold out has its own sentence in the part; here only the sentences
+        # of the wishes, or "heute aus" would appear twice (review PR #139).
         sold_out = bool(found.results) and found.results[0].sold_out
-        # Mehrdeutig: erst die Wahl, im Teil gefragt; der Wunsch zaehlt danach.
-        # Sonst stuende die Auswahl doppelt da oder "Wogegen?" daneben (Codex und
-        # Review PR #139).
+        # Ambiguous: the choice comes first, asked in the part; the wish counts
+        # afterwards. Otherwise the choice would appear twice, or "Wogegen?"
+        # next to it (Codex and review PR #139).
         settled = not sold_out and found.match_type in CLEAR_MATCHES
         if (
             settled
@@ -286,9 +298,9 @@ def _search_menu(
 
 
 def _repeats(found: SearchResult) -> bool:
-    """Wird der Treffer sofort wiederholt? Nur ein eindeutiger, nicht
-    ausverkaufter; ein Wunsch, den die Karte nicht kennt, hat seinen eigenen
-    Satz (D8), eine Allergie wird mit wiederholt (T-4.10)."""
+    """Is the hit repeated at once? Only a clear one that is not sold out; a
+    wish the menu does not know has its own sentence (D8), an allergy is
+    repeated as well (T-4.10)."""
     if found.match_type not in CLEAR_MATCHES or not found.results:
         return False
     if found.results[0].sold_out:
@@ -323,12 +335,12 @@ def _draft_order(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    # Wie bei create_reservation: der Schluessel kommt aus den Angaben desselben
-    # Anrufs. Ein Modell-Retry mit denselben Positionen legt keinen zweiten
-    # Entwurf an; eine Korrektur (andere Menge, andere Option) ergibt einen
-    # neuen Entwurf mit neuem readback.
+    # As with create_reservation: the key comes from the details of the same
+    # call. A model retry with the same positions does not create a second
+    # draft; a correction (other quantity, other option) gives a new draft
+    # with a new readback.
     rest = {k: v for k, v in args.items() if k != "idempotency_key"}
-    # Wie bei create_reservation nie der Schluessel des Modells (Codex PR #127).
+    # As with create_reservation, never the model's key (Codex PR #127).
     req = _with_derived_key(
         DraftOrderRequest(
             call_id=call_id, tenant_id=tenant_id, idempotency_key=_PENDING, **rest
@@ -376,10 +388,10 @@ def dispatch(
         )
         error_code: str | None = None
     except AppError as exc:
-        # Wie `api/db.py`s `get_db` bei einem HTTP-Fehler: die Sitzung lebt hier über
-        # den ganzen Anruf weiter statt je Tool-Aufruf frisch zu sein, ein Rollback
-        # verhindert, dass ein nicht committeter Rest eines fehlgeschlagenen
-        # Fach-Aufrufs beim nächsten Tool-Aufruf mit hochgezogen wird.
+        # Like `get_db` in `api/db.py` on an HTTP error: here the session lives
+        # for the whole call instead of being fresh per tool call, and a
+        # rollback keeps an uncommitted remainder of a failed domain call from
+        # being carried into the next tool call.
         session.rollback()
         outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code)
         error_code = exc.code
@@ -390,7 +402,7 @@ def dispatch(
         entry["error_code"] = error_code
     try:
         append_tool_call(session, str(call_id), str(tenant_id), entry)
-    except Exception:  # noqa: BLE001 - Protokoll darf die Antwort nie kippen
+    except Exception:  # noqa: BLE001 - logging must never break the answer
         log(
             logger,
             logging.WARNING,

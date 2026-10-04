@@ -1,30 +1,30 @@
-"""search_menu: vom Gesagten zur menu_item_id (docs/04 §search_menu, T-4.3).
+"""search_menu: from what was said to the menu_item_id (docs/04 §search_menu, T-4.3).
 
-Die Auflösungsreihenfolge aus docs/04, streng in dieser Reihenfolge:
+The resolution order from docs/04, strictly in this order:
 
-1. Nummer -> exakter Treffer auf die Kartennummer (`exact_number`), aber nur,
-   wenn der ganze Satz genau eine Nummer ist (Regel A, numberwords.
-   sole_item_number). Steht mehr daneben - eine zweite Zahl, ein Name, "oder" -
-   ist das `ambiguous` mit der Frage nach der einen Nummer. Nennt der Gast eine
-   Nummer, die es nicht gibt, ist das `not_found`; die Suche weicht dann nicht
-   auf ähnliche Namen aus (CLAUDE.md §2 Regel 2).
-2. Alias exakt (`alias`). Hängt derselbe Alias an mehreren Gerichten, ist das
-   `ambiguous` - der Importer hat davor gewarnt, die Suche fragt nach.
-3. Unscharf über Name und Aliase (pg_trgm): genau ein Treffer über der hohen
-   Schwelle -> `fuzzy_single`; sonst alle über der niedrigen -> `ambiguous`
-   mit höchstens drei Vorschlägen; keiner -> `not_found`.
+1. Number -> exact hit on the card number (`exact_number`), but only if the
+   whole sentence is exactly one number (rule A, numberwords.
+   sole_item_number). If there is more next to it - a second number, a name,
+   "oder" - that is `ambiguous`, asking for the one number. If the guest names
+   a number that does not exist, that is `not_found`; the search then does not
+   fall back to similar names (CLAUDE.md §2 rule 2).
+2. Exact alias (`alias`). If the same alias is attached to several dishes,
+   that is `ambiguous` - the importer warned about it, the search asks back.
+3. Fuzzy over name and aliases (pg_trgm): exactly one hit above the high
+   threshold -> `fuzzy_single`; otherwise all above the low one -> `ambiguous`
+   with at most three suggestions; none -> `not_found`.
 
-Gesucht wird nur in aktiven Gerichten. Ausverkaufte kommen mit `sold_out: true`
-und einem Satz zurück: der Agent soll sagen, dass es heute aus ist, statt so zu
-tun, als gäbe es das Gericht nicht.
+Only active dishes are searched. Sold-out ones come back with `sold_out: true`
+and a sentence: the agent should say it is out today instead of acting as if
+the dish did not exist.
 
-Die unscharfe Suche läuft in zwei Schritten: erst ein Vorfilter mit den
-Operatoren `%` und `<%`, der die GIN-Indizes auf `menu_items.name` und
-`item_aliases.alias` benutzt, dann die genauen Werte nur auf den Treffern. Der
-Vorfilter vergleicht gegen die Schwellen der Sitzung, die dafür auf dieselbe
-niedrige Schwelle gesetzt werden - er ist damit deckungsgleich mit der
-Bedingung und schneidet nichts weg. Bei ein paar hundert Zeilen ist der
-Unterschied klein, mit wachsender Karte trägt der Index die Suche.
+The fuzzy search runs in two steps: first a prefilter with the operators `%`
+and `<%`, which uses the GIN indexes on `menu_items.name` and
+`item_aliases.alias`, then the exact scores only on the hits. The prefilter
+compares against the session thresholds, which are set to the same low
+threshold for this - so it matches the condition and cuts nothing off. With a
+few hundred rows the difference is small; as the menu grows, the index carries
+the search.
 """
 
 import uuid
@@ -39,10 +39,14 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.errors import Ambiguous, NotFound
 from api.core.time import utcnow
+from api.domain.menu.items import card_format, option_groups
 from api.domain.menu.items import is_sold_out as _sold_out
-from api.domain.menu.items import option_groups
 from api.domain.menu.normalize import normalize_alias, normalize_query
-from api.domain.menu.numberwords import sole_item_number
+from api.domain.menu.numberwords import (
+    CardFormat,
+    canonical_card,
+    sole_item_number,
+)
 from api.domain.menu.sold_out import alternatives
 from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
 from api.domain.menu.wishes import (
@@ -65,22 +69,22 @@ SAY_NO_SUCH_NUMBER = (
 )
 SAY_WHICH_NUMBER = "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer."
 SAY_SOLD_OUT = "{name} ist heute leider aus."
-# Alternative aus derselben Kategorie, nur was heute zu haben ist (T-4.8, D8).
+# Alternative from the same category, only what is available today (T-4.8, D8).
 SAY_ALTERNATIVES = "Stattdessen hätte ich {items}."
-# Mehrere Positionen in einem Satz: der Gast darf das, und er muss nichts
-# wiederholen (Maxi, PR #127). Ueber HTTP fragt der Aufrufer danach je Teil.
+# Several positions in one sentence: the guest may do that and does not have to
+# repeat anything (Maxi, PR #127). Over HTTP the caller then asks per part.
 SAY_IN_TURN = "Einen Moment, ich nehme das der Reihe nach auf."
-# Wuensche (T-4.10, D8). Was die Karte nicht kennt, wird nicht angeboten; die
-# Allergie geht ohne Zusage an die Kueche. Der Wortlaut zur Allergie ist ein
-# Entwurf und wird vor dem Echtbetrieb mit dem Rechts-Check abgestimmt (docs/09).
+# Wishes (T-4.10, D8). What the menu does not know is not offered; the allergy
+# goes to the kitchen without a promise. The wording about the allergy is a
+# draft and is agreed with the legal check before live operation (docs/09).
 SAY_WISH_UNKNOWN = (
     "Den Wunsch „{wish}“ kann ich leider nicht anbieten. {name} nehme ich so auf, "
     "wie es auf der Karte steht."
 )
 SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
 SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
-# Mehrere Gerichte mit Allergie ohne Zutat: eine Frage nach der anderen, jede
-# mit ihrem Gericht (Codex PR #139, P1).
+# Several dishes with an allergy but no ingredient: one question after the
+# other, each with its dish (Codex PR #139, P1).
 SAY_ALLERGY_WHICH_FOR = (
     "Wogegen sind Sie bei {name} allergisch? Das gebe ich an die Küche weiter."
 )
@@ -95,9 +99,9 @@ SAY_UNDERSTOOD = (
     "{items}, sehr gern.",
 )
 AMBIGUOUS_LIMIT = 3
-# Abstand der Sitzungsschwelle zur eigentlichen Schwelle, damit der Vorfilter
-# sicher eine Obermenge bleibt. Klein genug, um keine echte Zeile zusaetzlich
-# zu holen, gross genug fuer den Vergleich in float4.
+# Distance of the session threshold from the actual threshold, so the prefilter
+# safely stays a superset. Small enough not to fetch a real extra row, large
+# enough for the comparison in float4.
 PREFILTER_EPSILON = 1e-4
 
 
@@ -105,21 +109,31 @@ def _active(tenant_id: uuid.UUID) -> tuple:
     return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
 
 
-def _by_number(session: Session, tenant_id: uuid.UUID, spoken: str) -> list[MenuItem]:
-    """Aktive Gerichte zu einer gesagten Kartennummer.
+def _by_number(
+    session: Session, tenant_id: uuid.UUID, spoken: tuple[str, ...] | list[str]
+) -> list[MenuItem]:
+    """Active dishes for the card numbers that were said.
 
-    Verglichen wird der Text ohne führende Nullen: "07" findet 7, "acht" findet
-    08. Die Kartennummer ist Text (docs/14), eine Umwandlung über int verlöre
-    "23a" (Befund Codex PR #116); Zahl, Buchstabe und Marker stammen aus
-    derselben Stelle im Satz (Befund Codex PR #117).
+    The text is compared without leading zeros of the number: "07" finds 7,
+    "acht" finds 08, "S7" finds S07 (numberwords.canonical_card, here in SQL).
+    The card number is text (docs/14); converting via int would lose "23a"
+    (Codex PR #116). Number, letter and marker come from the same place in the
+    sentence (Codex PR #117). Several numbers come from a category word
+    ("Sushi zwölf" is S12 or SM12, T-4.12).
     """
-    stored = func.lower(
-        func.coalesce(func.nullif(func.ltrim(MenuItem.number, "0"), ""), "0")
+    if isinstance(spoken, str):
+        # A str would be looked up character by character (review PR #155).
+        raise TypeError("pass card numbers as a sequence, not as a str")
+    stored = func.regexp_replace(
+        func.lower(func.btrim(MenuItem.number)), "^([a-z]*)0*([0-9])", "\\1\\2"
     )
     return list(
         session.scalars(
             select(MenuItem)
-            .where(*_active(tenant_id), stored == (spoken.lstrip("0") or "0"))
+            .where(
+                *_active(tenant_id),
+                stored.in_(sorted({canonical_card(n) for n in spoken})),
+            )
             .order_by(MenuItem.number)
         )
     )
@@ -150,8 +164,8 @@ def _single(
 
 
 def _sold_out_say(session: Session, item: MenuItem, now: datetime) -> str:
-    """ "Heute aus" plus bis zu zwei Gerichte derselben Kategorie (docs/06 §3:
-    der Agent nennt eine Alternative). Ohne Alternative nur der erste Satz."""
+    """ "Heute aus" plus up to two dishes of the same category (docs/06 §3: the
+    agent names an alternative). Without an alternative only the first sentence."""
     others = alternatives(session, item, now)
     if not others:
         return SAY_SOLD_OUT.format(name=item.name)
@@ -178,22 +192,22 @@ CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
 def say_understood(
     understood: list[tuple[str, MenuHit, Wish | None]], said: str
 ) -> str | None:
-    """Wiederholt sofort, was eindeutig verstanden wurde - so, wie ein Mensch am
-    Telefon es tut (Maxi, PR #127).
+    """Repeats at once what was clearly understood - the way a person on the
+    phone does (Maxi, PR #127).
 
-    Hat der Gast eine Nummer genannt, kommt nur die Nummer zurueck ("Nummer 9").
-    Hat er das Gericht beschrieben ("Süß Sauer mit Ente"), kommt der Name der
-    Karte mit Nummer ("Nummer 25a Ente süß-sauer"): nicht das Gesagte, sondern
-    das, was das System daraus gemacht hat - ein falscher Treffer faellt so
-    sofort auf. Ohne Menge, die kommt mit dem readback von draft_order.
+    If the guest named a number, only the number comes back ("Nummer 9"). If
+    they described the dish ("Süß Sauer mit Ente"), the menu's name comes back
+    with the number ("Nummer 25a Ente süß-sauer"): not what was said, but what
+    the system made of it - a wrong hit is noticed at once that way. Without
+    the quantity; that comes with the readback from draft_order.
 
-    Die Einleitung wechselt, damit es nicht wie eine Ansage klingt. Gewaehlt
-    wird aus dem Gesagten, nicht zufaellig: ein Replay sagt dasselbe (docs/08).
-    `understood` sind match_type, Treffer und Wunsch; leer heisst kein Satz.
+    The opening varies so it does not sound like an announcement. It is chosen
+    from what was said, not at random: a replay says the same (docs/08).
+    `understood` holds match_type, hit and wish; empty means no sentence.
 
-    Ein Wunsch wird mit wiederholt, damit der Gast hoert, dass er notiert ist:
-    "Nummer 23, ohne Karotten", "Nummer 47 Ente knusprig mit Nudeln, 3 Euro
-    Aufpreis" - der Aufpreis aus der Karte, nie vom Modell (T-4.10).
+    A wish is repeated as well, so the guest hears that it was noted: "Nummer
+    23, ohne Karotten", "Nummer 47 Ente knusprig mit Nudeln, 3 Euro Aufpreis" -
+    the surcharge from the menu, never from the model (T-4.10).
     """
     names = [
         _with_wish(
@@ -212,13 +226,13 @@ def say_understood(
 
 
 def _with_wish(item: str, wish: Wish | None) -> str:
-    # Unbekannt hat einen eigenen Satz, offen ist noch nicht entschieden, und die
-    # Allergie steht im Satz danach (SAY_ALLERGY_NOTE) - hier nur das Gericht.
+    # Unknown has its own sentence, open is not decided yet, and the allergy is
+    # in the sentence after it (SAY_ALLERGY_NOTE) - here only the dish.
     if wish is None or wish.kind in ("unknown", "open", "allergy"):
         return item
     if wish.kind != "option":
         return f"{item}, {wish.text}"
-    # Import hier: ordering importiert search (validation), oben waere es zirkulaer.
+    # Import here: ordering imports search (validation); at the top it would be circular.
     from api.domain.ordering.readback import spoken_euro
 
     delta = wish.price_delta_cents or 0
@@ -241,11 +255,12 @@ def position_parts(
     now: datetime | None = None,
     high: float | None = None,
     low: float | None = None,
+    card: CardFormat | None = None,
 ) -> list[str]:
-    """Die Positionen eines Satzes (`_position_parts`). Ein Teil, der mit einer
-    eigenen Allergie beginnt ("und einer Sesamallergie"), ist keine neue
-    Position, sondern gehoert zur davor (Codex PR #139, P1)."""
-    parts = _position_parts(session, tenant_id, query, now, high, low)
+    """The positions of a sentence (`_position_parts`). A part that starts with
+    an allergy of its own ("und einer Sesamallergie") is not a new position; it
+    belongs to the one before (Codex PR #139, P1)."""
+    parts = _position_parts(session, tenant_id, query, now, high, low, card)
     return _keep_allergy_clauses(query, parts)
 
 
@@ -253,8 +268,8 @@ def _keep_allergy_clauses(query: str, parts: list[str]) -> list[str]:
     if len(parts) <= 1 or not any(opens_with_allergy(p) for p in parts):
         return parts
     if opens_with_allergy(parts[0]):
-        # Vorn im Satz: sie gehoert zum ersten Gericht danach, als Wunsch hinter
-        # dem Gericht (Review PR #139).
+        # At the start of the sentence: it belongs to the first dish after it,
+        # as a wish behind the dish (review PR #139).
         rest = _keep_allergy_clauses(query, parts[1:])
         if opens_with_allergy(rest[0]):
             return parts
@@ -283,22 +298,24 @@ def _position_parts(
     now: datetime | None,
     high: float | None,
     low: float | None,
+    card: CardFormat | None = None,
 ) -> list[str]:
-    """Die Positionen eines Satzes: erst nach dem Satz (`split_positions`), dann
-    mit der Karte.
+    """The positions of a sentence: first by the sentence (`split_positions`),
+    then with the menu.
 
-    "die 23 und Pho Bo": "Pho Bo" eroeffnet ohne Menge keine Position, der Satz
-    allein bliebe ganz, und die Namenssuche ueber den ganzen Satz faende nur Pho
-    Bo - die 23 fiele still weg (Codex PR #127, P1). Trifft jedes Stueck an den
-    Trennern fuer sich eindeutig ein **anderes** Gericht, sind es mehrere
-    Positionen. Trifft eines nichts oder dasselbe, war das "und" Teil eines
-    Namens ("Ente süß und sauer"), und der Satz bleibt ganz.
+    "die 23 und Pho Bo": without a quantity "Pho Bo" does not open a position,
+    the sentence alone would stay whole, and the name search over the whole
+    sentence would find only Pho Bo - the 23 would silently drop out (Codex PR
+    #127, P1). If every piece at the separators clearly hits a **different**
+    dish on its own, these are several positions. If one hits nothing or the
+    same dish, the "und" was part of a name ("Ente süß und sauer"), and the
+    sentence stays whole.
 
-    Vorher gelten zusammenhaengende Stuecke: steht der ganze Satz oder ein Teil
-    davon selbst so auf der Karte ("Fisch und Chips" als Alias oder als Name),
-    ist er ein Gericht, auch wenn "Fisch" und "Chips" es einzeln auch sind -
-    auch mitten in einer Aufzaehlung ("Fisch und Chips und Pho Bo", Codex PR
-    #127, P1). Gesucht wird von links, das laengste Stueck zuerst.
+    Connected pieces come first: if the whole sentence or a part of it is on
+    the menu as such ("Fisch und Chips" as an alias or as a name), it is one
+    dish, even if "Fisch" and "Chips" are dishes on their own too - also in
+    the middle of a list ("Fisch und Chips und Pho Bo", Codex PR #127, P1).
+    The search goes from the left, longest piece first.
     """
     parts = split_positions(query)
     if len(parts) > 1:
@@ -306,22 +323,29 @@ def _position_parts(
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
+    # Read the menu once, not per piece and span (review PR #155).
     search = partial(
-        search_menu, session, tenant_id, now=now, high=high, low=low, split_check=False
+        search_menu,
+        session,
+        tenant_id,
+        now=now,
+        high=high,
+        low=low,
+        split_check=False,
+        card=card if card is not None else card_format(session, tenant_id),
     )
     spans = _spans(query, pieces)
-    # Laenger als der laengste Name oder Alias der Karte kann keine Spanne ein
-    # Gericht sein. Ohne Grenze pruefte eine Aufzaehlung von 20 Gerichten rund
-    # 190 Spannen (Codex PR #127, P2); so sind es hoechstens eine je Stueck, wenn
-    # die Karte Namen mit einem "und" hat, und keine, wenn nicht.
+    # No span can be a dish if it is longer than the longest name or alias on
+    # the menu. Without a limit, a list of 20 dishes checked about 190 spans
+    # (Codex PR #127, P2); this way it is at most one per piece if the menu has
+    # names with an "und", and none if it does not.
     longest = _longest_dish(session, tenant_id)
     positions: list[str] = []
-    # Je Gericht die Worte, mit denen es genannt wurde. "Pho Bo und Pho Bo" sind
-    # zwei Portionen (Codex PR #127, P1); "Pho und Pho Bo" trifft dasselbe mit
-    # anderen Worten - das kann eine Praezisierung sein, der Satz bleibt ganz.
-    # Zaehlt fuer zusammengesetzte Gerichte genauso: "Fisch und Chips und
-    # Backfisch mit Pommes" nennt dasselbe Gericht mit anderen Worten (Codex PR
-    # #127, P1).
+    # Per dish, the words it was named with. "Pho Bo und Pho Bo" are two
+    # portions (Codex PR #127, P1); "Pho und Pho Bo" hits the same dish with
+    # other words - that can be a clarification, and the sentence stays whole.
+    # The same holds for compound dishes: "Fisch und Chips und Backfisch mit
+    # Pommes" names the same dish with other words (Codex PR #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
     i = 0
     while i < len(pieces):
@@ -367,8 +391,8 @@ def _longest_dish(session: Session, tenant_id: uuid.UUID) -> int:
 
 
 def _spans(query: str, pieces: list[str]) -> list[tuple[int, int]]:
-    """Wo jedes Stueck im Satz steht, damit benachbarte Stuecke mit ihrem
-    Trenner wieder zusammengesetzt werden koennen, wie der Gast sie sagte."""
+    """Where each piece is in the sentence, so neighbouring pieces can be put
+    back together with their separator, the way the guest said them."""
     spans = []
     start = 0
     for piece in pieces:
@@ -385,21 +409,21 @@ def _whole_dish(
     query: str,
     pieces: list[str],
 ) -> set[uuid.UUID]:
-    """Ist der ganze Satz genau ein Gericht der Karte: Alias oder derselbe Name?
-    Liefert die Gerichte, die er so trifft - mehrere bei einem doppelten Alias,
-    keins, wenn er kein ganzes Gericht ist.
-    Unscharf zaehlt nicht - "die 23 und Pho Bo" traefe unscharf Pho Bo.
+    """Is the whole sentence exactly one dish on the menu: an alias or the same
+    name? Returns the dishes it hits that way - several for a duplicate alias,
+    none if it is not a whole dish.
+    Fuzzy does not count - "die 23 und Pho Bo" would fuzzily hit Pho Bo.
 
-    Verglichen wird in der Form der Suche (normalize_query): "einmal Fisch und
-    Chips, bitte" ist der Name mit Menge und Fuellwort (Codex PR #127, P1). Die
-    Form wirft auch Nummern weg, aus "Pho Bo und die 23" bliebe "pho bo". Darum
-    muss jedes Stueck dabei Inhalt behalten: "die 23" allein ist ein eigenes
-    Gericht, kein Teil des Namens. Das gilt auch fuer den Alias: "die 23 und
-    Pho" traefe sonst den Alias "Pho" (Codex PR #127, P1).
+    The comparison uses the form of the search (normalize_query): "einmal Fisch
+    und Chips, bitte" is the name with a quantity and filler word (Codex PR
+    #127, P1). That form also drops numbers; "Pho Bo und die 23" would become
+    "pho bo". So every piece must keep content: "die 23" alone is a dish of its
+    own, not part of the name. The same holds for the alias: "die 23 und Pho"
+    would otherwise hit the alias "Pho" (Codex PR #127, P1).
 
-    Ein Alias zaehlt auch, wenn er an mehreren Gerichten haengt: dann fragt die
-    Suche ueber den ganzen Satz, welches gemeint ist, statt die Stuecke als
-    Positionen zu nehmen (Codex PR #127, P2)."""
+    An alias also counts if it is attached to several dishes: then the search
+    asks over the whole sentence which one is meant, instead of taking the
+    pieces as positions (Codex PR #127, P2)."""
     if not all(normalize_query(p) for p in pieces):
         return set()
     by_alias = _alias_items(session, tenant_id, query)
@@ -440,13 +464,13 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
 
 
 def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
-    """Der Satz, den ein Wunsch braucht: nicht angeboten (D8), die Frage nach der
-    Gruppe einer Option, die in zweien steht, oder der Hinweis zur Allergie ohne
-    Zusage (E14). Weglassen und Optionen brauchen keinen, sie werden mit
-    wiederholt (`say_understood`)."""
+    """The sentence a wish needs: not offered (D8), the question for the group
+    of an option that is in two of them, or the note about the allergy without
+    a promise (E14). Leaving out and options need none; they are repeated as
+    well (`say_understood`)."""
     if wish.kind == "unknown":
         sentence = SAY_WISH_UNKNOWN.format(wish=wish.text, name=hit.name)
-        # Das Weglassen dazu gilt trotzdem ("ohne Zwiebeln, dafür mit Pommes").
+        # The leaving-out that comes with it still applies ("ohne Zwiebeln, dafür mit Pommes").
         return f"{sentence} Notiert: {wish.note}." if wish.note else sentence
     if wish.kind == "open" and wish.groups:
         return SAY_WISH_WHICH_GROUP.format(
@@ -460,8 +484,8 @@ def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
 
 
 def allergy_question(names: list[str], named: bool | None = None) -> str | None:
-    """Die Frage nach der ersten offenen Allergie. Bei mehreren nennt sie das
-    Gericht, damit die Antwort zu ihm gehoert - auch die letzte der Reihe
+    """The question for the first open allergy. With several, it names the
+    dish so the answer belongs to it - also for the last one in the row
     (`named`)."""
     if not names:
         return None
@@ -476,8 +500,8 @@ def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem |
     if len(by_alias) == 1:
         return by_alias[0]
     said = normalize_query(text)
-    # Die Namen der Karte einmal je Sitzung, nicht bei jeder Suche mit Wunsch neu
-    # (Review PR #139); aktiv wird beim Treffer geprueft.
+    # The menu's names once per session, not again for every search with a wish
+    # (review PR #139); active is checked on the hit.
     names = session.info.setdefault("menu_names", {})
     if tenant_id not in names:
         names[tenant_id] = [
@@ -501,20 +525,29 @@ def _search_with_wish(
     now: datetime,
     high: float,
     low: float,
+    card: CardFormat,
 ) -> SearchResult | None:
-    """Das Gericht ohne den Wunsch suchen, den Wunsch dazu einordnen (T-4.10).
+    """Search the dish without the wish, then classify the wish for it (T-4.10).
 
-    None heisst: die normale Suche ueber den ganzen Satz entscheidet, weil das
-    Gericht ohne Wunsch nichts findet. Gesucht wird einmal, mit dem Gericht der
-    ersten Trennung. Gehoert deren Satzteil zum Namen ("Sommerrollen mit
-    Garnelen"), gilt der naechste Wunsch fuer dasselbe Gericht ("... ohne
-    Koriander") - ohne zweite Suche, die scheitern koennte (Codex und Review
-    PR #139).
+    None means: the normal search over the whole sentence decides, because the
+    dish without the wish finds nothing. The search runs once, with the dish of
+    the first split. If that part of the sentence belongs to the name
+    ("Sommerrollen mit Garnelen"), the next wish applies to the same dish
+    ("... ohne Koriander") - without a second search that could fail (Codex and
+    review PR #139).
     """
     dish = candidates[0][0]
     try:
         found = search_menu(
-            session, tenant_id, dish, max_results, now, high, low, split_check=False
+            session,
+            tenant_id,
+            dish,
+            max_results,
+            now,
+            high,
+            low,
+            split_check=False,
+            card=card,
         )
     except (Ambiguous, NotFound):
         return None
@@ -522,17 +555,17 @@ def _search_with_wish(
         return None
     hit = found.results[0]
     first = 0
-    # Ist "Gericht + erster Satzteil" selbst ein Gericht ("Pizza mit Salami"
-    # neben "Pizza" oder "Pizza mit Pilzen"), gilt dieses, und erst der naechste
-    # Satzteil ist der Wunsch (Codex PR #139).
+    # If "dish + first part of the sentence" is a dish itself ("Pizza mit
+    # Salami" next to "Pizza" or "Pizza mit Pilzen"), that one applies, and only
+    # the next part of the sentence is the wish (Codex PR #139).
     named = _named_dish(session, tenant_id, f"{dish} {candidates[0][2]}")
     clear = found.match_type in CLEAR_MATCHES
     if named is not None and (not clear or named.id != hit.menu_item_id):
         found = _single(session, "alias", named, now)
         hit, first = found.results[0], 1
     elif not clear:
-        # Gehoert der Satzteil zum Namen eines der Treffer, entscheidet der ganze
-        # Satz (Codex PR #139).
+        # If the part of the sentence belongs to the name of one of the hits,
+        # the whole sentence decides (Codex PR #139).
         if any(names_it(h.name, candidates[0][2]) for h in found.results):
             return None
         return found.model_copy(update={"wish": open_wish(candidates[0][1])})
@@ -555,25 +588,30 @@ def search_menu(
     low: float | None = None,
     *,
     split_check: bool = True,
+    card: CardFormat | None = None,
 ) -> SearchResult:
-    """`split_check=False` nur fuer `position_parts`: die Suche je Stueck und ueber
-    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen."""
+    """`split_check=False` only for `position_parts`: the search per piece and
+    over the whole sentence must not run the check for several positions again.
+    `card`: the card format, if the caller has already read it."""
     now = now or utcnow()
+    # Which prefixes a number can carry ("S12") is decided by the menu
+    # (T-4.12); read once per search, including the recursive calls.
+    card = card if card is not None else card_format(session, tenant_id)
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
 
-    # Die Positionen des Satzes werden hoechstens einmal bestimmt, auch wenn ein
-    # Wunsch darin steht (Review PR #139).
+    # The positions of the sentence are determined at most once, even if there
+    # is a wish in it (review PR #139).
     parts: list[str] | None = None
     candidates = wish_candidates(query)
     if candidates and not has_number(candidates[0][1]):
         if split_check:
             parts = position_parts(
-                session, tenant_id, query, now=now, high=high, low=low
+                session, tenant_id, query, now=now, high=high, low=low, card=card
             )
         if parts is None or len(parts) <= 1:
             found = _search_with_wish(
-                session, tenant_id, candidates, max_results, now, high, low
+                session, tenant_id, candidates, max_results, now, high, low, card
             )
             if found is not None:
                 return found
@@ -581,69 +619,73 @@ def search_menu(
 
     text = normalize_query(query)
 
-    # 1. Nummer - Regel A: direkt nur, wenn der ganze Satz genau eine Nummer
-    # ist ("Nummer 23", "die 23", "zweimal die 23"). Steht mehr daneben (eine
-    # zweite Zahl, ein Name, "oder"), fragt die Suche nach, statt eine Zahl zu
-    # wählen. Ohne "Nummer" ist eine Zahl neben einem Namen eine Menge ("zwei
-    # Frühlingsrollen") und die Namenssuche entscheidet.
-    ref, unclear = sole_item_number(query)
+    # 1. Number - rule A: directly only if the whole sentence is exactly one
+    # number ("Nummer 23", "die 23", "zweimal die 23"). If there is more next
+    # to it (a second number, a name, "oder"), the search asks back instead of
+    # choosing a number. Without "Nummer", a number next to a name is a
+    # quantity ("zwei Frühlingsrollen") and the name search decides.
+    ref, unclear = sole_item_number(query, card)
     if unclear:
         raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
     if ref is not None:
-        # "23g": eine Endung, die es auf keiner Karte gibt, ist nicht die 23.
-        items = _by_number(session, tenant_id, ref.text) if ref.valid else []
+        # "23h": a suffix that no menu has is not the 23.
+        items = _by_number(session, tenant_id, ref.cards) if ref.valid else []
         if not items:
             raise NotFound(
                 f"Nummer {ref.text} nicht auf der Karte",
                 say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
         if len(items) > 1:
-            # "7" und "07" auf derselben Karte: nachfragen statt wählen.
+            # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
+            # ask back instead of choosing.
             return _ambiguous(session, items[:limit], now)
         return _single(session, "exact_number", items[0], now)
 
     if not text:
         raise NotFound("Anfrage ohne Inhalt", say=SAY_NOT_FOUND)
 
-    # Ein Satz, eine Position: nennt der Satz mehrere, fragt die Suche nach,
-    # statt die Namenssuche über den ganzen Satz laufen zu lassen - die fände
-    # eine und verschluckte die andere still (Codex PR #124, P1). Zerlegt wird
-    # hier nichts; die Teile stehen in der Meldung, der Aufrufer fragt je Teil.
+    # One sentence, one position: if the sentence names several, the search
+    # asks back instead of running the name search over the whole sentence -
+    # that would find one and silently swallow the other (Codex PR #124, P1).
+    # Nothing is split here; the parts are in the message, the caller asks per
+    # part.
     if parts is None:
         parts = (
-            position_parts(session, tenant_id, query, now=now, high=high, low=low)
+            position_parts(
+                session, tenant_id, query, now=now, high=high, low=low, card=card
+            )
             if split_check
             else [query]
         )
     if len(parts) > 1:
         raise Ambiguous("mehrere Positionen: " + " | ".join(parts), say=SAY_IN_TURN)
 
-    # 2. Alias exakt. Aliase stehen wie aus der Karte da, oft mit Artikel ("die
-    # knusprigen rollen"), der Gast sagt "die knusprigen Rollen, bitte". Beide
-    # Seiten werden deshalb ohne Füllwörter verglichen. In Python statt SQL:
-    # normalize_query gibt es nur hier, und eine Karte hat ein paar hundert
-    # Aliase - das ist ein Index-Scan und eine Schleife, keine Last.
+    # 2. Exact alias. Aliases are stored as on the menu, often with an article
+    # ("die knusprigen rollen"); the guest says "die knusprigen Rollen, bitte".
+    # So both sides are compared without filler words. In Python instead of
+    # SQL: normalize_query exists only here, and a menu has a few hundred
+    # aliases - that is one index scan and a loop, not a load.
     by_alias = _alias_items(session, tenant_id, query)
     if len(by_alias) == 1:
         return _single(session, "alias", by_alias[0], now)
     if by_alias:
         return _ambiguous(session, list(by_alias)[:limit], now)
 
-    # 3. Unscharf: das bessere von Name und bestem Alias, je Gericht.
+    # 3. Fuzzy: the better of name and best alias, per dish.
     #
-    # Zwei Schritte, weil nur der erste den GIN-Index benutzen kann: die
-    # Operatoren % und <% schlagen im Index nach, ein greatest(similarity(...))
-    # im WHERE muss jede aktive Zeile anfassen (Codex PR #117, P2).
+    # Two steps, because only the first can use the GIN index: the operators %
+    # and <% look up in the index, a greatest(similarity(...)) in the WHERE has
+    # to touch every active row (Codex PR #117, P2).
     #
-    # Der Vorfilter ist bewusst eine Obermenge, nicht die genaue Bedingung: die
-    # Sitzungsschwelle liegt eine Winzigkeit unter `low`. Ob die Operatoren auf
-    # ">" oder ">=" gegen ihre Schwelle pruefen, haengt an der Version; ein
-    # Treffer genau auf der Schwelle waere sonst schon hier weg, obwohl
-    # `total >= low` ihn behalten wuerde (Codex PR #117, P2). Entschieden wird
-    # ohnehin unten in der Abfrage, der Vorfilter spart nur Zeilen.
+    # The prefilter is a superset on purpose, not the exact condition: the
+    # session threshold is a tiny bit below `low`. Whether the operators check
+    # with ">" or ">=" against their threshold depends on the version; a hit
+    # exactly on the threshold would otherwise be gone here already, although
+    # `total >= low` would keep it (Codex PR #117, P2). The decision is made
+    # in the query below anyway; the prefilter only saves rows.
     #
-    # `SET LOCAL` ueber set_config(..., true): die Werte gelten nur fuer diese
-    # Transaktion und bleiben nicht an der Verbindung aus dem Pool haengen.
+    # `SET LOCAL` via set_config(..., true): the values apply only to this
+    # transaction and do not stick to the connection from the pool.
     grenze = max(0.0, low - PREFILTER_EPSILON)
     session.execute(
         select(
@@ -658,11 +700,11 @@ def search_menu(
         )
 
     def candidate(column):
-        # Obermenge von score(column) >= low, indexgestuetzt.
+        # Superset of score(column) >= low, backed by the index.
         return or_(column.op("%")(text), literal(text).op("<%")(column))
 
-    # Ohne lower(): pg_trgm bildet seine Trigramme selbst in Kleinschreibung,
-    # und ein lower(name) im Ausdruck passt nicht mehr zum Index auf name.
+    # Without lower(): pg_trgm builds its trigrams in lower case itself, and a
+    # lower(name) in the expression no longer matches the index on name.
     alias_score = (
         select(func.max(score(ItemAlias.alias)))
         .where(ItemAlias.menu_item_id == MenuItem.id)
@@ -680,10 +722,10 @@ def search_menu(
         select(MenuItem, total.label("score"))
         .where(
             *_active(tenant_id),
-            # Bei `low <= 0` faellt der Vorfilter weg: er koennte dann nur noch
-            # Zeilen mit Wert genau 0 verlieren, die `total >= low` behaelt.
+            # With `low <= 0` the prefilter is dropped: it could then only lose
+            # rows with a score of exactly 0, which `total >= low` keeps.
             *((or_(candidate(MenuItem.name), alias_candidate),) if grenze > 0 else ()),
-            # Die Schwelle entscheidet hier, nicht die Sitzungsvariable.
+            # The threshold decides here, not the session variable.
             total >= low,
         )
         .order_by(total.desc(), MenuItem.number)

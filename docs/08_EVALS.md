@@ -95,6 +95,8 @@ Danach:
 
 **Suite v2 (03.10.2026):** 48 cases instead of 107, more human and from level 1 to 5 (§1). `cases/` 21 (pickup 8, reservation 6, escalation 5, allergy 2), `targets/` 27 (pickup 9, delivery 15, reservation 2, allergy 1). Kept: the mandatory cases (in `cases/` also a real abort in the middle of an order and a pickup order during closing time, review PR #162), the cases that came from findings (e.g. `reservierung_0027`) and the three that `test_sim_pickup.py` reads. The eval menu has 26 invented active dishes with a required group "Fleisch" and a group "Extras" like the register (docs/14 §Quelle Kasse). With the scripted model: `cases/` 21 of 21 green, false escalation 0 %; `targets/` 1 of 27 green, hard metrics 0 in both. Already at level 2 the script reads two aliases in one sentence ("Sommerrollen und die Teigtaschen") as one search; that is a target for T-2.4.
 
+**T-4.12 (04.10.2026):** five cases for prefixed card numbers and the suffix g joined `cases/` (`abholung_0070` to `0074`, level 1 and 2, tag `praefix`): `cases/` now holds 26 (pickup 13), 26 of 26 green with the scripted model. The eval menu has 31 active dishes; S1, S12, SM1 (group Sushi), 45 and 45g were added.
+
 **Suite v1 (T-5.2, 26.09.2026):** 107 Fälle in `evals/cases/` (Abholung, Reservierung, Eskalation, Allergie, Lieferung), jede Zeile aus §6 hat mindestens einen. Ein Lauf dauert etwa 12 s. Stand mit dem Skript-Modell: 101 von 107 grün (99 bei T-5.2, zwei Lücken durch die Nummernregel für „Und noch die 24“ und „ich würde die 13“ geschlossen), harte Metriken 0, falsche Eskalation 4,5 %.
 - `"sold_out": ["48"]` setzt „heute aus" nur für diesen Fall (die Evalkarte im Importformat kennt keinen Tagesstand). Eine Nummer, die nicht auf der Evalkarte steht, lässt den Fall abstürzen.
 - `"pending": "T-6.5: …"` markiert eine **bekannte Lücke**: der Fall beschreibt das Ziel, das der heutige Stand noch nicht kann, mit der Aufgabe, die ihn grün macht. Er zählt in der Genauigkeit mit und steht im Report unter „Bekannte Lücken". CI verlangt, dass jeder Fall ohne `pending` grün und jeder mit `pending` rot ist, wie ein striktes xfail: wird eine Lücke grün, fällt CI auf, und das Feld kommt weg. Höchstens jeder zehnte Fall darf eine Lücke sein.
@@ -192,7 +194,7 @@ Vier Erwartungswerte, mehr gibt es nicht:
 | Wert | Bedeutung |
 |---|---|
 | `"23"` | genau diese Kartennummer, die Suche darf sie direkt nehmen |
-| `"!23g"` | als Nummer genannt, aber keine gueltige Kartenform → `not_found`; nie Ausweichen auf aehnliche Namen (CLAUDE.md §2 Regel 2) |
+| `"!23h"` | als Nummer genannt, aber keine gueltige Kartenform → `not_found`; nie Ausweichen auf aehnliche Namen (CLAUDE.md §2 Regel 2) |
 | `"?"` | nicht eindeutig → `ambiguous` mit der Frage nach der einen Nummer |
 | `"name"` | kein Nummernsatz → Alias- und Trigram-Suche entscheiden |
 

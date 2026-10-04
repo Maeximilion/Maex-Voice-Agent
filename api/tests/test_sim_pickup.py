@@ -1244,3 +1244,36 @@ def test_andere_nummer_nach_der_rueckfrage_gilt(session, tenant):
     )
     [order] = orders(session)
     assert [p[0] for p in positions(session, order)] == ["24"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["S12.", "SM1", "die 25g", "S0001", "S zwölf.", "SM eins.", "Sushi zwölf."],
+)
+def test_prefixed_number_is_not_an_ingredient(session, tenant, answer):
+    """Codex PR #155: as an answer to "Wogegen?", a card number with letters
+    is an order, not an ingredient - no "Keine S12" for the kitchen."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
+@pytest.mark.parametrize("answer", ["Fünf-Gewürze-Pulver.", "Zwei Sachen: Milch."])
+def test_ingredient_with_number_word_is_not_an_order(session, tenant, answer):
+    """Codex PR #155: a number word inside an ingredient does not turn the
+    answer into an order - the note is recorded and the question not repeated."""
+    _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
+    assert "Wogegen" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert len(_notes(session, order)) == 1
+
+
+def test_additive_is_an_ingredient(session, tenant):
+    """Code review PR #155: "E621" as an answer to "Wogegen?" is an additive,
+    not a card number - the allergy is recorded."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", "Gegen E621.")
+    [order] = orders(session)
+    assert any("E621" in (note or "") for note in _notes(session, order))

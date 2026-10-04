@@ -59,7 +59,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | Datei | Verantwortung |
 |---|---|
-| `numberwords.py` | „dreiundzwanzig" → 23, „zweimal" → Menge 2, „Nummer vierzig sieben" → 47. Reine Funktion, hundert Tests. |
+| `numberwords.py` | „dreiundzwanzig" → 23, „zweimal" → Menge 2, „Nummer vierzig sieben" → 47, „Es zwölf" → S12 mit dem `CardFormat` der Karte (T-4.12). Reine Funktion, hundert Tests; welche Präfixe gelten, gibt der Aufrufer aus der DB mit (`items.card_format`). |
 | `normalize.py` | Kleinschreibung, Umlaute, Füllwörter raus („einmal die … bitte") |
 | `search.py` | die Auflösungsreihenfolge aus 04: Nummer → Alias → Trigram, mit Schwellen aus der Konfiguration |
 | `aliases.py` | Alias anlegen, Treffer zählen, Vorschläge aus Anrufen |

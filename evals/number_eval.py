@@ -1,51 +1,71 @@
 #!/usr/bin/env python3
-"""Eval-Satz fuer die Nummernerkennung (Regel A, docs/08 §6).
+"""Eval set for number recognition (rule A, docs/08 §6).
 
-Warum eigenstaendig und nicht Teil der Gespraechs-Evals aus docs/08 §1: hier
-faellt keine Entscheidung eines Modells, sondern eine des Codes. Der Satz
-laeuft ohne Datenbank, ohne HTTP und ohne LLM in Millisekunden und beantwortet
-genau eine Frage - loest `sole_item_number` jeden bekannten Satz so auf, wie er
-aufgeloest werden muss.
+Why it stands alone and is not part of the conversation evals from docs/08 §1:
+no model decides here, the code does. The set runs without a database, HTTP or
+an LLM in milliseconds and answers exactly one question - does
+`sole_item_number` resolve every known sentence the way it must be resolved.
 
-Der Satz ist als Netz gegen Regressionen entstanden: die Regeln fuer Marker,
-Endung, Menge und Verbindungswort greifen ineinander, und zwei Korrekturen in
-Folge haben je eine frueher richtige Form wieder kaputt gemacht (PR #117).
-Einzelne Testfunktionen zeigen das nicht - eine Tabelle aller Faelle schon.
+The set began as a net against regressions: the rules for marker, suffix,
+quantity and connecting word interlock, and two fixes in a row each broke a
+form that had been right before (PR #117). Single test functions do not show
+that - a table of all cases does.
 
-Erwartungswerte in `cases/nummern.jsonl`:
+Expected values in `cases/nummern.jsonl`:
 
-    "23"      genau diese Kartennummer, die Suche darf sie direkt nehmen
-    "!23g"    als Nummer genannt, aber keine gueltige Kartenform -> not_found;
-              die Suche weicht nie auf aehnliche Namen aus (CLAUDE.md §2 Regel 2)
-    "?"       nicht eindeutig -> ambiguous mit der Frage nach der einen Nummer
-    "name"    kein Nummernsatz -> Alias- und Trigram-Suche entscheiden
+    "23"      exactly this card number, the search may take it directly
+    "!23h"    named as a number but not a valid card form -> not_found; the
+              search never falls back to similar names (CLAUDE.md §2 rule 2)
+    "?"       not unambiguous -> ambiguous, asking for the one number
+    "name"    not a number sentence -> alias and trigram search decide
+    "s12|sm12" several card numbers possible ("Sushi zwoelf"); the search
+              looks up all of them, and the menu says which one exists
 
-Aufruf:
+Which prefixes a number can carry ("S12", "SM1") is not in the code; it
+follows from the numbers on the menu (T-4.12). This set uses the eval menu
+`evals/menu/menu_items.csv`, the same one as the conversation evals.
 
-    python -m evals.number_eval           # Tabelle, Exit 1 bei rot
-    python -m evals.number_eval --quiet   # nur die Zusammenfassung
+Usage:
 
-Ein neuer Fall ist eine Zeile in der JSONL-Datei. Gehoert ein Satz vom Telefon
-dazu, der heute falsch aufgeloest wird, kommt er mit der richtigen Erwartung
-hinein - der Satz ist dann rot, bis der Code stimmt (CLAUDE.md §9: erst der
-rote Fall, dann der Fix).
+    python -m evals.number_eval           # table, exit 1 when red
+    python -m evals.number_eval --quiet   # summary only
+
+A new case is one line in the JSONL file. If a sentence from the phone that is
+resolved wrongly today belongs in it, it goes in with the right expectation -
+the set is then red until the code is right (CLAUDE.md §9: red case first,
+then the fix).
 """
 
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 from api.domain.menu.numberwords import (
+    CardFormat,
     find_item_number,
     find_item_number_ref,
     sole_item_number,
 )
 
 CASES = Path(__file__).parent / "cases" / "nummern.jsonl"
+MENU_ITEMS = Path(__file__).parent / "menu" / "menu_items.csv"
+
+
+def eval_card(path: Path = MENU_ITEMS) -> CardFormat:
+    """Card format of the eval menu: prefixes and category words from the numbers."""
+    with path.open(encoding="utf-8", newline="") as f:
+        rows = list(csv.DictReader(f, delimiter=";"))
+    return CardFormat.from_items(
+        (r["number"], r["category"]) for r in rows if r.get("active", "ja") != "nein"
+    )
+
+
+CARD = eval_card()
 
 
 @dataclass(frozen=True)
@@ -69,38 +89,37 @@ def load(path: Path = CASES) -> list[Case]:
 
 def resolve(say: str) -> str:
     """Das Ergebnis von `sole_item_number` in der Sprache der Erwartungswerte."""
-    ref, unclear = sole_item_number(say)
+    ref, unclear = sole_item_number(say, CARD)
     if unclear:
         return "?"
     if ref is None:
         return "name"
-    return ref.text if ref.valid else f"!{ref.text}"
+    return "|".join(ref.cards) if ref.valid else f"!{ref.text}"
 
 
 def disagreement(say: str) -> str | None:
-    """Sagen beide Ausgaenge dasselbe ueber eine genannte, ungueltige Nummer?
+    """Do both callers say the same about a named, invalid number?
 
-    `sole_item_number` treibt die Suche, `find_item_number` die
-    Verstaendnisleiter. Wer als Nummer genannt wurde, aber keine Kartenform
-    hat, darf auf keinem der beiden Wege zu einer Zahl werden - sonst antwortet
-    die Suche `not_found`, waehrend die Leiter dasselbe Wort als Gericht nimmt.
-    Genau so war "Nummer A12" in der Suche richtig und ueber `find_item_number`
-    Gericht 12 (Codex PR #117, P2).
+    `sole_item_number` drives the search, `find_item_number` the understanding
+    ladder. What was named as a number but has no card form must not become a
+    number on either path - otherwise the search answers `not_found` while the
+    ladder takes the same word as a dish. That is exactly how "Nummer A12" was
+    right in the search and dish 12 via `find_item_number` (Codex PR #117, P2).
     """
-    ref, unclear = sole_item_number(say)
-    other = find_item_number_ref(say)
+    ref, unclear = sole_item_number(say, CARD)
+    other = find_item_number_ref(say, CARD)
     if ref is not None and not ref.valid:
-        # Die Suche kennt die Nummer nicht. Dann darf sie auf dem anderen Weg
-        # auch keine Zahl werden.
-        wert = find_item_number(say)
+        # The search does not know the number. Then it must not become a
+        # number on the other path either.
+        wert = find_item_number(say, CARD)
         if wert is not None:
             return f"ungueltig als {ref.text!r}, aber find_item_number gibt {wert}"
         return None
-    # Andersherum: meldet die Leiter eine genannte, ungueltige Nummer, darf die
-    # Suche den Satz nicht fuer einen reinen Namenssatz halten. Sonst sagt die
-    # Leiter "die Nummer 7up gibt es nicht", waehrend die Suche den Alias
-    # findet. Eine Rueckfrage der Suche ist dagegen kein Widerspruch - dann ist
-    # auf beiden Seiten von einer Nummer die Rede ("Nummer 1000 und 23").
+    # The other way round: if the ladder reports a named, invalid number, the
+    # search must not take the sentence for a pure name sentence. Otherwise the
+    # ladder says "die Nummer 7up gibt es nicht" while the search finds the
+    # alias. A follow-up question from the search is no contradiction - then
+    # both sides are talking about a number ("Nummer 1000 und 23").
     if other is not None and not other.valid and ref is None and not unclear:
         return (
             f"find_item_number_ref meldet ungueltig {other.text!r}, "

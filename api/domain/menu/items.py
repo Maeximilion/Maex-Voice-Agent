@@ -1,8 +1,8 @@
-"""Gemeinsame Bausteine der Karten-Tools: Optionen und der Zustand "aus" (docs/04).
+"""Shared building blocks of the menu tools: options and the state "aus" (docs/04).
 
-`search_menu` und `get_item_details` lesen dieselben Kindtabellen und muessen
-dasselbe antworten - ein Gericht, das in der Suche Optionen hat, hat sie in den
-Details auch. Deshalb liegt die Logik hier und nicht zweimal nebeneinander.
+`search_menu` and `get_item_details` read the same child tables and must give
+the same answer - a dish that has options in the search has them in the
+details as well. That is why the logic lives here and not twice side by side.
 """
 
 import uuid
@@ -12,16 +12,17 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.domain.menu.numberwords import CardFormat
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
 
 
 def option_key(text: str) -> str:
-    """Vergleichsform von Gruppen- und Optionsnamen: ohne Groß-/Kleinschreibung und Mehrfach-Leerzeichen.
+    """Comparison form of group and option names: case-insensitive, without repeated spaces.
 
-    Import und draft_order vergleichen damit gleich. Sonst nähme der Import
-    "Sauce/Erdnuss" und "sauce/erdnuss" als zwei Optionen an, und draft_order
-    könnte nicht sagen, welche gemeint ist (Codex PR #124).
+    Import and draft_order compare with it in the same way. Otherwise the
+    import would take "Sauce/Erdnuss" and "sauce/erdnuss" as two options, and
+    draft_order could not tell which one is meant (Codex PR #124).
     """
     return " ".join(text.split()).casefold()
 
@@ -31,12 +32,28 @@ def is_sold_out(item: MenuItem, now: datetime) -> bool:
     return item.sold_out_until is not None and item.sold_out_until > now
 
 
+def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:
+    """Prefixes and category words of the active menu (T-4.12).
+
+    Which letters can stand in front of a number ("S12", "SM1") follows from
+    the numbers in the database, never from the code (CLAUDE.md §2 rule 1).
+    One query over number and category; for a menu of a few hundred rows that
+    is one index scan.
+    """
+    rows = session.execute(
+        select(MenuItem.number, MenuItem.category).where(
+            MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True)
+        )
+    )
+    return CardFormat.from_items((number, category) for number, category in rows)
+
+
 def option_groups(
     session: Session, item_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[OptionGroup]]:
-    """Optionen aller genannten Gerichte in einer Abfrage, nach Gruppe gebuendelt.
+    """Options of all given dishes in one query, grouped by option group.
 
-    Voreinstellung zuerst, damit der Agent sie als erste vorliest.
+    The default comes first, so the agent reads it out first.
     """
     if not item_ids:
         return {}

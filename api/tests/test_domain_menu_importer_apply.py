@@ -563,10 +563,10 @@ def test_skript_von_dbf_bis_zur_karte(tmp_path, session, tenant_id):
 def test_skript_meldet_fehler_und_fehlende_datei(tmp_path, capsys):
     kasse = tmp_path / "kasse"
     kasse.mkdir()
-    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "S1"}])
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "X1"}])
 
     assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 1
-    assert "S1" in capsys.readouterr().out
+    assert "X1" in capsys.readouterr().out
 
     (kasse / "zutgrp.DBF").unlink()
     assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "x")]) == 2

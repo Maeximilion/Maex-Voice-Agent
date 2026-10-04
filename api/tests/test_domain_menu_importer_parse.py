@@ -298,7 +298,9 @@ def test_alias_doppelt_im_gleichen_gericht_zaehlt_einmal():
 # --- Kartennummern, die die Suche eindeutig aufloesen kann (Codex PR #117, P1) ----
 
 
-@pytest.mark.parametrize("nummer", ["23", "23a", "23F", "007", "12c"])
+@pytest.mark.parametrize(
+    "nummer", ["23", "23a", "23F", "007", "12c", "25g", "25G", "S12", "sm1", "SM06"]
+)
 def test_kartennummer_im_suchformat(nummer):
     plan = parse(
         {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
@@ -306,9 +308,22 @@ def test_kartennummer_im_suchformat(nummer):
     assert plan.ok, plan.errors
 
 
-@pytest.mark.parametrize("nummer", ["23g", "A12", "23x", "23ab", "12-3", "Nr. 5", "V2"])
+@pytest.mark.parametrize(
+    "nummer",
+    [
+        "23h",
+        "23x",
+        "23ab",
+        "35AE",
+        "12-3",
+        "Nr. 5",
+        "ABC1",
+        "S",
+        "S12AB",
+    ],
+)
 def test_kartennummer_ausserhalb_des_suchformats(nummer):
-    """Sonst sucht "Nummer 23g" still die 23: lieber beim Import scheitern."""
+    """Otherwise "Nummer 23h" silently looks up the 23: better to fail at import."""
     plan = parse(
         {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
     )
@@ -393,3 +408,62 @@ def test_option_nur_in_schreibweise_verschieden():
 def test_gruppe_in_zwei_schreibweisen():
     text = fehler(**{OPTIONS_FILE: OPTIONS + "47;größe;groß;1,00;nein;nein\n"})
     assert "47/größe" in text and "Schreibweise" in text
+
+
+# --- Prefix and suffix g from the register (T-4.12) -------------------------------
+
+
+def test_prefixed_number_is_stored_lower_case():
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n"
+            "S12;Maki;Sushi;5,90\nSM1;Menue;Sushi;16,90\n25G;Sosse;Test;2,00\n"
+        }
+    )
+    assert plan.ok, plan.errors
+    assert set(plan.items) == {"s12", "sm1", "25g"}
+
+
+@pytest.mark.parametrize(("first", "second"), [("S7", "s07"), ("SM1", "sm001")])
+def test_prefixed_number_with_zeros_is_a_duplicate(first, second):
+    """Duplicates by canonical_card: "S7" and "S07" are one number."""
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n"
+            f"{first};Eins;Sushi;1,00\n{second};Zwei;Sushi;1,00\n"
+        }
+    )
+    assert not plan.ok and "doppelt" in plan.errors[0]
+
+
+def test_prefixed_and_plain_are_two_numbers():
+    """S12 is not the 12: both may be on the same menu."""
+    plan = parse(
+        {
+            MENU_FILE: "number;name;category;price_eur\n"
+            "12;Suppe;Suppen;5,00\nS12;Maki;Sushi;5,90\n"
+        }
+    )
+    assert plan.ok, plan.errors
+
+
+@pytest.mark.parametrize(
+    ("number", "prefix"),
+    [
+        # Prefixes numberwords already reads as a quantity or marker (review PR #155)
+        ("X12", "x"),
+        ("ST1", "st"),
+        ("NR5", "nr"),
+        ("NO5", "no"),
+        # Spoken words as a prefix (code review PR #155)
+        ("JA1", "ja"),
+        ("ES1", "es"),
+    ],
+)
+def test_reserved_prefix_is_rejected_with_its_own_message(number, prefix):
+    """A reserved prefix says why - not "up to two letters in front"."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{number};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok
+    assert number in plan.errors[0] and f'the prefix "{prefix}"' in plan.errors[0]

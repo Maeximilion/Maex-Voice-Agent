@@ -196,7 +196,14 @@ def test_ohne_alternative_nur_heute_aus(session, tenant_id):
 
 @pytest.mark.parametrize(
     ("nummern", "sortiert"),
-    [(["12", "2", "23a", "23", "B1"], ["2", "12", "23", "23a", "B1"])],
+    [
+        (["12", "2", "23a", "23", "B1"], ["2", "12", "23", "23a", "B1"]),
+        # Register prefixes (T-4.12): plain numbers first, S2 before S12 before SM1.
+        (
+            ["sm1", "s12", "25g", "s2", "25", "2", "S3"],
+            ["2", "25", "25g", "s2", "S3", "s12", "sm1"],
+        ),
+    ],
 )
 def test_kartenreihenfolge(nummern, sortiert):
     assert sorted(nummern, key=number_key) == sortiert
@@ -210,3 +217,13 @@ def test_name_mit_ziffer_vorn_wird_gefunden(session, tenant_id):
     session.commit()
     found = [d.number for d in list_switches(session, tenant_id, "8 Kostbar", now=NOW)]
     assert found == ["12"]
+
+
+def test_search_field_finds_prefixed_number(session, tenant_id):
+    """T-4.12: "s1" in the search field is a number (S1, S12), not part of a name."""
+    rows = "S1;Lachs Nigiri;Sushi;4,50;;ja\nS12;Maki;Sushi;5,90;;ja\nSM1;Menue;Sushi;16,90;;ja\n"
+    plan = parse({**KARTE, MENU_FILE: KARTE[MENU_FILE] + rows})
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    found = [d.number for d in list_switches(session, tenant_id, "S1", now=NOW)]
+    assert found == ["s1", "s12"]
