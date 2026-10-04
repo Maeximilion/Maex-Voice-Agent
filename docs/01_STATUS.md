@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.1
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.2
 
 ---
 
@@ -264,6 +264,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Prefix numbers read aloud (`search.py` `say_understood`, `ordering/readback.py`) | T-4.12: the card stores numbers lower case, so the agent says "Nummer s12" and "Nummer 25g". Whether the TTS of the voice platform reads that as "S zwölf" and "fünfundzwanzig G" is only testable with the platform (C2) | with T-2.4 / first test call |
 | Real import of the register menu (`scripts/kasse_to_csv.py`, then `scripts/import_menu.py --dry-run`) | Dry run done 04.10.2026: converter 173 dishes, 797 options, 5 allergen errors, 6 warning classes; `import_menu --dry-run --deactivate-missing` exit 0 against a copy of the local test database at migration 005 (166 new, 7 changed, 7 price changes, nothing deactivated). Still open, all Maxi's: who confirms the allergens, or the five test entries leave the register (without the switch every dish stays "no information"); a backup without `scripts/backup.sh` (T-9.3); the target database at migration 005. The import without `--dry-run` was not exercised, not even on a throwaway copy. Steps in "What's next" 3 | Maxi's go for the real import |
 | Converter does not warn about a "free from" claim in a dish name | Found once in the real menu (dry run 04.10.2026): the agent reads the name aloud, so the name states an allergen fact that is not a database value (rule 1). Proposal: a warning in `pos_convert` like the one for allergen carriers; today only the register can fix it | before the first real import |
+| `import_menu` says "nothing was stored" for every database error (Codex P2, PR #169) | `scripts/import_menu.py` catches `DBAPIError` around `apply` and reports that nothing was stored. True for a row the database rejects, also in a dry run. Not certain when the connection drops while a real import waits for the answer to its commit: the server may have committed already, and the rollback that follows cannot undo it. The message should then say that the outcome is unknown and to check with a dry run (it reports "Keine Änderung" if the import went through). Arrived after the review round of PR #169 was worked off, so noted instead of fixed | before the first real import |
 | Lunch menus `M`/`VM` (register groups 100 to 102) | Maxi 26.09.2026: later. Numbers like `M4A` or `VM5C` already fit the format; the category "Menü Sushi" holds both M and VM, so "Menü eins" would be no category word. The groups stay excluded in the converter until then | own task after T-4.12 |
 | Text phone: compact ingredient names that look like card numbers (`sim/scripted_order.py` `_orders_something`, Codex PR #155, P2, noted after the review round) | On "Wogegen?" an answer such as "B12" or "Vitamin B12" counts as an order, because the text phone does not know the menu and accepts every form the import allows; only E-number additives are excluded. The question is asked again, nothing wrong is noted. Fix: decide from the active menu's `CardFormat` (the session has the tenant) instead of the import grammar; add a test next to `test_additive_is_an_ingredient` | with the next change to the text phone's allergy flow |
 | **#82 undecided** | Dependabot bump to Python 3.14, closed without merge. By convention it does not go to Done automatically. Maxi left the decision open; it is tracked in issue #136 (`projektpflege`), which the daily run keeps up to date. `PROJECT_TOKEN` was replaced on 24.09.2026, the first full run was green | when Maxi decides, via #136 or `/project` |
@@ -349,6 +350,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.36.2 · 04.10.2026:** Open point from PR #169 (Codex P2): import_menu claims nothing was stored for every database error
 - **v1.36.1 · 04.10.2026:** PR #169 review: backup before migration and against the database of DATABASE_URL, database rejection as a message, NUL named by parse
 - **v1.36.0 · 04.10.2026:** Real register menu: import dry run done (173 dishes, 797 options), dry run now sends options, allergens and aliases to the database; real import prepared, Maxi decides
 - **v1.35.3 · 04.10.2026:** File-mode tests of the call log skip on Windows; open point: call log files are not owner-only on NTFS
