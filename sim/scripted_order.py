@@ -119,10 +119,10 @@ class PickupScript:
         # What is asked after the allergy: never two questions at once,
         # otherwise "Nummer 12" would be the ingredient (Codex PR #139, P1).
         self._after_allergy: str | None = None
-        # The position, wish and question for which "Meinen Sie Reis bei
-        # Beilage oder bei Extra?" is open: the answer is the group, not a
-        # dish (Codex PR #139).
-        self._group_for: list[tuple[CartItem, dict[str, Any], str]] = []
+        # The position, its hit, the wish and the question for which "Meinen
+        # Sie Reis bei Beilage oder bei Extra?" is open: the answer is the
+        # group, not a dish (Codex PR #139).
+        self._group_for: list[tuple[CartItem, dict[str, Any], dict[str, Any], str]] = []
         # The open follow-up question while an answer is being searched again.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
@@ -141,7 +141,13 @@ class PickupScript:
         if self._group_for:
             return self._answer_group(text, slots, patch)
         if self.phase == "choose":
-            hit = self._pick_suggestion(text)
+            # "Nein, die 13": what follows the no can still name one of the
+            # offered dishes - a choice with the quantity and the wish of the
+            # question, not a new search (review PR #178).
+            other = None if _finishes(text) else _replacement(text)
+            hit = self._pick_suggestion(text) or (
+                self._pick_suggestion(other, agree=False) if other else None
+            )
             if hit is not None and hit.get("sold_out"):
                 # Out today: do not add it, say so and offer the rest. Otherwise
                 # draft_order would reject the cart and the order would never
@@ -180,7 +186,6 @@ class PickupScript:
                 self._suggestions = []
                 # "keine davon, lieber Frühlingsrollen": only the rejection is
                 # settled, the dish named with it is searched (Codex PR #133).
-                other = None if _finishes(text) else _replacement(text)
                 if other:
                     self.phase = "dishes"
                     return _search(other, patch)
@@ -401,7 +406,7 @@ class PickupScript:
             question = say_for_wish(
                 MenuHit.model_validate(hit), Wish.model_validate(wish)
             )
-            self._group_for.append((item, wish, question or ""))
+            self._group_for.append((item, hit, wish, question or ""))
         elif wish["kind"] == "allergy" and not wish.get("ingredient"):
             # The ingredient is missing: the question stays open until the answer comes.
             self._allergy_for.append(item)
@@ -413,9 +418,12 @@ class PickupScript:
             item.note = wish["text"]
         return wish
 
-    def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
+    def _pick_suggestion(
+        self, text: str, *, agree: bool = True
+    ) -> dict[str, Any] | None:
         """Only an unambiguous mention counts: the number, or a name that
-        matches exactly one of the offered ones."""
+        matches exactly one of the offered ones. `agree=False`: a yes does not
+        count, for what follows a rejection."""
         lowered = text.lower()
         # Also spoken ("die dreizehn") and with a leading zero (review PR #133).
         # Only if the sentence is the number itself: in "zwei Pho Bo" the two is
@@ -439,7 +447,7 @@ class PickupScript:
         # back forever (eval suite T-5.2). Only after number and name, and never
         # if the sentence names another number: "Ja, aber lieber die 24" means
         # the 24. With several suggestions a yes is not a choice.
-        if len(self._suggestions) == 1 and ref is None and _agrees(text):
+        if agree and len(self._suggestions) == 1 and ref is None and _agrees(text):
             return self._suggestions[0]
         return None
 
@@ -496,21 +504,32 @@ class PickupScript:
         group it names. A bare no drops the option, the dish stays as it is on
         the menu. Anything else leaves the question open - no group is chosen
         for the guest (CLAUDE.md §2 rule 2)."""
-        item, wish, question = self._group_for[0]
+        item, hit, wish, question = self._group_for[0]
         said = set(_words(text))
         named = [g for g in wish["groups"] if set(_words(g)) <= said]
         rejected = _rejects(text) or "nicht" in said
-        if len(named) == 1 and not rejected:
-            item.options.append({"group": named[0], "name": wish["option"]})
-            item.pending = [g for g in item.pending if g["group"] != named[0]]
-        elif named or not rejected:
+        chosen = len(named) == 1 and not rejected
+        dropped = rejected and not named
+        if not (chosen or dropped):
             return LLMTurn(
                 say=question,
                 state_patch=patch or None,
                 understanding_failure="option",
             )
         self._group_for.pop(0)
-        return self._next(slots, patch, lead=self._take_deferred())
+        lead = None
+        if chosen:
+            # Classified again against the one group: the option and its
+            # surcharge come from the menu and are said like any other option
+            # (Codex PR #178).
+            groups = [g for g in hit["option_groups"] if g["group"] == named[0]]
+            settled = self._apply_wish(
+                item,
+                {**hit, "option_groups": groups},
+                {"kind": "open", "text": wish["text"]},
+            )
+            lead = _wish_sentence(hit, settled, text)
+        return self._next(slots, patch, lead=_join(lead, self._take_deferred()))
 
     def _answer_option(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
@@ -546,7 +565,7 @@ class PickupScript:
             # Only the question about the allergy or the group, no second one
             # next to it. If it is already in the search's sentence, not again.
             question = (
-                self._allergy_question() if self._allergy_for else self._group_for[0][2]
+                self._allergy_question() if self._allergy_for else self._group_for[0][3]
             )
             said = _join(lead) or ""
             return LLMTurn(
@@ -768,8 +787,9 @@ _REJECTION_FILL = frozenset(
 def _replacement(text: str) -> str | None:
     """The dish named after a leading rejection ("keine davon, lieber
     Frühlingsrollen" -> "Frühlingsrollen"), or None if the answer only rejects.
-    "Keine Suppe" negates the dish itself, and a second no ("nein, nicht die")
-    leaves nothing to search: both stay a rejection."""
+    "Keine Suppe" and "weder die 12 noch die 13" negate the dish itself, and a
+    second no ("nein, nicht die", "nein, lieber nichts") leaves nothing to
+    search: they stay a rejection."""
     words = list(re.finditer(r"[^\W_]+", text))
     said = [w.group().lower() for w in words]
     if not said or said[0] not in REJECT_WORDS:
@@ -778,9 +798,9 @@ def _replacement(text: str) -> str | None:
         (i for i, w in enumerate(said) if w not in (*REJECT_WORDS, *_REJECTION_FILL)),
         None,
     )
-    if at is None or said[at - 1].startswith("kein"):
+    if at is None or said[at - 1].startswith(("kein", "weder")):
         return None
-    if any(w in (*REJECT_WORDS, "nicht") for w in said[at:]):
+    if any(w in (*REJECT_WORDS, "nicht", "nichts") for w in said[at:]):
         return None
     rest = text[words[at].start() :]
     return rest if normalize_query(rest) or re.search(r"\d", rest) else None

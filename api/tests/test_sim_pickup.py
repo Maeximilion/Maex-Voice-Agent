@@ -1456,6 +1456,13 @@ def test_group_answer_adds_the_option(session, side_dish, answer, group):
     assert _chosen(session, order) == [(group, "Reis")]
 
 
+def test_group_answer_repeats_the_surcharge(session, side_dish):
+    """Codex PR #178: the surcharge of the chosen group is said at once, as for
+    an option named directly - from the menu, never from the script."""
+    _, turns = _bestellung(session, side_dish, "Die 55 mit Reis.", "Extra.")
+    assert "mit Reis, 2 Euro Aufpreis" in " ".join(turns[2].say)
+
+
 def test_group_question_is_the_only_question(session, side_dish):
     """No "Darf es noch etwas sein?" next to it, and an answer that names no
     group leaves the question open instead of being searched as a dish."""
@@ -1521,6 +1528,9 @@ def test_rejection_with_replacement_is_searched(session, tenant, answer, taken):
         ("Nein danke, bitte die 23.", "die 23."),
         ("Nein, nicht die.", None),
         ("Nein, ich weiß nicht.", None),
+        ("Nein, lieber nichts.", None),
+        # "weder ... noch" rejects what it names (Codex PR #178).
+        ("Weder die 12 noch die 13.", None),
         # "Keine Suppe" negates the dish, it is not a rejection plus a dish.
         ("Keine Suppe, lieber die 23.", None),
         # Not a rejection at all.
@@ -1531,6 +1541,15 @@ def test_replacement_after_a_rejection(answer, rest):
     from sim.scripted_order import _replacement
 
     assert _replacement(answer) == rest
+
+
+def test_offered_dish_after_a_no_keeps_the_quantity(session, tenant):
+    """ "Nein, die 13" names one of the offered dishes: a choice, with the
+    quantity of the question, not a new search with its own."""
+    _, turns = _suppe_und(session, tenant, "Nein, die 13.")
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert positions(session, order) == [("13", 2, [])]
 
 
 def test_standalone_rejection_searches_nothing(session, tenant):
@@ -1598,6 +1617,8 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
         # The question about allergens goes to the team, pickup or not.
         "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen.",
         "Ich moechte bestellen, koennen Sie das auch liefern?",
+        # "Karte" next to the pickup stays what it was before the order.
+        "Koennen Sie mir die Speisekarte vorlesen? Ich moechte bestellen.",
         # No pickup named: the allergy alone starts no order.
         "Guten Tag, ich habe eine Erdnussallergie.",
     ],
@@ -1609,3 +1630,45 @@ def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
     assert orders(session) == []
+
+
+@pytest.mark.parametrize(
+    "lines",
+    [
+        # No dish the allergy could be noted on.
+        ("Ich habe eine Erdnussallergie und moechte etwas zum Abholen bestellen.",),
+        # The dish is not on the menu.
+        ("Ich moechte Schnitzel mit Erdnussallergie zum Abholen.",),
+        ("Guten Tag.", "Schnitzel mit Erdnussallergie zum Abholen."),
+        # A question about the dish, worded with the guest's allergy (Codex PR #178).
+        (
+            "Ist in der Pho etwas, gegen das ich allergisch sein koennte? "
+            "Ich moechte sie zum Abholen.",
+        ),
+    ],
+)
+def test_allergy_that_reaches_no_position_goes_to_the_team(session, tenant, lines):
+    """The allergy in the sentence that announces the pickup is a note only if
+    the search puts it on a dish. Otherwise it must not get lost: the team
+    calls back, as before the order."""
+    replay(session, case(*lines, "0721 5551234"), tenant, now=NOW)
+    session.expire_all()
+    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert orders(session) == []
+
+
+def test_allergy_on_a_sold_out_dish_goes_to_the_team(session, tenant):
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant.id, MenuItem.number == "13")
+        .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
+    )
+    session.commit()
+    replay(
+        session,
+        case("Ich moechte Pho Bo mit Erdnussallergie zum Abholen.", "0721 5551234"),
+        tenant,
+        now=NOW,
+    )
+    session.expire_all()
+    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
