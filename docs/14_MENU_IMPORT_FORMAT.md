@@ -47,6 +47,7 @@
 
 - Doppelte `number` → Fehler
 - Preis nicht parsebar → Fehler
+- NUL character in a field → error with file and line (Postgres text cannot store it; a register export may pad with it)
 - Option zu unbekannter Nummer → Fehler
 - Pflichtgruppe ohne Default → Fehler
 - Gericht ohne Alias → Warnung, Liste für den Chat
@@ -60,6 +61,8 @@
 - Gericht in der Datenbank, aber nicht in der Datei → im Bericht; mit `--deactivate-missing` wird es `active = nein`, nie gelöscht (Kasse als Quelle, T-4.11). Eine Datei ohne Gerichte oder mehr als die Hälfte der aktiven Karte weg → verweigert, außer mit `--allow-large-deactivation`: ein kaputter Export schaltet nie die Karte ab
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.
+
+**`--dry-run` sends every menu row to the database** (dishes, options, allergens, aliases) and rolls back; only the commit and the audit entry are left out. What the database would reject fails in the dry run already, with a message and exit 1, not only in the real import.
 
 ---
 
