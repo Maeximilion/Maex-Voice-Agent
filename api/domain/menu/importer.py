@@ -305,9 +305,10 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             # Otherwise the message would say "up to two letters in front" and
             # the operator could not see what is wrong (code review PR #155).
             plan.errors.append(
-                f"{where}: Kartennummer „{row['number']}“ hat das Praefix "
-                f"„{parts.group(1)}“, das am Telefon schon etwas anderes heisst "
-                "(Menge, Marker oder gesprochenes Wort wie x, st, nr, no, ja, es)"
+                f'{where}: card number "{row["number"]}" has the prefix '
+                f'"{parts.group(1)}", which already means something else on the '
+                "phone (a quantity, a marker or a spoken word such as x, st, nr, "
+                "no, ja, es)"
             )
             continue
         if not is_card_number(number):

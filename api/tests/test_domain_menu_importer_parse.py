@@ -320,14 +320,6 @@ def test_kartennummer_im_suchformat(nummer):
         "ABC1",
         "S",
         "S12AB",
-        # Prefixes numberwords already reads as a quantity or marker (review PR #155)
-        "X12",
-        "ST1",
-        "NR5",
-        "NO5",
-        # Spoken words as a prefix (code review PR #155)
-        "JA1",
-        "ES1",
     ],
 )
 def test_kartennummer_ausserhalb_des_suchformats(nummer):
@@ -455,7 +447,23 @@ def test_prefixed_and_plain_are_two_numbers():
     assert plan.ok, plan.errors
 
 
-def test_reserved_prefix_has_its_own_message():
-    """Code review PR #155: "NO5" says why - not "up to two letters"."""
-    plan = parse({MENU_FILE: "number;name;category;price_eur\nNO5;Gericht;Test;1,00\n"})
-    assert not plan.ok and "Praefix" in plan.errors[0] and "no" in plan.errors[0]
+@pytest.mark.parametrize(
+    ("number", "prefix"),
+    [
+        # Prefixes numberwords already reads as a quantity or marker (review PR #155)
+        ("X12", "x"),
+        ("ST1", "st"),
+        ("NR5", "nr"),
+        ("NO5", "no"),
+        # Spoken words as a prefix (code review PR #155)
+        ("JA1", "ja"),
+        ("ES1", "es"),
+    ],
+)
+def test_reserved_prefix_is_rejected_with_its_own_message(number, prefix):
+    """A reserved prefix says why - not "up to two letters in front"."""
+    plan = parse(
+        {MENU_FILE: f"number;name;category;price_eur\n{number};Gericht;Test;1,00\n"}
+    )
+    assert not plan.ok
+    assert number in plan.errors[0] and f'the prefix "{prefix}"' in plan.errors[0]
