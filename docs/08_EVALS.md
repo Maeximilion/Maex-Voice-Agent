@@ -194,7 +194,7 @@ Vier Erwartungswerte, mehr gibt es nicht:
 | Wert | Bedeutung |
 |---|---|
 | `"23"` | genau diese Kartennummer, die Suche darf sie direkt nehmen |
-| `"!23g"` | als Nummer genannt, aber keine gueltige Kartenform → `not_found`; nie Ausweichen auf aehnliche Namen (CLAUDE.md §2 Regel 2) |
+| `"!23h"` | als Nummer genannt, aber keine gueltige Kartenform → `not_found`; nie Ausweichen auf aehnliche Namen (CLAUDE.md §2 Regel 2) |
 | `"?"` | nicht eindeutig → `ambiguous` mit der Frage nach der einen Nummer |
 | `"name"` | kein Nummernsatz → Alias- und Trigram-Suche entscheiden |
 
