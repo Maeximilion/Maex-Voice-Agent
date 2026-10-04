@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.0
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.1
 
 ---
 
@@ -353,6 +353,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.37.1 · 04.10.2026:** Codex review PR #177 (P2) fixed: the message nodes pass only title, text and priority on, the event payload no longer reaches the channel node
 - **v1.37.0 · 04.10.2026:** D13 decided: team notifications from n8n go through a self-hosted push service on the EU server
 - **v1.36.6 · 04.10.2026:** n8n workflow for team events (reservation, callback, handover failed) with dedupe and a placeholder channel node, guard test against api/events/types.py; D13 opened: channel push or SMS
 - **v1.36.5 · 04.10.2026:** Handover text phone allergy guard: PR #168 merged as 67b3bcd, next T-9.3 backup and restore, then n8n workflow

@@ -163,7 +163,10 @@ def test_every_branch_builds_a_message_for_the_channel() -> None:
         node = _nodes()[name]
         assert node["type"] == "n8n-nodes-base.set", event_type
         fields = {a["name"] for a in node["parameters"]["assignments"]["assignments"]}
-        assert {"title", "text", "priority"} <= fields, event_type
+        assert fields == {"title", "text", "priority"}, event_type
+        # Nothing but the message goes on: the payload holds names, phone
+        # numbers and call text, and a channel node may forward its whole input.
+        assert not node["parameters"].get("includeOtherFields", False), event_type
 
 
 def test_placeholder_channel_fails_closed() -> None:

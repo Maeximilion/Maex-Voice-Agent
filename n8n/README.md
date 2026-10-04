@@ -44,7 +44,7 @@ The placeholder is a "Stop and Error" node: it fails on purpose, so no event cou
 
 The replacement
 
-- receives `title`, `text` and `priority` (`normal` or `high`),
+- receives `title`, `text` and `priority` (`normal` or `high`) and nothing else: the event payload stops at the message nodes, so a node that forwards its whole input sends no customer data,
 - must fail when sending fails (no "Continue on Fail"), otherwise a lost notification is recorded as delivered,
 - keeps its credentials in n8n. An export contains only the reference (id and name), never the values.
 
