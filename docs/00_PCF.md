@@ -498,9 +498,13 @@ Open: one worktree, branch and chat per item, independent of each other:
           run without a backup; `make backup` fails today.
        2. feat/n8n-team-events - n8n workflow for reservation.confirmed, callback.created and
           order.handover_failed as push or SMS to the team, export to n8n/.
-       3. fix/sim-open-points - the remaining text phone points in docs/01 "Open Points":
-          option in two groups, rejection plus replacement in one answer, digit in a dish
-          name read as quantity. Stand-in only, none blocks.
+       3. fix/sim-open-points - every text phone point in docs/01 "Open Points from
+          Reviews"; read the table, this list is only the index. Due with the next sim
+          change: option in two groups, rejection plus replacement in one answer, digit in
+          a dish name read as quantity, allergy in the opening sentence (ends in a callback
+          instead of an order). Due with T-2.4, can be left for the real model: reason for
+          a surcharge, whole pickup order taken while pickup is closed. Stand-in only, none
+          blocks.
        4. docs/english-code-comments - translation sweep, runs in its own chat and worktree
           (29 commits ahead, 11 behind main on 04.10., no PR yet); it has to merge main
           first, sim/scripted_order.py changed under it.
