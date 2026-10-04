@@ -467,3 +467,21 @@ def test_reserved_prefix_is_rejected_with_its_own_message(number, prefix):
     )
     assert not plan.ok
     assert number in plan.errors[0] and f'the prefix "{prefix}"' in plan.errors[0]
+
+
+@pytest.mark.parametrize(
+    ("name", "line"),
+    [(MENU_FILE, 3), (OPTIONS_FILE, 2), (ALLERGENS_FILE, 2), (ALIASES_FILE, 4)],
+)
+def test_nul_character_is_an_error_with_file_and_line(name, line):
+    """Review PR #169: Postgres text cannot hold NUL. Without this check the
+    database rejects the row, and its message names neither file nor line."""
+    rows = files()[name].splitlines(keepends=True)
+    cells = rows[line - 1].split(";")
+    cells[1] = cells[1][:1] + "\x00" + cells[1][1:]
+    rows[line - 1] = ";".join(cells)
+
+    plan = parse(files(**{name: "".join(rows)}))
+
+    assert not plan.ok
+    assert any(f"{name} line {line}" in e and "NUL" in e for e in plan.errors)

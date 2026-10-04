@@ -47,6 +47,7 @@
 
 - Doppelte `number` → Fehler
 - Preis nicht parsebar → Fehler
+- NUL character in a field → error with file and line (Postgres text cannot store it; a register export may pad with it)
 - Option zu unbekannter Nummer → Fehler
 - Pflichtgruppe ohne Default → Fehler
 - Gericht ohne Alias → Warnung, Liste für den Chat
@@ -61,7 +62,7 @@
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.
 
-**`--dry-run` is a full rehearsal.** It sends every row to the database (dishes, options, allergens, aliases) and rolls back: what the database would reject fails in the dry run already, not only in the real import.
+**`--dry-run` sends every menu row to the database** (dishes, options, allergens, aliases) and rolls back; only the commit and the audit entry are left out. What the database would reject fails in the dry run already, with a message and exit 1, not only in the real import.
 
 ---
 

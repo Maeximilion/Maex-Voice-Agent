@@ -117,7 +117,10 @@ def test_dry_run_rejects_what_the_database_rejects_in_an_option(
     # Postgres text cannot hold NUL; the checks in parse let it through.
     plan.options["47"].append(OptionRow("Extras", "Mango\x00Curry", 0, False, False))
 
-    with Session(engine, autoflush=False) as s, pytest.raises(DBAPIError):
+    with (
+        Session(engine, autoflush=False) as s,
+        pytest.raises(DBAPIError, match="NUL"),
+    ):
         apply(s, tenant_id, plan, now=NOW, dry_run=dry_run)
 
     with Session(engine) as s:
@@ -130,17 +133,19 @@ def test_dry_run_sends_the_last_dish_to_the_database_too(session, tenant_id):
     plan = parse(files())
     assert plan.ok, plan.errors
     last = list(plan.items)[-1]
-    plan.aliases[last].add("sup\x00pe")
+    plan.aliases.setdefault(last, set()).add("sup\x00pe")
 
-    with pytest.raises(DBAPIError):
+    with pytest.raises(DBAPIError, match="NUL"):
         apply(session, tenant_id, plan, now=NOW, dry_run=True)
+
+    # Rolled back like every other error exit of apply: the session works on.
+    assert count(session, MenuItem) == 0 and count(session, ItemAlias) == 0
 
 
 def test_dry_run_without_autoflush_writes_nothing(engine, tenant_id):
     """The flush before the rollback must not turn into a commit."""
-    plan = parse(files())
     with Session(engine, autoflush=False) as s:
-        report = apply(s, tenant_id, plan, now=NOW, dry_run=True)
+        report = run(s, tenant_id, dry_run=True)
 
     assert sorted(report.items_new) == ["12", "23", "47"]
     assert report.options_added == 3 and report.aliases_added == 4
@@ -315,6 +320,33 @@ def test_cli_fehler_exit_1_und_nichts_gespeichert(cli, ordner, session, capsys):
     assert cli(ordner) == 1
     assert "nichts eingespielt" in capsys.readouterr().err
     assert count(session, MenuItem) == 0
+
+
+@pytest.mark.parametrize("flags", [["--dry-run"], []])
+def test_cli_database_rejection_is_a_message_not_a_traceback(
+    engine, monkeypatch, tenant_id, ordner, session, capsys, flags
+):
+    """Review PR #169: the script caught only ValueError. A row the database
+    refuses - which a dry run now sends too - ended in a stack trace."""
+    with engine.begin() as conn:
+        # A rule only the database knows: no check of the files sees it coming.
+        conn.exec_driver_sql(
+            "ALTER TABLE item_options ADD CONSTRAINT ck_no_ente "
+            "CHECK (option_name <> 'Ente')"
+        )
+    # Like api.db.SessionLocal, which the script uses outside the tests.
+    monkeypatch.setattr(
+        import_menu,
+        "SessionLocal",
+        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False),
+    )
+
+    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", *flags])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "ck_no_ente" in err and "nothing was stored" in err
+    assert count(session, MenuItem) == 0 and count(session, ItemOption) == 0
 
 
 def test_cli_ordner_fehlt(cli, tmp_path):
