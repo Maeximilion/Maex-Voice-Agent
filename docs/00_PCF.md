@@ -493,9 +493,14 @@ Decisions: The scripted model gets the menu from its caller, not from the databa
        No new eval case: the unit tests were the red tests, cases/ stays at 26.
 Gate: G0 open, unchanged.
 Open: one worktree, branch and chat per item, independent of each other:
-       1. task/backup-restore (T-9.3) - scripts/backup.sh and restore.sh, restore rehearsed
-          once. Recommended first: the real register import waits on Maxi's go and must not
-          run without a backup; `make backup` fails today.
+       1. task/backup-restore (T-9.3) - recommended first: the real register import waits
+          on Maxi's go and must not run without a backup; `make backup` fails today. The
+          task definition is docs/07 (T-9.3) and docs/13 §4, not this line: scripts/backup.sh
+          and restore.sh, a daily pg_dump at 03:00 by cron, the dump encrypted onto a second
+          storage at another EU provider, and the restore really rehearsed once. Scripts and
+          a local rehearsal need nothing from Maxi. The second storage costs money and
+          depends on the hosting choice (D3): until it exists, T-9.3 stays open and the
+          session says so instead of ticking it off.
        2. feat/n8n-team-events - n8n workflow for reservation.confirmed, callback.created and
           order.handover_failed as push or SMS to the team, export to n8n/.
        3. fix/sim-open-points - every text phone point in docs/01 "Open Points from
