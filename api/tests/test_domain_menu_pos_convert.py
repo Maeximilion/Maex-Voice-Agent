@@ -290,6 +290,7 @@ def test_free_from_claim_in_a_name_without_allergens_is_listed():
         "Kuchen haselnussfrei",
         "Suppe frei von Sellerie",
         "Reis ohne Ei",
+        "Suppe ohne Eiernudeln",
         "Rolle ohne ERDNUESSE",
         "Salat ohne Zwiebeln und Sesam",
         "Curry (vegan)",
@@ -309,8 +310,12 @@ def test_free_from_claim_spellings(name):
         "Alkoholfreies Bier",  # free from something that is no allergen
         "Ente ohne Knochen",
         "Reis ohne Eis",  # "Ei" counts as a whole word only
+        "Kuchen ohne Feier",  # "Eier" counts at the start of a word only
         "Nudeln ohne Zwiebeln mit Erdnusssoße",  # the claim ends at "mit"
         "Erdnuss Curry mit Sesam",  # names an allergen, claims nothing
+        "Suppe laut Karte frei von",  # cut off at 40 characters by the register
+        "Reis ohne",
+        "Suppe ohne Zwiebeln und",
     ],
 )
 def test_word_in_another_sense_is_no_free_from_claim(name):

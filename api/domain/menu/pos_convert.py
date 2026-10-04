@@ -107,10 +107,11 @@ ALLERGEN_NAMES = {
     "P": ("lupine",),
     "R": ("weichtier",),
 }
-# "Ei" counts as a whole word only: "Eis", "Reis" and "Feier" are no eggs.
-_WHOLE_WORDS = frozenset(ALLERGEN_NAMES["C"])
+# "Ei" counts only as a whole word and "Eier" only at the start of one: "Eis",
+# "Reis" and "Feier" are no eggs, "Eiernudeln" are.
+_EGG, _EGGS = ALLERGEN_NAMES["C"]
 _STEMS = tuple(
-    n for names in ALLERGEN_NAMES.values() for n in names if n not in _WHOLE_WORDS
+    n for code, names in ALLERGEN_NAMES.items() if code != "C" for n in names
 )
 _FREE = re.compile(r"(.*)frei(?:e[mnrs]?)?")
 # "vegan" claims the animal allergens absent (B, C, D, G, R).
@@ -523,7 +524,9 @@ def _add_extras(
 
 
 def _names_allergen(word: str) -> bool:
-    return word in _WHOLE_WORDS or any(stem in word for stem in _STEMS)
+    return (
+        word == _EGG or word.startswith(_EGGS) or any(stem in word for stem in _STEMS)
+    )
 
 
 def free_from_claim(name: str) -> bool:
@@ -549,7 +552,8 @@ def free_from_claim(name: str) -> bool:
             # "glutenfrei", "Gluten-frei" and "Gluten frei" name it in front,
             # "frei von Gluten" behind.
             front = free[1] or (words[i - 1] if i else "")
-            behind = words[i + 2] if words[i + 1 : i + 2] == ["von"] else ""
+            after = words[i + 1 : i + 3]
+            behind = after[1] if len(after) == 2 and after[0] == "von" else ""
             if _names_allergen(front) or (not free[1] and _names_allergen(behind)):
                 return True
     return False
