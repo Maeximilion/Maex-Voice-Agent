@@ -327,14 +327,36 @@ def _reserved_local(session: Session, call, done_res) -> str | None:
     return to_local(done_res[-1].reserved_for, zone).strftime(LOCAL_MINUTE)
 
 
+def _norm_address(value: Any) -> str:
+    text = fold(str(value or "")).replace("str.", "strasse")
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def unchecked_address(
+    expected: dict[str, Any], ok_calls: list[tuple[str, dict[str, Any]]]
+) -> str | None:
+    """A case that expects an address and a successful `check_delivery` needs a
+    successful check for exactly that address. Checking house number 14 and then
+    delivering to the corrected 41 is not a zone check (Codex PR #162)."""
+    address = expected.get("address")
+    if address is None or "check_delivery" not in expected.get("tools", []):
+        return None
+    fields = {k: v for k, v in address.items() if k not in ADDRESS_WORD_KEYS}
+    for tool, args in ok_calls:
+        if tool == "check_delivery" and all(
+            _norm_address(args.get(k)) == _norm_address(v) for k, v in fields.items()
+        ):
+            return None
+    return (
+        f"tools: kein erfolgreicher check_delivery fuer die erwartete Adresse {fields}"
+    )
+
+
 def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | None:
     """Only the fields the case names. Values are equal when they differ only in
     umlaut spelling, ss/ß, spaces, punctuation or "str." for "strasse" ("7 b" and
     "7b", "Lindenstr." and "Lindenstraße")."""
-
-    def norm(value: str | None) -> str:
-        text = fold(value or "").replace("str.", "strasse")
-        return "".join(ch for ch in text if ch.isalnum())
+    norm = _norm_address
 
     def words(value: str | None) -> set[str]:
         # Punctuation separates words: "Nord,dritter" is two words, not one.

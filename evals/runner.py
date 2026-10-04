@@ -49,6 +49,7 @@ from evals.judge import (
     missing_tools,
     observe,
     offered_alternatives,
+    unchecked_address,
     validate_case,
 )
 from evals.recorder import RecordingLLM
@@ -212,6 +213,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     missing = missing_tools(
         expected.get("tools", []), rec.ok_results, rec.error_results
     )
+    unchecked = unchecked_address(expected, rec.ok_calls)
+    if unchecked:
+        diffs.append(unchecked)
     rejected = [m for m in missing if isinstance(m, dict) and "error" in m]
     succeeded = [m for m in missing if m not in rejected]
     if succeeded:

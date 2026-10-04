@@ -910,6 +910,73 @@ def test_expected_rejection_needs_exactly_that_rejection():
     assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
 
 
+def test_zone_check_has_to_cover_the_final_address():
+    """Codex PR #162: checking Gartenweg 14 and then delivering to the corrected
+    Gartenweg 41 must not pass; the successful check has to be for that address."""
+    from evals.judge import unchecked_address
+
+    address = {
+        "street": "Gartenweg",
+        "house_number": "41",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus",
+    }
+    expected = {"address": address, "tools": ["check_delivery"]}
+    first = {**address, "house_number": "14"}
+    assert unchecked_address(expected, [("check_delivery", first)])
+    assert unchecked_address(expected, [("search_menu", address)])
+    assert unchecked_address(expected, [])
+    final = {"street": "Gartenweg", "house_number": "41", "postal_code": "12345"}
+    assert (
+        unchecked_address(
+            expected, [("check_delivery", {**final, "city": "Musterdorf"})]
+        )
+        is None
+    )
+    # floor_note is not an argument of check_delivery and does not have to match.
+    assert (
+        unchecked_address(
+            expected,
+            [
+                ("check_delivery", first),
+                ("check_delivery", {**final, "city": "musterdorf"}),
+            ],
+        )
+        is None
+    )
+    # Without an expected address or without an expected successful check: no rule.
+    assert unchecked_address({"tools": ["check_delivery"]}, []) is None
+    assert unchecked_address({"address": address}, []) is None
+
+
+def test_recorder_keeps_the_arguments_of_successful_calls():
+    args = {"street": "Gartenweg", "house_number": "41"}
+    llm = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall(name="check_delivery", args=args)),
+                LLMTurn(
+                    tool_call=ToolCall(name="check_delivery", args={"street": "x"})
+                ),
+                LLMTurn(say="done"),
+            ]
+        )
+    )
+    llm.next_turn("", {}, "Gartenweg 41")
+    llm.next_turn(
+        "", {}, json.dumps({"tool": "check_delivery", "ok": True, "data": {}})
+    )
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    assert llm.recording.ok_calls == [("check_delivery", args)]
+
+
 def test_recorder_keeps_rejected_results_with_their_code():
     llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
     llm.next_turn(

@@ -78,6 +78,9 @@ class Recording:
     # Rejected tool results (name, error_code): a delivery outside the zone is
     # only handled correctly when the check rejected it (Codex PR #162).
     error_results: list[tuple[str, str]] = field(default_factory=list)
+    # Arguments of every call that succeeded (name, args): a zone check only
+    # counts for the address it was actually asked about (Codex PR #162).
+    ok_calls: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
@@ -89,6 +92,8 @@ class RecordingLLM:
     def __init__(self, inner: LLMClient):
         self._inner = inner
         self.recording = Recording()
+        # The call whose result arrives with the next input.
+        self._open_call: tuple[str, dict[str, Any]] | None = None
 
     def next_turn(
         self, system_prompt: str, state: dict[str, Any], user_input: str
@@ -104,10 +109,13 @@ class RecordingLLM:
         if result is None:
             self.recording.customer_lines.append(user_input)
             return
+        call, self._open_call = self._open_call, None
         if result.get("ok"):
             self.recording.ok_results.append(
                 (str(result.get("tool")), result.get("data") or {})
             )
+            if call is not None and call[0] == result.get("tool"):
+                self.recording.ok_calls.append(call)
         elif result.get("error_code"):
             self.recording.error_results.append(
                 (str(result.get("tool")), str(result["error_code"]))
@@ -118,6 +126,7 @@ class RecordingLLM:
     def _observe_call(self, name: str, args: dict[str, Any]) -> None:
         rec = self.recording
         rec.tool_calls.append(name)
+        self._open_call = (name, dict(args))
         last = rec.customer_lines[-1] if rec.customer_lines else ""
         if name in DRAFT_TOOLS:
             rec.drafted_at = len(rec.customer_lines)
