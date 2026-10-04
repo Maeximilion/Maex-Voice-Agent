@@ -1514,6 +1514,11 @@ def test_rejection_with_replacement_is_searched(session, tenant, answer, taken):
         # A standalone rejection: nothing to search.
         ("Keine davon.", None),
         ("Nein danke.", None),
+        # Courtesy only, no dish (Codex PR #178).
+        ("Nein, vielen Dank.", None),
+        ("Nein, danke schön.", None),
+        ("Nein, danke sehr.", None),
+        ("Nein danke, bitte die 23.", "die 23."),
         ("Nein, nicht die.", None),
         ("Nein, ich weiß nicht.", None),
         # "Keine Suppe" negates the dish, it is not a rejection plus a dish.

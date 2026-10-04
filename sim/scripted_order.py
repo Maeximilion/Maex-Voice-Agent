@@ -757,9 +757,11 @@ def _rejects(text: str) -> bool:
 
 
 # What stands between a rejection and the dish named instead; none of it names
-# a dish ("keine davon, lieber ...", "weder noch, dann ...", "nein danke").
+# a dish ("keine davon, lieber ...", "weder noch, dann ...", "nein, vielen
+# Dank": courtesy alone is no replacement, Codex PR #178).
 _REJECTION_FILL = frozenset(
-    {"davon", "noch", "danke", "lieber", "sondern", "dann", "aber", "stattdessen"}
+    {"davon", "noch", "lieber", "sondern", "dann", "aber", "stattdessen"}
+    | {"danke", "dank", "vielen", "schön", "schoen", "sehr", "bitte"}
 )
 
 
