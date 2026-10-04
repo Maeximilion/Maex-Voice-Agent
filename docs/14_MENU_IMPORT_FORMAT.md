@@ -62,7 +62,7 @@
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.
 
-**`--dry-run` sends every menu row to the database** (dishes, options, allergens, aliases) and rolls back; only the commit and the audit entry are left out. What the database would reject fails in the dry run already, with a message and exit 1, not only in the real import.
+**`--dry-run` sends every menu row to the database** (dishes, options, allergens, aliases) and rolls back; only the commit and the audit entry are left out. What the database would reject fails in the dry run already, with a message and exit 1, not only in the real import. The real import sends every row before its commit as well, so the message tells two cases apart, both exit 1 and without a stack trace: a rejected row ("nothing was stored"), and an error of the commit itself, for example a dropped connection ("unknown whether the import was stored" - the server may have committed before its answer got lost). After the second, run the same command with `--dry-run`, same files and switches: nothing new, changed or removed means the import went through, and `audit_log` holds a `menu.imported` entry if it changed anything; if the report still shows the changes, nothing was stored and the import can be repeated.
 
 ---
 

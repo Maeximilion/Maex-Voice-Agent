@@ -5,7 +5,9 @@ Two steps, so each can be tested on its own:
 - `parse(files)` reads and checks, without a database. Errors prevent any
   import, warnings end up in the report (docs/14 §Prüfregeln).
 - `apply(session, tenant_id, plan, ...)` brings the database in line. All in
-  one transaction: an error halfway leaves no half menu behind.
+  one transaction: an error halfway leaves no half menu behind. Every row is
+  flushed before the commit, so an error is either a rejected row (nothing
+  stored) or the commit itself (`CommitOutcomeUnknownError`).
 
 The file is the truth for every dish it names: options are brought in line,
 and so are aliases from an earlier import. Aliases from calls or added by hand
@@ -20,6 +22,7 @@ Prices from the file replace an existing price only with
 report. Money only as integer cents, never via float (CLAUDE.md §8).
 """
 
+import contextlib
 import csv
 import io
 import re
@@ -87,6 +90,13 @@ MAX_DEACTIVATE_SHARE = 0.5
 class MassDeactivationError(ValueError):
     """More than MAX_DEACTIVATE_SHARE of the active menu would be deactivated.
     The interface (CLI, later GUI) says how to allow it on purpose."""
+
+
+class CommitOutcomeUnknownError(Exception):
+    """The commit of an import raised. Every row had been accepted before, so
+    the server may have committed and only its answer got lost (connection
+    dropped). A dry run with the same plan and switches tells: no change means
+    the import went through. The message is the database's own."""
 
 
 def is_card_number(number: str) -> bool:
@@ -548,6 +558,9 @@ def apply(
     (register as master, docs/14). Without the switch they stay as they are.
     A file without dishes, or one that would drop more than half of the active
     menu, is refused unless allow_large_deactivation is set.
+
+    Errors by phase: whatever is raised before the commit means nothing was
+    stored. The commit itself raises CommitOutcomeUnknownError.
     """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
@@ -703,7 +716,22 @@ def apply(
                 },
             )
         )
-    session.commit()
+    # Every row goes to the database before the commit, so a row it rejects
+    # fails here and nothing was stored. What the commit raises afterwards is
+    # about the commit alone (no constraint is deferred to it), and there the
+    # server may have committed before its answer got lost (Codex PR #169).
+    try:
+        session.flush()
+    except BaseException:
+        session.rollback()
+        raise
+    try:
+        session.commit()
+    except Exception as exc:
+        # Releases the session; a commit that reached the server stays.
+        with contextlib.suppress(Exception):
+            session.rollback()
+        raise CommitOutcomeUnknownError(str(getattr(exc, "orig", exc)).strip()) from exc
     return report
 
 

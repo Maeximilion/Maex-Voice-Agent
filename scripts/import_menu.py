@@ -10,7 +10,8 @@ item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
 Ordner imports/ ist im .gitignore: echte Kartendaten kommen nicht ins Repo.
 
 Exit code: 0 imported (or a dry run without errors), 1 check errors in the
-files or the database rejected a row (a dry run sends every row too),
+files, the database rejected a row (a dry run sends every row too), or the
+commit failed and the outcome is unknown (the message says how to find out),
 2 folder or tenant not found. Die Logik steckt in
 api/domain/menu/importer.py, hier nur Dateien lesen und Bericht drucken.
 """
@@ -24,7 +25,13 @@ from sqlalchemy.exc import DBAPIError
 
 from api.config import settings
 from api.db import SessionLocal
-from api.domain.menu.importer import FILES, MassDeactivationError, apply, parse
+from api.domain.menu.importer import (
+    FILES,
+    CommitOutcomeUnknownError,
+    MassDeactivationError,
+    apply,
+    parse,
+)
 from api.models import Tenant
 
 
@@ -99,10 +106,24 @@ def main(argv: list[str] | None = None) -> int:
             # Bestand passt nicht zum Plan (z. B. 23A und 23a): nichts eingespielt.
             print(f"Fehler: {exc}", file=sys.stderr)
             return 1
+        except CommitOutcomeUnknownError as exc:
+            # Every row was accepted, then the commit raised: the server may
+            # have committed before its answer got lost (Codex PR #169).
+            print(
+                f"Error: the commit failed, so it is unknown whether the import "
+                f"was stored: {exc}\n"
+                "Run the same command again with --dry-run (same files, same "
+                "switches). If the report shows nothing new, changed or removed, "
+                "the import went through, and audit_log holds a menu.imported "
+                "entry if it changed anything. If it still shows the changes, "
+                "they were not stored: repeat the import.",
+                file=sys.stderr,
+            )
+            return 1
         except DBAPIError as exc:
-            # The database refused a row the checks of the files let through.
-            # A dry run sends every row too, so it ends here as well - with a
-            # message instead of a stack trace (review PR #169).
+            # The database refused a row the checks of the files let through,
+            # before the commit. A dry run sends every row too, so it ends here
+            # as well - with a message instead of a stack trace (review PR #169).
             session.rollback()
             print(
                 f"Error: the database rejected the import, nothing was stored: "
