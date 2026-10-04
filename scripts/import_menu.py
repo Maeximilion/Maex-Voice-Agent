@@ -10,8 +10,9 @@ item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
 Ordner imports/ ist im .gitignore: echte Kartendaten kommen nicht ins Repo.
 
 Exit code: 0 imported (or a dry run without errors), 1 check errors in the
-files, the database rejected a row (a dry run sends every row too), or the
-commit failed and the outcome is unknown (the message says how to find out),
+files, a database error before the commit (no connection, or a row the
+database rejects - a dry run sends every row too), or the commit did not
+finish and the outcome is unknown (the message says how to find out),
 2 folder or tenant not found. Die Logik steckt in
 api/domain/menu/importer.py, hier nur Dateien lesen und Bericht drucken.
 """
@@ -27,6 +28,7 @@ from api.config import settings
 from api.db import SessionLocal
 from api.domain.menu.importer import (
     FILES,
+    CommitInterruptedError,
     CommitOutcomeUnknownError,
     MassDeactivationError,
     apply,
@@ -81,11 +83,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     with SessionLocal() as session:
-        tenant = session.scalar(select(Tenant).where(Tenant.name == args.tenant_name))
-        if tenant is None:
-            print(f"Mandant nicht gefunden: {args.tenant_name}", file=sys.stderr)
-            return 2
         try:
+            tenant = session.scalar(
+                select(Tenant).where(Tenant.name == args.tenant_name)
+            )
+            if tenant is None:
+                print(f"Mandant nicht gefunden: {args.tenant_name}", file=sys.stderr)
+                return 2
             report = apply(
                 session,
                 tenant.id,
@@ -106,28 +110,32 @@ def main(argv: list[str] | None = None) -> int:
             # Bestand passt nicht zum Plan (z. B. 23A und 23a): nichts eingespielt.
             print(f"Fehler: {exc}", file=sys.stderr)
             return 1
-        except CommitOutcomeUnknownError as exc:
-            # Every row was accepted, then the commit raised: the server may
-            # have committed before its answer got lost (Codex PR #169).
+        except (CommitOutcomeUnknownError, CommitInterruptedError) as exc:
+            # Every row was accepted, then the commit raised or was interrupted:
+            # the server may have committed before its answer got lost (Codex
+            # PR #169, PR #176).
             print(
-                f"Error: the commit failed, so it is unknown whether the import "
-                f"was stored: {exc}\n"
+                f"Error: the commit did not finish, so it is unknown whether the "
+                f"import was stored: {exc}\n"
                 "Run the same command again with --dry-run (same files, same "
-                "switches). If the report shows nothing new, changed or removed, "
-                "the import went through, and audit_log holds a menu.imported "
-                "entry if it changed anything. If it still shows the changes, "
-                "they were not stored: repeat the import.",
+                "switches). If the report counts nothing new, changed, removed or "
+                "deactivated, the import went through, and audit_log holds a "
+                "menu.imported entry if it changed anything. If it counts the "
+                "same changes as before, the import was not stored: repeat it. "
+                "Price changes that are not applied, dishes not in the file and "
+                "warnings are listed either way.",
                 file=sys.stderr,
             )
             return 1
         except DBAPIError as exc:
-            # The database refused a row the checks of the files let through,
-            # before the commit. A dry run sends every row too, so it ends here
-            # as well - with a message instead of a stack trace (review PR #169).
+            # A database error before the commit: no connection, or a row the
+            # database refuses although the checks of the files let it through.
+            # A dry run sends every row too, so it ends here as well - with a
+            # message instead of a stack trace (review PR #169).
             session.rollback()
             print(
-                f"Error: the database rejected the import, nothing was stored: "
-                f"{str(exc.orig).strip()}",
+                f"Error: database error before the commit, nothing was stored: "
+                f"{str(exc.orig or exc).strip()}",
                 file=sys.stderr,
             )
             return 1

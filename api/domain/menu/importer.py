@@ -7,7 +7,8 @@ Two steps, so each can be tested on its own:
 - `apply(session, tenant_id, plan, ...)` brings the database in line. All in
   one transaction: an error halfway leaves no half menu behind. Every row is
   flushed before the commit, so an error is either a rejected row (nothing
-  stored) or the commit itself (`CommitOutcomeUnknownError`).
+  stored) or the commit itself (`CommitOutcomeUnknownError`,
+  `CommitInterruptedError`).
 
 The file is the truth for every dish it names: options are brought in line,
 and so are aliases from an earlier import. Aliases from calls or added by hand
@@ -95,8 +96,15 @@ class MassDeactivationError(ValueError):
 class CommitOutcomeUnknownError(Exception):
     """The commit of an import raised. Every row had been accepted before, so
     the server may have committed and only its answer got lost (connection
-    dropped, or interrupted with Ctrl-C). A dry run with the same plan and switches tells: no change means
-    the import went through. The message is the database's own."""
+    dropped). A dry run with the same plan and switches tells: no change means
+    the import went through. The message is the text of the cause."""
+
+
+class CommitInterruptedError(KeyboardInterrupt):
+    """Ctrl-C while the commit was running: the same doubt as
+    CommitOutcomeUnknownError. Still an interrupt and no Exception, so a
+    caller that catches Exception does not swallow it - the eval runner turns
+    exceptions into red cases and goes on."""
 
 
 def is_card_number(number: str) -> bool:
@@ -560,7 +568,8 @@ def apply(
     menu, is refused unless allow_large_deactivation is set.
 
     Errors by phase: whatever is raised before the commit means nothing was
-    stored. The commit itself raises CommitOutcomeUnknownError.
+    stored. The commit itself raises CommitOutcomeUnknownError, or
+    CommitInterruptedError on Ctrl-C.
     """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
@@ -685,18 +694,7 @@ def apply(
             _sync_allergens(session, item, plan.allergens[number], now, report)
         _sync_aliases(session, item, plan.aliases.get(number, set()), report)
 
-    if dry_run:
-        # Send everything to the database before rolling back. The script's
-        # session has autoflush off: options, allergens and aliases would
-        # never reach the database, and a row it rejects would pass the dry
-        # run and fail only in the real import. Rolled back in any case, like
-        # every other error exit here.
-        try:
-            session.flush()
-        finally:
-            session.rollback()
-        return report
-    if report.changed:
+    if not dry_run and report.changed:
         session.add(
             AuditLog(
                 tenant_id=tenant_id,
@@ -716,26 +714,33 @@ def apply(
                 },
             )
         )
-    # Every row goes to the database before the commit, so a row it rejects
-    # fails here and nothing was stored. What the commit raises afterwards is
-    # about the commit alone (no constraint is deferred to it), and there the
-    # server may have committed before its answer got lost (Codex PR #169).
+    # Every row goes to the database here, in a dry run too. The script's
+    # session has autoflush off: options, allergens and aliases would
+    # otherwise reach the database only in the commit, and a row it rejects
+    # would pass the dry run. Such a row fails here, is rolled back like every
+    # other error exit, and nothing was stored.
     try:
         session.flush()
     except BaseException:
         session.rollback()
         raise
+    if dry_run:
+        session.rollback()
+        return report
+    # What the commit raises is about the commit alone (no constraint is
+    # deferred to it), and there the server may have committed before its
+    # answer got lost (Codex PR #169). Ctrl-C leaves the same doubt, but stays
+    # an interrupt (Codex PR #176).
     try:
         session.commit()
-    except BaseException as exc:
-        # BaseException on purpose: Ctrl-C while the driver runs COMMIT leaves
-        # the same doubt as a dropped connection (Codex PR #176).
-        # The rollback releases the session; a commit that reached the server
-        # stays.
+    except (Exception, KeyboardInterrupt) as exc:
+        # Releases the session; a commit that reached the server stays.
         with contextlib.suppress(Exception):
             session.rollback()
-        detail = str(getattr(exc, "orig", exc)).strip() or type(exc).__name__
-        raise CommitOutcomeUnknownError(detail) from exc
+        if isinstance(exc, KeyboardInterrupt):
+            raise CommitInterruptedError("interrupted during the commit") from exc
+        detail = str(getattr(exc, "orig", None) or exc).strip()
+        raise CommitOutcomeUnknownError(detail or type(exc).__name__) from exc
     return report
 
 

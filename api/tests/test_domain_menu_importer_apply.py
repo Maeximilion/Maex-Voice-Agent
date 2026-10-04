@@ -14,6 +14,7 @@ from api.domain.menu.importer import (
     ALLERGENS_FILE,
     MENU_FILE,
     OPTIONS_FILE,
+    CommitInterruptedError,
     CommitOutcomeUnknownError,
     OptionRow,
     apply,
@@ -148,6 +149,27 @@ def test_apply_names_an_error_of_the_commit_itself(engine, tenant_id, monkeypatc
 
     assert unflushed == [False]
     assert isinstance(e.value.__cause__, OperationalError)
+
+
+def test_apply_interrupt_in_the_commit_stays_an_interrupt(
+    engine, tenant_id, monkeypatch
+):
+    """Review PR #176: wrapped into an Exception, Ctrl-C in the commit was
+    swallowed by every caller that catches Exception - the eval runner turned
+    it into a red case and went on."""
+    plan = parse(files())
+    assert plan.ok, plan.errors
+
+    def interrupted() -> None:
+        raise KeyboardInterrupt
+
+    with Session(engine, autoflush=False) as s:
+        monkeypatch.setattr(s, "commit", interrupted)
+        # Caught here in any case: a bare interrupt would stop the pytest run.
+        with pytest.raises(KeyboardInterrupt) as e:
+            apply(s, tenant_id, plan, now=NOW)
+
+    assert isinstance(e.value, CommitInterruptedError)
 
 
 def test_dry_run_sends_the_last_dish_to_the_database_too(session, tenant_id):
@@ -345,6 +367,15 @@ def test_cli_fehler_exit_1_und_nichts_gespeichert(cli, ordner, session, capsys):
     assert count(session, MenuItem) == 0
 
 
+def script_sessions(engine, **kw) -> sessionmaker:
+    """Sessions like api.db.SessionLocal, which the script uses outside the tests."""
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, **kw)
+
+
+def run_script(ordner, *flags: str) -> int:
+    return import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", *flags])
+
+
 def reject_ente(engine) -> None:
     """A rule only the database knows: no check of the files sees it coming."""
     with engine.begin() as conn:
@@ -377,14 +408,7 @@ def commit_fails(engine, monkeypatch, tenant_id):
                 )
 
         monkeypatch.setattr(
-            import_menu,
-            "SessionLocal",
-            sessionmaker(
-                bind=engine,
-                class_=LostConnection,
-                autoflush=False,
-                expire_on_commit=False,
-            ),
+            import_menu, "SessionLocal", script_sessions(engine, class_=LostConnection)
         )
         return calls
 
@@ -398,14 +422,9 @@ def test_cli_database_rejection_is_a_message_not_a_traceback(
     """Review PR #169: the script caught only ValueError. A row the database
     refuses - which a dry run now sends too - ended in a stack trace."""
     reject_ente(engine)
-    # Like api.db.SessionLocal, which the script uses outside the tests.
-    monkeypatch.setattr(
-        import_menu,
-        "SessionLocal",
-        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False),
-    )
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", *flags])
+    code = run_script(ordner, *flags)
 
     err = capsys.readouterr().err
     assert code == 1
@@ -421,7 +440,7 @@ def test_cli_database_rejection_never_reaches_the_commit(
     reject_ente(engine)
     calls = commit_fails(reaches_server=False)
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb"])
+    code = run_script(ordner)
 
     err = capsys.readouterr().err
     assert code == 1
@@ -440,7 +459,7 @@ def test_cli_commit_error_reports_an_unknown_outcome(
     must not claim that nothing was stored. A dry run afterwards tells."""
     calls = commit_fails(reaches_server=reaches_server)
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb"])
+    code = run_script(ordner)
 
     err = capsys.readouterr().err
     assert code == 1
@@ -452,15 +471,8 @@ def test_cli_commit_error_reports_an_unknown_outcome(
     assert count(session, MenuItem) == (3 if reaches_server else 0)
 
     # What the message tells the operator to do, with a working connection.
-    monkeypatch.setattr(
-        import_menu,
-        "SessionLocal",
-        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False),
-    )
-    assert (
-        import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", "--dry-run"])
-        == 0
-    )
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
+    assert run_script(ordner, "--dry-run") == 0
     out = capsys.readouterr().out
     assert ("Keine Änderung" in out) == reaches_server
     assert ("Gerichte neu: 3" in out) == (not reaches_server)
@@ -475,20 +487,67 @@ def test_cli_interrupt_during_commit_reports_an_unknown_outcome(
     message instead of an interrupt traceback."""
     calls = commit_fails(reaches_server=True, error=KeyboardInterrupt())
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb"])
+    try:
+        code = run_script(ordner)
+    except KeyboardInterrupt:
+        # Not let through: pytest would take it for Ctrl-C and stop the run.
+        pytest.fail("the interrupt escaped the script")
 
     err = capsys.readouterr().err
     assert code == 1
     assert calls == [False]
-    assert "KeyboardInterrupt" in err
+    assert "interrupted" in err
     assert "unknown" in err and "--dry-run" in err
     assert count(session, MenuItem) == 3
+
+
+def test_cli_unapplied_price_change_is_listed_either_way(
+    cli, engine, monkeypatch, commit_fails, ordner, capsys
+):
+    """Review PR #176: without --apply-price-changes the dry run lists the
+    price change before and after a stored import. The message has to say that
+    this line does not tell, or the operator repeats an import that is in."""
+    assert cli(ordner) == 0
+    (ordner / MENU_FILE).write_text(
+        files()[MENU_FILE]
+        .replace("6,90", "7,50")
+        .replace("Frühlingsrollen", "Knusperrollen"),
+        encoding="utf-8",
+    )
+    commit_fails(reaches_server=True)
+    capsys.readouterr()
+
+    assert run_script(ordner) == 1
+
+    assert "listed either way" in capsys.readouterr().err
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
+    assert run_script(ordner, "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "Gerichte neu: 0, geändert: 0" in out
+    assert "Preisänderung 23" in out and "NICHT übernommen" in out
+
+
+def test_cli_no_connection_is_a_message_not_a_traceback(monkeypatch, ordner, capsys):
+    """Review PR #176: the tenant lookup ran outside the try, so a database
+    that cannot be reached (wrong DATABASE_URL, stack down) ended in a stack
+    trace. Nothing was rejected there, so the message does not say so."""
+    nowhere = create_engine(
+        "postgresql+psycopg://nobody@127.0.0.1:1/nothing",
+        connect_args={"connect_timeout": 2},
+    )
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(nowhere))
+
+    code = run_script(ordner)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "nothing was stored" in err and "rejected" not in err
 
 
 def test_cli_dry_run_never_commits(commit_fails, ordner, session, capsys):
     calls = commit_fails(reaches_server=True)
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", "--dry-run"])
+    code = run_script(ordner, "--dry-run")
 
     assert code == 0
     assert calls == []
