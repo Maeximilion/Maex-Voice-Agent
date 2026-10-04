@@ -335,7 +335,9 @@ def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | Non
         return "".join(ch for ch in text if ch.isalnum())
 
     def words(value: str | None) -> set[str]:
-        return {norm(word) for word in (value or "").split()} - {""}
+        # Punctuation separates words: "Nord,dritter" is two words, not one.
+        text = fold(value or "")
+        return set("".join(ch if ch.isalnum() else " " for ch in text).split())
 
     def same(key: str) -> bool:
         if key in ADDRESS_WORD_KEYS:

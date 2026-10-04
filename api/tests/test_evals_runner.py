@@ -539,6 +539,11 @@ def test_genannte_rufnummer_und_klingelhinweis_werden_geprueft():
     assert judge({"address": {"floor_note": "Firma Sued"}}, seen)
     without = _reservation_seen(address={"street": "Industriestrasse"})
     assert judge({"address": note}, without)
+    # Codex PR #162: punctuation joins words in a stored note; it must separate
+    # them, otherwise "Nord,dritter" becomes one token and a matching note is red.
+    for stored in ("Firma Nord,dritter Stock", "Firma-Nord: dritter/Stock"):
+        joined = _reservation_seen(address={"floor_note": stored})
+        assert judge({"address": note}, joined) == [], stored
 
 
 def test_run_waehlt_den_report_ordner_je_fallordner(
