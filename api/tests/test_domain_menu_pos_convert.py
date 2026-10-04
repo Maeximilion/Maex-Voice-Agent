@@ -3,7 +3,13 @@
 import pytest
 
 from api.domain.menu.importer import ALLERGENS_FILE, MENU_FILE, OPTIONS_FILE, parse
-from api.domain.menu.pos_convert import ALLERGEN_MAP, cents, convert, extra_name
+from api.domain.menu.pos_convert import (
+    ALLERGEN_MAP,
+    ALLERGEN_NAMES,
+    cents,
+    convert,
+    extra_name,
+)
 from api.domain.menu.pos_dbf import DbfError, Field, Table
 
 
@@ -247,6 +253,85 @@ def test_warnungen_fuer_menschen():
     assert "Aktionspreis" in text
     assert "Allergenträger" in text and "33" in text
     assert "Gerichte übernommen: 2" in text
+
+
+def free_from_warnings(result):
+    return [w for w in result.warnings if "free from" in w]
+
+
+def test_free_from_claim_in_a_name_without_allergens_is_listed():
+    """The agent reads the name aloud: the claim would be an allergen fact
+    that is not a database value (CLAUDE.md rule 1)."""
+    result = run(
+        [
+            artikel("11", "Glutenfreie Nudeln"),
+            artikel("12", "Reis ohne Erdnüsse"),
+            artikel("13", "Curry mit Tofu"),
+            artikel("14", "Vegane Rollen"),
+        ]
+    )
+
+    [warning] = free_from_warnings(result)
+    assert warning.endswith(": 11, 12, 14")
+    assert "Warnung: " + warning in result.as_text()
+    assert result.errors == []
+    # A warning only: the dish is taken over, the agent says "no information".
+    assert [r["number"] for r in result.menu] == ["11", "12", "13", "14"]
+    assert {r["allergen_codes"] for r in result.allergens} == {""}
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Nudeln glutenfrei",
+        "Gluten-freie Nudeln",
+        "Nudeln Gluten frei",
+        "Tofu laktosefrei",
+        "Kuchen haselnussfrei",
+        "Suppe frei von Sellerie",
+        "Reis ohne Ei",
+        "Rolle ohne ERDNUESSE",
+        "Salat ohne Zwiebeln und Sesam",
+        "Curry (vegan)",
+        "Veganes Curry",
+    ],
+)
+def test_free_from_claim_spellings(name):
+    assert free_from_warnings(run([artikel("7", name)]))
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "Bohnen Erdnusssoße",  # "ohne" only inside "Bohnen"
+        "Ei vom Freilandhuhn",  # "frei" only inside another word
+        "Freilandei",
+        "Alkoholfreies Bier",  # free from something that is no allergen
+        "Ente ohne Knochen",
+        "Reis ohne Eis",  # "Ei" counts as a whole word only
+        "Nudeln ohne Zwiebeln mit Erdnusssoße",  # the claim ends at "mit"
+        "Erdnuss Curry mit Sesam",  # names an allergen, claims nothing
+    ],
+)
+def test_word_in_another_sense_is_no_free_from_claim(name):
+    assert free_from_warnings(run([artikel("7", name)])) == []
+
+
+def test_free_from_claim_with_maintained_allergens_gives_no_warning():
+    rows = [artikel("7", "Glutenfreie Nudeln", ALLERGENE="CF")]
+
+    confirmed = run(rows, allergens_confirmed_by="Maxi")
+    assert confirmed.allergens[0]["allergen_codes"] == "C,F"
+    assert free_from_warnings(confirmed) == []
+
+    # Letters in the register, but nobody confirmed them: the row stays empty,
+    # so the name is still the only allergen statement the caller gets.
+    assert free_from_warnings(run(rows))
+
+
+def test_free_from_words_cover_every_lmiv_allergen():
+    assert set(ALLERGEN_NAMES) == set(ALLERGEN_MAP.values())
+    assert all(ALLERGEN_NAMES.values())
 
 
 def test_zutat_mit_unbekannter_preisstufe_und_abgeschnittenem_namen():

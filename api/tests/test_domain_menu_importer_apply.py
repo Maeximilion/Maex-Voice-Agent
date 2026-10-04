@@ -652,6 +652,17 @@ def test_skript_meldet_fehler_und_fehlende_datei(tmp_path, capsys):
     assert not (tmp_path / "x").exists()
 
 
+def test_script_reports_free_from_claim_as_warning(tmp_path, capsys):
+    kasse = tmp_path / "kasse"
+    kasse.mkdir()
+    _kasse(kasse, [SUPPE, {**SUPPE, "ARTNR": "2", "BEZEICH": "Suppe glutenfrei"}])
+
+    assert kasse_to_csv.main([str(kasse), "--out", str(tmp_path / "out")]) == 0
+
+    [line] = [x for x in capsys.readouterr().out.splitlines() if "free from" in x]
+    assert line.startswith("Warnung: ") and line.endswith(": 2")
+
+
 def test_cli_deaktiviert_fehlende_nur_mit_schalter(cli, ordner, session, capsys):
     """Review T-4.11: der Schalter muss auf der Kommandozeile ankommen."""
     assert cli(ordner) == 0

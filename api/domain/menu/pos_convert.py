@@ -34,7 +34,7 @@ from api.domain.menu.importer import (
     parse_eur,
 )
 from api.domain.menu.items import option_key
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import canonical_card, fold
 from api.domain.menu.pos_dbf import DbfError, Table
 
 # Names from the register's screen ("Größen Bezeichnung ändern"), Maxi
@@ -87,6 +87,34 @@ _CARRIERS = (
     "mandel",
     "tintenfisch",
 )
+# Only for the warning to people (docs/14): a dish name that claims an allergen
+# is absent ("glutenfrei", "ohne Erdnüsse") while no allergens are maintained.
+# The 14 LMIV allergens by database letter (api/models/menu.py), as a name
+# would spell them, in `fold` spelling. Matched inside a word ("haselnussfrei").
+ALLERGEN_NAMES = {
+    "A": ("gluten", "weizen"),
+    "B": ("krebstier",),
+    "C": ("ei", "eier"),
+    "D": ("fisch",),
+    "E": ("erdnuss", "erdnuesse"),
+    "F": ("soja",),
+    "G": ("milch", "laktose", "lactose"),
+    "H": ("nuss", "nuesse", "schalenfrucht", "schalenfruechte"),
+    "L": ("sellerie",),
+    "M": ("senf",),
+    "N": ("sesam",),
+    "O": ("sulfit", "sulphit", "schwefel"),
+    "P": ("lupine",),
+    "R": ("weichtier",),
+}
+# "Ei" counts as a whole word only: "Eis", "Reis" and "Feier" are no eggs.
+_WHOLE_WORDS = frozenset(ALLERGEN_NAMES["C"])
+_STEMS = tuple(
+    n for names in ALLERGEN_NAMES.values() for n in names if n not in _WHOLE_WORDS
+)
+_FREE = re.compile(r"(.*)frei(?:e[mnrs]?)?")
+# "vegan" claims the animal allergens absent (B, C, D, G, R).
+_VEGAN = re.compile(r"vegan(?:e[mnrs]?)?")
 # Columns the converter reads directly. If one is missing (other register
 # version, wrong file), that is a format error instead of a KeyError (Codex PR
 # #149). Optional columns (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
@@ -241,6 +269,7 @@ def convert(
     bad_numbers: list[str] = []
     unnamed_sizes: dict[int, list[str]] = {}
     carriers: list[str] = []
+    free_from: list[str] = []
     for row in candidates:
         pos_code = row["ARTNR"]
         where = f"Artikel {pos_code or '(ohne Nummer)'}"
@@ -335,6 +364,8 @@ def convert(
         if "+" in code:
             _add_extras(result, where, number, row["WRG"], named, extras)
         _add_allergens(result, where, number, row, allergens_confirmed_by, carriers)
+        if not result.allergens[-1]["allergen_codes"] and free_from_claim(name):
+            free_from.append(pos_code)
 
     if bad_numbers:
         result.errors.append(
@@ -361,6 +392,12 @@ def convert(
         result.warnings.append(
             "ZUTATEN nennt einen Allergenträger, ALLERGENE ist leer (Agent sagt "
             "weiter „keine Auskunft“): " + ", ".join(carriers)
+        )
+    if free_from:
+        result.warnings.append(
+            'Name carries a "free from" claim that the agent would read aloud, but '
+            "no allergens are maintained (rename the dish in the register, or "
+            "maintain and confirm its allergens): " + ", ".join(free_from)
         )
     return result
 
@@ -483,6 +520,39 @@ def _add_extras(
         result.options.append(
             _option(number, EXTRAS_GROUP, name, price, default=False, required=False)
         )
+
+
+def _names_allergen(word: str) -> bool:
+    return word in _WHOLE_WORDS or any(stem in word for stem in _STEMS)
+
+
+def free_from_claim(name: str) -> bool:
+    """Does the dish name say that an allergen is absent?
+
+    Whole words only: "ohne" inside "Bohnen" and "frei" inside "Freilandei"
+    claim nothing. A heuristic for the report, never a source for allergens.
+    """
+    words = re.findall(r"[a-z]+", fold(name))
+    for i, word in enumerate(words):
+        if _VEGAN.fullmatch(word):
+            return True
+        if word == "ohne":
+            # "ohne Zwiebeln und Sesam": the list goes on over "und"/"oder".
+            j = i + 1
+            while j < len(words):
+                if _names_allergen(words[j]):
+                    return True
+                if words[j + 1 : j + 2] not in (["und"], ["oder"]):
+                    break
+                j += 2
+        elif free := _FREE.fullmatch(word):
+            # "glutenfrei", "Gluten-frei" and "Gluten frei" name it in front,
+            # "frei von Gluten" behind.
+            front = free[1] or (words[i - 1] if i else "")
+            behind = words[i + 2] if words[i + 1 : i + 2] == ["von"] else ""
+            if _names_allergen(front) or (not free[1] and _names_allergen(behind)):
+                return True
+    return False
 
 
 def _add_allergens(
