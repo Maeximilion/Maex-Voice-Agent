@@ -18,11 +18,13 @@ Event from dispatcher (webhook, POST /webhook/maex, basic auth)
 |---|---|---|
 | `reservation.confirmed` | "Neue Reservierung": party size, date and time | `party_size`, `reserved_for` |
 | `callback.created` | "Rückruf offen": the reason in words, priority `high` for a complaint | `reason` |
-| `order.handover_failed` | "Bestellung nicht angekommen": pickup code and reason, priority `high` | `pickup_code`, `reason` |
+| `order.handover_failed` | "Bestellung nicht angekommen": pickup code and reason (first 120 characters), priority `high` | `pickup_code`, `reason` |
 
 `order.confirmed` never arrives here: the print bridge collects it (`api/events/types.py`, `KITCHEN`). `daily.report` has no branch because nothing produces it yet. `api/tests/test_n8n_workflow.py` fails as soon as an event type reaches n8n without a branch.
 
-The message texts are German because the team reads them. The time is shown in the timezone of the n8n instance (`GENERIC_TIMEZONE` in `docker-compose.yml`).
+The message texts are German because the team reads them. The time is shown in `Europe/Berlin`, pinned in the workflow settings so it does not depend on the environment of the n8n instance.
+
+`tenant_id` arrives with every event but is not used: one location, one team, one timezone. A second tenant needs its own channel and its timezone in the payload.
 
 ## Import
 
@@ -36,7 +38,7 @@ The message texts are German because the team reads them. The time is shown in t
 3. Replace the node **REPLACE ME: team notification channel** (next section).
 4. Publish the workflow. `N8N_WEBHOOK_URL` must point at the production URL `/webhook/maex`, not at `/webhook-test/`.
 
-Importing the file again overwrites the workflow with the same id, including the two manual steps.
+Importing the file again with the command above overwrites the workflow with the same id, including the two manual steps: repeat steps 2 to 4. "Import from File" in the editor does not overwrite, it loads the nodes into the workflow that is open.
 
 ## The channel node
 
@@ -60,6 +62,12 @@ The messages carry no names, phone numbers or free text from the call; the detai
 | Event type without a branch | 422 `unknown_event_type` | retry, then `failed` with alarm |
 | Channel node fails, or is still the placeholder | 500 | retry, then `failed` with alarm |
 
+## What n8n stores
+
+The workflow settings switch the execution history off, for successful and failed runs: a saved run holds the whole event, including guest name, phone number and note. n8n still writes a run to its database while it runs; right after the run the row is marked as deleted and no longer shows in the editor (observed), and n8n's pruning job removes it afterwards (not checked here).
+
+The price: a failed run leaves nothing to look at in the editor. To debug, switch "Save failed production executions" on in the workflow settings for a while, and off again.
+
 ## Dedupe
 
 The event id (`X-Idempotency-Key`, same as `id` in the body) is stored in the workflow's static data, the last 1000 ids. It is stored after the channel node succeeded, not before: a failed notification leaves no mark, so the retry is processed again. The price is that a notification can arrive twice (sent, but the answer to the dispatcher got lost, or two runs at the same moment overwrite each other's mark). Twice is the safe side for an alarm.
@@ -68,10 +76,10 @@ n8n keeps static data only for a published workflow called through its productio
 
 ## Changing the workflow
 
-Edit in n8n, download the workflow, overwrite `team_events.json`, then:
+Edit in n8n, download the workflow, overwrite `team_events.json`, then run the test. It also checks what a replaced channel node must not do (carry on after an error, hold a secret in its parameters):
 
 ```bash
 pytest api/tests/test_n8n_workflow.py
 ```
 
-Checked by hand against n8n 2.40.5 with a local stand-in for the channel: all three event types, a repeated id, an unknown type, wrong password, and a channel outage followed by the retry.
+Checked by hand against n8n 2.40.5 with a local stand-in for the channel: all three event types, a repeated id, an unknown type, wrong password, and a channel outage followed by the retry; the last run without `GENERIC_TIMEZONE` in the environment.

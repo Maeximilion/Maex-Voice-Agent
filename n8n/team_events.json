@@ -259,7 +259,7 @@
             {
               "id": "4237c113-2667-55e9-884b-ae0dbc78288c",
               "name": "text",
-              "value": "=Bestellung {{ $json.payload.pickup_code ?? 'ohne Abholcode' }}: {{ $json.payload.reason }}. Bitte am Tablet prüfen.",
+              "value": "=Bestellung {{ $json.payload.pickup_code ?? 'ohne Abholcode' }}: {{ ($json.payload.reason ?? '').slice(0, 120) }}. Bitte am Tablet prüfen.",
               "type": "string"
             },
             {
@@ -311,7 +311,7 @@
         1160,
         380
       ],
-      "notes": "Placeholder. Replace with the real channel node (push or SMS).",
+      "notes": "Placeholder. Replace with the node for the self-hosted push service.",
       "notesInFlow": true
     },
     {
@@ -346,7 +346,7 @@
     },
     {
       "parameters": {
-        "content": "## Replace this node\n\n**REPLACE ME: team notification channel** is a placeholder. It fails on purpose, so no event counts as delivered while nobody is notified.\n\nPut the real channel node (push or SMS) in its place. It receives `title`, `text` and `priority` (`normal` or `high`) and must fail when sending fails. Its credentials live in n8n, never in the repo.\n\nDetails: `n8n/README.md`\n",
+        "content": "## Replace this node\n\n**REPLACE ME: team notification channel** is a placeholder. It fails on purpose, so no event counts as delivered while nobody is notified.\n\nPut the node for the self-hosted push service in its place. It receives `title`, `text` and `priority` (`normal` or `high`) and must fail when sending fails. Its credentials live in n8n, never in the repo.\n\nDetails: `n8n/README.md`\n",
         "height": 280,
         "width": 380,
         "color": 3
@@ -492,7 +492,12 @@
   },
   "active": false,
   "settings": {
-    "executionOrder": "v1"
+    "executionOrder": "v1",
+    "timezone": "Europe/Berlin",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none",
+    "saveManualExecutions": false,
+    "saveExecutionProgress": false
   },
   "pinData": {},
   "id": "maexTeamEvents01"

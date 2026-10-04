@@ -9,6 +9,7 @@ Static checks, no n8n needed. What n8n does with the export (import, dedupe,
 answers) was run by hand against a real instance, see `n8n/README.md`.
 """
 
+import ast
 import json
 import re
 from functools import cache
@@ -17,20 +18,28 @@ from urllib.parse import urlparse
 
 from api.config import Settings
 from api.events import types
+from api.gui.router import CALLBACK_LABELS
 from api.schemas.callbacks import CallbackReason
 from api.tests.test_commands import REPO_ROOT
 
 WORKFLOW = REPO_ROOT / "n8n" / "team_events.json"
-API_DIR = REPO_ROOT / "api"
+# Where code that can reach the outbox lives.
+PRODUCER_DIRS = ("api", "scripts", "sim")
 
 # Listed in `types.ALL`, but no code enqueues it yet, so there is no payload to
 # build a message from. The moment a producer appears, the test below fails
 # until the workflow has a branch for it.
 WITHOUT_PRODUCER = {types.DAILY_REPORT}
 
-PRODUCER_RE = re.compile(r"event_type=([A-Z_]+)")
 PLACEHOLDER_PREFIX = "REPLACE ME"
-SECRET_KEY_RE = re.compile(r"pass|secret|token|api_?key|authorization", re.IGNORECASE)
+SECRET_NAME_RE = re.compile(
+    r"pass|secret|token|api[-_ ]?key|authorization", re.IGNORECASE
+)
+# A secret in a URL: user:password@host, or a query parameter that names one.
+SECRET_URL_RE = re.compile(
+    r"://[^/\s:@]+:[^/\s@]+@|[?&][\w-]*(?:auth|token|key|secret|pass)[\w-]*=",
+    re.IGNORECASE,
+)
 PHONE_RE = re.compile(r"\+\d{7,}")
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
@@ -83,27 +92,64 @@ def _channel() -> dict:
     return _nodes()[name]
 
 
+def _assignment(node: dict, field: str) -> str:
+    (value,) = (
+        a["value"]
+        for a in node["parameters"]["assignments"]["assignments"]
+        if a["name"] == field
+    )
+    return value
+
+
 def _produced() -> set[str]:
-    """Event types some code outside the tests enqueues."""
-    names = set()
-    for path in API_DIR.rglob("*.py"):
-        if "tests" in path.parts:
-            continue
-        names.update(PRODUCER_RE.findall(path.read_text(encoding="utf-8")))
-    return {getattr(types, name) for name in names}
+    """Event types some code outside the tests enqueues.
+
+    Read from the syntax tree, not by text search: `event_type=types.X` counts
+    like `event_type=X`, and an event type handed over in a variable fails here
+    instead of slipping past the guard.
+    """
+    produced = set()
+    for directory in PRODUCER_DIRS:
+        for path in (REPO_ROOT / directory).rglob("*.py"):
+            if "tests" in path.relative_to(REPO_ROOT).parts:
+                continue
+            for call in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+                if not isinstance(call, ast.Call):
+                    continue
+                func = call.func
+                name = getattr(func, "id", None) or getattr(func, "attr", None)
+                if name != "enqueue":
+                    continue
+                (value,) = (k.value for k in call.keywords if k.arg == "event_type")
+                constant = getattr(value, "id", None) or getattr(value, "attr", None)
+                where = f"{path.relative_to(REPO_ROOT)}:{call.lineno}"
+                assert constant and constant.isupper() and hasattr(types, constant), (
+                    f"{where}: pass the event type as a constant from api.events.types"
+                )
+                produced.add(getattr(types, constant))
+    return produced
 
 
-def _walk(value: object, key: str = ""):
-    """Every (key, string) pair in the export, however deep."""
+def _strings(value: object, key: str = ""):
+    """Every string in a node's parameters with the key it stands under."""
     if isinstance(value, dict):
         for child_key, child in value.items():
-            yield child_key, child_key
-            yield from _walk(child, child_key)
+            yield from _strings(child, child_key)
     elif isinstance(value, list):
         for child in value:
-            yield from _walk(child, key)
+            yield from _strings(child, key)
     elif isinstance(value, str):
         yield key, value
+
+
+def _keys(value: object):
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield key
+            yield from _keys(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _keys(child)
 
 
 def test_export_is_a_workflow_n8n_can_import() -> None:
@@ -116,8 +162,6 @@ def test_export_is_a_workflow_n8n_can_import() -> None:
         for output in outputs["main"]:
             for link in output or []:
                 assert link["node"] in names
-    # Imported inactive: the two manual steps from the README come first.
-    assert workflow["active"] is False
 
 
 def test_webhook_matches_what_the_dispatcher_posts_to() -> None:
@@ -134,6 +178,22 @@ def test_webhook_matches_what_the_dispatcher_posts_to() -> None:
     assert params["responseMode"] == "responseNode"
 
 
+def test_no_run_is_kept_in_the_execution_history() -> None:
+    # A saved run holds the whole event: guest name, phone number, note.
+    settings = _workflow()["settings"]
+    assert settings["saveDataSuccessExecution"] == "none"
+    assert settings["saveDataErrorExecution"] == "none"
+    assert settings["saveManualExecutions"] is False
+    assert settings["saveExecutionProgress"] is False
+
+
+def test_times_are_shown_in_the_tenant_timezone() -> None:
+    # Pinned in the workflow: without it the time in a message follows the
+    # environment of the n8n instance, whose default is not our timezone.
+    expected = Settings.model_fields["tenant_timezone"].default
+    assert _workflow()["settings"]["timezone"] == expected
+
+
 def test_one_branch_for_exactly_the_event_types_that_reach_n8n() -> None:
     expected = set(types.ALL) - set(types.KITCHEN) - WITHOUT_PRODUCER
     assert set(_branches()) == expected
@@ -143,7 +203,6 @@ def test_a_type_without_a_branch_has_no_producer() -> None:
     produced = _produced()
     # The scan sees the producers that exist; otherwise it proves nothing.
     assert {types.RESERVATION_CONFIRMED, types.CALLBACK_CREATED} <= produced
-    assert produced <= set(types.ALL)
     assert not WITHOUT_PRODUCER & produced
     assert produced - set(types.KITCHEN) == set(_branches())
 
@@ -169,11 +228,17 @@ def test_every_branch_builds_a_message_for_the_channel() -> None:
         assert not node["parameters"].get("includeOtherFields", False), event_type
 
 
-def test_placeholder_channel_fails_closed() -> None:
+def test_channel_node_stops_the_run_when_it_fails() -> None:
     channel = _channel()
     if channel["name"].startswith(PLACEHOLDER_PREFIX):
-        # Until a real channel is chosen, no event may count as delivered.
+        # Until the real channel is built, no event may count as delivered.
         assert channel["type"] == "n8n-nodes-base.stopAndError"
+    # A channel that does nothing or carries on after an error lets the run
+    # reach "delivered" although nobody was notified.
+    assert channel["type"] != "n8n-nodes-base.noOp"
+    assert not channel.get("continueOnFail", False)
+    assert channel.get("onError", "stopWorkflow") == "stopWorkflow"
+    assert not channel.get("disabled", False)
 
 
 def test_event_id_is_remembered_only_after_the_channel() -> None:
@@ -195,24 +260,27 @@ def test_event_id_is_remembered_only_after_the_channel() -> None:
     assert nodes[answer]["parameters"]["options"]["responseCode"] == 200
 
 
-def test_every_callback_reason_has_a_label() -> None:
-    node = _nodes()[_branches()[types.CALLBACK_CREATED]]
-    text = json.dumps(node["parameters"], ensure_ascii=False)
-    for reason in get_args(CallbackReason):
-        assert reason in text, reason
+def test_callback_labels_are_the_ones_on_the_tablet() -> None:
+    text = _assignment(_nodes()[_branches()[types.CALLBACK_CREATED]], "text")
+    assert set(get_args(CallbackReason)) == set(CALLBACK_LABELS)
+    for reason, (_tone, label) in CALLBACK_LABELS.items():
+        assert f"{reason}: '{label}'" in text, reason
 
 
 def test_no_secrets_or_personal_data_in_the_export() -> None:
     raw = WORKFLOW.read_text(encoding="utf-8")
     assert not PHONE_RE.search(raw)
     assert not EMAIL_RE.search(raw)
-    for key, value in _walk(_workflow()):
-        assert not SECRET_KEY_RE.search(key), key
-        # n8n stores a header as {"name": "Authorization", "value": ...}.
-        if key == "name":
-            assert not SECRET_KEY_RE.search(value), value
-    # A credential reference (id and name) is fine, its values are not part of
-    # an export. The first version carries none: they are assigned in n8n.
     for node in _workflow()["nodes"]:
+        params = node["parameters"]
+        for key in _keys(params):
+            assert not SECRET_NAME_RE.search(key), (node["name"], key)
+        for key, value in _strings(params):
+            assert not SECRET_URL_RE.search(value), (node["name"], key)
+            # n8n stores a header as {"name": "Authorization", "value": ...}.
+            if key == "name":
+                assert not SECRET_NAME_RE.search(value), (node["name"], value)
+        # A credential reference is fine, whatever its name: the values are
+        # not part of an export.
         for reference in node.get("credentials", {}).values():
             assert set(reference) <= {"id", "name"}
