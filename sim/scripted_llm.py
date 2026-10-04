@@ -153,7 +153,12 @@ class ScriptedLLM:
         if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
 
-        stems = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
+        # A sentence that announces the pickup is already an order: the guest's
+        # own allergy in it is a note on the position, not a callback (Codex
+        # PR #139).
+        wants_pickup = self._pickup is None and _wants_pickup(text)
+        in_order = self._pickup is not None or wants_pickup
+        stems = OUT_OF_SCOPE_IN_ORDER if in_order else OUT_OF_SCOPE
         if _mentions_stem(text, stems) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
             # Und gemerkt, bis der Rückruf steht: der nächste Zug enthält oft nur noch
@@ -162,7 +167,7 @@ class ScriptedLLM:
             return self._out_of_scope(slots, patch)
 
         started_pickup = False
-        if self._pickup is None and _wants_pickup(text):
+        if wants_pickup:
             self._pickup = PickupScript(self._menu)
             started_pickup = True
             if not self._status_checked:

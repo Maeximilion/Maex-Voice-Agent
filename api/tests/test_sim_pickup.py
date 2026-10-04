@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
-from api.domain.menu.importer import MENU_FILE, apply, parse
+from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
 from api.models import Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
@@ -1410,3 +1410,197 @@ def test_text_phone_reads_the_numbers_of_the_active_menu(session, sushi):
     assert menu.card.prefixes == {"s", "sm"}
     assert {"s12", "sm1", "25g", "13"} <= menu.numbers
     assert "50" not in menu.numbers  # "Altes Gericht" is inactive
+
+
+# --- Open points from reviews, text phone (Codex PR #133 and #139) -----------------
+
+
+@pytest.fixture
+def side_dish(session, tenant):
+    """A dish whose option "Reis" stands in two groups: the domain answers
+    `open` with `groups` and asks which one is meant."""
+    plan = parse(
+        {
+            **KARTE,
+            MENU_FILE: KARTE[MENU_FILE] + "55;Gemüsepfanne;Hauptgerichte;9,50;;ja\n",
+            OPTIONS_FILE: KARTE[OPTIONS_FILE]
+            + "55;Beilage;Reis;0,00;nein;nein\n"
+            + "55;Beilage;Nudeln;1,00;nein;nein\n"
+            + "55;Extra;Reis;2,00;nein;nein\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant.id, plan, now=NOW)
+    return tenant
+
+
+def _chosen(session, order) -> list[tuple[str, str]]:
+    [options] = session.scalars(
+        select(OrderItem.options).where(OrderItem.order_id == order.id)
+    )
+    return [(o["group"], o["option"]) for o in options]
+
+
+@pytest.mark.parametrize(
+    ("answer", "group"),
+    [("Extra.", "Extra"), ("Als Beilage bitte.", "Beilage")],
+)
+def test_group_answer_adds_the_option(session, side_dish, answer, group):
+    """The answer to "Meinen Sie Reis bei Beilage oder bei Extra?" is the group,
+    not a dish: the option enters the order in that group."""
+    _, turns = _bestellung(session, side_dish, "Die 55 mit Reis.", answer)
+    assert "Meinen Sie Reis bei Beilage oder bei Extra?" in " ".join(turns[1].say)
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _chosen(session, order) == [(group, "Reis")]
+
+
+def test_group_question_is_the_only_question(session, side_dish):
+    """No "Darf es noch etwas sein?" next to it, and an answer that names no
+    group leaves the question open instead of being searched as a dish."""
+    _, turns = _bestellung(
+        session, side_dish, "Die 55 mit Reis.", "Wie bitte?", "Extra."
+    )
+    assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
+    assert "Meinen Sie Reis bei Beilage oder bei Extra?" in " ".join(turns[2].say)
+    assert "search_menu" not in str(turns[2].tools)
+    [order] = orders(session)
+    assert _chosen(session, order) == [("Extra", "Reis")]
+
+
+@pytest.mark.parametrize("answer", ["Nein.", "Weder noch."])
+def test_rejected_group_question_adds_no_option(session, side_dish, answer):
+    """A no drops the option, never one of the groups: the dish stays as it is
+    on the menu, and the readback shows it."""
+    _bestellung(session, side_dish, "Die 55 mit Reis.", answer)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("55", 1, [])]
+
+
+def test_group_named_with_a_no_is_asked_again(session, side_dish):
+    """ "Nicht als Beilage" names a group and rejects it: no choice either way."""
+    _, turns = _bestellung(
+        session, side_dish, "Die 55 mit Reis.", "Nicht als Beilage.", "Extra."
+    )
+    assert "Meinen Sie Reis bei Beilage oder bei Extra?" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _chosen(session, order) == [("Extra", "Reis")]
+
+
+@pytest.mark.parametrize(
+    ("answer", "taken"),
+    [
+        ("Keine davon, lieber Frühlingsrollen.", ("23", 1, [])),
+        ("Nein, lieber zweimal die 24.", ("24", 2, [])),
+    ],
+)
+def test_rejection_with_replacement_is_searched(session, tenant, answer, taken):
+    """Codex PR #133: the rejection closes the question, the dish named in the
+    same answer is searched - with its own quantity, not the two soups'."""
+    _, turns = _suppe_und(session, tenant, answer)
+    assert "Meinen Sie" not in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert positions(session, order) == [taken]
+
+
+@pytest.mark.parametrize(
+    ("answer", "rest"),
+    [
+        ("Keine davon, lieber Frühlingsrollen.", "Frühlingsrollen."),
+        ("Nein, die 23", "die 23"),
+        ("Weder noch, dann zwei Pho Bo", "zwei Pho Bo"),
+        # A standalone rejection: nothing to search.
+        ("Keine davon.", None),
+        ("Nein danke.", None),
+        ("Nein, nicht die.", None),
+        ("Nein, ich weiß nicht.", None),
+        # "Keine Suppe" negates the dish, it is not a rejection plus a dish.
+        ("Keine Suppe, lieber die 23.", None),
+        # Not a rejection at all.
+        ("Lieber Frühlingsrollen.", None),
+    ],
+)
+def test_replacement_after_a_rejection(answer, rest):
+    from sim.scripted_order import _replacement
+
+    assert _replacement(answer) == rest
+
+
+def test_standalone_rejection_searches_nothing(session, tenant):
+    _, turns = replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            "Eine Suppe.",
+            "Nein, nicht die.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    assert turns[2].tools == []
+    assert "Was möchten Sie bestellen?" in " ".join(turns[2].say)
+
+
+EIGHT = {"number": "31", "name": "8 Schätze"}
+
+
+@pytest.mark.parametrize(
+    ("said_words", "hit", "quantity"),
+    [
+        # Codex PR #133: found via the alias "acht schaetze", the 8 is the name.
+        ("acht schaetze", EIGHT, 1),
+        ("Acht Schätze", EIGHT, 1),
+        ("8 Schätze", ACHT, 1),
+        ("8 Schätze", EIGHT, 1),
+        # A quantity in front of the name still counts.
+        ("zwei acht schaetze", EIGHT, 2),
+        ("zweimal acht schaetze", EIGHT, 2),
+        ("acht Frühlingsrollen", FRUEHLING, 8),
+    ],
+)
+def test_digit_in_the_name_against_a_number_word(said_words, hit, quantity):
+    assert _quantity(said_words, hit) == quantity
+
+
+def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
+    """Codex PR #139: the first sentence announces a pickup and names the
+    guest's own allergy - a note on the position (E14), not a callback."""
+    replay(
+        session,
+        case(
+            "Ich moechte Pho Bo mit Erdnussallergie zum Abholen.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    session.expire_all()
+    assert list(session.scalars(select(Callback))) == []
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert positions(session, order) == [("13", 1, [])]
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        # The question about allergens goes to the team, pickup or not.
+        "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen.",
+        "Ich moechte bestellen, koennen Sie das auch liefern?",
+        # No pickup named: the allergy alone starts no order.
+        "Guten Tag, ich habe eine Erdnussallergie.",
+    ],
+)
+def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
+    session, tenant, opening
+):
+    replay(session, case(opening, "0721 5551234"), tenant, now=NOW)
+    session.expire_all()
+    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert orders(session) == []
