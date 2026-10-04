@@ -1,6 +1,7 @@
 """Anrufprotokoll ohne Tonaufnahme (scripts/call_log.py, docs/17). Ohne Datenbank."""
 
 import json
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -12,6 +13,9 @@ from scripts.call_log import main, parse, report, to_case, write_cases
 HEADER = "date;time;duration_min;intent;outcome;phrases;items;problems\n"
 VORLAGE = (
     Path(__file__).resolve().parents[2] / "docs" / "vorlagen" / "anrufprotokoll.csv"
+)
+posix_mode = pytest.mark.skipif(
+    sys.platform == "win32", reason="POSIX file mode, NTFS has none"
 )
 
 
@@ -1066,6 +1070,7 @@ def test_id_verzeichnis_mit_falschem_datum_bleibt_erhalten(
     assert ids.read_text(encoding="utf-8") == inhalt
 
 
+@posix_mode
 def test_loeschen_behaelt_die_dateirechte(tmp_path, monkeypatch):
     """Codex PR #135: die neue CSV bekam die Rechte der umask statt der alten."""
     monkeypatch.setattr(call_log, "_today", lambda: date(2026, 9, 24))
@@ -1075,6 +1080,7 @@ def test_loeschen_behaelt_die_dateirechte(tmp_path, monkeypatch):
     assert csv_file.stat().st_mode & 0o777 == 0o600
 
 
+@posix_mode
 def test_salz_und_verzeichnis_nur_fuer_den_eigentuemer(tmp_path, eval_cases):
     csv_file = tmp_path / "protokoll.csv"
     csv_file.write_text(HEADER + _row(), encoding="utf-8")
