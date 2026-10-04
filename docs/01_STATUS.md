@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.3
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.4
 
 ---
 
@@ -254,6 +254,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Real import of the register menu (`scripts/kasse_to_csv.py`, then `scripts/import_menu.py --dry-run`) | Checked 27.09.2026 after merging #149 into T-4.12: the converter on the register copies takes all 43 S/SM and 7 G dishes, no number is rejected any more. Still open before a real import: the allergens found in the register need `--allergens-confirmed-by` (who checked them), and the import dry run against the real database | before the first real import |
 | Lunch menus `M`/`VM` (register groups 100 to 102) | Maxi 26.09.2026: later. Numbers like `M4A` or `VM5C` already fit the format; the category "Menü Sushi" holds both M and VM, so "Menü eins" would be no category word. The groups stay excluded in the converter until then | own task after T-4.12 |
 | **#82 undecided** | Dependabot bump to Python 3.14, closed without merge. By convention it does not go to Done automatically. Maxi left the decision open; it is tracked in issue #136 (`projektpflege`), which the daily run keeps up to date. `PROJECT_TOKEN` was replaced on 24.09.2026, the first full run was green | when Maxi decides, via #136 or `/project` |
+| Call log files are not owner-only on Windows (`scripts/call_log.py` `_replace`) | Found 04.10.2026 while making the two file-mode tests skip on Windows: `touch(mode=0o600)` and `os.chmod` only toggle the read-only flag on NTFS, `st_mode` stays 0666 and access follows the ACL inherited from the folder. The script neither warns nor says so, and docs/17 promises 0600 for salt and ID directory. On Linux the protection holds and is tested. Behaviour unchanged here. Fix: either state in docs/17 that on Windows the CSV, salt and ID directory must live in a folder only the user can read, or set the ACL explicitly | before the call log is kept on a Windows machine with more than one user account, latest with the data protection officer's answer on the CSV (E10) |
 
 ## Blockers
 
@@ -335,7 +336,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.35.3 · 04.10.2026:** Bug text phone: on Wogegen the active menu decides what a card number is, open point from PR #155 closed
+- **v1.35.4 · 04.10.2026:** Bug text phone: on Wogegen the active menu decides what a card number is, open point from PR #155 closed
+- **v1.35.3 · 04.10.2026:** File-mode tests of the call log skip on Windows; open point: call log files are not owner-only on NTFS
 - **v1.35.2 · 04.10.2026:** Handover T-4.12: merged as 26aaf8e, follow-ups split into one worktree each
 - **v1.35.1 · 04.10.2026:** T-4.12 follows the English rule (CLAUDE.md §8, PR #166): the eleven source files it touches are English throughout, its new tests and its new import message too; the rest of the repo follows in its own sweep
 - **v1.35.0 · 03.10.2026:** T-4.12: Kartennummern mit Praefix (S, SM) und Endung g, Praefixe aus der Karte
