@@ -468,6 +468,53 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 04.10.2026 - T-4.12 card numbers with prefix and suffix g
+Status: Runs: card numbers with a prefix from the menu (S, SM) and the suffix g, in search,
+       import, tablet and text phone; merged into main as 26aaf8e (PR #155, squash). Number
+       eval 181/181, conversation suite cases/ 26/26, hard metrics 0, search_menu p95 under
+       300 ms with 260 dishes. Does not run yet: the first real import of the register menu
+       (only the converter dry run was done: all 50 Sushi and sauce dishes pass), lunch menus
+       M/VM (excluded in the converter), reading "s12" aloud on the voice platform (untested).
+Artifacts: PR #155 -> main 26aaf8e. Code: api/domain/menu/{numberwords,search,importer,items,
+       normalize,sold_out,pos_convert}.py, api/domain/ordering/correction.py, api/agent/
+       dispatch.py, sim/scripted_order.py, evals/number_eval.py. Evals: 68 new lines in
+       evals/cases/nummern.jsonl, abholung_0070 to 0074, eval menu with S1, S12, SM1, 45, 45g.
+       Docs: 01, 04 §search_menu, 07 (T-4.12), 08, 11, 14.
+Decisions: Maxi 26.09. - S, SM and G now; lunch menus M/VM later; no combinations like 35AE.
+       Prefixes are never in the code, they follow from the active numbers of the menu
+       (rule 1). A category word counts only if every number of that category carries a
+       prefix. Never a guess (rule 2): unknown prefix, number above 999 or wrong suffix is
+       not_found; a prefixed number directly next to a name asks back, separated by "und" or
+       a comma it is two positions. Import rejects prefixes that already mean a quantity,
+       marker or spoken word (x, st, nr, no, hm, ja, es, so, um, zu, da, du, er, ob).
+       Maxi 04.10. - everything written for the repo is English (CLAUDE.md §8, PR #166).
+Gate: G0 open, unchanged. T-4.12 itself is done; the real import is the next step towards
+       stage 2.
+Open: one worktree and branch per item; the items are independent and run in parallel,
+       the order of work is "What's next" in docs/01_STATUS.md:
+       1. fix/sim-allergy-guard - text phone: decide "is this an order?" from the menu's
+          CardFormat, so "B12" and "E 621" on "Wogegen?" are ingredients (open point docs/01).
+       2. task/real-menu-import-dry-run - converter plus import --dry-run against a local DB
+          with the register copies (gitignored), read the report; needs Maxi for
+          --allergens-confirmed-by and the register cleanup before the real run.
+       3. task/lunch-menus-m-vm - register groups 100 to 102; needs Maxi's decision on how
+          lunch menus are offered ("Menü eins" is not a category word today).
+       4. docs/english-code-comments - translation sweep, already running in its own
+          worktree; it branched from the old PR head and has to merge main first. It also
+          takes the German leftovers of T-4.12: the two older import messages, the eval
+          `why` notes and the T-4.12 text in docs/04, 07, 14.
+       5. chore/dependabot - PRs #159 and #160 were red only because of the latency flake
+          that #163 fixed; rebase and re-run.
+       Not startable in code: "s12" read aloud (needs the voice platform, C2), paper check of
+       the input slip (T-4.6) and the tablet test (T-3.5) need a person.
+Lessons: The eval suite v2 on main gives ids that are unique across cases/ and targets/ and
+       wants a level tag; check the highest id before adding a case. Codex reviews one
+       commit: every push needs a new "@codex review", and a docs-only note still moves the
+       head, so record a late P2 in an existing open point instead of a new commit. Latency
+       tests need @pytest.mark.latency and run serially. Two call-log tests fail only on
+       Windows (file permissions), green in CI. The venv lives at C:\v412; long paths break
+       sqlalchemy on Windows.
+
 ## Handover 26.09.2026 - D2, D11, Vorbereitung T-4.11 (Kassen-Import)
 Status: Reine Klaerungs- und Doku-Sitzung, kein Code geaendert. D2 und D11 entschieden, die
        Kasse (<Kassensystem>) ist Quelle fuer Karte und Preise und einziger Weg fuer Quittung
