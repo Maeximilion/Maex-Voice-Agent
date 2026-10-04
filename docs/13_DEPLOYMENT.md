@@ -73,6 +73,34 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --b
 
 **Wiederherstellung wird einmal wirklich geprobt** (T-8.6), bevor die erste echte Bestellung läuft. Ein Backup, das nie zurückgespielt wurde, ist eine Hoffnung.
 
+### Scripts (T-9.3)
+
+Both scripts act on the database of `DATABASE_URL`, the same variable the application and the menu import read, so a backup can never come from a different stack than the one being changed. They read their configuration from the environment or from `.env`:
+
+| Variable | Meaning |
+|---|---|
+| `DATABASE_URL` | which database is dumped and replaced (`BACKUP_DATABASE_URL` overrides it for the scripts only) |
+| `BACKUP_PASSPHRASE_FILE` | file with the passphrase, readable only by the backup user; never in the repo. Without it no dump is written. The passphrase also belongs in the password manager: without it no backup can be read |
+| `BACKUP_DIR` | where dumps go, default `backups/` (ignored by git) |
+| `BACKUP_KEEP_DAYS` | scheduled dumps older than this are removed after a good run, default 14, `0` keeps everything |
+| `BACKUP_DOCKER_NETWORK` | Compose network of the stack, for example `maex-voice-agent_default`. Needed on the server: Postgres has no published port there and the host `db` only resolves inside that network |
+| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. Without `pg_dump` on PATH the scripts run the client from the `postgres:16-alpine` image, the same version as the server |
+
+```bash
+bash scripts/backup.sh                              # scheduled dump, also `make backup`
+bash scripts/backup.sh --label before_menu_import   # by hand, never removed by the retention
+bash scripts/restore.sh <file> --check              # rehearsal, the live database is not touched
+bash scripts/restore.sh <file> --replace <database> # the real restore
+```
+
+**Backup:** `pg_dump` in custom format, encrypted with gpg (AES256, symmetric), written as `maex_<database>_<UTC time>[_label].dump.gpg`, readable only by its owner (mode 600; on Windows the folder decides). The dump is read back with the same passphrase before it counts; a failed run keeps no file, removes no older backup and exits 1. `--no-encrypt` writes a plain dump and is only for a database without customer data.
+
+**Restore:** the dump always goes into a new database first. `--check` reports table count and schema revision and drops that database again. `--replace` renames the current database to `<name>_before_restore_<time>` and the restored one into its place, both renames in one transaction. Nothing is dropped: the way back is a rename, and the old database is removed by hand once the restored state is checked. `--replace` wants the database name as a confirmation and refuses while sessions are connected, so stop `api` and `dispatcher` first (`docker compose stop api dispatcher`). If the database is gone entirely, `--replace` creates it from the dump. The restored schema is at the revision of the dump; if the code is newer, `alembic -c db/alembic.ini upgrade head` follows.
+
+**Cron:** `deploy/backup.cron` runs the backup daily at 03:00 and appends to `backups/backup.log`. Nobody is told yet when a night's backup fails: that alarm comes with the monitoring (T-8.3).
+
+**Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. Still open: the second storage at another EU provider (which provider is a cost decision, with D3), and the rehearsal on the production server once it exists (T-8.6).
+
 ---
 
 ## 5. Monitoring (Minimum)

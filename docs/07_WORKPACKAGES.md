@@ -144,7 +144,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 |---|---|---|---|---|---|
 | T-9.1 | #71 | Tunnel für Testanrufe einrichten, dokumentieren, einmal durchgeprobt | 13 §2 | T-0.1 | offen |
 | T-9.2 | #72 | `deploy/docker-compose.prod.yml` + Caddy auf einem EU-Server, `/health` von außen erreichbar | 13 §3 | T-0.1, D3 | offen |
-| T-9.3 | #73 | `scripts/backup.sh` + `restore.sh`, Cron, Wiederherstellung einmal wirklich geprobt | 13 §4 | T-1.1 | offen |
+| T-9.3 | #73 | `scripts/backup.sh` + `restore.sh`, Cron, Wiederherstellung einmal wirklich geprobt | 13 §4 | T-1.1 | fertig 04.10.2026: `scripts/backup.sh` (dump of the database of `DATABASE_URL`, gpg AES256, read back before it counts, retention for scheduled dumps), `scripts/restore.sh` (`--check` as rehearsal, `--replace` restores into a new database and swaps by rename, the old one stays), `scripts/lib_pg.sh` (target from the URL, client from PATH or from the Postgres image, Compose network for the server), `deploy/backup.cron` (daily 03:00). 15 tests against real scratch databases. Rehearsed on a throwaway database: all row counts identical after the restore. Open: second storage at another EU provider (cost decision), alarm on a failed night (T-8.3), rehearsal on the production server (T-8.6) |
 | T-9.4 | #74 | Uptime-Check auf `/health` mit Benachrichtigung | 13 §5 | T-9.2 | offen |
 | T-9.5 | #75 | `jobs/holidays.py`: Feiertage des Bundeslandes (konfigurierbar) als Vorschlag in `special_days` | 11 §jobs | T-1.2 | offen |
 
@@ -157,7 +157,7 @@ Die Chats C1 bis C8 aus `docs/00_PCF.md` Abschnitt 10 bleiben bestehen. Alles, w
 | T-8.3 | #78 | Monitoring: Heartbeat, Kosten-Alarm, Fehler-Alarm, Tagesbericht | 02 §5 | T-1.9 | offen |
 | T-8.4 | #79 | Kennzahlen: Leiste mit 4 Werten in jedem Admin-Bereich, Verlauf im Bereich „Kennzahlen" | 06 §4 | T-8.3 | offen |
 | T-8.5 | #80 | Runbook und Team-Schulung, 1 Seite | 09 | T-8.1 | offen |
-| T-8.6 | #81 | Backup und Wiederherstellung, Wiederherstellung einmal wirklich geprobt | CLAUDE.md §8 | T-1.1 | offen |
+| T-8.6 | #81 | Backup und Wiederherstellung, Wiederherstellung einmal wirklich geprobt | CLAUDE.md §8 | T-1.1 | offen: scripts and a rehearsal on a throwaway database exist since T-9.3 (04.10.2026); left here is the rehearsal on the production server (needs T-9.2) |
 
 **→ Gate G5, dann Monats-Review**
 
