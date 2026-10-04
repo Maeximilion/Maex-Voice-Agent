@@ -1,0 +1,499 @@
+{
+  "name": "Maex team events",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "maex",
+        "authentication": "basicAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "6dcbc8e0-3afb-5296-a4fe-4f8270004c24",
+      "name": "Event from dispatcher",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "330bb11b-f887-52b8-a99c-4e817ef4d6b2"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Dedupe on the outbox event id. The dispatcher sends it as X-Idempotency-Key\n// and as body.id; a retried delivery carries the same id.\nconst request = $input.first().json;\nconst body = request.body ?? {};\nconst eventId = request.headers['x-idempotency-key'] ?? body.id;\nif (!eventId) {\n  throw new Error('Event without id: no X-Idempotency-Key header and no body.id');\n}\nconst delivered = $getWorkflowStaticData('global').delivered ?? [];\nreturn [\n  {\n    json: {\n      event_id: eventId,\n      event_type: body.event_type,\n      tenant_id: body.tenant_id,\n      payload: body.payload ?? {},\n      duplicate: delivered.includes(eventId),\n    },\n  },\n];\n"
+      },
+      "id": "2819a83e-dbef-5e07-b1e4-73be8b9af9ca",
+      "name": "Seen before?",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "2752ab43-dd98-55da-96b9-5d8cbc2880ad",
+              "leftValue": "={{ $json.duplicate }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5aaac0f4-2225-58f7-9a6c-740a5b1c1e53",
+      "name": "Duplicate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"duplicate\", \"event_id\": $json.event_id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "5b02d6ab-3ffa-57b1-9964-680e47c6a3af",
+      "name": "Respond: duplicate",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        660,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "3aaff8f5-1ce5-59b4-bf6b-5a118debe0ca",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "reservation.confirmed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "reservation.confirmed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "91dd486a-e669-5c5d-8e9c-ccf28c9fc90e",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "callback.created",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "callback.created"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9a136fea-27bb-52a0-8a99-886b12afb23a",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "order.handover_failed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "order.handover_failed"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "7ce36647-6345-5994-bb3e-3eddc09f8288",
+      "name": "Route by event type",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c912526d-3805-5192-b4b3-58d925ea4bc6",
+              "name": "title",
+              "value": "Neue Reservierung",
+              "type": "string"
+            },
+            {
+              "id": "5c09abc7-0657-5b08-b111-ef7748d59819",
+              "name": "text",
+              "value": "=Tisch für {{ $json.payload.party_size }}, {{ DateTime.fromISO($json.payload.reserved_for).toFormat('dd.MM.') }} um {{ DateTime.fromISO($json.payload.reserved_for).toFormat('HH:mm') }} Uhr. Details am Tablet.",
+              "type": "string"
+            },
+            {
+              "id": "e6419816-1374-5942-a5dc-e6aed5f32e54",
+              "name": "priority",
+              "value": "normal",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "46b2038c-5ba4-5362-9553-083067e2ed58",
+      "name": "Message: reservation confirmed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "653fb884-3f32-589e-9fd7-86b507b0520f",
+              "name": "title",
+              "value": "Rückruf offen",
+              "type": "string"
+            },
+            {
+              "id": "edb1b3d0-cc2c-5b24-a715-15b1bcc1c046",
+              "name": "text",
+              "value": "={{ ({ complaint: 'Beschwerde', not_understood: 'Nicht verstanden', human_requested: 'Will Mitarbeiter sprechen', out_of_scope: 'Anderes Anliegen' })[$json.payload.reason] ?? $json.payload.reason }}. Nummer und Notiz am Tablet.",
+              "type": "string"
+            },
+            {
+              "id": "ec2a0cd5-f776-53fc-bb2b-a4dd84e2b554",
+              "name": "priority",
+              "value": "={{ $json.payload.reason === 'complaint' ? 'high' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "7c0c5ed9-d65a-53f7-afe8-7dee6e3567a7",
+      "name": "Message: callback created",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "1f050a0d-8b41-505e-a2dc-07e6bbda6197",
+              "name": "title",
+              "value": "Bestellung nicht angekommen",
+              "type": "string"
+            },
+            {
+              "id": "4237c113-2667-55e9-884b-ae0dbc78288c",
+              "name": "text",
+              "value": "=Bestellung {{ $json.payload.pickup_code ?? 'ohne Abholcode' }}: {{ $json.payload.reason }}. Bitte am Tablet prüfen.",
+              "type": "string"
+            },
+            {
+              "id": "174c5fda-adef-5365-9418-a7ea5ca21d0d",
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "295ae2bc-1e50-5f1f-8e79-5f18e1323362",
+      "name": "Message: order handover failed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        560
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"unknown_event_type\", \"event_type\": $json.event_type ?? null } }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "8923f363-3050-5115-9d5f-db30d5e89323",
+      "name": "Respond: unknown event type",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        900,
+        760
+      ]
+    },
+    {
+      "parameters": {
+        "errorMessage": "No team notification channel configured: replace this node (n8n/README.md)"
+      },
+      "id": "87481b61-93f1-5028-b6a2-6ce4728730ca",
+      "name": "REPLACE ME: team notification channel",
+      "type": "n8n-nodes-base.stopAndError",
+      "typeVersion": 1,
+      "position": [
+        1160,
+        380
+      ],
+      "notes": "Placeholder. Replace with the real channel node (push or SMS).",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// The id is stored only here, after the channel node succeeded. A failed\n// notification leaves no mark, so the dispatcher's retry is processed again\n// instead of being answered as a duplicate.\nconst KEEP = 1000;\nconst store = $getWorkflowStaticData('global');\nconst eventId = $('Seen before?').first().json.event_id;\nconst delivered = store.delivered ?? [];\nif (!delivered.includes(eventId)) {\n  delivered.push(eventId);\n}\nstore.delivered = delivered.slice(-KEEP);\nreturn [{ json: { event_id: eventId } }];\n"
+      },
+      "id": "0f237cf9-4e7a-5b2e-9b43-1b48a127fbb5",
+      "name": "Remember event id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"status\": \"delivered\", \"event_id\": $json.event_id } }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "2948689b-8037-5b78-ab57-90584016ade3",
+      "name": "Respond: delivered",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1620,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Replace this node\n\n**REPLACE ME: team notification channel** is a placeholder. It fails on purpose, so no event counts as delivered while nobody is notified.\n\nPut the real channel node (push or SMS) in its place. It receives `title`, `text` and `priority` (`normal` or `high`) and must fail when sending fails. Its credentials live in n8n, never in the repo.\n\nDetails: `n8n/README.md`\n",
+        "height": 280,
+        "width": 380,
+        "color": 3
+      },
+      "id": "b7953e21-0744-5c0d-bb2c-66ab064c6716",
+      "name": "Note: replace the channel",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "Event from dispatcher": {
+      "main": [
+        [
+          {
+            "node": "Seen before?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Seen before?": {
+      "main": [
+        [
+          {
+            "node": "Duplicate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicate?": {
+      "main": [
+        [
+          {
+            "node": "Respond: duplicate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Route by event type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by event type": {
+      "main": [
+        [
+          {
+            "node": "Message: reservation confirmed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: callback created",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: order handover failed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond: unknown event type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: reservation confirmed": {
+      "main": [
+        [
+          {
+            "node": "REPLACE ME: team notification channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: callback created": {
+      "main": [
+        [
+          {
+            "node": "REPLACE ME: team notification channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: order handover failed": {
+      "main": [
+        [
+          {
+            "node": "REPLACE ME: team notification channel",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "REPLACE ME: team notification channel": {
+      "main": [
+        [
+          {
+            "node": "Remember event id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Remember event id": {
+      "main": [
+        [
+          {
+            "node": "Respond: delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "id": "maexTeamEvents01"
+}
