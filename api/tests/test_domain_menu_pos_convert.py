@@ -291,6 +291,10 @@ def test_free_from_claim_in_a_name_without_allergens_is_listed():
         "Suppe frei von Sellerie",
         "Reis ohne Ei",
         "Suppe ohne Eiernudeln",
+        "Mandelfreier Kuchen",  # LMIV Annex II names the nuts and cereals
+        "Cashewfrei",
+        "Kuchen ohne Pistazien",
+        "Brot dinkelfrei",
         "Rolle ohne ERDNUESSE",
         "Salat ohne Zwiebeln und Sesam",
         "Curry (vegan)",
@@ -341,6 +345,11 @@ def test_free_from_claim_with_maintained_allergens_gives_no_warning():
         ("Rolle ohne Ei und Sesam", "CFK", "7 (C,N)"),  # register k is Sesam (N)
         ("Vegane Rolle", "AG", "7 (G)"),
         ("Rolle haselnussfrei", "H", "7 (H)"),
+        ("Mandelfreier Kuchen", "H", "7 (H)"),
+        # A hyphen left open shares the "-frei" of the last word.
+        ("Gluten- und laktosefreie Nudeln", "A", "7 (A)"),
+        ("Gluten-, ei- oder sojafrei", "CF", "7 (C,F)"),
+        ("Rolle ohne Ei- und Milchprodukte", "C", "7 (C)"),
     ],
 )
 def test_free_from_claim_contradicting_confirmed_allergens_is_listed(
@@ -363,6 +372,7 @@ def test_free_from_claim_contradicting_confirmed_allergens_is_listed(
         ("Erdnussfreie Rolle", "H"),  # "Erdnuss" is no "Nuss": E claimed, H kept
         ("Rolle ohne Nüsse", "E"),
         ("Vegane Rolle", "AF"),
+        ("Reis mit Ei und laktosefreie Sosse", "C"),  # no open hyphen: Ei is in
     ],
 )
 def test_free_from_claim_matching_confirmed_allergens_gives_no_warning(name, register):

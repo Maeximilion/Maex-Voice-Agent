@@ -91,16 +91,27 @@ _CARRIERS = (
 # is absent ("glutenfrei", "ohne Erdnüsse") while no allergens are maintained,
 # or while the confirmed allergens contain it.
 # The 14 LMIV allergens by database letter (api/models/menu.py), as a name
-# would spell them, in `fold` spelling. Matched inside a word ("haselnussfrei").
+# would spell them, with the cereals and nuts Annex II lists by name, in `fold`
+# spelling. Matched inside a word ("haselnussfrei").
 ALLERGEN_NAMES = {
-    "A": ("gluten", "weizen"),
+    "A": ("gluten", "weizen", "roggen", "gerste", "hafer", "dinkel"),
     "B": ("krebstier",),
     "C": ("ei", "eier"),
     "D": ("fisch",),
     "E": ("erdnuss", "erdnuesse"),
     "F": ("soja",),
     "G": ("milch", "laktose", "lactose"),
-    "H": ("nuss", "nuesse", "schalenfrucht", "schalenfruechte"),
+    "H": (
+        "nuss",
+        "nuesse",
+        "schalenfrucht",
+        "schalenfruechte",
+        "mandel",
+        "cashew",
+        "kaschu",
+        "pistazie",
+        "macadamia",
+    ),
     "L": ("sellerie",),
     "M": ("senf",),
     "N": ("sesam",),
@@ -118,6 +129,7 @@ _FREE = re.compile(r"(.*)frei(?:e[mnrs]?)?")
 # "vegan" claims the animal allergens absent.
 _VEGAN = re.compile(r"vegan(?:e[mnrs]?)?")
 _VEGAN_CODES = frozenset("BCDGR")
+_JOINS = ("und", "oder")
 # Columns the converter reads directly. If one is missing (other register
 # version, wrong file), that is a format error instead of a KeyError (Codex PR
 # #149). Optional columns (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
@@ -554,7 +566,9 @@ def free_from_claim(name: str) -> set[str]:
     claim nothing. A heuristic for the report, never a source for allergens.
     """
     claimed: set[str] = set()
-    words = re.findall(r"[a-z]+", fold(name))
+    # A hyphen left open ("gluten- und laktosefrei") stays on its word.
+    tokens = re.findall(r"[a-z]+(?:-(?![a-z]))?", fold(name))
+    words = [t.rstrip("-") for t in tokens]
     for i, word in enumerate(words):
         if _VEGAN.fullmatch(word):
             claimed |= _VEGAN_CODES
@@ -563,13 +577,18 @@ def free_from_claim(name: str) -> set[str]:
             j = i + 1
             while j < len(words):
                 claimed |= _allergens_named(words[j])
-                if words[j + 1 : j + 2] not in (["und"], ["oder"]):
+                if j + 1 >= len(words) or words[j + 1] not in _JOINS:
                     break
                 j += 2
         elif free := _FREE.fullmatch(word):
             # "glutenfrei", "Gluten-frei" and "Gluten frei" name it in front,
             # "frei von Gluten" behind.
             claimed |= _allergens_named(free[1] or (words[i - 1] if i else ""))
+            # "gluten-, ei- und sojafrei": the open hyphens share the "-frei".
+            k = i - 1
+            while k >= 0 and (words[k] in _JOINS or tokens[k].endswith("-")):
+                claimed |= _allergens_named(words[k])
+                k -= 1
             after = words[i + 1 : i + 3]
             if not free[1] and len(after) == 2 and after[0] == "von":
                 claimed |= _allergens_named(after[1])
