@@ -1,0 +1,76 @@
+{
+  "id": "lieferung_0010",
+  "name": "Quantity corrected, an omission",
+  "tags": [
+    "lieferung",
+    "mengenaenderung",
+    "wunsch",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, liefern Sie nach Musterdorf?"
+    },
+    {
+      "role": "customer",
+      "text": "Dann zweimal die 31 mit Huhn, ach nee, dreimal, eine davon ohne Ei, und eine Kokossuppe."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ringstrasse 2, Postleitzahl 12345."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Vogel."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "31",
+        "quantity": 2,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "31",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ],
+        "note": "ohne Ei"
+      },
+      {
+        "number": "11",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Vogel",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Ringstrasse",
+      "house_number": "2",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

@@ -1,0 +1,95 @@
+{
+  "id": "lieferung_0015",
+  "name": "Two speakers, sold out and ambiguous",
+  "tags": [
+    "lieferung",
+    "mehrere_positionen",
+    "ausverkauft",
+    "mehrdeutig",
+    "level-5"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "sold_out": [
+    "48"
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja hallo, Lieferung bitte, Moment, mein Mann will auch noch was."
+    },
+    {
+      "role": "customer",
+      "text": "Ich nehm die Ente, die suess-saure, und eine Suppe, und er, was? ... er nimmt das Curry mit Rind."
+    },
+    {
+      "role": "customer",
+      "text": "Na gut, dann die knusprige mit Ente. Die Suppe ist die Pho Ga. Und das rote Curry."
+    },
+    {
+      "role": "customer",
+      "text": "Und zwei Bananen und zwei Mochi."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Lindenstrasse 8, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Keller."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "47",
+        "quantity": 1,
+        "options": [
+          "Ente"
+        ]
+      },
+      {
+        "number": "14",
+        "quantity": 1
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      },
+      {
+        "number": "60",
+        "quantity": 2
+      },
+      {
+        "number": "61",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Keller",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "8",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

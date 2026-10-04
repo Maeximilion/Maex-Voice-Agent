@@ -1,0 +1,79 @@
+{
+  "id": "lieferung_0013",
+  "name": "Allergy and an unknown wish on a delivery",
+  "tags": [
+    "lieferung",
+    "allergie_hinweis",
+    "unbekannt",
+    "mehrere_positionen",
+    "level-4"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 34 mit Huhn, ich habe eine Erdnussallergie, und die 13 mit extra Koriander."
+    },
+    {
+      "role": "customer",
+      "text": "Ok, dann ohne Extra. Und zweimal die 24."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Lindenstrasse 30, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Arnold."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "34",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ],
+        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+      },
+      {
+        "number": "13",
+        "quantity": 1,
+        "note": null
+      },
+      {
+        "number": "24",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Arnold",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "30",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

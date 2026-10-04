@@ -1,0 +1,61 @@
+{
+  "id": "abholung_0063",
+  "name": "Sold-out dish in the middle of the order",
+  "tags": [
+    "abholung",
+    "ausverkauft",
+    "mehrere_positionen",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "sold_out": [
+    "48"
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte was zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die 21, die 48 und zwei Pho Ga."
+    },
+    {
+      "role": "customer",
+      "text": "Oh schade, dann nehm ich die 49."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Wolf."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "21",
+        "quantity": 1
+      },
+      {
+        "number": "49",
+        "quantity": 1
+      },
+      {
+        "number": "14",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Wolf",
+    "confirmed": true,
+    "escalated": false
+  }
+}

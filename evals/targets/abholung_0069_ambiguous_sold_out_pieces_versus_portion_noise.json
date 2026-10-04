@@ -1,0 +1,82 @@
+{
+  "id": "abholung_0069",
+  "name": "Ambiguous, sold out, pieces versus portion, noise",
+  "tags": [
+    "abholung",
+    "mehrdeutig",
+    "ausverkauft",
+    "rauschen",
+    "mengenaenderung",
+    "level-5"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "sold_out": [
+    "33"
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ... krrr ... ja, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die Ente, die mit Mango, zweimal Mango-Curry, aeh, und das gruene Curry mit Huhn."
+    },
+    {
+      "role": "customer",
+      "text": "Oh, dann das rote mit Huhn. Und vier Fruehlingsrollen, nee warte, das sind ja vier Stueck pro Portion, also eine Portion."
+    },
+    {
+      "role": "customer",
+      "text": "Und ... chhh ... die zwoelf, zweimal, und dreimal die 61."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Fischer."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "49",
+        "quantity": 1
+      },
+      {
+        "number": "41",
+        "quantity": 2
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "23",
+        "quantity": 1
+      },
+      {
+        "number": "12",
+        "quantity": 2
+      },
+      {
+        "number": "61",
+        "quantity": 3
+      }
+    ],
+    "customer_name": "Fischer",
+    "confirmed": true,
+    "escalated": false
+  }
+}

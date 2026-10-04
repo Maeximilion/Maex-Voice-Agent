@@ -27,6 +27,7 @@ Abhängigkeiten: nur das Projekt selbst (Datenbank aus DATABASE_URL).
 """
 
 import argparse
+import hashlib
 import json
 import sys
 from collections.abc import Callable
@@ -48,6 +49,7 @@ from evals.judge import (
     missing_tools,
     observe,
     offered_alternatives,
+    unchecked_address,
     validate_case,
 )
 from evals.recorder import RecordingLLM
@@ -208,9 +210,18 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         return result
 
     rec = llm.recording
-    missing = missing_tools(expected.get("tools", []), rec.ok_results)
-    if missing:
-        diffs.append(f"tools: kein erfolgreicher Aufruf {missing}")
+    missing = missing_tools(
+        expected.get("tools", []), rec.ok_results, rec.error_results
+    )
+    unchecked = unchecked_address(expected, rec.ok_calls)
+    if unchecked:
+        diffs.append(unchecked)
+    rejected = [m for m in missing if isinstance(m, dict) and "error" in m]
+    succeeded = [m for m in missing if m not in rejected]
+    if succeeded:
+        diffs.append(f"tools: kein erfolgreicher Aufruf {succeeded}")
+    if rejected:
+        diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
@@ -232,13 +243,16 @@ def run(
     cases_dir: Path = CASES,
     tags: list[str] | None = None,
     model: str = "scripted",
-    report_dir: Path = REPORTS,
+    report_dir: Path | None = None,
     db_url: str | None = None,
     keep_db: bool = False,
     stamp: datetime | None = None,
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests)."""
     tags = sorted(tags or [])
+    # Without an explicit folder every case folder gets its own report folder: a
+    # run over targets/ must never become the baseline of the CI suite.
+    report_dir = report_dir or default_report_dir(cases_dir)
     make_llm = model_factory(model)
     cases = load_cases(cases_dir, tags)
     if not cases:
@@ -273,12 +287,26 @@ def run(
     return report
 
 
+def default_report_dir(cases_dir: Path) -> Path:
+    """`evals/reports/` for the CI suite, `evals/reports/<folder>/` for a folder in
+    `evals/`, and `evals/reports/<folder>_<hash>/` for a folder anywhere else: a
+    `/tmp/targets` must not share the baseline of `evals/targets` (Codex PR #162)."""
+    folder = cases_dir.resolve()
+    if folder == CASES.resolve():
+        return REPORTS
+    if folder.parent == HERE:
+        return REPORTS / folder.name
+    digest = hashlib.sha256(str(folder).encode("utf-8")).hexdigest()[:8]
+    return REPORTS / f"{folder.name}_{digest}"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eval-Suite laufen lassen (docs/08)")
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
     parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
     parser.add_argument("--cases", type=Path, default=CASES)
-    parser.add_argument("--report-dir", type=Path, default=REPORTS)
+    # Without a value run() picks the report folder per case folder.
+    parser.add_argument("--report-dir", type=Path, default=None)
     parser.add_argument(
         "--keep-db", action="store_true", help="Wegwerf-Datenbank nicht löschen"
     )

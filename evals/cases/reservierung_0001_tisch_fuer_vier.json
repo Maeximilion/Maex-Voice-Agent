@@ -1,17 +1,35 @@
 {
   "id": "reservierung_0001",
   "name": "Tisch fuer vier am Abend",
-  "tags": ["reservierung", "durchstich"],
+  "tags": [
+    "reservierung",
+    "durchstich",
+    "level-1"
+  ],
   "source": "roleplay",
   "transcript": [
-    { "role": "customer", "text": "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr." },
-    { "role": "customer", "text": "Auf den Namen Mueller." },
-    { "role": "customer", "text": "Meine Nummer ist 0721 5551234." },
-    { "role": "customer", "text": "Ja, passt so." }
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
   ],
   "expected": {
     "intent": "reservation",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "reserved_for": "2026-09-16T19:00",
+    "phone": "+497215551234"
   }
 }

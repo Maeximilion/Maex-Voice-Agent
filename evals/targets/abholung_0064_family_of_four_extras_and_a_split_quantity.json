@@ -1,0 +1,83 @@
+{
+  "id": "abholung_0064",
+  "name": "Family of four, extras and a split quantity",
+  "tags": [
+    "abholung",
+    "mehrere_positionen",
+    "wunsch",
+    "menge",
+    "level-4"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja hallo, aeh, wir wollen was zum Abholen bestellen, wir sind zu viert."
+    },
+    {
+      "role": "customer",
+      "text": "Also fuer meine Frau das gruene Curry mit Tofu und Nudeln statt Reis, fuer mich die 40 ohne Zwiebeln, und die Kinder kriegen zweimal die 31 mit Huhn, eine davon mit Spiegelei."
+    },
+    {
+      "role": "customer",
+      "text": "Und dazu noch zweimal Fruehlingsrollen und eine Banane."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars dann."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Hoffmann."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt alles."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "33",
+        "quantity": 1,
+        "options": [
+          "Tofu",
+          "Nudeln statt Reis"
+        ]
+      },
+      {
+        "number": "40",
+        "quantity": 1,
+        "note": "ohne Zwiebeln"
+      },
+      {
+        "number": "31",
+        "quantity": 1,
+        "options": [
+          "Huhn",
+          "Spiegelei"
+        ]
+      },
+      {
+        "number": "31",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "23",
+        "quantity": 2
+      },
+      {
+        "number": "60",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Hoffmann",
+    "confirmed": true,
+    "escalated": false
+  }
+}

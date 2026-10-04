@@ -3,7 +3,8 @@
   "name": "Wiederholter confirm ergibt eine Reservierung",
   "tags": [
     "reservierung",
-    "doppeltes_confirm"
+    "doppeltes_confirm",
+    "level-1"
   ],
   "source": "handcrafted",
   "repeat_confirm": true,

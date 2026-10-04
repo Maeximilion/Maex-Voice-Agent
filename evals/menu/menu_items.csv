@@ -1,13 +1,33 @@
 number;name;category;price_eur;description;active
+20;Edamame;Vorspeisen;4,50;;ja
+21;Wan-Tan frittiert (6 Stück);Vorspeisen;6,50;;ja
+22;Gyoza (6 Stück);Vorspeisen;6,90;;ja
 23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;;ja
 24;Sommerrollen mit Garnelen;Vorspeisen;7,50;;ja
+25;Papaya-Salat;Vorspeisen;7,90;;ja
+10;Miso-Suppe;Suppen;4,50;;ja
+11;Tom Kha Gai;Suppen;6,90;;ja
 12;Wan-Tan-Suppe;Suppen;5,00;;ja
 13;Pho Bo;Suppen;11,90;;ja
+14;Pho Ga;Suppen;11,50;;ja
+30;Gebratene Nudeln;Hauptgerichte;10,90;;ja
+31;Gebratener Reis;Hauptgerichte;10,50;;ja
+32;Rotes Curry;Hauptgerichte;12,90;;ja
+33;Grünes Curry;Hauptgerichte;12,90;;ja
+34;Pad Thai;Hauptgerichte;12,50;;ja
+35a;Bun Bo Nam Bo;Hauptgerichte;12,90;;ja
+35b;Bun Cha;Hauptgerichte;12,90;;ja
+40;Rind mit Zwiebeln;Hauptgerichte;14,50;;ja
+41;Mango-Curry mit Huhn;Hauptgerichte;13,50;;ja
+42;Gemüse mit Tofu;Hauptgerichte;10,90;;ja
 47;Ente knusprig;Hauptgerichte;15,50;;ja
 48;Ente süß-sauer;Hauptgerichte;14,90;;ja
+49;Ente mit Mango;Hauptgerichte;15,90;;ja
 50;Altes Gericht;Hauptgerichte;9,00;;nein
-60;Chop Suey mit Huhn;Hauptgerichte;12,50;;ja
-60g;Soße Chop Suey;Hauptgerichte;2,00;;ja
+60;Gebackene Banane;Desserts;4,90;;ja
+61;Mochi (3 Stück);Desserts;5,50;;ja
+45;Chop Suey mit Huhn;Hauptgerichte;12,50;;ja
+45g;Soße Chop Suey;Hauptgerichte;2,00;;ja
 S1;Lachs Nigiri (2 Stück);Sushi;4,50;;ja
 S12;Thunfisch Maki (6 Stück);Sushi;5,90;;ja
 SM1;Sushi-Menü klein;Sushi;16,90;;ja
