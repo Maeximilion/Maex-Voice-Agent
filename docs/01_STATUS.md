@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.0
+> Status: 04.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.35.1
 
 ---
 
@@ -330,6 +330,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.35.1 · 04.10.2026:** Convention (Maxi): code, comments and docstrings in English, German only for the German use case (CLAUDE.md §8); applied to what T-4.12 adds or touches, the rest is translated when its block is touched
 - **v1.35.0 · 03.10.2026:** T-4.12: Kartennummern mit Praefix (S, SM) und Endung g, Praefixe aus der Karte
 - **v1.34.18 · 03.10.2026:** Bug: Migrationstests unabhaengig von Reihenfolge und xdist-Worker, offener Punkt test_migration_001 geschlossen
 - **v1.34.17 · 03.10.2026:** Latenztests seriell in CI nach der parallelen Suite (Marker latency), offener Punkt test_migration_001 unter xdist

@@ -112,18 +112,18 @@ def _active(tenant_id: uuid.UUID) -> tuple:
 def _by_number(
     session: Session, tenant_id: uuid.UUID, spoken: tuple[str, ...] | list[str]
 ) -> list[MenuItem]:
-    """Aktive Gerichte zu gesagten Kartennummern.
+    """Active dishes for the card numbers that were said.
 
-    Verglichen wird der Text ohne führende Nullen der Zahl: "07" findet 7,
-    "acht" findet 08, "S7" findet S07 (numberwords.canonical_card, hier in SQL).
-    Die Kartennummer ist Text (docs/14), eine Umwandlung über int verlöre "23a"
-    (Befund Codex PR #116); Zahl, Buchstabe und Marker stammen aus derselben
-    Stelle im Satz (Befund Codex PR #117). Mehrere Nummern kommen aus einem
-    Kategoriewort ("Sushi zwölf" ist S12 oder SM12, T-4.12).
+    The text is compared without leading zeros of the number: "07" finds 7,
+    "acht" finds 08, "S7" finds S07 (numberwords.canonical_card, here in SQL).
+    The card number is text (docs/14); converting via int would lose "23a"
+    (Codex PR #116). Number, letter and marker come from the same place in the
+    sentence (Codex PR #117). Several numbers come from a category word
+    ("Sushi zwölf" is S12 or SM12, T-4.12).
     """
     if isinstance(spoken, str):
-        # Ein str waere zeichenweise nachgeschlagen worden (Review PR #155).
-        raise TypeError("Kartennummern als Folge übergeben, nicht als Text")
+        # A str would be looked up character by character (review PR #155).
+        raise TypeError("pass card numbers as a sequence, not as a str")
     stored = func.regexp_replace(
         func.lower(func.btrim(MenuItem.number)), "^([a-z]*)0*([0-9])", "\\1\\2"
     )
@@ -322,7 +322,7 @@ def _position_parts(
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
-    # Die Karte einmal lesen, nicht je Stueck und Spanne (Review PR #155).
+    # Read the menu once, not per piece and span (review PR #155).
     search = partial(
         search_menu,
         session,
@@ -590,12 +590,12 @@ def search_menu(
     split_check: bool = True,
     card: CardFormat | None = None,
 ) -> SearchResult:
-    """`split_check=False` nur fuer `position_parts`: die Suche je Stueck und ueber
-    den ganzen Satz darf nicht wieder in die Pruefung auf mehrere Positionen.
-    `card`: das Kartenformat, wenn der Aufrufer es schon gelesen hat."""
+    """`split_check=False` only for `position_parts`: the search per piece and
+    over the whole sentence must not run the check for several positions again.
+    `card`: the card format, if the caller has already read it."""
     now = now or utcnow()
-    # Welche Praefixe eine Nummer tragen kann ("S12"), sagt die Karte (T-4.12);
-    # gelesen einmal je Suche, auch ueber die rekursiven Aufrufe.
+    # Which prefixes a number can carry ("S12") is decided by the menu
+    # (T-4.12); read once per search, including the recursive calls.
     card = card if card is not None else card_format(session, tenant_id)
     high = settings.menu_fuzzy_threshold_high if high is None else high
     low = settings.menu_fuzzy_threshold_low if low is None else low
@@ -628,7 +628,7 @@ def search_menu(
     if unclear:
         raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
     if ref is not None:
-        # "23h": eine Endung, die es auf keiner Karte gibt, ist nicht die 23.
+        # "23h": a suffix that no menu has is not the 23.
         items = _by_number(session, tenant_id, ref.cards) if ref.valid else []
         if not items:
             raise NotFound(
@@ -636,8 +636,8 @@ def search_menu(
                 say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
         if len(items) > 1:
-            # "7" und "07" auf derselben Karte, "Sushi eins" mit S1 und SM1:
-            # nachfragen statt wählen.
+            # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
+            # ask back instead of choosing.
             return _ambiguous(session, items[:limit], now)
         return _single(session, "exact_number", items[0], now)
 

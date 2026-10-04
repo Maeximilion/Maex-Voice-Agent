@@ -214,7 +214,7 @@ def _search_menu(
     Ein Teil ohne Treffer bleibt mit error_code und say sichtbar, statt still
     wegzufallen."""
     req = SearchMenuRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    # Die Karte einmal je Werkzeugaufruf lesen, nicht je Teil (Code-Review PR #155).
+    # Read the menu once per tool call, not per part (code review PR #155).
     card = card_format(session, tenant_id)
     parts = position_parts(session, tenant_id, req.query, now=now, card=card)
     if len(parts) <= 1:

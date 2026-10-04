@@ -1,40 +1,39 @@
 #!/usr/bin/env python3
-"""Eval-Satz fuer die Nummernerkennung (Regel A, docs/08 §6).
+"""Eval set for number recognition (rule A, docs/08 §6).
 
-Warum eigenstaendig und nicht Teil der Gespraechs-Evals aus docs/08 §1: hier
-faellt keine Entscheidung eines Modells, sondern eine des Codes. Der Satz
-laeuft ohne Datenbank, ohne HTTP und ohne LLM in Millisekunden und beantwortet
-genau eine Frage - loest `sole_item_number` jeden bekannten Satz so auf, wie er
-aufgeloest werden muss.
+Why it stands alone and is not part of the conversation evals from docs/08 §1:
+no model decides here, the code does. The set runs without a database, HTTP or
+an LLM in milliseconds and answers exactly one question - does
+`sole_item_number` resolve every known sentence the way it must be resolved.
 
-Der Satz ist als Netz gegen Regressionen entstanden: die Regeln fuer Marker,
-Endung, Menge und Verbindungswort greifen ineinander, und zwei Korrekturen in
-Folge haben je eine frueher richtige Form wieder kaputt gemacht (PR #117).
-Einzelne Testfunktionen zeigen das nicht - eine Tabelle aller Faelle schon.
+The set began as a net against regressions: the rules for marker, suffix,
+quantity and connecting word interlock, and two fixes in a row each broke a
+form that had been right before (PR #117). Single test functions do not show
+that - a table of all cases does.
 
-Erwartungswerte in `cases/nummern.jsonl`:
+Expected values in `cases/nummern.jsonl`:
 
-    "23"      genau diese Kartennummer, die Suche darf sie direkt nehmen
-    "!23g"    als Nummer genannt, aber keine gueltige Kartenform -> not_found;
-              die Suche weicht nie auf aehnliche Namen aus (CLAUDE.md §2 Regel 2)
-    "?"       nicht eindeutig -> ambiguous mit der Frage nach der einen Nummer
-    "name"    kein Nummernsatz -> Alias- und Trigram-Suche entscheiden
-    "s12|sm12" mehrere Kartennummern moeglich ("Sushi zwoelf"), die Suche
-              schlaegt alle nach; welche es gibt, sagt die Karte
+    "23"      exactly this card number, the search may take it directly
+    "!23h"    named as a number but not a valid card form -> not_found; the
+              search never falls back to similar names (CLAUDE.md §2 rule 2)
+    "?"       not unambiguous -> ambiguous, asking for the one number
+    "name"    not a number sentence -> alias and trigram search decide
+    "s12|sm12" several card numbers possible ("Sushi zwoelf"); the search
+              looks up all of them, and the menu says which one exists
 
-Welche Praefixe eine Nummer tragen kann ("S12", "SM1"), steht nicht im Code,
-sondern folgt aus den Nummern der Karte (T-4.12). Dieser Satz nimmt dafuer die
-Evalkarte `evals/menu/menu_items.csv`, dieselbe wie die Gespraechs-Evals.
+Which prefixes a number can carry ("S12", "SM1") is not in the code; it
+follows from the numbers on the menu (T-4.12). This set uses the eval menu
+`evals/menu/menu_items.csv`, the same one as the conversation evals.
 
-Aufruf:
+Usage:
 
-    python -m evals.number_eval           # Tabelle, Exit 1 bei rot
-    python -m evals.number_eval --quiet   # nur die Zusammenfassung
+    python -m evals.number_eval           # table, exit 1 when red
+    python -m evals.number_eval --quiet   # summary only
 
-Ein neuer Fall ist eine Zeile in der JSONL-Datei. Gehoert ein Satz vom Telefon
-dazu, der heute falsch aufgeloest wird, kommt er mit der richtigen Erwartung
-hinein - der Satz ist dann rot, bis der Code stimmt (CLAUDE.md §9: erst der
-rote Fall, dann der Fix).
+A new case is one line in the JSONL file. If a sentence from the phone that is
+resolved wrongly today belongs in it, it goes in with the right expectation -
+the set is then red until the code is right (CLAUDE.md §9: red case first,
+then the fix).
 """
 
 from __future__ import annotations
@@ -58,7 +57,7 @@ MENU_ITEMS = Path(__file__).parent / "menu" / "menu_items.csv"
 
 
 def eval_card(path: Path = MENU_ITEMS) -> CardFormat:
-    """Kartenformat der Evalkarte: Praefixe und Kategoriewoerter aus den Nummern."""
+    """Card format of the eval menu: prefixes and category words from the numbers."""
     with path.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f, delimiter=";"))
     return CardFormat.from_items(

@@ -187,7 +187,7 @@ def test_nummern_die_die_suche_nicht_versteht_und_dubletten():
         ]
     )
 
-    # S12 und 25G versteht die Suche seit T-4.12, 35AE und X12 nicht.
+    # The search understands S12 and 25G since T-4.12, but not 35AE and X12.
     assert [i["number"] for i in result.menu] == ["s12", "25g", "36"]
     assert any("35AE, X12" in e and "2 Gerichte" in e for e in result.errors)
     assert sum("doppelt" in e for e in result.errors) == 2

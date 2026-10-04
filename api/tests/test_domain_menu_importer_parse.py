@@ -320,18 +320,18 @@ def test_kartennummer_im_suchformat(nummer):
         "ABC1",
         "S",
         "S12AB",
-        # Praefixe, die numberwords schon als Menge oder Marker liest (Review PR #155)
+        # Prefixes numberwords already reads as a quantity or marker (review PR #155)
         "X12",
         "ST1",
         "NR5",
         "NO5",
-        # Gesprochene Woerter als Praefix (Code-Review PR #155)
+        # Spoken words as a prefix (code review PR #155)
         "JA1",
         "ES1",
     ],
 )
 def test_kartennummer_ausserhalb_des_suchformats(nummer):
-    """Sonst sucht "Nummer 23h" still die 23: lieber beim Import scheitern."""
+    """Otherwise "Nummer 23h" silently looks up the 23: better to fail at import."""
     plan = parse(
         {MENU_FILE: f"number;name;category;price_eur\n{nummer};Gericht;Test;1,00\n"}
     )
@@ -418,10 +418,10 @@ def test_gruppe_in_zwei_schreibweisen():
     assert "47/größe" in text and "Schreibweise" in text
 
 
-# --- Praefix und Endung g aus der Kasse (T-4.12) ----------------------------------
+# --- Prefix and suffix g from the register (T-4.12) -------------------------------
 
 
-def test_praefixnummer_wird_klein_gespeichert():
+def test_prefixed_number_is_stored_lower_case():
     plan = parse(
         {
             MENU_FILE: "number;name;category;price_eur\n"
@@ -432,20 +432,20 @@ def test_praefixnummer_wird_klein_gespeichert():
     assert set(plan.items) == {"s12", "sm1", "25g"}
 
 
-@pytest.mark.parametrize(("erste", "zweite"), [("S7", "s07"), ("SM1", "sm001")])
-def test_praefixnummer_mit_nullen_ist_dublette(erste, zweite):
-    """Dubletten nach canonical_card: "S7" und "S07" sind eine Nummer."""
+@pytest.mark.parametrize(("first", "second"), [("S7", "s07"), ("SM1", "sm001")])
+def test_prefixed_number_with_zeros_is_a_duplicate(first, second):
+    """Duplicates by canonical_card: "S7" and "S07" are one number."""
     plan = parse(
         {
             MENU_FILE: "number;name;category;price_eur\n"
-            f"{erste};Eins;Sushi;1,00\n{zweite};Zwei;Sushi;1,00\n"
+            f"{first};Eins;Sushi;1,00\n{second};Zwei;Sushi;1,00\n"
         }
     )
     assert not plan.ok and "doppelt" in plan.errors[0]
 
 
-def test_praefix_und_ohne_praefix_sind_zwei_nummern():
-    """S12 ist nicht die 12: beide duerfen auf derselben Karte stehen."""
+def test_prefixed_and_plain_are_two_numbers():
+    """S12 is not the 12: both may be on the same menu."""
     plan = parse(
         {
             MENU_FILE: "number;name;category;price_eur\n"
@@ -455,7 +455,7 @@ def test_praefix_und_ohne_praefix_sind_zwei_nummern():
     assert plan.ok, plan.errors
 
 
-def test_reserviertes_praefix_hat_eigene_meldung():
-    """Code-Review PR #155: "NO5" sagt, warum - nicht "bis zu zwei Buchstaben"."""
+def test_reserved_prefix_has_its_own_message():
+    """Code review PR #155: "NO5" says why - not "up to two letters"."""
     plan = parse({MENU_FILE: "number;name;category;price_eur\nNO5;Gericht;Test;1,00\n"})
     assert not plan.ok and "Praefix" in plan.errors[0] and "no" in plan.errors[0]

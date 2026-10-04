@@ -47,13 +47,13 @@ class DishSwitch:
     sold_out: bool
 
 
-# Eine Nummer im Suchfeld: Ziffer vorn, auch hinter einem Praefix ("s1", T-4.12).
+# A number in the search field: a digit first, also after a prefix ("s1", T-4.12).
 _NUMBER_START = re.compile(r"[a-z]{0,2}\d")
 
 
 def number_key(number: str) -> tuple[str, int, str]:
-    """Kartenreihenfolge: 2 vor 12, 23 vor 23a, Nummern ohne Praefix vor S2 vor
-    S12 vor SM1. Nummern sind Text (docs/14)."""
+    """Menu order: 2 before 12, 23 before 23a, numbers without a prefix before
+    S2 before S12 before SM1. Numbers are text (docs/14)."""
     match = CARD_PARTS.fullmatch(number.lower())
     if match is None:
         return ("\uffff", 10**9, number)

@@ -368,11 +368,11 @@ class PickupScript:
         """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
         auf eine der angebotenen passt."""
         lowered = text.lower()
-        # Auch gesprochen ("die dreizehn") und mit fuehrender Null (Review PR #133).
-        # Nur, wenn der Satz die Nummer selbst ist: in "zwei Pho Bo" ist die Zwei
-        # eine Menge, keine Karte 2 - dieselbe Regel wie in der Suche (Codex PR
+        # Also spoken ("die dreizehn") and with a leading zero (review PR #133).
+        # Only if the sentence is the number itself: in "zwei Pho Bo" the two is
+        # a quantity, not card 2 - the same rule as in the search (Codex PR
         # #133, P2).
-        # Praefixe der angebotenen Nummern ("S1 oder SM1?" - "SM eins", T-4.12).
+        # Prefixes of the offered numbers ("S1 oder SM1?" - "SM eins", T-4.12).
         offered = CardFormat.from_items((h["number"], "") for h in self._suggestions)
         ref, _ = sole_item_number(text, offered)
         if ref is not None:
@@ -546,20 +546,20 @@ def _wish_sentence(
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
-# Eine Kartennummer mit Buchstaben im Satz ("S12", "SM1", "25g", "S0001",
-# T-4.12). Das Text-Telefon kennt die Karte nicht, darum jede Form, die der
-# Import erlaubt (importer.is_card_number, dieselbe Grammatik),
-# und ein Zahlwort am Ende der Antwort ("S zwölf", "Sushi zwölf bitte"). Ein
-# Zahlwort vor einem Wort gehoert zur Zutat ("Fünf-Gewürze-Pulver", "zwei
+# A card number with letters in the sentence ("S12", "SM1", "25g", "S0001",
+# T-4.12). The text phone does not know the menu, so it takes every form the
+# import allows (importer.is_card_number, the same grammar) and a number word
+# at the end of the answer ("S zwölf", "Sushi zwölf bitte"). A number word
+# before another word belongs to the ingredient ("Fünf-Gewürze-Pulver", "zwei
 # Sachen: Milch") (Codex PR #155).
 _AFTER_NUMBER = frozenset({"bitte", "danke"})
-# Zusatzstoffe ("E621", "E220") haben die Form einer Kartennummer, sind auf
-# "Wogegen?" aber die Zutat (Code-Review PR #155).
+# Additives ("E621", "E220") have the shape of a card number, but as an answer
+# to "Wogegen?" they are the ingredient (code review PR #155).
 _ADDITIVE = re.compile(r"e\d{3,4}[a-z]?")
 
 
 def _ends_with_number(words: list[str]) -> bool:
-    """Endet die Antwort mit einem Zahlwort, hoechstens "bitte" dahinter?"""
+    """Does the answer end with a number word, with at most "bitte" after it?"""
     rest = [w for w in words if w not in _AFTER_NUMBER]
     return (
         bool(rest)

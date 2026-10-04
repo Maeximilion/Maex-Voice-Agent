@@ -1,28 +1,27 @@
-"""Deutsche Zahlwörter und Mengen in Zahlen (docs/11 §menu).
+"""German number words and quantities as numbers (docs/11 §menu).
 
-Reine Funktion: keine DB, keine HTTP, keine Konfiguration. Was hier entschieden
-wird, entscheidet sich allein am Text, den die Spracherkennung liefert.
+Pure functions: no DB, no HTTP, no configuration. Everything decided here is
+decided from the text the speech recognition delivers, nothing else.
 
-Drei Aufgaben, die am Telefon auseinanderfallen:
+Three jobs that differ on the phone:
 
-- `parse_cardinal("dreiundzwanzig")` — der ganze Text **ist** die Zahl
-- `find_item_number("Nummer vierzig sieben")` — die Zahl **steckt** im Satz
-- `find_quantity("zweimal die Frühlingsrollen")` — wie oft, nicht was
+- `parse_cardinal("dreiundzwanzig")` — the whole text **is** the number
+- `find_item_number("Nummer vierzig sieben")` — the number is **inside** the sentence
+- `find_quantity("zweimal die Frühlingsrollen")` — how many, not what
 
-Die Spracherkennung liefert dieselbe Zahl in mehreren Gestalten: als Ziffer
-("23"), als ein Wort ("dreiundzwanzig"), auseinandergeschrieben ("drei und
-zwanzig") oder ziffernweise gesprochen ("vierzig sieben"). Alle vier Formen
-ergeben hier dieselbe Zahl.
+The speech recognition delivers the same number in several shapes: as digits
+("23"), as one word ("dreiundzwanzig"), written apart ("drei und zwanzig") or
+spoken digit by digit ("vierzig sieben"). All four give the same number here.
 
-Kartennummern tragen ausserdem Buchstaben: eine Endung a bis g ("23a", "25g")
-und, wenn die Karte es so hat, ein Praefix davor ("S12", "SM1"). Welche
-Praefixe gelten, steht nicht hier, sondern kommt als `CardFormat` aus den
-Nummern der Karte (CLAUDE.md §2 Regel 1, T-4.12). Ohne `CardFormat` kennt das
-Modul keine Praefixe.
+Card numbers also carry letters: a suffix a to g ("23a", "25g") and, if the
+menu has it, a prefix in front ("S12", "SM1"). Which prefixes apply is not
+written here; it comes as a `CardFormat` from the numbers on the menu
+(CLAUDE.md §2 rule 1, T-4.12). Without a `CardFormat` this module knows no
+prefixes.
 
-**Kein Treffer ergibt `None`, nie eine Vermutung** (CLAUDE.md §2 Regel 2). Ob
-daraus eine Rückfrage, eine Stufe der Verständnis-Leiter oder ein Abbruch wird,
-entscheidet der Aufrufer, nicht dieses Modul.
+**No match gives `None`, never a guess** (CLAUDE.md §2 rule 2). Whether that
+becomes a follow-up question, a step on the understanding ladder or an abort
+is up to the caller, not this module.
 """
 
 import re
@@ -109,12 +108,12 @@ _TOKEN = re.compile(r"\d+|[a-z]+|[.,;:!?]")
 
 @dataclass(frozen=True)
 class _Span:
-    """Eine gefundene Zahl mit ihrer Lage im Satz. Die Lage braucht, wer wissen
-    will, ob diese Zahl schon als Menge vergeben ist.
+    """A number found in the sentence, with its position. The position is
+    needed to tell whether this number is already taken as a quantity.
 
-    Mit Kartenpraefix ("S zwölf") beginnt die Spanne beim Praefix: `lead` Token
-    davor gehoeren zur Nummer, `prefixes` sind die Praefixe, die sie meinen
-    koennen - einer bei "S", mehrere bei einem Kategoriewort ("Sushi")."""
+    With a card prefix ("S zwölf") the span starts at the prefix: the `lead`
+    tokens in front belong to the number, and `prefixes` are the prefixes they
+    can mean - one for "S", several for a category word ("Sushi")."""
 
     start: int
     end: int
@@ -124,7 +123,7 @@ class _Span:
 
     @property
     def digits_at(self) -> int:
-        """Wo die Zahl selbst beginnt, hinter einem Praefix."""
+        """Where the number itself starts, after a prefix."""
         return self.start + self.lead
 
     def overlaps(self, other: "_Span") -> bool:
@@ -137,13 +136,13 @@ def fold(text: str) -> str:
     return text.lower().translate(_UMLAUTS)
 
 
-# Eine Kartennummer in ihren Teilen: Praefix, Ziffern, Endung. Welche Formen
-# erlaubt sind, prueft der Import (importer.is_card_number), hier nur zerlegen.
+# A card number in its parts: prefix, digits, suffix. Which forms are allowed
+# is checked by the import (importer.is_card_number); this only splits.
 CARD_PARTS = re.compile(r"([a-z]*)(\d+)([a-z]*)")
 
-# Buchstaben, wie die Erkennung sie ausschreibt, wenn der Gast buchstabiert:
-# "Es zwölf" ist S12, "Es Em eins" SM1. Deutsches Alphabet, keine Kartendaten:
-# welcher Buchstabe als Praefix gilt, sagt allein die Karte (`CardFormat`).
+# Letters as the speech recognition writes them out when the guest spells:
+# "Es zwölf" is S12, "Es Em eins" is SM1. German alphabet, not menu data:
+# which letter counts as a prefix is decided by the menu alone (`CardFormat`).
 _LETTER_NAMES = {
     "a": "a", "be": "b", "ce": "c", "ze": "c", "zeh": "c", "de": "d", "e": "e",
     "ef": "f", "ge": "g", "ha": "h", "i": "i", "jot": "j", "ka": "k", "el": "l",
@@ -151,34 +150,34 @@ _LETTER_NAMES = {
     "ess": "s", "te": "t", "u": "u", "vau": "v", "we": "w", "ix": "x",
     "ypsilon": "y", "zett": "z",
 }  # fmt: skip
-# Hoechstens so viele Token bilden ein Praefix ("Es Em" -> sm, "S M" -> sm).
+# At most this many tokens form a prefix ("Es Em" -> sm, "S M" -> sm).
 _MAX_PREFIX_TOKENS = 3
 
 
 @dataclass(frozen=True)
 class CardFormat:
-    """Was eine Kartennummer dieser Karte vor der Zahl tragen kann (T-4.12).
+    """What a card number of this menu can carry in front of the number (T-4.12).
 
-    `prefixes`: Buchstaben vor der Zahl, die auf der Karte vorkommen ("s",
-    "sm"). `words`: ein Kategoriewort, das der Gast statt des Praefixes sagt
-    ("Sushi zwölf"), mit allen Praefixen, die es meinen kann - nur fuer
-    Kategorien, in denen jede Nummer ein Praefix traegt. Kommt aus der Datenbank
-    (`items.card_format`), nie aus dem Code (CLAUDE.md §2 Regel 1).
+    `prefixes`: letters in front of the number that occur on the menu ("s",
+    "sm"). `words`: a category word the guest says instead of the prefix
+    ("Sushi zwölf"), with every prefix it can mean - only for categories in
+    which every number carries a prefix. Comes from the database
+    (`items.card_format`), never from the code (CLAUDE.md §2 rule 1).
     """
 
     prefixes: frozenset[str] = frozenset()
-    # Paare (Wort, Praefixe) statt dict: der Wert bleibt hashbar und
-    # unveraenderlich, NO_PREFIXES teilt keinen veraenderbaren Zustand.
+    # Pairs (word, prefixes) instead of a dict: the value stays hashable and
+    # immutable, and NO_PREFIXES shares no mutable state.
     words: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     @classmethod
     def from_items(cls, items: Iterable[tuple[str, str]]) -> "CardFormat":
-        """Aus (Nummer, Kategorie) der aktiven Gerichte.
+        """From (number, category) of the active dishes.
 
-        Ein Kategoriewort zaehlt nur, wenn die Kategorie ein Wort ist und jedes
-        ihrer Praefixe nur in ihr vorkommt: die Warengruppe "Sushi" traegt S1
-        bis S53 und SM1 bis SM6, "Sushi zwölf" meint also S12 oder SM12, und
-        welche davon es gibt, entscheidet die Suche an der Karte.
+        A category word only counts if the category is one word and each of
+        its prefixes occurs only in it: the group "Sushi" holds S1 to S53 and
+        SM1 to SM6, so "Sushi zwölf" means S12 or SM12, and which of them
+        exists is decided by the search against the menu.
         """
         prefixes: set[str] = set()
         in_category: dict[str, set[str]] = {}
@@ -196,9 +195,9 @@ class CardFormat:
         words: dict[str, tuple[str, ...]] = {}
         for name, found in in_category.items():
             carried = found - {""}
-            # Nur Kategorien, deren Nummern alle ein Praefix tragen: der leere
-            # Kandidat haette keinen Bezug mehr zur Kategorie, "Sushi zwölf"
-            # faende sonst die 12 der Suppen (Codex PR #155).
+            # Only categories whose numbers all carry a prefix: the empty
+            # candidate would have no tie to the category, and "Sushi zwölf"
+            # would find the soups' 12 (Codex PR #155).
             if (
                 carried
                 and "" not in found
@@ -210,15 +209,14 @@ class CardFormat:
 
     @cached_property
     def _word_map(self) -> dict[str, tuple[str, ...]]:
-        """`words` als Woerterbuch, einmal je Kartenformat gebaut."""
+        """`words` as a dict, built once per card format."""
         return dict(self.words)
 
     def prefixes_of(self, run: list[str], spelled: bool = True) -> tuple[str, ...]:
-        """Die Praefixe, die diese Token direkt vor einer Zahl meinen koennen.
+        """The prefixes these tokens can mean directly in front of a number.
 
-        `spelled=False`: Buchstabennamen ("es", "em") zaehlen nicht. Sie sind
-        auch deutsche Woerter - "Dann nehme ich es zwei" ist kein S2 (Review
-        PR #155).
+        `spelled=False`: letter names ("es", "em") do not count. They are also
+        German words - "Dann nehme ich es zwei" is not S2 (review PR #155).
         """
         if not self.prefixes or not run or any(t in PUNCTUATION for t in run):
             return ()
@@ -236,18 +234,19 @@ class CardFormat:
         return tuple(sorted(spellings & self.prefixes))
 
 
-# Kurze Woerter, die am Telefon vor einer Zahl fallen ("ja 12", "so 12", "es
-# zwei") oder die Erkennung als Zoegerlaut ausgibt. Als Praefix wuerden sie
-# still Teil der Nummer (Code-Review PR #155). "s" und "n" bleiben erlaubt:
-# S ist das Sushi-Praefix der Kasse, N ein naheliegendes fuer Nudeln.
+# Short words that are said in front of a number on the phone ("ja 12", "so
+# 12", "es zwei") or that the recognition emits as a hesitation. As a prefix
+# they would silently become part of the number (code review PR #155). "s" and
+# "n" stay allowed: S is the register's Sushi prefix, N an obvious one for
+# noodles.
 _SPOKEN_PREFIXES = frozenset({"ja", "es", "so", "um", "zu", "da", "du", "er", "ob"})
 
 
 def reserved_prefix(prefix: str) -> bool:
-    """Liest numberwords diese Buchstaben schon anders - als Menge ("2 x 12",
-    "3 st"), Marker ("Nr 5"), Zoegerlaut ("hm") oder gesprochenes Wort ("ja
-    12")? Dann kann eine Karte sie nicht als Praefix tragen, sonst wuerde aus
-    "2 x 12" die x12 (Review PR #155)."""
+    """Does numberwords already read these letters as something else - a
+    quantity ("2 x 12", "3 st"), a marker ("Nr 5"), a hesitation ("hm") or a
+    spoken word ("ja 12")? Then a menu cannot use them as a prefix, or "2 x 12"
+    would become x12 (review PR #155)."""
     return (
         prefix in _QUANTITY_NOUNS
         or prefix in _ITEM_NUMBER_MARKERS
@@ -351,11 +350,11 @@ def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
     return None
 
 
-# Was vor einem buchstabierten Praefix ("Es zwölf") stehen darf. Davor ein
-# anderes Wort ("nehme ich es zwei"), ist "es" ein Pronomen (Review PR #155).
-# Dazu der Wunsch am Satzanfang ("Ich haette gern Es zwoelf") und die
-# Begruessung ("Hallo, Es zwoelf", Code-Review PR #155) - aber kein Verb wie
-# "nehme" oder "hole": dahinter ist "es" das Objekt.
+# What may stand in front of a spelled prefix ("Es zwölf"). After any other
+# word ("nehme ich es zwei") "es" is a pronoun (review PR #155). Allowed as
+# well: the wish at the start of the sentence ("Ich haette gern Es zwoelf") and
+# the greeting ("Hallo, Es zwoelf", code review PR #155) - but no verb such as
+# "nehme" or "hole": after those, "es" is the object.
 _SPELLED_LEAD = frozenset(
     {
         "und", "noch", "die", "der", "das", "den", "nummer", "nr", "no", "bitte",
@@ -365,8 +364,9 @@ _SPELLED_LEAD = frozenset(
 
 
 def _clean_lead(tokens: list[str], at: int) -> bool:
-    """Steht vor Position `at` nur Satzzeichen, Zoegerlaut, Artikel, Marker
-    oder eine Menge? Nur dann darf ein Buchstabenname dort ein Praefix sein."""
+    """Is there only punctuation, a hesitation, an article, a marker or a
+    quantity before position `at`? Only then may a letter name be a prefix
+    there."""
     return all(
         t in PUNCTUATION
         or t in _SPELLED_LEAD
@@ -384,15 +384,15 @@ def _number_spans(
     card: CardFormat = NO_PREFIXES,
     prefixed: set[int] | frozenset[int] = frozenset(),
 ) -> list[_Span]:
-    """Alle genannten Zahlen mit ihrer Lage.
+    """All numbers said, with their positions.
 
-    Ein bloßer Artikel zählt nicht mit ("ein Tisch"), eine Zahl, die mit einem
-    Artikel **beginnt**, sehr wohl: "die ein und zwanzig" ist die 21 und war
-    vorher die 20, weil das "ein" verworfen wurde, bevor jemand geprüft hat, ob
-    es eine Zahl eröffnet (Codex-Review PR #105, P1).
+    A bare article does not count ("ein Tisch"), but a number that **starts**
+    with an article does: "die ein und zwanzig" is 21 and used to be 20,
+    because the "ein" was dropped before anyone checked whether it opens a
+    number (Codex review PR #105, P1).
 
-    Steht direkt davor ein Praefix der Karte ("S zwölf", "Sushi zwölf"),
-    gehoert es zur Spanne (`_with_prefix`).
+    A prefix of the menu directly in front ("S zwölf", "Sushi zwölf") belongs
+    to the span (`_with_prefix`).
     """
     spans: list[_Span] = []
     i = 0
@@ -417,11 +417,11 @@ def _with_prefix(
     floor: int,
     prefixed: set[int] | frozenset[int] = frozenset(),
 ) -> _Span:
-    """Die Spanne um ein Kartenpraefix direkt davor erweitert, das laengste zuerst.
+    """The span extended by a card prefix directly in front, longest first.
 
-    Nur Token ab `floor`: was zur Zahl davor gehoert, ist kein Praefix.
-    Buchstabennamen nur mit sauberem Satzanfang davor (`_clean_lead`) und nie
-    an die Ziffer geklebt: "ES12" ist das Praefix ES, nicht "Es zwölf" (Codex
+    Only tokens from `floor` on: what belongs to the previous number is not a
+    prefix. Letter names only after a clean sentence start (`_clean_lead`) and
+    never glued to the digits: "ES12" is the prefix ES, not "Es zwölf" (Codex
     PR #155).
     """
     for n in range(_MAX_PREFIX_TOKENS, 0, -1):
@@ -496,8 +496,8 @@ def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
     fragen, nimmt `find_item_number_ref` (Codex PR #117, P2).
     """
     ref = find_item_number_ref(text, card)
-    # Eine Nummer mit Praefix ("S12") hat keine Zahl, mit der sich allein
-    # weiterarbeiten liesse: 12 waere ein anderes Gericht (Review PR #155).
+    # A number with a prefix ("S12") has no bare number to work with: 12 would
+    # be a different dish (review PR #155).
     plain = ref is not None and ref.valid and not ref.choices and ref.text[:1].isdigit()
     return ref.value if plain and ref is not None else None
 
@@ -517,23 +517,23 @@ class ItemNumber:
     value: int
     text: str
     marked: bool
-    # False, wenn eine Endung dranhängt, die keine Karte hat ("23h", "23ab"):
-    # die Nummer gilt dann als nicht vorhanden, statt still zur 23 gekürzt zu
-    # werden (Codex PR #117, P1).
+    # False if a suffix is attached that no menu has ("23h", "23ab"): the
+    # number then counts as not existing, instead of being silently cut down
+    # to 23 (Codex PR #117, P1).
     valid: bool = True
-    # Mehrere moegliche Kartennummern aus einer Stelle: "Sushi zwölf" ist S12
-    # oder SM12. `text` nennt dann alle ("s12 oder sm12"). Welche es gibt,
-    # entscheidet die Suche an der Karte (T-4.12).
+    # Several possible card numbers from one place: "Sushi zwölf" is S12 or
+    # SM12. `text` then names all of them ("s12 oder sm12"). Which one exists
+    # is decided by the search against the menu (T-4.12).
     choices: tuple[str, ...] = ()
 
     @property
     def cards(self) -> tuple[str, ...]:
-        """Die Kartennummern, die nachzuschlagen sind."""
+        """The card numbers to look up."""
         return self.choices or (self.text,)
 
 
-# Kartenendungen: a bis f fuer Varianten, g fuer die Sossen der Kasse (25G bis
-# 60G, T-4.12). Zusammengesetzte Endungen ("35AE") hat die Kasse nicht.
+# Card suffixes: a to f for variants, g for the register's sauces (25G to 60G,
+# T-4.12). The register has no combined suffixes ("35AE").
 CARD_SUFFIXES = frozenset("abcdefg")
 _SUFFIXES = CARD_SUFFIXES
 # Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
@@ -553,12 +553,12 @@ def _glued(text: str) -> set[int]:
 
 
 def _prefixed(text: str) -> set[int]:
-    """Indizes der Buchstaben-Tokens, an denen ohne Lücke Ziffern hängen.
+    """Indices of the letter tokens that have digits attached without a gap.
 
-    Gegenstück zu `_glued`: dort folgt der Buchstabe auf die Ziffer ("23a"),
-    hier geht er ihr voran ("A12"). Ist der Buchstabe kein Praefix der Karte
-    (`CardFormat`), ist "Nummer A12" eine Nummer, die es nicht gibt - und kein
-    Gerichtname (Codex PR #117).
+    Counterpart to `_glued`: there the letter follows the digits ("23a"), here
+    it comes first ("A12"). If the letter is not a prefix of the menu
+    (`CardFormat`), "Nummer A12" is a number that does not exist - and not a
+    dish name (Codex PR #117).
     """
     matches = list(_TOKEN.finditer(fold(text)))
     return {
@@ -568,20 +568,20 @@ def _prefixed(text: str) -> set[int]:
     }
 
 
-# Wie lang ein Buchstabenteil einer Kartennummer hoechstens ist. Die Karte
-# kennt eine Ziffernfolge mit einem Buchstaben a bis g (docs/14); zwei ist
-# schon grosszuegig. Alles darueber ist ein Wort: "Ente", "Pho", "Beef",
-# "Cafe" sind Gerichtnamen, keine Kartenteile (Codex PR #117, P2).
+# The maximum length of a letter part of a card number. The menu has digits
+# with one letter a to g (docs/14); two is already generous. Anything longer is
+# a word: "Ente", "Pho", "Beef", "Cafe" are dish names, not card parts (Codex
+# PR #117, P2).
 _MAX_CARD_LETTERS = 2
 
 
 def _card_letters(token: str) -> bool:
-    """Buchstaben, die zu einer Kartennummer gehoeren koennten.
+    """Letters that could belong to a card number.
 
-    Nur a bis g (docs/14) und hoechstens zwei davon. Die Laenge allein reicht
-    nicht: "so" und "ab" sind beide zwei Zeichen, aber nur eines davon kann
-    Teil einer Kartennummer sein. Sonst wuerde "Nummer so 23" zur nicht
-    vorhandenen Nummer "so23", statt nach Regel A nachzufragen (Codex PR #117).
+    Only a to g (docs/14) and at most two of them. Length alone is not enough:
+    "so" and "ab" both have two characters, but only one of them can be part
+    of a card number. Otherwise "Nummer so 23" would become the non-existent
+    number "so23" instead of a follow-up question under rule A (Codex PR #117).
     """
     return (
         token.isalpha()
@@ -590,35 +590,35 @@ def _card_letters(token: str) -> bool:
     )
 
 
-# Einzelbuchstaben, die die Erkennung fuer verschluckte Silben ausgibt: 'n
-# (einen), 's (es, das). Abgesetzt hinter "Nummer" sind sie ein Wort, kein
-# Praefix einer nicht vorhandenen Nummer (Review PR #155); an die Ziffer
-# geklebt ("Nummer N12") sind sie ein Praefix (`_glued_card`).
+# Single letters the recognition emits for swallowed syllables: 'n (einen),
+# 's (es, das). Set apart after "Nummer" they are a word, not the prefix of a
+# non-existent number (review PR #155); glued to the digits ("Nummer N12")
+# they are a prefix (`_glued_card`).
 _CLITICS = frozenset({"n", "s"})
 
 
 def _prefix_letters(token: str) -> bool:
-    """Abgesetzte Buchstaben, die hinter "Nummer" vor der Zahl ein Kartenpraefix
-    sein koennen. Geklebte ("Nummer ZZ12") liest `_glued_card` als Ganzes.
+    """Letters set apart that can be a card prefix between "Nummer" and the
+    number. Glued ones ("Nummer ZZ12") are read as a whole by `_glued_card`.
 
-    Jeder einzelne Buchstabe: der Import erlaubt jedes Praefix (T-4.12), und
-    "Nummer Z12" ist dann eine genannte Nummer, die es nicht gibt - `not_found`
-    statt Rueckfrage (Codex PR #155, P2). Zwei Buchstaben nur aus a bis g
-    (`_card_letters`), wenn abgesetzt: "Nummer so 23" bleibt ein Wort neben
-    der Nummer und damit eine Rueckfrage (Codex PR #117). Ein Praefix, das die Karte kennt,
-    hat `CardFormat` vorher schon gelesen.
+    Any single letter: the import allows every prefix (T-4.12), so "Nummer
+    Z 12" is a named number that does not exist - `not_found` instead of a
+    follow-up question (Codex PR #155, P2). Two letters only from a to g
+    (`_card_letters`): "Nummer so 23" stays a word next to the number and
+    therefore a follow-up question (Codex PR #117). A prefix the menu knows has
+    already been read by `CardFormat`.
     """
     single = len(token) == 1 and token.isalpha() and token not in _CLITICS
     return single or _card_letters(token)
 
 
 def _long_suffix(token: str) -> bool:
-    """Mehrere Buchstaben, die zusammen eine Kartenendung sein wollen ("ab").
+    """Several letters that together want to be a card suffix ("ab").
 
-    Begrenzt auf a bis g, die einzigen Buchstaben, die eine Kartennummer
-    tragen kann (docs/14). Damit bleibt "Nummer 23 mit Reis" die 23 mit einem
-    Wort daneben, waehrend "Nummer 23 ab" wie "Nummer 23ab" ungueltig ist -
-    die Erkennung setzt das Leerzeichen, nicht der Gast (Codex PR #117, P2).
+    Limited to a to g, the only letters a card number can carry (docs/14).
+    That keeps "Nummer 23 mit Reis" the 23 with a word next to it, while
+    "Nummer 23 ab" is invalid like "Nummer 23ab" - the recognition sets the
+    space, not the guest (Codex PR #117, P2).
     """
     return len(token) == _MAX_CARD_LETTERS and _card_letters(token)
 
@@ -630,14 +630,14 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     cards = tuple(prefix + ref.text for prefix in span.prefixes)
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
-    # Gesagt wird, was nachgeschlagen wird: "s12 oder sm12" (Review PR #155).
+    # What is said is what is looked up: "s12 oder sm12" (review PR #155).
     return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards)
 
 
 def _plain_ref(
     tokens: list[str], span: _Span, marked: bool, glued: set[int]
 ) -> ItemNumber:
-    """Die Nummer ohne Praefix: Ziffern oder Zahlwort, dazu die Endung."""
+    """The number without a prefix: digits or a number word, plus the suffix."""
     at = span.digits_at
     digits = span.end - at == 1 and tokens[at].isdigit()
     card = tokens[at] if digits else str(span.value)
@@ -649,12 +649,11 @@ def _plain_ref(
         # vorher schon aussortiert, sie kommen hier nicht an.
         valid = suffix in _SUFFIXES
         return ItemNumber(span.value, card + suffix, marked, valid)
-    # "Nummer 23 ab": abgesetzte Endung aus mehreren Buchstaben. Zusammen
-    # geschrieben ("23ab") war das laengst ungueltig, getrennt kam bisher die
-    # blanke 23 heraus - und zwar nur ueber find_item_number_ref, waehrend die
-    # Suche nachfragte. Begrenzt auf Buchstaben, die eine Kartenendung
-    # ueberhaupt tragen kann (a bis g): "Nummer 23 mit Reis" bleibt die 23 mit
-    # einem Wort daneben (Codex PR #117, P2).
+    # "Nummer 23 ab": a suffix of several letters, set apart. Written together
+    # ("23ab") this was invalid all along; apart it used to give the bare 23 -
+    # and only via find_item_number_ref, while the search asked back. Limited
+    # to letters a card suffix can carry at all (a to g): "Nummer 23 mit Reis"
+    # stays the 23 with a word next to it (Codex PR #117, P2).
     if marked and _long_suffix(nxt):
         return ItemNumber(span.value, card + nxt, marked, valid=False)
     if nxt in _SUFFIXES:
@@ -671,10 +670,10 @@ _LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
 
 
 def canonical_card(card: str) -> str:
-    """Kartennummer so, wie search_menu sie vergleicht: klein, ohne führende
-    Nullen der Zahl, auch hinter einem Praefix ("S07" wie "s7"). Eine Stelle
-    für Import, Zahlwörter und Text-Telefon; search._by_number rechnet in SQL
-    dasselbe."""
+    """The card number as search_menu compares it: lower case, without leading
+    zeros of the number, also after a prefix ("S07" like "s7"). One place for
+    import, number words and the text phone; search._by_number computes the
+    same in SQL."""
     return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower()) or "0"
 
 
@@ -708,10 +707,10 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
 
 
 def _suffix_at(tokens: list[str], at: int) -> str:
-    """Eine Endung an Stelle `at`, gueltig oder nicht ("g", "h", "ab"), sonst "".
+    """A suffix at position `at`, valid or not ("g", "h", "ab"), else "".
 
-    Sie gehoert zu einer genannten, nicht vorhandenen Nummer ("Nummer 1000g",
-    "Nummer Z12h"), sonst bliebe sie als Rest und der Satz waere unklar
+    It belongs to a named number that does not exist ("Nummer 1000g", "Nummer
+    Z 12 h"); otherwise it would be left over and the sentence would be unclear
     (Codex PR #155).
     """
     token = tokens[at] if at < len(tokens) else ""
@@ -719,9 +718,9 @@ def _suffix_at(tokens: list[str], at: int) -> str:
 
 
 def _said(prefix: str, number: str, suffix: str) -> str:
-    """Eine genannte, nicht vorhandene Nummer so, wie sie vorgelesen wird:
-    Ziffern zusammen ("s1000g"), ein Zahlwort abgesetzt ("s tausend g") -
-    sonst hiesse es "stausend" (Code-Review PR #155)."""
+    """A named number that does not exist, the way it is read back: digits
+    joined ("s1000g"), a number word set apart ("s tausend g") - otherwise it
+    would read "stausend" (code review PR #155)."""
     if number.isdigit():
         return prefix + number + suffix
     return " ".join(part for part in (prefix, number, suffix) if part)
@@ -735,11 +734,11 @@ def _oversized_after_prefix(
     spelled: bool,
     marked: bool,
 ) -> tuple[int, ItemNumber] | None:
-    """Ein Praefix der Karte in `tokens[start:start+n]`, dahinter eine Zahl ueber
-    dem Kartenbereich ("S 1000", "S tausend", "Sushi 1000g"): genannt, nicht
-    vorhanden. Rueckgabe: Ende der Nummer und die ungueltige Nummer.
+    """A prefix of the menu in `tokens[start:start+n]`, followed by a number
+    above the card range ("S 1000", "S tausend", "Sushi 1000g"): named, but
+    not existing. Returns the end of the number and the invalid number.
 
-    Eine Stelle fuer den Satz mit und ohne Marker (Codex PR #155).
+    One place for sentences with and without a marker (Codex PR #155).
     """
     at = start + n
     after = tokens[at] if at < len(tokens) else ""
@@ -756,15 +755,15 @@ def _oversized_after_prefix(
 def _glued_card(
     tokens: list[str], j: int, glued: set[int], card: CardFormat
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
-    """Hinter "Nummer" eine zusammen geschriebene Kartennummer: Praefix, Ziffern
-    und Endung ohne Luecke ("S12", "S12a", "Z12h", "ZZ1000zz", "JA12").
+    """After "Nummer", a card number written in one piece: prefix, digits and
+    suffix without a gap ("S12", "S12a", "Z12h", "ZZ1000zz", "JA12").
 
-    Ein Stueck, wie geschrieben, statt dass jede Kombination aus bekanntem oder
-    unbekanntem Praefix, Kartenbereich und Endung einzeln wieder
-    zusammengesetzt wird (Code-Review PR #155). Kennt die Karte das Praefix und
-    liegt die Zahl im Bereich, ist es eine Nummer - die Endung prueft `_ref`
-    wie bei jeder Zahl. Sonst ist das ganze Stueck eine genannte Nummer, die es
-    nicht gibt. Rueckgabe wie `_marker_target`.
+    One piece, as written, instead of putting every combination of known or
+    unknown prefix, card range and suffix back together case by case (code
+    review PR #155). If the menu knows the prefix and the number is in range,
+    it is a number - `_ref` checks the suffix as for any number. Otherwise the
+    whole piece is a named number that does not exist. Returns the same shape
+    as `_marker_target`.
     """
     prefix, digits = tokens[j], tokens[j + 1]
     value = _word_value(digits)
@@ -782,20 +781,19 @@ def _marker_target(
     card: CardFormat = NO_PREFIXES,
     glued: set[int] | frozenset[int] = frozenset(),
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
-    """Was hinter dem Marker an Stelle `i` steht.
+    """What follows the marker at position `i`.
 
-    Rückgabe `(start, end, span, bad)`: `span` ist eine gelesene Zahl, `bad`
-    eine genannte, die keine Kartennummer sein kann. `start` bis `end` sind die
-    Token, die zu `bad` gehören. Höchstens eines von beiden ist gesetzt.
+    Returns `(start, end, span, bad)`: `span` is a number that was read, `bad`
+    a named one that cannot be a card number. `start` to `end` are the tokens
+    that belong to `bad`. At most one of the two is set.
 
-    Eine Stelle für beide Ausgänge - `_marked` für die Verständnisleiter und
-    `sole_item_number` für die Suche. Vorher stand die Logik zweimal da, und
-    der Prefix-Fall wurde nur in einer der beiden Kopien ungültig: "Nummer A12"
-    war in der Suche `not_found`, über `find_item_number` aber Gericht 12
-    (Codex PR #117, P2).
+    One place for both callers - `_marked` for the understanding ladder and
+    `sole_item_number` for the search. The logic used to exist twice, and the
+    prefix case became invalid in only one copy: "Nummer A12" was `not_found`
+    in the search but dish 12 via `find_item_number` (Codex PR #117, P2).
 
-    Erst scannen, dann überspringen: "Nummer ein und zwanzig" ist 21, das "ein"
-    eröffnet die Zahl und ist an dieser Stelle kein Füllwort.
+    Scan first, then skip: "Nummer ein und zwanzig" is 21; the "ein" opens the
+    number and is not a filler word at this position.
     """
     j = i + 1
     while j < len(tokens):
@@ -804,23 +802,22 @@ def _marker_target(
             return j, j, span, None
         if j in prefixed and len(tokens[j]) <= _MAX_CARD_LETTERS:
             return _glued_card(tokens, j, glued, card)
-        # "Nummer S 12", "Nummer Es zwölf": ein Praefix der Karte vor der Zahl.
+        # "Nummer S 12", "Nummer Es zwölf": a prefix of the menu before the number.
         for n in range(_MAX_PREFIX_TOKENS, 0, -1):
             following = _scan(tokens, j + n) if j + n < len(tokens) else None
-            # Geklebt ("Nummer ES12") zaehlt der Buchstabenname nicht (Codex
+            # Glued ("Nummer ES12"), the letter name does not count (Codex
             # PR #155).
             spelled = j + n - 1 not in prefixed
             found = card.prefixes_of(tokens[j : j + n], spelled) if following else ()
             if following is not None and found:
                 return j, j, _Span(j, following.end, following.value, n, found), None
-            # "Nummer S 1000", "Nummer S tausend": bekanntes Praefix, aber die
-            # Zahl liegt ueber dem Kartenbereich - genannt, nicht vorhanden
-            # (Codex PR #155).
+            # "Nummer S 1000", "Nummer S tausend": known prefix, but the number
+            # is above the card range - named, not existing (Codex PR #155).
             oversized = _oversized_after_prefix(tokens, j, n, card, spelled, True)
             if oversized is not None:
                 return j, oversized[0], None, oversized[1]
-        # An die Ziffer geklebt ("Nummer JA12", "Nummer HM12") ist ein Wort kein
-        # Fuellwort, sondern ein Praefix - nie still die 12 (Codex PR #155).
+        # Glued to the digits ("Nummer JA12", "Nummer HM12"), a word is not a
+        # filler but a prefix - never silently the 12 (Codex PR #155).
         if j not in prefixed and (
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
@@ -833,31 +830,29 @@ def _marker_target(
     if j >= len(tokens):
         return j, j, None, None
     word = tokens[j]
-    # Ziffern ausserhalb des Kartenbereichs ("Nummer 1000") tragen ihren Wert;
-    # ein Zahlwort darüber ("tausend", "eintausend") hat keinen im erlaubten
-    # Bereich, `value` bleibt dann 0 und wird nie gelesen, weil `valid=False`
-    # den Aufrufer vorher abbiegen lässt.
+    # Digits outside the card range ("Nummer 1000") carry their value; a number
+    # word above it ("tausend", "eintausend") has none in the allowed range, so
+    # `value` stays 0 and is never read, because `valid=False` makes the caller
+    # turn off before that.
     if word.isdigit() or _too_large(word):
-        # Geklebt ("Nummer 1000zz") gehoert jede Endung dazu, abgesetzt nur eine,
-        # die nach Endung aussieht (Codex PR #155).
+        # Glued ("Nummer 1000zz"), any suffix belongs to it; set apart, only
+        # one that looks like a suffix (Codex PR #155).
         suffix = tokens[j + 1] if j in glued else _suffix_at(tokens, j + 1)
         value = int(word) if word.isdigit() else 0
         bad = ItemNumber(value, _said("", word, suffix), True, valid=False)
         return j, j + 1 + bool(suffix), None, bad
-    # "Nummer A12", "Nummer A 12", "Nummer AB 12", "Nummer A zwölf": Buchstaben
-    # vor der Zahl. Keine Kartenform - eine Endung steht hinter der Zahl, nie
-    # davor. Die Zahl darf dabei auch als Wort kommen, die Erkennung liefert
-    # beides (Codex PR #117, P1). Nur Kartenbuchstaben zählen: "Nummer so 23"
-    # ist eine Nummer neben einem Wort und damit eine Rückfrage, keine nicht
-    # vorhandene Nummer "so23" (Codex PR #117, P2).
+    # "Nummer A 12", "Nummer AB 12", "Nummer A zwölf": letters before the
+    # number that the menu does not know as a prefix. The number may also come
+    # as a word; the recognition delivers both (Codex PR #117, P1). Only card
+    # letters count: "Nummer so 23" is a number next to a word and therefore a
+    # follow-up question, not a non-existent number "so23" (Codex PR #117, P2).
     if _prefix_letters(word):
         following = _scan(tokens, j + 1)
         if following is not None:
-            # Eine Endung gehoert zur genannten Nummer ("Nummer Z12g"), sonst
-            # bliebe "g" als Rest und der Satz waere unklar (Codex PR #155).
+            # A suffix belongs to the named number ("Nummer Z 12 g"), valid or
+            # not ("Nummer Z 12 h"), as for numbers without a prefix; otherwise
+            # it would be left over and the sentence unclear (Codex PR #155).
             end = following.end
-            # Auch eine falsche Endung ("Nummer Z12h") gehoert dazu, wie bei
-            # Nummern ohne Praefix (Codex PR #155).
             suffix = _suffix_at(tokens, end)
             end += bool(suffix)
             return (
@@ -866,9 +861,9 @@ def _marker_target(
                 None,
                 ItemNumber(0, word + str(following.value) + suffix, True, valid=False),
             )
-        # "Nummer Z 1000", "Nummer Z tausend": Zahl ueber dem Kartenbereich
-        # hinter einem unbekannten Praefix - genannt, nicht vorhanden, keine
-        # Namenssuche auf "z" (Codex PR #155).
+        # "Nummer Z 1000", "Nummer Z tausend": a number above the card range
+        # after an unknown prefix - named, not existing, no name search for
+        # "z" (Codex PR #155).
         after = tokens[j + 1] if j + 1 < len(tokens) else ""
         if after.isdigit() or _too_large(after):
             suffix = _suffix_at(tokens, j + 2)
@@ -992,12 +987,12 @@ def find_item_number_ref(
     if len(uebrig) != 1:
         return None
     if not uebrig[0].prefixes and uebrig[0].start - 1 in prefixed:
-        # "JA12", "A12" ohne Marker: Buchstaben kleben an der Zahl, das ist nicht
-        # die blanke 12 (Codex PR #155).
+        # "JA12", "A12" without a marker: letters glued to the number, so this
+        # is not the bare 12 (Codex PR #155).
         return None
     ref = _ref(tokens, uebrig[0], marked=False, glued=glued)
-    # "das ist 5g Zucker": g mit einem Wort dahinter ist die Einheit, keine
-    # Kartenendung - sonst meldete die Leiter "Nummer 5g" (Review PR #155).
+    # "das ist 5g Zucker": g followed by a word is the unit, not a card suffix
+    # - otherwise the ladder would report "Nummer 5g" (review PR #155).
     word_at = uebrig[0].end + 1
     unit = (
         ref.text.endswith("g")
@@ -1060,12 +1055,12 @@ def _too_large(token: str) -> bool:
 def _prefixed_too_large(
     tokens: list[str], card: CardFormat, prefixed: set[int], taken: set[int]
 ) -> list[tuple[int, int, ItemNumber]]:
-    """ "S1000", "S tausend", "Sushi 1000" ohne Marker: ein Praefix der Karte
-    vor einer Zahl ueber dem Kartenbereich. Genannt, nicht vorhanden - keine
-    Namenssuche, die ueber "sushi" ein Gericht faende (Codex PR #155).
+    """ "S1000", "S tausend", "Sushi 1000" without a marker: a prefix of the
+    menu before a number above the card range. Named, not existing - no name
+    search that would find a dish via "sushi" (Codex PR #155).
 
-    Rueckgabe je Fundstelle `(start, end, bad)`. Token in `taken` gehoeren
-    schon zu einer Nummer hinter einem Marker.
+    Returns `(start, end, bad)` per occurrence. Tokens in `taken` already
+    belong to a number after a marker.
     """
     found_all: list[tuple[int, int, ItemNumber]] = []
     i = 0
@@ -1091,29 +1086,29 @@ def _prefixed_too_large(
 def sole_item_number(
     text: str, card: CardFormat = NO_PREFIXES
 ) -> tuple[ItemNumber | None, bool]:
-    """Regel A: eine Kartennummer nur, wenn der ganze Satz genau eine Nummer ist.
+    """Rule A: a card number only if the whole sentence is exactly one number.
 
-    Erlaubt neben der Nummer: "Nummer"/"Nr.", Füllwörter, Zögerlaute,
-    Satzzeichen und eine Menge ("zweimal", "2x", "drei Portionen", "zwei
-    Nummer 23"). Ergebnis:
+    Allowed next to the number: "Nummer"/"Nr.", filler words, hesitations,
+    punctuation and one quantity ("zweimal", "2x", "drei Portionen", "zwei
+    Nummer 23"). Result:
 
-    - `(ref, False)`: genau eine Nummer, sonst nichts - der Aufrufer nimmt sie
-      (ungültige wie "23g" oder "Nummer 1000" als `valid=False`).
-    - `(None, True)`: Nummer plus mehr (zweite Zahl, Text) - nachfragen.
-    - `(None, False)`: kein Nummernsatz. Ohne "Nummer" ist eine Zahl neben
-      einem Namen eine Menge ("zwei Frühlingsrollen"), die Namenssuche
-      entscheidet.
+    - `(ref, False)`: exactly one number and nothing else - the caller takes
+      it (invalid ones such as "23h" or "Nummer 1000" as `valid=False`).
+    - `(None, True)`: a number plus more (second number, text) - ask back.
+    - `(None, False)`: not a number sentence. Without "Nummer", a number next
+      to a name is a quantity ("zwei Frühlingsrollen") and the name search
+      decides.
 
-    Eine Regel statt vieler Sonderfälle: jede Satzform, die nicht eindeutig
-    eine Nummer ist, wird zur Rückfrage statt zum stillen Fehlgriff
-    (Codex-Reviews PR #117, 15 Runden).
+    One rule instead of many special cases: every sentence form that is not
+    clearly one number becomes a follow-up question instead of a silent wrong
+    pick (Codex reviews PR #117, 15 rounds).
 
-    Eine Nummer mit Praefix der Karte ("S12", "Sushi zwölf") ist nie eine
-    Menge: direkt neben einem Namen ("S12 Lachs") fragt der Satz nach wie mit
-    Marker. Mit "und" oder Satzzeichen davon getrennt ("S12 und Pho Bo") sind
-    es zwei Positionen wie bei einer Zahl ohne Praefix, die Namenssuche und
-    `position_parts` entscheiden (T-4.12, Code-Review PR #155). Nur ein
-    Zahlwort ohne Artikel davor ist die Menge ("zwei S zwölf").
+    A number with a prefix of the menu ("S12", "Sushi zwölf") is never a
+    quantity: directly next to a name ("S12 Lachs") the sentence asks back as
+    with a marker. Separated from it by "und" or punctuation ("S12 und Pho
+    Bo") it is two positions as with a plain number, and the name search and
+    `position_parts` decide (T-4.12, code review PR #155). Only a number word
+    without an article in front is the quantity ("zwei S zwölf").
     """
     tokens = _tokens(text)
     glued = _glued(text)
@@ -1149,9 +1144,9 @@ def sole_item_number(
     prefix_at = {s.start for s in [*spans, *marked] if s.prefixes}
 
     def _quantity_before_prefix(span: _Span) -> bool:
-        """ "zwei S zwölf": ein Zahlwort ohne Artikel vor dem Praefix ist die
-        Menge. Ziffern oder ein Artikel davor ("die 23 S12") sind eine eigene
-        Nummer, dann fragt der Satz nach (Review PR #155)."""
+        """ "zwei S zwölf": a number word without an article before the prefix
+        is the quantity. Digits or an article in front ("die 23 S12") are a
+        number of their own, and the sentence asks back (review PR #155)."""
         return (
             span.end in prefix_at
             and not any(tokens[k].isdigit() for k in range(span.start, span.end))
@@ -1166,7 +1161,7 @@ def sole_item_number(
         if any(k in invalid_at for k in range(span.start, span.end)):
             continue
         if span.end in marker_at or _quantity_before_prefix(span):
-            # "zwei Nummer 23", "zwei S zwölf": Menge vor Marker oder Praefix.
+            # "zwei Nummer 23", "zwei S zwölf": quantity before marker or prefix.
             consumed.update(range(span.start, span.end))
             continue
         numbers.append(span)
@@ -1237,8 +1232,8 @@ def sole_item_number(
         if tok in _ITEM_NUMBER_MARKERS
         for k in range(i + 1, min((n.start for n in numbers if n.start > i), default=0))
     }
-    # Was daneben übrig bleibt und ein Gerichtname sein könnte. Ein Wort, das an
-    # der Ziffer klebt ("JA12"), ist nie Fuellwort (Codex PR #155).
+    # What is left over and could be a dish name. A word glued to the digits
+    # ("JA12") is never a filler word (Codex PR #155).
     residue_at = [
         k
         for k, t in enumerate(tokens)
@@ -1260,9 +1255,9 @@ def sole_item_number(
     has_marker = bool(marked or invalid)
 
     def _apart(span: _Span) -> bool:
-        """Steht zwischen der Praefixnummer und jedem Restwort "und" oder ein
-        Satzzeichen? Dann ist der Rest eine eigene Position (Code-Review PR
-        #155)."""
+        """Is there an "und" or punctuation between the prefixed number and
+        every leftover word? Then the rest is a position of its own (code
+        review PR #155)."""
 
         def cut(a: int, b: int) -> bool:
             return any(
@@ -1274,15 +1269,15 @@ def sole_item_number(
             for k in residue_at
         )
 
-    # Ein Marker, der selbst keine Zahl gefasst hat, zaehlt trotzdem - aber nur
-    # fuer eine Zahl, die nach ihm kommt: "Nummer Ente 23" ist eine Nummer
-    # neben einem Namen, also eine Rueckfrage statt der Namenssuche nach
-    # "ente" (Codex PR #117, P2). Steht die Zahl davor, gehoert sie nicht zum
-    # Marker: in "zwei Fruehlingsrollen, Nummer weiss ich nicht" ist die zwei
-    # eine Menge und der Gast sagt gerade, dass er die Nummer nicht kennt -
-    # dann entscheidet die Namenssuche.
-    # Eine Nummer mit Praefix ist nie eine Menge ("S12 Lachs"): direkt neben
-    # einem Namen fragt der Satz nach, wie mit Marker (Review PR #155).
+    # A marker that caught no number itself still counts - but only for a
+    # number that comes after it: "Nummer Ente 23" is a number next to a name,
+    # so a follow-up question instead of a name search for "ente" (Codex PR
+    # #117, P2). If the number comes first, it does not belong to the marker:
+    # in "zwei Fruehlingsrollen, Nummer weiss ich nicht" the two is a quantity
+    # and the guest is saying they do not know the number - then the name
+    # search decides.
+    # A number with a prefix is never a quantity ("S12 Lachs"): directly next
+    # to a name the sentence asks back, as with a marker (review PR #155).
     nummer_gemeint = (
         has_marker
         or any(s.prefixes and not _apart(s) for s in numbers)

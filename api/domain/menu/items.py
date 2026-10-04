@@ -33,12 +33,12 @@ def is_sold_out(item: MenuItem, now: datetime) -> bool:
 
 
 def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:
-    """Praefixe und Kategoriewoerter der aktiven Karte (T-4.12).
+    """Prefixes and category words of the active menu (T-4.12).
 
-    Welche Buchstaben vor einer Nummer stehen koennen ("S12", "SM1"), folgt aus
-    den Nummern in der Datenbank, nie aus dem Code (CLAUDE.md §2 Regel 1). Eine
-    Abfrage ueber Nummer und Kategorie; bei einer Karte von ein paar hundert
-    Zeilen ist das ein Index-Scan.
+    Which letters can stand in front of a number ("S12", "SM1") follows from
+    the numbers in the database, never from the code (CLAUDE.md §2 rule 1).
+    One query over number and category; for a menu of a few hundred rows that
+    is one index scan.
     """
     rows = session.execute(
         select(MenuItem.number, MenuItem.category).where(

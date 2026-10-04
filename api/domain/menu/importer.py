@@ -69,13 +69,13 @@ _COLUMNS = {
 # "6,90", "6,9", "6" - nur Ziffern und Komma (docs/14). Punkt als Dezimal- oder
 # Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
-# Kartennummern, die search_menu eindeutig auflöst: höchstens drei Stellen ohne
-# führende Nullen (numberwords.MAX_VALUE = 999), optional ein Buchstabe a bis g
-# dahinter (numberwords._SUFFIXES) und ein Praefix aus ein oder zwei Buchstaben
-# davor ("s12", "sm1", T-4.12). Welche Praefixe es gibt, liest die Suche aus
-# der Karte (numberwords.CardFormat). Geprüft wird die klein geschriebene
-# Nummer: 23a und 23A wären sonst zwei Gerichte, die die Suche nie
-# auseinanderhält.
+# Card numbers search_menu resolves unambiguously: at most three digits not
+# counting leading zeros (numberwords.MAX_VALUE = 999), optionally one letter
+# a to g after them (numberwords.CARD_SUFFIXES) and a prefix of one or two
+# letters in front ("s12", "sm1", T-4.12). Which prefixes exist is read by the
+# search from the menu (numberwords.CardFormat). The lower-case number is
+# checked: 23a and 23A would otherwise be two dishes the search can never tell
+# apart.
 _CARD_NUMBER = re.compile(
     r"(?:[a-z]{1,2})?0*\d{1,3}[" + "".join(sorted(CARD_SUFFIXES)) + "]?"
 )
@@ -90,10 +90,12 @@ class MassDeactivationError(ValueError):
 
 
 def is_card_number(number: str) -> bool:
-    """Versteht search_menu diese Nummer eindeutig? Klein geschrieben prüfen.
+    """Does search_menu understand this number unambiguously? Pass it in lower
+    case.
 
-    Ein Praefix, das numberwords schon als Menge oder Marker liest ("x12",
-    "st1", "nr5"), versteht die Suche nicht eindeutig (Review PR #155)."""
+    A prefix numberwords already reads as a quantity, marker or spoken word
+    ("x12", "st1", "nr5", "ja1") is not unambiguous for the search (review PR
+    #155)."""
     if _CARD_NUMBER.fullmatch(number) is None:
         return False
     parts = CARD_PARTS.fullmatch(number)
@@ -300,8 +302,8 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             continue
         parts = CARD_PARTS.fullmatch(number)
         if parts is not None and reserved_prefix(parts.group(1)):
-            # Sonst sagte die Meldung "bis zu zwei Buchstaben davor" und der
-            # Betreiber saehe nicht, was falsch ist (Code-Review PR #155).
+            # Otherwise the message would say "up to two letters in front" and
+            # the operator could not see what is wrong (code review PR #155).
             plan.errors.append(
                 f"{where}: Kartennummer „{row['number']}“ hat das Praefix "
                 f"„{parts.group(1)}“, das am Telefon schon etwas anderes heisst "
@@ -309,8 +311,9 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             )
             continue
         if not is_card_number(number):
-            # Nur was search_menu eindeutig auflösen kann. Sonst würde "Nummer
-            # 23g" still die 23 finden oder "A12" die 12 (Codex PR #117, P1).
+            # Only what search_menu can resolve unambiguously. Otherwise
+            # "Nummer 23h" would silently find the 23, or "A12" the 12 (Codex
+            # PR #117, P1).
             plan.errors.append(
                 f"{where}: Kartennummer „{row['number']}“ versteht die Suche nicht "
                 "(erlaubt: bis 999, optional ein Buchstabe a bis g dahinter und bis "

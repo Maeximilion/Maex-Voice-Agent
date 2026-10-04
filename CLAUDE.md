@@ -162,7 +162,7 @@ A task is complete when **all** of these are true:
 - Every transaction carries a `call_id`. No write without `call_id`.
 - Write tools are idempotent: same `idempotency_key` → same result, no duplicate transaction.
 - Errors return structured JSON, never stack trace to the agent.
-- German comments and error messages, English identifiers in code.
+- Code is English: identifiers, comments and docstrings. German only where the German use case needs it: what guests and staff hear or read (`say` texts, error messages, GUI), spoken-word data (number words, filler words) and example sentences in tests and evals. Existing German comments are translated when their block is touched.
 - No emojis in code, docs, commits, or UI. Status expressed in words.
 
 **Git**
