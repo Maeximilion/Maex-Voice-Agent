@@ -9,8 +9,9 @@ Erwartet im Ordner menu_items.csv und optional item_options.csv,
 item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
 Ordner imports/ ist im .gitignore: echte Kartendaten kommen nicht ins Repo.
 
-Exit-Code: 0 eingespielt (oder Probelauf ohne Fehler), 1 Prüffehler in den
-Dateien, 2 Ordner oder Mandant nicht gefunden. Die Logik steckt in
+Exit code: 0 imported (or a dry run without errors), 1 check errors in the
+files or the database rejected a row (a dry run sends every row too),
+2 folder or tenant not found. Die Logik steckt in
 api/domain/menu/importer.py, hier nur Dateien lesen und Bericht drucken.
 """
 
@@ -19,6 +20,7 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 
 from api.config import settings
 from api.db import SessionLocal
@@ -96,6 +98,17 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             # Bestand passt nicht zum Plan (z. B. 23A und 23a): nichts eingespielt.
             print(f"Fehler: {exc}", file=sys.stderr)
+            return 1
+        except DBAPIError as exc:
+            # The database refused a row the checks of the files let through.
+            # A dry run sends every row too, so it ends here as well - with a
+            # message instead of a stack trace (review PR #169).
+            session.rollback()
+            print(
+                f"Error: the database rejected the import, nothing was stored: "
+                f"{str(exc.orig).strip()}",
+                file=sys.stderr,
+            )
             return 1
     print(report.as_text())
     return 0
