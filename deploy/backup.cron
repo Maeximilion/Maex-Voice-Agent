@@ -1,5 +1,6 @@
 # Daily database backup at 03:00 server time (T-9.3, docs/13 §4).
 # Install on the server: adjust the path, then `crontab deploy/backup.cron` as the
 # user that runs the Compose stack. The script reads DATABASE_URL and BACKUP_* from
-# the .env next to it and exits non-zero when no readable dump was written.
-0 3 * * * cd /opt/maex-voice-agent && bash scripts/backup.sh >> backups/backup.log 2>&1
+# the .env next to it and exits non-zero when no readable dump was written. The log
+# folder is made first: the shell opens the log before the script could create it.
+0 3 * * * cd /opt/maex-voice-agent && mkdir -p backups && bash scripts/backup.sh >> backups/backup.log 2>&1

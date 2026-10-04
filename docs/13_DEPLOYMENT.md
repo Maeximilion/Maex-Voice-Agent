@@ -80,11 +80,11 @@ Both scripts act on the database of `DATABASE_URL`, the same variable the applic
 | Variable | Meaning |
 |---|---|
 | `DATABASE_URL` | which database is dumped and replaced (`BACKUP_DATABASE_URL` overrides it for the scripts only) |
-| `BACKUP_PASSPHRASE_FILE` | file with the passphrase, readable only by the backup user; never in the repo. Without it no dump is written. The passphrase also belongs in the password manager: without it no backup can be read |
+| `BACKUP_PASSPHRASE_FILE` | file with the passphrase, readable only by the backup user; never in the repo. Without it no dump is written. The passphrase is the first line without its line ending, so a file saved with Windows line endings gives the same key. The passphrase also belongs in the password manager: without it no backup can be read |
 | `BACKUP_DIR` | where dumps go, default `backups/` (ignored by git) |
 | `BACKUP_KEEP_DAYS` | scheduled dumps older than this are removed after a good run, default 14, `0` keeps everything |
 | `BACKUP_DOCKER_NETWORK` | Compose network of the stack, for example `maex-voice-agent_default`. Needed on the server: Postgres has no published port there and the host `db` only resolves inside that network |
-| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. Without `pg_dump` on PATH the scripts run the client from the `postgres:16-alpine` image, the same version as the server |
+| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. `auto` takes the client from the `postgres:16-alpine` image (`BACKUP_PG_IMAGE`) when no `pg_dump` is on PATH, when `BACKUP_DOCKER_NETWORK` is set, or when the local client has another major version than the server |
 
 ```bash
 bash scripts/backup.sh                              # scheduled dump, also `make backup`
@@ -93,13 +93,13 @@ bash scripts/restore.sh <file> --check              # rehearsal, the live databa
 bash scripts/restore.sh <file> --replace <database> # the real restore
 ```
 
-**Backup:** `pg_dump` in custom format, encrypted with gpg (AES256, symmetric), written as `maex_<database>_<UTC time>[_label].dump.gpg`, readable only by its owner (mode 600; on Windows the folder decides). The dump is read back with the same passphrase before it counts; a failed run keeps no file, removes no older backup and exits 1. `--no-encrypt` writes a plain dump and is only for a database without customer data.
+**Backup:** `pg_dump` in custom format, encrypted with gpg (AES256, symmetric), written as `maex_<database>_<UTC time>[_label].dump.gpg`, readable only by its owner (mode 600; on Windows the folder decides). The dump is read back to its end with the same passphrase before it counts (gpg checks integrity, `pg_restore` unpacks every table); a failed run keeps no file, removes no older backup and exits 1. `sslmode` from the URL is kept. `--no-encrypt` writes a plain dump and is only for a database without customer data.
 
-**Restore:** the dump always goes into a new database first. `--check` reports table count and schema revision and drops that database again. `--replace` renames the current database to `<name>_before_restore_<time>` and the restored one into its place, both renames in one transaction. Nothing is dropped: the way back is a rename, and the old database is removed by hand once the restored state is checked. `--replace` wants the database name as a confirmation and refuses while sessions are connected, so stop `api` and `dispatcher` first (`docker compose stop api dispatcher`). If the database is gone entirely, `--replace` creates it from the dump. The restored schema is at the revision of the dump; if the code is newer, `alembic -c db/alembic.ini upgrade head` follows.
+**Restore:** the dump always goes into a new database first. `--check` reports table count and schema revision and drops that database again. `--replace` renames the current database to `<name>_before_restore_<time>` and the restored one into its place, both renames in one transaction. Nothing is dropped: the way back is a rename, and the old database is removed by hand once the restored state is checked. That copy holds customer data and nothing expires it, so every later run of `restore.sh` names the copies that still exist. `--replace` wants the database name as a confirmation and refuses while sessions are connected, so stop `api` and `dispatcher` first (`docker compose stop api dispatcher`). If the database is gone entirely, `--replace` creates it from the dump. The restored schema is at the revision of the dump; if the code is newer, `alembic -c db/alembic.ini upgrade head` follows.
 
 **Cron:** `deploy/backup.cron` runs the backup daily at 03:00 and appends to `backups/backup.log`. Nobody is told yet when a night's backup fails: that alarm comes with the monitoring (T-8.3).
 
-**Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. Still open: the second storage at another EU provider (which provider is a cost decision, with D3), and the rehearsal on the production server once it exists (T-8.6).
+**Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. Known limits: the restore uses `--no-owner --no-privileges`, right for today's single database user and to be revisited when roles are separated; without a local client on Linux, a database published on `127.0.0.1` only is not reachable from the client container (install a client or use the Compose network). Still open: the second storage at another EU provider (which provider is a cost decision, with D3), and the rehearsal on the production server once it exists (T-8.6).
 
 ---
 

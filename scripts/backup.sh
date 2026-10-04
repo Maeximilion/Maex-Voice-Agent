@@ -60,6 +60,7 @@ trap 'rm -f "$partial"' EXIT
 
 echo "backup of $TARGET_LABEL"
 pg_sql "$PGDATABASE" "select 1" >/dev/null || die 1 "cannot connect to $TARGET_LABEL: $CONNECT_HINT"
+pg_match_server_version "$PGDATABASE"
 
 if [ "$encrypt" = 1 ]; then
     pg pg_dump --format=custom </dev/null | encrypt_stream >"$partial" ||
@@ -68,9 +69,10 @@ else
     pg pg_dump --format=custom </dev/null >"$partial" || die 1 "pg_dump failed, nothing kept"
 fi
 
-# A dump only counts once it was read back with the same passphrase.
+# A dump only counts once it was read back to the end with the same passphrase.
+verify_dump "$partial" || die 1 "the dump cannot be read back, nothing kept"
 tables="$(dump_table_count "$partial")"
-[ "$tables" -gt 0 ] || die 1 "the dump cannot be read back or holds no table data, nothing kept"
+[ "$tables" -gt 0 ] || die 1 "the dump holds no table data, nothing kept"
 
 mv "$partial" "$final"
 echo "written: $final ($(wc -c <"$final" | tr -d ' ') bytes, $tables tables)"

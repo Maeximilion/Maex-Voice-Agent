@@ -65,11 +65,19 @@ if [ ${#scratch} -gt 63 ] || [ ${#previous} -gt 63 ]; then
 fi
 
 echo "restore of $(basename "$file") on $TARGET_LABEL ($mode)"
-tables="$(dump_table_count "$file")"
-[ "$tables" -gt 0 ] ||
-    die 1 "cannot read the dump (wrong passphrase, damaged file or no table data); nothing changed"
 pg_sql "$maintenance" "select 1" >/dev/null ||
     die 1 "cannot connect to ${PGHOST}:${PGPORT}/${maintenance}: $CONNECT_HINT; nothing changed"
+pg_match_server_version "$maintenance"
+verify_dump "$file" || die 1 "cannot read the dump to its end; nothing changed"
+tables="$(dump_table_count "$file")"
+[ "$tables" -gt 0 ] || die 1 "the dump holds no table data; nothing changed"
+
+# Every earlier --replace left a full copy of the data behind on purpose. Nothing
+# expires them, so each run names them until somebody drops them.
+kept="$(pg_sql "$maintenance" "select string_agg(datname, ', ' order by datname) from pg_database where datname like '${PGDATABASE}\_before\_restore\_%'")"
+if [ -n "$kept" ]; then
+    echo "kept from earlier restores, with customer data, drop them once they are not needed: $kept"
+fi
 
 scratch_exists=0
 drop_scratch() {

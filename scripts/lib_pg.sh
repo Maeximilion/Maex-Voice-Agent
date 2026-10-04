@@ -43,6 +43,10 @@ pg_target_from_url() {
         *) die 2 "DATABASE_URL is not a postgresql:// URL" ;;
     esac
     rest="${url#*://}"
+    # The application enforces sslmode from the same URL; a dump must not go without it.
+    if [[ "$rest" =~ [?\&]sslmode=([a-z-]+) ]]; then
+        export PGSSLMODE="${BASH_REMATCH[1]}"
+    fi
     rest="${rest%%\?*}"
     case "$rest" in
         */?*) ;;
@@ -55,11 +59,19 @@ pg_target_from_url() {
         userinfo="${rest%@*}"
         hostport="${rest##*@}"
     fi
-    PGHOST="${hostport%%:*}"
     PGPORT=5432
+    if [[ "$hostport" == \[*\]* ]]; then
+        # IPv6 literal: [::1]:5432
+        PGHOST="${hostport#\[}"
+        PGHOST="${PGHOST%%\]*}"
+        hostport="${hostport##*\]}"
+    else
+        PGHOST="${hostport%%:*}"
+    fi
     if [[ "$hostport" == *:* ]]; then PGPORT="${hostport##*:}"; fi
     [ -n "$PGHOST" ] || die 2 "DATABASE_URL names no host"
-    unset PGUSER PGPASSWORD
+    # User and password of the URL win; where the URL names none, what the caller
+    # exported (PGUSER, PGPASSWORD) stays.
     if [ -n "${userinfo%%:*}" ]; then
         PGUSER="$(urldecode "${userinfo%%:*}")"
         export PGUSER
@@ -96,9 +108,11 @@ pg_resolve_client() {
     PG_IMAGE="${BACKUP_PG_IMAGE:-postgres:16-alpine}"
     if [ "$PG_CLIENT" = auto ]; then
         PG_CLIENT=docker
-        if command -v pg_dump >/dev/null && command -v pg_restore >/dev/null &&
-            command -v psql >/dev/null; then
+        # A client on the host cannot resolve names of the Compose network.
+        if [ -z "${BACKUP_DOCKER_NETWORK:-}" ] && command -v pg_dump >/dev/null &&
+            command -v pg_restore >/dev/null && command -v psql >/dev/null; then
             PG_CLIENT=local
+            PG_CLIENT_MAY_SWITCH=1
         fi
     fi
     case "$PG_CLIENT" in
@@ -122,6 +136,28 @@ pg_resolve_client() {
     fi
 }
 
+pg_major() { # first number of a version line: "pg_dump (PostgreSQL) 16.4" -> 16
+    sed -E 's/^[^0-9]*([0-9]+).*/\1/'
+}
+
+# pg_dump refuses a newer server, and a newer pg_dump writes what an older server
+# cannot restore. A local client of another major version is replaced by the image
+# when the choice was automatic, and refused when it was asked for.
+pg_match_server_version() { # <database to ask>
+    [ "$PG_CLIENT" = local ] || return 0
+    local server client
+    server="$(pg_sql "$1" "show server_version_num")"
+    server=$((server / 10000))
+    client="$(pg_dump --version | pg_major)"
+    [ "$server" != "$client" ] || return 0
+    if [ "${PG_CLIENT_MAY_SWITCH:-0}" = 1 ] && command -v docker >/dev/null; then
+        echo "local Postgres client is version $client, the server $server: using $PG_IMAGE"
+        PG_CLIENT=docker
+        return 0
+    fi
+    die 2 "local Postgres client is version $client, the server $server: set BACKUP_PG_CLIENT=docker"
+}
+
 pg() { # pg <tool> [arguments]; stdin goes through to the tool
     if [ "$PG_CLIENT" = local ]; then
         "$@"
@@ -131,7 +167,7 @@ pg() { # pg <tool> [arguments]; stdin goes through to the tool
     # password never shows up in a process list.
     MSYS_NO_PATHCONV=1 docker run --rm -i ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"} \
         -e PGHOST="$CONTAINER_PGHOST" -e PGPORT -e PGUSER -e PGPASSWORD \
-        -e PGDATABASE -e PGCONNECT_TIMEOUT "$PG_IMAGE" "$@"
+        -e PGDATABASE -e PGSSLMODE -e PGCONNECT_TIMEOUT "$PG_IMAGE" "$@"
 }
 
 pg_sql() { # pg_sql <database> <sql>; prints bare values
@@ -149,11 +185,14 @@ require_passphrase() {
     command -v gpg >/dev/null || die 2 "gpg is not on PATH"
 }
 
+# The passphrase is the first line of the file without its line ending: gpg itself
+# would take a carriage return as part of it, and a file saved on Windows would
+# write dumps nobody can open with the passphrase from the password manager.
 # --no-symkey-cache: without it gpg-agent remembers a passphrase and a restore with
 # the wrong one would pass on the machine that wrote the backup.
 gpg_quiet() {
     gpg --batch --quiet --no-symkey-cache --pinentry-mode loopback \
-        --passphrase-file "$BACKUP_PASSPHRASE_FILE" "$@"
+        --passphrase-fd 3 "$@" 3< <(head -n 1 "$BACKUP_PASSPHRASE_FILE" | tr -d '\r\n')
 }
 
 encrypt_stream() { # stdin -> stdout; the custom format is compressed already
@@ -167,8 +206,14 @@ read_dump() { # plain dump bytes of <file> on stdout
     esac
 }
 
-# How many tables a dump holds (pg_dump lists empty ones too); 0 also when it cannot
-# be read at all.
+# Read the whole dump, not only its table of contents: decrypts to the last byte
+# (gpg checks integrity there) and lets pg_restore unpack every table. Errors show.
+verify_dump() {
+    read_dump "$1" | pg pg_restore --file=/dev/null
+}
+
+# How many tables a dump holds (pg_dump lists empty ones too). Only the table of
+# contents is read, so the writer of the pipe is cut off: its status says nothing.
 dump_table_count() {
     read_dump "$1" 2>/dev/null | pg pg_restore --list 2>/dev/null | grep -c 'TABLE DATA' || true
 }

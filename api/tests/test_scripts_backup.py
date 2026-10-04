@@ -216,6 +216,19 @@ def test_restore_replace_brings_the_state_back_and_keeps_the_old_database(
     assert previous in done.stdout
     assert _note(_admin_url(previous)) == "after"
 
+    # The kept copy holds customer data and nothing expires it: every later run names it.
+    later = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert later.returncode == 0, later.stderr
+    assert "kept from earlier restores" in later.stdout and previous in later.stdout
+
 
 def test_restore_replace_recreates_a_database_that_is_gone(
     db, backup_dir, passphrase_file
@@ -413,19 +426,59 @@ def test_label_is_part_of_the_file_name(db, backup_dir, passphrase_file):
 
 
 TARGET_PROBE = (
-    'source scripts/lib_pg.sh; pg_target_from_url "$1"; '
+    'pg_target_from_url "$1"; '
     'printf \'%s\\n\' "$PGHOST" "$PGPORT" "${PGUSER-}" "${PGPASSWORD-}" "$PGDATABASE"'
 )
 
 
-def _target(url: str) -> subprocess.CompletedProcess:
+def _lib(snippet: str, *args: str, **env: str) -> subprocess.CompletedProcess:
+    clean = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "BACKUP_"))}
     return subprocess.run(
-        [BASH, "-c", TARGET_PROBE, "probe", url],
+        [BASH, "-c", f"source scripts/lib_pg.sh; {snippet}", "probe", *args],
         cwd=REPO_ROOT,
+        env={**clean, "BACKUP_ENV_FILE": "/nonexistent", **env},
         capture_output=True,
         text=True,
         timeout=60,
     )
+
+
+def _target(url: str, **env: str) -> subprocess.CompletedProcess:
+    return _lib(TARGET_PROBE, url, **env)
+
+
+def test_url_without_a_password_keeps_the_exported_one():
+    done = _target("postgresql://maex@db/maex_agent", PGPASSWORD="from the caller")
+
+    assert done.stdout.split("\n")[3] == "from the caller"
+
+
+def test_sslmode_and_an_ipv6_host_are_taken_from_the_url():
+    done = _lib(
+        'pg_target_from_url "$1"; echo "$PGHOST $PGPORT $PGSSLMODE"',
+        "postgresql+psycopg://maex:pw@[::1]:6543/maex_agent?connect_timeout=3&sslmode=require",
+    )
+
+    assert done.stdout.strip() == "::1 6543 require"
+
+
+def test_the_compose_network_always_takes_the_client_from_the_image():
+    # A client on the host cannot resolve `db`, whatever is installed there.
+    done = _lib(
+        'PGHOST=db; pg_resolve_client; echo "$PG_CLIENT ${DOCKER_ARGS[*]}"',
+        BACKUP_DOCKER_NETWORK="maex_default",
+    )
+
+    assert done.stdout.strip() == "docker --network maex_default"
+
+
+def test_major_version_is_read_from_a_version_line():
+    done = _lib(
+        "echo 'pg_dump (PostgreSQL) 16.4 (Ubuntu 16.4-1.pgdg24.04+1)' | pg_major; "
+        "echo 'pg_dump (PostgreSQL) 9.6.24' | pg_major"
+    )
+
+    assert done.stdout.split() == ["16", "9"]
 
 
 def test_target_is_read_from_the_sqlalchemy_url():
@@ -462,3 +515,47 @@ def test_cron_file_runs_the_backup_daily_at_three():
     (job,) = lines
     assert job.startswith("0 3 * * * ")
     assert "scripts/backup.sh" in job
+    # The shell opens the log before the script runs; without the folder no backup.
+    assert job.index("mkdir -p backups") < job.index(">> backups/")
+
+
+def test_passphrase_file_with_windows_line_ending_gives_the_same_key(
+    db, backup_dir, passphrase_file, tmp_path
+):
+    crlf = tmp_path / "crlf"
+    crlf.write_bytes(PASSPHRASE.encode() + b"\r\n")
+    dump = _backup(db, backup_dir, crlf)
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert done.returncode == 0, done.stderr
+
+
+def test_restore_of_a_cut_off_dump_changes_nothing(db, backup_dir, passphrase_file):
+    dump = _backup(db, backup_dir, passphrase_file)
+    _sql(db, "update backup_probe set note = 'after'")
+    whole = dump.read_bytes()
+    dump.write_bytes(whole[: len(whole) - 200])
+    name = make_url(db).database
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        name,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert done.returncode == 1
+    assert "nothing changed" in done.stderr
+    assert _note(db) == "after"
+    assert _databases_like(f"{name}_") == []
