@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.domain.menu.importer import (
@@ -13,6 +14,7 @@ from api.domain.menu.importer import (
     ALLERGENS_FILE,
     MENU_FILE,
     OPTIONS_FILE,
+    OptionRow,
     apply,
     parse,
 )
@@ -101,6 +103,50 @@ def test_probelauf_schreibt_nichts(session, tenant_id):
     assert sorted(report.items_new) == ["12", "23", "47"]
     assert "Probelauf" in report.as_text()
     assert count(session, MenuItem) == 0 and count(session, AuditLog) == 0
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_dry_run_rejects_what_the_database_rejects_in_an_option(
+    engine, tenant_id, dry_run
+):
+    """Real import dry run: `SessionLocal` has autoflush off, so the dry run
+    rolled back without ever sending options, allergens and aliases. A row the
+    database rejects passed the dry run and failed only in the real import."""
+    plan = parse(files())
+    assert plan.ok, plan.errors
+    # Postgres text cannot hold NUL; the checks in parse let it through.
+    plan.options["47"].append(OptionRow("Extras", "Mango\x00Curry", 0, False, False))
+
+    with Session(engine, autoflush=False) as s, pytest.raises(DBAPIError):
+        apply(s, tenant_id, plan, now=NOW, dry_run=dry_run)
+
+    with Session(engine) as s:
+        assert count(s, MenuItem) == 0 and count(s, ItemOption) == 0
+
+
+def test_dry_run_sends_the_last_dish_to_the_database_too(session, tenant_id):
+    """With autoflush on, every query flushes what is pending - except for the
+    aliases of the last dish, which no query follows."""
+    plan = parse(files())
+    assert plan.ok, plan.errors
+    last = list(plan.items)[-1]
+    plan.aliases[last].add("sup\x00pe")
+
+    with pytest.raises(DBAPIError):
+        apply(session, tenant_id, plan, now=NOW, dry_run=True)
+
+
+def test_dry_run_without_autoflush_writes_nothing(engine, tenant_id):
+    """The flush before the rollback must not turn into a commit."""
+    plan = parse(files())
+    with Session(engine, autoflush=False) as s:
+        report = apply(s, tenant_id, plan, now=NOW, dry_run=True)
+
+    assert sorted(report.items_new) == ["12", "23", "47"]
+    assert report.options_added == 3 and report.aliases_added == 4
+    with Session(engine) as s:
+        for model in (MenuItem, ItemOption, ItemAllergen, ItemAlias, AuditLog):
+            assert count(s, model) == 0
 
 
 def test_preisaenderung_nur_mit_schalter(session, tenant_id):

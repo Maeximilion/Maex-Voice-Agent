@@ -532,7 +532,8 @@ def apply(
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Report:
-    """Bring the database in line with the plan. With dry_run it is rolled back at the end.
+    """Bring the database in line with the plan. With dry_run everything is sent
+    to the database and rolled back at the end.
 
     deactivate_missing: dishes that are not in the file become inactive
     (register as master, docs/14). Without the switch they stay as they are.
@@ -663,6 +664,11 @@ def apply(
         _sync_aliases(session, item, plan.aliases.get(number, set()), report)
 
     if dry_run:
+        # Send everything to the database before rolling back. The script's
+        # session has autoflush off: options, allergens and aliases would
+        # never reach the database, and a row it rejects would pass the dry
+        # run and fail only in the real import.
+        session.flush()
         session.rollback()
         return report
     if report.changed:

@@ -61,6 +61,8 @@
 
 **Import ist idempotent.** Zweimal einspielen ändert nichts.
 
+**`--dry-run` is a full rehearsal.** It sends every row to the database (dishes, options, allergens, aliases) and rolls back: what the database would reject fails in the dry run already, not only in the real import.
+
 ---
 
 ## Was im Chat entsteht
