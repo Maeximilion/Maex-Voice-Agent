@@ -360,7 +360,9 @@ def commit_fails(engine, monkeypatch, tenant_id):
     decides whether the server had committed before the answer got lost.
     Returns one entry per commit call: was anything still unflushed?"""
 
-    def install(*, reaches_server: bool) -> list[bool]:
+    def install(
+        *, reaches_server: bool, error: BaseException | None = None
+    ) -> list[bool]:
         calls: list[bool] = []
 
         class LostConnection(Session):
@@ -368,7 +370,7 @@ def commit_fails(engine, monkeypatch, tenant_id):
                 calls.append(bool(self.new or self.dirty or self.deleted))
                 if reaches_server:
                     super().commit()
-                raise OperationalError(
+                raise error or OperationalError(
                     "COMMIT",
                     None,
                     Exception("server closed the connection unexpectedly"),
@@ -463,6 +465,24 @@ def test_cli_commit_error_reports_an_unknown_outcome(
     assert ("Keine Änderung" in out) == reaches_server
     assert ("Gerichte neu: 3" in out) == (not reaches_server)
     assert count(session, AuditLog) == (1 if reaches_server else 0)
+
+
+def test_cli_interrupt_during_commit_reports_an_unknown_outcome(
+    commit_fails, ordner, session, capsys
+):
+    """Codex PR #176: Ctrl-C while the driver runs COMMIT is a BaseException.
+    The server may have committed all the same, so the operator gets the same
+    message instead of an interrupt traceback."""
+    calls = commit_fails(reaches_server=True, error=KeyboardInterrupt())
+
+    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb"])
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert calls == [False]
+    assert "KeyboardInterrupt" in err
+    assert "unknown" in err and "--dry-run" in err
+    assert count(session, MenuItem) == 3
 
 
 def test_cli_dry_run_never_commits(commit_fails, ordner, session, capsys):

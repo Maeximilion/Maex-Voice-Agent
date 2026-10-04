@@ -95,7 +95,7 @@ class MassDeactivationError(ValueError):
 class CommitOutcomeUnknownError(Exception):
     """The commit of an import raised. Every row had been accepted before, so
     the server may have committed and only its answer got lost (connection
-    dropped). A dry run with the same plan and switches tells: no change means
+    dropped, or interrupted with Ctrl-C). A dry run with the same plan and switches tells: no change means
     the import went through. The message is the database's own."""
 
 
@@ -727,11 +727,15 @@ def apply(
         raise
     try:
         session.commit()
-    except Exception as exc:
-        # Releases the session; a commit that reached the server stays.
+    except BaseException as exc:
+        # BaseException on purpose: Ctrl-C while the driver runs COMMIT leaves
+        # the same doubt as a dropped connection (Codex PR #176).
+        # The rollback releases the session; a commit that reached the server
+        # stays.
         with contextlib.suppress(Exception):
             session.rollback()
-        raise CommitOutcomeUnknownError(str(getattr(exc, "orig", exc)).strip()) from exc
+        detail = str(getattr(exc, "orig", exc)).strip() or type(exc).__name__
+        raise CommitOutcomeUnknownError(detail) from exc
     return report
 
 
