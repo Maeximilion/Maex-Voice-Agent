@@ -30,8 +30,8 @@ from dataclasses import dataclass
 from functools import cached_property
 from itertools import pairwise, product
 
-# Obergrenze: Speisekarten-Nummern und Mengen bleiben dreistellig. Alles darüber
-# ist am Telefon kein Zahlwort mehr, sondern eine Ziffernfolge.
+# Upper limit: menu numbers and quantities stay at three digits. Anything above
+# is no longer a number word on the phone but a string of digits.
 MAX_VALUE = 999
 
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
@@ -45,7 +45,7 @@ UNITS = {
     "einem": 1,
     "einer": 1,
     "zwei": 2,
-    "zwo": 2,  # am Telefon üblich, um zwei und drei zu unterscheiden
+    "zwo": 2,  # common on the phone, to tell zwei and drei apart
     "drei": 3,
     "vier": 4,
     "fuenf": 5,
@@ -65,7 +65,7 @@ TEENS = {
     "siebzehn": 17,
     "achtzehn": 18,
     "neunzehn": 19,
-    # Formen, die die Spracherkennung regelmäßig so ausgibt
+    # Forms the speech recognition regularly emits like this
     "sechszehn": 16,
     "siebenzehn": 17,
 }
@@ -83,24 +83,24 @@ TENS = {
 }
 HUNDRED = "hundert"
 
-# Bloße Artikel. "ein Tisch" ist keine Eins, "einmal" schon. Ohne diese Ausnahme
-# fände `find_item_number` in fast jedem Satz eine Eins.
+# Bare articles. "ein Tisch" is not a one, "einmal" is. Without this exception
+# `find_item_number` would find a one in almost every sentence.
 ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 
-# Mengen-Marker: ohne einen davon gibt es keine Menge, sondern nur eine Zahl.
+# Quantity markers: without one of them there is no quantity, only a number.
 _QUANTITY_SUFFIX = re.compile(r"^(.+?)mal$")
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _ITEM_NUMBER_MARKERS = frozenset({"nummer", "nr", "no", "position", "pos"})
-# Zahlwörter oberhalb von MAX_VALUE. _scan kennt sie nicht, sie sind aber
-# erkennbar als Zahl gemeint: "Nummer tausend" ist eine Nummer, die es nicht
-# gibt, und darf nicht als Name "tausend" in der Suche landen (Codex PR #117).
+# Number words above MAX_VALUE. _scan does not know them, but they are clearly
+# meant as a number: "Nummer tausend" is a number that does not exist and must
+# not end up in the search as the name "tausend" (Codex PR #117).
 _TOO_LARGE = frozenset({"tausend", "million", "millionen", "milliarde", "milliarden"})
-# Zwischen Marker und Zahl erlaubt: "die Nummer ist 23", "Nummer die 23".
+# Allowed between marker and number: "die Nummer ist 23", "Nummer die 23".
 _MARKER_FILLER = frozenset({"ist", "war", "waere", "die", "der", "das", "den"})
 
-# Satzzeichen trennen zwei Angaben: "Nummer 20, eine Portion" ist die 20 mit
-# einer Portion, nicht die 21 (Codex-Review PR #105, P1). Der Bindestrich steht
-# bewusst nicht dabei, der verbindet.
+# Punctuation separates two statements: "Nummer 20, eine Portion" is the 20
+# with one portion, not the 21 (Codex review PR #105, P1). The hyphen is left
+# out on purpose; it connects.
 PUNCTUATION = frozenset(".,;:!?")
 
 _TOKEN = re.compile(r"\d+|[a-z]+|[.,;:!?]")
@@ -131,8 +131,8 @@ class _Span:
 
 
 def fold(text: str) -> str:
-    """Kleinschreibung plus Umlaut-Ersatzschreibung. Am Telefon klingt "fünf" wie
-    "fuenf"; welche Schreibweise die Erkennung liefert, ist Zufall."""
+    """Lower case plus the umlaut replacement spelling. On the phone "fünf"
+    sounds like "fuenf"; which spelling the recognition delivers is chance."""
     return text.lower().translate(_UMLAUTS)
 
 
@@ -294,16 +294,16 @@ def _tokens(text: str) -> list[str]:
 
 
 def _scan(tokens: list[str], start: int) -> _Span | None:
-    """Längste Zahl ab Position `start`.
+    """The longest number from position `start`.
 
-    Zusammengesetzt wird nur, was sich am Telefon auch zusammen anhört:
-    "vierzig sieben" (Zehner plus Einer), "drei und zwanzig", "zwei hundert".
-    "zwei drei" bleibt zwei und drei -- daraus 23 zu machen wäre geraten.
+    Only what also sounds joined on the phone is joined: "vierzig sieben"
+    (tens plus units), "drei und zwanzig", "zwei hundert". "zwei drei" stays
+    two and three -- turning that into 23 would be a guess.
 
-    Zwei harte Grenzen: ein Satzzeichen und ein Artikel. Ohne sie wuchs
-    "Nummer 20, eine Portion" zur 21, weil die Regel für ziffernweise
-    gesprochene Zahlen über das Komma und über das "eine" der Mengenangabe
-    hinweggriff (Codex-Review PR #105, P1).
+    Two hard limits: punctuation and an article. Without them "Nummer 20, eine
+    Portion" grew into the 21, because the rule for numbers spoken digit by
+    digit reached across the comma and across the "eine" of the quantity
+    (Codex review PR #105, P1).
     """
     i = start
     total: int | None = None
@@ -312,7 +312,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
         if token in PUNCTUATION:
             break
         if token == "und" and total is not None and total < 10:
-            # "ein und zwanzig": der Zehner muss folgen, sonst war es ein normales "und"
+            # "ein und zwanzig": the tens must follow, otherwise it was a normal "und"
             if i + 1 < len(tokens) and _word_value(tokens[i + 1]) in TENS.values():
                 i += 1
                 continue
@@ -330,7 +330,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
         elif total % 10 == 0 and total >= 20 and 1 <= value <= 9:
             total += value  # "vierzig sieben"
         elif total < 10 and value % 10 == 0 and 20 <= value <= 90:
-            total += value  # "drei und zwanzig", das "und" wurde übersprungen
+            total += value  # "drei und zwanzig", the "und" was skipped
         elif total % 100 == 0 and total >= 100 and value < 100:
             total += value  # "zweihundert dreiundzwanzig"
         else:
@@ -342,7 +342,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
 
 
 def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
-    """Zahl, die unmittelbar **vor** `end` endet ("drei Portionen", "zwei mal")."""
+    """A number that ends directly **before** `end` ("drei Portionen", "zwei mal")."""
     for start in range(max(0, end - 3), end + 1):
         span = _scan(tokens, start)
         if span is not None and span.end == end + 1:
@@ -436,7 +436,7 @@ def _with_prefix(
 
 
 def _quantity_spans(tokens: list[str]) -> list[_Span]:
-    """Zahlen, die an einem Mengen-Marker hängen: "zweimal", "2 x", "drei Portionen"."""
+    """Numbers attached to a quantity marker: "zweimal", "2 x", "drei Portionen"."""
     spans: list[_Span] = []
     for i, token in enumerate(tokens):
         suffix = _QUANTITY_SUFFIX.match(token)
@@ -453,11 +453,11 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
 
 
 def parse_cardinal(text: str) -> int | None:
-    """Der gesamte Text als eine Zahl, sonst `None`.
+    """The whole text as one number, else `None`.
 
-    Anders als `find_item_number` zählt hier auch ein alleinstehendes "eine":
-    wer diese Funktion aufruft, hat bereits entschieden, dass an dieser Stelle
-    eine Zahl steht. Satzzeichen am Rand stören nicht.
+    Unlike `find_item_number`, a standalone "eine" counts here too: whoever
+    calls this function has already decided that there is a number at this
+    place. Punctuation at the edge does not matter.
     """
     tokens = _tokens(text)
     while tokens and tokens[0] in PUNCTUATION:
@@ -473,27 +473,27 @@ def parse_cardinal(text: str) -> int | None:
 
 
 def find_numbers(text: str) -> list[int]:
-    """Alle genannten Zahlen im Satz, in der Reihenfolge, in der sie gesagt wurden.
+    """All numbers said in the sentence, in the order they were said.
 
-    Nicht mitgezählt werden bloße Artikel ("ein Tisch", siehe `ARTICLES`) und
-    Mengenadverbien ("zweimal"): das eine ist keine Zahl, das andere eine Menge
-    und damit Sache von `find_quantity`.
+    Not counted: bare articles ("ein Tisch", see `ARTICLES`) and quantity
+    adverbs ("zweimal"): the first is not a number, the second is a quantity
+    and therefore a matter for `find_quantity`.
     """
     return [span.value for span in _number_spans(_tokens(text))]
 
 
 def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
-    """Die Gerichtnummer im Satz. Ein ausdrückliches "Nummer …" schlägt alles andere.
+    """The dish number in the sentence. An explicit "Nummer …" beats everything else.
 
-    Eine Zahl, die an einem Mengen-Marker hängt, ist keine Gerichtnummer: "2 x
-    die 23" ist eindeutig, auch wenn zwei Zahlen fallen (Codex-Review PR #105,
-    P2). Bleiben danach mehrere Zahlen übrig, ist nicht entscheidbar, welche
-    gemeint war -- dann `None` statt der ersten (CLAUDE.md §2 Regel 2).
+    A number attached to a quantity marker is not a dish number: "2 x die 23"
+    is unambiguous even though two numbers are said (Codex review PR #105,
+    P2). If several numbers remain after that, it cannot be decided which one
+    was meant -- then `None` instead of the first (CLAUDE.md §2 rule 2).
 
-    Eine genannte Nummer, die keine Kartenform hat ("Nummer 23g", "Nummer A12",
-    "Nummer tausend"), ergibt ebenfalls `None`: sie trägt keine Zahl, mit der
-    sich weiterarbeiten liesse. Wer die Schreibweise braucht, um danach zu
-    fragen, nimmt `find_item_number_ref` (Codex PR #117, P2).
+    A named number that has no card form ("Nummer 23h", "Nummer A12", "Nummer
+    tausend") gives `None` as well: it carries no number to work with. Whoever
+    needs the spelling to ask about it uses `find_item_number_ref` (Codex PR
+    #117, P2).
     """
     ref = find_item_number_ref(text, card)
     # A number with a prefix ("S12") has no bare number to work with: 12 would
@@ -504,14 +504,14 @@ def find_item_number(text: str, card: CardFormat = NO_PREFIXES) -> int | None:
 
 @dataclass(frozen=True)
 class ItemNumber:
-    """Eine Gerichtnummer mit allem, was aus derselben Stelle im Satz stammt.
+    """A dish number with everything that comes from the same place in the sentence.
 
-    `text` ist die Schreibweise, wie sie auf der Karte stehen kann: Ziffern
-    behalten führende Nullen ("07"), ein direkt folgender Buchstabe a bis f
-    gehört dazu ("23a", auch "23 a"). Bei einem Zahlwort ist es die Zahl.
-    `marked` heisst: direkt hinter "Nummer"/"Nr." - nicht irgendwo im Satz.
-    Alles aus einer Fundstelle, sonst mischt "23a, nein, Nummer 23" den
-    Buchstaben der ersten mit der Zahl der zweiten Angabe (Codex PR #117, P1).
+    `text` is the spelling as it can be on the menu: digits keep leading zeros
+    ("07"), a directly following letter a to g belongs to it ("23a", also "23
+    a"). For a number word it is the number. `marked` means: directly after
+    "Nummer"/"Nr." - not anywhere in the sentence. Everything comes from one
+    place, otherwise "23a, nein, Nummer 23" mixes the letter of the first
+    statement with the number of the second (Codex PR #117, P1).
     """
 
     value: int
@@ -536,10 +536,10 @@ class ItemNumber:
 # T-4.12). The register has no combined suffixes ("35AE").
 CARD_SUFFIXES = frozenset("abcdefg")
 _SUFFIXES = CARD_SUFFIXES
-# Buchstaben direkt an Ziffern ("23g", "23ab", "2x") sind im Tokenstrom nicht
-# mehr vom Leerzeichen-Fall ("23 bitte") zu unterscheiden. Deshalb je Token
-# merken, ob der nächste ohne Lücke folgt - nach Position, nicht nach
-# Ziffernfolge, sonst leiht sich "23a, nein, Nummer 23" das a der ersten 23.
+# Letters directly on digits ("23g", "23ab", "2x") can no longer be told apart
+# from the case with a space ("23 bitte") in the token stream. So remember per
+# token whether the next one follows without a gap - by position, not by the
+# digits, otherwise "23a, nein, Nummer 23" borrows the a of the first 23.
 
 
 def _glued(text: str) -> set[int]:
@@ -644,9 +644,9 @@ def _plain_ref(
     nxt = tokens[span.end] if span.end < len(tokens) else ""
     if digits and at in glued:
         suffix = nxt
-        # "23x" ist keine Kartennummer und auch keine Endung: ungültig, nicht
-        # die 23 (Codex PR #117). Echte Mengen ("2x Pho") hat _quantity_spans
-        # vorher schon aussortiert, sie kommen hier nicht an.
+        # "23x" is not a card number and not a suffix either: invalid, not the
+        # 23 (Codex PR #117). Real quantities ("2x Pho") have already been
+        # sorted out by _quantity_spans and do not get here.
         valid = suffix in _SUFFIXES
         return ItemNumber(span.value, card + suffix, marked, valid)
     # "Nummer 23 ab": a suffix of several letters, set apart. Written together
@@ -659,9 +659,9 @@ def _plain_ref(
     if nxt in _SUFFIXES:
         return ItemNumber(span.value, card + nxt, marked)
     if len(nxt) == 1 and nxt.isalpha() and (nxt != "x" or marked):
-        # "Nummer 23 g", "Nummer 23 x": einzelner Buchstabe ohne Karte -
-        # ungültig, nicht 23 (Codex PR #117). Ohne Marker ist "23 x" eine Menge
-        # und kommt hier gar nicht an.
+        # "Nummer 23 h", "Nummer 23 x": a single letter no menu has - invalid,
+        # not 23 (Codex PR #117). Without a marker "23 x" is a quantity and
+        # does not get here at all.
         return ItemNumber(span.value, card + nxt, marked, valid=False)
     return ItemNumber(value=span.value, text=card, marked=marked)
 
@@ -678,30 +678,30 @@ def canonical_card(card: str) -> str:
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
-# Zögerlaute der Spracherkennung, nach fold() (ä -> ae).
+# Hesitations from the speech recognition, after fold() (ä -> ae).
 _HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
-# Wörter, die eine zweite Zahl zur Alternative oder Korrektur machen.
+# Words that turn a second number into an alternative or a correction.
 _ALTERNATIVE_WORDS = frozenset(
     {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
 )
-# Wörter, die zwei Zahlen verbinden können. Sie sind nur dann durchsichtig,
-# wenn links und rechts wirklich eine Zahl steht - "Nummer 23, nein" ist eine
-# zurückgenommene Bestellung, keine 23 (Codex PR #117, P1).
+# Words that can connect two numbers. They are only transparent if there
+# really is a number on the left and on the right - "Nummer 23, nein" is an
+# order taken back, not a 23 (Codex PR #117, P1).
 _CONNECTORS = _ALTERNATIVE_WORDS | {"und"}
 
 
 def _connected(tokens: list[str], after: int, before: int) -> bool:
-    """Verbindet, was zwischen zwei Zahlen steht, sie zu Kandidaten?
+    """Does what stands between two numbers connect them into candidates?
 
-    Ja bei einem Wort für Alternative, Korrektur oder Aufzählung ("oder",
-    "nein", "und") und bei bloßen Satzzeichen ("Nummer 23, 24"): eine zweite
-    genannte Nummer wird nie verschluckt (Codex PR #117). "drei und zwanzig"
-    ist davon nicht betroffen, das fasst _scan vorher zu einer Zahl zusammen.
+    Yes for a word for alternative, correction or enumeration ("oder", "nein",
+    "und") and for bare punctuation ("Nummer 23, 24"): a second number that was
+    said is never swallowed (Codex PR #117). "drei und zwanzig" is not
+    affected; _scan joins that into one number before.
     """
     between = [t for t in tokens[after:before] if t not in PUNCTUATION]
-    # Zögerlaute und Artikel sind durchsichtig ("Nummer 23, äh, 24", "Nummer 23
-    # oder die 24"). Alles andere muss ein Verbindungswort sein - ein "oder"
-    # zwischen Reis und Nudeln verbindet keine spätere Uhrzeit (Codex PR #117).
+    # Hesitations and articles are transparent ("Nummer 23, äh, 24", "Nummer 23
+    # oder die 24"). Everything else must be a connecting word - an "oder"
+    # between rice and noodles does not connect a later time (Codex PR #117).
     words = [t for t in between if t not in _HESITATIONS and t not in _LINK_ARTICLES]
     return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
 
@@ -879,9 +879,9 @@ def _marked(
     card: CardFormat = NO_PREFIXES,
 ) -> list[ItemNumber]:
     spans: list[_Span] = []
-    # Ziffern hinter dem Marker, die ausserhalb des Zahlbereichs liegen
-    # ("Nummer 1000"): ungültig, und keine spätere Zahl darf nachrücken
-    # ("Nummer 1000 und 23" ist nicht die 23, Codex PR #117).
+    # Digits after the marker that are outside the number range ("Nummer
+    # 1000"): invalid, and no later number may move up ("Nummer 1000 und 23"
+    # is not the 23, Codex PR #117).
     invalid: list[ItemNumber] = []
     for i, token in enumerate(tokens):
         if token not in _ITEM_NUMBER_MARKERS:
@@ -893,17 +893,17 @@ def _marked(
             invalid.append(bad)
     if not spans:
         return invalid
-    # Weitere Zahlen hinter der ersten markierten Nummer sind Alternative oder
-    # Korrektur, aber nur mit einem Wort, das das sagt: "Nummer 23 oder 24",
-    # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" oder
-    # "um 12 Uhr" ist ein Detail, keine zweite Nummer (P2). Zahlen vor dem
-    # Marker bleiben Mengen: "zwei Nummer 23".
-    # Kette: eine spätere Zahl ist Alternative, wenn ihr direkter Vorgänger
-    # schon Kandidat ist und sie entweder unmittelbar folgt ("Nummer zwei drei",
-    # "Nummer 23 24") oder ein Korrekturwort dazwischen steht - ohne eine
-    # andere Zahl dazwischen. "Nummer 23 mit 2 oder 3 Soßen": das "oder"
-    # verbindet die Soßen, nicht die 23 (Codex PR #117, P1, P2). Mengen sind
-    # nie Kandidat und unterbrechen die Kette.
+    # Further numbers after the first marked number are an alternative or a
+    # correction, but only with a word that says so: "Nummer 23 oder 24",
+    # "Nummer 23, nein 24" (Codex PR #117, P1). "Nummer 23 mit 2 Soßen" or "um
+    # 12 Uhr" is a detail, not a second number (P2). Numbers before the marker
+    # stay quantities: "zwei Nummer 23".
+    # Chain: a later number is an alternative if its direct predecessor is
+    # already a candidate and it either follows immediately ("Nummer zwei
+    # drei", "Nummer 23 24") or a correction word stands in between - without
+    # another number in between. "Nummer 23 mit 2 oder 3 Soßen": the "oder"
+    # connects the sauces, not the 23 (Codex PR #117, P1, P2). Quantities are
+    # never a candidate and break the chain.
     mengen = _quantity_spans(tokens)
     later = sorted(
         (
@@ -940,7 +940,7 @@ def _marked(
     found: list[ItemNumber] = list(invalid)
     for span in spans:
         ref = _ref(tokens, span, marked=True, glued=glued)
-        # Gleiche Kartennummer in zwei Schreibweisen ("07", "7") ist eine.
+        # The same card number in two spellings ("07", "7") is one.
         if all(_same_cards(r) != _same_cards(ref) for r in found):
             found.append(ref)
     return found
@@ -953,12 +953,12 @@ def _same_cards(ref: ItemNumber) -> frozenset[str]:
 def find_marked_item_numbers(
     text: str, card: CardFormat = NO_PREFIXES
 ) -> list[ItemNumber]:
-    """Alle verschiedenen Nummern hinter "Nummer"/"Nr.", in Satzfolge - auch
-    eine zweite Zahl ohne eigenen Marker ("Nummer 23 oder 24").
+    """All different numbers after "Nummer"/"Nr.", in sentence order - also a
+    second number without a marker of its own ("Nummer 23 oder 24").
 
-    Mehr als eine heisst: der Gast korrigiert sich ("Nummer 23, nein, Nummer
-    24") oder stellt zur Wahl ("Nummer 23 oder Nummer 24"). Welche gilt, ist
-    nicht entscheidbar - der Aufrufer fragt nach (Codex PR #117, P1).
+    More than one means: the guest corrects themselves ("Nummer 23, nein,
+    Nummer 24") or offers a choice ("Nummer 23 oder Nummer 24"). Which one
+    applies cannot be decided - the caller asks back (Codex PR #117, P1).
     """
     return _marked(_tokens(text), _glued(text), _prefixed(text), card)
 
@@ -966,10 +966,10 @@ def find_marked_item_numbers(
 def find_item_number_ref(
     text: str, card: CardFormat = NO_PREFIXES
 ) -> ItemNumber | None:
-    """Wie `find_item_number`, aber mit Kartenschreibweise und Marker.
+    """Like `find_item_number`, but with the card spelling and the marker.
 
-    Zwei verschiedene ausdrücklich genannte Nummern ergeben `None`: die erste
-    zu nehmen wäre geraten (CLAUDE.md §2 Regel 2).
+    Two different explicitly named numbers give `None`: taking the first would
+    be a guess (CLAUDE.md §2 rule 2).
     """
     tokens = _tokens(text)
     glued = _glued(text)
@@ -1003,15 +1003,15 @@ def find_item_number_ref(
     )
     if unit:
         return None
-    # Ohne "Nummer" ist eine Zahl, die keine saubere Kartenform ergibt, keine
-    # genannte Nummer, sondern Text: "einmal 7up bitte", "das ist 5g Zucker".
-    # Sonst meldete die Leiter "die Nummer 7up gibt es nicht", waehrend
-    # search_menu den Alias findet (Review PR #117).
+    # Without "Nummer", a number that does not give a clean card form is not a
+    # named number but text: "einmal 7up bitte", "das ist 5mg Zucker". Otherwise
+    # the ladder would report "die Nummer 7up gibt es nicht" while search_menu
+    # finds the alias (review PR #117).
     return ref if ref.valid else None
 
 
-# Wörter, die in einem reinen Nummernsatz stehen dürfen, nach fold(). Alles
-# andere daneben macht den Satz unklar (Regel A, docs/01_STATUS.md).
+# Words that may stand in a pure number sentence, after fold(). Anything else
+# next to it makes the sentence unclear (rule A, docs/01_STATUS.md).
 _SENTENCE_FILLER = frozenset(
     {
         "ich", "wir", "haette", "haetten", "moechte", "moechten", "nehme", "nehmen",
@@ -1020,34 +1020,35 @@ _SENTENCE_FILLER = frozenset(
         "eine", "einen", "einem", "einer", "von", "vom", "ist", "war", "waere",
     }
 )  # fmt: skip
-# Nur im Satz, nicht zwischen Marker und Zahl: "ich wuerde die 13", "Guten Tag,
-# die 13", "dazu die 24" fielen ohne diese Woerter als Rest in die Namenssuche
-# (T-5.2). Zwischen "Nummer" und Zahl machen sie den Satz weiter unklar -
-# "Nummer dazu 23" ist keine 23 (Review PR #147). Dieselben Woerter stehen in
-# normalize.FILLER, sonst suchte die Namenssuche nach "wuerde pho".
+# Only in the sentence, not between marker and number: "ich wuerde die 13",
+# "Guten Tag, die 13", "dazu die 24" fell into the name search as leftovers
+# without these words (T-5.2). Between "Nummer" and the number they still make
+# the sentence unclear - "Nummer dazu 23" is not a 23 (review PR #147). The
+# same words are in normalize.FILLER, otherwise the name search would look for
+# "wuerde pho".
 _LEAD_FILLER = frozenset(
     {
         "wuerde", "wuerden", "wuerd", "hallo", "guten", "tag", "abend", "dazu",
         "bestellen", "bestelle",
     }
 )  # fmt: skip
-# Womit ein Satz die Bestellung aus dem vorigen fortsetzt: "Und noch die 24",
+# How a sentence continues the order from the previous one: "Und noch die 24",
 # "Und dann dazu die 24".
 _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 
 
 def _too_large(token: str) -> bool:
-    """Ein Zahlwort oberhalb von MAX_VALUE, auch zusammengesetzt.
+    """A number word above MAX_VALUE, also a compound one.
 
-    "tausend", "eintausend", "zweitausend", "dreitausendzwei", "Million": als
-    Zahl gemeint, aber keine Kartennummer. Der Aufrufer macht daraus
-    `valid=False`, nicht `None` - sonst würde aus einer genannten Nummer eine
-    Namenssuche (CLAUDE.md §2 Regel 2).
+    "tausend", "eintausend", "zweitausend", "dreitausendzwei", "Million":
+    meant as a number, but not a card number. The caller turns it into
+    `valid=False`, not `None` - otherwise a named number would become a name
+    search (CLAUDE.md §2 rule 2).
 
-    Gesucht wird an jeder Stelle im Wort, nicht nur am Anfang: im Deutschen
-    steht der Faktor davor ("zweitausend"), und "tausend" kann in der Mitte
-    sitzen ("dreitausendzwei"). Ein Gerichtname trägt keines dieser Wörter,
-    und geprüft wird ohnehin nur direkt hinter einem Marker (Codex PR #117).
+    The search looks at every position in the word, not only the start: in
+    German the factor comes first ("zweitausend"), and "tausend" can sit in
+    the middle ("dreitausendzwei"). No dish name carries any of these words,
+    and the check only runs directly next to a number anyway (Codex PR #117).
     """
     return any(word in token for word in _TOO_LARGE)
 
@@ -1117,9 +1118,9 @@ def sole_item_number(
     consumed: set[int] = set()
     marked: list[_Span] = []
     invalid: list[ItemNumber] = []
-    # Token, die schon zu einer ungueltigen Nummer gehoeren. Die Ziffer aus
-    # "Nummer A12" darf nicht noch einmal als eigene Zahl zaehlen, sonst waere
-    # der Satz "unklar" statt einer Nummer, die es nicht gibt.
+    # Tokens that already belong to an invalid number. The digits from "Nummer
+    # A12" must not count again as a number of their own, otherwise the
+    # sentence would be "unclear" instead of a number that does not exist.
     invalid_at: set[int] = set()
     marker_at: set[int] = set()
     for i, token in enumerate(tokens):
@@ -1174,10 +1175,10 @@ def sole_item_number(
         if nxt >= len(tokens):
             continue
         after = tokens[nxt]
-        # Zur Zahl gehören: ein Mengenwort ("2 x", "drei Portionen"), eine
-        # Kartenendung a bis f ("23a", "23 a") und - nur hinter "Nummer" - jede
-        # andere Endung, die die Nummer dann ungültig macht ("Nummer 23g").
-        # Ohne Marker bleibt "7up" oder "23g" Text für die Namenssuche.
+        # Belonging to the number: a quantity word ("2 x", "drei Portionen"), a
+        # card suffix a to g ("23a", "23 a") and - only after "Nummer" - any
+        # other suffix, which then makes the number invalid ("Nummer 23h").
+        # Without a marker "7up" or "23h" stays text for the name search.
         if (
             after in _QUANTITY_NOUNS
             or after in _SUFFIXES
@@ -1190,28 +1191,29 @@ def sole_item_number(
         ):
             consumed.add(nxt)
     consumed |= marker_at
-    # Token, die zu einer Zahl gehören - gültig oder nicht.
+    # Tokens that belong to a number - valid or not.
     number_at = {k for s in numbers for k in range(s.start, s.end)} | invalid_at
 
     def _connects(k: int) -> bool:
         """Steht links und rechts von Position k eine Zahl?"""
         return any(x < k for x in number_at) and any(x > k for x in number_at)
 
-    # Ein Verbindungswort zwischen zwei Zahlen ist durchsichtig: "23 oder 24"
-    # ist eine Rückfrage nach der Nummer, kein Satz über ein Gericht namens
-    # "oder". Hängt es dagegen frei ("Nummer 23, nein", "Nummer 23 oder"), hat
-    # der Gast zurückgenommen oder nicht zu Ende gesprochen. Es ist dann kein
-    # Gerichtname - es gehört also nicht in den Rest, sondern macht den Satz
-    # für sich unklar (Codex PR #117, P1).
+    # A connecting word between two numbers is transparent: "23 oder 24" is a
+    # follow-up question about the number, not a sentence about a dish called
+    # "oder". If it hangs loose instead ("Nummer 23, nein", "Nummer 23 oder"),
+    # the guest took something back or did not finish. It is then not a dish
+    # name - so it does not belong in the leftovers but makes the sentence
+    # unclear by itself (Codex PR #117, P1).
     #
-    # Ausnahme: ein "und", das den Satz eröffnet. "Und noch die 24" setzt die
-    # Bestellung aus dem vorigen Satz fort und verbindet keine zweite Zahl in
-    # diesem (T-5.2). Nur ganz vorn: steht davor schon eine Menge ("zweimal und
-    # die 24") oder ein Marker ("Nummer und 24"), verbindet es etwas in diesem
-    # Satz, das fehlt. Und nie vor einem Zehner: "und zwanzig" ist die zweite
-    # Hälfte von "drei und zwanzig", die Erkennung hat nur abgeschnitten
-    # (Review PR #147). Nur "und": ein "oder" oder "nein" vorweg bezieht sich
-    # auf etwas, das dieser Satz nicht nennt, und bleibt eine Rückfrage.
+    # Exception: an "und" that opens the sentence. "Und noch die 24" continues
+    # the order from the previous sentence and does not connect a second number
+    # in this one (T-5.2). Only at the very start: if a quantity ("zweimal und
+    # die 24") or a marker ("Nummer und 24") comes before it, it connects
+    # something in this sentence that is missing. And never before a tens
+    # word: "und zwanzig" is the second half of "drei und zwanzig", the
+    # recognition only cut it off (review PR #147). Only "und": an "oder" or
+    # "nein" up front refers to something this sentence does not name and
+    # stays a follow-up question.
     def _opens(k: int) -> bool:
         if tokens[k] != "und" or (k + 1 < len(tokens) and tokens[k + 1] in TENS):
             return False
@@ -1224,8 +1226,8 @@ def sole_item_number(
         for k, t in enumerate(tokens)
         if k not in consumed
     )
-    # Token zwischen einem Marker und der nächsten Zahl: dort gilt _LEAD_FILLER
-    # nicht, "Nummer dazu 23" bleibt unklar (Review PR #147).
+    # Tokens between a marker and the next number: _LEAD_FILLER does not apply
+    # there, "Nummer dazu 23" stays unclear (review PR #147).
     after_marker = {
         k
         for i, tok in enumerate(tokens)
@@ -1288,11 +1290,11 @@ def sole_item_number(
             for span in numbers
         )
     )
-    # Ein frei hängendes Verbindungswort ist nur dann eine zurückgenommene
-    # Nummer, wenn überhaupt von einer Nummer die Rede war: mit Marker, oder
-    # wenn kein Gerichtname daneben steht. Sonst gehört das "oder" zum Namen -
-    # "zwei Cola oder Fanta" ist eine Menge neben einem Namen, und der Alias
-    # "cola oder fanta" muss erreichbar bleiben (Codex PR #117, P2).
+    # A loose connecting word is only a number taken back if a number was being
+    # talked about at all: with a marker, or if there is no dish name next to
+    # it. Otherwise the "oder" belongs to the name - "zwei Cola oder Fanta" is
+    # a quantity next to a name, and the alias "cola oder fanta" must stay
+    # reachable (Codex PR #117, P2).
     dangling = loose and (has_marker or not residue)
     if len(numbers) + len(invalid) == 1 and not residue and not dangling:
         if invalid:
@@ -1304,20 +1306,19 @@ def sole_item_number(
 
 
 def has_item_number_marker(text: str) -> bool:
-    """Steht ein ausdrückliches "Nummer"/"Nr." im Satz?
+    """Is there an explicit "Nummer"/"Nr." in the sentence?
 
-    Ohne Marker ist eine nackte Zahl neben einem Gerichtnamen eher eine Menge:
-    "zwei Frühlingsrollen" meint nicht Gericht 2 (search_menu, T-4.3).
+    Without a marker, a bare number next to a dish name is more likely a
+    quantity: "zwei Frühlingsrollen" does not mean dish 2 (search_menu, T-4.3).
     """
     return any(token in _ITEM_NUMBER_MARKERS for token in _tokens(text))
 
 
 def find_quantity(text: str) -> int | None:
-    """Die Menge, aber nur mit Marker: "zweimal", "2 x", "drei Portionen".
+    """The quantity, but only with a marker: "zweimal", "2 x", "drei Portionen".
 
-    Eine nackte Zahl ist keine Menge -- "die dreiundzwanzig" ist ein Gericht,
-    nicht dreiundzwanzig Stück. Ohne Marker `None`, der Aufrufer setzt die
-    Voreinstellung.
+    A bare number is not a quantity -- "die dreiundzwanzig" is a dish, not
+    twenty-three pieces. Without a marker `None`; the caller sets the default.
     """
     spans = _quantity_spans(_tokens(text))
     return spans[0].value if spans else None

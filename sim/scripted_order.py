@@ -1,12 +1,12 @@
-"""Abholbestellung im regelbasierten Modell-Ersatz (`sim/scripted_llm.py`).
+"""Pickup order in the rule-based stand-in model (`sim/scripted_llm.py`).
 
-Der Ablauf aus `prompts/system_v2.md` §Ablauf 4: Gerichte ueber `search_menu`,
-Pflichtoptionen erfragen, Name und Rufnummer, `draft_order`, vorlesen, auf ein
-Ja hin `confirm`. Wie der Rest des Skripts erkennt das hier nur Muster und raet
-nichts: eine Position kommt nur mit einer `menu_item_id` aus `search_menu` in
-den Warenkorb, bei mehreren Treffern werden sie angeboten, nie einer gewaehlt
-(CLAUDE.md §2 Regel 2). Namen von Gerichten und Optionen stammen aus den
-Tool-Ergebnissen, nie aus diesem Modul.
+The flow from `prompts/system_v2.md` §Ablauf 4: dishes via `search_menu`, ask
+for mandatory options, name and phone number, `draft_order`, read back,
+`confirm` on a yes. Like the rest of the script this only recognises patterns
+and guesses nothing: a position enters the cart only with a `menu_item_id`
+from `search_menu`; with several hits they are offered, never one chosen
+(CLAUDE.md §2 rule 2). Names of dishes and options come from the tool results,
+never from this module.
 """
 
 import re
@@ -43,10 +43,10 @@ SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
 SAY_THANKS = "Vielen Dank und bis gleich."
 SAY_APPROVAL = "Das Team bestätigt die Bestellung gleich noch."
 
-# Wer das sagt, ist mit den Gerichten fertig.
+# Whoever says this is done with the dishes.
 DONE_PHRASES = ("nein", "das war", "das wars", "nichts mehr", "alles", "sonst nichts")
 CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
-# Vor dem fuehrenden Zahlwort: Artikel und Marker zaehlen nicht.
+# Before the leading number word: articles and markers do not count.
 _LEAD_SKIP = frozenset({"die", "der", "das", "den", "nummer", "nr"})
 
 
@@ -57,9 +57,9 @@ class CartItem:
     name: str
     quantity: int
     options: list[dict[str, str]] = field(default_factory=list)
-    # Pflichtgruppen ohne Wahl: [{"group": ..., "options": [namen]}]
+    # Mandatory groups without a choice: [{"group": ..., "options": [names]}]
     pending: list[dict[str, Any]] = field(default_factory=list)
-    # Hinweis fuer die Kueche ("ohne Karotten", eine Allergie), T-4.10.
+    # Note for the kitchen ("ohne Karotten", an allergy), T-4.10.
     note: str | None = None
 
 
@@ -72,30 +72,31 @@ class PickupScript:
         self._suggestions: list[dict[str, Any]] = []
         self._suggestion_query = ""
         self._suggestion_wish: dict[str, Any] | None = None
-        # Die order_id, deren readback gerade offen ist. Nach einem Nein ist sie
-        # weg: der Gespraechszustand bleibt readback_pending, bis ein neuer
-        # Entwurf kommt, und ein spaeteres Ja bestaetigte sonst die verworfene
-        # Bestellung (CLAUDE.md §2 Regel 3).
+        # The order_id whose readback is currently open. After a no it is gone:
+        # the conversation state stays readback_pending until a new draft
+        # comes, and a later yes would otherwise confirm the discarded order
+        # (CLAUDE.md §2 rule 3).
         self.readback_for: str | None = None
-        # Weitere unklare Teile eines Satzes: eine Rueckfrage nach der anderen,
-        # keiner faellt still weg. Nach der ersten Antwort wird der naechste gesucht.
+        # Further unclear parts of a sentence: one follow-up question after the
+        # other, none drops out silently. After the first answer the next one
+        # is searched.
         self._later: list[str] = []
-        # Was vor einer nachgeholten Suche gesagt werden soll ("Gern, Nummer 23."):
-        # ein Zug ist Satz oder Tool-Aufruf, nie beides.
+        # What should be said before a deferred search ("Gern, Nummer 23."): a
+        # turn is a sentence or a tool call, never both.
         self._carry: str | None = None
-        # Die Position, zu der "Wogegen sind Sie allergisch?" offen ist: die Antwort
-        # ist die Zutat, kein Gericht (Codex PR #139, P1).
-        # Mehrere Positionen: jede einzeln, in Reihenfolge (Codex PR #139, P1).
+        # The position for which "Wogegen sind Sie allergisch?" is open: the
+        # answer is the ingredient, not a dish (Codex PR #139, P1).
+        # Several positions: each one separately, in order (Codex PR #139, P1).
         self._allergy_for: list[CartItem] = []
-        # Stehen mehrere offen, nennt jede Frage ihr Gericht.
+        # If several are open, each question names its dish.
         self._allergy_named = False
-        # Was nach der Allergie gefragt wird: nie zwei Fragen zugleich, sonst
-        # waere "Nummer 12" die Zutat (Codex PR #139, P1).
+        # What is asked after the allergy: never two questions at once,
+        # otherwise "Nummer 12" would be the ingredient (Codex PR #139, P1).
         self._after_allergy: str | None = None
-        # Die offene Rueckfrage, waehrend eine Antwort neu gesucht wird.
+        # The open follow-up question while an answer is being searched again.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
 
-    # -- Kundenzug ---------------------------------------------------------
+    # -- Customer turn ------------------------------------------------------
 
     def start(
         self, prefix: str | None = None, patch: dict[str, Any] | None = None
@@ -110,9 +111,9 @@ class PickupScript:
         if self.phase == "choose":
             hit = self._pick_suggestion(text)
             if hit is not None and hit.get("sold_out"):
-                # Heute aus: nicht aufnehmen, sagen und den Rest anbieten. Sonst
-                # lehnte draft_order den Warenkorb ab, und die Bestellung kaeme
-                # nicht mehr zum Abschluss (Codex PR #133).
+                # Out today: do not add it, say so and offer the rest. Otherwise
+                # draft_order would reject the cart and the order would never
+                # be completed (Codex PR #133).
                 sold = SAY_SOLD_OUT.format(name=hit["name"])
                 self._suggestions = [h for h in self._suggestions if h is not hit]
                 if self._suggestions:
@@ -123,9 +124,10 @@ class PickupScript:
                 self.phase = "dishes"
                 return self._next(slots, patch, lead=sold)
             if hit is not None:
-                # Menge aus der Antwort ("einmal die dreizehn", auch ohne Marker:
-                # "zwei Pho Bo", "zwei Nummer dreizehn"), sonst aus der Frage, zu
-                # der die Vorschlaege gehoeren ("zwei Suppen") (Codex PR #133).
+                # Quantity from the answer ("einmal die dreizehn", also without
+                # a marker: "zwei Pho Bo", "zwei Nummer dreizehn"), else from
+                # the question the suggestions belong to ("zwei Suppen") (Codex
+                # PR #133).
                 quantity = _stated_quantity(text, hit) or _quantity(
                     self._suggestion_query, hit
                 )
@@ -133,23 +135,25 @@ class PickupScript:
                     hit, self._suggestion_query, quantity, self._suggestion_wish
                 )
                 lead = _wish_sentence(hit, wish, text)
-                # Erst hier ist die Rueckfrage beantwortet. In _add geloescht, verlor
-                # ein eindeutiger Teil im selben Satz die offene Frage (Codex PR #130).
+                # Only here is the follow-up question answered. Cleared in _add,
+                # a clear part in the same sentence lost the open question
+                # (Codex PR #130).
                 self._suggestions = []
                 self.phase = "dishes"
                 return self._next(slots, patch, lead=lead)
-            # "Nein, das wars" oder "keine davon": die Vorschlaege sind verworfen.
-            # Neu gesucht fanden die Worte kein Gericht, und dieselbe Frage kaeme
-            # endlos zurueck (Codex PR #133).
+            # "Nein, das wars" or "keine davon": the suggestions are discarded.
+            # Searched again, the words found no dish, and the same question
+            # would come back forever (Codex PR #133).
             if _finishes(text) or _rejects(text):
                 self._suggestions = []
                 self.phase = "customer" if _finishes(text) and self.cart else "dishes"
                 return self._next(slots, patch)
-            # Keine der angebotenen: ein anderes Gericht, neu suchen mit eigener
-            # Menge - die aus der Frage darauf zu legen waere geraten (Review PR
-            # #133). Die Rueckfrage ist damit erledigt (Codex PR #130, P1) -
-            # ausser, die Suche findet nichts: dann wird sie wieder gestellt,
-            # statt dass die Position still verschwindet (on_search_failed).
+            # None of the offered ones: another dish, search again with its own
+            # quantity - putting the one from the question on it would be a
+            # guess (review PR #133). That settles the follow-up question
+            # (Codex PR #130, P1) - unless the search finds nothing: then it is
+            # asked again instead of the position vanishing silently
+            # (on_search_failed).
             self._reopen = (self._suggestions, self._suggestion_query)
             self.phase = "dishes"
             self._suggestions = []
@@ -177,14 +181,14 @@ class PickupScript:
                     "confirm", {"entity": "order", "entity_id": order_id}
                 )
             )
-        # Eine Korrektur am vorgelesenen Warenkorb wird nicht geraten, sondern neu
-        # aufgenommen: der alte Entwurf bleibt Entwurf und wird nie bestaetigt.
+        # A correction to the cart that was read back is not guessed but taken
+        # anew: the old draft stays a draft and is never confirmed.
         self.readback_for = None
         self.cart = []
         self.phase = "dishes"
         return LLMTurn(say=SAY_RESTART)
 
-    # -- Tool-Ergebnis -----------------------------------------------------
+    # -- Tool result -------------------------------------------------------
 
     def on_search(
         self,
@@ -193,17 +197,17 @@ class PickupScript:
         slots: dict[str, Any],
         say: str | None = None,
     ) -> LLMTurn:
-        """`say` wiederholt, was eindeutig verstanden wurde (aus dem Code, Maxi PR
-        #127); das Skript spricht es wie ein Modell, das der Regel im Prompt folgt."""
+        """`say` repeats what was clearly understood (from the code, Maxi PR #127);
+        the script speaks it like a model that follows the rule in the prompt."""
         reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
-            # "heute aus" ist eine Aussage, keine Frage: sie kommt direkt mit,
-            # ohne zweite Suche (Review PR #133).
+            # "heute aus" is a statement, not a question: it goes along
+            # directly, without a second search (review PR #133).
             sold_out: list[str] = []
             for part in data["positions"]:
                 if not part["ok"]:
-                    # Jeder unklare Teil wird nachgefragt, einer nach dem anderen
+                    # Every unclear part is asked about, one after the other
                     # (Codex PR #130, P1).
                     if unclear:
                         self._later.append(part["query"])
@@ -213,8 +217,8 @@ class PickupScript:
                 if unclear and part.get("match_type") not in CLEAR_MATCHES:
                     self._later.append(part["query"])
                     continue
-                # Jeder eindeutige Teil kommt in den Warenkorb, auch nach einer
-                # Rueckfrage; gesprochen wird nur die erste (Codex PR #130, P1).
+                # Every clear part goes into the cart, also after a follow-up
+                # question; only the first one is spoken (Codex PR #130, P1).
                 said = self._take(part["query"], part)
                 if said and _is_sold_out(part):
                     sold_out.append(said)
@@ -226,9 +230,9 @@ class PickupScript:
             return self._next(slots, {}, lead=lead)
         carried = self._carried_wish(reopen, data)
         if carried is not None:
-            # Die neue Suche traf eines der angebotenen Gerichte: der Wunsch aus
-            # der Frage gilt fuer es, sonst fiele eine Allergie still weg (Review
-            # PR #139).
+            # The new search hit one of the offered dishes: the wish from the
+            # question applies to it, otherwise an allergy would silently drop
+            # out (review PR #139).
             hit = data["results"][0]
             wish = self._add(hit, query, wish=carried)
             tail = (
@@ -246,8 +250,8 @@ class PickupScript:
         reopen: tuple[list[dict[str, Any]], str] | None,
         found: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Der Wunsch der offenen Frage, wenn die neue Suche eindeutig eines der
-        angebotenen Gerichte fand und selbst keinen Wunsch traegt."""
+        """The wish of the open question, if the new search clearly found one of
+        the offered dishes and carries no wish itself."""
         hits = found.get("results") or []
         if (
             reopen is None
@@ -262,10 +266,10 @@ class PickupScript:
         return self._suggestion_wish if hits[0]["menu_item_id"] in offered else None
 
     def on_search_failed(self, say: str | None) -> LLMTurn | None:
-        """Die Antwort auf eine Rueckfrage fand nichts: die Frage gilt weiter.
-        Die allgemeine Meldung ("nicht gefunden, Nummer?") wuerde eine zweite
-        Frage daneben stellen, eine genaue ("Nummer 99 habe ich nicht") kommt
-        mit. None, wenn keine Rueckfrage offen war."""
+        """The answer to a follow-up question found nothing: the question still
+        stands. The general message ("nicht gefunden, Nummer?") would put a
+        second question next to it; a precise one ("Nummer 99 habe ich nicht")
+        goes along. None if no follow-up question was open."""
         if self._reopen is None:
             return None
         self._suggestions, self._suggestion_query = self._reopen
@@ -288,11 +292,11 @@ class PickupScript:
         parts.append(SAY_THANKS)
         return LLMTurn(say=_join(*parts))
 
-    # -- intern ------------------------------------------------------------
+    # -- internal ----------------------------------------------------------
 
     def _take(self, query: str, found: dict[str, Any]) -> str | None:
-        """Nimmt einen eindeutigen Treffer auf. Sonst der Satz, der gesagt werden
-        muss: ausverkauft (aus dem Code) oder die Rueckfrage bei mehreren."""
+        """Takes a clear hit into the cart. Otherwise the sentence that must be
+        said: sold out (from the code) or the follow-up question for several."""
         hits = found.get("results") or []
         match_type = found.get("match_type")
         if match_type in CLEAR_MATCHES and hits:
@@ -305,7 +309,7 @@ class PickupScript:
             self.phase = "choose"
             self._suggestions = hits
             self._suggestion_query = query
-            # Ein Wunsch bei mehreren Treffern wird nach der Wahl eingeordnet.
+            # A wish with several hits is classified after the choice.
             self._suggestion_wish = found.get("wish")
             return _offer(hits)
         return found.get("say")
@@ -336,10 +340,10 @@ class PickupScript:
     def _apply_wish(
         self, item: CartItem, hit: dict[str, Any], wish: dict[str, Any] | None
     ) -> dict[str, Any] | None:
-        """Der Wunsch aus search_menu am Warenkorb (T-4.10): eine Option der Karte
-        wird gewaehlt (die Pflichtfrage dieser Gruppe entfaellt), ein Hinweis und
-        eine Allergie gehen in `note`. Was die Karte nicht kennt, bleibt weg - der
-        Satz dazu kam schon aus dem Code (D8)."""
+        """The wish from search_menu on the cart (T-4.10): an option of the menu
+        is chosen (the mandatory question of that group is dropped), a note and
+        an allergy go into `note`. What the menu does not know stays out - the
+        sentence for it already came from the code (D8)."""
         if wish is None:
             return None
         if wish["kind"] == "open":
@@ -348,25 +352,25 @@ class PickupScript:
             ]
             wish = classify_wish(wish["text"], groups).model_dump()
         if wish.get("note"):
-            # Weglassen zu einer Zugabe ("ohne Zwiebeln, dafür mit Huhn").
+            # Leaving out in addition to an extra ("ohne Zwiebeln, dafür mit Huhn").
             item.note = wish["note"]
         if wish["kind"] == "option":
             item.options.append({"group": wish["group"], "name": wish["option"]})
             item.pending = [g for g in item.pending if g["group"] != wish["group"]]
         elif wish["kind"] == "allergy" and not wish.get("ingredient"):
-            # Die Zutat fehlt: die Frage bleibt offen, bis die Antwort kommt.
+            # The ingredient is missing: the question stays open until the answer comes.
             self._allergy_for.append(item)
             self._allergy_named = self._allergy_named or len(self._allergy_for) > 1
         elif wish["kind"] == "note" or (
             wish["kind"] == "allergy" and wish.get("ingredient")
         ):
-            # Die Allergie im festen Wortlaut (E14); ohne Zutat fragt der Satz nach.
+            # The allergy in the fixed wording (E14); without an ingredient the sentence asks back.
             item.note = wish["text"]
         return wish
 
     def _pick_suggestion(self, text: str) -> dict[str, Any] | None:
-        """Nur eine eindeutige Nennung zaehlt: die Nummer oder ein Name, der genau
-        auf eine der angebotenen passt."""
+        """Only an unambiguous mention counts: the number, or a name that
+        matches exactly one of the offered ones."""
         lowered = text.lower()
         # Also spoken ("die dreizehn") and with a leading zero (review PR #133).
         # Only if the sentence is the number itself: in "zwei Pho Bo" the two is
@@ -385,11 +389,11 @@ class PickupScript:
         by_name = [h for h in self._suggestions if h["name"].lower() in lowered]
         if len(by_name) == 1:
             return by_name[0]
-        # "Meinen Sie Nummer 23?" - "Ja, genau": ein Ja nimmt den einen Vorschlag.
-        # Neu gesucht fand "Ja, genau" kein Gericht, und dieselbe Frage kam
-        # endlos zurueck (Eval-Suite T-5.2). Erst nach Nummer und Name, und nie,
-        # wenn der Satz eine andere Nummer nennt: "Ja, aber lieber die 24" meint
-        # die 24. Bei mehreren Vorschlaegen ist ein Ja keine Wahl.
+        # "Meinen Sie Nummer 23?" - "Ja, genau": a yes takes the one suggestion.
+        # Searched again, "Ja, genau" found no dish, and the same question came
+        # back forever (eval suite T-5.2). Only after number and name, and never
+        # if the sentence names another number: "Ja, aber lieber die 24" means
+        # the 24. With several suggestions a yes is not a choice.
         if len(self._suggestions) == 1 and ref is None and _agrees(text):
             return self._suggestions[0]
         return None
@@ -398,20 +402,20 @@ class PickupScript:
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
         """Die Antwort auf "Wogegen?": die Zutat im festen Wortlaut (E14)."""
-        # Eine ganze Antwort ("ich bin gegen Erdnuesse allergisch") traegt ihre
-        # Zutat selbst; nur das blosse Wort ("Erdnuesse", "gegen Erdnuesse")
-        # bekommt den Satzanfang (Codex PR #139, P1).
+        # A whole answer ("ich bin gegen Erdnuesse allergisch") carries its
+        # ingredient itself; only the bare word ("Erdnuesse", "gegen
+        # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
         if wish.kind != "allergy" and _orders_something(text):
-            # "Eine Cola bitte", "Nummer 12": keine Zutat - die Frage bleibt
-            # offen, statt "Keine Eine Cola" zu notieren (Review PR #139).
+            # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
+            # stays open instead of noting "Keine Eine Cola" (review PR #139).
             return LLMTurn(
                 say=self._allergy_question(),
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
         if wish.kind != "allergy":
-            # "Keine Erdnuesse" ergaebe sonst "Keine Keine Erdnuesse".
+            # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
             bare = re.sub(
                 r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
             )
@@ -466,8 +470,8 @@ class PickupScript:
         """Der naechste Schritt aus dem, was schon feststeht."""
         state_patch = patch or None
         if self._allergy_for:
-            # Nur die Frage nach der Allergie, keine zweite daneben. Steht sie
-            # schon im Satz der Suche, nicht noch einmal.
+            # Only the question about the allergy, no second one next to it. If
+            # it is already in the search's sentence, not again.
             question = self._allergy_question()
             said = _join(lead) or ""
             return LLMTurn(
@@ -478,7 +482,7 @@ class PickupScript:
             self._carry = _join(self._carry, lead)
             return _search(self._later.pop(0), patch)
         if self.phase == "choose":
-            # Hier steht immer die Rueckfrage mit den Vorschlaegen (_take).
+            # This is always the follow-up question with the suggestions (_take).
             return LLMTurn(say=_join(lead) or SAY_WHAT, state_patch=state_patch)
         if any(i.pending for i in self.cart):
             self.phase = "option"
@@ -528,9 +532,9 @@ class PickupScript:
 def _wish_sentence(
     hit: dict[str, Any], wish: dict[str, Any] | None, said: str
 ) -> str | None:
-    """Nach der Wahl aus Vorschlaegen wird der Wunsch erst eingeordnet - und wie
-    in der Suche gesagt: eine Option oder ein Hinweis mit wiederholt, das
-    Unbekannte abgelehnt, die Allergie ohne Zusage (Codex PR #139)."""
+    """After the choice from suggestions the wish is classified first - and said
+    as in the search: an option or a note repeated as well, the unknown
+    rejected, the allergy without a promise (Codex PR #139)."""
     if wish is None:
         return None
     menu_hit, settled = MenuHit.model_validate(hit), Wish.model_validate(wish)
@@ -542,7 +546,7 @@ def _wish_sentence(
     return _join(echo, say_for_wish(menu_hit, settled)) or None
 
 
-# Womit eine Bestellung beginnt, nie eine Zutat ("eine Cola", "Nummer 12").
+# What an order starts with, never an ingredient ("eine Cola", "Nummer 12").
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
@@ -604,14 +608,14 @@ def _quantity(query: str, hit: dict[str, Any] | None = None) -> int:
 
 
 def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | None:
-    """Die genannte Menge oder None. Nach der Regel der Domain (numberwords): mit
-    Marker ("zweimal", "2 x") gilt sie immer. Ist der Satz die Kartennummer
-    selbst ("die 7", "die sieben", "die 23 a"), ist ein fuehrendes Zahlwort nur
-    eine Menge, wenn es nicht die Nummer ist ("zwei Nummer 23"). Neben einem
-    Namen ist es eine Menge ("zwei Frühlingsrollen") - ausser, das gefundene
-    Gericht erklaert es: seine eigene Nummer mit Artikel davor ("die 23,
-    Frühlingsrollen") oder ein Name, der selbst mit dem Zahlwort beginnt ("Acht
-    Schätze") (Review PR #133)."""
+    """The quantity that was said, or None. By the domain's rule (numberwords):
+    with a marker ("zweimal", "2 x") it always applies. If the sentence is the
+    card number itself ("die 7", "die sieben", "die 23 a"), a leading number
+    word is a quantity only if it is not the number ("zwei Nummer 23"). Next to
+    a name it is a quantity ("zwei Frühlingsrollen") - unless the dish that
+    was found explains it: its own number with an article in front ("die 23,
+    Frühlingsrollen") or a name that itself starts with the number word ("Acht
+    Schätze") (review PR #133)."""
     marked = find_quantity(query)
     if marked:
         return marked
@@ -635,8 +639,8 @@ def _stated_quantity(query: str, hit: dict[str, Any] | None = None) -> int | Non
 
 
 def _words(text: str) -> list[str]:
-    # Gefaltet wie im Zahlwort-Parser: "fuenf" und "fünf" sind ein Wort (Codex PR
-    # #133, P2).
+    # Folded as in the number word parser: "fuenf" and "fünf" are one word
+    # (Codex PR #133, P2).
     return re.findall(r"[^\W_]+", fold(text))
 
 
@@ -645,27 +649,27 @@ def _option_question(item: CartItem, group: dict[str, Any]) -> str:
     return f"Welche Auswahl bei {group['group']} möchten Sie zu {item.name}: {offer}?"
 
 
-# Auf eine Rueckfrage: "keine davon", "nein" verwirft die Vorschlaege.
+# As an answer to a follow-up question: "keine davon", "nein" discards the suggestions.
 REJECT_WORDS = ("nein", "keine", "keins", "keinen", "weder")
 
 
 def _finishes(text: str) -> bool:
-    """Fertig mit den Gerichten, ausser dem blossen "nein": das verwirft auf eine
-    Rueckfrage nur die Vorschlaege."""
+    """Done with the dishes, except for the bare "nein": as an answer to a
+    follow-up question that only discards the suggestions."""
     lowered = text.lower()
     return any(
         re.search(rf"\b{re.escape(p)}\b", lowered) for p in DONE_PHRASES if p != "nein"
     )
 
 
-# Kein "gern": "Ich haette gern die 24" ist eine Bestellung, kein Ja.
+# No "gern": "Ich haette gern die 24" is an order, not a yes.
 _AGREE = re.compile(r"\b(ja|jawohl|genau|richtig|stimmt|korrekt)\b")
-# "stimmt nicht", "nicht richtig", "ja, aber ...": kein Ja zum Vorschlag.
+# "stimmt nicht", "nicht richtig", "ja, aber ...": not a yes to the suggestion.
 _DOUBT = re.compile(r"\b(nein|nicht|aber|lieber|sondern|anders)\b")
 
 
 def _agrees(text: str) -> bool:
-    """Ein Ja ohne Zweifel: "Ja, genau" nimmt den Vorschlag, "Das stimmt nicht" nicht."""
+    """A yes without doubt: "Ja, genau" takes the suggestion, "Das stimmt nicht" does not."""
     lowered = text.lower()
     return (
         bool(_AGREE.search(lowered))

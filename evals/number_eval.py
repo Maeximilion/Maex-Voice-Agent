@@ -98,29 +98,28 @@ def resolve(say: str) -> str:
 
 
 def disagreement(say: str) -> str | None:
-    """Sagen beide Ausgaenge dasselbe ueber eine genannte, ungueltige Nummer?
+    """Do both callers say the same about a named, invalid number?
 
-    `sole_item_number` treibt die Suche, `find_item_number` die
-    Verstaendnisleiter. Wer als Nummer genannt wurde, aber keine Kartenform
-    hat, darf auf keinem der beiden Wege zu einer Zahl werden - sonst antwortet
-    die Suche `not_found`, waehrend die Leiter dasselbe Wort als Gericht nimmt.
-    Genau so war "Nummer A12" in der Suche richtig und ueber `find_item_number`
-    Gericht 12 (Codex PR #117, P2).
+    `sole_item_number` drives the search, `find_item_number` the understanding
+    ladder. What was named as a number but has no card form must not become a
+    number on either path - otherwise the search answers `not_found` while the
+    ladder takes the same word as a dish. That is exactly how "Nummer A12" was
+    right in the search and dish 12 via `find_item_number` (Codex PR #117, P2).
     """
     ref, unclear = sole_item_number(say, CARD)
     other = find_item_number_ref(say, CARD)
     if ref is not None and not ref.valid:
-        # Die Suche kennt die Nummer nicht. Dann darf sie auf dem anderen Weg
-        # auch keine Zahl werden.
+        # The search does not know the number. Then it must not become a
+        # number on the other path either.
         wert = find_item_number(say, CARD)
         if wert is not None:
             return f"ungueltig als {ref.text!r}, aber find_item_number gibt {wert}"
         return None
-    # Andersherum: meldet die Leiter eine genannte, ungueltige Nummer, darf die
-    # Suche den Satz nicht fuer einen reinen Namenssatz halten. Sonst sagt die
-    # Leiter "die Nummer 7up gibt es nicht", waehrend die Suche den Alias
-    # findet. Eine Rueckfrage der Suche ist dagegen kein Widerspruch - dann ist
-    # auf beiden Seiten von einer Nummer die Rede ("Nummer 1000 und 23").
+    # The other way round: if the ladder reports a named, invalid number, the
+    # search must not take the sentence for a pure name sentence. Otherwise the
+    # ladder says "die Nummer 7up gibt es nicht" while the search finds the
+    # alias. A follow-up question from the search is no contradiction - then
+    # both sides are talking about a number ("Nummer 1000 und 23").
     if other is not None and not other.valid and ref is None and not unclear:
         return (
             f"find_item_number_ref meldet ungueltig {other.text!r}, "

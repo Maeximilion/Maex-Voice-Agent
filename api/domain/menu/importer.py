@@ -1,23 +1,23 @@
-"""Speisekarte aus den CSV-Dateien nach docs/14 einspielen (T-4.2).
+"""Import the menu from the CSV files described in docs/14 (T-4.2).
 
-Zwei Schritte, damit sich jeder allein testen lässt:
+Two steps, so each can be tested on its own:
 
-- `parse(files)` liest und prüft, ohne Datenbank. Fehler verhindern jeden
-  Import, Warnungen landen im Bericht (docs/14 §Prüfregeln).
-- `apply(session, tenant_id, plan, ...)` gleicht die Datenbank an. Alles in
-  einer Transaktion: ein Fehler mittendrin hinterlässt keine halbe Karte.
+- `parse(files)` reads and checks, without a database. Errors prevent any
+  import, warnings end up in the report (docs/14 §Prüfregeln).
+- `apply(session, tenant_id, plan, ...)` brings the database in line. All in
+  one transaction: an error halfway leaves no half menu behind.
 
-Die Datei ist die Wahrheit für jedes Gericht, das sie nennt: Optionen werden
-angeglichen, Aliase aus einem früheren Import ebenso. Aliase aus Anrufen oder
-von Hand bleiben, sie sind gewachsenes Wissen. Gerichte, die in der Datenbank
-stehen, aber nicht in der Datei, bleiben unangetastet - bestellte Gerichte
-lassen sich nicht löschen, und ein vergessenes Gericht soll nicht still
-verschwinden. Der Bericht nennt sie. Mit `deactivate_missing` (Kasse als
-Quelle, T-4.11) werden sie inaktiv, nie gelöscht.
+The file is the truth for every dish it names: options are brought in line,
+and so are aliases from an earlier import. Aliases from calls or added by hand
+stay; they are knowledge that has grown. Dishes that are in the database but
+not in the file are left untouched - ordered dishes cannot be deleted, and a
+forgotten dish should not vanish silently. The report names them. With
+`deactivate_missing` (register as the source, T-4.11) they become inactive,
+never deleted.
 
-Preise aus der Datei ersetzen einen bestehenden Preis nur mit
-`apply_price_changes`; ohne stehen sie als "Preisänderung" im Bericht.
-Geld nur als Cent-Ganzzahl, nie über float (CLAUDE.md §8).
+Prices from the file replace an existing price only with
+`apply_price_changes`; without it they appear as "Preisänderung" in the
+report. Money only as integer cents, never via float (CLAUDE.md §8).
 """
 
 import csv
@@ -66,8 +66,8 @@ _COLUMNS = {
     ALLERGENS_FILE: ("number", "allergen_codes", "confirmed_by"),
     ALIASES_FILE: ("number", "alias"),
 }
-# "6,90", "6,9", "6" - nur Ziffern und Komma (docs/14). Punkt als Dezimal- oder
-# Tausendertrenner wäre mehrdeutig und wird abgelehnt statt geraten.
+# "6,90", "6,9", "6" - digits and comma only (docs/14). A dot as decimal or
+# thousands separator would be ambiguous and is rejected instead of guessed.
 _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 # Card numbers search_menu resolves unambiguously: at most three digits not
 # counting leading zeros (numberwords.MAX_VALUE = 999), optionally one letter
@@ -79,14 +79,14 @@ _EUR = re.compile(r"^(-?)(\d+)(?:,(\d{1,2}))?$")
 _CARD_NUMBER = re.compile(
     r"(?:[a-z]{1,2})?0*\d{1,3}[" + "".join(sorted(CARD_SUFFIXES)) + "]?"
 )
-# Mehr als dieser Anteil der aktiven Karte fällt nur mit ausdrücklichem
-# Schalter weg: ein kaputter Export soll nie die Karte abschalten (T-4.11).
+# More than this share of the active menu is only dropped with an explicit
+# switch: a broken export must never switch off the menu (T-4.11).
 MAX_DEACTIVATE_SHARE = 0.5
 
 
 class MassDeactivationError(ValueError):
-    """Mehr als MAX_DEACTIVATE_SHARE der aktiven Karte würde deaktiviert. Die
-    Oberfläche (CLI, später GUI) sagt, wie man es bewusst erlaubt."""
+    """More than MAX_DEACTIVATE_SHARE of the active menu would be deactivated.
+    The interface (CLI, later GUI) says how to allow it on purpose."""
 
 
 def is_card_number(number: str) -> bool:
@@ -108,12 +108,12 @@ class ItemRow:
     name: str
     category: str
     price_cents: int
-    # None: die Datei hat die Spalte nicht (Kasse), der gespeicherte Text
-    # bleibt; "": Text gelöscht (Review T-4.11).
+    # None: the file does not have the column (register), the stored text
+    # stays; "": text deleted (review T-4.11).
     description: str | None
     active: bool
-    # Nummer in der Schreibweise der Kasse (T-4.11). None: die Datei hat die
-    # Spalte nicht, der gespeicherte Wert bleibt; "": Wert gelöscht.
+    # Number in the register's spelling (T-4.11). None: the file does not have
+    # the column, the stored value stays; "": value deleted.
     pos_code: str | None = None
 
 
@@ -124,14 +124,14 @@ class OptionRow:
     price_delta_cents: int
     is_default: bool
     required: bool
-    # Optionale Spalte (T-4.10): warum die Option mehr kostet. None: die Datei
-    # hat die Spalte nicht, der gepflegte Grund bleibt; "": Grund geloescht.
+    # Optional column (T-4.10): why the option costs more. None: the file does
+    # not have the column, the maintained reason stays; "": reason deleted.
     price_reason: str | None = None
 
 
 @dataclass(frozen=True)
 class AllergenRow:
-    # Leer heisst "keine Auskunft", nicht "keine Allergene" (docs/03).
+    # Empty means "no information", not "no allergens" (docs/03).
     codes: tuple[str, ...]
     confirmed_by: str | None
 
@@ -156,12 +156,12 @@ class Report:
     items_new: list[str] = field(default_factory=list)
     items_updated: list[str] = field(default_factory=list)
     items_not_in_file: list[str] = field(default_factory=list)
-    # Aus items_not_in_file, die noch aktiv waren; nur mit deactivate_missing.
+    # From items_not_in_file, those that were still active; only with deactivate_missing.
     items_deactivated: list[str] = field(default_factory=list)
     # (Nummer, alt, neu) in Cent
     price_changes: list[tuple[str, int, int]] = field(default_factory=list)
     price_changes_applied: bool = False
-    # Hinweis auf --deactivate-missing nur bei einer Kassendatei ohne den Schalter.
+    # Hint at --deactivate-missing only for a register file without the switch.
     suggest_deactivate: bool = False
     options_added: int = 0
     options_removed: int = 0
@@ -203,7 +203,7 @@ class Report:
             if not self.price_changes_applied:
                 state = "NICHT übernommen"
             elif self.dry_run:
-                # Probelauf rollt zurück: "übernommen" wäre gelogen (Codex PR #115).
+                # A dry run rolls back: "übernommen" would be a lie (Codex PR #115).
                 state = "würde übernommen"
             else:
                 state = "übernommen"
@@ -268,8 +268,8 @@ def _rows(plan: Plan, name: str, text: str | None) -> list[tuple[int, dict[str, 
     """Zeilen mit ihrer Zeilennummer in der Datei (Kopfzeile = 1)."""
     if text is None:
         return []
-    # Excel speichert UTF-8 gern mit BOM; ohne lstrip hiesse die erste Spalte
-    # "BOM-Zeichen + number" und fehlte scheinbar.
+    # Excel likes to save UTF-8 with a BOM; without lstrip the first column
+    # would be called "BOM character + number" and would seem to be missing.
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
     missing = [c for c in _COLUMNS[name] if c not in (reader.fieldnames or [])]
     if missing:
@@ -320,8 +320,8 @@ def parse(files: Mapping[str, str | None]) -> Plan:
                 "zu zwei Buchstaben davor, z. B. 23, 23a, 25g, s12 oder sm1)"
             )
             continue
-        # Dublette nach der Form, in der die Suche vergleicht: "7" und "07" sind
-        # eine Nummer (Codex PR #117). Die Schreibweise aus der Datei bleibt.
+        # Duplicate by the form the search compares: "7" and "07" are one
+        # number (Codex PR #117). The spelling from the file stays.
         key = canonical_card(number)
         if key in first_line:
             plan.errors.append(
@@ -455,7 +455,7 @@ def _parse_allergens(plan: Plan, text: str | None, known: Mapping[str, str]) -> 
         raw = [c.strip().upper() for c in row["allergen_codes"].split(",") if c.strip()]
         unknown = [c for c in raw if c not in ALLERGEN_CODES]
         if unknown:
-            # Nie raten: ein unbekannter Buchstabe wird kein bestätigtes Allergen.
+            # Never guess: an unknown letter does not become a confirmed allergen.
             plan.errors.append(
                 f"{where}: unbekannter LMIV-Code {', '.join(unknown)} "
                 f"(erlaubt: {', '.join(ALLERGEN_CODES)})"
@@ -479,11 +479,11 @@ def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
         if not alias:
             plan.errors.append(f"{where}: Alias leer")
             continue
-        # Bleibt nach der Such-Normalisierung nichts übrig ("bitte", "die",
-        # "x", "23"), wäre der Alias gespeichert, aber nie zu finden:
-        # search_menu bricht vorher mit not_found ab. Fehler statt Warnung -
-        # das ist für die Suche dasselbe wie ein leerer Alias
-        # (Codex PR #117, P2).
+        # If nothing is left after the search normalisation ("bitte", "die",
+        # "x", "23"), the alias would be stored but could never be found:
+        # search_menu aborts with not_found before that. An error instead of a
+        # warning - for the search this is the same as an empty alias (Codex
+        # PR #117, P2).
         if not normalize_query(alias):
             plan.errors.append(
                 f"{where}: Alias „{alias}“ besteht nur aus Füll- oder "
@@ -492,24 +492,23 @@ def _parse_aliases(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
             continue
         plan.aliases.setdefault(number, set()).add(alias)
 
-    # Gewarnt wird nach derselben Kennung, mit der search_menu spaeter vergleicht:
-    # dort faellt vor dem Alias-Vergleich das Fuellwort weg. "Ente" und "die
-    # Ente" an zwei Gerichten sind deshalb eine Kollision, auch wenn die beiden
-    # Zeichenketten verschieden sind - ohne das meldet der Import "keine
-    # Kollision" und jede Anfrage nach beiden Schreibweisen wird ambiguous
-    # (Codex PR #117, P2).
+    # The warning uses the same key search_menu compares with later: there the
+    # filler word is dropped before the alias comparison. "Ente" and "die
+    # Ente" on two dishes are therefore a collision, even though the two
+    # strings differ - without this the import reports "no collision" and
+    # every request in either spelling becomes ambiguous (Codex PR #117, P2).
     owners: dict[str, dict[str, set[str]]] = {}
     for number, aliases in plan.aliases.items():
         for alias in aliases:
-            # Nie leer: die Pruefung oben hat solche Aliase abgelehnt.
+            # Never empty: the check above has rejected such aliases.
             key = normalize_query(alias)
             spellings = owners.setdefault(key, {})
             spellings.setdefault(number, set()).add(alias)
     for key, by_number in sorted(owners.items()):
         if len(by_number) < 2:
             continue
-        # Die Schreibweisen nur nennen, wenn sie sich unterscheiden - sonst
-        # stuende dreimal dasselbe Wort in der Meldung.
+        # Name the spellings only if they differ - otherwise the same word
+        # would appear three times in the message.
         abweichend = any(s != key for ss in by_number.values() for s in ss)
         genannt = ", ".join(
             f"{number} ({', '.join(sorted(spellings))})" if abweichend else number
@@ -532,12 +531,12 @@ def apply(
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Report:
-    """Datenbank an den Plan angleichen. Bei dry_run wird am Ende zurückgerollt.
+    """Bring the database in line with the plan. With dry_run it is rolled back at the end.
 
-    deactivate_missing: Gerichte, die nicht in der Datei stehen, werden inaktiv
-    (Kasse als Master, docs/14). Ohne den Schalter bleiben sie wie sie sind.
-    Eine Datei ohne Gerichte oder mehr als die Hälfte der aktiven Karte weg
-    wird verweigert, außer mit allow_large_deactivation.
+    deactivate_missing: dishes that are not in the file become inactive
+    (register as master, docs/14). Without the switch they stay as they are.
+    A file without dishes, or one that would drop more than half of the active
+    menu, is refused unless allow_large_deactivation is set.
     """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
@@ -554,11 +553,11 @@ def apply(
             select(MenuItem).where(MenuItem.tenant_id == tenant_id).with_for_update()
         )
     )
-    # In der Form der Suche (klein, ohne führende Nullen): ein früher als "23A"
-    # oder "07" importiertes Gericht ist dasselbe wie "23a" oder "7" und wird
-    # angeglichen, nicht verdoppelt (Codex #117).
-    # Stehen beide Schreibweisen schon im Bestand, entscheidet ein Mensch, welche
-    # gilt - still eine zu verdecken hiesse, die andere nie wieder zu finden.
+    # In the form of the search (lower case, without leading zeros): a dish
+    # imported earlier as "23A" or "07" is the same as "23a" or "7" and is
+    # brought in line, not duplicated (Codex #117).
+    # If both spellings already exist, a person decides which one applies -
+    # silently hiding one would mean never finding the other again.
     by_key: dict[str, list[MenuItem]] = {}
     for row in rows:
         by_key.setdefault(canonical_card(row.number), []).append(row)
@@ -576,9 +575,9 @@ def apply(
     in_plan = {canonical_card(n) for n in plan.items}
     missing = [item for key, item in existing.items() if key not in in_plan]
     report.items_not_in_file = sorted(item.number for item in missing)
-    # Gerichte außerhalb der Datei bleiben stehen, auch deaktiviert: ihre
-    # Kassennummer darf kein zweites Gericht bekommen, sonst ist die
-    # Kassenübergabe mehrdeutig (Codex PR #149).
+    # Dishes outside the file stay, deactivated ones too: their register
+    # number must not go to a second dish, or the handover to the register
+    # becomes ambiguous (Codex PR #149).
     wanted_codes = {r.pos_code: n for n, r in plan.items.items() if r.pos_code}
     taken = sorted(
         f"{item.pos_code} ({item.number}, in der Datei bei {wanted_codes[item.pos_code]})"
@@ -719,7 +718,7 @@ def _sync_options(
             )
             report.options_added += 1
             continue
-        # Alte Datei ohne Spalte: der Grund bleibt (Review PR #139).
+        # Old file without the column: the reason stays (review PR #139).
         reason = (
             option.price_reason
             if row.price_reason is None
@@ -755,11 +754,11 @@ def _sync_allergens(
     same_codes = set(current) == desired
     same_confirmer = all(a.confirmed_by == row.confirmed_by for a in current.values())
     if same_codes and same_confirmer:
-        # Unveränderter Nachweis behält seinen ursprünglichen Zeitpunkt.
+        # Unchanged evidence keeps its original time.
         return
-    # Die Zeile der Datei ist ein neuer Nachweis für das ganze Gericht: auch
-    # behaltene Codes tragen danach Prüfer und Zeitpunkt dieses Imports, sonst
-    # widerspräche die Datenbank der Datei, aus der sie stammt (Codex PR #115).
+    # The row in the file is new evidence for the whole dish: codes that are
+    # kept also carry the checker and time of this import afterwards, otherwise
+    # the database would contradict the file it comes from (Codex PR #115).
     for code, allergen in current.items():
         if code not in desired:
             session.delete(allergen)
@@ -788,7 +787,7 @@ def _sync_aliases(
         )
     }
     for alias, row in current.items():
-        # Nur, was ein früherer Import gebracht hat; Anrufe und Handarbeit bleiben.
+        # Only what an earlier import brought; calls and manual work stay.
         if row.source == SOURCE_IMPORT and alias not in wanted:
             session.delete(row)
             report.aliases_removed += 1

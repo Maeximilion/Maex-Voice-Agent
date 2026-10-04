@@ -60,7 +60,7 @@ Each issue carries exactly one type label. Priority and status only when they ac
 ## Code Style
 
 - `ruff` decides on format and linting, config in repository.
-- Code is English: identifiers, comments and docstrings. German only where the German use case needs it: what guests and staff hear or read (`say` texts, error messages, GUI), spoken-word data (number words, filler words) and example sentences in tests and evals. Existing German comments are translated when their block is touched.
+- Code is English: identifiers, comments and docstrings. German only where the German use case needs it: what guests and staff hear or read (`say` texts, error messages, GUI), spoken-word data (number words, filler words) and example sentences in tests and evals. A file that a change touches gets all of its comments and docstrings translated in the same change.
 - Comments explain the why, not the what. No emojis in code, docs, commits, or UI.
 - Money always as integer cents, phone numbers in E.164, times stored UTC and displayed in local time.
 - Domain logic belongs in `api/domain/`, never in `api/tools/` or `api/gui/`. Dependency direction is in `docs/11_MODULE.md`.
