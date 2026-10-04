@@ -4,6 +4,7 @@ import pytest
 
 from api.domain.menu.importer import ALLERGENS_FILE, MENU_FILE, OPTIONS_FILE, parse
 from api.domain.menu.pos_convert import (
+    ALLERGEN_KINDS,
     ALLERGEN_MAP,
     ALLERGEN_NAMES,
     cents,
@@ -295,6 +296,12 @@ def test_free_from_claim_in_a_name_without_allergens_is_listed():
         "Cashewfrei",
         "Kuchen ohne Pistazien",
         "Brot dinkelfrei",
+        "Gluten Free Roll",  # the menu has English names too
+        "Peanut-free roll",
+        "Roll without peanuts",
+        "Rolle ohne frische Erdnüsse",  # one word may stand in between
+        "Suppe ohne Zusatz von Milch",
+        "Rolle ohne Garnelen",  # a carrier of one allergen is a claim too
         "Rolle ohne ERDNUESSE",
         "Salat ohne Zwiebeln und Sesam",
         "Curry (vegan)",
@@ -317,6 +324,17 @@ def test_free_from_claim_spellings(name):
         "Kuchen ohne Feier",  # "Eier" counts at the start of a word only
         "Nudeln ohne Zwiebeln mit Erdnusssoße",  # the claim ends at "mit"
         "Erdnuss Curry mit Sesam",  # names an allergen, claims nothing
+        "Reis mit Ei frei wählbar",  # "frei" in the middle of a name is no claim
+        "Milchreis frei Haus",
+        "Curry (vegan möglich)",  # a variant on offer, not a claim about the dish
+        "Reis nicht vegan",
+        "Nudeln mit oder ohne Ei",
+        "Curry ohne Kokosmilch",  # looks like an allergen, is none
+        "Curry ohne Kokosnuss",
+        "Suppe ohne Buchweizen",
+        "Ente ohne Knochen in Erdnusssoße",
+        "Ente ohne Haut Knochen Erdnuss",  # more than one word in between
+        "Tori no Karaage Sesam",  # "no" only counts directly before the allergen
         "Suppe laut Karte frei von",  # cut off at 40 characters by the register
         "Reis ohne",
         "Suppe ohne Zwiebeln und",
@@ -338,23 +356,32 @@ def test_free_from_claim_with_maintained_allergens_gives_no_warning():
     assert free_from_warnings(run(rows))
 
 
+def contradictions(result):
+    return [w for w in result.warnings if "contradicts" in w]
+
+
 @pytest.mark.parametrize(
     ("name", "register", "expected"),
     [
-        ("Glutenfreie Nudeln", "AC", "7 (A)"),
-        ("Rolle ohne Ei und Sesam", "CFK", "7 (C,N)"),  # register k is Sesam (N)
-        ("Vegane Rolle", "AG", "7 (G)"),
-        ("Rolle haselnussfrei", "H", "7 (H)"),
-        ("Mandelfreier Kuchen", "H", "7 (H)"),
+        ("Glutenfreie Nudeln", "AC", "7 (a -> A)"),
+        # Register k is Sesam (N), register n would be Weichtiere: both letters.
+        ("Rolle ohne Ei und Sesam", "CFK", "7 (c -> C, k -> N)"),
+        ("Vegane Rolle", "AG", "7 (g -> G)"),
         # A hyphen left open shares the "-frei" of the last word.
-        ("Gluten- und laktosefreie Nudeln", "A", "7 (A)"),
-        ("Gluten-, ei- oder sojafrei", "CF", "7 (C,F)"),
-        ("Rolle ohne Ei- und Milchprodukte", "C", "7 (C)"),
+        ("Gluten- und laktosefreie Nudeln", "A", "7 (a -> A)"),
+        ("Gluten- und Laktose-frei", "A", "7 (a -> A)"),
+        ("Gluten- und Laktose frei", "A", "7 (a -> A)"),
+        ("Gluten-, ei- oder sojafrei", "CF", "7 (c -> C, f -> F)"),
+        ("Rolle ohne Ei- und Milchprodukte", "C", "7 (c -> C)"),
+        # A list goes on over a comma or a slash, also behind "frei von".
+        ("Reis ohne Ei, Milch und Nüsse", "GH", "7 (g -> G, h -> H)"),
+        ("Rolle ohne Ei/Milch", "G", "7 (g -> G)"),
+        ("Suppe frei von Gluten und Milch", "G", "7 (g -> G)"),
+        ("Gluten Free Roll", "A", "7 (a -> A)"),
+        ("Roll without peanuts", "E", "7 (e -> E)"),
     ],
 )
-def test_free_from_claim_contradicting_confirmed_allergens_is_listed(
-    name, register, expected
-):
+def test_free_from_claim_contradicting_the_register_is_listed(name, register, expected):
     """Codex PR #175: the agent would read "glutenfrei" aloud and
     get_item_details would say the dish contains gluten."""
     result = run([artikel("7", name, ALLERGENE=register)], allergens_confirmed_by="M")
@@ -373,6 +400,17 @@ def test_free_from_claim_contradicting_confirmed_allergens_is_listed(
         ("Rolle ohne Nüsse", "E"),
         ("Vegane Rolle", "AF"),
         ("Reis mit Ei und laktosefreie Sosse", "C"),  # no open hyphen: Ei is in
+        # "frei von": the word in front is the dish, not the claim.
+        ("Fischsuppe frei von Gluten", "D"),
+        ("Sesamsoße, frei von Gluten", "K"),
+        ("Reis mit Ei frei wählbar", "C"),
+        ("Milchreis frei Haus", "G"),
+        ("Rolle ohne Tintenfisch", "D"),  # Weichtiere (R), not Fisch (D)
+        ("Curry (vegan möglich)", "C"),
+        ("Nudeln mit oder ohne Ei", "C"),
+        ("Curry ohne Kokosmilch", "G"),
+        ("Curry ohne Kokosnuss", "H"),
+        ("Suppe ohne Buchweizen", "A"),
     ],
 )
 def test_free_from_claim_matching_confirmed_allergens_gives_no_warning(name, register):
@@ -381,17 +419,77 @@ def test_free_from_claim_matching_confirmed_allergens_gives_no_warning(name, reg
     assert free_from_warnings(result) == []
 
 
-def test_free_from_claim_with_unconfirmed_allergens_is_no_contradiction():
-    """Without a checker the row stays empty: there is nothing to contradict."""
-    result = run([artikel("7", "Glutenfreie Nudeln", ALLERGENE="A")])
+@pytest.mark.parametrize(
+    ("name", "register", "expected"),
+    [
+        ("Laktosefreier Käse", "G", "7 (g -> G)"),  # still carries the milk allergen
+        ("Weizenfreies Brot", "A", "7 (a -> A)"),  # may hold barley
+        ("Mandelfreier Kuchen", "H", "7 (h -> H)"),  # may hold cashews
+        ("Rolle haselnussfrei", "H", "7 (h -> H)"),
+        ("Rolle ohne Tintenfisch", "N", "7 (n -> R)"),  # may hold mussels
+        ("Rolle ohne Garnelen", "B", "7 (b -> B)"),
+    ],
+)
+def test_claim_for_one_kind_of_an_allergen_is_to_check_not_a_contradiction(
+    name, register, expected
+):
+    """Both can be right, so nobody is told to correct the allergens."""
+    result = run([artikel("7", name, ALLERGENE=register)], allergens_confirmed_by="M")
 
     [warning] = free_from_warnings(result)
-    assert "contradicts" not in warning and warning.endswith(": 7")
+    assert "one kind" in warning and warning.endswith(": " + expected)
+    assert contradictions(result) == []
+
+
+def test_free_from_claim_is_compared_with_unconfirmed_register_letters():
+    """Without a checker the row stays empty, but the register already
+    contradicts the name: both are reported."""
+    result = run([artikel("7", "Glutenfreie Nudeln", ALLERGENE="A")])
+
+    unbacked, contradicted = free_from_warnings(result)
+    assert "no allergens are maintained" in unbacked and unbacked.endswith(": 7")
+    assert "contradicts" in contradicted and contradicted.endswith(": 7 (a -> A)")
+
+
+def test_free_from_claim_in_an_extra_or_a_category_is_listed():
+    """The agent offers extras and names categories; no allergen row backs them."""
+    warengrp = table(
+        [
+            {"W_WRG": "006", "W_BEZEICH": "Vegan"},
+            {"W_WRG": "001", "W_BEZEICH": "Suppe"},
+        ]
+    )
+    zutaten = table(
+        [
+            {
+                "ZBEZEICH": "A.Ohne_Erdnuss",
+                "WRGSHOWALL": "T",
+                "WRGSHOW": "",
+                "ZPREIGRP3": "C",
+            },
+            {"ZBEZEICH": "Ohne_Fleisch", "WRGSHOWALL": "T", "ZPREIGRP3": "C"},
+        ]
+    )
+    rows = [artikel("7", "Curry"), artikel("8", "Pho", wrg="001")]
+
+    result = convert(table(rows), warengrp, zutaten, ZUTGRP)
+
+    assert sorted(w.split(":")[0] for w in free_from_warnings(result)) == [
+        "Warengruppe „Vegan“",
+        "Zutat „A.Ohne_Erdnuss“",
+    ]
+
+
+def test_allergen_carrier_in_a_recipe_with_umlaut():
+    result = run([artikel("7", "Reis", ZUTATEN="Reis, Erdnüsse")])
+
+    assert any("Allergenträger" in w and w.endswith(": 7") for w in result.warnings)
 
 
 def test_free_from_words_cover_every_lmiv_allergen():
     assert set(ALLERGEN_NAMES) == set(ALLERGEN_MAP.values())
     assert all(ALLERGEN_NAMES.values())
+    assert set(ALLERGEN_KINDS) <= set(ALLERGEN_NAMES)
 
 
 def test_zutat_mit_unbekannter_preisstufe_und_abgeschnittenem_namen():
