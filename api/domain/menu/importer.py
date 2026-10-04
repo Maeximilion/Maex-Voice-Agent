@@ -280,6 +280,15 @@ def _rows(plan: Plan, name: str, text: str | None) -> list[tuple[int, dict[str, 
         row = {k: (v or "").strip() for k, v in raw.items() if k is not None}
         if not any(row.values()):
             continue
+        if any("\x00" in v for v in row.values()):
+            # Postgres text cannot hold NUL (a register export may pad with
+            # it). Named here with file and line; the database would only say
+            # that some row is wrong (review PR #169).
+            plan.errors.append(
+                f"{name} line {index}: NUL character in a field, the database "
+                "cannot store it"
+            )
+            continue
         rows.append((index, row))
     return rows
 
@@ -532,7 +541,8 @@ def apply(
     dry_run: bool = False,
     now: datetime | None = None,
 ) -> Report:
-    """Bring the database in line with the plan. With dry_run it is rolled back at the end.
+    """Bring the database in line with the plan. With dry_run everything is sent
+    to the database and rolled back at the end.
 
     deactivate_missing: dishes that are not in the file become inactive
     (register as master, docs/14). Without the switch they stay as they are.
@@ -663,7 +673,15 @@ def apply(
         _sync_aliases(session, item, plan.aliases.get(number, set()), report)
 
     if dry_run:
-        session.rollback()
+        # Send everything to the database before rolling back. The script's
+        # session has autoflush off: options, allergens and aliases would
+        # never reach the database, and a row it rejects would pass the dry
+        # run and fail only in the real import. Rolled back in any case, like
+        # every other error exit here.
+        try:
+            session.flush()
+        finally:
+            session.rollback()
         return report
     if report.changed:
         session.add(
