@@ -1,72 +1,72 @@
-# 15 – README-Pflege
+# 15 – README Maintenance
 
-Die README ist das Schaufenster des Repos. Sie beschreibt den Ist-Zustand für jemanden, der das Projekt zum ersten Mal sieht. Sie ist kein Änderungsprotokoll (das ist `docs/01_STATUS.md`) und keine Spezifikation (das sind `docs/02` bis `docs/14`).
+The README is the shop window of the repo. It describes the current state for someone who sees the project for the first time. It is not a change log (that is `docs/01_STATUS.md`) and not a specification (those are `docs/02` to `docs/14`).
 
-## Wann die README aktualisiert wird
+## When the README is updated
 
-| Auslöser | Was sich ändert | Wer |
+| Trigger | What changes | Who |
 |---|---|---|
-| Gate bestanden (G0 bis G5) | Status, Version, „Was funktioniert", nächste Schritte | Claude Code über `/gate` |
-| Neue Abhängigkeit oder neuer Dienst (Docker-Image, Anbieter, Bibliothek) | Voraussetzungen, Schnellstart | Claude Code in derselben Aufgabe |
-| Änderung am Schnellstart (neuer Befehl, neue Umgebungsvariable) | Schnellstart, Konfiguration | Claude Code in derselben Aufgabe |
-| Bekanntes Problem, das Nutzer treffen wird | Bekannte Probleme | Claude Code über `/bug` oder `/done` |
-| Neue Doku-Datei unter `docs/` | Dokumentation | Claude Code in derselben Aufgabe |
+| Gate passed (G0 to G5) | Status, version, "What works", next steps | Claude Code via `/gate` |
+| New dependency or new service (Docker image, vendor, library) | Requirements, Quick Start | Claude Code in the same task |
+| Change to the Quick Start (new command, new environment variable) | Quick Start, Configuration | Claude Code in the same task |
+| Known issue that users will run into | Known Issues | Claude Code via `/bug` or `/done` |
+| New doc file under `docs/` | Documentation | Claude Code in the same task |
 
-Nicht bei jedem Commit. Eine README, die sich täglich ändert, liest niemand mehr.
+Not with every commit. Nobody reads a README that changes daily.
 
-## Versionierung
+## Versioning
 
-Die Version in der README folgt den Gates. Semantic Versioning, Tag im Repo.
+The version in the README follows the gates. Semantic Versioning, tag in the repo.
 
-| Gate | Version | Bedeutung |
+| Gate | Version | Meaning |
 |---|---|---|
-| Repo angelegt | 0.0.x | Gerüst, nichts Nutzbares |
-| G0 | 0.1.0 | Fundament: Anbieter, Recht, Budget geklärt |
-| G1 | 0.2.0 | Reservierung läuft auf Testnummer |
-| G2 | 0.3.0 | Abholung läuft, Evals im Ziel |
-| G3 | 0.5.0 | Lieferung läuft, funktional vollständig |
-| G4 | 0.8.0 | Schattenmessung bestanden, bereit für echte Anrufe |
-| G5 | 1.0.0 | Überlauf-Betrieb mit echten Kunden bestanden |
-| G6 laufend | 1.x | Hauptannahme, Betrieb |
+| Repo created | 0.0.x | Skeleton, nothing usable |
+| G0 | 0.1.0 | Foundation: vendor, legal, budget settled |
+| G1 | 0.2.0 | Reservation runs on a test number |
+| G2 | 0.3.0 | Pickup runs, evals on target |
+| G3 | 0.5.0 | Delivery runs, functionally complete |
+| G4 | 0.8.0 | Shadow measurement passed, ready for real calls |
+| G5 | 1.0.0 | Overflow operation with real customers passed |
+| G6 ongoing | 1.x | Main line answered by the agent, operations |
 
-Alternative aus der Vorplanung: 1.0.0 bereits nach G3. Dagegen spricht: Vor G5 hat kein echter Kunde mit dem System gesprochen. Eine 1.0, die noch nie produktiv lief, ist keine.
+Alternative from the early planning: 1.0.0 already after G3. The argument against it: before G5 no real customer has talked to the system. A 1.0 that never ran in production is not one.
 
-Zwischen Gates: Patch-Versionen (0.2.1, 0.2.2) für Fixes, die nach `main` gehen.
+Between gates: patch versions (0.2.1, 0.2.2) for fixes that go to `main`.
 
-## Pflichtabschnitte
+## Mandatory sections
 
-Die README enthält immer, in dieser Reihenfolge:
+The README always contains, in this order:
 
-1. Titel und ein Absatz: was das Projekt tut und für wen
-2. Status: aktuelle Version, aktuelle Stufe, nächstes Gate, Datum
-3. Was funktioniert / was nicht (je eine Liste, ehrlich)
-4. Voraussetzungen
-5. Schnellstart (kopierbar, getestet)
-6. Konfiguration (die wichtigsten Umgebungsvariablen, Verweis auf `.env.example`)
-7. Projektstruktur (Kurzform, Verweis auf `docs/11_MODULE.md`)
-8. Entwicklung (Tests, Lint, Evals, Slash-Befehle)
-9. Dokumentation (Tabelle der `docs/`-Dateien)
-10. Bekannte Probleme
-11. Lizenz und Kontakt
+1. Title and one paragraph: what the project does and for whom
+2. Status: current version, current stage, next gate, date
+3. What works / what does not (one list each, honest)
+4. Requirements
+5. Quick Start (copyable, tested)
+6. Configuration (the most important environment variables, pointer to `.env.example`)
+7. Project Structure (short form, pointer to `docs/11_MODULE.md`)
+8. Development (tests, lint, evals, slash commands)
+9. Documentation (table of the `docs/` files)
+10. Known Issues
+11. License and Contact
 
-Was nicht hineingehört: Marketingtext, Emojis, Feature-Versprechen, Screenshots von Mockups, Änderungsverlauf.
+What does not belong in it: marketing text, emojis, feature promises, screenshots of mockups, change history.
 
-## Ablauf bei einem Gate
+## Gate workflow
 
 ```text
 /gate G1
-1. docs/01_STATUS.md: Gate-Tabelle auf „bestanden" mit Datum, Belege verlinken (Eval-Report, Protokoll)
-2. README.md: Status, Version, „Was funktioniert", „Nächste Schritte" nach dieser Datei aktualisieren
-3. Schnellstart einmal auf einem sauberen Checkout ausführen. Was nicht klappt, wird korrigiert, nicht kommentiert.
-4. CHANGELOG.md: Abschnitt für die neue Version aus den Commits seit dem letzten Tag
-5. Commit: docs: README und Status für <Gate>, Version <x.y.z>
+1. docs/01_STATUS.md: gate table to "passed" with the date, link the evidence (eval report, log)
+2. README.md: update status, version, "What works" and "Next steps" according to this file
+3. Run the Quick Start once on a clean checkout. What does not work gets fixed, not commented.
+4. CHANGELOG.md: section for the new version from the commits since the last tag
+5. Commit: docs: README and status for <gate>, version <x.y.z>
 6. Tag: v<x.y.z>
 ```
 
-## Stil
+## Style
 
-- Deutsch, Sätze statt Stichwortsalat, kein Ausrufezeichen
-- Präsens und Ist-Zustand: „Die API antwortet auf /health", nicht „wird antworten"
-- Befehle in Codeblöcken, genau so, wie sie eingegeben werden
-- Wenn etwas nicht funktioniert, steht es unter „Bekannte Probleme", nicht in einem Nebensatz
-- Keine Emojis, keine Badges, die nichts messen
+- English, sentences instead of keyword lists, no exclamation marks
+- Present tense and current state: "The API answers on /health", not "will answer"
+- Commands in code blocks, exactly as they are typed
+- If something does not work, it is listed under "Known Issues", not in a subordinate clause
+- No emojis, no badges that measure nothing
