@@ -334,6 +334,51 @@ def test_free_from_claim_with_maintained_allergens_gives_no_warning():
     assert free_from_warnings(run(rows))
 
 
+@pytest.mark.parametrize(
+    ("name", "register", "expected"),
+    [
+        ("Glutenfreie Nudeln", "AC", "7 (A)"),
+        ("Rolle ohne Ei und Sesam", "CFK", "7 (C,N)"),  # register k is Sesam (N)
+        ("Vegane Rolle", "AG", "7 (G)"),
+        ("Rolle haselnussfrei", "H", "7 (H)"),
+    ],
+)
+def test_free_from_claim_contradicting_confirmed_allergens_is_listed(
+    name, register, expected
+):
+    """Codex PR #175: the agent would read "glutenfrei" aloud and
+    get_item_details would say the dish contains gluten."""
+    result = run([artikel("7", name, ALLERGENE=register)], allergens_confirmed_by="M")
+
+    [warning] = free_from_warnings(result)
+    assert "contradicts" in warning and warning.endswith(": " + expected)
+    assert result.errors == []
+    assert result.allergens[0]["allergen_codes"]
+
+
+@pytest.mark.parametrize(
+    ("name", "register"),
+    [
+        ("Glutenfreie Nudeln", "CF"),
+        ("Erdnussfreie Rolle", "H"),  # "Erdnuss" is no "Nuss": E claimed, H kept
+        ("Rolle ohne Nüsse", "E"),
+        ("Vegane Rolle", "AF"),
+    ],
+)
+def test_free_from_claim_matching_confirmed_allergens_gives_no_warning(name, register):
+    result = run([artikel("7", name, ALLERGENE=register)], allergens_confirmed_by="M")
+
+    assert free_from_warnings(result) == []
+
+
+def test_free_from_claim_with_unconfirmed_allergens_is_no_contradiction():
+    """Without a checker the row stays empty: there is nothing to contradict."""
+    result = run([artikel("7", "Glutenfreie Nudeln", ALLERGENE="A")])
+
+    [warning] = free_from_warnings(result)
+    assert "contradicts" not in warning and warning.endswith(": 7")
+
+
 def test_free_from_words_cover_every_lmiv_allergen():
     assert set(ALLERGEN_NAMES) == set(ALLERGEN_MAP.values())
     assert all(ALLERGEN_NAMES.values())

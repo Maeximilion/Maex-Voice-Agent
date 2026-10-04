@@ -350,7 +350,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.36.6 · 04.10.2026:** Converter warns about a "free from" claim in a dish name while no allergens are maintained (pos_convert, docs/14); open point closed
+- **v1.36.6 · 04.10.2026:** Converter warns about a "free from" claim in a dish name while no allergens are maintained, or while the confirmed allergens contain the allergen claimed absent (pos_convert, docs/14); open point closed
 - **v1.36.5 · 04.10.2026:** Handover text phone allergy guard: PR #168 merged as 67b3bcd, next T-9.3 backup and restore, then n8n workflow
 - **v1.36.4 · 04.10.2026:** Bug text phone: on Wogegen the active menu decides what a card number is, open point from PR #155 closed
 - **v1.36.3 · 04.10.2026:** Open point from PR #169 (Codex P2): import_menu claims nothing was stored for every database error
