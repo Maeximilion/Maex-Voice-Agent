@@ -56,6 +56,39 @@ def run(migrated_db_url, cases_dir, report_dir, **kw) -> RunReport:
 # --- Ganzer Lauf -------------------------------------------------------------------
 
 
+TARGETS = Path(runner.__file__).parent / "targets"
+
+
+def _tags(folder: Path) -> set[str]:
+    return {
+        tag
+        for path in folder.glob("*.json")
+        for tag in json.loads(path.read_text(encoding="utf-8"))["tags"]
+    }
+
+
+def test_mandatory_cases_only_in_targets_stay_red_until_they_move(
+    migrated_db_url, tmp_path
+):
+    """Review PR #162: CI does not play targets/. Mandatory cases that exist only
+    there (allergy with a value, quantity change, zone, minimum order value) run
+    here anyway, like a strict xfail: once one is green it belongs in cases/."""
+    from api.tests.test_evals_suite import _mandatory
+
+    only_targets = set(_mandatory().values()) - _tags(CASES)
+    assert only_targets, "no mandatory case left only in targets: simplify this test"
+    cases = tmp_path / "mandatory_targets"
+    cases.mkdir()
+    for path in TARGETS.glob("*.json"):
+        if only_targets & set(json.loads(path.read_text(encoding="utf-8"))["tags"]):
+            shutil.copy(path, cases / path.name)
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.total >= len(only_targets)
+    green = [c.id for c in report.cases if c.passed]
+    assert green == [], f"green now, move to evals/cases/: {green}"
+    assert not [c.id for c in report.cases if c.error], "a target case crashed"
+
+
 def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
     cases = tmp_path / "cases"
     shutil.copytree(CASES, cases, ignore=shutil.ignore_patterns("*.jsonl"))
@@ -237,6 +270,38 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {},
         },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"reserved_for": "Freitag 19:30"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"address": {"strasse": "Gartenweg"}},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {
+                "tools": [{"tool": "check_delivery", "number": "1", "error": "x"}]
+            },
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "check_delivery", "error": " "}]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"order_type": "lieferung"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"phone": "0721 5551234"},
+        },
     ],
 )
 def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
@@ -378,6 +443,123 @@ def test_vergleich_nur_felder_aus_expected():
         {"items": [{"number": "47", "quantity": 1, "options": ["Ente"]}]}, seen
     )
     assert diffs and "items" in diffs[0]
+
+
+def _reservation_seen(**extra) -> Observed:
+    return Observed(
+        intent="reservation",
+        confirmed=True,
+        escalated=False,
+        items=[],
+        customer_name="Meyer",
+        party_size=7,
+        **extra,
+    )
+
+
+def test_corrected_slot_has_to_be_in_the_result():
+    # Codex PR #162: Saturday 20:00 -> Friday 19:30 must not go unchecked.
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, seen) == []
+    diffs = judge({"reserved_for": "2026-09-19T20:00"}, seen)
+    assert diffs and diffs[0].startswith("reserved_for")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, _reservation_seen())
+
+
+def test_address_is_never_silently_green_before_t61():
+    want = {"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    assert judge({"address": want}, _reservation_seen())  # address still None
+    seen = _reservation_seen(
+        address={"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    )
+    assert judge({"address": want}, seen) == []
+    # House number 14 instead of the corrected 41 is red; ss and ß count as equal.
+    wrong = _reservation_seen(address={**want, "house_number": "14"})
+    assert judge({"address": want}, wrong)
+    eszett = _reservation_seen(address={"street": "Lindenstraße", "house_number": "4"})
+    assert (
+        judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, eszett)
+        == []
+    )
+
+
+def test_second_confirmed_reservation_is_always_red():
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30", extra_reservations=1)
+    diffs = judge({"reserved_for": "2026-09-18T19:30"}, seen)
+    assert diffs == ["mehr als eine Reservierung bestaetigt: 1 zusaetzlich"]
+
+
+def test_address_ignores_spaces_and_abbreviation():
+    seen = _reservation_seen(
+        address={"street": "Lindenstr.", "house_number": "7 b", "city": "Musterdorf"}
+    )
+    want = {"street": "Lindenstraße", "house_number": "7b"}
+    assert judge({"address": want}, seen) == []
+    assert judge({"address": {**want, "house_number": "7c"}}, seen)
+
+
+def test_order_type_and_rejected_wish_without_note():
+    """Codex PR #162: pickup instead of delivery has to arrive as a pickup, and a
+    rejected wish ("extra scharf") must not end up as a kitchen note."""
+    seen = Observed(
+        intent="delivery",
+        confirmed=True,
+        escalated=False,
+        items=[{"number": "34", "quantity": 1, "options": [], "note": "extra scharf"}],
+        customer_name="Peters",
+        party_size=None,
+        order_type="delivery",
+    )
+    assert judge({"order_type": "pickup"}, seen) == [
+        "order_type: erwartet 'pickup', gebucht 'delivery'"
+    ]
+    want = {"number": "34", "quantity": 1, "note": None}
+    assert judge({"items": [want]}, seen)
+    clean = Observed(**{**seen.__dict__, "items": [{**seen.items[0], "note": None}]})
+    assert judge({"items": [want]}, clean) == []
+
+
+def test_spoken_phone_number_and_bell_note_are_checked():
+    """Codex PR #162: another valid number or a dropped bell note must not be
+    green."""
+    seen = _reservation_seen(
+        phone="+497215559876",
+        address={
+            "street": "Industriestrasse",
+            "house_number": "20",
+            "floor_note": "3. OG, klingeln bei Firma Nord, dritter Stock",
+        },
+    )
+    assert judge({"phone": "+497215559876"}, seen) == []
+    assert judge({"phone": "+497215551234"}, seen) == [
+        "phone: erwartet '+497215551234', gebucht '+497215559876'"
+    ]
+    note = {"floor_note": "Firma Nord dritter Stock"}
+    assert judge({"address": note}, seen) == []
+    assert judge({"address": {"floor_note": "Firma Sued"}}, seen)
+    without = _reservation_seen(address={"street": "Industriestrasse"})
+    assert judge({"address": note}, without)
+    # Codex PR #162: punctuation joins words in a stored note; it must separate
+    # them, otherwise "Nord,dritter" becomes one token and a matching note is red.
+    for stored in ("Firma Nord,dritter Stock", "Firma-Nord: dritter/Stock"):
+        joined = _reservation_seen(address={"floor_note": stored})
+        assert judge({"address": note}, joined) == [], stored
+
+
+def test_run_picks_the_report_folder_per_case_folder(
+    migrated_db_url, monkeypatch, tmp_path
+):
+    """Review PR #162: run() without report_dir separates the baselines too, not
+    only the command line."""
+    monkeypatch.setattr(runner, "REPORTS", tmp_path / "reports")
+    cases = write_cases(
+        tmp_path / "targets",
+        fall("one", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
+    )
+    runner.run(cases_dir=cases, db_url=migrated_db_url, stamp=datetime.now(UTC))
+    assert list(runner.default_report_dir(cases).glob("eval_*.json"))
+    assert runner.default_report_dir(cases).parent == tmp_path / "reports"
+    assert not list((tmp_path / "reports").glob("eval_*.json"))
 
 
 def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):
@@ -713,6 +895,100 @@ def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
     assert missing_tools(want, [("search_menu", {"number": "23"})]) == want
     assert missing_tools(want, [("get_item_details", {"number": "23"})]) == []
     assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
+
+
+def test_expected_rejection_needs_exactly_that_rejection():
+    """Codex PR #162: "nothing booked" alone does not prove a zone check."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "check_delivery", "error": "out_of_zone"}]
+    assert missing_tools(want, []) == want
+    # A successful check is the opposite of the expected rejection.
+    assert missing_tools(want, [("check_delivery", {"zone": "A"})]) == want
+    assert missing_tools(want, [], [("check_delivery", "invalid_input")]) == want
+    assert missing_tools(want, [], [("draft_order", "out_of_zone")]) == want
+    assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
+
+
+def test_zone_check_has_to_cover_the_final_address():
+    """Codex PR #162: checking Gartenweg 14 and then delivering to the corrected
+    Gartenweg 41 must not pass; the successful check has to be for that address."""
+    from evals.judge import unchecked_address
+
+    address = {
+        "street": "Gartenweg",
+        "house_number": "41",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus",
+    }
+    expected = {"address": address, "tools": ["check_delivery"]}
+    first = {**address, "house_number": "14"}
+    assert unchecked_address(expected, [("check_delivery", first)])
+    assert unchecked_address(expected, [("search_menu", address)])
+    assert unchecked_address(expected, [])
+    final = {"street": "Gartenweg", "house_number": "41", "postal_code": "12345"}
+    assert (
+        unchecked_address(
+            expected, [("check_delivery", {**final, "city": "Musterdorf"})]
+        )
+        is None
+    )
+    # floor_note is not an argument of check_delivery and does not have to match.
+    assert (
+        unchecked_address(
+            expected,
+            [
+                ("check_delivery", first),
+                ("check_delivery", {**final, "city": "musterdorf"}),
+            ],
+        )
+        is None
+    )
+    # Without an expected address or without an expected successful check: no rule.
+    assert unchecked_address({"tools": ["check_delivery"]}, []) is None
+    assert unchecked_address({"address": address}, []) is None
+
+
+def test_recorder_keeps_the_arguments_of_successful_calls():
+    args = {"street": "Gartenweg", "house_number": "41"}
+    llm = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall(name="check_delivery", args=args)),
+                LLMTurn(
+                    tool_call=ToolCall(name="check_delivery", args={"street": "x"})
+                ),
+                LLMTurn(say="done"),
+            ]
+        )
+    )
+    llm.next_turn("", {}, "Gartenweg 41")
+    llm.next_turn(
+        "", {}, json.dumps({"tool": "check_delivery", "ok": True, "data": {}})
+    )
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    assert llm.recording.ok_calls == [("check_delivery", args)]
+
+
+def test_recorder_keeps_rejected_results_with_their_code():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    llm.next_turn("", {}, json.dumps({"tool": "search_menu", "ok": False}))
+    assert llm.recording.error_results == [("check_delivery", "out_of_zone")]
+    assert llm.recording.ok_results == []
 
 
 def test_recorder_merkt_nur_erfolgreiche_ergebnisse():

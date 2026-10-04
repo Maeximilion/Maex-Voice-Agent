@@ -9,6 +9,7 @@ Unbekannte Schlüssel in `expected` sind ein Fehler im Fall, kein stilles Grün:
 ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 """
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.core.time import to_local
+from api.domain.menu.numberwords import fold
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
 from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
@@ -30,7 +32,9 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     Reservation,
+    Tenant,
 )
+from api.models.orders import ORDER_TYPES
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
@@ -48,8 +52,26 @@ EXPECTED_KEYS = frozenset(
         # Code anbietet, steht in keiner Tabelle, ist aber kein Wortlaut, sondern
         # ein Ergebnis (am Ruhetag nie der Vortag, Befund T-5.2).
         "alternatives",
+        # Start of the confirmed reservation as local time "YYYY-MM-DDTHH:MM": a
+        # corrected day or time has to arrive in the result (Codex PR #162).
+        "reserved_for",
+        # Delivery address, only the fields the case names (ADDRESS_KEYS). It can be
+        # observed once the addresses table exists (T-6.1); until then a case with
+        # an address is always red instead of silently skipping the correction.
+        "address",
+        # Type of the confirmed order: when the guest switches to pickup after
+        # "outside the zone", a pickup order has to result (Codex PR #162).
+        "order_type",
+        # Phone number of the confirmed transaction in E.164: with a suppressed
+        # caller ID the spoken number counts, not any other valid one (Codex PR #162).
+        "phone",
     }
 )
+ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
+# Free text ("2. OG, Klingel Müller"): every expected word has to occur, the
+# wording around it is free (Codex PR #162).
+ADDRESS_WORD_KEYS = frozenset({"floor_note"})
+PHONE = re.compile(r"^\+[1-9]\d{6,14}$")
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
 LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
 # `note` im festen Wortlaut: der Allergiehinweis an die Kueche darf nicht still
@@ -86,7 +108,8 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     tools = case["expected"].get("tools", [])
     if not isinstance(tools, list) or not all(_valid_tool(t) for t in tools):
         raise CaseError(
-            f"{source}: tools ist eine Liste aus Namen oder {{tool, number}}"
+            f"{source}: tools ist eine Liste aus Namen, {{tool, number}} "
+            "oder {tool, error}"
         )
     alternatives = case["expected"].get("alternatives", [])
     if (
@@ -100,6 +123,23 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             f"{source}: alternatives sind hoechstens {MAX_ALTERNATIVES} Ortszeiten "
             "YYYY-MM-DDTHH:MM, naechstgelegene zuerst"
         )
+    phone = case["expected"].get("phone")
+    if phone is not None and not (isinstance(phone, str) and PHONE.match(phone)):
+        raise CaseError(f"{source}: phone ist eine Rufnummer in E.164 (+49...)")
+    order_type = case["expected"].get("order_type")
+    if order_type is not None and order_type not in ORDER_TYPES:
+        raise CaseError(f"{source}: order_type ist eins von {ORDER_TYPES}")
+    reserved = case["expected"].get("reserved_for")
+    if reserved is not None and not _local_minute(reserved):
+        raise CaseError(f"{source}: reserved_for ist eine Ortszeit YYYY-MM-DDTHH:MM")
+    address = case["expected"].get("address")
+    if address is not None and (
+        not isinstance(address, dict)
+        or not address
+        or set(address) - set(ADDRESS_KEYS)
+        or not all(isinstance(v, str) and v.strip() for v in address.values())
+    ):
+        raise CaseError(f"{source}: address nennt nur Felder aus {ADDRESS_KEYS}")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -127,19 +167,34 @@ def _valid_tool(entry: Any) -> bool:
     return (
         isinstance(entry, dict)
         and isinstance(entry.get("tool"), str)
-        and set(entry) <= {"tool", "number"}
+        and set(entry) <= {"tool", "number", "error"}
+        and not {"number", "error"} <= set(entry)
         and isinstance(entry.get("number", ""), str)
+        and (
+            "error" not in entry
+            or (isinstance(entry["error"], str) and bool(entry["error"].strip()))
+        )
     )
 
 
 def missing_tools(
-    wanted: list[Any], ok_results: list[tuple[str, dict[str, Any]]]
+    wanted: list[Any],
+    ok_results: list[tuple[str, dict[str, Any]]],
+    error_results: list[tuple[str, str]] = (),
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
-    keine Frage nach der 23."""
+    keine Frage nach der 23.
+
+    With `error` the tool has to have rejected with exactly that code
+    (`check_delivery` with `out_of_zone`): "nothing booked" alone does not prove
+    that the rule was applied (Codex PR #162)."""
     missing = []
     for entry in wanted:
+        if isinstance(entry, dict) and "error" in entry:
+            if (entry["tool"], entry["error"]) not in error_results:
+                missing.append(entry)
+            continue
         name = entry if isinstance(entry, str) else entry["tool"]
         number = None if isinstance(entry, str) else entry.get("number")
         hit = any(
@@ -187,21 +242,32 @@ class Observed:
     items: list[dict[str, Any]]
     customer_name: str | None
     party_size: int | None
+    reserved_for: str | None = None
+    address: dict[str, str] | None = None
+    order_type: str | None = None
+    phone: str | None = None
     # Bestätigte Vorgänge ohne einen confirm des Modells: an der Regel vorbei gebucht.
     confirmed_without_confirm: int = 0
     # Bestaetigungen ueber die erste hinaus je Vorgang (audit_log und Outbox):
     # ein wiederholter confirm darf keinen zweiten Vorgang und keinen zweiten
     # Bon ausloesen (docs/08 §6, Idempotenz).
     duplicate_confirms: int = 0
+    # More than one confirmed reservation in a call: after a correction the old
+    # slot would still be booked (review PR #162).
+    extra_reservations: int = 0
     notes: list[str] = field(default_factory=list)
 
 
 def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     session.expire_all()
     call = session.get(Call, call_id)
-    orders = session.scalars(select(Order).where(Order.call_id == call_id)).all()
+    orders = session.scalars(
+        select(Order).where(Order.call_id == call_id).order_by(Order.created_at)
+    ).all()
     reservations = session.scalars(
-        select(Reservation).where(Reservation.call_id == call_id)
+        select(Reservation)
+        .where(Reservation.call_id == call_id)
+        .order_by(Reservation.created_at)
     ).all()
     callbacks = session.scalar(
         select(func.count(Callback.id)).where(Callback.call_id == call_id)
@@ -237,16 +303,74 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         name = done_orders[-1].customer_name
     elif done_res:
         name = done_res[-1].guest_name
+    done = done_orders or done_res
     return Observed(
+        phone=done[-1].phone if done else None,
         intent=call.intent if call else None,
         confirmed=booked > 0,
         escalated=bool(callbacks) or bool(call and call.transfer_reason),
         items=items,
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
+        reserved_for=_reserved_local(session, call, done_res),
+        order_type=done_orders[-1].type if done_orders else None,
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
+        extra_reservations=max(0, len(done_res) - 1),
     )
+
+
+def _reserved_local(session: Session, call, done_res) -> str | None:
+    if not done_res or call is None:
+        return None
+    zone = session.get(Tenant, call.tenant_id).timezone
+    return to_local(done_res[-1].reserved_for, zone).strftime(LOCAL_MINUTE)
+
+
+def _norm_address(value: Any) -> str:
+    text = fold(str(value or "")).replace("str.", "strasse")
+    return "".join(ch for ch in text if ch.isalnum())
+
+
+def unchecked_address(
+    expected: dict[str, Any], ok_calls: list[tuple[str, dict[str, Any]]]
+) -> str | None:
+    """A case that expects an address and a successful `check_delivery` needs a
+    successful check for exactly that address. Checking house number 14 and then
+    delivering to the corrected 41 is not a zone check (Codex PR #162)."""
+    address = expected.get("address")
+    if address is None or "check_delivery" not in expected.get("tools", []):
+        return None
+    fields = {k: v for k, v in address.items() if k not in ADDRESS_WORD_KEYS}
+    for tool, args in ok_calls:
+        if tool == "check_delivery" and all(
+            _norm_address(args.get(k)) == _norm_address(v) for k, v in fields.items()
+        ):
+            return None
+    return (
+        f"tools: kein erfolgreicher check_delivery fuer die erwartete Adresse {fields}"
+    )
+
+
+def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | None:
+    """Only the fields the case names. Values are equal when they differ only in
+    umlaut spelling, ss/ß, spaces, punctuation or "str." for "strasse" ("7 b" and
+    "7b", "Lindenstr." and "Lindenstraße")."""
+    norm = _norm_address
+
+    def words(value: str | None) -> set[str]:
+        # Punctuation separates words: "Nord,dritter" is two words, not one.
+        text = fold(value or "")
+        return set("".join(ch if ch.isalnum() else " " for ch in text).split())
+
+    def same(key: str) -> bool:
+        if key in ADDRESS_WORD_KEYS:
+            return words(want[key]) <= words(got.get(key))
+        return norm(want[key]) == norm(got.get(key))
+
+    if got is not None and all(same(k) for k in want):
+        return None
+    return f"address: erwartet {want!r}, gebucht {got!r}"
 
 
 def _duplicate_confirms(session: Session, orders, reservations) -> int:
@@ -325,7 +449,14 @@ def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
 def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
     """Abweichungen in Worten; leer heisst bestanden. Nur Felder aus `expected`."""
     diffs: list[str] = []
-    for key in ("intent", "confirmed", "escalated", "party_size"):
+    for key in (
+        "intent",
+        "confirmed",
+        "escalated",
+        "party_size",
+        "order_type",
+        "phone",
+    ):
         if key in expected and expected[key] != getattr(seen, key):
             diffs.append(
                 f"{key}: erwartet {expected[key]!r}, gebucht {getattr(seen, key)!r}"
@@ -338,7 +469,20 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diff = _compare_items(expected["items"], seen.items)
         if diff:
             diffs.append(diff)
+    if "reserved_for" in expected and expected["reserved_for"] != seen.reserved_for:
+        diffs.append(
+            f"reserved_for: erwartet {expected['reserved_for']!r}, "
+            f"gebucht {seen.reserved_for!r}"
+        )
+    if "address" in expected:
+        diff = _address_diff(expected["address"], seen.address)
+        if diff:
+            diffs.append(diff)
     # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
     if seen.duplicate_confirms:
         diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")
+    if seen.extra_reservations:
+        diffs.append(
+            f"mehr als eine Reservierung bestaetigt: {seen.extra_reservations} zusaetzlich"
+        )
     return diffs

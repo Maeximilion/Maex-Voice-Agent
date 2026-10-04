@@ -3,7 +3,8 @@
   "name": "Bestellung waehrend der Schliesszeit",
   "tags": [
     "abholung",
-    "schliesszeit"
+    "schliesszeit",
+    "level-1"
   ],
   "source": "handcrafted",
   "now": "2026-09-15T23:30:00+02:00",

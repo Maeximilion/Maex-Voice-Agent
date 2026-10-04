@@ -1,0 +1,58 @@
+{
+  "id": "abholung_0061",
+  "name": "Three dishes, quantity and meat in one sentence",
+  "tags": [
+    "abholung",
+    "mehrere_positionen",
+    "menge",
+    "pflichtoption",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich wuerd gern was zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Also zweimal die 22, einmal die 30 mit Rind und, aeh, die 11 noch."
+    },
+    {
+      "role": "customer",
+      "text": "Nee, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf Schulz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "22",
+        "quantity": 2
+      },
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      },
+      {
+        "number": "11",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Schulz",
+    "confirmed": true,
+    "escalated": false
+  }
+}

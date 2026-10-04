@@ -1,0 +1,59 @@
+{
+  "id": "abholung_0065",
+  "name": "Number words with a letter, noise and a correction",
+  "tags": [
+    "abholung",
+    "rauschen",
+    "zahlwort",
+    "korrektur",
+    "level-4"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo? Ja, ich moechte was zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die fuenfunddreissig a, zweimal, und die einundvierzig ... krrr ... nee, die vierzig."
+    },
+    {
+      "role": "customer",
+      "text": "Und, aeh, zwei Miso-Suppen."
+    },
+    {
+      "role": "customer",
+      "text": "Nein danke, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Neumann."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "35a",
+        "quantity": 2
+      },
+      {
+        "number": "40",
+        "quantity": 1
+      },
+      {
+        "number": "10",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Neumann",
+    "confirmed": true,
+    "escalated": false
+  }
+}
