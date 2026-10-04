@@ -468,6 +468,59 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 04.10.2026 - text phone allergy guard (open point from PR #155)
+Status: Runs: on the open allergy question "Wogegen?" the text phone decides from the active
+       menu what a card number is. "B12", "Vitamin B12" and "Gegen E 621" are recorded as the
+       allergy note; "S12", "S zwölf", "Sushi zwölf", "Nummer 12", "die 25g" and "Eine Cola
+       bitte" stay an order and the question stays open. Merged into main as 67b3bcd (PR
+       #168, squash), reviewed by Codex on the merged head, CI green. Suite 2769 passed, 2
+       skipped; latency 22 passed; cases/ 26/26, hard metrics 0; targets/ 1/27 unchanged;
+       number eval 181/181. Does not run: a spaced name whose bare number is a dish on the
+       menu ("Vitamin B 12" next to dish 12) still asks again - it fails safe and stays as
+       built (card number scope, Maxi 04.10.).
+Artifacts: PR #168 -> main 67b3bcd. Code: sim/scripted_order.py (MenuNumbers,
+       _orders_something), sim/scripted_llm.py and sim/session.py (menu_numbers, wiring in
+       SimCall), evals/runner.py (model_factory takes now and menu), api/domain/menu/items.py
+       (active_numbers, card_format uses it). Tests: api/tests/test_sim_pickup.py,
+       api/tests/test_evals_runner.py. Docs: 01, 11 §sim, CHANGELOG. Along the way PR #170:
+       the two POSIX file-mode tests of the call log skip on Windows.
+Decisions: The scripted model gets the menu from its caller, not from the database itself:
+       SimCall and the eval runner hand in a callable, read only when an answer has to be
+       told apart from an order. Existence on the menu instead of the prefix alone: a bare
+       number inside a sentence counts only if the menu has it, otherwise "Gegen E 621" would
+       stay an order or "die 12 mit Reis" would become a kitchen note. A number form the menu
+       can have but lacks ("S13") still counts as an order: asking again is the safe side.
+       No new eval case: the unit tests were the red tests, cases/ stays at 26.
+Gate: G0 open, unchanged.
+Open: one worktree, branch and chat per item, independent of each other:
+       1. task/backup-restore (T-9.3) - scripts/backup.sh and restore.sh, restore rehearsed
+          once. Recommended first: the real register import waits on Maxi's go and must not
+          run without a backup; `make backup` fails today.
+       2. feat/n8n-team-events - n8n workflow for reservation.confirmed, callback.created and
+          order.handover_failed as push or SMS to the team, export to n8n/.
+       3. fix/sim-open-points - the remaining text phone points in docs/01 "Open Points":
+          option in two groups, rejection plus replacement in one answer, digit in a dish
+          name read as quantity. Stand-in only, none blocks.
+       4. docs/english-code-comments - translation sweep, runs in its own chat and worktree
+          (29 commits ahead, 11 behind main on 04.10., no PR yet); it has to merge main
+          first, sim/scripted_order.py changed under it.
+       Waits on Maxi, not on code: the real register import (steps in docs/01 "What's
+       next"), the paper check of the input slip (T-4.6), the tablet test (T-3.5), the voice
+       platform (C2, blocks T-2.4).
+       Cleanup, Maxi's call: the worktrees of merged branches can go (sim-allergy-guard,
+       lunch-menus-m-vm, real-menu-import-dry-run, latency-serial, infallible-grothendieck,
+       Maex-Voice-Agent-wt-skip-posix-mode, this handover's worktree after its merge).
+Lessons: docs/01_STATUS.md conflicts on every parallel PR: each one bumps the same version
+       line and adds a changelog line at the same place. PR #168 was merged with main four
+       times, and each merge moves the head past the commit Codex reviewed. Merge main right
+       before asking for the review and hold other merges until it is in. A new LLM factory
+       in evals/runner.py gets (now, menu); a ScriptedLLM built without `menu` knows no
+       prefix and would note "S12" as an ingredient. The test menu KARTE has no prefixes: use
+       the `sushi` fixture in test_sim_pickup.py for S and SM. Never undo a temporary edit
+       with `git checkout -- <file>`: it drops every uncommitted change of that file (it cost
+       the runner change once here); commit first or work on a copy. The database on port
+       5432 belongs to another worktree's stack; the tests build their own scratch databases.
+
 ## Handover 04.10.2026 - T-4.12 card numbers with prefix and suffix g
 Status: Runs: card numbers with a prefix from the menu (S, SM) and the suffix g, in search,
        import, tablet and text phone; merged into main as 26aaf8e (PR #155, squash). Number
