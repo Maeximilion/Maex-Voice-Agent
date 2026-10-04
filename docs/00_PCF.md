@@ -490,7 +490,8 @@ Decisions: Maxi 26.09. - S, SM and G now; lunch menus M/VM later; no combination
        Maxi 04.10. - everything written for the repo is English (CLAUDE.md §8, PR #166).
 Gate: G0 open, unchanged. T-4.12 itself is done; the real import is the next step towards
        stage 2.
-Open: one worktree and branch per item, in this order:
+Open: one worktree and branch per item; the items are independent and run in parallel,
+       the order of work is "What's next" in docs/01_STATUS.md:
        1. fix/sim-allergy-guard - text phone: decide "is this an order?" from the menu's
           CardFormat, so "B12" and "E 621" on "Wogegen?" are ingredients (open point docs/01).
        2. task/real-menu-import-dry-run - converter plus import --dry-run against a local DB
