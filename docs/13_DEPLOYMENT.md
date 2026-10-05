@@ -15,6 +15,35 @@
 
 **Regel:** Kein Anruf hängt jemals davon ab, ob ein Rechner bei Maxi eingeschaltet ist. Der PC ist Werkbank, nicht Betrieb.
 
+## 0a. What the restaurant needs
+
+The product is a web application on the EU server, not a program installed in the restaurant. In operation the containers run on the server and nowhere in the restaurant (Docker on Maxi's PC is the workbench, §2); a slow computer on site is no limit, because the views are HTML rendered by the server.
+
+| Needed | For what |
+|---|---|
+| A device with a current browser and internet: a tablet in the kitchen, optionally a PC | operations view (`/gui/`), later the admin view |
+| The address plus user name and password | access, Basic-Auth in `deploy/Caddyfile` (§3) |
+| The phone line routed to the voice platform | calls reach the agent (provider open, D1) |
+| A phone that rings at the team | the number `transfer_to_team` hands a call to, stored as `team_phone`. Nothing else uses it: it is no alert for a failed print bridge or for lost internet in the restaurant (that is the red card and the team push, see below). Where calls go when the voice platform is down depends on how the forward is set up, which is open with C2; `docs/02_ARCHITECTURE.md` §5 states the intended behaviour, not a tested one |
+| From the first order on: the print bridge on one machine that reaches the main receipt printer at the register | until the register has an interface it prints every confirmed order as an input slip the team types in (D2, `docs/02_ARCHITECTURE.md` §2a); `printbridge/README.md`; today this needs Python 3.12 set up by hand |
+| A device that receives the team notifications: an app on a phone or the web page on the tablet | callbacks and failed handovers (D13, push server in §3); which devices is open (D14) |
+
+Not needed in the restaurant: the repository, Docker, git, an installer for the product itself. Two small installs remain: the print bridge and, depending on D14, the notification app.
+
+**Why no desktop program (.exe) for the product** (asked 05.10.2026):
+
+- A call must never depend on a computer in the restaurant being switched on, awake and not restarting for an update (rule above, CLAUDE.md §2 rule 5).
+- The voice platform has to reach the tools over public HTTPS at a fixed address (§1). A router in a restaurant offers neither without port forwarding or a tunnel.
+- On the hot path every tool call would travel over the restaurant's uplink instead of between two data centres (budget in `docs/04_API_TOOLS.md`).
+- Tablet, admin PC and print bridge show the same live state. The computer running the program would be a server anyway, only a worse one.
+- An update is one deploy on the server instead of one visit per computer.
+- Names, phone numbers and addresses are kept on one server whose backup is encrypted (§4; the second storage and the production server are still open) instead of on a computer next to the till.
+- Postgres and n8n do not fit into one program file; it would be a second product.
+
+The price of this choice: a monthly server bill, the server is ours to operate, and the restaurant depends on its internet connection: without it the tablet shows nothing new and the print bridge fetches no slips. The server notices after 60 s: the card turns red and `order.handover_failed` is queued for the team push (`docs/02_ARCHITECTURE.md` §5). Nobody outside the tablet is notified until the push server is set up on the server and a device has subscribed (D13, D14), and a tablet without internet does not show the red card either. What happens to the calls in that case depends on where the forward is done. Today the Fritz!Box on the same line does it; whether the provider can forward in its network is open with C2 (`docs/01_STATUS.md`, phone line).
+
+Where an installer does make sense is the print bridge, the only software of ours that runs on site (T-9.6, proposal). The wish to start the view from an icon is met by a home-screen icon in the browser (T-3.7, proposal).
+
 ## 1. Warum das früh wichtig ist
 
 Die Voice-Plattform muss unsere Tools über **öffentliches HTTPS** erreichen. Ohne erreichbare Adresse gibt es keinen Testanruf. Das betrifft schon den PoC in Stufe 1, nicht erst den Betrieb.
