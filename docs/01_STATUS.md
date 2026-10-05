@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.10
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.11
 
 ---
 
@@ -361,6 +361,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.11 · 05.10.2026:** Codex review PR #191 (P2x2) fixed: demo commands in the handover pin --now to an open day (2026-10-06) and keep sim.replay in one shell command
 - **v1.38.10 · 05.10.2026:** Handover: demo run of the operations view for local Claude Code, steps and pitfalls in docs/00_PCF.md §13
 - **v1.38.9 · 05.10.2026:** CLAUDE.md: code-autopilot pointer, merge to main waits for Maxi; /handover uses Lessons
 - **v1.38.8 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api, n8n and push moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration

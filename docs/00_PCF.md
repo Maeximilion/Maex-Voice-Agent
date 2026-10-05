@@ -488,11 +488,13 @@ Open: 1. Locally: `git pull` on main, start `claude` in the repo, `/start`. Then
           make up && make migrate && make seed
           docker compose exec api python -m scripts.import_menu evals/menu
           open http://localhost:8000/gui/ in the browser, then in a second terminal
-          docker compose exec api python -m sim.cli --caller +497215551234
+          docker compose exec api python -m sim.cli --caller +497215551234 \
+             --now 2026-10-06T12:15+02:00
           and order as the guest ("Ich möchte zwei Frühlingsrollen abholen").
           Recorded calls instead of typing:
-          docker compose exec api python -m sim.replay --now <open day>T12:15+02:00
+          docker compose exec api python -m sim.replay --now 2026-10-06T12:15+02:00 \
              evals/cases/abholung_0001_zwei_positionen_mit_option.json
+          2026-10-06 is a Tuesday, an open day in the seed data; any open day works.
        2. Proposal, waits for Maxi's yes: `make demo` that imports the test menu and
           replays a few calls on an open day, with a test and a README line.
        3. T-3.5 on a real tablet needs the API reachable from the tablet (see Lessons).
