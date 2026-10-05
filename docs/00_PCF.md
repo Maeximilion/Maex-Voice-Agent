@@ -468,6 +468,47 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 05.10.2026 - demo run of the operations view, for local Claude Code
+Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migrations to
+       005, `scripts.seed`, the test menu from `evals/menu` (32 dishes), API on port 8000,
+       `/health` ok, `/gui/` 200. `sim.replay` puts calls on the board: two pickups (A1,
+       A2) under "Neue Bestellungen", a table for four under "Heute"; screenshot in
+       Chromium at 1280x800, the board fills without a reload. Run in a cloud session
+       outside Docker (Postgres 16 and a Python 3.12 venv), so `make up` itself was not
+       run here. Does not run: a real model (T-2.4, the rule-based stand-in answers), a
+       phone (C2), callbacks in the demo (both escalation cases transfer to the team,
+       none creates a callback).
+Artifacts: No code changed. This block, one line in docs/01_STATUS.md "Done", item 8 in
+       "What's next". Branch ccr-f287e6bf-i93pl3, one docs commit, PR to main.
+Decisions: None by Maxi. Assumption: `evals/menu` is the demo menu, because `scripts.seed`
+       loads no menu and the real register data is not for a demo.
+Gate: G0 open, this session changes nothing for it.
+Open: 1. Locally: `git pull` on main, start `claude` in the repo, `/start`. Then the demo:
+          cp .env.example .env          (set the passwords)
+          make up && make migrate && make seed
+          docker compose exec api python -m scripts.import_menu evals/menu
+          open http://localhost:8000/gui/ in the browser, then in a second terminal
+          docker compose exec api python -m sim.cli --caller +497215551234
+          and order as the guest ("Ich möchte zwei Frühlingsrollen abholen").
+          Recorded calls instead of typing:
+          docker compose exec api python -m sim.replay --now <open day>T12:15+02:00
+             evals/cases/abholung_0001_zwei_positionen_mit_option.json
+       2. Proposal, waits for Maxi's yes: `make demo` that imports the test menu and
+          replays a few calls on an open day, with a test and a README line.
+       3. T-3.5 on a real tablet needs the API reachable from the tablet (see Lessons).
+Lessons: Monday is the closed day in the seed data: on a Monday every sim call ends
+       "abandoned" and no order or reservation is written; pass `--now` on an open day.
+       The column "Heute" follows the real clock, not `--now`: a reservation shows only
+       when its date is the real today. `reservierung_0001` asks for "morgen", so replay
+       it with `--now` the day before today, and only when today is open. Orders show
+       whatever their date. Since PR #181 the dev host ports bind to 127.0.0.1 only
+       (`docker-compose.override.yml`): a tablet on the local network cannot reach port
+       8000 of the workbench; the tunnel from docs/13 §2 or a browser on the same machine
+       does. Without Docker: the Postgres cluster must be UTF8 (`initdb --encoding=UTF8
+       --locale=C.UTF-8`); a SQL_ASCII cluster fails at the first connect with "cannot
+       use a string pattern on a bytes-like object". Use Python 3.12 for the venv from
+       `api/requirements.txt`. `import_menu evals/menu` warns about aliases; expected.
+
 ## Handover 04.10.2026 - text phone allergy guard (open point from PR #155)
 Status: Runs: on the open allergy question "Wogegen?" the text phone decides from the active
        menu what a card number is. "B12", "Vitamin B12" and "Gegen E 621" are recorded as the
