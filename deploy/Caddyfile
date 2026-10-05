@@ -18,3 +18,9 @@ agent.example.com {
 n8n.example.com {
     reverse_proxy n8n:5678
 }
+
+# Push server for the team's devices (D13). It checks access itself: closed by
+# default, the user "team" may only read the topic "team" (docker-compose.yml).
+push.example.com {
+    reverse_proxy push:80
+}
