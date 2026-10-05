@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.3
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.4
 
 ---
 
@@ -358,6 +358,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.4 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a no longer promises an alarm on an outage in the restaurant; the red card and the queued event exist, the notification needs the push set-up (D13, D14)
 - **v1.38.3 · 05.10.2026:** PR #182 merged with main: docs/13 §0a names the push server as built (D13) and the devices as open (D14)
 - **v1.38.2 · 05.10.2026:** Own review PR #182: print bridge is needed from the first order on (D2), team phone and notification app added to what the restaurant needs, outage sentence follows docs/02 §5, README and mockup README say what a restaurant needs
 - **v1.38.1 · 05.10.2026:** docs/13 §0a: what the restaurant needs and why the product is no desktop program; proposals T-3.7 (home-screen icon) and T-9.6 (print bridge as one program file); open point: four admin tabs have no work package
