@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.7
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.36.8
 
 ---
 
@@ -239,6 +239,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Reason for a surcharge in the text phone (`sim/scripted_order.py` `_apply_wish`) | Codex PR #139 (P2, rule A): the cart keeps group and name of an option, not its `reason`; "Warum kostet das mehr?" is then searched as a dish. The real model reads `reason` from `search_menu` (prompt rule). Fix: keep `reason` in `CartItem.options`, answer the question before searching. Stand-in only | with T-2.4 |
 | Group names that contain each other in the text phone (`sim/scripted_order.py` `_answer_group`) | Codex PR #178 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): with groups like `Beilage` and `Warme Beilage` the answer "Warme Beilage" names both, so the question "Meinen Sie Reis bei ...?" is asked again until the ladder hands over. Nothing wrong enters the order. Fix: prefer the exact or the longest group name. Stand-in only | with T-2.4 or the next sim change |
 | "doch" between a rejection and its replacement (`sim/scripted_order.py` `_replacement`) | Codex PR #178 (P2, after the fully worked round, rule 24.09.2026: recorded, not blocking): "Nein, doch die 23." is searched as "doch die 23.", which is not read as the one card number; per Codex the search finds nothing and the guest has to name the 23 again. Fix: `doch` as filler in `_REJECTION_FILL`, first as a line in `test_replacement_after_a_rejection`. Stand-in only | with T-2.4 or the next sim change |
+| Quantity of a replacement that is one of the offered dishes (`sim/scripted_order.py` `on_customer`, question branch) | Codex PR #178 (P2 on the merged head, rule 24.09.2026: recorded, not blocking): "Nein, lieber zwei Nummer 13" on "Meinen Sie Nummer 12 oder Nummer 13?" picks the 13 from the part after the rejection, but reads the quantity from the whole answer. The leading "nein" hides the "zwei", so the quantity of the question is used. Wrong quantity shows in the readback, the caller can correct it. Fix: read the quantity from the replacement when it supplied the hit, fall back to the question only if it names none. Stand-in only | with T-2.4 or the next sim change |
 | Number next to a wish in a list (`search_menu`, `has_number`) | Own test PR #139: "Die 23 ohne Karotten und die 13 mit Allergie" in the text phone ends in "nicht gefunden, Nummer?" - rule A holds the second number back. Nothing wrong enters the order. Fix: split positions before the wish check | with the next wish change |
 | Spoken group for an option in two groups (`classify_wish`) | Codex PR #139 (P2, rule A): "mit Reis als Beilage" still returns `open` and asks "Reis bei Beilage oder bei Extra?" although the group was named. Nothing wrong enters the order, the question is one too many. Fix: filter duplicate matches by group-name words before `open` | with the next wish change |
 | Denied allergy (`classify_wish`) | Codex PR #139 (P2, rule A): "ich habe keine Erdnussallergie" or "ich bin nicht gegen Erdnüsse allergisch" still gives the note "WICHTIG: Keine Erdnuss". Safe direction (the kitchen leaves something out), but a note the guest did not ask for; it is read back and can be corrected. Fix: check the polarity of the allergy clause | with the next wish change, latest before G1 |
@@ -348,7 +349,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.36.7 · 05.10.2026:** Converter warns about a "free from" claim in a dish name while no allergens are maintained, when the register's allergens contradict it, and in extras and categories (pos_convert, docs/14); open point closed
+- **v1.36.8 · 05.10.2026:** Converter warns about a "free from" claim in a dish name while no allergens are maintained, when the register's allergens contradict it, and in extras and categories (pos_convert, docs/14); open point closed
+- **v1.36.7 · 05.10.2026:** PR #178 merged as 349b028 (four text phone points closed); open point from its last Codex pass: quantity of a replacement that is one of the offered dishes
 - **v1.36.6 · 04.10.2026:** Text phone: four open points from reviews closed (option in two groups, rejection plus replacement, digit against number word, allergy in the opening sentence)
 - **v1.36.5 · 04.10.2026:** Handover text phone allergy guard: PR #168 merged as 67b3bcd, next T-9.3 backup and restore, then n8n workflow
 - **v1.36.4 · 04.10.2026:** Bug text phone: on Wogegen the active menu decides what a card number is, open point from PR #155 closed
