@@ -1,0 +1,53 @@
+name: ai-pr-review
+
+# Automatische LLM-Analyse jedes PR: Diff an eine OpenAI-kompatible API schicken
+# und das Ergebnis als GitHub-Review mit Inline-Kommentaren (P0-P3) posten, wie
+# im Codex-Review-Bot-Beispiel.
+#
+# Standard: lokales Ollama auf dem eigenen Rechner (WSL2, Label wsl-local,
+# Modell qwen3-coder-next) -- kostenlos, dafuer nur erreichbar, solange der PC
+# laeuft. Der Runner laeuft als systemd-Dienst ghrunner-wsl im WSL-Ubuntu.
+# Cloud-Fallback: nur die Repo-Variable ZAI_API_BASE auf
+# https://api.z.ai/api/paas/v4 setzen (Secret ZAI_API_KEY, Modell z. B. glm-4.6);
+# der lokale Ollama ignoriert den Bearer-Key, der Aufruf ist identisch.
+# Modell ueber die Repository-Variable REVIEW_MODEL einstellbar.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Neuer Push auf denselben PR bricht den laufenden Review ab.
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Dependabot-PRs bekommen von GitHub keine Secrets zugewiesen.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # Eigener Runner im WSL2-Ubuntu: Self-hosted-Label zwingend, wsl-local zur
+    # Auswahl. GitHub lasst Workflow-Runs von erstmaligen Fork-Contributoren
+    # nur nach manueller Freigabe auf Self-hosted-Runnern laufen (Default, so
+    # lassen!). Lokales Modell: der Review braucht laenger als 10 Minuten.
+    runs-on: [self-hosted, wsl-local]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: PR-Diff exportieren
+        run: gh pr diff "$PR_NUMBER" > pr.diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+      - name: GLM-Review posten
+        run: python .github/scripts/ai_pr_review.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          ZAI_API_BASE: ${{ vars.ZAI_API_BASE }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
