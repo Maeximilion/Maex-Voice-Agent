@@ -23,7 +23,7 @@ SEVERITIES = ("P0", "P1", "P2", "P3")
 
 # Endpunkt und Modell sind ueber Environment/Repository-Variablen ueberschreibbar,
 # damit kein Workflow-Edit noetig ist, wenn z. B. ein neues GLM-Modell kommt.
-ZAI_BASE = os.environ.get("ZAI_API_BASE", "https://api.z.ai/api/paas/v4")
+ZAI_BASE = os.environ.get("ZAI_API_BASE") or "https://api.z.ai/api/paas/v4"
 MODEL = os.environ.get("REVIEW_MODEL") or "glm-4.6"
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -115,7 +115,9 @@ def call_glm(pr_title: str, pr_body: str, diff: str) -> dict[str, Any]:
             f"{ZAI_BASE}/chat/completions",
             data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Bearer {os.environ['ZAI_API_KEY']}",
+                # Lokales Ollama ignoriert den Bearer-Key; nur der Z.ai-Fallback
+                # braucht das Secret ZAI_API_KEY, daher hier tolerant bleiben.
+                "Authorization": f"Bearer {os.environ.get('ZAI_API_KEY') or 'ollama'}",
                 "Content-Type": "application/json",
             },
         )
