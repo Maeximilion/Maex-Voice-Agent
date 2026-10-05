@@ -5,7 +5,10 @@ Two steps, so each can be tested on its own:
 - `parse(files)` reads and checks, without a database. Errors prevent any
   import, warnings end up in the report (docs/14 §Prüfregeln).
 - `apply(session, tenant_id, plan, ...)` brings the database in line. All in
-  one transaction: an error halfway leaves no half menu behind.
+  one transaction: an error halfway leaves no half menu behind. Every row is
+  flushed before the commit, so an error is either a rejected row (nothing
+  stored) or the commit itself (`CommitOutcomeUnknownError`,
+  `CommitInterruptedError`).
 
 The file is the truth for every dish it names: options are brought in line,
 and so are aliases from an earlier import. Aliases from calls or added by hand
@@ -20,6 +23,7 @@ Prices from the file replace an existing price only with
 report. Money only as integer cents, never via float (CLAUDE.md §8).
 """
 
+import contextlib
 import csv
 import io
 import re
@@ -87,6 +91,20 @@ MAX_DEACTIVATE_SHARE = 0.5
 class MassDeactivationError(ValueError):
     """More than MAX_DEACTIVATE_SHARE of the active menu would be deactivated.
     The interface (CLI, later GUI) says how to allow it on purpose."""
+
+
+class CommitOutcomeUnknownError(Exception):
+    """The commit of an import raised. Every row had been accepted before, so
+    the server may have committed and only its answer got lost (connection
+    dropped). A dry run with the same plan and switches tells: no change means
+    the import went through. The message is the text of the cause."""
+
+
+class CommitInterruptedError(KeyboardInterrupt):
+    """Ctrl-C while the commit was running: the same doubt as
+    CommitOutcomeUnknownError. Still an interrupt and no Exception, so a
+    caller that catches Exception does not swallow it - the eval runner turns
+    exceptions into red cases and goes on."""
 
 
 def is_card_number(number: str) -> bool:
@@ -548,6 +566,10 @@ def apply(
     (register as master, docs/14). Without the switch they stay as they are.
     A file without dishes, or one that would drop more than half of the active
     menu, is refused unless allow_large_deactivation is set.
+
+    Errors by phase: whatever is raised before the commit means nothing was
+    stored. The commit itself raises CommitOutcomeUnknownError, or
+    CommitInterruptedError on Ctrl-C.
     """
     if not plan.ok:
         raise ValueError("Plan mit Fehlern wird nicht eingespielt")
@@ -672,18 +694,7 @@ def apply(
             _sync_allergens(session, item, plan.allergens[number], now, report)
         _sync_aliases(session, item, plan.aliases.get(number, set()), report)
 
-    if dry_run:
-        # Send everything to the database before rolling back. The script's
-        # session has autoflush off: options, allergens and aliases would
-        # never reach the database, and a row it rejects would pass the dry
-        # run and fail only in the real import. Rolled back in any case, like
-        # every other error exit here.
-        try:
-            session.flush()
-        finally:
-            session.rollback()
-        return report
-    if report.changed:
+    if not dry_run and report.changed:
         session.add(
             AuditLog(
                 tenant_id=tenant_id,
@@ -703,7 +714,33 @@ def apply(
                 },
             )
         )
-    session.commit()
+    # Every row goes to the database here, in a dry run too. The script's
+    # session has autoflush off: options, allergens and aliases would
+    # otherwise reach the database only in the commit, and a row it rejects
+    # would pass the dry run. Such a row fails here, is rolled back like every
+    # other error exit, and nothing was stored.
+    try:
+        session.flush()
+    except BaseException:
+        session.rollback()
+        raise
+    if dry_run:
+        session.rollback()
+        return report
+    # What the commit raises is about the commit alone (no constraint is
+    # deferred to it), and there the server may have committed before its
+    # answer got lost (Codex PR #169). Ctrl-C leaves the same doubt, but stays
+    # an interrupt (Codex PR #176).
+    try:
+        session.commit()
+    except (Exception, KeyboardInterrupt) as exc:
+        # Releases the session; a commit that reached the server stays.
+        with contextlib.suppress(Exception):
+            session.rollback()
+        if isinstance(exc, KeyboardInterrupt):
+            raise CommitInterruptedError("interrupted during the commit") from exc
+        detail = str(getattr(exc, "orig", None) or exc).strip()
+        raise CommitOutcomeUnknownError(detail or type(exc).__name__) from exc
     return report
 
 
