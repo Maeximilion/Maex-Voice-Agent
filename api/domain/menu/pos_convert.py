@@ -34,7 +34,7 @@ from api.domain.menu.importer import (
     parse_eur,
 )
 from api.domain.menu.items import option_key
-from api.domain.menu.numberwords import canonical_card
+from api.domain.menu.numberwords import canonical_card, fold
 from api.domain.menu.pos_dbf import DbfError, Table
 
 # Names from the register's screen ("Größen Bezeichnung ändern"), Maxi
@@ -64,29 +64,82 @@ ALLERGEN_MAP = {
     "M": "P",
     "N": "R",
 }
-# Only for the warning to people (docs/14): the recipe names a typical allergen
-# carrier while ALLERGENE is empty. The agent still says "keine Auskunft".
+# Only for the warnings to people (docs/14), never a source for allergens. The
+# 14 LMIV allergens by database letter (api/models/menu.py) as a dish name or a
+# recipe would spell them, in `fold` spelling, German and English: the menu has
+# both. A word that starts with one of these names the whole letter.
+ALLERGEN_NAMES = {
+    "A": ("gluten",),
+    "B": ("krebstier",),
+    "C": ("ei", "eier", "egg", "eggs"),
+    "D": ("fisch", "fish"),
+    "E": ("erdnuss", "erdnuesse", "peanut"),
+    "F": ("soja", "soy"),
+    "G": ("milch", "milk", "dairy"),
+    "H": ("nuss", "nuesse", "schalenfrucht", "schalenfruechte", "nut", "nuts"),
+    "L": ("sellerie", "celery"),
+    "M": ("senf", "mustard"),
+    "N": ("sesam",),
+    "O": ("sulfit", "sulphit", "schwefel"),
+    "P": ("lupine",),
+    "R": ("weichtier",),
+}
+# One kind or one carrier of a letter. "laktosefrei" does not say "no milk
+# allergen", "weizenfrei" not "no gluten": the letter can still be right.
+ALLERGEN_KINDS = {
+    "A": ("weizen", "roggen", "gerste", "hafer", "dinkel", "wheat"),
+    "B": ("garnele", "krabbe", "shellfish"),
+    "G": ("laktose", "lactose", "sahne", "kaese"),
+    "H": ("mandel", "cashew", "kaschu", "pistazie", "macadamia"),
+    "R": ("tintenfisch",),
+}
+# Short names count only as a whole word ("Eis", "Reis", "Minute") or only at
+# the start of one ("Feier" is no egg, "Eiernudeln" are). Every other name
+# counts anywhere inside a word ("haselnussfrei").
+_WHOLE_WORD_ONLY = frozenset(("ei", "egg", "eggs", "nut", "nuts"))
+_PREFIX_ONLY = frozenset(("eier",))
+# Look like an allergen and are none.
+_LOOKALIKES = ("kokos", "muskat", "buchweizen", "buckwheat")
+_NAMES = tuple(
+    (name, code, kind)
+    for kind, table in ((False, ALLERGEN_NAMES), (True, ALLERGEN_KINDS))
+    for code, names in table.items()
+    for name in names
+)
+# A recipe (ZUTATEN) names a carrier while ALLERGENE is empty: the same words
+# at the start of a word, plus two that belong to no single letter in a name.
 _CARRIERS = (
-    "eier",
-    "soja",
-    "weizen",
+    *(n for n, _, _ in _NAMES if n not in _WHOLE_WORD_ONLY),
     "mehl",
     "nudel",
-    "erdnuss",
-    "sesam",
-    "milch",
-    "sahne",
-    "käse",
-    "fisch",
-    "garnele",
-    "krabbe",
-    "sellerie",
-    "senf",
-    "nuss",
-    "cashew",
-    "mandel",
-    "tintenfisch",
 )
+_REGISTER_LETTER = {db: register.lower() for register, db in ALLERGEN_MAP.items()}
+# "glutenfrei", "glutenfreie", English "free".
+_FREE = re.compile(r"(.*)fre(?:i(?:e[mnrs]?)?|e)")
+# "vegan" claims the animal allergens absent.
+_VEGAN = re.compile(r"vegan(?:e[mnrs]?)?")
+_VEGAN_CODES = frozenset("BCDGR")
+_WITHOUT = ("ohne", "without", "no")
+_JOINS = ("und", "oder", "and", "or")
+# A new part of the name starts: the list behind "ohne" ends.
+_STOPS = (
+    "mit",
+    "in",
+    "im",
+    "auf",
+    "an",
+    "zu",
+    "dazu",
+    "aber",
+    "nach",
+    "bei",
+    "statt",
+    "fuer",
+    "with",
+)
+# "auch vegan", "auf Wunsch vegan", "vegan möglich": a variant on offer.
+_OFFER_BEFORE = ("nicht", "auch", "wunsch")
+_OFFER_AFTER = ("moeglich",)
 # Columns the converter reads directly. If one is missing (other register
 # version, wrong file), that is a format error instead of a KeyError (Codex PR
 # #149). Optional columns (VK2_PREIS, GRPREIS*, A_PREIS*, ALLERGENE, ZUTATEN,
@@ -241,6 +294,9 @@ def convert(
     bad_numbers: list[str] = []
     unnamed_sizes: dict[int, list[str]] = {}
     carriers: list[str] = []
+    free_from: list[str] = []
+    contradicted: list[str] = []
+    to_check: list[str] = []
     for row in candidates:
         pos_code = row["ARTNR"]
         where = f"Artikel {pos_code or '(ohne Nummer)'}"
@@ -335,6 +391,17 @@ def convert(
         if "+" in code:
             _add_extras(result, where, number, row["WRG"], named, extras)
         _add_allergens(result, where, number, row, allergens_confirmed_by, carriers)
+        claimed, whole = _claims(name)
+        if claimed and not result.allergens[-1]["allergen_codes"]:
+            free_from.append(pos_code)
+        # Against the register's letters, confirmed or not: the agent would
+        # read the claim aloud and get_item_details would name the allergen
+        # (Codex PR #175).
+        register = {ALLERGEN_MAP.get(c) for c in row.get("ALLERGENE", "").upper()}
+        if clash := whole & register:
+            contradicted.append(_with_letters(pos_code, clash))
+        elif clash := claimed & register:
+            to_check.append(_with_letters(pos_code, clash))
 
     if bad_numbers:
         result.errors.append(
@@ -362,6 +429,31 @@ def convert(
             "ZUTATEN nennt einen Allergenträger, ALLERGENE ist leer (Agent sagt "
             "weiter „keine Auskunft“): " + ", ".join(carriers)
         )
+    if free_from:
+        result.warnings.append(
+            'Name carries a "free from" claim that the agent would read aloud, but '
+            "no allergens are maintained (rename the dish in the register, or "
+            "maintain and confirm its allergens): " + ", ".join(free_from)
+        )
+    if contradicted:
+        result.warnings.append(
+            'Name carries a "free from" claim that contradicts the allergens in '
+            "the register (register letter -> database letter in brackets; "
+            "correct the name or the allergens in the register): "
+            + ", ".join(contradicted)
+        )
+    if to_check:
+        result.warnings.append(
+            'Name carries a "free from" claim for one kind of an allergen the '
+            "register has (register letter -> database letter in brackets; both "
+            "can be right, check them): " + ", ".join(to_check)
+        )
+    for category in sorted({row["category"] for row in result.menu}):
+        if free_from_claim(category):
+            result.warnings.append(
+                f'Warengruppe „{category}“: name carries a "free from" claim, the '
+                "agent names the category and no allergen data backs it"
+            )
     return result
 
 
@@ -415,6 +507,11 @@ def _extras(result: Conversion, zutaten: Table, zutgrp: Table) -> list[_Extra]:
                 "keinen lesbaren Preis, nicht übernommen"
             )
             continue
+        if free_from_claim(name):
+            result.warnings.append(
+                f'{where}: name carries a "free from" claim, the agent offers the '
+                "extra and no allergen data backs it"
+            )
         if len(row["ZBEZEICH"]) >= EXTRA_NAME_MAX:
             result.warnings.append(
                 f"{where}: Name mit {EXTRA_NAME_MAX} Zeichen, vermutlich "
@@ -485,6 +582,112 @@ def _add_extras(
         )
 
 
+def _with_letters(pos_code: str, codes: set[str]) -> str:
+    """ "7 (k -> N)": the register counts differently from the ninth letter on."""
+    letters = ", ".join(f"{_REGISTER_LETTER[c]} -> {c}" for c in sorted(codes))
+    return f"{pos_code} ({letters})"
+
+
+def _allergens_named(word: str) -> tuple[set[str], set[str]]:
+    """Database letters a word names, and those of them it names as a whole.
+
+    The longest name wins: "Erdnuss" is no "Nuss", "Tintenfisch" no "Fisch".
+    Only a word that starts with a name of `ALLERGEN_NAMES` stands for the
+    whole letter; "Haselnuss" or "Laktose" is one kind of it.
+    """
+    if any(x in word for x in _LOOKALIKES):
+        return set(), set()
+    hits = [
+        (name, code, kind)
+        for name, code, kind in _NAMES
+        if (
+            word == name
+            if name in _WHOLE_WORD_ONLY
+            else word.startswith(name)
+            if name in _PREFIX_ONLY
+            else name in word
+        )
+    ]
+    hits = [h for h in hits if not any(h[0] != m and h[0] in m for m, _, _ in hits)]
+    return (
+        {code for _, code, _ in hits},
+        {code for name, code, kind in hits if not kind and word.startswith(name)},
+    )
+
+
+def free_from_claim(name: str) -> set[str]:
+    """Database letters of the allergens the name says are absent.
+
+    Whole words only: "ohne" inside "Bohnen" and "frei" inside "Freilandei"
+    claim nothing. A heuristic for the report, never a source for allergens.
+    """
+    return _claims(name)[0]
+
+
+def _claims(name: str) -> tuple[set[str], set[str]]:
+    """The letters claimed absent, and those of them claimed as a whole."""
+    claimed: set[str] = set()
+    whole: set[str] = set()
+    # "Gluten-frei" is "glutenfrei". A hyphen left open ("gluten- und
+    # laktosefrei") stays on its word.
+    text = re.sub(r"-(?=fre[ie])", "", fold(name))
+    tokens = re.findall(r"[a-z]+(?:-(?![a-z]))?", text)
+    words = [t.rstrip("-") for t in tokens]
+
+    def add(word: str) -> bool:
+        some, as_whole = _allergens_named(word)
+        claimed.update(some)
+        whole.update(as_whole)
+        return bool(some)
+
+    def add_list(start: int, fillers: int) -> None:
+        # "Ei, Milch und Nüsse", "frische Erdnüsse", "Zusatz von Milch".
+        for word in words[start:]:
+            if word in _STOPS:
+                break
+            if not add(word) and word not in _JOINS and word != "von":
+                fillers -= 1
+                if fillers < 0:
+                    break
+
+    for i, word in enumerate(words):
+        before = words[i - 1] if i else ""
+        if before in _JOINS and i > 1:
+            before = words[i - 2]  # "mit oder ohne Ei"
+        if (
+            before in _OFFER_BEFORE
+            or (before == "mit" and word in _WITHOUT)
+            or words[i + 1 : i + 2] in ([w] for w in _OFFER_AFTER)
+        ):
+            continue
+        if _VEGAN.fullmatch(word):
+            claimed.update(_VEGAN_CODES)
+            whole.update(_VEGAN_CODES)
+        elif word in _WITHOUT:
+            # The Japanese "no" stands in dish names ("Tori no Karaage").
+            add_list(i + 1, 0 if word == "no" else 1)
+        elif free := _FREE.fullmatch(word):
+            k = i - 1
+            if free[1]:
+                add(free[1])
+            elif words[i + 1 : i + 2] in (["von"], ["from"]):
+                # "Fischsuppe frei von Gluten": the claim stands behind.
+                add_list(i + 2, 1)
+                continue
+            elif word == "free" or i + 1 == len(words) or words[i + 1] in _JOINS:
+                # "Gluten frei" ends the name, "Gluten Free Roll" is English;
+                # "frei wählbar" and "frei Haus" claim nothing.
+                add(words[i - 1] if i else "")
+                k = i - 2
+            else:
+                continue
+            # "gluten-, ei- und sojafrei": the open hyphens share the "-frei".
+            while k >= 0 and (words[k] in _JOINS or tokens[k].endswith("-")):
+                add(words[k])
+                k -= 1
+    return claimed, whole
+
+
 def _add_allergens(
     result: Conversion,
     where: str,
@@ -507,8 +710,8 @@ def _add_allergens(
         result.allergens.append(empty)
         return
     if not codes:
-        words = re.split(r"[\s,_;/()-]+", row.get("ZUTATEN", "").lower())
-        if any(w == "ei" or w.startswith(_CARRIERS) for w in words if w):
+        words = re.split(r"[\s,_;/()-]+", fold(row.get("ZUTATEN", "")))
+        if any(w in _WHOLE_WORD_ONLY or w.startswith(_CARRIERS) for w in words):
             carriers.append(row["ARTNR"])
         result.allergens.append(empty)
         return
