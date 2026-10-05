@@ -26,9 +26,9 @@ The product is a web application on the EU server, not a program installed in th
 | The phone line routed to the voice platform | calls reach the agent (provider open, D1) |
 | A phone that rings at the team | target of `transfer_to_team` and of every outage (CLAUDE.md §2 rule 5), stored as `team_phone` |
 | From the first order on: the print bridge on one machine that reaches the main receipt printer at the register | until the register has an interface it prints every confirmed order as an input slip the team types in (D2, `docs/02_ARCHITECTURE.md` §2a); `printbridge/README.md`; today this needs Python 3.12 set up by hand |
-| An app for team notifications on a phone or the tablet | callbacks and failed handovers (D13); decided, not built yet |
+| A device that receives the team notifications: an app on a phone or the web page on the tablet | callbacks and failed handovers (D13, push server in §3); which devices is open (D14) |
 
-Not needed in the restaurant: the repository, Docker, git, an installer for the product itself. Two small installs remain: the print bridge and the notification app.
+Not needed in the restaurant: the repository, Docker, git, an installer for the product itself. Two small installs remain: the print bridge and, depending on D14, the notification app.
 
 **Why no desktop program (.exe) for the product** (asked 05.10.2026):
 
