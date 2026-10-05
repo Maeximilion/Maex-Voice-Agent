@@ -133,7 +133,7 @@ maex-voice-agent/
 For code tasks use the personal skill `code-autopilot`. Where it differs from this file, this file wins (the follow-up budget of 3 above, no emojis, English for everything written to the repo).
 
 ### Questions
-Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
+Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Ask them as clickable choices (`AskUserQuestion`), not as free text in the chat. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
 
 **Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). Merging a PR into `main` is also a wait point (Maxi, 2026-10-05): prepare the PR, get CI and evals green, report it ready, Maxi merges.
 
@@ -172,7 +172,7 @@ A task is complete when **all** of these are true:
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
-- One commit = one completed task
+- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own
 - `main` always stays runnable
 - No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
 

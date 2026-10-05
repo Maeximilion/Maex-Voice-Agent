@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.13
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.14
 
 ---
 
@@ -359,6 +359,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.14 · 05.10.2026:** PR rule relaxed: one coherent behavior per PR, chores ride along; questions as clickable choices
 - **v1.38.13 · 05.10.2026:** n8n image pinned to 2.41.7 (2.41.4 or newer needed, GHSA-3qcw-p65v-c7vq), .gitignore for Claude Code local files
 - **v1.38.12 · 05.10.2026:** Dependabot for compose files, least-privilege CI token, dependency review and PR title checks
 - **v1.38.11 · 05.10.2026:** SessionStart hook syncs a clean main; /start relies on it
