@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.7
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.8
 
 ---
 
@@ -271,6 +271,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Call log files are not owner-only on Windows (`scripts/call_log.py` `_replace`) | Found 04.10.2026 while making the two file-mode tests skip on Windows: `touch(mode=0o600)` and `os.chmod` only toggle the read-only flag on NTFS, `st_mode` stays 0666 and access follows the ACL inherited from the folder. The script neither warns nor says so, and docs/17 promises 0600 for salt and ID directory. On Linux the protection holds and is tested. Behaviour unchanged here. Fix: either state in docs/17 that on Windows the CSV, salt and ID directory must live in a folder only the user can read, or set the ACL explicitly | before the call log is kept on a Windows machine with more than one user account, latest with the data protection officer's answer on the CSV (E10) |
 | **No work package for four admin tabs** (`gui/mockups/admin-desktop.html`, docs/06 §4) | Found 05.10.2026 when Maxi clicked through the mockup: its buttons for editing hours, special days and zones, the call list, the deletion request and the CSV exports do nothing, as intended for a mockup. `docs/07_WORKPACKAGES.md` only covers pieces of the admin view: price badge (T-4.9), alias suggestions (T-7.4), key figures (T-8.4). Zeiten, Lieferung, Anrufe and Daten have no task. Two wishes from the same look, both outside today's spec: the full phone number in the call list instead of a shortened one (who may see it is a data protection question), and column widths the user can drag | cut into tasks before the first admin tab is built; Maxi decides the phone number question |
 | **T-3.7 and T-9.6 undecided** | Two proposals from the question why the product is no desktop program (Done, 05.10.2026), neither built and neither with an issue: home-screen icon for the tablet (T-3.7), print bridge as one program file (T-9.6) | Maxi decides; T-9.6 after the bridge machine is chosen |
+| No heartbeat of the print bridge (`api/domain/ordering/handover.py` `sweep`) | Codex review PR #182 (P2, after the worked-off round): the watchdog only scans kitchen slips that have waited 60 s without being fetched. A bridge or an internet connection that fails while no order waits is noticed by nobody until the next order, and outside `primary` the 60 s start only with "Passt" on the tablet. docs/13 §0a says so since 05.10.2026; nothing is built. Fix: the bridge's poll is already a sign of life, so the server can remember the last one and show "bridge silent since ..." on the tablet and in the monitoring | with the monitoring (T-8.3), latest before orders run in `primary` |
 
 ## Blockers
 
@@ -358,7 +359,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.38.7 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api, n8n and push moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration
+- **v1.38.8 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api, n8n and push moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration
+- **v1.38.7 · 05.10.2026:** Open point from PR #182 (Codex P2): the print bridge sends no heartbeat, the 60 s watchdog only fires for a slip that waits; docs/13 §0a says so
 - **v1.38.6 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a no longer promises that the restaurant's line rings when the voice platform is down; that depends on the forward, open with C2
 - **v1.38.5 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a describes team_phone as the target of transfer_to_team only, not as an outage alert
 - **v1.38.4 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a no longer promises an alarm on an outage in the restaurant; the red card and the queued event exist, the notification needs the push set-up (D13, D14)
