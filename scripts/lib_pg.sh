@@ -214,7 +214,7 @@ pg_sql() { # pg_sql <database> <sql>; prints bare values
         --dbname "$1" --command "$2" </dev/null | tr -d '\r'
 }
 
-CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network (BACKUP_DOCKER_NETWORK)"
+CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network, and on Linux a client container does not reach the loopback port of the dev stack (BACKUP_DOCKER_NETWORK for both)"
 
 require_passphrase() {
     env_default BACKUP_PASSPHRASE_FILE

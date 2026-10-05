@@ -30,7 +30,7 @@ Maxis PC (nur Werkbank)
   Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
 ```
 
-**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000) and n8n (5678) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all.
+**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000) and n8n (5678) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
 
 **Tunnel** Vorschlag: `cloudflared tunnel --url http://localhost:8000` oder `ngrok http 8000`. Die URL wechselt bei jedem Start, in der Plattform eintragen. Nur für Tests, nie für echte Kunden.
 
@@ -40,7 +40,7 @@ Maxis PC (nur Werkbank)
 
 ```text
 Internet
-  │ 443 only
+  │ 443 only (80 answers the certificate challenge and redirects to 443)
   ▼
 Caddy (TLS automatisch, Reverse Proxy)
   ├── agent.example.com/v1/tools/*  → api:8000  (Token-Pflicht)

@@ -34,6 +34,9 @@ DEPLOYMENT_DOC = REPO_ROOT / "docs" / "13_DEPLOYMENT.md"
 PRODUCTION_FILES = "-f docker-compose.yml -f deploy/docker-compose.prod.yml"
 # The reverse proxy. Every other service is reached through it or not at all.
 PUBLISHERS = {"caddy"}
+# HTTPS, and HTTP for the certificate challenge and the redirect. Nothing else,
+# not even on the proxy: its admin API on 2019 would be just as open.
+PROXY_PORTS = {80, 443}
 LOOPBACK = {"127.0.0.1", "::1"}
 
 
@@ -138,6 +141,16 @@ def _host_ip(entry: object) -> str | None:
     return parts[0].strip("[]") if len(parts) == 3 else None
 
 
+def _published(entry: object) -> int | None:
+    """The host port of a port entry, or None when Docker picks one at random."""
+    if isinstance(entry, dict):  # long syntax
+        published = entry.get("published")
+    else:
+        parts = str(entry).split("/")[0].rsplit(":", 2)  # [address,] published, target
+        published = parts[-2] if len(parts) > 1 else None
+    return int(published) if str(published or "").isdigit() else None
+
+
 def _production() -> list[dict]:
     return [_load(BASE), _load(PROD)]
 
@@ -156,8 +169,16 @@ def test_production_publishes_ports_only_on_the_proxy():
 def test_the_proxy_is_what_production_publishes():
     """The check above would also pass on files that publish nothing at all."""
     ports = _merged_ports(_production())
-    assert ports["caddy"], "caddy publishes no port, the stack is unreachable"
     assert {"db", "api", "n8n"} <= set(ports), sorted(ports)
+    published = {
+        name: [_published(entry) for entry in ports[name]] for name in PUBLISHERS
+    }
+    assert 443 in published["caddy"], (
+        "caddy does not publish 443, the stack is unreachable"
+    )
+    for name, host_ports in published.items():
+        # A range or a random port is not in the set either and fails here.
+        assert set(host_ports) <= PROXY_PORTS, f"{name} publishes {host_ports}"
 
 
 def test_no_production_service_sits_on_the_host_network():
@@ -170,7 +191,7 @@ def test_documented_production_command_names_the_files_checked_here():
         commands = [
             line
             for line in path.read_text(encoding="utf-8").splitlines()
-            if "docker compose -f" in line
+            if "docker compose" in line and "docker-compose.prod.yml" in line
         ]
         assert commands, f"{path.name} names no production command"
         for command in commands:
@@ -180,7 +201,10 @@ def test_documented_production_command_names_the_files_checked_here():
 
 def test_dev_ports_bind_to_loopback_and_the_dev_file_carries_nothing_else():
     """`ports` only: mounts added here would bypass test_compose_mounts.py."""
-    services = _services(_load(DEV))
+    document = _load(DEV)
+    # `include`, `volumes`, `secrets` at the top would be just as unseen there.
+    assert set(document) == {"services"}, sorted(document)
+    services = _services(document)
     assert services, "docker-compose.override.yml defines no service"
     for name, service in sorted(services.items()):
         assert set(service) == {"ports"}, f"{name}: {sorted(service)}"
@@ -222,6 +246,15 @@ def test_constructs_the_merge_rule_cannot_see_fail():
     assert _unverifiable([_parse("services:\n  db:\n    extends:\n      service: x\n")])
     assert _unverifiable([_parse("services:\n  db: !reset null\n")])
     assert not _unverifiable([_parse(BASE_WITH_PORT)])
+
+
+def test_host_port_of_a_port_entry():
+    assert _published("443:443") == 443
+    assert _published("127.0.0.1:8000:8000/tcp") == 8000
+    assert _published({"target": 80, "published": "80"}) == 80
+    assert _published("8000") is None
+    assert _published("8000-8010:8000-8010") is None
+    assert _published("${PORT}:80") is None
 
 
 def test_host_ip_of_a_port_entry():
