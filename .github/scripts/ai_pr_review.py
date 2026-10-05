@@ -55,10 +55,7 @@ def parse_diff(text: str) -> dict[str, list[int]]:
         elif (m := HUNK_RE.match(line)) and path is not None:
             new_line = int(m.group(1))
         elif path is not None and new_line:
-            if line.startswith("+"):
-                anchors[path].append(new_line)
-                new_line += 1
-            elif line.startswith(" "):
+            if line.startswith(("+", " ")):
                 anchors[path].append(new_line)
                 new_line += 1
             # "-" zaehlt nur die Linksseite, "\" (no newline) gar nicht.
@@ -147,7 +144,9 @@ def post_review(summary: str, comments: list[dict[str, Any]]) -> None:
 
     def request(path: str, data: dict[str, Any]) -> urllib.error.HTTPError | None:
         req = urllib.request.Request(
-            f"{api}/repos/{repo}/{path}", data=json.dumps(data).encode(), headers=headers
+            f"{api}/repos/{repo}/{path}",
+            data=json.dumps(data).encode(),
+            headers=headers,
         )
         try:
             urllib.request.urlopen(req, timeout=60)
@@ -161,23 +160,31 @@ def post_review(summary: str, comments: list[dict[str, Any]]) -> None:
     )
     if err is None:
         return
-    print(f"::warning::Review-Posting fehlgeschlagen ({err.code}), Rueckfalloption PR-Kommentar", file=sys.stderr)
+    print(
+        f"::warning::Review-Posting fehlgeschlagen ({err.code}), Rueckfalloption PR-Kommentar",
+        file=sys.stderr,
+    )
     err2 = request(f"issues/{number}/comments", {"body": summary})
     if err2 is not None:
-        raise RuntimeError(f"GitHub-API HTTP {err2.code}: {err2.read().decode(errors='replace')[:500]}")
+        raise RuntimeError(
+            f"GitHub-API HTTP {err2.code}: {err2.read().decode(errors='replace')[:500]}"
+        )
 
 
 def main() -> int:
     api_key = os.environ.get("ZAI_API_KEY")
     if not api_key:
         # Kein rotes X im PR nur weil das Secret fehlt; deutlich loggen reicht.
-        print("::warning::Secret ZAI_API_KEY ist nicht gesetzt - Review uebersprungen. "
-              "Anlegen: gh secret set ZAI_API_KEY")
+        print(
+            "::warning::Secret ZAI_API_KEY ist nicht gesetzt - Review uebersprungen. "
+            "Anlegen: gh secret set ZAI_API_KEY"
+        )
         return 0
 
     diff_file = os.environ.get("DIFF_FILE", "pr.diff")
     try:
-        diff = open(diff_file, encoding="utf-8", errors="replace").read()
+        with open(diff_file, encoding="utf-8", errors="replace") as fh:
+            diff = fh.read()
     except OSError as exc:
         raise RuntimeError(f"Diff-Datei {diff_file} nicht lesbar: {exc}") from exc
 
@@ -186,7 +193,9 @@ def main() -> int:
         diff = diff[:MAX_DIFF_CHARS] + "\n\n[... diff truncated ...]"
     anchors = parse_diff(diff)
 
-    result = call_glm(os.environ.get("PR_TITLE", ""), os.environ.get("PR_BODY", ""), diff)
+    result = call_glm(
+        os.environ.get("PR_TITLE", ""), os.environ.get("PR_BODY", ""), diff
+    )
     findings = result.get("findings") or []
     summary_text = str(result.get("summary", "")).strip() or "(no summary)"
 
@@ -203,20 +212,34 @@ def main() -> int:
             unanchored.append(body)
             continue
         file_key = find_file(anchors, str(f.get("file", "")))
-        line = snap_to_diff(anchors[file_key], int(f.get("line", 0) or 0)) if file_key else None
+        line = (
+            snap_to_diff(anchors[file_key], int(f.get("line", 0) or 0))
+            if file_key
+            else None
+        )
         if file_key and line:
             inline.append({"path": file_key, "line": line, "body": body})
         else:
             unanchored.append(body)
 
-    count_line = " · ".join(f"{sev_counts[s]}× {s}" for s in SEVERITIES if sev_counts.get(s)) or "no findings"
+    count_line = (
+        " · ".join(f"{sev_counts[s]}× {s}" for s in SEVERITIES if sev_counts.get(s))  # noqa: RUF001
+        or "no findings"
+    )
     parts = [f"## AI Review — GLM (`{MODEL}`)\n\n{summary_text}\n\n**{count_line}**"]
     if truncated:
-        parts.append("⚠️ Der Diff war größer als das Limit und wurde gekürzt — Befunde können unvollständig sein.")
+        parts.append(
+            "⚠️ Der Diff war größer als das Limit und wurde gekürzt — Befunde können unvollständig sein."
+        )
     if unanchored:
-        parts.append("<details><summary>Weitere Befunde ohne Zeilenanker</summary>\n\n"
-                     + "\n\n".join(f"- {b}" for b in unanchored) + "\n</details>")
-    parts.append("<sub>Automated review via GitHub Actions + Z.ai GLM. Suggestions may be wrong.</sub>")
+        parts.append(
+            "<details><summary>Weitere Befunde ohne Zeilenanker</summary>\n\n"
+            + "\n\n".join(f"- {b}" for b in unanchored)
+            + "\n</details>"
+        )
+    parts.append(
+        "<sub>Automated review via GitHub Actions + Z.ai GLM. Suggestions may be wrong.</sub>"
+    )
     summary_md = "\n\n".join(parts)
 
     if inline or unanchored:

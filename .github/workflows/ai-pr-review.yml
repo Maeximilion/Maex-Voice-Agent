@@ -37,12 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: PR-Diff exportieren
-        run: gh pr diff "$PR_NUMBER" > pr.diff
+        # curl, not the GitHub CLI: the self-hosted runner brings only what its
+        # distribution ships, and gh is not part of that.
+        run: >-
+          curl -fsSL
+          -H "Authorization: Bearer $GH_TOKEN"
+          -H "Accept: application/vnd.github.v3.diff"
+          -o pr.diff
+          "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER"
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
       - name: GLM-Review posten
-        run: python .github/scripts/ai_pr_review.py
+        # python3: Ubuntu has no `python` command without an extra package.
+        run: python3 .github/scripts/ai_pr_review.py
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

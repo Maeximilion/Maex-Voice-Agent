@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.0
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.1
 
 ---
 
@@ -355,6 +355,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.1 · 05.10.2026:** AI review workflow runs on the self-hosted runner: diff fetched with curl instead of gh, script started with python3; script clean under ruff (CI does not lint .github/scripts yet)
 - **v1.38.0 · 05.10.2026:** Push server for team notifications built (D13): service push in the Compose stack, workflow node Send push to team, guard test; D14 opened: which devices; setup on the server is next
 - **v1.37.2 · 04.10.2026:** Own review PR #177: workflow keeps no execution history, timezone pinned in the workflow, handover reason cut to 120 characters; guard test reads producers from the syntax tree, checks the channel node, labels against the tablet, secrets in URLs
 - **v1.37.1 · 04.10.2026:** Codex review PR #177 (P2) fixed: the message nodes pass only title, text and priority on, the event payload no longer reaches the channel node
