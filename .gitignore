@@ -23,3 +23,7 @@ imports/
 
 # Optionales Proxy-Zertifikat für den Image-Build, nie ins Repo
 api/ca-bundle.crt
+
+# Claude Code: personal settings and per-session worktrees stay local
+.claude/settings.local.json
+.claude/worktrees/

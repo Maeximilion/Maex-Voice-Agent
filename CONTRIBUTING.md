@@ -39,7 +39,7 @@ Types used: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope in bracket
 
 ## Pull Requests
 
-- One PR covers one topic. No catch-all PRs across multiple tasks.
+- One PR covers one coherent, reviewable behavior, however large the diff. No line-count rule. Status notes, version pins, and CI chores ride in the next feature PR instead of getting their own.
 - Title in Conventional Commits format, since squash-merge makes it the commit message on `main`.
 - Description per template in `.github/PULL_REQUEST_TEMPLATE.md`: what changed, why, how tested, which issue closes.
 - `main` always stays runnable. Never push directly to `main`.
