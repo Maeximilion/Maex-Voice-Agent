@@ -48,6 +48,8 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 ## Requirements
 
+For development and for the server. A restaurant that uses the product needs a browser, not this repository (`docs/13_DEPLOYMENT.md` §0a).
+
 - Docker and Docker Compose
 - Git
 - For development without Docker: Python 3.12
