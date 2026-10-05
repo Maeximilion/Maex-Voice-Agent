@@ -56,6 +56,8 @@ services:
       - ./CLAUDE.md:/app/CLAUDE.md:ro
       - ./README.md:/app/README.md:ro
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro
+      # test_n8n_workflow.py checks the workflow export against api/events/types.py.
+      - ./n8n:/app/n8n:ro
       # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
       # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
       - ./docker-compose.yml:/app/docker-compose.yml:ro
