@@ -25,7 +25,7 @@ from zoneinfo import ZoneInfo
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from sim.scripted_order import MenuNumbers, PickupScript
+from sim.scripted_order import CLEAR_MATCHES, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -53,6 +53,10 @@ OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
 # Die Frage nach Allergenen geht ans Team; die eigene Allergie ("ich habe eine
 # Erdnussallergie") ist ein Hinweis zur Position (E14, Codex PR #139).
 OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
+# In the sentence that announces the pickup the guest's own allergy may be a
+# note on the dish named with it (Codex PR #139); everything else in that
+# sentence is judged like the call before the order and like the order itself.
+ALLERGY_STEM = "allergi"
 PICKUP = ("abhol", "mitnehmen")
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
@@ -132,6 +136,9 @@ class ScriptedLLM:
         # (Codex PR #130, P2).
         self._opening_query: str | None = None
         self._opening_prefix: str | None = None
+        # The sentence that announced the pickup together with the guest's own
+        # allergy, until the search shows whether the allergy reached a dish.
+        self._opening_allergy: str | None = None
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -153,7 +160,21 @@ class ScriptedLLM:
         if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
 
+        wants_pickup = self._pickup is None and _wants_pickup(text)
+        # Only a statement next to a dish: a question about the dish goes to
+        # the team (Codex PR #178). Whether the allergy reached a position is
+        # checked on the search result (`_after_tool`).
+        own_allergy = (
+            wants_pickup
+            and ALLERGY_STEM in text.lower()
+            and "?" not in text
+            and _opening_dish(text) is not None
+        )
         stems = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
+        if wants_pickup:
+            stems = OUT_OF_SCOPE_IN_ORDER + tuple(
+                s for s in OUT_OF_SCOPE if not (own_allergy and s == ALLERGY_STEM)
+            )
         if _mentions_stem(text, stems) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
             # Und gemerkt, bis der Rückruf steht: der nächste Zug enthält oft nur noch
@@ -162,8 +183,9 @@ class ScriptedLLM:
             return self._out_of_scope(slots, patch)
 
         started_pickup = False
-        if self._pickup is None and _wants_pickup(text):
+        if wants_pickup:
             self._pickup = PickupScript(self._menu)
+            self._opening_allergy = text if own_allergy else None
             started_pickup = True
             if not self._status_checked:
                 self._opening_query = _opening_dish(text)
@@ -249,6 +271,16 @@ class ScriptedLLM:
         say = result.get("say")
         slots = state.get("slots", {})
 
+        if name == "search_menu" and self._opening_allergy:
+            request, self._opening_allergy = self._opening_allergy, None
+            if not _allergy_on_a_dish(result):
+                # The allergy reached no position (no dish, not on the menu,
+                # sold out, several to choose from): it must not get lost, the
+                # team calls back as before the order (review PR #178).
+                prefix, self._opening_prefix = self._opening_prefix, None
+                self._out_of_scope_request = request
+                turn = self._out_of_scope(slots, {})
+                return replace(turn, say=_join(prefix, turn.say)) if turn.say else turn
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok"):
@@ -438,6 +470,19 @@ def _as_tool_result(text: str) -> dict[str, Any] | None:
     if isinstance(parsed, dict) and "tool" in parsed:
         return parsed
     return None
+
+
+def _allergy_on_a_dish(result: dict[str, Any]) -> bool:
+    """Did the search put the guest's allergy on one dish that can be ordered?
+    Several hits are not enough: the choice can still be rejected, and the
+    allergy would go with it (Codex PR #178)."""
+    data = result.get("data") or {}
+    return bool(result.get("ok")) and any(
+        (part.get("wish") or {}).get("kind") == "allergy"
+        and part.get("match_type") in CLEAR_MATCHES
+        and any(not hit.get("sold_out") for hit in (part.get("results") or [])[:1])
+        for part in data.get("positions") or [data]
+    )
 
 
 def _mentions_stem(text: str, stems: tuple[str, ...]) -> bool:
