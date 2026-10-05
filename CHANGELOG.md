@@ -5,6 +5,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 ## [Unreleased]
 
 ### Added
+- Team notifications (D13): the n8n workflow `n8n/team_events.json` turns `reservation.confirmed`, `callback.created` and `order.handover_failed` into a push message and publishes it to a self-hosted push server, the new service `push` in the Compose stack (closed by default, `n8n` may only write, `team` may only read, nothing forwarded to a relay). Setup in `n8n/README.md`
 - Backup and restore (T-9.3): `scripts/backup.sh` writes an encrypted dump of the database of `DATABASE_URL` and reads it back before it counts; `scripts/restore.sh --check` rehearses a restore without touching the live database, `--replace` restores into a new database and swaps it in by rename, the previous state stays; `deploy/backup.cron` for the nightly run. `make backup` works
 - "Gericht aus" on the tablet (T-4.8): a button in the header with the number of dishes sold out today opens a box with a search field and big switches. One tap marks a dish sold out until the end of the business day, a second tap brings it back; every tap is written to `audit_log`, other tablets follow over the event stream. `search_menu` then names up to two available dishes of the same category as an alternative
 - Project skeleton: FastAPI app with /health, token auth, uniform response envelope

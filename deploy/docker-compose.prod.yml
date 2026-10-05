@@ -1,7 +1,7 @@
 # Produktion: zusammen mit der Basis-Datei starten
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
 #
-# Only caddy publishes a host port. db, api and n8n stay inside the Docker
+# Only caddy publishes a host port. db, api, n8n and push stay inside the Docker
 # network because the base file gives them no port and this file adds none;
 # `ports: []` here would not remove one (Compose merges the lists). Naming the
 # files with -f also keeps docker-compose.override.yml, the dev ports, out.
@@ -19,6 +19,12 @@ services:
   n8n:
     restart: always
 
+  push:
+    restart: always
+    environment:
+      # Caddy stands in front: take the visitor address from its header.
+      - NTFY_BEHIND_PROXY=true
+
   caddy:
     image: caddy:2-alpine
     restart: always
@@ -34,7 +40,7 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api, n8n]
+    depends_on: [api, n8n, push]
 
 volumes:
   caddy_data:

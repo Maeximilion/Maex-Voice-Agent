@@ -169,7 +169,7 @@ def test_production_publishes_ports_only_on_the_proxy():
 def test_the_proxy_is_what_production_publishes():
     """The check above would also pass on files that publish nothing at all."""
     ports = _merged_ports(_production())
-    assert {"db", "api", "n8n"} <= set(ports), sorted(ports)
+    assert {"db", "api", "n8n", "push"} <= set(ports), sorted(ports)
     published = {
         name: [_published(entry) for entry in ports[name]] for name in PUBLISHERS
     }

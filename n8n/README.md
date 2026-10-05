@@ -7,7 +7,7 @@ Event from dispatcher (webhook, POST /webhook/maex, basic auth)
   -> Seen before?            dedupe on the event id
   -> Route by event type     one branch per type
   -> Message: ...            builds title, text, priority
-  -> REPLACE ME: team notification channel
+  -> Send push to team       publishes to the push server in the stack
   -> Remember event id
   -> Respond: delivered
 ```
@@ -35,22 +35,58 @@ The message texts are German because the team reads them. The time is shown in `
    ```
 
 2. Open the node **Event from dispatcher** and create a "Basic Auth" credential with the values of `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD` from `.env`. Without it the webhook answers 500 to every request.
-3. Replace the node **REPLACE ME: team notification channel** (next section).
+3. Open the node **Send push to team** and create a "Header Auth" credential: name `Authorization`, value `Bearer <token>`, the token of the user `n8n` from `NTFY_AUTH_TOKENS` in `.env` (next section). Without it the push server answers 403 and every event fails.
 4. Publish the workflow. `N8N_WEBHOOK_URL` must point at the production URL `/webhook/maex`, not at `/webhook-test/`.
 
-Importing the file again with the command above overwrites the workflow with the same id, including the two manual steps: repeat steps 2 to 4. "Import from File" in the editor does not overwrite, it loads the nodes into the workflow that is open.
+Importing the file again with the command above overwrites the workflow with the same id, including the manual steps: repeat steps 2 to 4. "Import from File" in the editor does not overwrite, it loads the nodes into the workflow that is open.
 
-## The channel node
+## The channel node and the push server
 
-The placeholder is a "Stop and Error" node: it fails on purpose, so no event counts as delivered while nobody is notified. Decided 04.10.2026 (D13 in `docs/01_STATUS.md`): a self-hosted push service on the EU server replaces it. Neither the service nor the node is built yet.
+**Send push to team** posts `title`, `text` and `priority` to the push server, the service `push` in `docker-compose.yml`, at `http://push/` inside the Compose network. The topic is `team`; `normal` becomes priority 3, `high` priority 4. Decided 04.10.2026 (D13 in `docs/01_STATUS.md`): self-hosted, nothing is forwarded to a relay, the messages stay on our server.
 
-The replacement
+The node
 
-- receives `title`, `text` and `priority` (`normal` or `high`) and nothing else: the event payload stops at the message nodes, so a node that forwards its whole input sends no customer data,
+- receives `title`, `text` and `priority` and nothing else: the event payload stops at the message nodes, so the push server never sees customer data,
 - must fail when sending fails (no "Continue on Fail"), otherwise a lost notification is recorded as delivered,
-- keeps its credentials in n8n. An export contains only the reference (id and name), never the values.
+- gives up after 5 seconds, before the dispatcher's own timeout (`N8N_TIMEOUT_SECONDS`), so a hanging push server does not make the dispatcher send the event a second time while the first run still waits,
+- keeps its token in an n8n credential. An export contains only the reference (id and name), never the value.
 
-The messages carry no names, phone numbers or free text from the call; the details are on the tablet. Adding such fields sends customer data to whoever runs the channel: check `docs/09_OPERATIONS_LEGAL.md` first.
+The messages carry no names, phone numbers or free text from the call; the details are on the tablet. Adding such fields puts customer data on the team's devices: check `docs/09_OPERATIONS_LEGAL.md` first.
+
+### Setting up the push server
+
+The server is closed by default: without users nobody can publish or read. Two users are fixed in `docker-compose.yml`: `n8n` may only write to the topic `team`, `team` may only read it.
+
+1. One password hash per user, typed twice at the prompt:
+
+   ```bash
+   docker run --rm -it binwiederhier/ntfy:v2.28.0 user hash
+   ```
+
+2. One token for the workflow:
+
+   ```bash
+   docker run --rm binwiederhier/ntfy:v2.28.0 token generate
+   ```
+
+3. Into `.env`, in single quotes because a hash contains `$`:
+
+   ```text
+   NTFY_AUTH_USERS='team:<hash>:user,n8n:<hash>:user'
+   NTFY_AUTH_TOKENS='n8n:<token>:n8n workflow'
+   ```
+
+   The password of `n8n` is never used, the workflow sends the token. `NTFY_BASE_URL` is the address under which the team's devices reach the server (`deploy/Caddyfile`).
+
+4. Start it:
+
+   ```bash
+   docker compose up -d push
+   ```
+
+5. On each device of the team: subscribe to the topic `team` on that address with the user `team` and its password, in the app of the push server or in its web page.
+
+Locally the server listens on `http://localhost:8090`, loopback only. Android devices keep their own connection to our server. iPhones and iPads get a message at once only through a relay of the app's maker; that is not configured and an open decision (D14 in `docs/01_STATUS.md`).
 
 ## What the dispatcher gets back
 
@@ -60,7 +96,7 @@ The messages carry no names, phone numbers or free text from the call; the detai
 | Same event id again | 200 `duplicate`, no second notification | `sent` |
 | Wrong or missing basic auth | 401 | retry, then `failed` with alarm |
 | Event type without a branch | 422 `unknown_event_type` | retry, then `failed` with alarm |
-| Channel node fails, or is still the placeholder | 500 | retry, then `failed` with alarm |
+| Push server down, wrong token or no credential | 500 | retry, then `failed` with alarm |
 
 ## What n8n stores
 
@@ -76,10 +112,10 @@ n8n keeps static data only for a published workflow called through its productio
 
 ## Changing the workflow
 
-Edit in n8n, download the workflow, overwrite `team_events.json`, then run the test. It also checks what a replaced channel node must not do (carry on after an error, hold a secret in its parameters):
+Edit in n8n, download the workflow, overwrite `team_events.json`, then run the test. It also checks what the channel node must not do (carry on after an error, hold a secret in its parameters), and `api/tests/test_push_service.py` checks that node, Compose file and proxy agree:
 
 ```bash
-pytest api/tests/test_n8n_workflow.py
+pytest api/tests/test_n8n_workflow.py api/tests/test_push_service.py
 ```
 
-Checked by hand against n8n 2.40.5 with a local stand-in for the channel: all three event types, a repeated id, an unknown type, wrong password, and a channel outage followed by the retry; the last run without `GENERIC_TIMEZONE` in the environment.
+Checked by hand against n8n 2.40.5 and the push server 2.28.0 in a throwaway stack, sent through the dispatcher's own sender: all three event types arrive for the user `team`, a repeated id arrives once, a stopped push server gives 500 after 5 seconds and the retry is delivered, a wrong token gives 500 and no message. The access rules were tried directly: publishing without a token, with the token on another topic and as `team` is refused, reading as `n8n` or without a login too. Earlier, with a stand-in channel: unknown event type, wrong webhook password, and a run without `GENERIC_TIMEZONE`.

@@ -60,6 +60,9 @@ services:
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro
       # test_n8n_workflow.py checks the workflow export against api/events/types.py.
       - ./n8n:/app/n8n:ro
+      # test_push_service.py checks that the example holds no credentials. Only
+      # the example: .env itself never goes into a container.
+      - ./.env.example:/app/.env.example:ro
       # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
       # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
       - ./docker-compose.yml:/app/docker-compose.yml:ro
@@ -100,6 +103,39 @@ services:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows
 
+  push:
+    # Push server for team notifications (D13, n8n/README.md): the n8n workflow
+    # publishes, the team's devices subscribe. Nothing is forwarded to an
+    # upstream relay, the messages stay on this server.
+    image: binwiederhier/ntfy:v2.28.0
+    restart: unless-stopped
+    # The server refuses to start with an empty user list, and with access
+    # rules for users it does not know. So the rules are set only when users
+    # exist; without users it starts closed for everyone instead of not at all.
+    # n8n may only write to the topic, the team may only read it.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$NTFY_AUTH_USERS" ]; then
+          export NTFY_AUTH_ACCESS="n8n:team:wo,team:team:ro"
+        else
+          unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
+        fi
+        exec ntfy serve
+    environment:
+      - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/auth.db
+      # Closed unless a rule opens it.
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_ENABLE_LOGIN=true
+      # Keys without a value come from .env (.env.example).
+      - NTFY_BASE_URL
+      - NTFY_AUTH_USERS
+      - NTFY_AUTH_TOKENS
+    volumes:
+      - pushdata:/var/lib/ntfy
+
 volumes:
   pgdata:
   n8ndata:
+  pushdata:

@@ -7,7 +7,7 @@
 | Baustein | Läuft auf | Nie auf |
 |---|---|---|
 | Voice-Plattform (Telefonie, Spracherkennung, Stimme) | beim Anbieter, EU-Rechenzentrum | Maxis PC |
-| Agent-API, Datenbank, GUI, n8n | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
+| Agent-API, Datenbank, GUI, n8n, Push-Server für das Team (D13) | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
 | Sprachmodell des Agenten | beim Voice- oder Modellanbieter | Maxis PC |
 | Entwicklung und Simulator | Maxis PC, nur zum Bauen und Testen | – |
 | Druckbrücke für den Eingabezettel am Haupt-Bondrucker (T-4.6, D2) | Rechner im Lokal, der den Bondrucker erreicht (Kassenrechner oder eigener Kleinrechner, offen: Maxi) | Maxis PC |
@@ -30,7 +30,7 @@ Maxis PC (nur Werkbank)
   Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
 ```
 
-**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000) and n8n (5678) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
+**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000), n8n (5678) and the push server (8090) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
 
 **Tunnel** Vorschlag: `cloudflared tunnel --url http://localhost:8000` oder `ngrok http 8000`. Die URL wechselt bei jedem Start, in der Plattform eintragen. Nur für Tests, nie für echte Kunden.
 
@@ -45,7 +45,8 @@ Internet
 Caddy (TLS automatisch, Reverse Proxy)
   ├── agent.example.com/v1/tools/*  → api:8000  (Token-Pflicht)
   ├── agent.example.com/gui/*        → api:8000  (Basic-Auth in deploy/Caddyfile)
-  └── n8n.example.com                → n8n:5678  (Basic-Auth)
+  ├── n8n.example.com                → n8n:5678  (Basic-Auth)
+  └── push.example.com               → push:80   (the push server checks its own users)
 Postgres: nur im Docker-Netz, kein offener Port
 ```
 
@@ -57,9 +58,11 @@ Annahme: Domainnamen sind Vorschläge.
 
 **Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` und `KITCHEN_BRIDGE_TENANT_ID` setzen, ohne beide ist `/v1/kitchen/*` zu. Genau eine Brücke je Betrieb.
 
+**Push server (D13):** the service `push` carries the team notifications from the n8n workflow to the team's devices. It is closed by default and knows two users, `n8n` (write only) and `team` (read only); hashes and token live in `.env`. Nothing is forwarded to a relay outside. Setup in `n8n/README.md`; it needs the DNS name from the Caddyfile and `NTFY_BASE_URL` set to it.
+
 **Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, `restart: always`, `--reload` aus).
 
-**Published ports:** only Caddy publishes host ports (80 and 443). Postgres, API and n8n have no `ports:` entry in either of the two files and are reachable only inside the Docker network. Three rules keep it that way:
+**Published ports:** only Caddy publishes host ports (80 and 443). Postgres, API, n8n and the push server have no `ports:` entry in either of the two files and are reachable only inside the Docker network. Three rules keep it that way:
 
 - Compose merges `ports` lists across files. `ports: []` in an override removes nothing; until 05.10.2026 the production file relied on exactly that and the rendered stack published 5432, 8000 and 5678 on all interfaces. A service that needs a host port for development gets it in `docker-compose.override.yml`, never in the base file.
 - Always start with both `-f` flags as below. With `-f`, Compose does not read `docker-compose.override.yml`. A bare `docker compose up` on the server would start the development layout: no Caddy, ports on loopback.

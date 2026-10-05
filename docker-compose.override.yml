@@ -4,7 +4,7 @@
 #
 # Host ports live here and not in the base file because Compose merges `ports`
 # lists across files: production could not take them away again. Loopback only,
-# so the dev database and n8n are not reachable from the local network.
+# so the dev database, n8n and the push server are not reachable from the local network.
 # Nothing but `ports` belongs in this file; api/tests/test_compose_ports.py
 # enforces both rules.
 services:
@@ -19,3 +19,8 @@ services:
   n8n:
     ports:
       - "127.0.0.1:5678:5678"
+
+  push:
+    # In production the team reaches it through Caddy.
+    ports:
+      - "127.0.0.1:8090:80"

@@ -301,17 +301,26 @@
     },
     {
       "parameters": {
-        "errorMessage": "No team notification channel configured: replace this node (n8n/README.md)"
+        "method": "POST",
+        "url": "http://push/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ topic: 'team', title: $json.title, message: $json.text, priority: $json.priority === 'high' ? 4 : 3 }) }}",
+        "options": {
+          "timeout": 5000
+        }
       },
       "id": "87481b61-93f1-5028-b6a2-6ce4728730ca",
-      "name": "REPLACE ME: team notification channel",
-      "type": "n8n-nodes-base.stopAndError",
-      "typeVersion": 1,
+      "name": "Send push to team",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1160,
         380
       ],
-      "notes": "Placeholder. Replace with the node for the self-hosted push service.",
+      "notes": "Publishes to the push server in the Compose stack. Fails when sending fails.",
       "notesInFlow": true
     },
     {
@@ -346,13 +355,13 @@
     },
     {
       "parameters": {
-        "content": "## Replace this node\n\n**REPLACE ME: team notification channel** is a placeholder. It fails on purpose, so no event counts as delivered while nobody is notified.\n\nPut the node for the self-hosted push service in its place. It receives `title`, `text` and `priority` (`normal` or `high`) and must fail when sending fails. Its credentials live in n8n, never in the repo.\n\nDetails: `n8n/README.md`\n",
+        "content": "## Team channel\n\n**Send push to team** publishes `title`, `text` and `priority` to the topic `team` on the push server of the Compose stack (`http://push/`).\n\nIt needs a \"Header Auth\" credential: name `Authorization`, value `Bearer <token of the user n8n>`. The credential lives in n8n, never in the repo.\n\nThe node must fail when sending fails: no \"Continue on Fail\".\n\nDetails: `n8n/README.md`\n",
         "height": 280,
         "width": 380,
         "color": 3
       },
       "id": "b7953e21-0744-5c0d-bb2c-66ab064c6716",
-      "name": "Note: replace the channel",
+      "name": "Note: team channel",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
@@ -438,7 +447,7 @@
       "main": [
         [
           {
-            "node": "REPLACE ME: team notification channel",
+            "node": "Send push to team",
             "type": "main",
             "index": 0
           }
@@ -449,7 +458,7 @@
       "main": [
         [
           {
-            "node": "REPLACE ME: team notification channel",
+            "node": "Send push to team",
             "type": "main",
             "index": 0
           }
@@ -460,14 +469,14 @@
       "main": [
         [
           {
-            "node": "REPLACE ME: team notification channel",
+            "node": "Send push to team",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "REPLACE ME: team notification channel": {
+    "Send push to team": {
       "main": [
         [
           {
