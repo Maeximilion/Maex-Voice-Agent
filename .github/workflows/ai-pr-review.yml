@@ -39,4 +39,5 @@ jobs:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          ZAI_API_BASE: ${{ vars.ZAI_API_BASE }}
           REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}

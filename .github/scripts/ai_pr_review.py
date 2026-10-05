@@ -23,7 +23,7 @@ SEVERITIES = ("P0", "P1", "P2", "P3")
 
 # Endpunkt und Modell sind ueber Environment/Repository-Variablen ueberschreibbar,
 # damit kein Workflow-Edit noetig ist, wenn z. B. ein neues GLM-Modell kommt.
-ZAI_BASE = os.environ.get("ZAI_API_BASE", "https://api.z.ai/api/paas/v4")
+ZAI_BASE = os.environ.get("ZAI_API_BASE") or "https://api.z.ai/api/paas/v4"
 MODEL = os.environ.get("REVIEW_MODEL") or "glm-4.6"
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
