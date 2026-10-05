@@ -90,7 +90,9 @@ services:
       - ./db:/app/db
 
   n8n:
-    image: n8nio/n8n:latest
+    # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)
+    # without anyone noticing. Dependabot proposes updates as pull requests.
+    image: n8nio/n8n:2.40.5
     restart: unless-stopped
     environment:
       N8N_BASIC_AUTH_ACTIVE: "true"
