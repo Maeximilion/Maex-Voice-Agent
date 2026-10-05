@@ -61,6 +61,8 @@ maex-voice-agent/
 ├── deploy/                Prod Compose, Caddyfile
 ├── .claude/commands/      /start /task /done /bug /eval /gate /project /handover
 ├── .claude/skills/        Repo-specific rules Claude Code loads on demand
+├── .claude/settings.json  Project hooks: SessionStart syncs a clean main
+├── .claude/hooks/         Hook scripts (sync_main.sh)
 ├── .github/workflows/     CI: ruff + pytest
 ├── docs/                  Planning, specs, status  →  Section 5
 ├── api/
