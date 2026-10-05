@@ -1,0 +1,18 @@
+name: dependency-review
+
+# Fails a pull request that introduces a dependency with a known high or critical
+# vulnerability. Needs the dependency graph, which is on by default for public repositories.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high

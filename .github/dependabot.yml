@@ -6,6 +6,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR for all minor and patch bumps instead of one PR per package.
+    groups:
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: chore
       include: scope
@@ -36,3 +42,14 @@ updates:
         update-types:
           - version-update:semver-major
           - version-update:semver-minor
+
+  # Postgres, n8n, ntfy and caddy images live in the compose files, not in a Dockerfile.
+  - package-ecosystem: docker-compose
+    directories:
+      - /
+      - /deploy
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+      include: scope
