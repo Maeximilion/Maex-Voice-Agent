@@ -16,6 +16,12 @@ services:
     ports: []
     restart: always
 
+  push:
+    restart: always
+    environment:
+      # Caddy stands in front: take the visitor address from its header.
+      - NTFY_BEHIND_PROXY=true
+
   caddy:
     image: caddy:2-alpine
     restart: always
@@ -31,7 +37,7 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api, n8n]
+    depends_on: [api, n8n, push]
 
 volumes:
   caddy_data:
