@@ -128,10 +128,12 @@ maex-voice-agent/
 ### The Loop
 **Plan → Build → Execute → Assess → Iterate.** After each task, independently take up to **3 follow-up steps** toward the goal (add tests, close obvious gaps, sync docs), then report results. Larger scope expansions only as a proposal.
 
+For code tasks use the personal skill `code-autopilot`. Where it differs from this file, this file wins (the follow-up budget of 3 above, no emojis, English for everything written to the repo).
+
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
 
-**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10).
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). Merging a PR into `main` is also a wait point (Maxi, 2026-10-05): prepare the PR, get CI and evals green, report it ready, Maxi merges.
 
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
