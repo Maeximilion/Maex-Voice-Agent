@@ -5,6 +5,7 @@ Format per Keep a Changelog. Versions follow gates, see docs/15_README_STRATEGY.
 ## [Unreleased]
 
 ### Added
+- Backup and restore (T-9.3): `scripts/backup.sh` writes an encrypted dump of the database of `DATABASE_URL` and reads it back before it counts; `scripts/restore.sh --check` rehearses a restore without touching the live database, `--replace` restores into a new database and swaps it in by rename, the previous state stays; `deploy/backup.cron` for the nightly run. `make backup` works
 - "Gericht aus" on the tablet (T-4.8): a button in the header with the number of dishes sold out today opens a box with a search field and big switches. One tap marks a dish sold out until the end of the business day, a second tap brings it back; every tap is written to `audit_log`, other tablets follow over the event stream. `search_menu` then names up to two available dishes of the same category as an alternative
 - Project skeleton: FastAPI app with /health, token auth, uniform response envelope
 - `api/db.py`: engine with connection ping, session per request via `get_db`, tests against real Postgres
