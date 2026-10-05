@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.domain.menu.importer import (
@@ -14,6 +14,8 @@ from api.domain.menu.importer import (
     ALLERGENS_FILE,
     MENU_FILE,
     OPTIONS_FILE,
+    CommitInterruptedError,
+    CommitOutcomeUnknownError,
     OptionRow,
     apply,
     parse,
@@ -125,6 +127,49 @@ def test_dry_run_rejects_what_the_database_rejects_in_an_option(
 
     with Session(engine) as s:
         assert count(s, MenuItem) == 0 and count(s, ItemOption) == 0
+
+
+def test_apply_names_an_error_of_the_commit_itself(engine, tenant_id, monkeypatch):
+    """Codex PR #169: after a commit that raised, the server may have committed.
+    apply flushes everything first, so this error is told apart from a row the
+    database rejects (the DBAPIError of the test above, also without dry run)."""
+    plan = parse(files())
+    assert plan.ok, plan.errors
+    unflushed: list[bool] = []
+
+    with Session(engine, autoflush=False) as s:
+
+        def lost_connection() -> None:
+            unflushed.append(bool(s.new or s.dirty or s.deleted))
+            raise OperationalError("COMMIT", None, Exception("connection lost"))
+
+        monkeypatch.setattr(s, "commit", lost_connection)
+        with pytest.raises(CommitOutcomeUnknownError, match="connection lost") as e:
+            apply(s, tenant_id, plan, now=NOW)
+
+    assert unflushed == [False]
+    assert isinstance(e.value.__cause__, OperationalError)
+
+
+def test_apply_interrupt_in_the_commit_stays_an_interrupt(
+    engine, tenant_id, monkeypatch
+):
+    """Review PR #176: wrapped into an Exception, Ctrl-C in the commit was
+    swallowed by every caller that catches Exception - the eval runner turned
+    it into a red case and went on."""
+    plan = parse(files())
+    assert plan.ok, plan.errors
+
+    def interrupted() -> None:
+        raise KeyboardInterrupt
+
+    with Session(engine, autoflush=False) as s:
+        monkeypatch.setattr(s, "commit", interrupted)
+        # Caught here in any case: a bare interrupt would stop the pytest run.
+        with pytest.raises(KeyboardInterrupt) as e:
+            apply(s, tenant_id, plan, now=NOW)
+
+    assert isinstance(e.value, CommitInterruptedError)
 
 
 def test_dry_run_sends_the_last_dish_to_the_database_too(session, tenant_id):
@@ -322,31 +367,192 @@ def test_cli_fehler_exit_1_und_nichts_gespeichert(cli, ordner, session, capsys):
     assert count(session, MenuItem) == 0
 
 
+def script_sessions(engine, **kw) -> sessionmaker:
+    """Sessions like api.db.SessionLocal, which the script uses outside the tests."""
+    return sessionmaker(bind=engine, autoflush=False, expire_on_commit=False, **kw)
+
+
+def run_script(ordner, *flags: str) -> int:
+    return import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", *flags])
+
+
+def reject_ente(engine) -> None:
+    """A rule only the database knows: no check of the files sees it coming."""
+    with engine.begin() as conn:
+        conn.exec_driver_sql(
+            "ALTER TABLE item_options ADD CONSTRAINT ck_no_ente "
+            "CHECK (option_name <> 'Ente')"
+        )
+
+
+@pytest.fixture
+def commit_fails(engine, monkeypatch, tenant_id):
+    """The script's sessions lose the connection in the commit. `reaches_server`
+    decides whether the server had committed before the answer got lost.
+    Returns one entry per commit call: was anything still unflushed?"""
+
+    def install(
+        *, reaches_server: bool, error: BaseException | None = None
+    ) -> list[bool]:
+        calls: list[bool] = []
+
+        class LostConnection(Session):
+            def commit(self) -> None:
+                calls.append(bool(self.new or self.dirty or self.deleted))
+                if reaches_server:
+                    super().commit()
+                raise error or OperationalError(
+                    "COMMIT",
+                    None,
+                    Exception("server closed the connection unexpectedly"),
+                )
+
+        monkeypatch.setattr(
+            import_menu, "SessionLocal", script_sessions(engine, class_=LostConnection)
+        )
+        return calls
+
+    return install
+
+
 @pytest.mark.parametrize("flags", [["--dry-run"], []])
 def test_cli_database_rejection_is_a_message_not_a_traceback(
     engine, monkeypatch, tenant_id, ordner, session, capsys, flags
 ):
     """Review PR #169: the script caught only ValueError. A row the database
     refuses - which a dry run now sends too - ended in a stack trace."""
-    with engine.begin() as conn:
-        # A rule only the database knows: no check of the files sees it coming.
-        conn.exec_driver_sql(
-            "ALTER TABLE item_options ADD CONSTRAINT ck_no_ente "
-            "CHECK (option_name <> 'Ente')"
-        )
-    # Like api.db.SessionLocal, which the script uses outside the tests.
-    monkeypatch.setattr(
-        import_menu,
-        "SessionLocal",
-        sessionmaker(bind=engine, autoflush=False, expire_on_commit=False),
-    )
+    reject_ente(engine)
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
 
-    code = import_menu.main([str(ordner), "--tenant-name", "Testbetrieb", *flags])
+    code = run_script(ordner, *flags)
 
     err = capsys.readouterr().err
     assert code == 1
     assert "ck_no_ente" in err and "nothing was stored" in err
     assert count(session, MenuItem) == 0 and count(session, ItemOption) == 0
+
+
+def test_cli_database_rejection_never_reaches_the_commit(
+    engine, commit_fails, ordner, session, capsys
+):
+    """Codex PR #169: "nothing was stored" is only certain for an error that
+    comes before the commit. A rejected row has to fail in the flush."""
+    reject_ente(engine)
+    calls = commit_fails(reaches_server=False)
+
+    code = run_script(ordner)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert calls == []
+    assert "ck_no_ente" in err and "nothing was stored" in err
+    assert "unknown" not in err
+    assert count(session, MenuItem) == 0 and count(session, ItemOption) == 0
+
+
+@pytest.mark.parametrize("reaches_server", [False, True])
+def test_cli_commit_error_reports_an_unknown_outcome(
+    engine, monkeypatch, commit_fails, ordner, session, capsys, reaches_server
+):
+    """Codex PR #169: the connection drops while the import waits for the
+    answer to its commit. The server may have committed already, so the script
+    must not claim that nothing was stored. A dry run afterwards tells."""
+    calls = commit_fails(reaches_server=reaches_server)
+
+    code = run_script(ordner)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    # Everything was flushed before the commit: the error can only be its own.
+    assert calls == [False]
+    assert "server closed the connection unexpectedly" in err
+    assert "unknown" in err and "--dry-run" in err and "menu.imported" in err
+    assert "nothing was stored" not in err
+    assert count(session, MenuItem) == (3 if reaches_server else 0)
+
+    # What the message tells the operator to do, with a working connection.
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
+    assert run_script(ordner, "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert ("Keine Änderung" in out) == reaches_server
+    assert ("Gerichte neu: 3" in out) == (not reaches_server)
+    assert count(session, AuditLog) == (1 if reaches_server else 0)
+
+
+def test_cli_interrupt_during_commit_reports_an_unknown_outcome(
+    commit_fails, ordner, session, capsys
+):
+    """Codex PR #176: Ctrl-C while the driver runs COMMIT is a BaseException.
+    The server may have committed all the same, so the operator gets the same
+    message instead of an interrupt traceback."""
+    calls = commit_fails(reaches_server=True, error=KeyboardInterrupt())
+
+    try:
+        code = run_script(ordner)
+    except KeyboardInterrupt:
+        # Not let through: pytest would take it for Ctrl-C and stop the run.
+        pytest.fail("the interrupt escaped the script")
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert calls == [False]
+    assert "interrupted" in err
+    assert "unknown" in err and "--dry-run" in err
+    assert count(session, MenuItem) == 3
+
+
+def test_cli_unapplied_price_change_is_listed_either_way(
+    cli, engine, monkeypatch, commit_fails, ordner, capsys
+):
+    """Review PR #176: without --apply-price-changes the dry run lists the
+    price change before and after a stored import. The message has to say that
+    this line does not tell, or the operator repeats an import that is in."""
+    assert cli(ordner) == 0
+    (ordner / MENU_FILE).write_text(
+        files()[MENU_FILE]
+        .replace("6,90", "7,50")
+        .replace("Frühlingsrollen", "Knusperrollen"),
+        encoding="utf-8",
+    )
+    commit_fails(reaches_server=True)
+    capsys.readouterr()
+
+    assert run_script(ordner) == 1
+
+    assert "listed either way" in capsys.readouterr().err
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(engine))
+    assert run_script(ordner, "--dry-run") == 0
+    out = capsys.readouterr().out
+    assert "Gerichte neu: 0, geändert: 0" in out
+    assert "Preisänderung 23" in out and "NICHT übernommen" in out
+
+
+def test_cli_no_connection_is_a_message_not_a_traceback(monkeypatch, ordner, capsys):
+    """Review PR #176: the tenant lookup ran outside the try, so a database
+    that cannot be reached (wrong DATABASE_URL, stack down) ended in a stack
+    trace. Nothing was rejected there, so the message does not say so."""
+    nowhere = create_engine(
+        "postgresql+psycopg://nobody@127.0.0.1:1/nothing",
+        connect_args={"connect_timeout": 2},
+    )
+    monkeypatch.setattr(import_menu, "SessionLocal", script_sessions(nowhere))
+
+    code = run_script(ordner)
+
+    err = capsys.readouterr().err
+    assert code == 1
+    assert "nothing was stored" in err and "rejected" not in err
+
+
+def test_cli_dry_run_never_commits(commit_fails, ordner, session, capsys):
+    calls = commit_fails(reaches_server=True)
+
+    code = run_script(ordner, "--dry-run")
+
+    assert code == 0
+    assert calls == []
+    assert "Probelauf, nichts gespeichert." in capsys.readouterr().out
+    assert count(session, MenuItem) == 0 and count(session, AuditLog) == 0
 
 
 def test_cli_ordner_fehlt(cli, tmp_path):
