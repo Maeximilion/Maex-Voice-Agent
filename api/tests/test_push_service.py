@@ -19,6 +19,8 @@ COMPOSE = REPO_ROOT / "docker-compose.yml"
 PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
 CADDYFILE = REPO_ROOT / "deploy" / "Caddyfile"
 ENV_EXAMPLE = REPO_ROOT / ".env.example"
+# Host ports for development; production never loads this file (docs/13 §3).
+DEV = REPO_ROOT / "docker-compose.override.yml"
 
 SERVICE = "push"
 PUBLISHER = "n8n"
@@ -124,7 +126,10 @@ def test_channel_gives_up_before_the_dispatcher() -> None:
 
 def test_host_port_is_loopback_only() -> None:
     # From outside the server is reached through the proxy, never directly.
-    ports = _service()["ports"]
+    # The port lives in the dev file: in the base file it would also be published
+    # on the production host (api/tests/test_compose_ports.py).
+    assert "ports" not in _service() and "ports" not in _service(PROD)
+    ports = _service(DEV)["ports"]
     assert ports and all(port.startswith("127.0.0.1:") for port in ports)
 
 

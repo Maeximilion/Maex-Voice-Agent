@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.7
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.8
 
 ---
 
@@ -359,6 +359,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.8 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api, n8n and push moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration
 - **v1.38.7 · 05.10.2026:** Open point from PR #182 (Codex P2): the print bridge sends no heartbeat, the 60 s watchdog only fires for a slip that waits; docs/13 §0a says so
 - **v1.38.6 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a no longer promises that the restaurant's line rings when the voice platform is down; that depends on the forward, open with C2
 - **v1.38.5 · 05.10.2026:** Codex review PR #182 (P2) fixed: docs/13 §0a describes team_phone as the target of transfer_to_team only, not as an outage alert

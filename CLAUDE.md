@@ -56,7 +56,8 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 maex-voice-agent/
 ├── CLAUDE.md              ← this file
 ├── README.md
-├── docker-compose.yml     Postgres · API · n8n (dev)
+├── docker-compose.yml     Postgres · API · n8n (base, no host ports)
+├── docker-compose.override.yml  dev host ports, loopback only
 ├── deploy/                Prod Compose, Caddyfile
 ├── .claude/commands/      /start /task /done /bug /eval /gate /project /handover
 ├── .claude/skills/        Repo-specific rules Claude Code loads on demand
