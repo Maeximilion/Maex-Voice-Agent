@@ -92,7 +92,9 @@ services:
   n8n:
     # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)
     # without anyone noticing. Dependabot proposes updates as pull requests.
-    image: n8nio/n8n:2.40.5
+    # 2.41.4 or newer is required: GHSA-3qcw-p65v-c7vq (unauthenticated, unbounded growth of
+    # the database through the authorize endpoint) affects every older release.
+    image: n8nio/n8n:2.41.7
     restart: unless-stopped
     environment:
       N8N_BASIC_AUTH_ACTIVE: "true"
