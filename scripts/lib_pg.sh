@@ -34,6 +34,44 @@ urldecode() {
     printf '%b' "${escaped//%/\\x}"
 }
 
+# Connection parameters behind the "?" of the URL, as the variables libpq reads. The
+# application connects with them (TLS mode, certificates), so a dump must not go
+# without them: a parameter that cannot be passed on stops the script instead of
+# being dropped. Messages name the key only, a value may be a secret.
+pg_params_from_query() {
+    local pairs pair key var
+    IFS='&' read -ra pairs <<<"$1"
+    for pair in ${pairs[@]+"${pairs[@]}"}; do
+        key="${pair%%=*}"
+        case "$key" in
+            sslmode) var=PGSSLMODE ;;
+            sslrootcert) var=PGSSLROOTCERT ;;
+            sslcert) var=PGSSLCERT ;;
+            sslkey) var=PGSSLKEY ;;
+            sslcrl) var=PGSSLCRL ;;
+            connect_timeout) var=PGCONNECT_TIMEOUT ;;
+            application_name) var=PGAPPNAME ;;
+            options) var=PGOPTIONS ;;
+            channel_binding) var=PGCHANNELBINDING ;;
+            gssencmode) var=PGGSSENCMODE ;;
+            target_session_attrs) var=PGTARGETSESSIONATTRS ;;
+            *) die 2 "DATABASE_URL carries the connection parameter '$key', which backup and restore cannot pass on" ;;
+        esac
+        printf -v "$var" '%s' "$(urldecode "${pair#*=}")"
+        export "${var?}"
+        case "$key" in
+            sslrootcert | sslcert | sslkey | sslcrl) PG_FILE_PARAMS+=("$key") ;;
+        esac
+    done
+}
+
+# Certificate files of the URL exist on this machine, not in the client container.
+pg_refuse_files_in_container() {
+    [ "$PG_CLIENT" = docker ] || return 0
+    [ ${#PG_FILE_PARAMS[@]} -eq 0 ] ||
+        die 2 "DATABASE_URL names certificate files (${PG_FILE_PARAMS[*]}); they need a local Postgres client of the server's version, not the client container"
+}
+
 # Split a SQLAlchemy or libpq URL into the PG* variables every Postgres client reads.
 # The URL holds the password, so no message here repeats it.
 pg_target_from_url() {
@@ -43,10 +81,8 @@ pg_target_from_url() {
         *) die 2 "DATABASE_URL is not a postgresql:// URL" ;;
     esac
     rest="${url#*://}"
-    # The application enforces sslmode from the same URL; a dump must not go without it.
-    if [[ "$rest" =~ [?\&]sslmode=([a-z-]+) ]]; then
-        export PGSSLMODE="${BASH_REMATCH[1]}"
-    fi
+    PG_FILE_PARAMS=()
+    if [[ "$rest" == *\?* ]]; then pg_params_from_query "${rest#*\?}"; fi
     rest="${rest%%\?*}"
     case "$rest" in
         */?*) ;;
@@ -134,6 +170,7 @@ pg_resolve_client() {
         CONTAINER_PGHOST=host.docker.internal
         DOCKER_ARGS=(--add-host host.docker.internal:host-gateway)
     fi
+    pg_refuse_files_in_container
 }
 
 pg_major() { # first number of a version line: "pg_dump (PostgreSQL) 16.4" -> 16
@@ -153,6 +190,7 @@ pg_match_server_version() { # <database to ask>
     if [ "${PG_CLIENT_MAY_SWITCH:-0}" = 1 ] && command -v docker >/dev/null; then
         echo "local Postgres client is version $client, the server $server: using $PG_IMAGE"
         PG_CLIENT=docker
+        pg_refuse_files_in_container
         return 0
     fi
     die 2 "local Postgres client is version $client, the server $server: set BACKUP_PG_CLIENT=docker"
@@ -167,7 +205,8 @@ pg() { # pg <tool> [arguments]; stdin goes through to the tool
     # password never shows up in a process list.
     MSYS_NO_PATHCONV=1 docker run --rm -i ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"} \
         -e PGHOST="$CONTAINER_PGHOST" -e PGPORT -e PGUSER -e PGPASSWORD \
-        -e PGDATABASE -e PGSSLMODE -e PGCONNECT_TIMEOUT "$PG_IMAGE" "$@"
+        -e PGDATABASE -e PGCONNECT_TIMEOUT -e PGSSLMODE -e PGAPPNAME -e PGOPTIONS \
+        -e PGCHANNELBINDING -e PGGSSENCMODE -e PGTARGETSESSIONATTRS "$PG_IMAGE" "$@"
 }
 
 pg_sql() { # pg_sql <database> <sql>; prints bare values

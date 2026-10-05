@@ -163,8 +163,10 @@ def test_backup_writes_one_encrypted_dump(db, backup_dir, passphrase_file):
         # NTFS has no owner-only mode; there the folder's ACL decides.
         assert dump.stat().st_mode & 0o077 == 0
     assert name in done.stdout
-    password = make_url(db).password
-    assert password not in done.stdout + done.stderr
+    # The target is named without the URL and without the password part of it
+    # (the bare password proves nothing where it equals the user name, as in CI).
+    said = done.stdout + done.stderr
+    assert db not in said and f":{make_url(db).password}@" not in said
 
 
 def test_restore_check_reads_the_dump_and_leaves_the_database_alone(
@@ -228,6 +230,59 @@ def test_restore_replace_brings_the_state_back_and_keeps_the_old_database(
 
     assert later.returncode == 0, later.stderr
     assert "kept from earlier restores" in later.stdout and previous in later.stdout
+
+
+# Stands in for psql, pg_dump and pg_restore: runs the real client, but the answer to
+# a rename is lost after the server carried it out, as when the connection drops.
+LOSSY_CLIENT = """#!/usr/bin/env bash
+tool="$(basename "$0")"
+here="$(cd "$(dirname "$0")" && pwd)"
+PATH=":$PATH:"
+PATH="${PATH//:$here:/:}"
+PATH="${PATH#:}"
+export PATH="${PATH%:}"
+source "$LIB"
+BACKUP_PG_CLIENT=auto
+pg_resolve_client
+pg "$tool" "$@"
+status=$?
+if [ "$tool" = psql ] && [[ "$*" == *"rename to"* ]]; then exit 2; fi
+exit $status
+"""
+
+
+def test_restore_replace_asks_the_server_when_the_answer_to_the_swap_is_lost(
+    db, backup_dir, passphrase_file, tmp_path
+):
+    dump = _backup(db, backup_dir, passphrase_file)
+    _sql(db, "update backup_probe set note = 'after'")
+    name = make_url(db).database
+    clients = tmp_path / "clients"
+    clients.mkdir()
+    for tool in ("psql", "pg_dump", "pg_restore"):
+        (clients / tool).write_text(LOSSY_CLIENT, encoding="utf-8", newline="\n")
+        (clients / tool).chmod(0o755)
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--replace",
+        name,
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+        PATH=f"{clients}{os.pathsep}{os.environ['PATH']}",
+        LIB=(REPO_ROOT / "scripts" / "lib_pg.sh").as_posix(),
+        BACKUP_PG_CLIENT="local",
+    )
+
+    # "Nothing changed" would be a false assurance: the restored state is live.
+    assert done.returncode == 0, done.stderr
+    assert "the server has renamed the databases" in done.stderr
+    assert "nothing changed" not in done.stderr
+    assert _note(db) == "before"
+    (previous,) = _databases_like(f"{name}_")
+    assert _note(_admin_url(previous)) == "after"
 
 
 def test_restore_replace_recreates_a_database_that_is_gone(
@@ -453,13 +508,34 @@ def test_url_without_a_password_keeps_the_exported_one():
     assert done.stdout.split("\n")[3] == "from the caller"
 
 
-def test_sslmode_and_an_ipv6_host_are_taken_from_the_url():
+def test_connection_parameters_and_an_ipv6_host_are_taken_from_the_url():
     done = _lib(
-        'pg_target_from_url "$1"; echo "$PGHOST $PGPORT $PGSSLMODE"',
-        "postgresql+psycopg://maex:pw@[::1]:6543/maex_agent?connect_timeout=3&sslmode=require",
+        'pg_target_from_url "$1"; '
+        'echo "$PGHOST $PGPORT $PGSSLMODE $PGCONNECT_TIMEOUT $PGSSLROOTCERT"',
+        "postgresql+psycopg://maex:pw@[::1]:6543/maex_agent"
+        "?connect_timeout=3&sslmode=verify-full&sslrootcert=%2Fetc%2Fssl%2Fdb%20ca.pem",
     )
 
-    assert done.stdout.strip() == "::1 6543 require"
+    assert done.stdout.strip() == "::1 6543 verify-full 3 /etc/ssl/db ca.pem"
+
+
+def test_a_parameter_that_cannot_be_passed_on_stops_the_script():
+    # Dropping it silently would let the backup connect differently from the application.
+    done = _target("postgresql://maex@db/maex_agent?sslpassword=hunter2")
+
+    assert done.returncode == 2
+    assert "sslpassword" in done.stderr and "hunter2" not in done.stderr
+
+
+def test_certificate_files_are_refused_for_the_client_container():
+    done = _lib(
+        'pg_target_from_url "$1"; pg_resolve_client',
+        "postgresql://maex@db/maex_agent?sslmode=verify-full&sslrootcert=/etc/ssl/ca.pem",
+        BACKUP_PG_CLIENT="docker",
+    )
+
+    assert done.returncode == 2
+    assert "sslrootcert" in done.stderr
 
 
 def test_the_compose_network_always_takes_the_client_from_the_image():

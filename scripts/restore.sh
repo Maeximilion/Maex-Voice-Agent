@@ -114,7 +114,20 @@ if [ "$exists" = 1 ]; then
     # One statement string is one transaction: both renames or none.
     swap="alter database \"$PGDATABASE\" rename to \"$previous\"; $swap"
 fi
-pg_sql "$maintenance" "$swap" || die 1 "could not swap the databases; nothing changed"
+if ! pg_sql "$maintenance" "$swap"; then
+    # The connection may have dropped after the server committed. Both renames are
+    # one transaction, so the scratch name is gone exactly when the swap happened.
+    left="$(pg_sql "$maintenance" "select count(*) from pg_database where datname = '$scratch'" 2>/dev/null || true)"
+    case "$left" in
+        1) die 1 "could not swap the databases; nothing changed" ;;
+        0) echo "warning: the swap reported an error, but the server has renamed the databases" >&2 ;;
+        *)
+            # Unknown is unknown: no cleanup on a guess.
+            scratch_exists=0
+            die 1 "the swap reported an error and the server cannot be asked: outcome unknown. If a database $scratch still exists, nothing changed and it can be dropped; if not, $PGDATABASE holds the restored state"
+            ;;
+    esac
+fi
 scratch_exists=0
 
 echo "$PGDATABASE now holds the restored state, schema revision ${revision:-unknown}"
