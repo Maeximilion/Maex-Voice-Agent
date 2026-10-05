@@ -99,7 +99,7 @@ Die Kasse speichert ihre Artikel als dBase-Tabellen. Sie ist Master für Menü u
 | `ARTNR2` | `  35B` | – | dieselbe Nummer, rechtsbündig mit Leerzeichen; nur zur Kontrolle |
 | `WRG` | `008` | `category` über `warengrp.dbf` | |
 | `K_BEZEICH` | `Geb. Nudeln Huhn` | – | Kurzname für den Bon, Kandidat für Aliase |
-| `BEZEICH` | `Gebr. Nudeln mit Hühnerbrust` | `name` | **höchstens 40 Zeichen**, längere Namen sind abgeschnitten („…Rindfleisc"). Der Agent liest den Namen vor: abgeschnittene Namen in der Kasse korrigieren oder als Warnung im Bericht |
+| `BEZEICH` | `Gebr. Nudeln mit Hühnerbrust` | `name` | **höchstens 40 Zeichen**, längere Namen sind abgeschnitten („…Rindfleisc"). Der Agent liest den Namen vor: abgeschnittene Namen in der Kasse korrigieren oder als Warnung im Bericht. A name that claims an allergen is absent ("glutenfrei", "ohne Erdnüsse", "vegan") is a warning as long as no allergens are maintained for the dish or the register contradicts it, see below |
 | `VK1_PREIS` | `13,5` | `price_eur` | **regulärer Preis, gilt am Telefon** (D11, Maxi 26.09.2026) |
 | `VK2_PREIS`, `VK3_PREIS` | `13,5` | – | Abholer- und Restaurantpreis, optional in der Kasse, heute überall gleich `VK1_PREIS`. `VK2_PREIS` 0 heißt nicht gepflegt, dann gilt `VK1_PREIS`. Weicht `VK2_PREIS` sonst ab, ist das ein **Fehler** im Bericht, kein stiller Import: eine telefonische Bestellung ist eine Abholung, die Kasse könnte dann einen anderen Preis nehmen als der Agent nennt (Regel 1) |
 | `A_PREIS1` … `A_PREIS6` | `7,90` | – | Aktionspreise, der Betrieb nutzt keine (D11). Ein Wert ungleich 0 wird im Bericht als Warnung gezeigt |
@@ -118,6 +118,29 @@ Sonderfälle: Die Zeile mit `ARTNR` `000` ohne Name und Preis ist ein Platzhalte
 **Warengruppen ohne Telefonbestellung** (Maxi 26.09.2026, Standard in `scripts/kasse_to_csv.py`, mit `--skip-groups` überschreibbar): `015` bis `025` (Getränke), `100` bis `102` (Menüs), `EXS`, `FRE`, `GAH`, `GEH`, `GET`, `OHN`, `PFA`, `RTN`, `SON`. Übernommen werden die Speisen aus `001` bis `013`.
 
 **Stand 26.09.2026:** Allergene und Zusatzstoffe sind in der Kasse nicht gepflegt, die Zutaten schon. Einmal gepflegt, ist die Kasse auch hier die einzige Quelle (docs/02 §6): Maxi hakt die Allergene je Artikel in der Kasse an, der nächste Export bringt sie mit. `confirmed_by` setzt der Umwandler aus einem Aufrufparameter (wer die Liste geprüft hat), nie von selbst. Der Umwandler warnt, wenn `ZUTATEN` einen typischen Allergenträger nennt (Ei, Soja, Weizen …) und `ALLERGENE` leer ist; die Warnung ist nur für Menschen, der Agent sagt weiter „keine Auskunft".
+
+**"Free from" claim in a name (04.10.2026).** The agent reads `BEZEICH` aloud. A name like "Nudeln (glutenfrei)" therefore states an allergen fact that is not a database value (rule 1), while `get_item_details` answers "keine Auskunft" for the same dish. The converter reports three things about dish names, all warnings, never errors (the dish is imported):
+
+1. **Claim without allergens:** every dish whose name carries a claim and whose row in `item_allergens.csv` stays empty (nothing in `ALLERGENE`, an unknown letter, or letters without `--allergens-confirmed-by`). Either the register renames the dish or the allergens are maintained and confirmed.
+2. **Claim that contradicts the register:** the name claims an allergen absent that `ALLERGENE` contains ("glutenfrei" with `a`), confirmed or not. The agent would read the claim aloud and `get_item_details` would name the allergen, so the name or the allergens are wrong. The letters stand in brackets as `register letter -> database letter` ("7 (k -> N)"), because the register counts differently from the ninth letter on (table below).
+3. **Claim for one kind of an allergen:** "laktosefrei" with `g`, "weizenfrei" with `a`, "mandelfrei" with `h`, "ohne Tintenfisch" with `n`. Both can be right (lactose-free cheese still carries the milk allergen), so this one only says "check" and does not ask to correct anything.
+
+Extras (`ZBEZEICH`) and categories (`W_BEZEICH`) are checked as well, because the agent offers extras and names categories: a claim there is a warning per extra or category, no allergen row can back it.
+
+What counts as a claim, whole words only (`free_from_claim` in `pos_convert.py`):
+- `<allergen>frei`, also "Gluten-frei" and English "gluten free", with the endings of "freie", "freies" …; a hyphen left open shares the "-frei" ("gluten- und laktosefrei", "Gluten- und Laktose-frei" claim both). A separate "frei" counts only at the end of the name or before "und"/"oder": "Ei frei wählbar" and "frei Haus" claim nothing
+- `frei von <allergen>` / `free from <allergen>`: the claim stands behind, the word in front is the dish ("Fischsuppe frei von Gluten" claims gluten only)
+- `ohne <allergen>` / `without <allergen>`, also as a list over "und", "oder", a comma or a slash ("ohne Ei, Milch und Nüsse") and with one word in between ("ohne frische Erdnüsse", "ohne Zusatz von Milch"); the list ends at "mit", "in" and similar. English "no" counts only directly before the allergen, because the Japanese "no" stands in dish names
+- "vegan" in its inflections: it claims the animal allergens absent (B, C, D, G, R)
+- not a claim, but a variant on offer: "auch vegan", "auf Wunsch vegan", "nicht vegan", "vegan möglich", "mit oder ohne Ei"
+
+The words are in `ALLERGEN_NAMES` and `ALLERGEN_KINDS`, by database letter, German and English, no restaurant words:
+- `ALLERGEN_NAMES`: the 14 LMIV allergens of the table below as a name would spell them (Gluten, Krebstier, Ei, Fisch, Erdnuss, Soja, Milch, Nuss/Schalenfrucht, Sellerie, Senf, Sesam, Sulfit/Schwefel, Lupine, Weichtier). A word that starts with one of them claims the whole letter ("milchfrei", "ohne Erdnusssoße").
+- `ALLERGEN_KINDS`: one kind or one carrier of a letter (Weizen, Roggen, Gerste, Hafer, Dinkel; Garnele, Krabbe; Laktose, Sahne, Käse; Mandel, Cashew, Pistazie, Macadamia; Tintenfisch). A word that only contains an allergen name ("Haselnuss") counts as a kind too. Kinds give warning 1 and 3, never 2.
+- Matching: inside a word ("haselnussfrei"), the longest name wins ("Erdnuss" is no "Nuss", "Tintenfisch" no "Fisch"). "Ei", "egg" and "nut" count only as a whole word, "Eier" only at the start of one ("ohne Eiernudeln"). "Kokos…", "Muskat…" and "Buchweizen" look like an allergen and are none.
+- Not a claim: "ohne" inside "Bohnen", "frei" inside "Freilandei", "alkoholfrei", "ohne Knochen", a name that only names an allergen ("Erdnuss Curry"), and "vegetarisch".
+
+The carrier warning for `ZUTATEN` above uses the same words at the start of a word, plus "Mehl" and "Nudel". All of this is a heuristic for people and never a source for allergens.
 
 **Umsetztabelle Allergene: Kasse → Datenbank.** Die Kasse zählt die 14 Hauptallergene der EU (LMIV Anhang II) von a bis n **ohne Lücke** durch. Die übliche Kennzeichnung und unsere Datenbank (docs/03 `item_allergens`) überspringen I, J, K und Q. Ab dem neunten Allergen bedeuten dieselben Buchstaben also etwas anderes. Eine 1:1-Übernahme würde aus Sulfiten Sellerie machen (`l`), aus Lupinen Senf (`m`) und aus Weichtieren Sesam (`n`), ohne dass die Datenbank widerspricht. Deshalb nur über diese Tabelle, und jeder unbekannte Buchstabe ist ein Fehler:
 
