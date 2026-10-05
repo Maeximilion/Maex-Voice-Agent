@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.10
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.11
 
 ---
 
@@ -359,6 +359,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.11 · 05.10.2026:** SessionStart hook syncs a clean main; /start relies on it
 - **v1.38.10 · 05.10.2026:** /start syncs and tidies finished branches, /done tidies the merged task
 - **v1.38.9 · 05.10.2026:** CLAUDE.md: code-autopilot pointer, merge to main waits for Maxi; /handover uses Lessons
 - **v1.38.8 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api, n8n and push moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration
