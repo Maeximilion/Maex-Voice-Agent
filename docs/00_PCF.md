@@ -479,7 +479,9 @@ Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migra
        phone (C2), callbacks in the demo (both escalation cases transfer to the team,
        none creates a callback).
 Artifacts: No code changed. This block, one line in docs/01_STATUS.md "Done", item 8 in
-       "What's next". Branch ccr-f287e6bf-i93pl3, one docs commit, PR to main.
+       "What's next". Branch ccr-f287e6bf-i93pl3, PR #191: 62b2ef1 (handover) and
+       9f7756e (Codex review, two P2: demo commands pinned to an open day, one shell
+       command each, both run as written).
 Decisions: None by Maxi. Assumption: `evals/menu` is the demo menu, because `scripts.seed`
        loads no menu and the real register data is not for a demo.
 Gate: G0 open, this session changes nothing for it.
@@ -510,6 +512,9 @@ Lessons: Monday is the closed day in the seed data: on a Monday every sim call e
        --locale=C.UTF-8`); a SQL_ASCII cluster fails at the first connect with "cannot
        use a string pattern on a bytes-like object". Use Python 3.12 for the venv from
        `api/requirements.txt`. `import_menu evals/menu` warns about aliases; expected.
+       The check `github-advanced-security` is red on PR #191 and on every PR until the
+       account's quota resets: the scanner stops with HTTP 402 "monthly quota exceeded"
+       before it reads the diff. Not a code finding; commented once on the PR.
 
 ## Handover 04.10.2026 - text phone allergy guard (open point from PR #155)
 Status: Runs: on the open allergy question "Wogegen?" the text phone decides from the active
