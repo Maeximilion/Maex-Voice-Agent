@@ -53,9 +53,12 @@ umask 077
 mkdir -p "$backup_dir"
 name="maex_${PGDATABASE}_$(date -u +%Y%m%dT%H%M%SZ)${label:+_$label}.$suffix"
 final="$backup_dir/$name"
-# Keeps the suffix, so read_dump knows whether to decrypt it.
-partial="$backup_dir/.partial_$name"
-[ ! -e "$final" ] || die 1 "$final exists already"
+# Its own file per process: two backups started in the same second get the same
+# name and must never write into the same file. Keeps the suffix, so read_dump
+# knows whether to decrypt it.
+partial="$backup_dir/.partial_$$_$name"
+taken="$final exists already (another backup in the same second?), nothing kept"
+[ ! -e "$final" ] || die 1 "$taken"
 trap 'rm -f "$partial"' EXIT
 
 echo "backup of $TARGET_LABEL"
@@ -74,7 +77,13 @@ verify_dump "$partial" || die 1 "the dump cannot be read back, nothing kept"
 tables="$(dump_table_count "$partial")"
 [ "$tables" -gt 0 ] || die 1 "the dump holds no table data, nothing kept"
 
-mv "$partial" "$final"
+# Publish without ever replacing a file: a hard link fails when the name is taken.
+# Where the file system has no hard links, a rename that refuses an existing target.
+if ! ln "$partial" "$final" 2>/dev/null; then
+    [ ! -e "$final" ] || die 1 "$taken"
+    mv -n "$partial" "$final"
+    [ ! -e "$partial" ] || die 1 "$taken"
+fi
 echo "written: $final ($(wc -c <"$final" | tr -d ' ') bytes, $tables tables)"
 
 # Only after a good run, and only scheduled dumps of this database: the time stamp

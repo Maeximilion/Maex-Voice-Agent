@@ -464,6 +464,53 @@ def test_retention_removes_only_old_scheduled_backups_of_this_database(
     assert old_scheduled in done.stdout
 
 
+def test_two_backups_in_the_same_second_never_share_a_file(
+    db, backup_dir, passphrase_file
+):
+    def start():
+        env = {k: v for k, v in os.environ.items() if not k.startswith("BACKUP_")}
+        env.update(
+            DATABASE_URL=db,
+            BACKUP_DIR=backup_dir.as_posix(),
+            BACKUP_ENV_FILE=(backup_dir.parent / "absent.env").as_posix(),
+            BACKUP_PASSPHRASE_FILE=passphrase_file.as_posix(),
+        )
+        return subprocess.Popen(
+            [BASH, "scripts/backup.sh"],
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+    # Both names carry the second they start in: start right after one begins.
+    time.sleep(1.05 - time.time() % 1)
+    runs = [start(), start()]
+    results = [(run.communicate(timeout=300), run.returncode) for run in runs]
+
+    written = sorted(backup_dir.iterdir())
+    good = [code for _, code in results if code == 0]
+    assert good, [err for (_, err), _ in results]
+    # One file per run that reported success, and nothing half-written left over.
+    assert len(written) == len(good), [path.name for path in written]
+    for (_, err), code in results:
+        assert code in (0, 1)
+        assert code == 0 or "exists already" in err
+    for dump in written:
+        check = _run(
+            "restore.sh",
+            dump.as_posix(),
+            "--check",
+            db_url=db,
+            backup_dir=backup_dir,
+            passphrase_file=passphrase_file,
+        )
+        assert check.returncode == 0, check.stderr
+
+
 def test_label_is_part_of_the_file_name(db, backup_dir, passphrase_file):
     common = {
         "db_url": db,
