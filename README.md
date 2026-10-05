@@ -65,7 +65,7 @@ curl http://localhost:8000/health
 make test
 ```
 
-API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`. `/health` responds with `{"status": "ok", "env": "dev"}`.
+API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`. `/health` responds with `{"status": "ok", "env": "dev"}`. These ports are bound to `127.0.0.1` (`docker-compose.override.yml`), so they are reachable from this machine only; the production stack publishes none of them (`docs/13_DEPLOYMENT.md` §3).
 
 Tests and lint from a local Python environment. Database tests need reachable Postgres, e.g. from `make up`; `DATABASE_URL` then points to `localhost` instead of container name `db`:
 

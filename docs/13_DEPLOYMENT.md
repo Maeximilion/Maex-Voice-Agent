@@ -30,6 +30,8 @@ Maxis PC (nur Werkbank)
   Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
 ```
 
+**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000) and n8n (5678) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all.
+
 **Tunnel** Vorschlag: `cloudflared tunnel --url http://localhost:8000` oder `ngrok http 8000`. Die URL wechselt bei jedem Start, in der Plattform eintragen. Nur für Tests, nie für echte Kunden.
 
 ---
@@ -55,7 +57,13 @@ Annahme: Domainnamen sind Vorschläge.
 
 **Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` und `KITCHEN_BRIDGE_TENANT_ID` setzen, ohne beide ist `/v1/kitchen/*` zu. Genau eine Brücke je Betrieb.
 
-**Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, keine offenen DB-Ports, `restart: always`, `--reload` aus).
+**Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, `restart: always`, `--reload` aus).
+
+**Published ports:** only Caddy publishes host ports (80 and 443). Postgres, API and n8n have no `ports:` entry in either of the two files and are reachable only inside the Docker network. Three rules keep it that way:
+
+- Compose merges `ports` lists across files. `ports: []` in an override removes nothing; until 05.10.2026 the production file relied on exactly that and the rendered stack published 5432, 8000 and 5678 on all interfaces. A service that needs a host port for development gets it in `docker-compose.override.yml`, never in the base file.
+- Always start with both `-f` flags as below. With `-f`, Compose does not read `docker-compose.override.yml`. A bare `docker compose up` on the server would start the development layout: no Caddy, ports on loopback.
+- Docker publishes ports past `ufw`. The firewall rule for 22 and 443 does not close a published container port, so the Compose files are the control. `api/tests/test_compose_ports.py` fails when the merged production configuration publishes a port outside Caddy. Check on the server after every deploy: `docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml ps` must show host ports for `caddy` only.
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build

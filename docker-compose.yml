@@ -1,3 +1,9 @@
+# Base file, shared by development and production. No service publishes a host
+# port here: Compose merges `ports` lists across files, so an override cannot
+# take one away again with `ports: []`. Dev ports live in
+# docker-compose.override.yml (loopback only), the public ones in
+# deploy/docker-compose.prod.yml (caddy only). api/tests/test_compose_ports.py
+# checks both.
 services:
   db:
     image: postgres:16-alpine
@@ -8,8 +14,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -23,8 +27,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "8000:8000"
     volumes:
       - ./api:/app/api
       - ./gui:/app/gui
@@ -61,6 +63,8 @@ services:
       # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
       # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
       - ./docker-compose.yml:/app/docker-compose.yml:ro
+      # api/tests/test_compose_ports.py reads the dev ports from this file.
+      - ./docker-compose.override.yml:/app/docker-compose.override.yml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
@@ -95,8 +99,6 @@ services:
     volumes:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows
-    ports:
-      - "5678:5678"
 
 volumes:
   pgdata:

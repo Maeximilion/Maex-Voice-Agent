@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.2
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.3
 
 ---
 
@@ -353,6 +353,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.37.3 · 05.10.2026:** Production Compose publishes only Caddy: dev host ports of db, api and n8n moved to docker-compose.override.yml (loopback), because ports: [] in the production override never removed them; api/tests/test_compose_ports.py guards the merged configuration
 - **v1.37.2 · 04.10.2026:** Own review PR #177: workflow keeps no execution history, timezone pinned in the workflow, handover reason cut to 120 characters; guard test reads producers from the syntax tree, checks the channel node, labels against the tablet, secrets in URLs
 - **v1.37.1 · 04.10.2026:** Codex review PR #177 (P2) fixed: the message nodes pass only title, text and priority on, the event payload no longer reaches the channel node
 - **v1.37.0 · 04.10.2026:** D13 decided: team notifications from n8n go through a self-hosted push service on the EU server

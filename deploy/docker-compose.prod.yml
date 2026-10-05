@@ -1,19 +1,22 @@
 # Produktion: zusammen mit der Basis-Datei starten
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# Only caddy publishes a host port. db, api and n8n stay inside the Docker
+# network because the base file gives them no port and this file adds none;
+# `ports: []` here would not remove one (Compose merges the lists). Naming the
+# files with -f also keeps docker-compose.override.yml, the dev ports, out.
+# Docker publishes past ufw: a port set here is open whatever the host firewall says.
 services:
   db:
-    ports: []                      # kein offener DB-Port nach außen
     restart: always
 
   api:
-    ports: []                      # nur über Caddy erreichbar
     restart: always
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ENV: prod
 
   n8n:
-    ports: []
     restart: always
 
   caddy:
