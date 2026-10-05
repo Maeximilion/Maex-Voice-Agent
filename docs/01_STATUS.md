@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.2
+> Status: 05.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.37.3
 
 ---
 
@@ -268,6 +268,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Client container cannot reach a `127.0.0.1`-only port on Linux (`scripts/lib_pg.sh` `pg_resolve_client`) | Own review PR #179: without a local Postgres client the scripts reach a database on `localhost` through `host.docker.internal:host-gateway`. On Docker Desktop that is the host's localhost; on Linux it is the bridge address, where a port published on `127.0.0.1` only does not listen. The server path (Compose network) and a machine with a local client are not affected. Not fixed because `--network host` behaves the other way round on Docker Desktop | with the first Linux development machine without a client |
 | **#82 undecided** | Dependabot bump to Python 3.14, closed without merge. By convention it does not go to Done automatically. Maxi left the decision open; it is tracked in issue #136 (`projektpflege`), which the daily run keeps up to date. `PROJECT_TOKEN` was replaced on 24.09.2026, the first full run was green | when Maxi decides, via #136 or `/project` |
 | Call log files are not owner-only on Windows (`scripts/call_log.py` `_replace`) | Found 04.10.2026 while making the two file-mode tests skip on Windows: `touch(mode=0o600)` and `os.chmod` only toggle the read-only flag on NTFS, `st_mode` stays 0666 and access follows the ACL inherited from the folder. The script neither warns nor says so, and docs/17 promises 0600 for salt and ID directory. On Linux the protection holds and is tested. Behaviour unchanged here. Fix: either state in docs/17 that on Windows the CSV, salt and ID directory must live in a folder only the user can read, or set the ACL explicitly | before the call log is kept on a Windows machine with more than one user account, latest with the data protection officer's answer on the CSV (E10) |
+| **No work package for four admin tabs** (`gui/mockups/admin-desktop.html`, docs/06 §4) | Found 05.10.2026 when Maxi clicked through the mockup: its buttons for editing hours, special days and zones, the call list, the deletion request and the CSV exports do nothing, as intended for a mockup. `docs/07_WORKPACKAGES.md` only covers pieces of the admin view: price badge (T-4.9), alias suggestions (T-7.4), key figures (T-8.4). Zeiten, Lieferung, Anrufe and Daten have no task. Two wishes from the same look, both outside today's spec: the full phone number in the call list instead of a shortened one (who may see it is a data protection question), and column widths the user can drag | cut into tasks before the first admin tab is built; Maxi decides the phone number question |
+| Product stays a web application on the EU server, no desktop program | Asked by Maxi 05.10.2026 ("why no .exe"). Reasons and what the restaurant needs are in docs/13 §0a. Two proposals came out of it, neither built: home-screen icon for the tablet (T-3.7), print bridge as one Windows program file (T-9.6) | Maxi decides on T-3.7 and T-9.6 |
 
 ## Blockers
 
@@ -353,6 +355,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.37.3 · 05.10.2026:** docs/13 §0a: what the restaurant needs and why the product is no desktop program; proposals T-3.7 (home-screen icon) and T-9.6 (print bridge as one program file); open point: four admin tabs have no work package
 - **v1.37.2 · 04.10.2026:** Own review PR #177: workflow keeps no execution history, timezone pinned in the workflow, handover reason cut to 120 characters; guard test reads producers from the syntax tree, checks the channel node, labels against the tablet, secrets in URLs
 - **v1.37.1 · 04.10.2026:** Codex review PR #177 (P2) fixed: the message nodes pass only title, text and priority on, the event payload no longer reaches the channel node
 - **v1.37.0 · 04.10.2026:** D13 decided: team notifications from n8n go through a self-hosted push service on the EU server

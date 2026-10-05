@@ -15,6 +15,33 @@
 
 **Regel:** Kein Anruf hängt jemals davon ab, ob ein Rechner bei Maxi eingeschaltet ist. Der PC ist Werkbank, nicht Betrieb.
 
+## 0a. What the restaurant needs
+
+The product is a web application on the EU server, not a program installed in the restaurant. Docker runs on the server only; a slow computer on site is no limit, because the views are HTML rendered by the server.
+
+| Needed | For what |
+|---|---|
+| A device with a current browser and internet: a tablet in the kitchen, optionally a PC | operations view (`/gui/`), later the admin view |
+| The address plus user name and password | access, Basic-Auth in `deploy/Caddyfile` (§3) |
+| The phone line routed to the voice platform | calls reach the agent (provider open, D1) |
+| Only if kitchen slips are printed: the print bridge on one machine that reaches the receipt printer | `printbridge/README.md`; today this needs Python 3.12 set up by hand |
+
+Not needed in the restaurant: the repository, Docker, git, an installer for the product itself.
+
+**Why no desktop program (.exe) for the product** (asked 05.10.2026):
+
+- A call must never depend on a computer in the restaurant being switched on, awake and not restarting for an update (rule above, CLAUDE.md §2 rule 5).
+- The voice platform has to reach the tools over public HTTPS at a fixed address (§1). A router in a restaurant offers neither without port forwarding or a tunnel.
+- On the hot path every tool call would travel over the restaurant's uplink instead of between two data centres (budget in `docs/04_API_TOOLS.md`).
+- Tablet, admin PC and print bridge show the same live state. The computer running the program would be a server anyway, only a worse one.
+- An update is one deploy on the server instead of one visit per computer.
+- Names, phone numbers and addresses stay on one server with an encrypted backup (§4) instead of on a computer next to the till.
+- Postgres and n8n do not fit into one program file; it would be a second product.
+
+The price of this choice: a monthly server bill, the server is ours to operate, and without internet in the restaurant the tablet shows nothing new. Calls are still answered and orders wait (`docs/02_ARCHITECTURE.md`, failure behaviour).
+
+Where an installer does make sense is the print bridge, the only software that runs on site (T-9.6, proposal). The wish to start the view from an icon is met by a home-screen icon in the browser (T-3.7, proposal).
+
 ## 1. Warum das früh wichtig ist
 
 Die Voice-Plattform muss unsere Tools über **öffentliches HTTPS** erreichen. Ohne erreichbare Adresse gibt es keinen Testanruf. Das betrifft schon den PoC in Stufe 1, nicht erst den Betrieb.
