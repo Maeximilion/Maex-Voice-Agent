@@ -20,7 +20,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 **What works:**
 
-- `make up` builds the API image and starts Postgres, API, dispatcher, and n8n; `/health` responds, token auth works
+- `make up` builds the API image and starts Postgres, API, dispatcher, n8n and the push server for team notifications; `/health` responds, token auth works
 - Every agent API response follows the envelope from `docs/04_API_TOOLS.md`; errors return JSON with code and read-aloud text, never stacktrace
 - Database access with one session per request (`api/db.py`), logs as JSON lines with `request_id` and `call_id`
 - `make migrate` creates the stage-1 tables and the stage-2 tables for menu and orders (Alembic in `db/`, models in `api/models/`), `make seed` fills stage 1 idempotently with test config
@@ -43,7 +43,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
-- The n8n workflow for team events (`n8n/team_events.json`, import in `n8n/README.md`) notifies nobody yet: its channel node is a placeholder until the self-hosted push service is set up (D13)
+- Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
 
 ## Requirements
@@ -67,7 +67,7 @@ curl http://localhost:8000/health
 make test
 ```
 
-API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`. `/health` responds with `{"status": "ok", "env": "dev"}`.
+API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`, the push server at `http://localhost:8090` (closed until users are set in `.env`). `/health` responds with `{"status": "ok", "env": "dev"}`.
 
 Tests and lint from a local Python environment. Database tests need reachable Postgres, e.g. from `make up`; `DATABASE_URL` then points to `localhost` instead of container name `db`:
 

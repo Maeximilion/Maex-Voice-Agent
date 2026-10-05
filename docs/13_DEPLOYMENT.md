@@ -7,7 +7,7 @@
 | Baustein | Läuft auf | Nie auf |
 |---|---|---|
 | Voice-Plattform (Telefonie, Spracherkennung, Stimme) | beim Anbieter, EU-Rechenzentrum | Maxis PC |
-| Agent-API, Datenbank, GUI, n8n | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
+| Agent-API, Datenbank, GUI, n8n, Push-Server für das Team (D13) | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
 | Sprachmodell des Agenten | beim Voice- oder Modellanbieter | Maxis PC |
 | Entwicklung und Simulator | Maxis PC, nur zum Bauen und Testen | – |
 | Druckbrücke für den Eingabezettel am Haupt-Bondrucker (T-4.6, D2) | Rechner im Lokal, der den Bondrucker erreicht (Kassenrechner oder eigener Kleinrechner, offen: Maxi) | Maxis PC |
@@ -72,7 +72,8 @@ Internet
 Caddy (TLS automatisch, Reverse Proxy)
   ├── agent.example.com/v1/tools/*  → api:8000  (Token-Pflicht)
   ├── agent.example.com/gui/*        → api:8000  (Basic-Auth in deploy/Caddyfile)
-  └── n8n.example.com                → n8n:5678  (Basic-Auth)
+  ├── n8n.example.com                → n8n:5678  (Basic-Auth)
+  └── push.example.com               → push:80   (the push server checks its own users)
 Postgres: nur im Docker-Netz, kein offener Port
 ```
 
@@ -83,6 +84,8 @@ Annahme: Domainnamen sind Vorschläge.
 **Server** Vorschlag: kleiner VPS bei einem Anbieter mit Rechenzentrum in Deutschland, 2 vCPU, 4 GB RAM reichen für Stufe 1–6. Docker, Compose, `ufw` mit 22 und 443. Unattended Upgrades an.
 
 **Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` und `KITCHEN_BRIDGE_TENANT_ID` setzen, ohne beide ist `/v1/kitchen/*` zu. Genau eine Brücke je Betrieb.
+
+**Push server (D13):** the service `push` carries the team notifications from the n8n workflow to the team's devices. It is closed by default and knows two users, `n8n` (write only) and `team` (read only); hashes and token live in `.env`. Nothing is forwarded to a relay outside. Setup in `n8n/README.md`; it needs the DNS name from the Caddyfile and `NTFY_BASE_URL` set to it.
 
 **Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, keine offenen DB-Ports, `restart: always`, `--reload` aus).
 
