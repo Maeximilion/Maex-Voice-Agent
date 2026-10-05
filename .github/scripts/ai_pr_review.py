@@ -115,7 +115,9 @@ def call_glm(pr_title: str, pr_body: str, diff: str) -> dict[str, Any]:
             f"{ZAI_BASE}/chat/completions",
             data=json.dumps(payload).encode(),
             headers={
-                "Authorization": f"Bearer {os.environ['ZAI_API_KEY']}",
+                # Lokales Ollama ignoriert den Bearer-Key; nur der Z.ai-Fallback
+                # braucht das Secret ZAI_API_KEY, daher hier tolerant bleiben.
+                "Authorization": f"Bearer {os.environ.get('ZAI_API_KEY') or 'ollama'}",
                 "Content-Type": "application/json",
             },
         )
