@@ -24,7 +24,7 @@ The product is a web application on the EU server, not a program installed in th
 | A device with a current browser and internet: a tablet in the kitchen, optionally a PC | operations view (`/gui/`), later the admin view |
 | The address plus user name and password | access, Basic-Auth in `deploy/Caddyfile` (§3) |
 | The phone line routed to the voice platform | calls reach the agent (provider open, D1) |
-| A phone that rings at the team | the number `transfer_to_team` hands a call to, stored as `team_phone`. Nothing else uses it: it is no alert for a failed print bridge or for lost internet in the restaurant (that is the red card and the team push, see below), and when the voice platform itself is down the restaurant's own line rings as before (`docs/02_ARCHITECTURE.md` §5) |
+| A phone that rings at the team | the number `transfer_to_team` hands a call to, stored as `team_phone`. Nothing else uses it: it is no alert for a failed print bridge or for lost internet in the restaurant (that is the red card and the team push, see below). Where calls go when the voice platform is down depends on how the forward is set up, which is open with C2; `docs/02_ARCHITECTURE.md` §5 states the intended behaviour, not a tested one |
 | From the first order on: the print bridge on one machine that reaches the main receipt printer at the register | until the register has an interface it prints every confirmed order as an input slip the team types in (D2, `docs/02_ARCHITECTURE.md` §2a); `printbridge/README.md`; today this needs Python 3.12 set up by hand |
 | A device that receives the team notifications: an app on a phone or the web page on the tablet | callbacks and failed handovers (D13, push server in §3); which devices is open (D14) |
 
