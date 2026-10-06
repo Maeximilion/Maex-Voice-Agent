@@ -42,13 +42,30 @@ _CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
 
 _WORD = re.compile(r"[^\W_]+")
 _TOKEN = re.compile(r"[^\W_]+|,")
+# The patterns below run on what the caller said and must stay linear in its
+# length (CodeQL py/polynomial-redos). Each one takes a run of separators only
+# from its first character, so a long run is scanned once instead of once per
+# character. The matches are the same as without the look-behind: a match that
+# starts inside a run also starts at the beginning of that run.
+_RUN_START = r"(?<![\s,])"
+_TRAILING_WORDS = ("aber", "und", "dafür", "dafuer", "dann", "bitte")
+# A chain of such words is likewise entered only at its first word.
+_CHAIN_START = "".join(rf"(?<![\s,]{word})" for word in _TRAILING_WORDS)
 _TRAILING_GLUE = re.compile(
-    r"(?:[\s,]+(?:aber|und|dafür|dafuer|dann|bitte))+[\s,]*$", re.IGNORECASE
+    rf"{_RUN_START}{_CHAIN_START}(?:[\s,]+(?:{'|'.join(_TRAILING_WORDS)}))+[\s,]*$",
+    re.IGNORECASE,
 )
-_TRAILING_PLEASE = re.compile(r"[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
+_TRAILING_PLEASE = re.compile(rf"{_RUN_START}[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
+# "ohne Zwiebeln, dafür" / "mit Nudeln, aber": the joining word before the next
+# part of a wish.
+_TRAILING_JOINER = re.compile(
+    rf"{_RUN_START}[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", re.IGNORECASE
+)
 # Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
-_TIMES = re.compile(r"[\s,]*\b(\w+?)mal\b", re.IGNORECASE)
-_COUNTED = re.compile(r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE)
+_TIMES = re.compile(rf"{_RUN_START}[\s,]*\b(\w+?)mal\b", re.IGNORECASE)
+_COUNTED = re.compile(
+    rf"{_RUN_START}[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE
+)
 
 
 # Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
@@ -74,9 +91,17 @@ _INGREDIENT = (
 )
 # "Erdnussallergie", "Erdnuss-Allergie" und der Wortanfang in "Nuss- und
 # Sesamallergie": jede gilt, nicht nur die erste (Codex PR #139, P1).
+# A stem is looked for from the beginning of its word, or from right behind the
+# allergy noun that ended the match before it ("Milchunverträglichkeitsallergie")
+# - the two places a match could start anyway. Without this the search began
+# again at every letter of a long word (CodeQL py/polynomial-redos).
+_STEM_START = (
+    r"(?:(?<!\w)|(?<=allergie)|(?<=intoleranz)"
+    r"|(?<=unverträglichkeit)|(?<=unvertraeglichkeit))"
+)
 _COMPOUND = re.compile(
-    r"(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
-    r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
+    _STEM_START + r"(?:(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
+    r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s))",
     re.IGNORECASE,
 )
 # Nach einem "und" oder Komma beginnt hier ein neuer Satzteil, keine Zutat mehr.
@@ -394,7 +419,7 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     if words[at] in _INSTEAD:
         at -= 1
     removal = text[: tokens[at].start()]
-    removal = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", removal)
+    removal = _TRAILING_JOINER.sub("", removal)
     return removal.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 
@@ -406,7 +431,7 @@ def _split_removal(text: str) -> tuple[str, str | None]:
     if at is None:
         return text, None
     addition = text[: tokens[at].start()]
-    addition = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", addition)
+    addition = _TRAILING_JOINER.sub("", addition)
     return addition.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 

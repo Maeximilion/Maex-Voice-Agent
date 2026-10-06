@@ -33,7 +33,10 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
 )
 
-_SEPARATOR = re.compile(r"\s*,\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+# Whitespace in front of a separator is taken only from the first character of
+# its run (`(?<!\s)`): a long run is scanned once instead of once per character
+# (CodeQL py/polynomial-redos). Same cuts as `\s*,\s*|\s+(?:und|sowie)\s+`.
+_SEPARATOR = re.compile(r"(?<!\s)\s+(?:,\s*|(?:und|sowie)\s+)|,\s*", re.IGNORECASE)
 _WORD = re.compile(r"\d+|[a-z]+")
 # Nach fold() (ä -> ae). Deckungsgleich mit numberwords._ALTERNATIVE_WORDS.
 _CORRECTION_WORDS = frozenset(
