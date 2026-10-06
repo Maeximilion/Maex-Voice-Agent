@@ -44,10 +44,18 @@ class ConversationState(BaseModel):
     # until the sentence that ends the turn shows which of them were named.
     known_item_ids: set[str] = Field(default_factory=set)
     offered_items: dict[str, tuple[str, str]] = Field(default_factory=dict)
+    # Set by the phone line (telephony/handler.py), which says the AI disclosure
+    # before the first turn: the model must not greet a second time.
+    greeted: bool = False
+    # Team extension from transfer_to_team, for the phone line to dial. Not part
+    # of the prompt: the model has no use for the number.
+    transfer_to: str | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
         data: dict[str, Any] = {"stage": self.stage, "open": self.open_questions}
+        if self.greeted:
+            data["greeted"] = True
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -132,6 +140,7 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     elif name == "transfer_to_team" and result.data.get("available"):
         state.transferred = True
         state.stage = "transferred"
+        state.transfer_to = result.data.get("transfer_to")
 
 
 def _note_search(state: ConversationState, data: dict[str, Any]) -> None:

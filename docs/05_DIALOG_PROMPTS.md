@@ -204,6 +204,8 @@ but what it heard (a phone number) is taken first, for the callback of the hando
 **Begrüßung**
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
 
+On the phone the code says this sentence before the first turn (`telephony/handler.py`, name from `tenants.name`), so the disclosure never depends on the model. The state then carries `greeted: true`, and the model does not greet a second time (T-1.13).
+
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
 
@@ -215,5 +217,10 @@ but what it heard (a phone number) is taken first, for the callback of the hando
 
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
+
+**Verabschiedung**
+> „Vielen Dank für Ihren Anruf. Auf Wiederhören."
+
+The line is hung up only after a goodbye (Maxi, 06.10.2026). The code says this sentence before every hangup unless the agent's last sentence already parts ("bis dann", "bis gleich", "Auf Wiederhören"), so it is never said twice (`telephony/handler.py`). A transfer needs no goodbye: the transfer sentence comes before it.
 
 Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).
