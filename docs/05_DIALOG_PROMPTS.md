@@ -179,12 +179,52 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
+system prompt, the compact state and one input per call, never a transcript. It answers
+with exactly one JSON object; the instruction for it (`OUTPUT_FORMAT`) is appended to the
+system prompt by the client and is not part of `prompts/system_vN.md`:
+```json
+{ "say": null, "tool": "check_slot", "args": { "party_size": 4, "reserved_for": "…" },
+  "slots": { "party_size": 4 }, "not_understood": null }
+```
+
+| Field | Meaning |
+|---|---|
+| `say` or `tool` + `args` | exactly one of them: the sentence for the guest, or a tool call. Both in one answer is rejected, because the sentence may be the readback and the tool `confirm` |
+| `slots` | what the guest named in this turn; goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number |
+| `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
+
+An answer outside this format, a timeout or an unreachable model is an outage: the core
+says the outage sentence (§6) and hands the call to the team, it does not ask the model
+again. An answer is limited to `LLM_MAX_OUTPUT_TOKENS`; one that is cut off there is no
+valid JSON and counts as outside the format. Tool names and arguments are checked by `agent/dispatch.py`, not by the format.
+
+**The core holds the hard rules itself** (`agent/guards.py`, `agent/state.py`) — the prompt
+asks the model to follow them, the code does not rely on it. Before a tool call is
+dispatched, the loop checks:
+
+| Rule | What the core checks | If not |
+|---|---|---|
+| 3, nothing without a yes | `confirm` needs an explicit yes (`agent/consent.py`) in the guest's current sentence, to the draft that was read back **before** this turn. A draft built or replaced inside the turn was never read to the guest; a yes in the same sentence does not count. A yes is a sentence that is nothing but the assent: an assent word plus words that carry no order ("Ja, gerne", "Passt so, danke"). "Ja, und noch eine Cola" or "Ich hätte gerne noch eine Suppe" is the start of a change | `confirm` is not dispatched, the draft stays a draft |
+| 2, never guess | `draft_order` takes a `menu_item_id` only from a clear match of `search_menu` in this call (`exact_number`, `alias`, `fuzzy_single`), or from a candidate of an unclear result that the guest heard: the sentence that ended a turn named it by its full name, as whole words ("Reis" is not named by "Preis"), or as "Nummer <card number>". A model that keeps the offer to itself makes no candidate usable | `draft_order` is not dispatched |
+| 1, facts from the database | a model writes only guest details into `slots` (`GUEST_SLOTS`: party size, date and time, name, phone, note). A tool result copied there (`open`, `closes_at`, a price) is dropped | the field never reaches the next prompt |
+
+A refused call goes back to the model as a failed tool result with `error_code` and a
+`hint` that says why; it stands in `calls.tool_calls` like any failed call and costs one
+tool hop, so a model that insists ends in the handoff to the team. Which of several
+offered dishes the guest's answer means is left to the model and measured by the evals;
+the readback and its yes come after it. The call time limit is read again when the
+model has answered: an answer that arrives too late is neither spoken nor dispatched,
+but what it heard (a phone number) is taken first, for the callback of the handoff.
+
 ---
 
 ## 6. Ansagetexte (Entwurf, C1 prüft rechtlich)
 
 **Begrüßung**
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
+
+On the phone the code says this sentence before the first turn (`telephony/handler.py`, name from `tenants.name`), so the disclosure never depends on the model. The state then carries `greeted: true`, and the model does not greet a second time (T-1.13).
 
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
@@ -197,5 +237,13 @@ bestätigbar, eine andere Option geht nur über `draft_order`.
 
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
+
+**Nobody reachable** (`agent/loop.py` `SAY_NOBODY_REACHABLE`, draft): the core gives up, the team is not reachable and there is no number for a callback. No sentence that promises the team is spoken then.
+> „Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant niemanden. Bitte rufen Sie später noch einmal an."
+
+**Verabschiedung**
+> „Vielen Dank für Ihren Anruf. Auf Wiederhören."
+
+The line is hung up only after a goodbye (Maxi, 06.10.2026). The code says this sentence before every hangup unless the agent's last sentence already parts ("bis dann", "bis gleich", "Auf Wiederhören"), so it is never said twice (`telephony/handler.py`). A transfer needs no goodbye: the transfer sentence comes before it.
 
 Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).

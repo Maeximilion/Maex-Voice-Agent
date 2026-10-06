@@ -38,7 +38,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 **Not yet working:**
 
-- No phone line, no provider chosen (decision D1)
+- No phone line, no provider chosen (decision D1). The provider-neutral part is built (`api/telephony/`, T-1.13): the port, the call handler with AI disclosure, mode check, transfer and outage fallback, and a fake adapter that plays eval cases as phone calls; the adapter for the chosen platform follows in T-1.11
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
@@ -89,6 +89,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `AGENT_API_TOKEN` | Bearer token for voice platform to call tools |
 | `TEAM_PHONE` | Extension for forwarding to team |
 | `MAX_CALL_SECONDS` | Maximum call duration |
+| `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
 | `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'` |
 

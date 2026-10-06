@@ -54,7 +54,7 @@ How to review:
 - Dependency direction: `tools`, `gui`, `sim`, `telephony` -> `agent` -> `domain` -> `models`, `core`.
   `domain/` imports no FastAPI, no HTTP client, no provider.
 - Business logic in `tools/` or `gui/` instead of `domain/` is P2.
-- A provider name outside `api/telephony/` (planned with the telephony adapter, not built yet) is P2.
+- A provider name outside `api/telephony/adapters/` is P2; `port.py` and `handler.py` there stay provider-neutral.
 - n8n and external APIs are reached through the outbox, never directly from `domain/`.
 - Errors reach the agent as structured JSON, never as a stack trace.
 
@@ -93,8 +93,10 @@ How to review:
 ### Docs and pull requests
 
 - Everything written for the repository is English. German only in what the agent says to callers
-  (`say` texts, prompts) and in caller sentences in `evals/`. Report a language slip at most once per
-  pull request and only as P2.
+  (`say` texts, prompts), in caller sentences in `evals/`, and in caller sentences used as test input
+  in `api/tests/` for code that parses German speech; test names, docstrings and comments around that
+  input are English. A German caller sentence in a test is not a finding. Report a language slip at
+  most once per pull request and only as P2.
 - Changing `docs/07_WORKPACKAGES.md` requires `docs/01_STATUS.md` to change too (the CI checks it);
   the status version moves through `scripts/status_bump.py`.
 - Pull request titles follow Conventional Commits (the title becomes the commit message on `main`).

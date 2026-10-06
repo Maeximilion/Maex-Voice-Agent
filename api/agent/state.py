@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from api.agent.dispatch import ToolResult
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
+from api.domain.menu.search import CLEAR_MATCHES
 
 Stage = Literal[
     "start",
@@ -36,10 +37,25 @@ class ConversationState(BaseModel):
     reservation_id: uuid.UUID | None = None
     order_id: uuid.UUID | None = None
     transferred: bool = False
+    # Memory of the core, never sent to the model (guards.py, rule 2): the
+    # dishes an order may name. `known` came from a clear match of search_menu,
+    # or was a candidate the guest heard by name or card number. `offered` are
+    # the candidates of an unclear result of this turn, id to (number, name),
+    # until the sentence that ends the turn shows which of them were named.
+    known_item_ids: set[str] = Field(default_factory=set)
+    offered_items: dict[str, tuple[str, str]] = Field(default_factory=dict)
+    # Set by the phone line (telephony/handler.py), which says the AI disclosure
+    # before the first turn: the model must not greet a second time.
+    greeted: bool = False
+    # Team extension from transfer_to_team, for the phone line to dial. Not part
+    # of the prompt: the model has no use for the number.
+    transfer_to: str | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
         data: dict[str, Any] = {"stage": self.stage, "open": self.open_questions}
+        if self.greeted:
+            data["greeted"] = True
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -69,13 +85,25 @@ def initial_state(
     return ConversationState(call_id=call_id, tenant_id=tenant_id, slots=slots)
 
 
-def apply_state_patch(state: ConversationState, patch: dict[str, Any]) -> None:
+# What a guest can say about a reservation or an order. Anything else a model
+# puts into its patch is dropped: `slots` goes back into the next prompt as what
+# the guest said, and a tool result copied there (`open`, `closes_at`, a price)
+# would be answered from on a later turn instead of asked from the database
+# (CLAUDE.md §2 rule 1). Extend it when a flow needs a new guest detail.
+GUEST_SLOTS = frozenset({"party_size", "reserved_for", "guest_name", "phone", "note"})
+
+
+def apply_state_patch(
+    state: ConversationState, patch: dict[str, Any]
+) -> dict[str, Any]:
     """Vom Modell gelieferte Gesprächsdetails in den kompakten Zustand übernehmen
     (`LLMTurn.state_patch`), bevor sie mit dem nächsten Zug verloren gehen. Reine
     Gesprächsangaben (Name, Datum, Personenzahl, ...), keine Fachdaten aus der DB
     (CLAUDE.md §2 Regel 1 betrifft Preise/Zeiten/Verfügbarkeit/Allergene, nicht das,
-    was der Gast gesagt hat)."""
-    state.slots.update(patch)
+    was der Gast gesagt hat). Returns what was taken: only `GUEST_SLOTS`."""
+    named = {key: value for key, value in patch.items() if key in GUEST_SLOTS}
+    state.slots.update(named)
+    return named
 
 
 def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -> None:
@@ -103,6 +131,8 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
+    elif name == "search_menu":
+        _note_search(state, result.data)
     elif name == "confirm":
         state.stage = "confirmed"
     elif name == "create_callback":
@@ -110,6 +140,24 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
     elif name == "transfer_to_team" and result.data.get("available"):
         state.transferred = True
         state.stage = "transferred"
+        state.transfer_to = result.data.get("transfer_to")
+
+
+def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
+    """Remembers which dishes a search delivered and how sure it was. A sentence
+    with several positions carries one result per part (`agent/dispatch.py`)."""
+    parts = data.get("positions") if data.get("match_type") == "positions" else [data]
+    for part in parts or []:
+        hits = part.get("results") or []
+        if part.get("match_type") in CLEAR_MATCHES:
+            # The hit of a clear match is its first result, as everywhere else.
+            state.known_item_ids.update(str(h["menu_item_id"]) for h in hits[:1])
+        else:
+            for h in hits:
+                state.offered_items[str(h["menu_item_id"])] = (
+                    str(h.get("number") or ""),
+                    str(h.get("name") or ""),
+                )
 
 
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber

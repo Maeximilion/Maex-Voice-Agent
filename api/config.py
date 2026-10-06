@@ -1,5 +1,6 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -29,6 +30,20 @@ class Settings(BaseSettings):
     # Betrieb, fuer den das Token gilt; ohne ihn ist /v1/kitchen/* zu. Jeder
     # andere tenant_id wird abgelehnt: ein Token oeffnet nie die Bons aller.
     kitchen_bridge_tenant_id: str = ""
+
+    # Language model of the conversation core (T-2.4, docs/13 §0). Empty means
+    # no model is configured: text phone and evals run on the scripted stand-in.
+    llm_base_url: str = ""
+    llm_model: str = ""
+    llm_api_key: str = ""
+    llm_timeout_seconds: float = 15.0
+    # Upper limit for one answer. A turn is a sentence or a tool call; a model
+    # that reasons before it answers needs more.
+    llm_max_output_tokens: int = 600
+    # Price of the model in cents per million tokens. Without both, the cost
+    # of a call is unknown and stays empty; 0 is a price (a local model).
+    llm_input_cents_per_mtok: int | None = Field(default=None, ge=0)
+    llm_output_cents_per_mtok: int | None = Field(default=None, ge=0)
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
