@@ -5,5 +5,5 @@ Session start for the Maex Voice Agent.
 3. Read `CLAUDE.md` in full.
 4. Read `docs/01_STATUS.md` and `docs/07_WORKPACKAGES.md`.
 5. Summarize in max 6 lines: current stage, next gate, open blockers, tasks with in-progress status.
-6. Suggest 1–3 ready tasks (all dependencies done), mark one as recommendation and justify in one sentence.
+6. Suggest 1–3 ready tasks (all dependencies done), mark one as recommendation and justify in one sentence. Name the model from the "Model Routing" table in `CLAUDE.md` for each task; if the running model differs, say so now so the switch happens before `/task` loads the specs.
 7. Wait for your choice. Don't build yet.
