@@ -15,8 +15,8 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent.guards import HINT_CONFIRM, HINT_ITEM
-from api.agent.llm import FakeLLM, LLMTurn, ToolCall
-from api.agent.loop import MAX_TOOL_HOPS, SAY_STUCK, SAY_TIMEOUT, ConversationLoop
+from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
+from api.agent.loop import MAX_TOOL_HOPS, SAY_NOBODY_REACHABLE, ConversationLoop
 from api.agent.state import ConversationState
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
@@ -215,7 +215,8 @@ def test_max_call_seconds_ohne_telefon_bleibt_beim_ehrlichen_fallback_satz(
     result = loop.run_turn(state, "Hallo")
 
     assert result.ended is True
-    assert result.say == [SAY_TIMEOUT]
+    # Nobody was reached: the sentence must not promise the team (Codex PR #208).
+    assert result.say == [SAY_NOBODY_REACHABLE]
     assert state.stage == "ended"
 
 
@@ -361,9 +362,96 @@ def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):
     result = loop.run_turn(state, "Hallo")
 
     assert result.ended is True
-    assert result.say == [SAY_STUCK]
+    assert result.say == [SAY_NOBODY_REACHABLE]
     assert len(llm.calls) == MAX_TOOL_HOPS
     assert state.stage == "ended"
+
+
+@pytest.mark.parametrize(
+    "customer", ["Ich möchte mich beschweren!", "Einen Tisch für vier bitte"]
+)
+def test_last_resort_never_promises_a_transfer(session, state, customer):
+    """Team not reachable and no number for a callback: the call ends, and the
+    guest hears that, not "Ich verbinde Sie" or "Ich gebe an das Team weiter"
+    (Codex PR #208, P1). Holds for an escalation as for a model outage."""
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, customer)
+
+    assert result.ended is True
+    assert state.stage == "ended"
+    (say,) = result.say
+    assert "verbinde" not in say
+    assert "Team weiter" not in say
+
+
+class BrokenLLM:
+    """A model that is unreachable or answers outside the contract (T-2.4)."""
+
+    def next_turn(self, system_prompt, state_json, input_text):
+        raise LLMError("model call failed: ReadTimeout")
+
+
+def test_model_failure_hands_the_call_to_the_team(session, state):
+    """A model outage is an outage like any other: the phone rings at the
+    team, the caller is not left with an error (CLAUDE.md §2 rule 5)."""
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=OPEN_NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    assert result.ended is True
+    assert state.stage == "transferred"
+    assert state.transferred is True
+
+
+def test_model_failure_without_a_reachable_team_creates_a_callback(session, state):
+    state.slots["phone"] = "+4972215551234"
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    assert result.ended is True
+    assert state.stage == "callback"
+    callback = session.scalars(select(Callback)).one()
+    assert "Einen Tisch für vier bitte" in callback.summary
+
+
+def test_model_failure_without_a_phone_number_says_so_honestly(session, state):
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Hallo")
+
+    assert result.ended is True
+    assert result.say == [SAY_NOBODY_REACHABLE]
+    assert state.stage == "ended"
+
+
+def test_model_failure_after_a_tool_call_still_hands_over(session, state):
+    """The model answers once, then drops out in the middle of the turn."""
+
+    class DropsOut(FakeLLM):
+        def next_turn(self, system_prompt, state_json, input_text):
+            if not self._turns:
+                raise LLMError("model call failed: ConnectError")
+            return super().next_turn(system_prompt, state_json, input_text)
+
+    llm = DropsOut([LLMTurn(tool_call=ToolCall(name="get_service_status"))])
+    loop = ConversationLoop(
+        session, llm, "system", now=OPEN_NOW, clock=clock_from([0, 0, 0])
+    )
+
+    result = loop.run_turn(state, "Hallo")
+
+    assert result.ended is True
+    assert state.stage == "transferred"
 
 
 # --- The core holds the hard rules against the model (agent/guards.py) ----------

@@ -11,6 +11,7 @@ anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 """
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,10 +23,14 @@ from sqlalchemy.orm import Session
 from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
 from api.agent.ladder import UnderstandingLadder
-from api.agent.llm import LLMClient
+from api.agent.llm import LLMClient, LLMError
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 from api.config import settings
+from api.core.envelope import SAY_ON_FAILURE
+from api.core.logging import get_logger, log
 from api.schemas.callbacks import CallbackReason
+
+logger = get_logger("api.agent.loop")
 
 # Schutz gegen ein Modell, das sich zwischen Tool-Aufrufen verheddert und nie zu
 # einem Satz für den Kunden kommt: lieber sauber abbrechen als den Anruf endlos
@@ -35,6 +40,14 @@ SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
+# The last resort of `_handoff`: the team is not reachable and there is no number
+# for a callback. Every sentence above promises the team; here nobody takes
+# over, so the guest hears exactly that (Codex PR #208, P1). Draft wording,
+# checked with the announcement texts of docs/05 §6.
+SAY_NOBODY_REACHABLE = (
+    "Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant "
+    "niemanden. Bitte rufen Sie später noch einmal an."
+)
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
 
@@ -103,9 +116,22 @@ class ConversationLoop:
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
 
-            turn = self._llm.next_turn(
-                self._system_prompt, self._prompt_state(state), pending_input
-            )
+            try:
+                turn = self._llm.next_turn(
+                    self._system_prompt, self._prompt_state(state), pending_input
+                )
+            except LLMError as exc:
+                # A model that is down or answers outside the contract is an
+                # outage: the call goes to the team, never into a retry loop
+                # with the guest waiting (CLAUDE.md §2 rule 5).
+                log(
+                    logger,
+                    logging.ERROR,
+                    "model failed, handing over to the team",
+                    call_id=str(state.call_id),
+                    error=str(exc),
+                )
+                return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
             if turn.state_patch:
                 # Only what was taken counts as understood: a name outside
                 # `GUEST_SLOTS` is dropped and is no success on the ladder.
@@ -187,6 +213,8 @@ class ConversationLoop:
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
         einen Rückruf anlegen. Ohne bekannte Rufnummer bleibt nur der ehrliche
         Fallback-Satz — raten (CLAUDE.md §2 Regel 2) ist keine Option.
+        `fallback_say` is spoken only when a transfer or a callback really
+        happened and its tool gave no sentence; the last resort has its own.
 
         `detail` ist der auslösende Kundenzug: ohne ihn bekäme das Team bei einer
         Vorab-Eskalation (kein Modell-Aufruf) nur eine feste Floskel statt der
@@ -221,7 +249,7 @@ class ConversationLoop:
                 )
 
         state.stage = "ended"
-        return TurnResult(state=state, say=[fallback_say], ended=True)
+        return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
 
 
 def _handoff_summary(reason: str, detail: str | None) -> str:

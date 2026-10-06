@@ -179,6 +179,26 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
+system prompt, the compact state and one input per call, never a transcript. It answers
+with exactly one JSON object; the instruction for it (`OUTPUT_FORMAT`) is appended to the
+system prompt by the client and is not part of `prompts/system_vN.md`:
+```json
+{ "say": null, "tool": "check_slot", "args": { "party_size": 4, "reserved_for": "…" },
+  "slots": { "party_size": 4 }, "not_understood": null }
+```
+
+| Field | Meaning |
+|---|---|
+| `say` or `tool` + `args` | exactly one of them: the sentence for the guest, or a tool call. Both in one answer is rejected, because the sentence may be the readback and the tool `confirm` |
+| `slots` | what the guest named in this turn; goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number |
+| `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
+
+An answer outside this format, a timeout or an unreachable model is an outage: the core
+says the outage sentence (§6) and hands the call to the team, it does not ask the model
+again. An answer is limited to `LLM_MAX_OUTPUT_TOKENS`; one that is cut off there is no
+valid JSON and counts as outside the format. Tool names and arguments are checked by `agent/dispatch.py`, not by the format.
+
 **The core holds the hard rules itself** (`agent/guards.py`, `agent/state.py`) — the prompt
 asks the model to follow them, the code does not rely on it. Before a tool call is
 dispatched, the loop checks:
@@ -217,6 +237,9 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
+
+**Nobody reachable** (`agent/loop.py` `SAY_NOBODY_REACHABLE`, draft): the core gives up, the team is not reachable and there is no number for a callback. No sentence that promises the team is spoken then.
+> „Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant niemanden. Bitte rufen Sie später noch einmal an."
 
 **Verabschiedung**
 > „Vielen Dank für Ihren Anruf. Auf Wiederhören."
