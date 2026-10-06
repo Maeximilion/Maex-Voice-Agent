@@ -161,7 +161,6 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 ### Reviews
 Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every fix commit. The rest is advisory (Maxi, 2026-10-06):
 
-- `ai-pr-review` workflow: runs on every push while the local runner is up, a second opinion. A missing run does not block.
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
 - `/security-review`: only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1.
 
