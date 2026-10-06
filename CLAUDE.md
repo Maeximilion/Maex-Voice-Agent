@@ -144,6 +144,8 @@ Mixed task: take the higher model and the higher effort. The `xhigh` triggers ar
 ### The Loop
 **Plan → Build → Execute → Assess → Iterate.** After each task, independently take up to **3 follow-up steps** toward the goal (add tests, close obvious gaps, sync docs), then report results. Larger scope expansions only as a proposal.
 
+Closing the loop is not a follow-up step: an untested path, an unverified claim or a known gap in what was just built or changed belongs to the same task. Test it and fix what it shows before reporting, without asking first and without counting it against the three steps. "I can test X if you want" is only for work outside the scope or behind a wait point.
+
 For code tasks use the personal skill `code-autopilot`. Where it differs from this file, this file wins (the follow-up budget of 3 above, no emojis, English for everything written to the repo).
 
 ### Questions
