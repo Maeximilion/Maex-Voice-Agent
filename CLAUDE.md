@@ -128,12 +128,12 @@ Pick the model when the session starts. A model switch starts a cold cache, so e
 |---|---|---|
 | `gui/`, docs, seeds and imports, tests for existing code, fixing review comments, status updates | Sonnet 5.5 (`claude-sonnet-5-5`) | `medium` |
 | `domain/`, `agent/`, `tools/`, `events/`, `telephony/`, `jobs/`, `prompts/`, `deploy/`, `printbridge/`, `n8n/` | Opus 5.5 (`claude-opus-5-5`) | `high` |
-| Migrations, anything touching the six hard rules, any task where the same failure survived two fix attempts on its routed setting (`/task` stops there) | Opus 5.5 (`claude-opus-5-5`) | `xhigh` |
+| Migrations; code that decides money, a booking or the fate of a call: prices and totals, delivery zones and fees, opening hours and availability, allergens, matching speech to a `menu_item_id`, the `draft` to `confirmed` step (`confirm`), escalation, transfer and outage fallback; any task where the same failure survived two fix attempts on its routed setting (`/task` stops there) | Opus 5.5 (`claude-opus-5-5`) | `xhigh` |
 | Anything not named above, or a task row that names no area | Opus 5.5 (`claude-opus-5-5`, default) | `high` |
 | Gate review, deep debugging when Opus 5.5 at `xhigh` also stalls | Fable 5.1 (`claude-fable-5-1`), only when Maxi asks | `high` |
 | File search, log reading | Haiku 4.5 (`claude-haiku-4-5`) or an Explore subagent | none (no effort setting) |
 
-Mixed task: take the higher model and the higher effort. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
+Mixed task: take the higher model and the higher effort. The `xhigh` triggers are hard rules 1, 2, 3 and 5 in concrete form; rule 4 (evals) and rule 6 (token budget) are process rules and do not raise the effort on their own, so token counting or cost logging stays at `high`. Decide from the task row and its Spec column. A row that names no area stays on the default (`high`); a row that names an area but leaves open whether one of the triggers applies takes `xhigh`. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
