@@ -24,9 +24,9 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | Script | Event | What it does |
 |---|---|---|
 | `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts. |
-| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. |
-| `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per state of `main` and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
-| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
+| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
+| `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
+| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
@@ -153,12 +153,12 @@ if [ "$1" = "--branch" ]; then
   [ -z "$(git config "branch.$branch.merge")" ] || git rev-parse -q --verify '@{u}' >/dev/null 2>&1 || exit 0
   behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
   [ "${behind:-0}" -gt 0 ] || exit 0
-  # Once per state of origin/main and worktree, so a merge Claude has to postpone is not nagged about.
+  # Once per branch, state of origin/main and worktree, so a merge Claude has to postpone is not nagged about.
   # ponytail: repeats after 30 minutes while the branch is still behind, because a note can get lost
   # (a prompt another hook blocked never reaches Claude); raise -mmin if that is too often.
-  tip=$(git rev-parse origin/main)
-  [ "$(cat "$key" 2>/dev/null)" != "$tip" ] || [ -z "$(find "$key" -mmin -30 2>/dev/null)" ] || exit 0
-  echo "$tip" > "$key"
+  mark="$branch $(git rev-parse origin/main)"
+  [ "$(cat "$key" 2>/dev/null)" != "$mark" ] || [ -z "$(find "$key" -mmin -30 2>/dev/null)" ] || exit 0
+  echo "$mark" > "$key"
   msg="Branch sync check: $branch is $behind commits behind origin/main. Bring it up to date before you continue with the request: use the ccd_host sync_with_base_branch tool if this session has it, otherwise commit your work and run git merge origin/main (a merge, no rebase). Resolve conflicts, and push if the branch has an upstream. If the branch has an open pull request, the merge moves its head, so the review of the head commit has to be requested again."
   jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
   exit 0
@@ -173,9 +173,14 @@ git fetch -q --prune origin 2>/dev/null || exit 0
 git fetch -q origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || exit 0
 
 # main is checked out in exactly one worktree (or none); update it there.
-dir=$(git worktree list --porcelain | awk '
-  /^worktree /{w=substr($0,10)}
-  /^branch refs\/heads\/main$/{print w; exit}')
+# NUL-separated, so a path with a line break in it stays one path.
+dir=
+while IFS= read -r -d '' line; do
+  case "$line" in
+    "worktree "*) w=${line#worktree } ;;
+    "branch refs/heads/main") dir=$w; break ;;
+  esac
+done < <(git worktree list --porcelain -z)
 if [ -n "$dir" ]; then
   git -C "$dir" merge -q --ff-only origin/main 2>/dev/null
   # Still behind means the fast-forward was refused; say so instead of drifting.
@@ -217,6 +222,8 @@ case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
   PostModelSwitch) jq -r '.to_model // empty' <<<"$input" > "$state/$sid.model"; exit 0 ;;
 esac
 
+# Nobody can switch the model of a subagent and resend its task: let its prompts through.
+[ -z "$(jq -r '.agent_id // empty' <<<"$input")" ] || exit 0
 prompt=$(jq -r '.prompt // ""' <<<"$input")
 # Machine-delivered prompts (routines, background reports, messages from other sessions,
 # CI events) arrive as a tagged block: nobody is there to switch the model and resend.
@@ -386,7 +393,7 @@ A hook that runs without anything to report leaves no visible trace. For `sync-m
 jq -n --arg cwd "$PWD" '{cwd: $cwd}' | bash ~/.claude/hooks/sync-main.sh --branch
 ```
 
-It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in `~/.claude/hook-state/branch-sync/`; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
+It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per branch and state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in `~/.claude/hook-state/branch-sync/`; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
 
 ## 7. Keeping this file true
 
