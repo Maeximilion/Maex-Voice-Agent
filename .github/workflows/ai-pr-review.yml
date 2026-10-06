@@ -1,19 +1,21 @@
 name: ai-pr-review
 
-# Automatische LLM-Analyse jedes PR: Diff an eine OpenAI-kompatible API schicken
-# und das Ergebnis als GitHub-Review mit Inline-Kommentaren (P0-P3) posten, wie
-# im Codex-Review-Bot-Beispiel.
+# LLM review of each pull request on a local llama-server, posted as a GitHub
+# review with inline comments (P0 to P3). The model is the repository variable
+# REVIEW_MODEL (MODEL_ALIAS from config.env of the local-llm-kit); the server is
+# reached at ZAI_API_BASE (127.0.0.1:8080 inside the runner distro). Free, and
+# only there while the PC runs.
 #
-# Standard: lokaler llama-server auf dem eigenen Rechner (WSL2), Modell ueber
-# die Repo-Variable REVIEW_MODEL (Alias MODEL_ALIAS aus config.env des
-# local-llm-kit, z. B. qwen3.6-35b-a3b). Kostenlos, dafuer nur erreichbar,
-# solange der PC laeuft. Der Runner laeuft in der eigenen WSL-Distro gh-runner
-# (Interop und Windows-Laufwerke aus, User ohne sudo) und erreicht den Server
-# ueber 127.0.0.1:8080 (Repo-Variable ZAI_API_BASE).
-# Cloud-Fallback: ZAI_API_BASE auf https://api.z.ai/api/paas/v4 setzen
-# (Secret ZAI_API_KEY, Modell z. B. glm-4.6); der Aufruf ist identisch.
-# Qwen3.6 denkt standardmaessig; das Skript schaltet das ab, ausser die
-# Repo-Variable REVIEW_DISABLE_THINKING steht auf false.
+# Self-hosted runner in a public repository (Maxi, 06.10.2026, accepted risk,
+# AGENTS.md "CI and workflows"). What keeps pull request code off the runner:
+# - Fork pull requests never start this job (`if` below). A fork that edits
+#   this file to drop the condition still needs Maxi's approval of the run
+#   (fork approval: all_external_contributors, keep it that way).
+# - The job never checks out pull request code. It runs the review script of
+#   the base commit; the diff of exactly base...head comes from the API and is
+#   only data for the model.
+# - The runner is its own WSL distro `gh-runner`: interop and Windows drives
+#   off, user `ghrunner` without sudo, reaches only the LLM on 127.0.0.1:8080.
 on:
   pull_request:
     types: [opened, synchronize, reopened]
@@ -22,32 +24,49 @@ permissions:
   contents: read
   pull-requests: write
 
-# Neuer Push auf denselben PR bricht den laufenden Review ab.
+# A new push to the same pull request cancels the running review.
 concurrency:
   group: ai-review-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   review:
-    # Dependabot-PRs bekommen von GitHub keine Secrets zugewiesen.
-    if: github.event.pull_request.user.login != 'dependabot[bot]'
-    # Self-hosted-Label zwingend, wsl-local zur Auswahl. Fork-PRs aller externen
-    # Contributors laufen nur nach manueller Freigabe (all_external_contributors,
-    # so lassen!). Lokales Modell: der Review braucht laenger als 10 Minuten.
+    # Same-repository branches only: fork code never reaches the runner, and
+    # Dependabot pull requests get no secrets.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: [self-hosted, wsl-local]
+    # A local model takes longer than ten minutes on a large diff.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - name: PR-Diff exportieren
-        run: gh pr diff "$PR_NUMBER" > pr.diff
+      - name: Check out the review script of the base commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - name: Export the diff of base...head
+        id: diff
+        run: |
+          if [ ! -f .github/scripts/ai_pr_review.py ]; then
+            echo "::notice::The base commit has no review script yet; nothing to run."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          gh api -H "Accept: application/vnd.github.diff" \
+            "repos/$GITHUB_REPOSITORY/compare/$BASE_SHA...$HEAD_SHA" > pr.diff
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-      - name: LLM-Review posten
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      - name: Post the LLM review
+        if: steps.diff.outputs.skip != 'true'
         run: python3 .github/scripts/ai_pr_review.py
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}

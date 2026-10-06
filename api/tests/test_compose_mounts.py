@@ -53,7 +53,15 @@ UNPRUEFBAR_OBEN = ("include",)
 # Read only on a full checkout, never inside the container: the sync hook test needs
 # git, which the api image does not have, and skips there. Mounting `.claude/hooks`
 # for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
-CHECKOUT_ONLY = frozenset({".claude/hooks/sync_main.sh"})
+# The same holds for the review workflow and its script, which run on GitHub's
+# side; the test of their conditions skips in the container like the hook test.
+CHECKOUT_ONLY = frozenset(
+    {
+        ".claude/hooks/sync_main.sh",
+        ".github/scripts/ai_pr_review.py",
+        ".github/workflows",
+    }
+)
 
 
 @cache

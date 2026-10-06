@@ -140,45 +140,78 @@ def call_llm(pr_title: str, pr_body: str, diff: str) -> dict[str, Any]:
     raise RuntimeError("LLM-API nicht erreichbar")
 
 
-def post_review(summary: str, comments: list[dict[str, Any]]) -> None:
-    """Review mit Inline-Kommentaren posten; Rueckfalloption: normaler PR-Kommentar."""
+def _github(method: str, path: str, data: dict[str, Any] | None = None) -> Any:
+    """One GitHub API call; returns the decoded answer or raises HTTPError."""
     api = os.environ.get("GITHUB_API_URL", "https://api.github.com")
     repo = os.environ["GITHUB_REPOSITORY"]
-    number = os.environ["PR_NUMBER"]
-    headers = {
-        "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
-        "Accept": "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-        "Content-Type": "application/json",
-    }
-
-    def request(path: str, data: dict[str, Any]) -> urllib.error.HTTPError | None:
-        req = urllib.request.Request(
-            f"{api}/repos/{repo}/{path}",
-            data=json.dumps(data).encode(),
-            headers=headers,
-        )
-        try:
-            urllib.request.urlopen(req, timeout=60)
-            return None
-        except urllib.error.HTTPError as exc:
-            return exc
-
-    err = request(
-        f"pulls/{number}/reviews",
-        {"body": summary, "event": "COMMENT", "comments": comments},
+    req = urllib.request.Request(
+        f"{api}/repos/{repo}/{path}",
+        data=None if data is None else json.dumps(data).encode(),
+        method=method,
+        headers={
+            "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Content-Type": "application/json",
+        },
     )
-    if err is None:
-        return
-    print(
-        f"::warning::Review-Posting fehlgeschlagen ({err.code}), Rueckfalloption PR-Kommentar",
-        file=sys.stderr,
-    )
-    err2 = request(f"issues/{number}/comments", {"body": summary})
-    if err2 is not None:
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        raw = resp.read()
+    return json.loads(raw) if raw else None
+
+
+def post_review(summary: str, comments: list[dict[str, Any]]) -> bool:
+    """Post the review on the head the diff was read from (HEAD_SHA).
+
+    Returns False, without posting, when the pull request has a newer head by
+    now: a review of the old diff must not show up as the review of the new
+    head (CLAUDE.md, exact-head review gate). If GitHub rejects the inline
+    review, a plain comment carries the summary and every inline finding with
+    file and line, so nothing the model found is lost.
+    """
+    head = os.environ.get("HEAD_SHA", "").strip()
+    if not head:
         raise RuntimeError(
-            f"GitHub-API HTTP {err2.code}: {err2.read().decode(errors='replace')[:500]}"
+            "HEAD_SHA is not set: the review cannot be pinned to a commit"
         )
+    number = os.environ["PR_NUMBER"]
+
+    current = _github("GET", f"pulls/{number}")["head"]["sha"]
+    if current != head:
+        print(
+            f"::notice::Review of {head[:12]} discarded, the pull request is at {current[:12]} now"
+        )
+        return False
+
+    try:
+        _github(
+            "POST",
+            f"pulls/{number}/reviews",
+            {
+                "commit_id": head,
+                "body": summary,
+                "event": "COMMENT",
+                "comments": comments,
+            },
+        )
+        return True
+    except urllib.error.HTTPError as exc:
+        print(
+            f"::warning::Inline review rejected ({exc.code}), posting a plain comment instead",
+            file=sys.stderr,
+        )
+
+    findings = "\n".join(f"- `{c['path']}:{c['line']}` {c['body']}" for c in comments)
+    body = f"{summary}\n\nReviewed commit: `{head[:12]}`"
+    if findings:
+        body += f"\n\n**Findings (inline posting failed):**\n\n{findings}"
+    try:
+        _github("POST", f"issues/{number}/comments", {"body": body})
+    except urllib.error.HTTPError as exc:
+        raise RuntimeError(
+            f"GitHub API HTTP {exc.code}: {exc.read().decode(errors='replace')[:500]}"
+        ) from exc
+    return True
 
 
 def main() -> int:
@@ -243,12 +276,9 @@ def main() -> int:
     )
     summary_md = "\n\n".join(parts)
 
-    if inline or unanchored:
-        post_review(summary_md, inline)
-    else:
-        # Ohne Befunde steht die Zusammenfassung trotzdem als Kommentar im PR.
-        post_review(summary_md, [])
-    print(f"Review gepostet: {len(inline)} inline, {len(unanchored)} im Summary")
+    # Without findings the summary still goes on the pull request as a review.
+    if post_review(summary_md, inline):
+        print(f"Review posted: {len(inline)} inline, {len(unanchored)} in the summary")
     return 0
 
 
