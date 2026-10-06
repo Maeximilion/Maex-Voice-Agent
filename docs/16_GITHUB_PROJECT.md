@@ -47,6 +47,8 @@ Wenn eine Sicht fehlt: eine View anlegen, niemals ein Project.
 
 Einzige Ausnahme: `status: blocked`. `docs/07_WORKPACKAGES.md` fuehrt "blockiert" als Aufgabenstatus, und diese Datei ist die Quelle der Wahrheit. Das Label spiegelt sie, damit ein blockiertes Arbeitspaket auch ohne Board sichtbar ist.
 
+Dropped and paused work (06.10.2026): a pull request cannot be deleted, only closed, so the list grows. Work that is dropped on purpose (a Python or Postgres major bump that stays out for compatibility, a feature that was decided against) gets the existing label `wontfix` on its closed pull request or issue. Work that is only paused is not a label: it stays an open issue on the board in `Todo`, because a second "parked" place would drift from the Status field. The pull request list is read with `is:pr is:open`.
+
 ---
 
 ## 4. Wie der Status sich bewegt
