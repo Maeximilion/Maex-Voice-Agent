@@ -129,6 +129,7 @@ class SimCall:
             session, self._llm, build_system_prompt(), now=self._now
         )
         self._logged = 0
+        self._usage_logged = False
 
     def say(self, text: str) -> Turn:
         result = self._loop.run_turn(self.state, text)
@@ -154,7 +155,11 @@ class SimCall:
             # must not name a model that never ran (Codex PR #211, P2).
             usage = Usage()
         cost = cost_cents(usage)
-        if usage.model is not None:
+        # Once per call: a repeated `finish` writes nothing (`end_call` is
+        # idempotent), and a second line would double the tokens of this call
+        # for whoever adds the lines up (Codex PR #211, P2).
+        if usage.model is not None and not self._usage_logged:
+            self._usage_logged = True
             log(
                 logger,
                 logging.INFO,

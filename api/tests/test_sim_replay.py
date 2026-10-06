@@ -329,6 +329,24 @@ def test_call_with_a_model_logs_model_tokens_and_cost(
     ]
 
 
+def test_finishing_a_call_twice_logs_its_usage_once(session, tenant, caplog):
+    """A second `finish` changes nothing in the call log (`end_call` is
+    idempotent); a second log line would double the call's tokens for anyone
+    who adds the lines up (Codex PR #211, P2)."""
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+    call.say("Hallo")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        first = call.finish()
+        second = call.finish()
+
+    assert second == first
+    assert len(usage_lines(caplog)) == 1
+
+
 def test_call_with_an_unmetered_answer_logs_no_cost(
     session, tenant, monkeypatch, caplog
 ):
