@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key: str = ""
     llm_timeout_seconds: float = 15.0
+    # Price of the model in cents per million tokens. Without both, the cost
+    # of a call is unknown and stays empty; 0 is a price (a local model).
+    llm_input_cents_per_mtok: int | None = None
+    llm_output_cents_per_mtok: int | None = None
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45

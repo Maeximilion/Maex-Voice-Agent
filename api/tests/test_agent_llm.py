@@ -12,6 +12,8 @@ from api.agent.llm import (
     LLMError,
     LLMTurn,
     ToolCall,
+    Usage,
+    cost_cents,
     parse_turn,
 )
 from api.config import settings
@@ -232,6 +234,115 @@ def test_from_settings_builds_the_client_from_the_environment(monkeypatch):
     monkeypatch.setattr(settings, "llm_model", "local-model")
 
     assert isinstance(ChatCompletionsLLM.from_settings(), ChatCompletionsLLM)
+
+
+def test_client_counts_the_tokens_of_every_answer():
+    llm = client_with(lambda request: recorded('{"say": "Gern."}'))
+    assert llm.usage == Usage(model="test-model")
+
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+    llm.next_turn(SYSTEM, STATE, "Einen Tisch bitte")
+
+    assert llm.usage == Usage(
+        model="test-model", requests=2, prompt_tokens=160, completion_tokens=24
+    )
+
+
+@pytest.mark.parametrize(
+    "usage",
+    [
+        None,
+        {},
+        {"prompt_tokens": "80", "completion_tokens": None},
+        {"prompt_tokens": -5, "completion_tokens": 12.5},
+        {"prompt_tokens": True, "completion_tokens": True},
+        "80 tokens",
+    ],
+)
+def test_answer_without_usable_token_numbers_counts_as_a_request_only(usage):
+    """Not every server sends the block. Unknown stays unknown, never estimated."""
+
+    def handler(request):
+        body = {"choices": [{"message": {"content": '{"say": "Gern."}'}}]}
+        if usage is not None:
+            body["usage"] = usage
+        return httpx.Response(200, json=body)
+
+    llm = client_with(handler)
+
+    assert llm.next_turn(SYSTEM, STATE, "Hallo") == LLMTurn(say="Gern.")
+    assert llm.usage == Usage(model="test-model", requests=1)
+
+
+def test_failed_request_counts_as_a_request_without_tokens():
+    llm = client_with(timeout)
+
+    with pytest.raises(LLMError):
+        llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage == Usage(model="test-model", requests=1)
+
+
+def test_answer_outside_the_contract_still_costs_its_tokens():
+    llm = client_with(lambda request: recorded("Guten Tag!"))
+
+    with pytest.raises(LLMError):
+        llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage.prompt_tokens == 80
+    assert llm.usage.completion_tokens == 12
+
+
+def prices(monkeypatch, per_mtok_in, per_mtok_out):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", per_mtok_in)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", per_mtok_out)
+
+
+@pytest.mark.parametrize(
+    ("prompt_tokens", "completion_tokens", "cents"),
+    [
+        (0, 0, 0),
+        (80, 12, 1),  # 0.00192 cents: any use at all is at least one cent
+        (1_000_000, 0, 15),
+        (1_000_000, 1_000_000, 75),
+        (1_000_001, 0, 16),  # always up, a budget is never undercut by rounding
+        (40_000, 3_000, 1),  # a long call on a small model
+    ],
+)
+def test_cost_is_whole_cents_rounded_up(
+    monkeypatch, prompt_tokens, completion_tokens, cents
+):
+    prices(monkeypatch, 15, 60)
+    usage = Usage(
+        model="test-model",
+        requests=3,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+
+    assert cost_cents(usage) == cents
+
+
+def test_cost_of_a_free_local_model_is_zero(monkeypatch):
+    prices(monkeypatch, 0, 0)
+
+    assert cost_cents(Usage(model="local", requests=4, prompt_tokens=9000)) == 0
+
+
+@pytest.mark.parametrize(("per_mtok_in", "per_mtok_out"), [(None, None), (15, None)])
+def test_cost_without_both_prices_is_unknown_not_zero(
+    monkeypatch, per_mtok_in, per_mtok_out
+):
+    prices(monkeypatch, per_mtok_in, per_mtok_out)
+
+    assert cost_cents(Usage(model="test-model", prompt_tokens=9000)) is None
+
+
+def test_cost_without_a_model_is_unknown(monkeypatch):
+    """The scripted stand-in is no model: its calls get no price, not 0 cents."""
+    prices(monkeypatch, 15, 60)
+
+    assert cost_cents(Usage()) is None
 
 
 @pytest.mark.parametrize("missing", ["llm_base_url", "llm_model"])

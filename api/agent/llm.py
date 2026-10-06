@@ -4,12 +4,12 @@ T-2.1 legt nur die Schnittstelle und ein Testdouble an. Ein echtes Modell mit
 Token-Zählung kommt mit T-2.4 gegen dieselbe `LLMClient`-Schnittstelle, damit
 `agent/loop.py` sich dann nicht ändern muss.
 
-T-2.4, first part: `ChatCompletionsLLM` is that real model. Token counting and
-cost per call follow in the next part.
+T-2.4: `ChatCompletionsLLM` is that real model. It counts the tokens it uses
+(`Usage`); `cost_cents` prices them for the call log.
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import httpx
@@ -96,6 +96,35 @@ Antworte immer mit genau einem JSON-Objekt, ohne Text davor oder danach:
 Die Eingabe ist entweder das, was der Gast gesagt hat, oder das Ergebnis deines letzten Tool-Aufrufs als JSON mit dem Feld `tool`."""
 
 
+@dataclass(frozen=True)
+class Usage:
+    """What one client has used since it was created. One client serves one
+    call, so this is the usage of that call. `model` is None for a stand-in
+    that is no model. A failed request counts in `requests` and adds no tokens:
+    what a provider bills for it is unknown."""
+
+    model: str | None = None
+    requests: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+
+
+def cost_cents(usage: Usage) -> int | None:
+    """Model cost of a call in whole cents, or None when it is unknown: no
+    model, or a price missing in the settings. Unknown is never 0.
+
+    Rounded up, so a sum over calls never undercuts a budget.
+    ponytail: whole cents per call overstate a cheap model (0.3 cents count as
+    1). The exact tokens are in the log line "model usage"; a token column on
+    `calls` once a KPI needs the exact cost (T-8.3)."""
+    price_in = settings.llm_input_cents_per_mtok
+    price_out = settings.llm_output_cents_per_mtok
+    if usage.model is None or price_in is None or price_out is None:
+        return None
+    total = usage.prompt_tokens * price_in + usage.completion_tokens * price_out
+    return -(-total // 1_000_000)
+
+
 class _Envelope(BaseModel):
     say: str | None = None
     tool: str | None = None
@@ -143,6 +172,7 @@ class ChatCompletionsLLM:
         transport: httpx.BaseTransport | None = None,  # replaceable for tests
     ):
         self._model = model
+        self.usage = Usage(model=model)
         self._http = httpx.Client(
             base_url=base_url,
             headers={"Authorization": f"Bearer {api_key}"} if api_key else {},
@@ -176,12 +206,32 @@ class ChatCompletionsLLM:
             # an eval that is red must be red again on the next run.
             "temperature": 0,
         }
+        self.usage = replace(self.usage, requests=self.usage.requests + 1)
         try:
             response = self._http.post("chat/completions", json=body)
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            payload = response.json()
+            # Before the answer is judged: one outside the contract cost the same.
+            self._count(payload)
+            content = payload["choices"][0]["message"]["content"]
         except (httpx.HTTPError, ValueError, LookupError, TypeError) as exc:
             raise LLMError(f"model call failed: {type(exc).__name__}") from exc
         if not isinstance(content, str):
             raise LLMError("model answer without text")
         return parse_turn(content)
+
+    def _count(self, payload: object) -> None:
+        """Adds the tokens the server reports. Both numbers or nothing: half a
+        count would read like a whole one. Missing or odd numbers add nothing,
+        they are never estimated."""
+        reported = payload.get("usage") if isinstance(payload, dict) else None
+        if not isinstance(reported, dict):
+            return
+        tokens = (reported.get("prompt_tokens"), reported.get("completion_tokens"))
+        if not all(type(n) is int and n >= 0 for n in tokens):
+            return
+        self.usage = replace(
+            self.usage,
+            prompt_tokens=self.usage.prompt_tokens + tokens[0],
+            completion_tokens=self.usage.completion_tokens + tokens[1],
+        )

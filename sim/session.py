@@ -5,19 +5,21 @@ kommen. Alles andere - Anruf-Zeile, Gesprächszustand, Tool-Protokoll, Abschluss
 ist identisch und steht deshalb hier, statt zweimal.
 """
 
+import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, get_args
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMClient
+from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import ConversationLoop
 from api.agent.prompt import build_system_prompt
 from api.agent.state import initial_state
 from api.core.errors import NotFound
+from api.core.logging import get_logger, log
 from api.core.time import utcnow
 from api.domain.calls import end_call, start_call
 from api.domain.menu.items import active_numbers
@@ -31,6 +33,8 @@ from api.schemas.calls import (
 )
 from sim.scripted_llm import ScriptedLLM
 from sim.scripted_order import MenuNumbers
+
+logger = get_logger("sim.session")
 
 # Der Ausgang des Anrufs folgt dem Gesprächszustand, nicht dem Gefühl des Modells
 # (docs/03 §calls). Alles, was weder bestätigt noch übergeben noch als Rückruf
@@ -116,16 +120,13 @@ class SimCall:
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
-        self._loop = ConversationLoop(
-            session,
-            llm
-            or ScriptedLLM(
-                now=self._now,
-                timezone=tenant.timezone,
-                menu=lambda: menu_numbers(session, tenant.id),
-            ),
-            build_system_prompt(),
+        self._llm = llm or ScriptedLLM(
             now=self._now,
+            timezone=tenant.timezone,
+            menu=lambda: menu_numbers(session, tenant.id),
+        )
+        self._loop = ConversationLoop(
+            session, self._llm, build_system_prompt(), now=self._now
         )
         self._logged = 0
 
@@ -145,6 +146,19 @@ class SimCall:
         Kennzahl wertlos (Codex-Review PR #104, P2)."""
         outcome = OUTCOME_BY_STAGE.get(self.state.stage, DEFAULT_OUTCOME)
         intent = self.state.intent if self.state.intent in INTENTS else None
+        # Only a real model counts tokens (`ChatCompletionsLLM.usage`); a
+        # stand-in has none, and its call gets neither a model nor a cost.
+        usage: Usage = getattr(self._llm, "usage", None) or Usage()
+        cost = cost_cents(usage)
+        if usage.model is not None:
+            log(
+                logger,
+                logging.INFO,
+                "model usage",
+                call_id=str(self.call_id),
+                **asdict(usage),
+                cost_cents=cost,
+            )
         return end_call(
             self._session,
             EndCallRequest(
@@ -152,6 +166,8 @@ class SimCall:
                 tenant_id=self._tenant.id,
                 outcome=outcome,
                 intent=intent,
+                cost_cents=cost,
+                model=usage.model,
             ),
             now=self._fixed_now or utcnow(),
         )
