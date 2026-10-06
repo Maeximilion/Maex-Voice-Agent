@@ -24,9 +24,9 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | Script | Event | What it does |
 |---|---|---|
 | `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts. |
-| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`. |
+| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per state of `main` and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
-| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag), because nobody is there to switch the model and resend. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
+| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
@@ -140,11 +140,13 @@ if [ "$1" = "--branch" ]; then
   # State lives under the home folder: a shared temp folder can be prepared by another local user.
   state="$HOME/.claude/hook-state/branch-sync"
   mkdir -p "$state"
-  key="$state/$(git rev-parse --show-toplevel | cksum | cut -d' ' -f1)"
+  key="$state/$(git rev-parse --show-toplevel | sha256sum | cut -c1-64)"
   # ponytail: fetches at most every 10 minutes; lower -mmin if main moves faster.
   # Its own stamp, not FETCH_HEAD: a fetch of one feature ref refreshes that file and leaves origin/main stale.
   if [ -z "$(find "$key.fetched" -mmin -10 2>/dev/null)" ]; then
     git fetch -q --prune origin 2>/dev/null || exit 0
+    # Named explicitly: the refspec of a single-branch clone leaves main out of a plain fetch.
+    git fetch -q origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || exit 0
     touch "$key.fetched"
   fi
   # A branch whose upstream is gone was merged or deleted on the remote: nothing to sync.
@@ -162,11 +164,13 @@ if [ "$1" = "--branch" ]; then
   exit 0
 fi
 if [ "$1" != "--always" ]; then
-  grep -q 'gh pr merge' || exit 0
+  # Only the command counts: output that merely mentions the text must not start a sync.
+  jq -r '.tool_input.command // empty' 2>/dev/null | grep -q 'gh pr merge' || exit 0
 fi
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 git fetch -q --prune origin 2>/dev/null || exit 0
+git fetch -q origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || exit 0
 
 # main is checked out in exactly one worktree (or none); update it there.
 dir=$(git worktree list --porcelain | awk '
@@ -176,7 +180,8 @@ if [ -n "$dir" ]; then
   git -C "$dir" merge -q --ff-only origin/main 2>/dev/null
   # Still behind means the fast-forward was refused; say so instead of drifting.
   behind=$(git -C "$dir" rev-list --count main..origin/main 2>/dev/null)
-  [ "${behind:-0}" -gt 0 ] && printf '{"systemMessage":"sync-main: main in %s is %s commits behind origin/main and was not fast-forwarded (uncommitted changes or local commits), check git status"}\n' "$dir" "$behind"
+  [ "${behind:-0}" -gt 0 ] && jq -n --arg d "$dir" --arg b "$behind" \
+    '{systemMessage: "sync-main: main in \($d) is \($b) commits behind origin/main and was not fast-forwarded (uncommitted changes or local commits), check git status"}'
 else
   # Refused means local main has commits origin/main lacks; say so instead of drifting.
   git fetch -q origin main:main 2>/dev/null \
@@ -207,14 +212,16 @@ state="$HOME/.claude/hook-state/model-router"
 mkdir -p "$state"
 
 case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
-  SessionStart)    jq -r '.model // empty' <<<"$input" > "$state/$sid.model"; exit 0 ;;
+  # A start without a model (after /clear) keeps what is already remembered.
+  SessionStart)    m=$(jq -r '.model // empty' <<<"$input"); [ -n "$m" ] && echo "$m" > "$state/$sid.model"; exit 0 ;;
   PostModelSwitch) jq -r '.to_model // empty' <<<"$input" > "$state/$sid.model"; exit 0 ;;
 esac
 
 prompt=$(jq -r '.prompt // ""' <<<"$input")
 # Machine-delivered prompts (routines, background reports, messages from other sessions,
 # CI events) arrive as a tagged block: nobody is there to switch the model and resend.
-case "$prompt" in "<"*) exit 0 ;; esac
+# Pasted text and a quoted reply also start with "<" and come from a person.
+case "$prompt" in "<pasted_content"*|"<!--"*) ;; "<"*) exit 0 ;; esac
 # A repo with its own "Model Routing" table in CLAUDE.md picks the model itself; stay out of its way.
 root=$(git -C "$(jq -r '.cwd // "."' <<<"$input")" rev-parse --show-toplevel 2>/dev/null)
 grep -qs '^#\+ Model Routing' "$root/CLAUDE.md" && exit 0
@@ -342,7 +349,7 @@ Ubuntu takes the scripts and the shared settings keys of section 3 from the Wind
 WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.claude"
 mkdir -p ~/.claude/hooks
 [ -f ~/.claude/settings.json ] || (umask 077; echo '{}' > ~/.claude/settings.json)
-for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; bash -n ~/.claude/hooks/$f || echo "broken: $f"; done
+for f in sync-main.sh model-router.sh session-title.sh; do t="$(mktemp ~/.claude/hooks/$f.new.XXXXXX)" && tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > "$t" && bash -n "$t" && chmod 755 "$t" && mv "$t" ~/.claude/hooks/$f || { rm -f "$t"; echo "broken, kept the old copy: $f"; }; done
 tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
   && jq '{hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null))' ~/.claude/settings.json > "$bak" \
   && jq -e . "$bak" > /dev/null \
@@ -355,7 +362,7 @@ tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
 jq -c '{env: has("env"), plugins: ((.enabledPlugins // {}) | keys), hooks: ((.hooks // {}) | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Before it rewrites anything, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. A settings file the block has to create is readable by its owner only. When any step fails, the run stops, removes what it created and says that the settings are unchanged.
+The last line has to show the plugin, the four hook groups and no `broken` line before it, and `"env":true` on a machine that had an `env` block before. Each script is copied to a new file, checked for syntax and only then moved over the old one, so a damaged Windows copy never replaces a working hook. Before it rewrites the settings, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. A settings file the block has to create is readable by its owner only. When any step fails, the run stops, removes what it created and says that the settings are unchanged.
 
 Undo, same console: put the values of the oldest backup back, written in one step like the restore. Keys that did not exist before the restore stay.
 
