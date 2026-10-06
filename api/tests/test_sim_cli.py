@@ -114,3 +114,13 @@ def test_model_defaults_to_the_scripted_stand_in():
 
 def test_model_can_be_named_on_the_command_line():
     assert build_parser().parse_args(["--model", "qwen3:14b"]).model == "qwen3:14b"
+
+
+def test_now_without_an_offset_is_refused_at_the_argument(capsys):
+    """Not inside the first turn, where `to_local` raises on a naive value."""
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["--now", "2026-09-15T18:00"])
+    assert "offset missing" in capsys.readouterr().err
+
+    args = build_parser().parse_args(["--now", "2026-09-15T18:00+02:00"])
+    assert args.now.utcoffset() is not None

@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from api.agent.llm import Usage, cost_cents
+from api.config import settings
 
 HARD = {
     "guessed_items": "Geratene Positionen",
@@ -91,6 +92,7 @@ class RunReport:
             prompt_tokens=sum(c.prompt_tokens for c in self.cases),
             completion_tokens=sum(c.completion_tokens for c in self.cases),
             unmetered=sum(c.unmetered for c in self.cases),
+            priced=self.model == settings.llm_model,
         )
 
     @property

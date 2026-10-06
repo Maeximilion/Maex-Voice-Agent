@@ -25,7 +25,7 @@ from api.core.errors import AppError
 from api.db import SessionLocal
 from api.models import Reservation, Tenant
 from sim.noise import noisy_text
-from sim.session import SCRIPTED, SimCall, Turn, render_turn, resolve_tenant
+from sim.session import SCRIPTED, SimCall, Turn, call_time, render_turn, resolve_tenant
 
 CUSTOMER = "customer"
 
@@ -92,7 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, help="Saat für das Rauschen")
     parser.add_argument(
         "--now",
-        type=datetime.fromisoformat,
+        type=call_time,
         help="Zeitpunkt des Anrufs mit Zeitzone, z. B. 2026-09-15T18:00+02:00",
     )
     parser.add_argument(

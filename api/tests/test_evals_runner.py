@@ -1118,6 +1118,7 @@ def _counted(case_id, **usage) -> CaseResult:
 
 
 def test_report_shows_tokens_and_cost_per_case(monkeypatch):
+    monkeypatch.setattr(settings, "llm_model", "scripted")
     monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
     monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
     report = _report(
@@ -1133,6 +1134,10 @@ def test_report_shows_tokens_and_cost_per_case(monkeypatch):
     # The run: 12000 x 300 + 600 x 1500 = 4.5 million, 4.5 cents, up to 5; two
     # cases, up again. Priced once for the run, not once per case.
     assert data["cost_per_case"] == 3
+
+    # `--model` names another model than `LLM_MODEL`: its prices are not these.
+    monkeypatch.setattr(settings, "llm_model", "mistral-small")
+    assert report.to_json()["cost_per_case"] is None
     assert "| Tokens je Fall | 6300 |" in report.to_markdown()
 
 

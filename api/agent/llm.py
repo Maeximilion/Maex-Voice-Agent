@@ -109,6 +109,9 @@ class Usage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     unmetered: int = 0
+    # False when the prices of the settings are not this model's: they belong
+    # to `LLM_MODEL`, and `--model` may name another one.
+    priced: bool = True
 
 
 def cost_cents(usage: Usage) -> int | None:
@@ -123,7 +126,9 @@ def cost_cents(usage: Usage) -> int | None:
     `calls` once a KPI needs the exact cost (T-8.3)."""
     price_in = settings.llm_input_cents_per_mtok
     price_out = settings.llm_output_cents_per_mtok
-    if usage.model is None or price_in is None or price_out is None:
+    if usage.model is None or not usage.priced:
+        return None
+    if price_in is None or price_out is None:
         return None
     if not usage.requests or usage.unmetered:
         return None
@@ -213,12 +218,17 @@ class ChatCompletionsLLM:
         model = model or settings.llm_model
         if not settings.llm_base_url or not model:
             raise LLMError("LLM_BASE_URL and LLM_MODEL must be set to use a model")
-        return cls(
+        llm = cls(
             settings.llm_base_url,
             model,
             settings.llm_api_key,
             timeout=settings.llm_timeout_seconds,
         )
+        llm.usage = replace(llm.usage, priced=model == settings.llm_model)
+        return llm
+
+    def close(self) -> None:
+        self._http.close()
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str

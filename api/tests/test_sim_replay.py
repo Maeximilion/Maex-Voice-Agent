@@ -325,6 +325,7 @@ def test_call_with_a_model_logs_model_tokens_and_cost(
             "prompt_tokens": 18000,
             "completion_tokens": 800,
             "unmetered": 0,
+            "priced": True,
             "cost_cents": 7,
         }
     ]

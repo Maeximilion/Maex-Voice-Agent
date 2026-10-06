@@ -1,6 +1,7 @@
 """agent/llm.py: LLMTurn erzwingt genau ein Ergebnis, FakeLLM spielt Skripte ab."""
 
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -297,7 +298,25 @@ def test_from_settings_takes_another_model_on_the_same_server(monkeypatch):
 
     llm = ChatCompletionsLLM.from_settings("qwen3:14b")
 
-    assert llm.usage == Usage(model="qwen3:14b")
+    # The prices of the settings belong to `LLM_MODEL`, not to this one.
+    assert llm.usage == Usage(model="qwen3:14b", priced=False)
+
+
+def test_another_model_than_the_configured_one_has_no_cost(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    usage = Usage(model="qwen3:14b", requests=1, prompt_tokens=9000)
+
+    assert cost_cents(usage) == 3
+    assert cost_cents(replace(usage, priced=False)) is None
+
+
+def test_close_closes_the_http_client():
+    llm = ChatCompletionsLLM("http://model.test/v1", "m")
+
+    llm.close()
+
+    assert llm._http.is_closed
 
 
 @pytest.mark.parametrize(("effort", "sent"), [("none", True), ("", False)])

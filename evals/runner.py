@@ -202,10 +202,11 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         expected_escalation=bool(expected.get("escalated")),
         pending=case.get("pending"),
     )
-    llm = None
+    llm = inner = None
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
-        llm = RecordingLLM(make_llm(now, lambda: menu_numbers(session, tenant.id)))
+        inner = make_llm(now, lambda: menu_numbers(session, tenant.id))
+        llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)
@@ -227,6 +228,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         # What the model used before the crash still counts for the run.
         _count_usage(result, llm)
         return result
+    finally:
+        # One client per case: closed with it, the count stays readable.
+        getattr(inner, "close", lambda: None)()
 
     rec = llm.recording
     missing = missing_tools(

@@ -5,6 +5,7 @@ kommen. Alles andere - Anruf-Zeile, Gesprächszustand, Tool-Protokoll, Abschluss
 ist identisch und steht deshalb hier, statt zweimal.
 """
 
+import argparse
 import logging
 import uuid
 from collections.abc import Callable
@@ -71,6 +72,15 @@ def menu_numbers(session: Session, tenant_id: uuid.UUID) -> MenuNumbers:
 
 
 SCRIPTED = "scripted"
+
+
+def call_time(text: str) -> datetime:
+    """`--now` of the text phone. Without an offset it is refused here, at the
+    argument, instead of failing inside the first turn (`to_local`)."""
+    value = datetime.fromisoformat(text)
+    if value.tzinfo is None:
+        raise argparse.ArgumentTypeError("offset missing, e.g. 2026-09-15T18:00+02:00")
+    return value
 
 
 def make_llm(
@@ -147,7 +157,7 @@ class SimCall:
         in jedem Anruf aus dem Terminal 0 Sekunden und die Gespraechsdauer waere als
         Kennzahl wertlos (Codex-Review PR #104, P2)."""
         outcome, intent = call_outcome(self.state)
-        usage = self.usage()
+        usage = self.usage
         cost = cost_cents(usage)
         # Once per call: a repeated `finish` writes nothing (`end_call` is
         # idempotent), and a second line would double the tokens of this call
@@ -175,6 +185,7 @@ class SimCall:
             now=self._fixed_now or utcnow(),
         )
 
+    @property
     def usage(self) -> Usage:
         """What the model of this call used. Only a real model counts tokens
         (`ChatCompletionsLLM.usage`); a stand-in has none, and its call gets
@@ -190,7 +201,7 @@ class SimCall:
         """Model, requests, tokens and cost for the terminal, or None on the
         stand-in. The text phone configures no logging, so the log line of
         `finish` is not shown there (Codex PR #211, P2)."""
-        usage = self.usage()
+        usage = self.usage
         if usage.model is None:
             return None
         cost = cost_cents(usage)

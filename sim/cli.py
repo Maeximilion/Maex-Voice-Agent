@@ -11,13 +11,12 @@ danach wirklich in `reservations` und taucht später in der GUI auf.
 import argparse
 import random
 import sys
-from datetime import datetime
 
 from api.agent.llm import LLMError
 from api.core.errors import AppError
 from api.db import SessionLocal
 from sim.noise import noisy_text
-from sim.session import SCRIPTED, SimCall, render_turn, resolve_tenant
+from sim.session import SCRIPTED, SimCall, call_time, render_turn, resolve_tenant
 
 QUIT_COMMANDS = ("quit", "ende", "q")
 PROMPT = "> "
@@ -41,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--now",
-        type=datetime.fromisoformat,
+        type=call_time,
         help="Zeitpunkt des Anrufs mit Zeitzone, z. B. 2026-09-15T18:00+02:00",
     )
     return parser
