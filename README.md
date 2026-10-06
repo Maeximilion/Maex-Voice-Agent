@@ -157,7 +157,7 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 ## Known Issues
 
 - Docker Hub rate-limits anonymous image downloads. If `make up` fails with rate limit: `docker login` with a free Docker Hub account, then restart.
-- Kitchen ticket printing is tested against simulated printers only; the first real print on the restaurant's Epson TM-T20II is still open (which machine runs the bridge, network or USB port)
+- Kitchen ticket printing: the test slip was checked on paper on the restaurant's Epson TM-T20II (register PC, Windows queue, 06.10.2026). A slip of a real order through the server has not been printed yet, and the network path is tested against a simulated printer only
 - `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`) until T-2.4 connects a real one; tokens and cost per case stay empty until then.
 - Behind a TLS-terminating proxy, `pip install` in image build fails with `CERTIFICATE_VERIFY_FAILED`. Fix: place the proxy's CA cert as `api/ca-bundle.crt` (in `.gitignore`), the build auto-includes it.
 
