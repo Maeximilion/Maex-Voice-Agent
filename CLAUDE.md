@@ -124,15 +124,16 @@ maex-voice-agent/
 ### Model Routing
 Pick the model when the session starts. A model switch starts a cold cache, so every doc read before the switch is paid for twice. `CLAUDE.md` itself loads at startup on whatever model is running and cannot be avoided; the saving covers what `/task` reads after its check (specs, modules). `/start` reads status and work packages on the starting model, so start the session on the model you expect to need. `/start` recommends the model for the task it suggests; `/task` checks the running model against the table before it reads anything else, and asks the user to switch on a mismatch (the user switches, Claude cannot).
 
-| Work | Model |
-|---|---|
-| `gui/`, docs, seeds and imports, tests for existing code, fixing review comments, status updates | Sonnet 5.5 (`claude-sonnet-5-5`) |
-| `domain/`, `agent/`, `tools/`, `events/`, `telephony/`, `jobs/`, `prompts/`, `deploy/`, `printbridge/`, `n8n/`, migrations, anything touching the six hard rules | Opus 5.5 (`claude-opus-5-5`) |
-| Anything not named above, or a task row that names no area | Opus 5.5 (`claude-opus-5-5`, default) |
-| Gate review, deep debugging after two failed attempts | Fable 5.1 (`claude-fable-5-1`), only when Maxi asks |
-| File search, log reading | Haiku 4.5 (`claude-haiku-4-5`) or an Explore subagent |
+| Work | Model | Effort |
+|---|---|---|
+| `gui/`, docs, seeds and imports, tests for existing code, fixing review comments, status updates | Sonnet 5.5 (`claude-sonnet-5-5`) | `medium` |
+| `domain/`, `agent/`, `tools/`, `events/`, `telephony/`, `jobs/`, `prompts/`, `deploy/`, `printbridge/`, `n8n/` | Opus 5.5 (`claude-opus-5-5`) | `high` |
+| Migrations, anything touching the six hard rules, a second attempt after a failed one | Opus 5.5 (`claude-opus-5-5`) | `xhigh` |
+| Anything not named above, or a task row that names no area | Opus 5.5 (`claude-opus-5-5`, default) | `high` |
+| Gate review, deep debugging after two failed attempts | Fable 5.1 (`claude-fable-5-1`), only when Maxi asks | `high` |
+| File search, log reading | Haiku 4.5 (`claude-haiku-4-5`) or an Explore subagent | none (no effort setting) |
 
-Mixed task: take the higher model. Effort `xhigh` for code, `medium` for docs. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
+Mixed task: take the higher model and the higher effort. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. Claude cannot read the session's effort setting, so `/start` and `/task` name the effort next to the model but can only check the model. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
