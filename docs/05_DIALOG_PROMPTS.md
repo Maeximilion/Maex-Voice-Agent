@@ -157,7 +157,7 @@ Sofort und ohne Diskussion:
 | Hebel | Wirkung |
 |---|---|
 | Menü als Index, Details per Tool | größter Hebel, spart ~90 % des Menü-Anteils |
-| System-Prompt unter 800 Tokens | wird bei jedem Zug mitgeschickt |
+| System-Prompt unter 800 Tokens | wird bei jedem Zug mitgeschickt. The own core sends more than the file: system prompt, tool reference and answer format are about 2,240 estimated tokens together, with a budget of 2,600 for the whole message (Maxi, 06.10.2026; `agent/prompt.py` `CORE_TOKEN_BUDGET`, tested). To be shrunk with the numbers of the first eval run |
 | Kompakter Bestellstatus statt Gesprächsverlauf | der Verlauf wächst linear, der Status nicht |
 | Formulierungen für heikle Fälle als `say` aus dem Code | kürzere Antworten, konstante Wortwahl |
 | Prompt-Caching, falls die Plattform es kann | System-Prompt und Index werden zwischengespeichert |
@@ -178,6 +178,13 @@ und `stage` geht zurück auf `collecting`: ein späteres Ja kann ihn nicht mehr
 bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
+
+**What a real model gets (T-2.4)** — the own core does not use the function calling of a
+platform. The system message is `prompts/system_vN.md`, then the tool reference (the
+sections of `prompts/tools_vN.md`, one per tool, without the file's notes for the voice
+platform), then the answer format below. The compact state carries `now`, the local date
+with weekday ("Dienstag, 2026-09-15T18:00+02:00"): a model has no clock, and "morgen um
+sieben" or "am Samstag" need one. It is the same clock the tools get.
 
 **Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
 system prompt, the compact state and one input per call, never a transcript. It answers

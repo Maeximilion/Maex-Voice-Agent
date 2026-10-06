@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Upper limit for one answer. A turn is a sentence or a tool call; a model
     # that reasons before it answers needs more.
     llm_max_output_tokens: int = 600
+    # Sent as `reasoning_effort` when set. A reasoning model needs "none", or it
+    # thinks until the output limit and answers nothing (docs/18 §5). Empty:
+    # the parameter is not sent.
+    llm_reasoning_effort: str = ""
     # Price of the model in cents per million tokens. Without both, the cost
     # of a call is unknown and stays empty; 0 is a price (a local model).
     llm_input_cents_per_mtok: int | None = Field(default=None, ge=0)

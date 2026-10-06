@@ -28,6 +28,8 @@ from api.agent.state import ConversationState, apply_state_patch, apply_tool_res
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
+from api.core.time import to_local, utcnow
+from api.domain.reservations.spoken import WEEKDAYS
 from api.schemas.callbacks import CallbackReason
 
 logger = get_logger("api.agent.loop")
@@ -190,6 +192,13 @@ class ConversationLoop:
 
     def _prompt_state(self, state: ConversationState) -> dict[str, Any]:
         data = state.to_prompt_json()
+        # A model has no clock: "morgen um sieben" and "am Samstag" need today's
+        # date and weekday. Local time of the restaurant, from the same clock
+        # the tools get (`now`), so a replay with a fixed time stays the same.
+        local = to_local(self._now or utcnow())
+        data["now"] = (
+            f"{WEEKDAYS[local.weekday()]}, {local.isoformat(timespec='minutes')}"
+        )
         hints = self._ladder.active_levels()
         if hints:
             # Sagt dem Modell, auf welcher Verständnis-Stufe eine Information

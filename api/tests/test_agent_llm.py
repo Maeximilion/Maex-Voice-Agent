@@ -272,6 +272,70 @@ def test_from_settings_builds_the_client_from_the_environment(monkeypatch):
     assert isinstance(ChatCompletionsLLM.from_settings(), ChatCompletionsLLM)
 
 
+def test_from_settings_takes_another_model_on_the_same_server(monkeypatch):
+    """`--model qwen3:14b` in the text phone and the eval runner: the server
+    comes from the settings, the model from the call."""
+    monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
+    monkeypatch.setattr(settings, "llm_model", "")
+
+    llm = ChatCompletionsLLM.from_settings("qwen3:14b")
+
+    assert llm.usage == Usage(model="qwen3:14b")
+
+
+@pytest.mark.parametrize(("effort", "sent"), [("none", True), ("", False)])
+def test_reasoning_effort_is_sent_only_when_it_is_set(monkeypatch, effort, sent):
+    """A reasoning model thinks until the output limit and answers nothing
+    unless it is told not to (docs/18 §5); a server that does not know the
+    parameter never sees it."""
+    monkeypatch.setattr(settings, "llm_reasoning_effort", effort)
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return recorded('{"say": "Gern."}')
+
+    client_with(handler).next_turn(SYSTEM, STATE, "Hallo")
+
+    assert ("reasoning_effort" in seen[0]) is sent
+    if sent:
+        assert seen[0]["reasoning_effort"] == "none"
+
+
+def test_usage_names_the_model_the_server_answered_with():
+    """A hosted endpoint resolves an alias to a dated model or routes to a
+    fallback: the call log names what really answered (Codex PR #211, P2)."""
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "model": "test-model-2026-09",
+                "choices": [{"message": {"content": '{"say": "Gern."}'}}],
+                "usage": {"prompt_tokens": 80, "completion_tokens": 12},
+            },
+        )
+
+    llm = client_with(handler)
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage.model == "test-model-2026-09"
+
+
+@pytest.mark.parametrize("named", [None, "", 7])
+def test_usage_keeps_the_configured_model_when_the_answer_names_none(named):
+    def handler(request):
+        body = {"choices": [{"message": {"content": '{"say": "Gern."}'}}]}
+        if named is not None:
+            body["model"] = named
+        return httpx.Response(200, json=body)
+
+    llm = client_with(handler)
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage.model == "test-model"
+
+
 def test_client_counts_the_tokens_of_every_answer():
     llm = client_with(lambda request: recorded('{"say": "Gern."}'))
     assert llm.usage == Usage(model="test-model")

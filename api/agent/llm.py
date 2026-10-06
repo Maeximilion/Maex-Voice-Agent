@@ -199,12 +199,15 @@ class ChatCompletionsLLM:
         )
 
     @classmethod
-    def from_settings(cls) -> "ChatCompletionsLLM":
-        if not settings.llm_base_url or not settings.llm_model:
+    def from_settings(cls, model: str | None = None) -> "ChatCompletionsLLM":
+        """`model` names another model on the server of the settings, as
+        `--model` does in the text phone and the eval runner."""
+        model = model or settings.llm_model
+        if not settings.llm_base_url or not model:
             raise LLMError("LLM_BASE_URL and LLM_MODEL must be set to use a model")
         return cls(
             settings.llm_base_url,
-            settings.llm_model,
+            model,
             settings.llm_api_key,
             timeout=settings.llm_timeout_seconds,
         )
@@ -227,6 +230,11 @@ class ChatCompletionsLLM:
             # an eval that is red must be red again on the next run.
             "temperature": 0,
         }
+        if settings.llm_reasoning_effort:
+            # A reasoning model thinks until the output limit and answers
+            # nothing unless told otherwise (docs/18 §5). Only sent when set: a
+            # server that does not know the parameter may reject the request.
+            body["reasoning_effort"] = settings.llm_reasoning_effort
         # Unmetered until the answer brings its token numbers (`_count`).
         self.usage = replace(
             self.usage,
@@ -249,7 +257,16 @@ class ChatCompletionsLLM:
     def _count(self, payload: object) -> None:
         """Adds the tokens the server reports. Both numbers or nothing: half a
         count would read like a whole one. Missing or odd numbers add nothing,
-        they are never estimated, and the request stays unmetered."""
+        they are never estimated, and the request stays unmetered.
+
+        Also takes the model name the server answered with: a hosted endpoint
+        resolves an alias to a dated model or routes to a fallback, and the
+        call log should name what really ran (Codex PR #211, P2).
+        ponytail: the last answer wins and the price stays the configured one;
+        per-model prices when a provider really mixes models within a call."""
+        answered = payload.get("model") if isinstance(payload, dict) else None
+        if isinstance(answered, str) and answered:
+            self.usage = replace(self.usage, model=answered)
         reported = payload.get("usage") if isinstance(payload, dict) else None
         if not isinstance(reported, dict):
             return

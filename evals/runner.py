@@ -39,7 +39,7 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
-from api.agent.llm import LLMClient
+from api.agent.llm import ChatCompletionsLLM, LLMClient, LLMError
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
@@ -58,9 +58,8 @@ from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
 from scripts.import_menu import read_files
 from scripts.seed import seed
 from sim.replay import customer_lines, replay
-from sim.scripted_llm import ScriptedLLM
 from sim.scripted_order import MenuNumbers
-from sim.session import menu_numbers, resolve_tenant
+from sim.session import SCRIPTED, make_llm, menu_numbers, resolve_tenant
 
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "cases"
@@ -71,7 +70,6 @@ TIMEZONE = "Europe/Berlin"
 # Ein Dienstag im Abendfenster: Abholung und Reservierung offen. Ein Fall kann
 # mit "now" einen eigenen Zeitpunkt setzen (Schliesszeit, Tageswechsel).
 DEFAULT_NOW = datetime.fromisoformat("2026-09-15T18:00:00+02:00")
-MODELS = ("scripted",)
 
 
 class UsageError(ValueError):
@@ -103,13 +101,18 @@ def model_factory(
     model: str,
 ) -> Callable[[datetime, Callable[[], MenuNumbers]], LLMClient]:
     """`menu` reads the card numbers of the case's tenant: the scripted model
-    gets them as in the text phone (`sim/session.py`)."""
-    if model == "scripted":
-        return lambda now, menu: ScriptedLLM(now=now, timezone=TIMEZONE, menu=menu)
-    # Ein echtes Modell kommt mit T-2.4 (agent/llm.py); bis dahin kein stilles
-    # Zurückfallen auf das Skript, sonst verglich ein Modellvergleich das Skript
-    # mit sich selbst.
-    raise UsageError(f"Modell '{model}' gibt es noch nicht (kommt mit T-2.4)")
+    gets them as in the text phone (`sim/session.py`). Any other name is a
+    model on the server of `LLM_BASE_URL`; every case gets its own client, so
+    its token count is the count of that case."""
+    if model != SCRIPTED:
+        try:
+            # Built once here, so a run without a server stops before the first
+            # case. Never a silent fall back to the script: a model comparison
+            # would compare the script with itself.
+            ChatCompletionsLLM.from_settings(model)
+        except LLMError as exc:
+            raise UsageError(f"Modell '{model}' nicht nutzbar: {exc}") from exc
+    return lambda now, menu: make_llm(model, now=now, timezone=TIMEZONE, menu=menu)
 
 
 def menu_plan():
@@ -228,6 +231,11 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     if rejected:
         diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
+    counted = call.usage()
+    result.requests = counted.requests
+    result.prompt_tokens = counted.prompt_tokens
+    result.completion_tokens = counted.completion_tokens
+    result.unmetered = counted.unmetered
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
     result.unconfirmed = len(rec.unconfirmed) + seen.confirmed_without_confirm
@@ -308,7 +316,11 @@ def default_report_dir(cases_dir: Path) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eval-Suite laufen lassen (docs/08)")
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
-    parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
+    parser.add_argument(
+        "--model",
+        default=SCRIPTED,
+        help="scripted (default), or the name of a model on the server of LLM_BASE_URL",
+    )
     parser.add_argument("--cases", type=Path, default=CASES)
     # Without a value run() picks the report folder per case folder.
     parser.add_argument("--report-dir", type=Path, default=None)

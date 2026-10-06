@@ -10,7 +10,8 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import FakeLLM, LLMTurn, ToolCall
+from api.agent.llm import ChatCompletionsLLM, FakeLLM, LLMTurn, ToolCall, Usage
+from api.config import settings
 from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
 from api.models import AuditLog, MenuItem, Tenant
@@ -1079,3 +1080,107 @@ def test_ohne_abgelehnten_wunsch_ist_das_angebot_none_nicht_leer():
     assert offered_alternatives(frei, "Europe/Berlin") is None
     voll = [("check_slot", {"available": False, "alternatives": []})]
     assert offered_alternatives(voll, "Europe/Berlin") == []
+
+
+# --- A real model in the runner (T-2.4 part 3) ---------------------------------
+
+
+def test_model_name_other_than_scripted_builds_the_model_client(monkeypatch):
+    """`--model qwen3:14b`: the name goes to the server of `LLM_BASE_URL`."""
+    monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
+
+    llm = runner.model_factory("qwen3:14b")(datetime.now(UTC), lambda: None)
+
+    assert isinstance(llm, ChatCompletionsLLM)
+    assert llm.usage.model == "qwen3:14b"
+
+
+def test_model_without_a_server_stops_the_run_before_any_case(monkeypatch):
+    """No silent fall back to the script: a model comparison would compare the
+    script with itself."""
+    monkeypatch.setattr(settings, "llm_base_url", "")
+
+    with pytest.raises(runner.UsageError, match="LLM_BASE_URL"):
+        runner.model_factory("qwen3:14b")
+
+
+def test_recorder_passes_the_usage_of_the_model_on():
+    inner = FakeLLM([])
+    inner.usage = Usage(model="m", requests=2, prompt_tokens=10, completion_tokens=3)
+
+    assert RecordingLLM(inner).usage == inner.usage
+    # The scripted stand-in and the test double count nothing.
+    assert RecordingLLM(FakeLLM([])).usage is None
+
+
+def _counted(case_id, **usage) -> CaseResult:
+    return CaseResult(id=case_id, name=case_id, tags=[], passed=True, **usage)
+
+
+def test_report_shows_tokens_and_cost_per_case(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=9000, completion_tokens=400),
+            _counted("b", requests=1, prompt_tokens=3000, completion_tokens=200),
+        ]
+    )
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] == 6300
+    # The run: 12000 x 300 + 600 x 1500 = 4.5 million, 4.5 cents, up to 5; two
+    # cases, up again. Priced once for the run, not once per case.
+    assert data["cost_per_case"] == 3
+    assert "| Tokens je Fall | 6300 |" in report.to_markdown()
+
+
+def test_report_of_a_run_without_a_model_shows_no_tokens(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report([_counted("a"), _counted("b")])
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] is None
+    assert data["cost_per_case"] is None
+
+
+def test_report_with_an_unmetered_request_shows_tokens_and_no_cost(monkeypatch):
+    """One request without token numbers: the sum is a part, so no price."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=9000, completion_tokens=400),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] == 4700
+    assert data["cost_per_case"] is None
+
+
+def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
+    """Through the runner: the case result holds what its client counted."""
+
+    class Counting(FakeLLM):
+        usage = Usage(model="m", requests=1, prompt_tokens=120, completion_tokens=9)
+
+    cases = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}))
+    make = lambda now, menu: Counting([LLMTurn(say="Guten Tag.")])  # noqa: E731
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        result = runner.run_case(
+            session, runner.load_cases(cases, [])[0], make, runner.menu_plan()
+        )
+    engine.dispose()
+
+    assert (result.requests, result.prompt_tokens, result.completion_tokens) == (
+        1,
+        120,
+        9,
+    )

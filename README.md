@@ -42,7 +42,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
-- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`); a real model with token counting follows in T-2.4
+- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4); how well a model does is not measured yet
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
 
@@ -119,6 +119,7 @@ make eval        # 21 CI cases (level 1-2) on a throwaway DB, optional TAGS=menu
 make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
 
 python -m sim.cli                                   # conversation in the terminal
+python -m sim.cli --model qwen3:14b                 # the same on a local model (LLM_* in .env, docs/18 §5)
 python -m sim.replay evals/cases/<case>.json        # replay a transcript
 ```
 
@@ -159,7 +160,7 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 
 - Docker Hub rate-limits anonymous image downloads. If `make up` fails with rate limit: `docker login` with a free Docker Hub account, then restart.
 - Kitchen ticket printing is tested against simulated printers only; the first real print on the restaurant's Epson TM-T20II is still open (which machine runs the bridge, network or USB port)
-- `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`) until T-2.4 connects a real one; tokens and cost per case stay empty until then.
+- `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`); tokens and cost per case are empty there. `make eval MODEL=<name>` runs the same cases on a model of the server in `LLM_BASE_URL` and fills them. A real model cannot keep found dishes across turns yet, so pickup orders over several turns fail on it (issue #37).
 - Behind a TLS-terminating proxy, `pip install` in image build fails with `CERTIFICATE_VERIFY_FAILED`. Fix: place the proxy's CA cert as `api/ca-bundle.crt` (in `.gitignore`), the build auto-includes it.
 
 ## License and Contact

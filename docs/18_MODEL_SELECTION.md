@@ -192,7 +192,7 @@ signals a new call; proposed as a work package, not part of T-2.4.
 ## 8. Next steps
 
 1. Maxi runs §5 on the workbench (handover above) and reports the GPU numbers.
-2. T-2.4 part 3: `--model` in sim and eval runner, send `reasoning_effort: "none"` (setting, default empty), tool reference in the prompt. **Required:** `.env.example` documents every `LLM_*` setting including the reasoning one, with `qwen3:14b` as the workbench example (to-do in `docs/01_STATUS.md`, What's next item 5).
+2. ~~T-2.4 part 3~~ **built 06.10.2026:** `--model` in sim and eval runner, `LLM_REASONING_EFFORT` (default empty, sent as `reasoning_effort` when set), tool reference in the prompt, `.env.example` documents every `LLM_*` setting with `qwen3:14b` as the workbench example. Left out and next: the cart in the conversation state, without which a real model loses found dishes between turns (`docs/01_STATUS.md`, What's next item 5).
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. C2: "the platform can call our own model endpoint" as a criterion (D7); concurrency limits and per-channel pricing of the platforms.

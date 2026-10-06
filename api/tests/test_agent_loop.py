@@ -725,3 +725,15 @@ def test_tool_call_that_arrives_after_the_limit_is_not_dispatched(session, state
     session.refresh(reservation)
     assert reservation.status == "draft"
     assert result.ended is True
+
+
+def test_model_sees_the_local_date_and_weekday(session, state):
+    """A model has no clock: "morgen um sieben" needs today's date, and a
+    weekday named by the guest needs today's weekday. Local time of the
+    restaurant, the same clock the tools use."""
+    llm = FakeLLM([LLMTurn(say="Guten Tag.")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Einen Tisch morgen um sieben")
+
+    assert llm.calls[0][1]["now"] == "Dienstag, 2026-09-15T08:00+02:00"

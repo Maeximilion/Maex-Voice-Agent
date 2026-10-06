@@ -13,10 +13,11 @@ import random
 import sys
 from datetime import datetime
 
+from api.agent.llm import LLMError
 from api.core.errors import AppError
 from api.db import SessionLocal
 from sim.noise import noisy_text
-from sim.session import SimCall, render_turn, resolve_tenant
+from sim.session import SCRIPTED, SimCall, render_turn, resolve_tenant
 
 QUIT_COMMANDS = ("quit", "ende", "q")
 PROMPT = "> "
@@ -34,6 +35,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, help="Saat für das Rauschen")
     parser.add_argument("--caller", help="Rufnummer des Anrufers")
     parser.add_argument(
+        "--model",
+        default=SCRIPTED,
+        help="scripted (default), or the name of a model on the server of LLM_BASE_URL",
+    )
+    parser.add_argument(
         "--now",
         type=datetime.fromisoformat,
         help="Zeitpunkt des Anrufs mit Zeitzone, z. B. 2026-09-15T18:00+02:00",
@@ -50,11 +56,23 @@ def main(argv: list[str] | None = None) -> int:
         except AppError as exc:
             print(exc.message, file=sys.stderr)
             return 2
-        call = SimCall(session, tenant, now=args.now, caller_id=args.caller)
+        try:
+            call = SimCall(
+                session,
+                tenant,
+                model=args.model,
+                now=args.now,
+                caller_id=args.caller,
+            )
+        except LLMError as exc:
+            print(f"Model '{args.model}' not usable: {exc}", file=sys.stderr)
+            return 2
         print(f"Anruf {call.call_id} bei {tenant.name}. Beenden mit :quit")
         _converse(call, noise=args.noise, rng=rng)
         ended = call.finish()
         print(f"Anruf beendet: {ended.outcome}, {ended.duration_seconds} s")
+        if usage := call.usage_line():
+            print(usage)
     return 0
 
 
