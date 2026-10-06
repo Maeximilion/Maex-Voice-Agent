@@ -159,10 +159,10 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 **Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). Merging a PR into `main` is also a wait point (Maxi, 2026-10-05): prepare the PR, get CI and evals green, report it ready, Maxi merges. Exception (Maxi, 2026-10-06): a PR that changes only `.md` files (`CLAUDE.md`, `docs/**/*.md`, `.claude/commands/*.md`; other files under `docs/` such as the CSV and HTML templates do not count) is merged by Claude once CI is green and the exact head commit has a clean review (Codex, or Claude's own if Codex is out of quota). Any other file in the diff, and every task PR, stays with Maxi.
 
 ### Reviews
-Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every fix commit. The rest is advisory (Maxi, 2026-10-06):
+Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every commit that moves the head, a merge from `main` included. The rest is advisory (Maxi, 2026-10-06):
 
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
-- `/security-review`: only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1.
+- `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1.
 
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
