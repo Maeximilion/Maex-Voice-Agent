@@ -121,6 +121,18 @@ maex-voice-agent/
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
+### Model Routing
+Pick the model **before** reading any doc: a model switch starts a cold cache, so everything loaded earlier is paid for twice. `/start` and `/task` check the model first, read nothing else until it matches, and ask the user to switch if it does not (the user switches, Claude cannot).
+
+| Work | Model |
+|---|---|
+| `domain/`, `agent/`, `tools/` hot path, migrations, anything touching the six hard rules | Opus 5.5 |
+| `gui/`, docs, seeds and imports, tests for existing code, fixing review comments, status updates | Sonnet 5.5 |
+| Gate review, deep debugging after two failed attempts | Fable 5.1, only when Maxi asks |
+| File search, log reading | Haiku 4.5 or an Explore subagent |
+
+Mixed task: take the higher model. Effort `xhigh` for code, `medium` for docs. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
+
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
 2. `docs/07_WORKPACKAGES.md` → choose next task with satisfied dependencies

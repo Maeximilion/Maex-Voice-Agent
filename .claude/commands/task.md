@@ -1,5 +1,6 @@
 Work on task $ARGUMENTS from `docs/07_WORKPACKAGES.md`.
 
+0. Model check first, before reading any doc: read only this task's row in `docs/07_WORKPACKAGES.md` (grep the ID), map its files to the "Model Routing" table in `CLAUDE.md`. If the running model is not the routed one, stop with one line naming the model to switch to; do not load specs, status or modules on the wrong model.
 1. Check whether all dependencies are complete. If not: name the missing one and stop.
 2. Read the spec from the "Spec" column and check in `docs/11_MODULE.md` which modules the files belong to.
 3. Create branch `task/<id-with-hyphens>-<shortname>`.
