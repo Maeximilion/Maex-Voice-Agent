@@ -24,7 +24,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 |---|---|---|
 | `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts. |
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`. |
-| `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per state of `main`. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
+| `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per state of `main` and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag), because nobody is there to switch the model and resend. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
@@ -138,7 +138,7 @@ if [ "$1" = "--branch" ]; then
   [ -n "$branch" ] && [ "$branch" != "main" ] || exit 0
   state="${TMPDIR:-/tmp}/claude-branch-sync"
   mkdir -p "$state"
-  key="$state/$(git rev-parse --show-toplevel | tr -c 'A-Za-z0-9' '_')"
+  key="$state/$(git rev-parse --show-toplevel | cksum | cut -d' ' -f1)"
   # ponytail: fetches at most every 10 minutes; lower -mmin if main moves faster.
   # Its own stamp, not FETCH_HEAD: a fetch of one feature ref refreshes that file and leaves origin/main stale.
   if [ -z "$(find "$key.fetched" -mmin -10 2>/dev/null)" ]; then
@@ -150,8 +150,10 @@ if [ "$1" = "--branch" ]; then
   behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
   [ "${behind:-0}" -gt 0 ] || exit 0
   # Once per state of origin/main and worktree, so a merge Claude has to postpone is not nagged about.
+  # ponytail: repeats after 30 minutes while the branch is still behind, because a note can get lost
+  # (a prompt another hook blocked never reaches Claude); raise -mmin if that is too often.
   tip=$(git rev-parse origin/main)
-  [ "$(cat "$key" 2>/dev/null)" != "$tip" ] || exit 0
+  [ "$(cat "$key" 2>/dev/null)" != "$tip" ] || [ -z "$(find "$key" -mmin -30 2>/dev/null)" ] || exit 0
   echo "$tip" > "$key"
   msg="Branch sync check: $branch is $behind commits behind origin/main. Bring it up to date before you continue with the request: use the ccd_host sync_with_base_branch tool if this session has it, otherwise commit your work and run git merge origin/main (a merge, no rebase). Resolve conflicts, and push if the branch has an upstream. If the branch has an open pull request, the merge moves its head, so the review of the head commit has to be requested again."
   jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
@@ -337,22 +339,22 @@ WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r
 mkdir -p ~/.claude/hooks
 [ -f ~/.claude/settings.json ] || echo '{}' > ~/.claude/settings.json
 for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; bash -n ~/.claude/hooks/$f || echo "broken: $f"; done
-cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%d-%H%M%S)
-jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json > ~/.claude/settings.tmp && mv ~/.claude/settings.tmp ~/.claude/settings.json
+cp ~/.claude/settings.json "$(mktemp ~/.claude/settings.json.bak.XXXXXX)"
+new=$(jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json) && printf '%s\n' "$new" > ~/.claude/settings.json
 jq -c '{env: has("env"), plugins: (.enabledPlugins | keys), hooks: (.hooks | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Every run writes a new dated `settings.json.bak.*` file and never overwrites an older one; the newest is the undo, delete them once the check passed.
+The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Every run copies the settings to a new, uniquely named `settings.json.bak.*` file that only the owner can read, and never overwrites an older one; the oldest holds the state before the first run. Delete them once the check passed. The settings file itself is rewritten in place and keeps its permissions.
 
 ## 6. Check that a hook fires
 
 A hook that runs without anything to report leaves no visible trace. For `sync-main.sh --branch`, feed it by hand from a branch that is behind `main`. Console: Git Bash or Ubuntu terminal, inside the checkout.
 
 ```bash
-printf '{"cwd":"%s"}' "$PWD" | bash ~/.claude/hooks/sync-main.sh --branch
+jq -n --arg cwd "$PWD" '{cwd: $cwd}' | bash ~/.claude/hooks/sync-main.sh --branch
 ```
 
-It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main`: a second run prints nothing until `main` moves again, and a run by hand uses up the note the session would have got for that state. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in the `claude-branch-sync` folder of the temp directory; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
+It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in the `claude-branch-sync` folder of the temp directory; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
 
 ## 7. Keeping this file true
 
