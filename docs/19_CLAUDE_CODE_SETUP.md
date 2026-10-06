@@ -156,9 +156,11 @@ if [ "$1" = "--branch" ]; then
   # Once per branch, state of origin/main and worktree, so a merge Claude has to postpone is not nagged about.
   # ponytail: repeats after 30 minutes while the branch is still behind, because a note can get lost
   # (a prompt another hook blocked never reaches Claude); raise -mmin if that is too often.
-  mark="$branch $(git rev-parse origin/main)"
-  [ "$(cat "$key" 2>/dev/null)" != "$mark" ] || [ -z "$(find "$key" -mmin -30 2>/dev/null)" ] || exit 0
-  echo "$mark" > "$key"
+  # One note file per branch: switching back and forth must not bring a note back early.
+  note="$key.$(printf '%s' "$branch" | sha256sum | cut -c1-16)"
+  tip=$(git rev-parse origin/main)
+  [ "$(cat "$note" 2>/dev/null)" != "$tip" ] || [ -z "$(find "$note" -mmin -30 2>/dev/null)" ] || exit 0
+  echo "$tip" > "$note"
   msg="Branch sync check: $branch is $behind commits behind origin/main. Bring it up to date before you continue with the request: use the ccd_host sync_with_base_branch tool if this session has it, otherwise commit your work and run git merge origin/main (a merge, no rebase). Resolve conflicts, and push if the branch has an upstream. If the branch has an open pull request, the merge moves its head, so the review of the head commit has to be requested again."
   jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
   exit 0
@@ -173,14 +175,15 @@ git fetch -q --prune origin 2>/dev/null || exit 0
 git fetch -q origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || exit 0
 
 # main is checked out in exactly one worktree (or none); update it there.
-# NUL-separated, so a path with a line break in it stays one path.
+# NUL-separated, so a path with a line break in it stays one path. Git before 2.36 has
+# no -z; there the lines of the plain list stand in for the records.
 dir=
 while IFS= read -r -d '' line; do
   case "$line" in
     "worktree "*) w=${line#worktree } ;;
     "branch refs/heads/main") dir=$w; break ;;
   esac
-done < <(git worktree list --porcelain -z)
+done < <(git worktree list --porcelain -z 2>/dev/null || git worktree list --porcelain | tr '\n' '\0')
 if [ -n "$dir" ]; then
   git -C "$dir" merge -q --ff-only origin/main 2>/dev/null
   # Still behind means the fast-forward was refused; say so instead of drifting.
