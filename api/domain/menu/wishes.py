@@ -25,6 +25,7 @@ Reine Funktionen ohne Datenbank.
 """
 
 import re
+from collections.abc import Callable, Iterator
 
 from api.domain.menu.numberwords import fold, parse_cardinal
 from api.schemas.menu import OptionGroup, Wish
@@ -42,13 +43,22 @@ _CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
 
 _WORD = re.compile(r"[^\W_]+")
 _TOKEN = re.compile(r"[^\W_]+|,")
-_TRAILING_GLUE = re.compile(
-    r"(?:[\s,]+(?:aber|und|dafür|dafuer|dann|bitte))+[\s,]*$", re.IGNORECASE
-)
-_TRAILING_PLEASE = re.compile(r"[\s,]*bitte[\s.!?]*$", re.IGNORECASE)
+# The patterns below run on what the caller said and must stay linear in its
+# length (CodeQL py/polynomial-redos). None of them begins with a repetition: a
+# pattern that may start anywhere and begins with `[\s,]*` reads a long run of
+# separators again from every character of it. The separators in front of a
+# match are taken off by `_separators_start` instead.
+#
+# "bitte" at the very end, and the word that joins the next part of a wish
+# ("ohne Zwiebeln, dafür" / "mit Nudeln, aber").
+_PLEASE_AT_END = re.compile(r"bitte[\s.!?]*$", re.IGNORECASE)
+# Lower case only, as the pattern it replaces was: "Und" at the end stays.
+_JOINER_AT_END = re.compile(r"(?:dafür|dafuer|aber|und)[\s,]*$")
+# Joining words at the end of a part, one after the other ("mit Salami, aber").
+_GLUE_WORD = re.compile(r"aber|und|dafür|dafuer|dann|bitte", re.IGNORECASE)
 # Eine Menge gehoert zur Position, nie in den Hinweis ("zweimal", "2 x").
-_TIMES = re.compile(r"[\s,]*\b(\w+?)mal\b", re.IGNORECASE)
-_COUNTED = re.compile(r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE)
+_TIMES = re.compile(r"\b(\w+?)mal\b", re.IGNORECASE)
+_COUNTED = re.compile(r"\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE)
 
 
 # Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
@@ -74,11 +84,15 @@ _INGREDIENT = (
 )
 # "Erdnussallergie", "Erdnuss-Allergie" und der Wortanfang in "Nuss- und
 # Sesamallergie": jede gilt, nicht nur die erste (Codex PR #139, P1).
-_COMPOUND = re.compile(
-    r"(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
-    r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
-    re.IGNORECASE,
+#
+# Read by `_compound_stems`, one word at a time. As a single pattern,
+# `(\w+?)-?(?:allergie|...)|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)`, the search
+# began again at every letter of a long word (CodeQL py/polynomial-redos).
+_ALLERGY_NOUN = re.compile(
+    r"allergie|intoleranz|unvertr(?:ä|ae)glichkeit", re.IGNORECASE
 )
+_LIST_WORD = re.compile(r"(?:,|und|oder|sowie)\s", re.IGNORECASE)
+_WORD_RUN = re.compile(r"\w+")
 # Nach einem "und" oder Komma beginnt hier ein neuer Satzteil, keine Zutat mehr.
 _CLAUSE_WORDS = (
     frozenset(
@@ -140,13 +154,12 @@ def _ingredient(text: str) -> str | None:
     for pattern in _INGREDIENT:
         for match in pattern.finditer(text):
             found.append((match.start(1), _until_new_clause(match.group(1))))
-    for match in _COMPOUND.finditer(text):
-        stem = match.group(1) or match.group(2)
+    for start, stem, at_noun in _compound_stems(text):
         if fold(stem) in _GENERIC_STEMS:
             continue
-        found.append((match.start(), stem))
-        if match.group(1):
-            found.extend(_stems_before(text[: match.start()]))
+        found.append((start, stem))
+        if at_noun:
+            found.extend(_stems_before(text[:start]))
     pieces: list[str] = []
     for _, piece in sorted(found):
         if not piece or _NO_INGREDIENT & set(_words(piece)):
@@ -159,6 +172,38 @@ def _ingredient(text: str) -> str | None:
     if len(pieces) == 1:
         return pieces[0]
     return ", ".join(pieces[:-1]) + " und " + pieces[-1]
+
+
+def _compound_stems(text: str) -> Iterator[tuple[int, str, bool]]:
+    """The stems of compound allergy words, in order: where each begins, the
+    stem, and whether it stands at the allergy noun itself ("Erdnussallergie",
+    "Erdnuss-Allergie") or ends in a hyphen that a list carries on ("Nuss- und
+    Sesamallergie"). A word is read once: from its beginning, then on from
+    behind each allergy noun found in it."""
+    pos = end = 0
+    while True:
+        if pos >= end:
+            run = _WORD_RUN.search(text, pos)
+            if run is None:
+                return
+            pos, end = run.span()
+        noun = _ALLERGY_NOUN.search(text, pos + 1, end)
+        if noun is not None:
+            yield pos, text[pos : noun.start()], True
+            pos = noun.end()
+            continue
+        if text.startswith("-", end):
+            noun = _ALLERGY_NOUN.match(text, end + 1)
+            if noun is not None:
+                yield pos, text[pos:end], True
+                pos = noun.end()
+                continue
+            after = end + 1
+            while after < len(text) and text[after].isspace():
+                after += 1
+            if _LIST_WORD.match(text, after) is not None:
+                yield pos, text[pos:end], False
+        pos = end
 
 
 # Kein Wortanfang einer Allergie: was davor steht, gehoert zum Satz.
@@ -288,27 +333,72 @@ def wish_candidates(text: str) -> list[tuple[str, str, str]]:
         end = tokens[starts[n + 1]].start() if n + 1 < len(starts) else len(text)
         # "mit Salami, aber" - das Bindewort vor dem naechsten Wunsch gehoert
         # nicht zum Satzteil, sonst traefe es den Namen nie (Codex PR #139).
-        segment = _TRAILING_GLUE.sub("", _clean(text[at:end]))
+        segment = _drop_trailing_glue(_clean(text[at:end]))
         if dish and wish:
             candidates.append((dish, wish, segment))
     return candidates
 
 
+def _is_separator(char: str) -> bool:
+    return char == "," or char.isspace()
+
+
+def _separators_start(text: str, end: int) -> int:
+    """Where the run of whitespace and commas in front of `end` begins."""
+    while end and _is_separator(text[end - 1]):
+        end -= 1
+    return end
+
+
+def _cut_tail(pattern: re.Pattern[str], text: str) -> str:
+    """Without what `pattern` finds at the end and the separators in front of it."""
+    found = pattern.search(text)
+    return text if found is None else text[: _separators_start(text, found.start())]
+
+
+def _drop_trailing_glue(text: str) -> str:
+    """Without the joining words at the end and the separators around them:
+    "mit Salami, aber" -> "mit Salami". A word counts only behind a separator;
+    read from the end, word by word."""
+    end = _separators_start(text, len(text))
+    cut = None
+    while True:
+        word = end
+        while word and not _is_separator(text[word - 1]):
+            word -= 1
+        if word == 0 or _GLUE_WORD.fullmatch(text, word, end) is None:
+            break
+        cut = end = _separators_start(text, word)
+    return text if cut is None else text[:cut]
+
+
 def _clean(text: str) -> str:
-    return _TRAILING_PLEASE.sub("", _drop_quantity(text)).strip(" ,.;!?")
+    return _cut_tail(_PLEASE_AT_END, _drop_quantity(text)).strip(" ,.;!?")
+
+
+def _is_quantity(word: str) -> bool:
+    """ "ein" and number words in front of "mal": "einmal", "zweimal"."""
+    return fold(word) == "ein" or parse_cardinal(fold(word)) is not None
+
+
+def _without(
+    pattern: re.Pattern[str], text: str, drop: Callable[[re.Match[str]], bool]
+) -> str:
+    """Without the matches `drop` says yes to, each with the separators in front."""
+    kept: list[str] = []
+    last = 0
+    for found in pattern.finditer(text):
+        if drop(found):
+            kept.append(text[last : _separators_start(text, found.start())])
+            last = found.end()
+    kept.append(text[last:])
+    return "".join(kept)
 
 
 def _drop_quantity(text: str) -> str:
     """Nur echte Mengen: "zweimal", "einmal", "2 x" - nicht "normal"."""
-    text = _COUNTED.sub("", text)
-    return _TIMES.sub(
-        lambda m: (
-            ""
-            if fold(m.group(1)) == "ein" or parse_cardinal(fold(m.group(1))) is not None
-            else m.group(0)
-        ),
-        text,
-    )
+    text = _without(_COUNTED, text, lambda found: True)
+    return _without(_TIMES, text, lambda found: _is_quantity(found.group(1)))
 
 
 def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
@@ -400,7 +490,7 @@ def _split_addition(text: str) -> tuple[str, str | None]:
     if words[at] in _INSTEAD:
         at -= 1
     removal = text[: tokens[at].start()]
-    removal = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", removal)
+    removal = _cut_tail(_JOINER_AT_END, removal)
     return removal.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 
@@ -412,7 +502,7 @@ def _split_removal(text: str) -> tuple[str, str | None]:
     if at is None:
         return text, None
     addition = text[: tokens[at].start()]
-    addition = re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", addition)
+    addition = _cut_tail(_JOINER_AT_END, addition)
     return addition.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
 
 
