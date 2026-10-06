@@ -329,13 +329,14 @@ Ubuntu takes the scripts and the hooks block from the Windows copy and keeps its
 ```bash
 WIN_CLAUDE=/mnt/c/Users/YOUR_WINDOWS_USER/.claude
 mkdir -p ~/.claude/hooks
+[ -f ~/.claude/settings.json ] || echo '{}' > ~/.claude/settings.json
 for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; done
 cp ~/.claude/settings.json ~/.claude/settings.json.bak
 jq --slurpfile win "$WIN_CLAUDE/settings.json" '.hooks = $win[0].hooks' ~/.claude/settings.json.bak > ~/.claude/settings.json
 jq -c '{env: has("env"), hooks: (.hooks | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show `"env":true` and the four hook groups. `settings.json.bak` is the undo; delete it once the check passed.
+The last line has to show the four hook groups, and `"env":true` on a machine that had an `env` block before. `settings.json.bak` is the undo; delete it once the check passed.
 
 ## 6. Check that a hook fires
 
@@ -345,7 +346,7 @@ A hook that runs without anything to report leaves no visible trace. For `sync-m
 printf '{"cwd":"%s"}' "$PWD" | bash ~/.claude/hooks/sync-main.sh --branch
 ```
 
-It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main`: a second run prints nothing until `main` moves again. Inside a session the sign that it ran is a fresh timestamp on the `FETCH_HEAD` file of the checkout. A session that was already open when the settings changed may not load the new entry; a new session does.
+It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main`: a second run prints nothing until `main` moves again, and a run by hand uses up the note the session would have got for that state. Inside a session the sign that it ran is a fresh timestamp on the `FETCH_HEAD` file of the checkout. A session that was already open when the settings changed may not load the new entry; a new session does.
 
 ## 7. Keeping this file true
 
