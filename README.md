@@ -147,6 +147,7 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/15_README_STRATEGY.md` | When and how to maintain this README |
 | `docs/16_GITHUB_PROJECT.md` | GitHub Project board: one project, derived from issues and PRs |
 | `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts |
+| `docs/18_CLAUDE_CODE_SETUP.md` | Personal Claude Code setup: user-level hooks, settings block, restore steps |
 
 ## Contributing
 
