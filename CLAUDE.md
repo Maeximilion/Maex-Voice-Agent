@@ -115,6 +115,7 @@ maex-voice-agent/
 | `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts | before collecting real call data |
 | `docs/18_MODEL_SELECTION.md` | Requirements on the model, operation shortlist, local test model, setup script, parallel calls | before work on `agent/llm.py`, before T-5.3 |
 | `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
+| `docs/19_CLAUDE_CODE_SETUP.md` | User-level hooks and settings outside the repository, backed up with restore steps for Windows and Ubuntu | before changing a hook or setting up a machine |
 
 ---
 
