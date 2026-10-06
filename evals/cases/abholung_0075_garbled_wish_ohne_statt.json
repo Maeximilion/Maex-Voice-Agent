@@ -1,0 +1,47 @@
+{
+  "id": "abholung_0075",
+  "name": "Garbled wish: nothing is named between ohne and statt",
+  "tags": [
+    "abholung",
+    "wunsch",
+    "unbekannt",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 23 ohne statt Reis."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "23",
+        "quantity": 1,
+        "note": ""
+      }
+    ],
+    "customer_name": "Mueller",
+    "confirmed": true,
+    "escalated": false
+  }
+}
