@@ -83,12 +83,13 @@ def tenant_id(session) -> uuid.UUID:
     return _tenant(session, "Testbetrieb")
 
 
-def _call(session, tenant_id) -> uuid.UUID:
+def _call(session, tenant_id, **fields) -> uuid.UUID:
     call = Call(
         tenant_id=tenant_id,
         external_session_id=uuid.uuid4().hex,
         started_at=NOW,
         delete_after=DIENSTAG,
+        **fields,
     )
     session.add(call)
     session.commit()
@@ -243,9 +244,15 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     assert "abholbereit in etwa 20 Minuten" in draft.readback
 
 
-def test_audit_haelt_keine_personendaten(session, tenant_id, call_id):
+def test_audit_haelt_keine_personendaten(session, tenant_id):
     """audit_log bleibt länger als die Bestellung: Name, Telefon und Hinweise
     (etwa "Allergie gegen Nüsse") gehören nicht in den Schnappschuss für den Replay."""
+    # The payload carries the call id. This one shares three digits with the
+    # phone number, as a random UUID does in about one run in 200: a check on
+    # a fragment of the number fails here, a check on the number does not.
+    call_id = _call(
+        session, tenant_id, id=uuid.UUID("00000000-0000-4000-8000-000000555000")
+    )
     items = [
         {
             "menu_item_id": item(session, tenant_id, "23"),
@@ -259,7 +266,12 @@ def test_audit_haelt_keine_personendaten(session, tenant_id, call_id):
         select(AuditLog.payload).where(AuditLog.entity_id == first.order_id)
     )
     text = str(payload)
-    assert "Müller" not in text and "Nüsse" not in text and "555" not in text
+    assert "Müller" not in text and "Nüsse" not in text
+    # The number as dictated, as stored (E.164), and in any other spacing.
+    stored = session.get(Order, first.order_id).phone
+    assert stored == "+497215551234"
+    assert req.customer.phone not in text and stored not in text
+    assert "7215551234" not in "".join(filter(str.isdigit, text))
     assert draft_order(session, req, now=NOW) == first
 
 
