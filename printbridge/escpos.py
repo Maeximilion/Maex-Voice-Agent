@@ -110,10 +110,11 @@ def render(
     Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
     """
     out = [INIT, CODEPAGE]
-    # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen die
-    # Steuerzeichen am Anfang der naechsten Zeile.
+    # End the line while double height is still on: the TM-T20II sizes the line
+    # feed by the mode in effect at the newline, otherwise the next line prints
+    # into the banner (paper check 06.10.2026).
     banner = printable(" NICHT IN KASSE ").encode(ENCODING)
-    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, BIG_OFF, b"\n"]
+    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, b"\n", BIG_OFF]
     out.append(_line("Bitte in die Kasse eingeben."))
     reason = ticket.get("correction_reason")
     if reason:

@@ -21,7 +21,7 @@ from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
 from printbridge.bridge import SAMPLE, main, run_once
 from printbridge.client import Server, ServerError
-from printbridge.escpos import CUT, render
+from printbridge.escpos import BIG_OFF, CUT, render
 from printbridge.state import PrintedLog
 from printbridge.transport import (
     PrinterError,
@@ -83,6 +83,15 @@ def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
     assert (
         text.index("NICHT IN KASSE") < text.index("KORREKTUR") < text.index("ABHOLUNG")
     )
+
+
+def test_banner_line_ends_while_double_height_is_on():
+    """The TM-T20II sizes a line feed by the print mode in effect when the line
+    ends. With double height switched off before the newline, the next line was
+    printed into the banner (paper check 06.10.2026)."""
+    data = render(TICKET)
+    start = data.index(b"NICHT IN KASSE")
+    assert data.index(b"\n", start) < data.index(BIG_OFF, start)
 
 
 def test_korrektur_steht_oben_mit_grund_und_stand():
