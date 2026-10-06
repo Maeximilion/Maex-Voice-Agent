@@ -54,7 +54,7 @@ How to review:
 - Dependency direction: `tools`, `gui`, `sim`, `telephony` -> `agent` -> `domain` -> `models`, `core`.
   `domain/` imports no FastAPI, no HTTP client, no provider.
 - Business logic in `tools/` or `gui/` instead of `domain/` is P2.
-- A provider name outside `api/telephony/` (planned with the telephony adapter, not built yet) is P2.
+- A provider name outside `api/telephony/adapters/` is P2; `port.py` and `handler.py` there stay provider-neutral.
 - n8n and external APIs are reached through the outbox, never directly from `domain/`.
 - Errors reach the agent as structured JSON, never as a stack trace.
 
