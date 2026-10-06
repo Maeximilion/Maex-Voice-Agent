@@ -44,6 +44,8 @@ SAMPLE = {
         }
     ],
 }
+# Printed above and below the test slip: whoever finds it at the register sends a photo.
+TEST_NOTICE = "Bitte an Maxi über WhatsApp senden"
 
 
 def run_once(
@@ -121,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     printer = from_spec(_env("MAEX_PRINTER"))
     width = int(_env("MAEX_PRINTER_WIDTH", str(DEFAULT_WIDTH)))
     if args.test:
-        printer.send(render(SAMPLE, width))
+        printer.send(render(SAMPLE, width, notice=TEST_NOTICE))
         logger.info("Probebon gesendet")
         return 0
 
