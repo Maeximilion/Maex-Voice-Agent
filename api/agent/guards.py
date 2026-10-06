@@ -10,10 +10,11 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 3: `confirm` only when the guest's current sentence is an explicit yes
   to the draft that was read back before this turn.
 - Rule 2: `draft_order` only with dishes from a clear match of `search_menu`,
-  or from candidates the guest has been asked about.
+  or from candidates of an unclear match that the guest heard by name.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
 """
 
+import re
 from dataclasses import dataclass
 
 from api.agent.consent import is_yes
@@ -42,11 +43,41 @@ class TurnStart:
 
 
 def begin_turn(state: ConversationState) -> TurnStart:
-    """Call once per guest turn, before the model. The guest now answers what
-    was offered in the turn before, so those candidates may enter an order."""
-    state.known_item_ids |= state.offered_item_ids
-    state.offered_item_ids = set()
+    """Call once per guest turn, before the model."""
     return TurnStart(readback_id=_readback_id(state))
+
+
+def note_said(state: ConversationState, say: str) -> None:
+    """Call with the sentence that ends a turn. A candidate of an unclear
+    search may enter an order only once the guest heard it: by its full name
+    or as "Nummer <card number>". A model that does not pass the offer on and
+    asks for something else makes no candidate usable (Codex PR #222, P1).
+
+    A candidate that was not named yet stays offered: the offer may come a
+    turn later, as when an open allergy question goes first and the two
+    questions are never asked at once (Codex PR #139)."""
+    heard = say.lower()
+    named = {
+        item_id
+        for item_id, (number, name) in state.offered_items.items()
+        if _named(heard, number.lower(), name.lower())
+    }
+    state.known_item_ids |= named
+    state.offered_items = {
+        item_id: label
+        for item_id, label in state.offered_items.items()
+        if item_id not in named
+    }
+
+
+def _named(heard: str, number: str, name: str) -> bool:
+    """A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
+    dish. Half a name names none either."""
+    if name and name in heard:
+        return True
+    return bool(number) and (
+        re.search(rf"\b(nummer|nr\.?)\s*{re.escape(number)}(?!\w)", heard) is not None
+    )
 
 
 def refusal(

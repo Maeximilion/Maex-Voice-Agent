@@ -106,16 +106,19 @@ class ConversationLoop:
             turn = self._llm.next_turn(
                 self._system_prompt, self._prompt_state(state), pending_input
             )
-            # The limit is checked again once the model has answered: a slow
-            # answer that arrives after the limit is neither spoken nor
-            # dispatched, the call goes to the team (Codex PR #208, P2).
-            if self._clock() - self._started > self._max_call_seconds:
-                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
             if turn.state_patch:
                 # Only what was taken counts as understood: a name outside
                 # `GUEST_SLOTS` is dropped and is no success on the ladder.
                 for field_name in apply_state_patch(state, turn.state_patch):
                     self._ladder.record_success(field_name)
+            # The limit is checked again once the model has answered: a slow
+            # answer that arrives after the limit is neither spoken nor
+            # dispatched, the call goes to the team (Codex PR #208, P2). What
+            # the model heard is taken first: a phone number from this very
+            # sentence is what the callback of the handoff needs when the
+            # team is not reachable (Codex PR #222, P1).
+            if self._clock() - self._started > self._max_call_seconds:
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
 
             if (
                 turn.understanding_failure
@@ -134,6 +137,9 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                # What the guest hears decides which offered dishes count as
+                # put to them (guards.py, rule 2).
+                guards.note_said(state, say)
                 return TurnResult(
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
                 )

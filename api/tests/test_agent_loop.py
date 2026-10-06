@@ -577,6 +577,49 @@ def test_answer_that_arrives_after_the_limit_is_not_spoken(session, state):
     assert state.stage == "ended"
 
 
+def test_late_answer_still_gives_its_phone_number_to_the_callback(session, state):
+    """From the review of PR #222: the caller ID is suppressed, the guest says
+    the number in this very sentence, and the model is slow. What it heard is
+    taken before the handoff, or the callback that saves the call (rule 5)
+    could not be created."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                say="Guten Tag, was darf es sein?",
+                state_patch={"phone": "+4972215551234"},
+            )
+        ]
+    )
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 5, 500]),
+    )
+
+    result = loop.run_turn(state, "Meine Nummer ist 07221 5551234")
+
+    assert result.ended is True
+    assert state.stage == "callback"
+    assert session.scalars(select(Callback)).one().phone == "+4972215551234"
+
+
+def test_offer_spoken_to_the_guest_makes_its_dishes_usable(session, state):
+    """The loop tells the guards what the guest heard: the sentence that ends
+    the turn."""
+    state.offered_items = {"a": ("47", "Ente knusprig"), "b": ("13", "Pho Bo")}
+    llm = FakeLLM([LLMTurn(say="Meinen Sie Nummer 47 Ente knusprig?")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "die Ente")
+
+    assert state.known_item_ids == {"a"}
+    # Not named yet: stays offered, the model may still put it to the guest.
+    assert set(state.offered_items) == {"b"}
+
+
 def test_tool_call_that_arrives_after_the_limit_is_not_dispatched(session, state):
     reservation = read_back_reservation(session, state)
     llm = confirming(state)

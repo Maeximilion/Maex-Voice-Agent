@@ -8,8 +8,9 @@ import uuid
 
 import pytest
 
+from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult
-from api.agent.guards import begin_turn, refusal
+from api.agent.guards import begin_turn, note_said, refusal
 from api.agent.llm import ToolCall
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 
@@ -33,8 +34,17 @@ def confirm(entity_id, entity="reservation"):
     return ToolCall("confirm", {"entity": entity, "entity_id": entity_id})
 
 
+CARD = {
+    ENTE: ("47", "Ente knusprig"),
+    PHO: ("13", "Pho Bo"),
+    SUPPE: ("12", "Wan-Tan-Suppe"),
+}
+OFFER = "Meinen Sie Nummer 47 Ente knusprig oder Nummer 13 Pho Bo?"
+
+
 def hit(item_id):
-    return {"menu_item_id": item_id, "number": "47", "name": "Ente", "sold_out": False}
+    number, name = CARD[item_id]
+    return {"menu_item_id": item_id, "number": number, "name": name, "sold_out": False}
 
 
 def searched(state, data):
@@ -66,6 +76,11 @@ def test_confirm_after_a_yes_to_the_read_back_draft_is_let_through(entity, said)
         "Moment, wie viel kostet das?",
         "Das passt so nicht",
         "",
+        # From the review of PR #222: a word of ordering is no assent.
+        "Ich hätte gerne noch eine Suppe",
+        "Okay, noch eine Suppe",
+        "Ja, und noch eine Cola",
+        "Gern.",
     ],
 )
 def test_confirm_without_an_explicit_yes_is_refused(said):
@@ -137,6 +152,45 @@ def test_confirm_without_any_draft_is_refused():
     assert refusal(state, begin_turn(state), "Ja", confirm(str(uuid.uuid4())))
 
 
+@pytest.mark.parametrize(
+    ("text", "yes"),
+    [
+        # Nothing but the assent.
+        ("Ja", True),
+        ("Ja, passt so.", True),
+        ("Ja, gerne.", True),
+        ("Ja bitte, vielen Dank!", True),
+        ("Genau so, danke schön.", True),
+        ("Ja, das ist richtig so.", True),
+        ("Okay, alles klar.", True),
+        ("Stimmt so.", True),
+        ("Ja, in Ordnung.", True),
+        ("Ja, passt, kein Problem.", True),
+        ("Ja, nicht schlecht.", True),
+        ("Jawohl", True),
+        # A yes word next to anything else is the start of a change.
+        ("Ich hätte gerne noch eine Suppe", False),
+        ("Gerne", False),
+        ("Okay, noch eine Suppe", False),
+        ("Ja, und noch eine Cola", False),
+        ("Ja, guten Tag, einen Tisch für vier", False),
+        ("Ja, zweimal", False),
+        ("Ja, 2", False),
+        ("Ja, die 23", False),
+        ("Genau, auf Müller", False),
+        ("Ja, das ist nicht gut", False),
+        ("Ja, kein Reis", False),
+        ("Passt mir morgen besser", False),
+        ("Richtig, aber keine Ente.", False),
+        ("Nein, ja doch nicht", False),
+        ("Im Januar", False),
+        ("", False),
+    ],
+)
+def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):
+    assert is_yes(text) is yes
+
+
 # --- Rule 2: an order only takes ids from a clear match or the guest's choice ---
 
 
@@ -172,10 +226,86 @@ def test_candidate_is_usable_once_the_guest_has_answered_the_offer():
     start = begin_turn(state)
     searched(state, {"match_type": "ambiguous", "results": [hit(ENTE), hit(PHO)]})
     assert refusal(state, start, "die Ente", draft(PHO)) is not None
+    note_said(state, OFFER)
 
     answer = begin_turn(state)
 
     assert refusal(state, answer, "die knusprige", draft(PHO)) is None
+    assert refusal(state, answer, "die knusprige", draft(ENTE)) is None
+
+
+def test_candidate_the_guest_never_heard_stays_unusable():
+    """From the review of PR #222: the model does not pass the offer on and
+    asks for something else. The guest answers that, and no candidate may
+    enter an order: nobody was asked to choose."""
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(ENTE), hit(PHO)]})
+    note_said(state, "Unter welcher Nummer erreichen wir Sie?")
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "0721 5551234", draft(ENTE)) is not None
+    assert refusal(state, answer, "0721 5551234", draft(PHO)) is not None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Meinen Sie Ente knusprig?",  # by name
+        "Meinen Sie die ENTE KNUSPRIG?",
+        "Meinen Sie Nummer 47?",  # by card number
+        "Nr. 47, richtig?",
+    ],
+)
+def test_only_the_candidate_that_was_named_becomes_usable(said):
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(ENTE), hit(PHO)]})
+    note_said(state, said)
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "ja", draft(ENTE)) is None
+    assert refusal(state, answer, "ja", draft(PHO)) is not None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Um 13 Uhr oder um 47 nach?",  # a number without "Nummer" is no card number
+        "Das macht 13,47 Euro.",
+        "Nummer 147 habe ich nicht.",
+        "Ente haben wir.",  # half a name names nothing
+    ],
+)
+def test_number_or_word_in_passing_names_no_candidate(said):
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(ENTE), hit(PHO)]})
+    note_said(state, said)
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "ja", draft(ENTE)) is not None
+    assert refusal(state, answer, "ja", draft(PHO)) is not None
+
+
+def test_offer_spoken_a_turn_later_still_counts():
+    """An open allergy question goes first and the offer follows in the next
+    turn, never both at once (Codex PR #139). The guest heard the offer then,
+    so its candidates are usable from the turn after that, not before."""
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(ENTE), hit(PHO)]})
+    note_said(state, "Wogegen sind Sie allergisch?")
+    allergy = begin_turn(state)
+    assert refusal(state, allergy, "Erdnüsse", draft(ENTE)) is not None
+    note_said(state, OFFER)
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "die Ente", draft(ENTE)) is None
 
 
 def test_draft_with_an_id_no_search_delivered_is_refused():

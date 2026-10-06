@@ -185,8 +185,8 @@ dispatched, the loop checks:
 
 | Rule | What the core checks | If not |
 |---|---|---|
-| 3, nothing without a yes | `confirm` needs an explicit yes (`agent/consent.py`) in the guest's current sentence, to the draft that was read back **before** this turn. A draft built or replaced inside the turn was never read to the guest; a yes in the same sentence does not count | `confirm` is not dispatched, the draft stays a draft |
-| 2, never guess | `draft_order` takes a `menu_item_id` only from a clear match of `search_menu` in this call (`exact_number`, `alias`, `fuzzy_single`), or from the candidates of an unclear result once the guest has answered the offer | `draft_order` is not dispatched |
+| 3, nothing without a yes | `confirm` needs an explicit yes (`agent/consent.py`) in the guest's current sentence, to the draft that was read back **before** this turn. A draft built or replaced inside the turn was never read to the guest; a yes in the same sentence does not count. A yes is a sentence that is nothing but the assent: an assent word plus words that carry no order ("Ja, gerne", "Passt so, danke"). "Ja, und noch eine Cola" or "Ich hätte gerne noch eine Suppe" is the start of a change | `confirm` is not dispatched, the draft stays a draft |
+| 2, never guess | `draft_order` takes a `menu_item_id` only from a clear match of `search_menu` in this call (`exact_number`, `alias`, `fuzzy_single`), or from a candidate of an unclear result that the guest heard: the sentence that ended a turn named it by its full name or as "Nummer <card number>". A model that keeps the offer to itself makes no candidate usable | `draft_order` is not dispatched |
 | 1, facts from the database | a model writes only guest details into `slots` (`GUEST_SLOTS`: party size, date and time, name, phone, note). A tool result copied there (`open`, `closes_at`, a price) is dropped | the field never reaches the next prompt |
 
 A refused call goes back to the model as a failed tool result with `error_code` and a
@@ -194,7 +194,8 @@ A refused call goes back to the model as a failed tool result with `error_code` 
 tool hop, so a model that insists ends in the handoff to the team. Which of several
 offered dishes the guest's answer means is left to the model and measured by the evals;
 the readback and its yes come after it. The call time limit is read again when the
-model has answered: an answer that arrives too late is neither spoken nor dispatched.
+model has answered: an answer that arrives too late is neither spoken nor dispatched,
+but what it heard (a phone number) is taken first, for the callback of the handoff.
 
 ---
 

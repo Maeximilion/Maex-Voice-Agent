@@ -38,11 +38,12 @@ class ConversationState(BaseModel):
     order_id: uuid.UUID | None = None
     transferred: bool = False
     # Memory of the core, never sent to the model (guards.py, rule 2): the
-    # dishes an order may name. `known` came from a clear match of search_menu
-    # or was offered to the guest in an earlier turn; `offered` are the
-    # candidates of an unclear result the guest has not answered yet.
+    # dishes an order may name. `known` came from a clear match of search_menu,
+    # or was a candidate the guest heard by name or card number. `offered` are
+    # the candidates of an unclear result of this turn, id to (number, name),
+    # until the sentence that ends the turn shows which of them were named.
     known_item_ids: set[str] = Field(default_factory=set)
-    offered_item_ids: set[str] = Field(default_factory=set)
+    offered_items: dict[str, tuple[str, str]] = Field(default_factory=dict)
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
@@ -138,12 +139,16 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
     with several positions carries one result per part (`agent/dispatch.py`)."""
     parts = data.get("positions") if data.get("match_type") == "positions" else [data]
     for part in parts or []:
-        ids = [str(h["menu_item_id"]) for h in part.get("results") or []]
+        hits = part.get("results") or []
         if part.get("match_type") in CLEAR_MATCHES:
             # The hit of a clear match is its first result, as everywhere else.
-            state.known_item_ids.update(ids[:1])
+            state.known_item_ids.update(str(h["menu_item_id"]) for h in hits[:1])
         else:
-            state.offered_item_ids.update(ids)
+            for h in hits:
+                state.offered_items[str(h["menu_item_id"])] = (
+                    str(h.get("number") or ""),
+                    str(h.get("name") or ""),
+                )
 
 
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
