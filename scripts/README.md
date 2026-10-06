@@ -9,4 +9,5 @@
 | `backup.sh` / `restore.sh` | Encrypted `pg_dump` of the database of `DATABASE_URL`; restore into a new database with `--check` (rehearsal) or `--replace` (swap by rename). `lib_pg.sh` is their shared part. Usage in `docs/13_DEPLOYMENT.md` §4 | T-9.3 |
 | `seed_zones.py` | Delivery zones from zone list (from delivery service project) | T-6.3 |
 | `call_log.py` | Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: C1 baseline, `--cases` eval drafts | – (C1) |
+| `setup_local_llm.sh` | Local test model on the workbench: installs Ollama, picks the model by GPU memory, checks one invented order line against the answer contract, prints the `.env` lines; `--dry-run`. Invented data only | T-2.4, docs/18 §5 |
 | `status_bump.py` | Auto-advance version, date, changelog line in `docs/01_STATUS.md` | – (Meta/Tooling) |
