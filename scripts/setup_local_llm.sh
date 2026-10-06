@@ -130,10 +130,17 @@ fi
 step "2/5 Model choice"
 
 # Tiers (docs/18_MODEL_SELECTION.md §4). Main model first, comparison model second.
-if [ "$vram_mib" -ge 15000 ]; then
-    tier="GPU with 16 GB"
+# Measured on an RTX 4080 under WSL (docs/18 §5): the Windows desktop keeps about
+# 1.6 GB of the 16 GB, so mistral-small (about 14 GB) spills into RAM and answers
+# five times slower than qwen3:14b. It is the main model only from 20 GB on.
+if [ "$vram_mib" -ge 20000 ]; then
+    tier="GPU with 20 GB or more"
     main_model="mistral-small"
     fallback_model="qwen3:14b"
+elif [ "$vram_mib" -ge 12000 ]; then
+    tier="GPU with 12 to 16 GB"
+    main_model="qwen3:14b"
+    fallback_model="mistral-small"
 elif [ "$vram_mib" -ge 7500 ]; then
     tier="GPU with 8 to 12 GB"
     main_model="qwen3:8b"
@@ -324,7 +331,7 @@ PY
         processor=$(ollama ps 2>/dev/null | awk -v m="$m" 'NR > 1 && index($1, m) == 1 { print $5, $6 }')
         [ -z "$processor" ] || say "   runs on: ${processor}"
         if [[ "$processor" == *CPU* ]] && [ "$vram_mib" -gt 0 ]; then
-            say "   part of the model sits in RAM; the comparison model fits the GPU completely"
+            say "   part of the model sits in RAM, which makes it several times slower (docs/18 §5)"
         fi
         if [ "$ok" -eq 1 ]; then
             say "   result: valid"

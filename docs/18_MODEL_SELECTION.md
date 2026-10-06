@@ -89,7 +89,8 @@ text-phone conversation or one eval run at a time.
 
 | Tier (detected by the script) | Main model | Comparison model | Notes |
 |---|---|---|---|
-| NVIDIA GPU with 16 GB or more (Maxi: RTX 4080) | `mistral-small` (24B, about 14 GB) | `qwen3:14b` (about 9 GB) | Mistral Small fits the GPU completely; same family as the operation favourite |
+| NVIDIA GPU with 20 GB or more | `mistral-small` (24B, about 14 GB) | `qwen3:14b` (about 9 GB) | Mistral Small fits the GPU completely; same family as the operation favourite |
+| NVIDIA GPU with 12 to 16 GB (Maxi: RTX 4080) | `qwen3:14b` (about 9 GB) | `mistral-small` | measured 06.10.2026: next to the Windows desktop Mistral Small spills into RAM, warm 5.3 s against 1.1 s (§5); it stays the comparison model for eval runs where time does not matter |
 | NVIDIA GPU with 8 to 12 GB | `qwen3:8b` | `qwen3:4b` | |
 | CPU only | `qwen3:4b` | – | slow, failed the answer format in the container test (§5) |
 
@@ -145,8 +146,8 @@ the printed numbers after each step:
 3. bash scripts/setup_local_llm.sh --dry-run, show me the plan.
 4. bash scripts/setup_local_llm.sh. It asks for my sudo password; wait for me.
 5. Report per model: answer valid or not, cold and warm latency, "runs on" (GPU share).
-   If mistral-small runs partly on CPU or warm is above 2 s, say so and recommend
-   qwen3:14b.
+   If the main model runs partly on CPU or warm is above 2 s, say so and recommend
+   the comparison model if that one runs fully on the GPU.
 6. Put the printed LLM_* lines into .env (create it from .env.example if missing).
    Never commit .env.
 7. Only invented test data. No real call content into the local model (docs/13 §0).
@@ -158,7 +159,7 @@ under "GPU numbers" and docs/01_STATUS.md, on a new branch, and open a PR.
 
 | Question | Decision |
 |---|---|
-| Local model | automatic by hardware: `mistral-small`, comparison `qwen3:14b` (RTX 4080, 64 GB RAM) |
+| Local model | automatic by hardware. RTX 4080 (16 GB, 64 GB RAM): `qwen3:14b`, comparison `mistral-small`; swapped after the measurement in §5, first planned the other way round |
 | Shortlist for the operation comparison (T-5.3) | Mistral Small, Claude Haiku 4.5, Gemini Flash via Vertex EU |
 | Not shortlisted | GPT-5 mini (Azure EU), Claude Sonnet 5.5 (only if every small model fails a hard metric) |
 | 1 to 3 agents at the restaurant | schedule plus overflow, see §7 |
@@ -185,7 +186,7 @@ signals a new call; proposed as a work package, not part of T-2.4.
 
 1. Maxi runs §5 on the workbench (handover above) and reports the GPU numbers.
 2. T-2.4 part 3: `--model` in sim and eval runner, send `reasoning_effort: "none"` (setting, default empty), tool reference in the prompt.
-3. T-2.4 part 4: first eval run on `mistral-small` locally; prompt work on what it shows.
+3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. C2: "the platform can call our own model endpoint" as a criterion (D7); concurrency limits and per-channel pricing of the platforms.
 6. Proposal: work package for `max_concurrent_calls` with schedule (§7), after D1.
