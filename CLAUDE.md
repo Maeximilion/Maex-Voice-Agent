@@ -189,7 +189,7 @@ A task is complete when **all** of these are true:
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
-- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own
+- One PR = one coherent behavior that can be reviewed and merged on its own. A task may be several PRs when each part is such a behavior (Maxi, 2026-10-06; T-2.4: the model client first, then tokens and cost); never split a behavior only to reach a number. Aim for about 400 lines of production code per PR, 600 to 800 with tests; eval case data, docs and mechanical renames do not count. That is a target, not a limit: a behavior that needs more stays in one PR. No stacking: the next part starts from `main` after the previous one is merged. A PR on top of an open PR needs every review fix of the lower one merged into it, and `docs/01_STATUS.md` conflicts each time. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own
 - `main` always stays runnable
 - No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
 

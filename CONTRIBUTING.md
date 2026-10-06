@@ -39,7 +39,7 @@ Types used: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope in bracket
 
 ## Pull Requests
 
-- One PR covers one coherent, reviewable behavior, however large the diff. No line-count rule. Status notes, version pins, and CI chores ride in the next feature PR instead of getting their own.
+- One PR covers one coherent behavior that can be reviewed and merged on its own. A task may be several PRs when each part is such a behavior. Aim for about 400 lines of production code per PR (600 to 800 with tests); that is a target, not a limit, and a behavior is never split only to reach it. No PR on top of an open PR. Status notes, version pins, and CI chores ride in the next feature PR instead of getting their own.
 - Title in Conventional Commits format, since squash-merge makes it the commit message on `main`.
 - Description per template in `.github/PULL_REQUEST_TEMPLATE.md`: what changed, why, how tested, which issue closes.
 - `main` always stays runnable. Never push directly to `main`.
