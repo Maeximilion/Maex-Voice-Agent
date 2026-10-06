@@ -104,6 +104,7 @@ von `callbacks/`, weil es kein Eskalationspfad ist, sondern der Rahmen um jeden
 Anruf, ganz gleich wie er ausgeht.
 - `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
 - `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
+- `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
 Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
@@ -121,6 +122,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `ladder.py` | die Verständnis-Leiter als Zustandsmaschine: zählt Fehlversuche, steigt die Stufe |
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
+| `outcome.py` | outcome and intent of a call from the state, shared by `sim/session.py` and `telephony/handler.py` |
 
 **Warum ein eigener Kern, wenn die Plattform einen hat?** Drei Gründe: Evals brauchen ihn, der Simulator braucht ihn, die Schattenmessung braucht ihn. Ob er auch im Betrieb läuft, ist Entscheidung **D7** (`docs/01_STATUS.md`). Läuft er, sind Test und Betrieb identisch. Läuft die Plattform ihren eigenen Loop, bleibt ein Rest Abweichung, den die Rollenspiele auffangen.
 
@@ -128,9 +130,12 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | Datei | Verantwortung |
 |---|---|
 | `port.py` | das Interface: `on_call_started`, `on_user_turn`, `on_dtmf`, `transfer`, `hangup`, `start_recording`, `caller_id` |
+| `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers or hangs up when the state says so, closes the call log; every failure ends with the outage sentence and a transfer |
 | `adapters/<anbieter>.py` | übersetzt Webhooks und API des Anbieters auf das Interface |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
 | `router.py` | Webhook-Endpunkte, Signaturprüfung, Session-Zuordnung |
+
+The port has two directions (T-1.13): `CallEvents` is what the platform reports (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`), implemented once by `handler.py`; `TelephonyPort` is what we make the platform do (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`), implemented by each adapter. Calls are named by the platform's session id (`calls.external_session_id`). `start_recording` is called nowhere before the legal check in docs/09. `fake.py` reads the eval case format (docs/08 §1) plus customer entries with `dtmf` or `hangup`, so every case in `evals/cases/` plays as a phone call. `router.py` comes with the first real adapter (T-1.11).
 
 **Regel:** Wechselt der Anbieter, ändert sich genau eine Datei in `adapters/` und `.env`. Sonst nichts.
 

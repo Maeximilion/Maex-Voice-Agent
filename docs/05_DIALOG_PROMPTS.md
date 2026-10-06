@@ -186,6 +186,8 @@ bestätigbar, eine andere Option geht nur über `draft_order`.
 **Begrüßung**
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
 
+On the phone the code says this sentence before the first turn (`telephony/handler.py`, name from `tenants.name`), so the disclosure never depends on the model. The state then carries `greeted: true`, and the model does not greet a second time (T-1.13).
+
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
 
