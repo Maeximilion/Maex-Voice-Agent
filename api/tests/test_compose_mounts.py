@@ -50,6 +50,10 @@ GESCHUETZT = (".env", ".claude")
 # statt stillzuhalten. Kommt ein weiteres Feld dieser Art dazu, gehoert es hierher.
 UNPRUEFBAR_JE_DIENST = ("extends", "volumes_from")
 UNPRUEFBAR_OBEN = ("include",)
+# Read only on a full checkout, never inside the container: the sync hook test needs
+# git, which the api image does not have, and skips there. Mounting `.claude/hooks`
+# for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
+CHECKOUT_ONLY = frozenset({".claude/hooks/sync_main.sh"})
 
 
 @cache
@@ -212,7 +216,11 @@ def test_slash_befehle_verweisen_nur_auf_gemountete_pfade():
 
 def test_tests_lesen_nur_gemountete_pfade():
     mounts = _api_mounts()
-    fehlend = sorted(ref for ref in _refs_aus_tests() if not _is_mounted(ref, mounts))
+    fehlend = sorted(
+        ref
+        for ref in _refs_aus_tests()
+        if ref not in CHECKOUT_ONLY and not _is_mounted(ref, mounts)
+    )
     assert not fehlend, (
         f"ueber REPO_ROOT geoeffnet, aber im api-Container nicht gemountet: {fehlend}"
     )
