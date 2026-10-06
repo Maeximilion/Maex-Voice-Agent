@@ -64,14 +64,13 @@ def start(request: Request) -> HTMLResponse:
     try:
         tenant = resolve_tenant(session, None)
         call = SimCall(session, tenant)
-    except AppError as exc:
+    except Exception as exc:
         session.close()
-        return _view(request, None, status=503, problem=exc.message)
-    except Exception:
-        session.close()
+        if isinstance(exc, AppError):
+            return _view(request, None, status=503, problem=exc.message)
         raise
-    OPEN_CALLS[str(call.call_id)] = OpenCall(session, call, tenant.name)
-    return _view(request, OPEN_CALLS[str(call.call_id)])
+    entry = OPEN_CALLS[str(call.call_id)] = OpenCall(session, call, tenant.name)
+    return _view(request, entry)
 
 
 @router.post(
