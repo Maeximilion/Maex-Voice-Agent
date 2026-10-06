@@ -188,7 +188,7 @@ A task is complete when **all** of these are true:
 - Every transaction carries a `call_id`. No write without `call_id`.
 - Write tools are idempotent: same `idempotency_key` → same result, no duplicate transaction.
 - Errors return structured JSON, never stack trace to the agent.
-- Everything written for the repo is English (Maxi, 04.10.2026): identifiers, comments, docstrings, error and log messages, docs, commit messages, PR titles and descriptions, review replies. German only where it is product content: what the agent says to callers (`say` texts, prompts) and caller sentences in `evals/`. Existing German text stays until its file is translated; new text in such a file is English.
+- Everything written for the repo is English (Maxi, 04.10.2026): identifiers, comments, docstrings, error and log messages, docs, commit messages, PR titles and descriptions, review replies. German only where it is product content: what the agent says to callers (`say` texts, prompts), caller sentences in `evals/`, and caller sentences as test input in `api/tests/` for code that parses German speech (Maxi, 06.10.2026: escalation keywords, the yes detector, number words and the stand-in model only react to German, an English sentence would test nothing). Test names, docstrings and comments around that input stay English. Existing German text stays until its file is translated; new text in such a file is English.
 - No emojis in code, docs, commits, or UI. Status expressed in words.
 
 **Git**
