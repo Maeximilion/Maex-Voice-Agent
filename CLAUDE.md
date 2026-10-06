@@ -122,12 +122,13 @@ maex-voice-agent/
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 ### Model Routing
-Pick the model **before** reading any doc: a model switch starts a cold cache, so everything loaded earlier is paid for twice. `/start` and `/task` check the model first, read nothing else until it matches, and ask the user to switch if it does not (the user switches, Claude cannot).
+Pick the model when the session starts. A model switch starts a cold cache, so every doc read before the switch is paid for twice. `CLAUDE.md` itself loads at startup on whatever model is running and cannot be avoided; the saving is for the docs read afterwards (status, work packages, specs, modules). `/start` recommends the model for the task it suggests; `/task` checks the running model against the table before it reads anything else, and asks the user to switch on a mismatch (the user switches, Claude cannot).
 
 | Work | Model |
 |---|---|
-| `domain/`, `agent/`, `tools/` hot path, migrations, anything touching the six hard rules | Opus 5.5 |
 | `gui/`, docs, seeds and imports, tests for existing code, fixing review comments, status updates | Sonnet 5.5 |
+| `domain/`, `agent/`, `tools/`, `events/`, `telephony/`, `jobs/`, `prompts/`, `deploy/`, `printbridge/`, `n8n/`, migrations, anything touching the six hard rules | Opus 5.5 |
+| Anything not named above, or a task row that names no area | Opus 5.5 (default) |
 | Gate review, deep debugging after two failed attempts | Fable 5.1, only when Maxi asks |
 | File search, log reading | Haiku 4.5 or an Explore subagent |
 
