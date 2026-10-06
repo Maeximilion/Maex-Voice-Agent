@@ -343,12 +343,25 @@ WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r
 mkdir -p ~/.claude/hooks
 [ -f ~/.claude/settings.json ] || echo '{}' > ~/.claude/settings.json
 for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; bash -n ~/.claude/hooks/$f || echo "broken: $f"; done
-cp ~/.claude/settings.json "$(mktemp ~/.claude/settings.json.bak.XXXXXX)"
-new=$(jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json) && printf '%s\n' "$new" > ~/.claude/settings.json
-jq -c '{env: has("env"), plugins: (.enabledPlugins | keys), hooks: (.hooks | keys)}' ~/.claude/settings.json
+bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
+  && jq '{hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null))' ~/.claude/settings.json > "$bak" \
+  && jq -e . "$bak" > /dev/null \
+  && new=$(jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json) \
+  && printf '%s\n' "$new" > ~/.claude/settings.json \
+  || echo "restore stopped before the settings were rewritten"
+jq -c '{env: has("env"), plugins: ((.enabledPlugins // {}) | keys), hooks: ((.hooks // {}) | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Every run copies the settings to a new, uniquely named `settings.json.bak.*` file that only the owner can read, and never overwrites an older one; the oldest holds the state before the first run. Delete them once the check passed. The settings file itself is rewritten in place and keeps its permissions.
+The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Before it rewrites anything, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back; when that fails the run stops and says so. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The settings file itself is rewritten in place and keeps its permissions.
+
+Undo, same console: put the values of the oldest backup back. Keys that did not exist before the restore stay.
+
+```bash
+old="$(ls -tr ~/.claude/settings.json.bak.* | head -n 1)"
+new=$(jq --slurpfile old "$old" '. + $old[0]' ~/.claude/settings.json) && printf '%s\n' "$new" > ~/.claude/settings.json
+```
+
+Delete the backups once the check passed.
 
 ## 6. Check that a hook fires
 
