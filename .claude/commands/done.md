@@ -1,6 +1,6 @@
 Close out the current task.
 
-1. If the diff against `main` contains anything other than `.md` files, run `/ponytail-review` on it and apply the cuts that hold. It only hunts complexity and is not a merge gate (`CLAUDE.md` §6); it runs here, before the PR opens, so a deletion does not move the head commit after its review.
+1. If the diff against `main` contains anything other than `.md` files, run `/ponytail-review` (skill `ponytail:ponytail-review`) on it and apply the cuts that hold. It only hunts complexity and is not a merge gate (`CLAUDE.md` §6); it runs here, before the PR opens, so a deletion does not move the head commit after its review.
 2. Run `make lint` and `make test`. Show results. If red: fix first, then continue.
 3. Check the Definition of Done from `CLAUDE.md` §7 point by point and show the list as complete/open.
 4. Update `docs/07_WORKPACKAGES.md` (status done) and `docs/01_STATUS.md` (completion table, next steps, new assumptions, new blockers). Then `python scripts/status_bump.py patch "<one line>"` (for new decision or changed "what's next": `minor`; for passed gate/stage change: `major`).
