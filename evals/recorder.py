@@ -18,46 +18,17 @@ von heute und das echte Modell aus T-2.4 mit derselben Regel.
 """
 
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
+# The yes detector lives in the core since the core refuses a `confirm` without
+# a yes itself (agent/guards.py); the recorder measures with the same rule.
+from api.agent.consent import is_yes
 from api.agent.llm import LLMClient, LLMTurn
 
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
 # Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
 DRAFT_TOOLS = frozenset({"draft_order", "create_reservation"})
-
-# Bewusst eigene, kleine Liste statt der Erkennung aus sim/scripted_llm.py:
-# sonst prüfte das Skript-Modell sich mit seiner eigenen Regel selbst.
-_YES = re.compile(
-    r"\b(ja|jawohl|jo|genau|richtig|passt|stimmt|korrekt|gerne|gern|okay|ok|einverstanden|bestaetigt|bestätigt)\b",
-    re.IGNORECASE,
-)
-_NO = re.compile(r"^\s*(nein|ne|nee|nö|noe|falsch|stopp|halt)\b", re.IGNORECASE)
-# Verneint ist das Ja-Wort selbst ("stimmt nicht", "passt so nicht", "nicht
-# richtig") oder ein "aber" kuendigt eine Aenderung an ("Richtig, aber keine
-# Ente"). "Ja, kein Problem" oder "ja, nicht schlecht" bleiben ein Ja: ein
-# "kein" irgendwo im Satz zu verbieten, meldete einen korrekten Agenten als
-# Verstoss gegen eine harte Metrik (Review PR #142).
-_NEGATED = re.compile(
-    r"\b(stimmt|passt|richtig|korrekt|genau|okay|ok|einverstanden)\b(\s+\w+)?\s+(nicht|kein\w*)\b"
-    r"|\b(nicht|kein\w*)\s+(\w+\s+)?(richtig|korrekt|ok|okay|einverstanden|so)\b"
-    r"|\baber\b",
-    re.IGNORECASE,
-)
-
-
-def is_yes(text: str) -> bool:
-    """Ein Ja ohne Nein davor und ohne Verneinung im Satz.
-
-    Streng mit Absicht: ein verpasstes Ja macht hier einen Fall rot, den ein
-    Mensch prüft; ein fälschlich erkanntes Ja verdeckte einen `confirm` ohne
-    Zustimmung, und genau den soll diese harte Metrik finden.
-    """
-    return (
-        bool(_YES.search(text)) and not _NO.search(text) and not _NEGATED.search(text)
-    )
 
 
 @dataclass

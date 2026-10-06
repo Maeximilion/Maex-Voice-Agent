@@ -19,8 +19,8 @@ from typing import Any, get_args
 
 from sqlalchemy.orm import Session
 
-from api.agent import escalation
-from api.agent.dispatch import ToolResult, dispatch
+from api.agent import escalation, guards
+from api.agent.dispatch import ToolResult, dispatch, log_refused
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
@@ -91,6 +91,7 @@ class ConversationLoop:
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
+        start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal
@@ -106,9 +107,18 @@ class ConversationLoop:
                 self._system_prompt, self._prompt_state(state), pending_input
             )
             if turn.state_patch:
-                apply_state_patch(state, turn.state_patch)
-                for field_name in turn.state_patch:
+                # Only what was taken counts as understood: a name outside
+                # `GUEST_SLOTS` is dropped and is no success on the ladder.
+                for field_name in apply_state_patch(state, turn.state_patch):
                     self._ladder.record_success(field_name)
+            # The limit is checked again once the model has answered: a slow
+            # answer that arrives after the limit is neither spoken nor
+            # dispatched, the call goes to the team (Codex PR #208, P2). What
+            # the model heard is taken first: a phone number from this very
+            # sentence is what the callback of the handoff needs when the
+            # team is not reachable (Codex PR #222, P1).
+            if self._clock() - self._started > self._max_call_seconds:
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
 
             if (
                 turn.understanding_failure
@@ -127,11 +137,26 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                # What the guest hears decides which offered dishes count as
+                # put to them (guards.py, rule 2).
+                guards.note_said(state, say)
                 return TurnResult(
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
                 )
 
-            result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
+            # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
+            refused = guards.refusal(state, start, user_text, turn.tool_call)
+            if refused is not None:
+                log_refused(
+                    self._session,
+                    state.call_id,
+                    state.tenant_id,
+                    turn.tool_call.name,
+                    refused,
+                )
+                result = refused
+            else:
+                result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
@@ -212,6 +237,10 @@ def _tool_result_as_input(name: str, result: ToolResult) -> str:
         payload = {"tool": name, "ok": True, "data": result.data}
     else:
         payload = {"tool": name, "ok": False, "error_code": result.error_code}
+    if result.hint:
+        # Why the core refused the call (guards.py): without it the model sees
+        # only an error code and has nothing to act on.
+        payload["hint"] = result.hint
     if result.say:
         # Die vorgeschriebene Formulierung heikler Fälle (ausverkauft, außerhalb
         # der Zone, ...) kommt aus dem Code, nicht vom Modell (docs/05 §5) - ohne

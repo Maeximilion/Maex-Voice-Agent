@@ -5,6 +5,7 @@ auch einen mit unbekanntem Toolnamen -- in `calls.tool_calls` protokolliert
 (docs/04 §Gemeinsame Regeln) und dafür eine echte `calls`-Zeile braucht.
 """
 
+import json
 import uuid
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
@@ -13,10 +14,11 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent.guards import HINT_CONFIRM, HINT_ITEM
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, SAY_STUCK, SAY_TIMEOUT, ConversationLoop
 from api.agent.state import ConversationState
-from api.models import Call, Callback
+from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -61,8 +63,10 @@ def state(tenant_id, call_id):
 
 
 def clock_from(values):
+    """Plays the values, then stays on the last one: the loop reads the clock
+    before and after every model call, a test only names the moments it means."""
     it = iter(values)
-    return lambda: next(it)
+    return lambda: next(it, values[-1])
 
 
 def test_direkte_modell_antwort_ohne_tool_aufruf(session, state):
@@ -360,3 +364,276 @@ def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):
     assert result.say == [SAY_STUCK]
     assert len(llm.calls) == MAX_TOOL_HOPS
     assert state.stage == "ended"
+
+
+# --- The core holds the hard rules against the model (agent/guards.py) ----------
+
+READBACK_TURN = "Einen Tisch für vier morgen um sieben auf Müller"
+
+
+def read_back_reservation(session, state):
+    """One guest turn that ends with a draft read back to the guest."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    "create_reservation",
+                    {
+                        "guest_name": "Müller",
+                        "phone": "+4972215551234",
+                        "party_size": 4,
+                        "reserved_for": "2026-09-16T19:00:00+02:00",
+                    },
+                )
+            ),
+            LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?"),
+        ]
+    )
+    ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0])).run_turn(
+        state, READBACK_TURN
+    )
+    assert state.stage == "readback_pending"
+    return session.get(Reservation, state.reservation_id)
+
+
+def confirming(state, then_say="Was soll ich ändern?"):
+    """A model that returns `confirm` with the id from the state, whatever the
+    guest said, and speaks afterwards."""
+    return FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    "confirm",
+                    {"entity": "reservation", "entity_id": str(state.reservation_id)},
+                )
+            ),
+            LLMTurn(say=then_say),
+        ]
+    )
+
+
+def test_confirm_after_a_no_stays_a_draft(session, state):
+    """The case from the review of PR #208: the guest rejects the readback, the
+    model returns `confirm` anyway. Rule 3 holds in the core, not in the prompt."""
+    reservation = read_back_reservation(session, state)
+    llm = confirming(state)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Nein, das stimmt nicht")
+
+    session.refresh(reservation)
+    assert reservation.status == "draft"
+    assert state.stage == "readback_pending"
+    assert result.say == ["Was soll ich ändern?"]
+    # The model learns why, and the call log shows the attempt.
+    refused = json.loads(llm.calls[1][2])
+    assert refused["tool"] == "confirm"
+    assert refused["ok"] is False
+    assert refused["error_code"] == "conflict"
+    assert refused["hint"] == HINT_CONFIRM
+    logged = session.scalars(select(Call.tool_calls)).one()[-1]
+    assert logged["name"] == "confirm"
+    assert logged["ok"] is False
+    assert logged["error_code"] == "conflict"
+
+
+def test_confirm_after_a_yes_books(session, state):
+    reservation = read_back_reservation(session, state)
+    llm = confirming(state, then_say="Vielen Dank, bis morgen.")
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Ja, passt so.")
+
+    session.refresh(reservation)
+    assert reservation.status == "confirmed"
+    assert state.stage == "confirmed"
+
+
+def test_confirm_in_the_turn_of_the_draft_stays_a_draft(session, state):
+    """Draft and `confirm` in one turn: the yes in "Ja, guten Tag" came before
+    anything was read back."""
+
+    class DraftsThenConfirms:
+        """Draft, then `confirm` with the id the state now shows, then a sentence."""
+
+        calls = 0
+
+        def next_turn(self, system_prompt, state_json, input_text):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMTurn(
+                    tool_call=ToolCall(
+                        "create_reservation",
+                        {
+                            "guest_name": "Müller",
+                            "phone": "+4972215551234",
+                            "party_size": 4,
+                            "reserved_for": "2026-09-16T19:00:00+02:00",
+                        },
+                    )
+                )
+            if self.calls == 2:
+                return LLMTurn(
+                    tool_call=ToolCall(
+                        "confirm",
+                        {
+                            "entity": "reservation",
+                            "entity_id": state_json["reservation_id"],
+                        },
+                    )
+                )
+            return LLMTurn(say="Passt das so?")
+
+    loop = ConversationLoop(
+        session, DraftsThenConfirms(), "system", now=NOW, clock=clock_from([0])
+    )
+
+    loop.run_turn(state, "Ja, guten Tag, " + READBACK_TURN)
+
+    assert session.get(Reservation, state.reservation_id).status == "draft"
+    assert state.stage == "readback_pending"
+
+
+def test_model_that_insists_on_confirm_ends_with_the_team(session, state):
+    """A refused call costs a tool hop: a model that keeps trying runs into the
+    hop limit and the handoff (rule 5), never into a booking."""
+    reservation = read_back_reservation(session, state)
+    one = confirming(state)._turns[0]
+    llm = FakeLLM([one] * MAX_TOOL_HOPS)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Nein")
+
+    session.refresh(reservation)
+    assert reservation.status == "draft"
+    assert result.ended is True
+
+
+def test_order_with_an_id_no_search_delivered_is_not_drafted(session, state):
+    """Rule 2 in the loop: the model invents a `menu_item_id`, the tool is
+    never reached and the model is told why."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    "draft_order",
+                    {
+                        "type": "pickup",
+                        "customer": {"name": "Müller", "phone": "+4972215551234"},
+                        "items": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}],
+                    },
+                )
+            ),
+            LLMTurn(say="Welches Gericht darf es sein?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Einmal die Ente bitte")
+
+    assert state.order_id is None
+    refused = json.loads(llm.calls[1][2])
+    assert refused["error_code"] == "invalid_input"
+    assert refused["hint"] == HINT_ITEM
+
+
+def test_slot_that_no_guest_can_name_is_not_taken(session, state):
+    """Rule 1: a tool result copied into the patch never reaches the next
+    prompt, and it is no success on the understanding ladder."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(name="get_service_status"),
+                state_patch={"open": True, "closes_at": "22:00", "party_size": 4},
+            ),
+            LLMTurn(say="Für wann darf ich reservieren?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Wir sind zu viert")
+
+    assert state.slots == {"party_size": 4}
+    assert llm.calls[1][1]["slots"] == {"party_size": 4}
+
+
+def test_answer_that_arrives_after_the_limit_is_not_spoken(session, state):
+    """The limit is read before the model is asked and again when it has
+    answered: 5 s before, 500 s after, with 10 s allowed."""
+    llm = FakeLLM([LLMTurn(say="Guten Tag, was darf es sein?")])
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 5, 500]),
+    )
+
+    result = loop.run_turn(state, "Hallo")
+
+    assert result.ended is True
+    assert "Guten Tag" not in " ".join(result.say)
+    assert state.stage == "ended"
+
+
+def test_late_answer_still_gives_its_phone_number_to_the_callback(session, state):
+    """From the review of PR #222: the caller ID is suppressed, the guest says
+    the number in this very sentence, and the model is slow. What it heard is
+    taken before the handoff, or the callback that saves the call (rule 5)
+    could not be created."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                say="Guten Tag, was darf es sein?",
+                state_patch={"phone": "+4972215551234"},
+            )
+        ]
+    )
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 5, 500]),
+    )
+
+    result = loop.run_turn(state, "Meine Nummer ist 07221 5551234")
+
+    assert result.ended is True
+    assert state.stage == "callback"
+    assert session.scalars(select(Callback)).one().phone == "+4972215551234"
+
+
+def test_offer_spoken_to_the_guest_makes_its_dishes_usable(session, state):
+    """The loop tells the guards what the guest heard: the sentence that ends
+    the turn."""
+    state.offered_items = {"a": ("47", "Ente knusprig"), "b": ("13", "Pho Bo")}
+    llm = FakeLLM([LLMTurn(say="Meinen Sie Nummer 47 Ente knusprig?")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "die Ente")
+
+    assert state.known_item_ids == {"a"}
+    # Not named yet: stays offered, the model may still put it to the guest.
+    assert set(state.offered_items) == {"b"}
+
+
+def test_tool_call_that_arrives_after_the_limit_is_not_dispatched(session, state):
+    reservation = read_back_reservation(session, state)
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 5, 500]),
+    )
+
+    result = loop.run_turn(state, "Ja, passt so.")
+
+    session.refresh(reservation)
+    assert reservation.status == "draft"
+    assert result.ended is True
