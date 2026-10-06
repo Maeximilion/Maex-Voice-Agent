@@ -1,4 +1,4 @@
-# 18 – Claude Code Setup
+# 19 – Claude Code Setup
 
 > The personal Claude Code setup behind this repository: three user-level hooks, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
 > Version 1.0 · 06.10.2026
@@ -22,11 +22,11 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 
 | Script | Event | What it does |
 |---|---|---|
-| `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded. |
+| `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts. |
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per state of `main`. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
-| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
-| `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. |
+| `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag), because nobody is there to switch the model and resend. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
+| `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
 
@@ -136,17 +136,20 @@ if [ "$1" = "--branch" ]; then
   cd "$cwd" 2>/dev/null || exit 0
   branch=$(git branch --show-current 2>/dev/null)
   [ -n "$branch" ] && [ "$branch" != "main" ] || exit 0
+  state="${TMPDIR:-/tmp}/claude-branch-sync"
+  mkdir -p "$state"
+  key="$state/$(git rev-parse --show-toplevel | tr -c 'A-Za-z0-9' '_')"
   # ponytail: fetches at most every 10 minutes; lower -mmin if main moves faster.
-  fh=$(git rev-parse --git-path FETCH_HEAD)
-  [ -n "$(find "$fh" -mmin -10 2>/dev/null)" ] || git fetch -q --prune origin 2>/dev/null || exit 0
+  # Its own stamp, not FETCH_HEAD: a fetch of one feature ref refreshes that file and leaves origin/main stale.
+  if [ -z "$(find "$key.fetched" -mmin -10 2>/dev/null)" ]; then
+    git fetch -q --prune origin 2>/dev/null || exit 0
+    touch "$key.fetched"
+  fi
   # A branch whose upstream is gone was merged or deleted on the remote: nothing to sync.
   [ -z "$(git config "branch.$branch.merge")" ] || git rev-parse -q --verify '@{u}' >/dev/null 2>&1 || exit 0
   behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
   [ "${behind:-0}" -gt 0 ] || exit 0
   # Once per state of origin/main and worktree, so a merge Claude has to postpone is not nagged about.
-  state="${TMPDIR:-/tmp}/claude-branch-sync"
-  mkdir -p "$state"
-  key="$state/$(git rev-parse --show-toplevel | tr -c 'A-Za-z0-9' '_')"
   tip=$(git rev-parse origin/main)
   [ "$(cat "$key" 2>/dev/null)" != "$tip" ] || exit 0
   echo "$tip" > "$key"
@@ -171,7 +174,9 @@ if [ -n "$dir" ]; then
   behind=$(git -C "$dir" rev-list --count main..origin/main 2>/dev/null)
   [ "${behind:-0}" -gt 0 ] && printf '{"systemMessage":"sync-main: main in %s is %s commits behind origin/main and was not fast-forwarded (uncommitted changes or local commits), check git status"}\n' "$dir" "$behind"
 else
-  git fetch -q origin main:main 2>/dev/null
+  # Refused means local main has commits origin/main lacks; say so instead of drifting.
+  git fetch -q origin main:main 2>/dev/null \
+    || printf '{"systemMessage":"sync-main: local main has diverged from origin/main and was not updated, check git log origin/main..main"}\n'
 fi
 exit 0
 ```
@@ -202,8 +207,9 @@ case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
 esac
 
 prompt=$(jq -r '.prompt // ""' <<<"$input")
-# Routines run unattended: nobody is there to switch the model and resend.
-case "$prompt" in "<scheduled-task"*) exit 0 ;; esac
+# Machine-delivered prompts (routines, background reports, messages from other sessions,
+# CI events) arrive as a tagged block: nobody is there to switch the model and resend.
+case "$prompt" in "<"*) exit 0 ;; esac
 # A repo with its own "Model Routing" table in CLAUDE.md picks the model itself; stay out of its way.
 root=$(git -C "$(jq -r '.cwd // "."' <<<"$input")" rev-parse --show-toplevel 2>/dev/null)
 grep -qs '^#\+ Model Routing' "$root/CLAUDE.md" && exit 0
@@ -317,26 +323,26 @@ jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", a
 3. Check the result. Console: Git Bash, any folder.
 
 ```bash
-bash -n ~/.claude/hooks/sync-main.sh && jq -c '.hooks | map_values(map(.hooks | map(.command)))' ~/.claude/settings.json
+for f in sync-main.sh model-router.sh session-title.sh; do bash -n ~/.claude/hooks/$f || echo "broken: $f"; done; jq -c '.hooks | map_values(map(.hooks | map(.command)))' ~/.claude/settings.json
 ```
 
-The check passed when it prints the four hook groups and no error. A settings file with broken JSON switches off everything in it without a message, so this check is not optional.
+The check passed when it prints the four hook groups and no `broken:` line. A settings file with broken JSON switches off everything in it without a message, so this check is not optional.
 
 ### Ubuntu
 
-Ubuntu takes the scripts and the hooks block from the Windows copy and keeps its own `env` block. Console: Ubuntu terminal, any folder. Set the first line to the Windows user folder. The commands must not be prefixed with `wsl`; that program only exists on the Windows side.
+Ubuntu takes the scripts and the shared settings keys of section 3 from the Windows copy and keeps everything else in its own file, the `env` block included. Console: Ubuntu terminal, any folder. The first line finds the Windows user folder by itself. The commands must not be prefixed with `wsl`; that program only exists on the Windows side.
 
 ```bash
-WIN_CLAUDE=/mnt/c/Users/YOUR_WINDOWS_USER/.claude
+WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.claude"
 mkdir -p ~/.claude/hooks
 [ -f ~/.claude/settings.json ] || echo '{}' > ~/.claude/settings.json
-for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; done
-cp ~/.claude/settings.json ~/.claude/settings.json.bak
-jq --slurpfile win "$WIN_CLAUDE/settings.json" '.hooks = $win[0].hooks' ~/.claude/settings.json.bak > ~/.claude/settings.json
-jq -c '{env: has("env"), hooks: (.hooks | keys)}' ~/.claude/settings.json
+for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; bash -n ~/.claude/hooks/$f || echo "broken: $f"; done
+cp ~/.claude/settings.json ~/.claude/settings.json.bak.$(date +%Y%m%d-%H%M%S)
+jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json > ~/.claude/settings.tmp && mv ~/.claude/settings.tmp ~/.claude/settings.json
+jq -c '{env: has("env"), plugins: (.enabledPlugins | keys), hooks: (.hooks | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the four hook groups, and `"env":true` on a machine that had an `env` block before. `settings.json.bak` is the undo; delete it once the check passed.
+The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Every run writes a new dated `settings.json.bak.*` file and never overwrites an older one; the newest is the undo, delete them once the check passed.
 
 ## 6. Check that a hook fires
 
@@ -346,7 +352,7 @@ A hook that runs without anything to report leaves no visible trace. For `sync-m
 printf '{"cwd":"%s"}' "$PWD" | bash ~/.claude/hooks/sync-main.sh --branch
 ```
 
-It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main`: a second run prints nothing until `main` moves again, and a run by hand uses up the note the session would have got for that state. Inside a session the sign that it ran is a fresh timestamp on the `FETCH_HEAD` file of the checkout. A session that was already open when the settings changed may not load the new entry; a new session does.
+It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main`: a second run prints nothing until `main` moves again, and a run by hand uses up the note the session would have got for that state. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in the `claude-branch-sync` folder of the temp directory; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
 
 ## 7. Keeping this file true
 
