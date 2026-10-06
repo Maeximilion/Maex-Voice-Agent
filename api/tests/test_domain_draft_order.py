@@ -259,7 +259,11 @@ def test_audit_haelt_keine_personendaten(session, tenant_id, call_id):
         select(AuditLog.payload).where(AuditLog.entity_id == first.order_id)
     )
     text = str(payload)
-    assert "Müller" not in text and "Nüsse" not in text and "555" not in text
+    assert "Müller" not in text and "Nüsse" not in text
+    # The number itself, raw and normalised: a short fragment such as "555" also
+    # turns up by chance in the random order and call ids of the payload (main
+    # CI run 872, "...5286b0a55558").
+    assert "555 1234" not in text and "5551234" not in text
     assert draft_order(session, req, now=NOW) == first
 
 

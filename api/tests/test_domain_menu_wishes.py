@@ -796,6 +796,26 @@ def test_weglassen_nach_unbekannter_zugabe_bleibt_notiert():
 
 
 @pytest.mark.parametrize(
+    ("said", "text", "note"),
+    [
+        # Nothing is named between the removal word and "statt".
+        ("ohne statt Reis", "ohne statt Reis", None),
+        ("keine anstatt Reis", "keine anstatt Reis", None),
+        # A filler in front of it is not something left out either.
+        ("bitte ohne statt Reis", "bitte ohne statt Reis", None),
+        # A removal that is named stays noted; the rest is not understood.
+        ("ohne Zwiebeln, kein statt Reis", "kein statt Reis", "ohne Zwiebeln"),
+    ],
+)
+def test_removal_word_directly_before_statt_is_not_understood(said, text, note):
+    """ "ohne statt Reis" names neither what to leave out nor what to take
+    instead. It ran into endless recursion (eval abholung_0075). It is a wish
+    the agent does not offer, never a free note for the kitchen."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == ("unknown", text, note)
+
+
+@pytest.mark.parametrize(
     "gesagt", ["allergisch gegen Sesam, ja genau", "allergisch gegen Sesam, richtig"]
 )
 def test_bestaetigung_nach_der_zutat(gesagt):

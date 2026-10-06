@@ -109,7 +109,8 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 
 ## S9 – Session-Ende
 ```text
-/done      → Tests, Lint, Status in 07 setzen, 01_STATUS aktualisieren, Commit vorschlagen
+/done      → ponytail review on code diffs, tests, lint, set status in 07, update 01_STATUS,
+             commit, push and open the PR without asking
 /handover  → Übergabeblock nach PCF Abschnitt 12, für den Chat oder die nächste Session
 ```
 
