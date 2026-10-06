@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.8
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.10
 
 ---
 
@@ -390,7 +390,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v1.39.8 · 06.10.2026:** T-4.6: first input slip checked on paper, second line feed after double-height lines, test slip notice (PR #231)
+- **v1.39.10 · 06.10.2026:** T-4.6: first input slip checked on paper, second line feed after double-height lines, test slip notice (PR #231)
+- **v1.39.9 · 06.10.2026:** PR #230: the seven P2 recorded for the user-level hooks are fixed after all (Maxi: fix everything), the open point is gone
+- **v1.39.8 · 06.10.2026:** PR #230: Claude Code setup doc (docs/19), five P2 of the third review round recorded as open points
 - **v1.39.7 · 06.10.2026:** Review PR #218: setup script uses OLLAMA_URL for every ollama command and checks answers with the core's contract
 - **v1.39.6 · 06.10.2026:** main merged into PR #218 (T-2.4 parts 1 and 2, core guards); the reasoning to-do stays open because #208 was merged without it
 - **v1.39.5 · 06.10.2026:** CLAUDE.md §6: Claude merges every PR with green CI and a clean review on the head commit, except xhigh triggers (Maxi decides those)
