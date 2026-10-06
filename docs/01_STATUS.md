@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.17
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.38.18
 
 ---
 
@@ -290,6 +290,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 06.10.2026 | **`AGENTS.md` with review rules for Codex:** new root file, section `## Code Review Rules` (the name the OpenAI documentation gives; the same page says Codex posts only P0 and P1 on GitHub, yet this repository saw P2 comments, so the file defines the severities itself). Rules are one line each with a named failure: public-repository secrets and real names, the six hard rules, money and migrations, layers, shell pipelines under `pipefail` and `lastpipe`, image pins against advisories, workflow permissions, tests and PR hygiene. Drafted by Claude Code from the repository and from the findings of this week; Codex reviews the pull request and so checks the format. Not run: no way to ask Codex whether it picked the section up before the first review; the reviews on the next pull requests show it. A root `AGENTS.md` is not on the Markdown-only merge list in `CLAUDE.md`, so Maxi merges it |
 | 06.10.2026 | **Test for a damaged gpg trailer (T-9.3):** `test_restore_check_catches_a_damaged_gpg_trailer` flips the last byte of an encrypted dump; `restore.sh --check` must fail with "cannot read the dump to its end". Proven by mutation: with the writer's status ignored (`{ read_dump "$file" || true; } | ...`) the damaged dump passes and the test is red 3 of 3. It pins the detection, not the drain: a dump this small also survives without the drain (gpg finishes before `pg_restore`), so the review finding that removing the drain would let a damaged trailer pass did not reproduce. Whole file 20 times in a row with four workers, all green |
 | 06.10.2026 | **Backup and restore no longer reject a good dump at random (T-9.3):** `verify_dump` and the restore into the scratch database piped `cat` (or `gpg`) into `pg_restore` under `pipefail`. `pg_restore` stops at the end marker without reading the rest, so the writer is sometimes killed by SIGPIPE (status 141) and a valid dump is reported as "cannot be read back, nothing kept". Seen once on `main` after PR #195 (`test_backup_refuses_to_write_plain_text_unless_told`), reproduced locally about one run in ten with four test workers, and the instrumented script showed `141 0` (writer, `pg_restore`). New helper `pg_restore_from` in `scripts/lib_pg.sh` drains the pipe before the status is read (gpg still checks to the last byte); `restore.sh` uses it for the real restore too. **Codex review PR #202 (P2x2) fixed:** the helper runs in a real subshell, because with `lastpipe` a brace group ran in the script itself and its `exit` ended `backup.sh` and `restore.sh` silently with status 0 (test with `BASHOPTS=lastpipe`, red before, green after); and the rest is drained only after a successful `pg_restore`, so a failed restore is not delayed by reading a large dump to its end. Regression test `test_a_dump_with_bytes_after_its_end_is_still_read_to_the_end` (1 MiB after the end marker): red 3 of 3 before, green 3 of 3 after; the whole file 40 times in a row with four workers, all green (before: about one in ten red). Also: handover "demo run of the operations view" carried over from the closed PR #191; `docs/16`: dropped work gets the label `wontfix`, paused work stays an open issue, no status label |
 | 05.10.2026 | **Product stays a web application on the EU server, no desktop program:** asked by Maxi after clicking through the admin mockup ("why no .exe"). Docs only: `docs/13_DEPLOYMENT.md` §0a lists what the restaurant needs (browser device, address and login, phone line, team phone, print bridge from the first order on, notification app) and why a program file in the restaurant would be worse; README and `gui/mockups/README.md` say so where the question came up |
@@ -362,6 +363,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.38.18 · 06.10.2026:** AGENTS.md: review rules for Codex, drafted by Claude Code
 - **v1.38.17 · 06.10.2026:** test(scripts): restore --check catches a damaged gpg trailer (Codex-style review follow-up of PR #202)
 - **v1.38.16 · 06.10.2026:** Backup/restore verify no longer fails at random (SIGPIPE); demo handover carried over; wontfix convention
 - **v1.38.15 · 06.10.2026:** Dependabot ignores PostgreSQL major bumps (16 stays, CLAUDE.md)

@@ -55,6 +55,7 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 ```text
 maex-voice-agent/
 ├── CLAUDE.md              ← this file
+├── AGENTS.md              Review rules Codex reads ("Code Review Rules")
 ├── README.md
 ├── docker-compose.yml     Postgres · API · n8n (base, no host ports)
 ├── docker-compose.override.yml  dev host ports, loopback only
