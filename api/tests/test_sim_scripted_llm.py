@@ -264,3 +264,16 @@ def test_korrektur_beim_vorlesen_baut_einen_neuen_entwurf(llm):
     assert turn.tool_call.name == "check_slot"
     assert turn.tool_call.args["party_size"] == 5
     assert turn.state_patch == {"party_size": 5}
+
+
+def test_no_second_greeting_when_the_phone_already_greeted(llm):
+    """On the phone the code says the AI disclosure before the first turn
+    (telephony/handler.py); the scripted model must not repeat it."""
+    state = {**START, "greeted": True, "slots": {"party_size": 4}}
+    llm.next_turn("", state, "Einen Tisch fuer vier bitte.")
+
+    turn = llm.next_turn("", state, tool_result("get_service_status", data={}))
+
+    assert turn.say is not None
+    assert GREETING not in turn.say
+    assert QUESTIONS["reserved_for"] in turn.say
