@@ -143,6 +143,9 @@ class ScriptedLLM:
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
     ) -> LLMTurn:
+        if state_json.get("greeted"):
+            # The phone line said the disclosure already (telephony/handler.py).
+            self._greeted = True
         result = _as_tool_result(input_text)
         if result is not None:
             return self._after_tool(state_json, result)
