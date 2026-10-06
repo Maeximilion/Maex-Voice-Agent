@@ -2,7 +2,7 @@ Work on task $ARGUMENTS from `docs/07_WORKPACKAGES.md`.
 
 1. Check whether all dependencies are complete. If not: name the missing one and stop.
 2. Read the spec from the "Spec" column and check in `docs/11_MODULE.md` which modules the files belong to.
-3. Create branch `task/<id-with-hyphens>-<shortname>`.
+3. Create branch `task/<id-with-hyphens>-<shortname>`. Then rename the session to `<next gate> - <task id> - <branch>`, for example `G0 - T-1.12 - task/1-12-shortname`; the gate is "Next gate" in the header of `docs/01_STATUS.md`. Use the session-title tool (`set_session_title`, session `self`) where the app offers it, and skip this where it does not.
 4. Show a plan with max 5 lines: files, tests, migration needs. Build directly; wait only if plan touches money, law, external impact, production data, or irreversibility.
 5. Write tests first (normal case + at least two edge cases), then code until green. Actually run them.
 6. For hot-path tools: measure response time and report value.
