@@ -1,0 +1,56 @@
+name: ai-pr-review
+
+# Automatische LLM-Analyse jedes PR: Diff an eine OpenAI-kompatible API schicken
+# und das Ergebnis als GitHub-Review mit Inline-Kommentaren (P0-P3) posten, wie
+# im Codex-Review-Bot-Beispiel.
+#
+# Standard: lokaler llama-server auf dem eigenen Rechner (WSL2), Modell ueber
+# die Repo-Variable REVIEW_MODEL (Alias MODEL_ALIAS aus config.env des
+# local-llm-kit, z. B. qwen3.6-35b-a3b). Kostenlos, dafuer nur erreichbar,
+# solange der PC laeuft. Der Runner laeuft in der eigenen WSL-Distro gh-runner
+# (Interop und Windows-Laufwerke aus, User ohne sudo) und erreicht den Server
+# ueber 127.0.0.1:8080 (Repo-Variable ZAI_API_BASE).
+# Cloud-Fallback: ZAI_API_BASE auf https://api.z.ai/api/paas/v4 setzen
+# (Secret ZAI_API_KEY, Modell z. B. glm-4.6); der Aufruf ist identisch.
+# Qwen3.6 denkt standardmaessig; das Skript schaltet das ab, ausser die
+# Repo-Variable REVIEW_DISABLE_THINKING steht auf false.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+# Neuer Push auf denselben PR bricht den laufenden Review ab.
+concurrency:
+  group: ai-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    # Dependabot-PRs bekommen von GitHub keine Secrets zugewiesen.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # Self-hosted-Label zwingend, wsl-local zur Auswahl. Fork-PRs aller externen
+    # Contributors laufen nur nach manueller Freigabe (all_external_contributors,
+    # so lassen!). Lokales Modell: der Review braucht laenger als 10 Minuten.
+    runs-on: [self-hosted, wsl-local]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: PR-Diff exportieren
+        run: gh pr diff "$PR_NUMBER" > pr.diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+      - name: LLM-Review posten
+        run: python3 .github/scripts/ai_pr_review.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          ZAI_API_BASE: ${{ vars.ZAI_API_BASE }}
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
+          REVIEW_DISABLE_THINKING: ${{ vars.REVIEW_DISABLE_THINKING }}
