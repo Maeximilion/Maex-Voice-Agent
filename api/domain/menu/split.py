@@ -33,7 +33,11 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
 )
 
-_SEPARATOR = re.compile(r"\s*,\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+# A separator takes the whitespace behind it, not the whitespace in front: a
+# pattern that begins with `\s*` or `\s+` reads a long run of spaces again from
+# every character of it (CodeQL py/polynomial-redos). The whitespace in front
+# stays at the end of the piece before; `_strip` takes it off.
+_SEPARATOR = re.compile(r",\s*|\s(?:und|sowie)\s+", re.IGNORECASE)
 _WORD = re.compile(r"\d+|[a-z]+")
 # Nach fold() (ä -> ae). Deckungsgleich mit numberwords._ALTERNATIVE_WORDS.
 _CORRECTION_WORDS = frozenset(
@@ -71,7 +75,7 @@ def split_positions(text: str) -> list[str]:
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [p.strip(" .!?;:") for p in _split(stripped)]
+    return [_strip(p) for p in _split(stripped)]
 
 
 def raw_pieces(text: str) -> list[str]:
@@ -85,7 +89,11 @@ def raw_pieces(text: str) -> list[str]:
     stripped = text.strip()
     if not _separable(stripped):
         return [stripped] if stripped else []
-    return [p.strip(" .!?;:") for p in _split(stripped, by_position=False)]
+    return [_strip(p) for p in _split(stripped, by_position=False)]
+
+
+def _strip(part: str) -> str:
+    return part.strip().strip(" .!?;:")
 
 
 def separator_pieces(text: str) -> int:
