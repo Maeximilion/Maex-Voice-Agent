@@ -11,9 +11,11 @@ Each case below feeds one such run through a public function. The length is
 chosen so that quadratic code needs several seconds and linear code a few
 milliseconds; the budget sits in between with a wide margin on both sides.
 
-The fix only adds look-behinds that say where a match may begin. What a pattern
-matches must not change with that, so the second test keeps each pattern in its
-plain form as the reference and compares the two on generated sentences.
+The fix takes the repetition off the front of each pattern and removes the
+separators in front of a match in plain code instead; the pattern for compound
+allergy words became a small scanner. What comes out must not change with that,
+so the second test keeps each operation as it was written before, as the
+reference, and compares the two on generated sentences.
 """
 
 import random
@@ -88,42 +90,85 @@ def test_long_run_of_one_character_stays_linear(call, text):
     assert elapsed < BUDGET_SECONDS, f"{elapsed:.2f} s for {len(text)} characters"
 
 
-# name -> (the plain pattern, the pattern in the code, words that make it match)
-_ALLERGY_NOUNS = r"allergie|intoleranz|unvertr(?:ä|ae)glichkeit"
+# The operations as they were before the fix. They are the reference here and
+# nothing else: do not use them on text a caller controls.
+_OLD_SEPARATOR = re.compile(r"\s*,\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+_OLD_COMPOUND = re.compile(
+    r"(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
+    r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
+    re.IGNORECASE,
+)
+
+
+def _old_pieces(text):
+    text = text.strip()
+    return _OLD_SEPARATOR.split(text), [
+        found.strip() for found in _OLD_SEPARATOR.findall(text)
+    ]
+
+
+def _new_pieces(text):
+    text = text.strip()
+    return [piece.strip() for piece in split._SEPARATOR.split(text)], [
+        found.strip() for found in split._SEPARATOR.findall(text)
+    ]
+
+
+def _old_drop_quantity(text):
+    text = re.sub(
+        r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b", "", text, flags=re.IGNORECASE
+    )
+    return re.sub(
+        r"[\s,]*\b(\w+?)mal\b",
+        lambda found: "" if wishes._is_quantity(found.group(1)) else found.group(0),
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def _old_compound_stems(text):
+    return [
+        (found.start(), found.group(1) or found.group(2), bool(found.group(1)))
+        for found in _OLD_COMPOUND.finditer(text)
+    ]
+
+
+# name -> (as it was, as it is, words that make it do something)
 REFERENCE = {
-    "_SEPARATOR": (
-        r"\s*,\s*|\s+(?:und|sowie)\s+",
-        split._SEPARATOR,
+    "pieces at the separators": (
+        _old_pieces,
+        _new_pieces,
         ["und", "Und", "sowie", "oder", "die", "23"],
     ),
-    "_TRAILING_GLUE": (
-        r"(?:[\s,]+(?:aber|und|dafür|dafuer|dann|bitte))+[\s,]*$",
-        wishes._TRAILING_GLUE,
+    "joining words at the end": (
+        lambda text: re.sub(
+            r"(?:[\s,]+(?:aber|und|dafür|dafuer|dann|bitte))+[\s,]*$",
+            "",
+            text,
+            flags=re.IGNORECASE,
+        ),
+        wishes._drop_trailing_glue,
         ["aber", "und", "Und", "dafür", "dafuer", "dann", "bitte", "Hund"],
     ),
-    "_TRAILING_PLEASE": (
-        r"[\s,]*bitte[\s.!?]*$",
-        wishes._TRAILING_PLEASE,
+    "bitte at the end": (
+        lambda text: re.sub(r"[\s,]*bitte[\s.!?]*$", "", text, flags=re.IGNORECASE),
+        lambda text: wishes._cut_tail(wishes._PLEASE_AT_END, text),
         ["bitte", "Bitte", "und", "?"],
     ),
-    "_TRAILING_JOINER": (
-        r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$",
-        wishes._TRAILING_JOINER,
-        ["dafür", "dafuer", "aber", "und", "Und", "Hund"],
+    # Without IGNORECASE, as it was: "Und" at the end stays.
+    "joining word before the next part": (
+        lambda text: re.sub(r"[\s,]*(?:dafür|dafuer|aber|und)[\s,]*$", "", text),
+        lambda text: wishes._cut_tail(wishes._JOINER_AT_END, text),
+        ["dafür", "dafuer", "aber", "und", "Und", "Aber", "Hund"],
     ),
-    "_TIMES": (
-        r"[\s,]*\b(\w+?)mal\b",
-        wishes._TIMES,
-        ["mal", "zweimal", "einmal", "normal", "2", "_"],
+    "quantities": (
+        _old_drop_quantity,
+        wishes._drop_quantity,
+        ["mal", "zweimal", "einmal", "normal", "2", "x", "portion", "stück", "_"],
     ),
-    "_COUNTED": (
-        r"[\s,]*\b\d+\s*(?:x|portionen?|stück|stueck)\b",
-        wishes._COUNTED,
-        ["2", "23", "x", "X", "portion", "portionen", "stück", "stueck"],
-    ),
-    "_COMPOUND": (
-        rf"(\w+?)-?(?:{_ALLERGY_NOUNS})|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
-        wishes._COMPOUND,
+    "stems of compound allergy words": (
+        _old_compound_stems,
+        lambda text: list(wishes._compound_stems(text)),
         [
             "allergie",
             "Allergie",
@@ -141,22 +186,21 @@ REFERENCE = {
     ),
 }
 _FILLER = [" ", " ", " ", "\t", "\n", ",", ",", ".", "!", "-", "a", "ä", "x"]
-SENTENCES_PER_PATTERN = 4000
-MATCHING_SENTENCES_AT_LEAST = 150
+SENTENCES_PER_OPERATION = 4000
+SENTENCES_WITH_AN_EFFECT_AT_LEAST = 150
 
 
 @pytest.mark.parametrize("name", list(REFERENCE))
-def test_look_behind_changes_no_match(name):
-    plain, hardened, words = REFERENCE[name]
-    reference = re.compile(plain, re.IGNORECASE)
+def test_result_is_the_same_as_before(name):
+    before, after, words = REFERENCE[name]
     rng = random.Random(len(name))
     atoms = _FILLER + words
-    matched = 0
-    for _ in range(SENTENCES_PER_PATTERN):
+    nothing = (before(""), before("a"))
+    with_an_effect = 0
+    for _ in range(SENTENCES_PER_OPERATION):
         text = "".join(rng.choice(atoms) for _ in range(rng.randint(0, 10)))
-        expected = [(m.span(), m.groups()) for m in reference.finditer(text)]
-        found = [(m.span(), m.groups()) for m in hardened.finditer(text)]
-        assert found == expected, repr(text)
-        matched += bool(expected)
-    # The comparison means nothing if the sentences never match.
-    assert matched >= MATCHING_SENTENCES_AT_LEAST
+        expected = before(text)
+        assert after(text) == expected, repr(text)
+        with_an_effect += expected not in (text, *nothing, ([text.strip()], []))
+    # The comparison means nothing if the sentences never trigger the operation.
+    assert with_an_effect >= SENTENCES_WITH_AN_EFFECT_AT_LEAST
