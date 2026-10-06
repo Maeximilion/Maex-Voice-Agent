@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.6
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.7
 
 ---
 
@@ -388,6 +388,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.39.7 · 06.10.2026:** Review PR #218: setup script uses OLLAMA_URL for every ollama command and checks answers with the core's contract
 - **v1.39.6 · 06.10.2026:** main merged into PR #218 (T-2.4 parts 1 and 2, core guards); the reasoning to-do stays open because #208 was merged without it
 - **v1.39.5 · 06.10.2026:** CLAUDE.md §6: Claude merges every PR with green CI and a clean review on the head commit, except xhigh triggers (Maxi decides those)
 - **v1.39.4 · 06.10.2026:** Reasoning setting handed to PR #208 by comment; CLAUDE.md: findings for another open PR go there as a comment

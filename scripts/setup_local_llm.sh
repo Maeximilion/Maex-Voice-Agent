@@ -19,7 +19,9 @@
 # For tests with invented data only. A local model never answers a real call
 # (docs/13_DEPLOYMENT.md §0).
 #
-# Configuration from the environment: OLLAMA_URL (default http://127.0.0.1:11434).
+# Configuration from the environment: OLLAMA_URL (default http://127.0.0.1:11434). It
+# decides for every step: the server check, the server this script starts, every
+# ollama command (pull, ps; OLLAMA_HOST is set from it) and the test request.
 #
 # Exit codes: 0 set up and the test answer is valid, 1 a step or the test failed,
 # 2 wrong call or unsupported system.
@@ -170,8 +172,18 @@ sudo_cmd=()
 
 server_up() { curl -fsS --max-time 3 "${OLLAMA_URL}/api/version" >/dev/null 2>&1; }
 
+# The ollama CLI talks to OLLAMA_HOST, not to OLLAMA_URL; without this a pull on a
+# custom port would go to the default server (review PR #218).
+ollama_cli() { OLLAMA_HOST="$OLLAMA_URL" ollama "$@"; }
+
+# The systemd service listens on the default address only.
+default_url=0
+case "$OLLAMA_URL" in
+    http://127.0.0.1:11434 | http://localhost:11434) default_url=1 ;;
+esac
+
 if command -v ollama >/dev/null; then
-    say "   installed: $(ollama --version 2>/dev/null | tail -n 1 | sed "s/^Warning: client //")"
+    say "   installed: $(ollama_cli --version 2>/dev/null | tail -n 1 | sed "s/^Warning: client //")"
 elif [ "$allow_install" -eq 0 ]; then
     die 1 "Ollama is missing and --skip-install is set"
 else
@@ -196,17 +208,19 @@ fi
 if server_up; then
     say "   server answers at ${OLLAMA_URL}"
 else
-    if [ -d /run/systemd/system ] && systemctl list-unit-files ollama.service >/dev/null 2>&1; then
+    if [ "$default_url" -eq 1 ] && [ -d /run/systemd/system ] &&
+        systemctl list-unit-files ollama.service >/dev/null 2>&1; then
         say "   starting the service"
         run "${sudo_cmd[@]}" systemctl enable --now ollama
     else
-        # WSL without systemd: start the server in the background, log next to the user.
-        say "   no systemd, starting 'ollama serve' in the background (log: ~/.ollama/serve.log)"
+        # No systemd (WSL) or a custom OLLAMA_URL: start the server in the background
+        # on exactly that address, log next to the user.
+        say "   starting 'ollama serve' on ${OLLAMA_URL} in the background (log: ~/.ollama/serve.log)"
         run mkdir -p "${HOME}/.ollama"
         if [ "$dry_run" -eq 1 ]; then
-            say "   [dry-run] OLLAMA_KEEP_ALIVE=1h nohup ollama serve >~/.ollama/serve.log 2>&1 &"
+            say "   [dry-run] OLLAMA_HOST=${OLLAMA_URL} OLLAMA_KEEP_ALIVE=1h nohup ollama serve >~/.ollama/serve.log 2>&1 &"
         else
-            OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-1h}" nohup ollama serve >"${HOME}/.ollama/serve.log" 2>&1 &
+            OLLAMA_HOST="$OLLAMA_URL" OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-1h}" nohup ollama serve >"${HOME}/.ollama/serve.log" 2>&1 &
         fi
     fi
     if [ "$dry_run" -eq 0 ]; then
@@ -228,7 +242,7 @@ if [ "$dry_run" -eq 0 ]; then
 fi
 for m in "${models[@]}"; do
     say "   ${m}"
-    run ollama pull "$m"
+    run ollama_cli pull "$m"
 done
 
 # ---------------------------------------------------------------------------
@@ -297,7 +311,9 @@ usage = body.get("usage") or {}
 print(f"   tokens: {usage.get('prompt_tokens')} in, {usage.get('completion_tokens')} out")
 if msg.get("reasoning") or "<think>" in content:
     print("   note: the model reasons before it answers (slower; switch it off in T-2.4 part 3)")
-content = content.split("</think>")[-1].strip()
+# The same contract as api/agent/llm.py parse_turn and _Envelope: one JSON object,
+# each known field null or of its type, say and tool counted after strip, exactly
+# one of them. Nothing is stripped from the answer here either (review PR #218).
 try:
     turn = json.loads(content)
 except ValueError:
@@ -306,8 +322,14 @@ except ValueError:
 if not isinstance(turn, dict):
     print("   answer is JSON but no object")
     sys.exit(1)
-has_say = bool(turn.get("say"))
-has_tool = bool(turn.get("tool"))
+types = {"say": str, "tool": str, "args": dict, "slots": dict, "not_understood": str}
+for field, kind in types.items():
+    value = turn.get(field)
+    if value is not None and not isinstance(value, kind):
+        print(f"   field {field} is {type(value).__name__}, the core expects {kind.__name__}: {content[:200]}")
+        sys.exit(1)
+has_say = bool((turn.get("say") or "").strip())
+has_tool = bool((turn.get("tool") or "").strip())
 if has_say == has_tool:
     print(f"   answer has {'both' if has_say else 'neither'} say and tool: {content[:200]}")
     sys.exit(1)
@@ -328,7 +350,7 @@ PY
                 say "   slower than ${SLOW_WARM_SECONDS} s: fine for evals, too slow as a stand-in for a call"
             fi
         fi
-        processor=$(ollama ps 2>/dev/null | awk -v m="$m" 'NR > 1 && index($1, m) == 1 { print $5, $6 }')
+        processor=$(ollama_cli ps 2>/dev/null | awk -v m="$m" 'NR > 1 && index($1, m) == 1 { print $5, $6 }')
         [ -z "$processor" ] || say "   runs on: ${processor}"
         if [[ "$processor" == *CPU* ]] && [ "$vram_mib" -gt 0 ]; then
             say "   part of the model sits in RAM, which makes it several times slower (docs/18 §5)"

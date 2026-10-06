@@ -106,9 +106,9 @@ decided by `make eval` once T-2.4 part 3 lands, the same way as in §3.
 
 1. detects WSL or native Ubuntu, the NVIDIA GPU and its memory, the RAM;
 2. installs `zstd` and then Ollama with the official installer if Ollama is missing (asks for the sudo password);
-3. starts the Ollama server (systemd service, or in the background without systemd) on loopback only;
+3. starts the Ollama server on loopback at `OLLAMA_URL`: the systemd service for the default address, otherwise in the background; every `ollama` command uses the same address;
 4. pulls the main and the comparison model of the tier;
-5. sends an invented German reservation sentence to `/v1/chat/completions`, the same API the core uses, checks that exactly one JSON object with `say` or `tool` comes back, and prints tokens, cold and warm latency and whether the model runs on the GPU;
+5. sends an invented German reservation sentence to `/v1/chat/completions`, the same API the core uses, checks the answer with the same contract as the core (`parse_turn` in `api/agent/llm.py`: one JSON object, field types, exactly one of `say` and `tool`), and prints tokens, cold and warm latency and whether the model runs on the GPU;
 6. prints the lines for `.env`.
 
 `--dry-run` prints every step without changing anything. Exit code 0 means set up and the
