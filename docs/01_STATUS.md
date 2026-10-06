@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.7
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.8
 
 ---
 
@@ -251,6 +251,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| User-level Claude Code hooks, third review round (`docs/19_CLAUDE_CODE_SETUP.md`) | Codex PR #230 (P2 x5, after two fully worked rounds, rule 24.09.2026: recorded, not blocking): (1) the Ubuntu restore block rewrites the settings even when the backup copy failed; (2) `model-router.sh` lets a prompt that begins with pasted content through unrouted; (3) the `sync-main.sh` warning for a checked-out `main` builds its JSON by hand, so a path with a quote breaks it; (4) `sync-main.sh --branch` relies on the fetch refspec of the remote, so a single-branch clone never gets `origin/main`; (5) the PostToolUse path searches the whole hook payload for `gh pr merge`, so command output that contains the text triggers a sync of `main`. Each fix is about one line; the hooks live outside the repository, the doc carries copies | with the next change to a hook |
 | `_split` reads the growing part again at every separator (`api/domain/menu/split.py`) | Seen while fixing CodeQL alerts 3 to 12 (06.10.2026), not a regular expression and not an alert: `_WORD.findall(fold(parts[-1]))` runs on a part that grows with every attached piece, so a sentence of joined pieces costs quadratic time ("die 23 mit Salami und und und ...": 0.5 s at 20,000 characters, 1.8 s at 40,000). Below 0.1 ms at the 300 characters a tool call allows. Left alone because the fix changes the cut itself, not a pattern | With the next change to `_split`, or before a caller without the 300-character cap goes live |
 | A joining word is cut off a word it only ends (`api/domain/menu/wishes.py` `_JOINER_AT_END`) | Seen while fixing CodeQL alerts 3 to 12 (06.10.2026), behaviour unchanged by that fix: the pattern has no word boundary before "und", "aber", "dafür", so "ohne Hund, mit Reis" yields the kitchen note "ohne H". It is also lower case only, unlike the patterns next to it: "Und" at the end stays. No dish or ingredient on the current menu ends that way; needs its own red test, because it changes what is matched | Before a menu with such a word, or with the next change to the wish patterns |
 | Register import, smaller review points (T-4.11) | Own review xhigh: `pos_code` unique only per file, not in the DB; NUL-padded text fields would keep `\x00` (none in the real copies, checked 04.10.2026; since PR #169 `parse` rejects a NUL with file and line, so `kasse_to_csv` writes nothing instead of handing it to the database); size names hardcoded in `pos_convert.SIZE_NAMES` although the register mask can rename them; German parameter names in `convert()`; allergen-carrier warning only matches word starts. None changes a price or allergen the agent says today (VK2 0.00, the `--deactivate-missing` hint, `WRGSHOWALL` spellings and the duplicated money helpers are fixed in PR #149) | with the card-number task or the first real register import |
@@ -388,6 +389,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.39.8 · 06.10.2026:** PR #230: Claude Code setup doc (docs/19), five P2 of the third review round recorded as open points
 - **v1.39.7 · 06.10.2026:** Review PR #218: setup script uses OLLAMA_URL for every ollama command and checks answers with the core's contract
 - **v1.39.6 · 06.10.2026:** main merged into PR #218 (T-2.4 parts 1 and 2, core guards); the reasoning to-do stays open because #208 was merged without it
 - **v1.39.5 · 06.10.2026:** CLAUDE.md §6: Claude merges every PR with green CI and a clean review on the head commit, except xhigh triggers (Maxi decides those)

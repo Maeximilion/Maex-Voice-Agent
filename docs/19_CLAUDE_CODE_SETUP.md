@@ -12,6 +12,7 @@
 | Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json` | yes, versioned and tested |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
+| Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |
 | Memory notes | `~/.claude/projects/` on Windows, linked into Ubuntu | no |
 
 Windows and Ubuntu each have their own copy of the hooks and of the settings. A change on one side has to be repeated on the other. Nothing in this file is secret: the scripts hold no keys, and the settings block below holds none either.
@@ -136,7 +137,8 @@ if [ "$1" = "--branch" ]; then
   cd "$cwd" 2>/dev/null || exit 0
   branch=$(git branch --show-current 2>/dev/null)
   [ -n "$branch" ] && [ "$branch" != "main" ] || exit 0
-  state="${TMPDIR:-/tmp}/claude-branch-sync"
+  # State lives under the home folder: a shared temp folder can be prepared by another local user.
+  state="$HOME/.claude/hook-state/branch-sync"
   mkdir -p "$state"
   key="$state/$(git rev-parse --show-toplevel | cksum | cut -d' ' -f1)"
   # ponytail: fetches at most every 10 minutes; lower -mmin if main moves faster.
@@ -200,7 +202,8 @@ simple='\b(rename|typo|format|lookup|simple|explain this line)'
 input=$(cat)
 sid=$(jq -r '.session_id // empty' <<<"$input")
 [ -n "$sid" ] || exit 0
-state="${TMPDIR:-/tmp}/claude-model-router"
+# State lives under the home folder: a shared temp folder can be prepared by another local user.
+state="$HOME/.claude/hook-state/model-router"
 mkdir -p "$state"
 
 case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
@@ -284,7 +287,8 @@ titles=$(grep '^{"type":"custom-title"' "$transcript" | jq -r '.customTitle // e
 current=$(tail -n 1 <<<"$titles")
 [ -n "$current" ] || exit 0
 
-state="${TMPDIR:-/tmp}/claude-session-title"
+# State lives under the home folder: a shared temp folder can be prepared by another local user.
+state="$HOME/.claude/hook-state/session-title"
 mkdir -p "$state"
 how='Rename it with the mcp__ccd_session_mgmt__set_session_title tool (session_id "self"; load it with ToolSearch if it is deferred), then carry on with the request. If that tool does not exist in this session, ignore this note.'
 
@@ -354,7 +358,7 @@ A hook that runs without anything to report leaves no visible trace. For `sync-m
 jq -n --arg cwd "$PWD" '{cwd: $cwd}' | bash ~/.claude/hooks/sync-main.sh --branch
 ```
 
-It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in the `claude-branch-sync` folder of the temp directory; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
+It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in `~/.claude/hook-state/branch-sync/`; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
 
 ## 7. Keeping this file true
 
