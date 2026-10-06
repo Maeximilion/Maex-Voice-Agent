@@ -419,6 +419,12 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         removal, addition = _split_addition(text)
         if addition is None:
             return Wish(text=text, kind="note")
+        if not _REMOVE & set(_words(removal)):
+            # "ohne statt Reis": the word in front of "statt" is the removal
+            # word itself, so nothing left out is named and the addition would
+            # be the same text again (endless recursion). Not understood, and
+            # never a free note.
+            return Wish(text=text, kind="unknown")
         return classify_wish(addition, groups).model_copy(update={"note": removal})
     addition, removal = _split_removal(text)
     if removal is not None:

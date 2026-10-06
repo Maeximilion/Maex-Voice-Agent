@@ -4,15 +4,19 @@ Das ist der Durchstich ohne Telefon (docs/11 §sim): Transkript -> Agent -> Fach
 -> DB. Geprueft wird der Datenbankzustand, nicht der Text des Agenten (docs/08 §3).
 """
 
+import logging
 import random
 import uuid
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import httpx
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent.llm import ChatCompletionsLLM
+from api.config import settings
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 from sim.replay import customer_lines, load_case, replay
@@ -269,3 +273,158 @@ def test_tisch_bestellen_bleibt_eine_reservierung(session, tenant):
         select(Reservation).where(Reservation.call_id == call.call_id)
     ).one()
     assert reservierung.status == "confirmed"
+
+
+# --- Model, tokens and cost in the call log (T-2.4) -----------------------------
+
+
+def model_answering(content, usage):
+    """A real model client whose server always gives the same recorded answer."""
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": content}}], "usage": usage},
+        )
+
+    return ChatCompletionsLLM(
+        "http://model.test/v1", "test-model", transport=httpx.MockTransport(handler)
+    )
+
+
+def usage_lines(caplog):
+    return [r.extra for r in caplog.records if r.getMessage() == "model usage"]
+
+
+def test_call_with_a_model_logs_model_tokens_and_cost(
+    session, tenant, monkeypatch, caplog
+):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    llm = model_answering(
+        '{"say": "Für wie viele Personen?"}',
+        {"prompt_tokens": 9000, "completion_tokens": 400},
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+    call.say("Guten Tag, einen Tisch bitte.")
+    call.say("Morgen Abend.")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model == "test-model"
+    # 18000 x 300 + 800 x 1500 = 6.6 million, per million tokens: 6.6 cents, up.
+    assert row.cost_cents == 7
+    assert usage_lines(caplog) == [
+        {
+            "call_id": str(call.call_id),
+            "model": "test-model",
+            "requests": 2,
+            "prompt_tokens": 18000,
+            "completion_tokens": 800,
+            "unmetered": 0,
+            "cost_cents": 7,
+        }
+    ]
+
+
+def test_finishing_a_call_twice_logs_its_usage_once(session, tenant, caplog):
+    """A second `finish` changes nothing in the call log (`end_call` is
+    idempotent); a second log line would double the call's tokens for anyone
+    who adds the lines up (Codex PR #211, P2)."""
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+    call.say("Hallo")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        first = call.finish()
+        second = call.finish()
+
+    assert second == first
+    assert len(usage_lines(caplog)) == 1
+
+
+def test_call_with_an_unmetered_answer_logs_no_cost(
+    session, tenant, monkeypatch, caplog
+):
+    """Prices are set, but the server sent no token numbers: the cost of the
+    call is unknown, not 0 (Codex PR #211, P1)."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    call = SimCall(
+        session, tenant, llm=model_answering('{"say": "Gern."}', {}), now=NOW
+    )
+    call.say("Hallo")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model == "test-model"
+    assert row.cost_cents is None
+    (line,) = usage_lines(caplog)
+    assert line["unmetered"] == 1
+    assert line["cost_cents"] is None
+
+
+def test_call_that_never_asked_its_model_logs_no_model(
+    session, tenant, monkeypatch, caplog
+):
+    """The caller hangs up before the first sentence: the call log must not
+    claim that a model ran (Codex PR #211, P2)."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 5, "completion_tokens": 1}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model is None
+    assert row.cost_cents is None
+    assert usage_lines(caplog) == []
+
+
+def test_call_with_a_model_without_prices_logs_tokens_and_no_cost(
+    session, tenant, monkeypatch, caplog
+):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", None)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", None)
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+    call.say("Hallo")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model == "test-model"
+    assert row.cost_cents is None
+    (line,) = usage_lines(caplog)
+    assert line["prompt_tokens"] == 500
+    assert line["cost_cents"] is None
+
+
+def test_call_on_the_scripted_stand_in_logs_no_model_and_no_cost(
+    session, tenant, monkeypatch, caplog
+):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    call = SimCall(session, tenant, now=NOW)
+    call.say("Guten Tag")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model is None
+    assert row.cost_cents is None
+    assert usage_lines(caplog) == []

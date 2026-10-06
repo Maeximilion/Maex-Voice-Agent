@@ -5,20 +5,22 @@ kommen. Alles andere - Anruf-Zeile, Gesprächszustand, Tool-Protokoll, Abschluss
 ist identisch und steht deshalb hier, statt zweimal.
 """
 
+import logging
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMClient
+from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome
 from api.agent.prompt import build_system_prompt
 from api.agent.state import initial_state
 from api.core.errors import NotFound
+from api.core.logging import get_logger, log
 from api.core.time import utcnow
 from api.domain.calls import end_call, start_call
 from api.domain.menu.items import active_numbers
@@ -26,6 +28,8 @@ from api.models import Call, Tenant
 from api.schemas.calls import CallEnded, EndCallRequest, StartCallRequest
 from sim.scripted_llm import ScriptedLLM
 from sim.scripted_order import MenuNumbers
+
+logger = get_logger("sim.session")
 
 
 @dataclass
@@ -96,18 +100,16 @@ class SimCall:
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
-        self._loop = ConversationLoop(
-            session,
-            llm
-            or ScriptedLLM(
-                now=self._now,
-                timezone=tenant.timezone,
-                menu=lambda: menu_numbers(session, tenant.id),
-            ),
-            build_system_prompt(),
+        self._llm = llm or ScriptedLLM(
             now=self._now,
+            timezone=tenant.timezone,
+            menu=lambda: menu_numbers(session, tenant.id),
+        )
+        self._loop = ConversationLoop(
+            session, self._llm, build_system_prompt(), now=self._now
         )
         self._logged = 0
+        self._usage_logged = False
 
     def say(self, text: str) -> Turn:
         result = self._loop.run_turn(self.state, text)
@@ -124,6 +126,27 @@ class SimCall:
         in jedem Anruf aus dem Terminal 0 Sekunden und die Gespraechsdauer waere als
         Kennzahl wertlos (Codex-Review PR #104, P2)."""
         outcome, intent = call_outcome(self.state)
+        # Only a real model counts tokens (`ChatCompletionsLLM.usage`); a
+        # stand-in has none, and its call gets neither a model nor a cost.
+        usage: Usage = getattr(self._llm, "usage", None) or Usage()
+        if not usage.requests:
+            # The caller hung up before the model was asked once: the call log
+            # must not name a model that never ran (Codex PR #211, P2).
+            usage = Usage()
+        cost = cost_cents(usage)
+        # Once per call: a repeated `finish` writes nothing (`end_call` is
+        # idempotent), and a second line would double the tokens of this call
+        # for whoever adds the lines up (Codex PR #211, P2).
+        if usage.model is not None and not self._usage_logged:
+            self._usage_logged = True
+            log(
+                logger,
+                logging.INFO,
+                "model usage",
+                call_id=str(self.call_id),
+                **asdict(usage),
+                cost_cents=cost,
+            )
         return end_call(
             self._session,
             EndCallRequest(
@@ -131,6 +154,8 @@ class SimCall:
                 tenant_id=self._tenant.id,
                 outcome=outcome,
                 intent=intent,
+                cost_cents=cost,
+                model=usage.model,
             ),
             now=self._fixed_now or utcnow(),
         )

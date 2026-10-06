@@ -57,6 +57,8 @@ class ToolResult:
     data: dict[str, Any] = field(default_factory=dict)
     say: str | None = None
     error_code: str | None = None
+    # Why the core refused a call (guards.py). For the model, never spoken.
+    hint: str | None = None
 
 
 def _status(
@@ -386,7 +388,6 @@ def dispatch(
             data=result.model_dump(mode="json"),
             say=getattr(result, "say", None),
         )
-        error_code: str | None = None
     except AppError as exc:
         # Like `get_db` in `api/db.py` on an HTTP error: here the session lives
         # for the whole call instead of being fresh per tool call, and a
@@ -394,12 +395,36 @@ def dispatch(
         # being carried into the next tool call.
         session.rollback()
         outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code)
-        error_code = exc.code
 
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
+    _log_call(session, call_id, tenant_id, name, duration_ms, outcome)
+    return outcome
+
+
+def log_refused(
+    session: Session,
+    call_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    name: str,
+    refused: ToolResult,
+) -> None:
+    """A call the core refused before it reached its tool (guards.py) stands in
+    `calls.tool_calls` like any other failed call: the log shows what the model
+    tried, not only what was let through."""
+    _log_call(session, call_id, tenant_id, name, 0.0, refused)
+
+
+def _log_call(
+    session: Session,
+    call_id: uuid.UUID,
+    tenant_id: uuid.UUID,
+    name: str,
+    duration_ms: float,
+    outcome: ToolResult,
+) -> None:
     entry = {"name": name, "duration_ms": duration_ms, "ok": outcome.ok}
-    if error_code:
-        entry["error_code"] = error_code
+    if outcome.error_code:
+        entry["error_code"] = outcome.error_code
     try:
         append_tool_call(session, str(call_id), str(tenant_id), entry)
     except Exception:  # noqa: BLE001 - logging must never break the answer
@@ -409,4 +434,3 @@ def dispatch(
             "tool_calls nicht geschrieben",
             call_id=str(call_id),
         )
-    return outcome
