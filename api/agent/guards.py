@@ -72,8 +72,9 @@ def note_said(state: ConversationState, say: str) -> None:
 
 def _named(heard: str, number: str, name: str) -> bool:
     """A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
-    dish. Half a name names none either."""
-    if name and name in heard:
+    dish. Half a name names none either, and a name counts only as whole
+    words: "Reis" is not named by "Preis" or "Reisnudeln" (Codex PR #222)."""
+    if name and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", heard):
         return True
     return bool(number) and (
         re.search(rf"\b(nummer|nr\.?)\s*{re.escape(number)}(?!\w)", heard) is not None

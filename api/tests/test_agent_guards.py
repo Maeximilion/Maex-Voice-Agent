@@ -17,6 +17,7 @@ from api.agent.state import ConversationState, apply_state_patch, apply_tool_res
 ENTE = str(uuid.uuid4())
 PHO = str(uuid.uuid4())
 SUPPE = str(uuid.uuid4())
+REIS = str(uuid.uuid4())
 
 
 def new_state(**fields):
@@ -35,6 +36,7 @@ def confirm(entity_id, entity="reservation"):
 
 
 CARD = {
+    REIS: ("63", "Reis"),
     ENTE: ("47", "Ente knusprig"),
     PHO: ("13", "Pho Bo"),
     SUPPE: ("12", "Wan-Tan-Suppe"),
@@ -289,6 +291,50 @@ def test_number_or_word_in_passing_names_no_candidate(said):
 
     assert refusal(state, answer, "ja", draft(ENTE)) is not None
     assert refusal(state, answer, "ja", draft(PHO)) is not None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Welchen Preis möchten Sie wissen?",  # the case from the review
+        "Die Reise dauert zwanzig Minuten.",
+        "Wir haben auch Reisnudeln.",
+        "Milchreis ist heute aus.",
+    ],
+)
+def test_dish_name_inside_another_word_names_no_candidate(said):
+    """From the review of PR #222: "reis" stands in "Preis". A name counts only
+    as whole words, or a sentence about something else makes a dish usable
+    that the guest never heard."""
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(REIS), hit(PHO)]})
+    note_said(state, said)
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "ja", draft(REIS)) is not None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Meinen Sie Reis?",
+        "Reis, richtig?",
+        "Meinen Sie „Reis“ oder Pho Bo?",
+        "Also REIS.",
+        "Reis",
+    ],
+)
+def test_dish_name_as_a_whole_word_names_the_candidate(said):
+    state = new_state()
+    begin_turn(state)
+    searched(state, {"match_type": "ambiguous", "results": [hit(REIS), hit(PHO)]})
+    note_said(state, said)
+
+    answer = begin_turn(state)
+
+    assert refusal(state, answer, "ja", draft(REIS)) is None
 
 
 def test_offer_spoken_a_turn_later_still_counts():
