@@ -5,7 +5,9 @@ checked out in another one. On 2026-10-06 a `main` with staged files sat eight
 commits behind and no session said so: the hook only looked at the worktree it was
 started from. Every test here builds a bare origin, a clone that has `main` checked
 out and a second worktree on a feature branch, and runs the hook from that second
-worktree. The hook is bash; without bash the tests are skipped locally and fail in CI.
+worktree. They need bash and git. The api container has no git and does not mount
+`.claude/hooks`, so under `make test` they are skipped; on a full checkout with both
+tools they run, and in CI a missing tool is a failure.
 """
 
 import os
@@ -23,10 +25,11 @@ HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "sync_main.sh
 
 @pytest.fixture
 def repos(tmp_path):
-    if BASH is None:
+    missing = "bash" if BASH is None else None if shutil.which("git") else "git"
+    if missing:
         if os.environ.get("CI"):
-            pytest.fail("sync hook tests need bash")
-        pytest.skip("sync hook tests need bash")
+            pytest.fail(f"sync hook tests need {missing}")
+        pytest.skip(f"sync hook tests need {missing}, which the api container lacks")
 
     # No user or system git config: the result must not depend on the machine.
     empty_config = tmp_path / "gitconfig"
