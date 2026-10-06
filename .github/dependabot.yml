@@ -53,3 +53,10 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+    ignore:
+      # PostgreSQL stays on 16 (CLAUDE.md). A major bump is not an image tag change: a
+      # volume initialised by 16 does not start under 18, it needs a dump and restore
+      # (take a backup first). Minor and patch bumps still arrive.
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major
