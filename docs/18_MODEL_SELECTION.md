@@ -129,7 +129,14 @@ test answer is valid.
 
 - `mistral-small` does not fit next to the desktop's share of the GPU memory; the spilled part makes it five times slower than `qwen3:14b`. **The workbench uses `qwen3:14b`** (`LLM_MODEL=qwen3:14b` in `.env`); `mistral-small` stays usable for eval runs where time does not matter.
 - `mistral-small` filled `reserved_for` with an invented absolute date (`2024-07-20T19:00:00`) for "Samstag"; the test prompt gives no current date. `qwen3:14b` kept the guest's words. The real prompt carries the date; the evals have to show whether this happens there too.
-- WSL sees 31 GiB of the 64 GB RAM (WSL default: half). `--model qwen3:30b` needs more; raise `memory=` in `%UserProfile%\.wslconfig` first.
+- **WSL memory (keep for later):** WSL sees 31 GiB of the 64 GB RAM (WSL default: half). Enough for `qwen3:14b` and `mistral-small`. Only for `--model qwen3:30b` or larger models raise it first: on Windows create or edit `%UserProfile%\.wslconfig` with
+
+  ```ini
+  [wsl2]
+  memory=48GB
+  ```
+
+  then run `wsl --shutdown` in PowerShell, open Ubuntu again and check with `free -g` (total about 47). The rest stays for Windows.
 
 ### Handover for a Claude Code session in Maxi's Ubuntu terminal
 
@@ -185,7 +192,7 @@ signals a new call; proposed as a work package, not part of T-2.4.
 ## 8. Next steps
 
 1. Maxi runs §5 on the workbench (handover above) and reports the GPU numbers.
-2. T-2.4 part 3: `--model` in sim and eval runner, send `reasoning_effort: "none"` (setting, default empty), tool reference in the prompt.
+2. T-2.4 part 3: `--model` in sim and eval runner, send `reasoning_effort: "none"` (setting, default empty), tool reference in the prompt. **Required:** `.env.example` documents every `LLM_*` setting including the reasoning one, with `qwen3:14b` as the workbench example (to-do in `docs/01_STATUS.md`, What's next item 5).
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. C2: "the platform can call our own model endpoint" as a criterion (D7); concurrency limits and per-channel pricing of the platforms.
