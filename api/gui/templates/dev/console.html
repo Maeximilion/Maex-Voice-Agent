@@ -1,0 +1,13 @@
+{# Simulator console (T-2.5): the text phone of sim/ in the browser, ENV=dev only.
+   Not for the team, so no tablet rules apply. #}
+{% extends "base.html" %}
+{% block title %}Simulator{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+{% block main %}
+<h1>Simulator</h1>
+<p class="muted">Text-Telefon: Anrufe landen in derselben Datenbank wie echte.</p>
+<div id="anruf">
+  <button type="button" class="primary"
+          hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
+</div>
+{% endblock %}

@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.9
+> Status: 07.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.10
 
 ---
 
 ## Summary
+
+**Simulator console in the browser (T-2.5, 07.10.2026).** `/gui/dev/console` is the text phone of `sim/` as a page: a button starts a call, a field sends what the guest says, and each turn shows the guest sentence, the tool calls with their duration, the agent's answer and the state, as `sim.cli` prints them. It writes into the same database, so a booking made there appears on the tablet. The router (`api/gui/dev.py`) is mounted only when `ENV=dev`; in any other environment the path is a 404. Open calls live in the API process (one worker), a restart drops them and leaves the call row open; hanging up writes `calls.outcome` through `SimCall.finish`. Checked with 8 new tests (conversation to call log, tool calls with duration, empty sentence, unknown call, missing tenant, `HX-Request` required, absent outside dev); not yet clicked through in a browser. No migration.
 
 **Model selection (06.10.2026): shortlist for operation, local test model, setup script; the final model is measured in T-5.3.** `docs/18_MODEL_SELECTION.md` derives the requirements from the hard rules (German, one JSON object per turn, rule following, model turn about 0.6 to 0.8 s, EU processing with a DPA) and estimates cost per call: about 15,000 input and 1,000 output tokens per call (assumption) cost 0.3 ct (Mistral Small) to 2 ct (Claude Haiku 4.5); the voice platform's minutes dominate the bill, so evals, latency and the EU path decide, not the token price. Maxi chose: shortlist Mistral Small (favourite, EU, open weights so the workbench runs the same family), Claude Haiku 4.5 (quality reference, needs a second client class) and Gemini Flash via Vertex EU; locally `qwen3:14b` with `mistral-small` for comparison on the RTX 4080 (16 GB, 64 GB RAM; measured on the workbench, see item 10 of What's next); 1 to 3 agents as schedule plus overflow (weekdays 1, Friday to Sunday evenings up to 3, overflow rings the team), built after D1 because the Fritz!Box allows one AI call today. `scripts/setup_local_llm.sh` installs Ollama on Ubuntu or WSL, picks the model by GPU memory, pulls it and checks one invented order line against the answer contract. Run in the cloud container (CPU, `qwen3:4b`): **Qwen3 over `/v1/chat/completions` reasons until the 600-token limit and answers empty unless the request carries `"reasoning_effort": "none"`** (87 s and no JSON without it, 12 s cold with it); the core has to send it (T-2.4 part 3). Both small models tried answered with a sentence and a tool call at once, which the contract rejects. The Ollama installer needs `zstd` on a minimal Ubuntu; the script installs it. GPU numbers come from Maxi's run (handover in docs/18 §5).
 
@@ -388,6 +390,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.39.10 · 07.10.2026:** T-2.5 done: simulator console in the browser (ENV=dev only)
 - **v1.39.9 · 06.10.2026:** PR #230: the seven P2 recorded for the user-level hooks are fixed after all (Maxi: fix everything), the open point is gone
 - **v1.39.8 · 06.10.2026:** PR #230: Claude Code setup doc (docs/19), five P2 of the third review round recorded as open points
 - **v1.39.7 · 06.10.2026:** Review PR #218: setup script uses OLLAMA_URL for every ollama command and checks answers with the core's contract
