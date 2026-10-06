@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key: str = ""
     llm_timeout_seconds: float = 15.0
+    # Upper limit for one answer. A turn is a sentence or a tool call; a model
+    # that reasons before it answers needs more.
+    llm_max_output_tokens: int = 600
     # Price of the model in cents per million tokens. Without both, the cost
     # of a call is unknown and stays empty; 0 is a price (a local model).
     llm_input_cents_per_mtok: int | None = None

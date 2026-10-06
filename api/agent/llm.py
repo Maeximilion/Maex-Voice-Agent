@@ -146,11 +146,23 @@ def parse_turn(content: str) -> LLMTurn:
         return LLMTurn(
             say=(envelope.say or "").strip() or None,
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
-            state_patch=envelope.slots or None,
+            state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,
         )
     except ValueError as exc:  # pydantic's ValidationError is one, LLMTurn raises one
         raise LLMError("model answer outside the contract") from exc
+
+
+def _named(slots: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Only what the guest named. A model that fills fields it has nothing for
+    (`"phone": null`, `"guest_name": ""`) would erase what is already known,
+    the caller ID first (Codex PR #208, P2). 0 and false are answers."""
+    named = {
+        key: value
+        for key, value in (slots or {}).items()
+        if value is not None and not (isinstance(value, str) and not value.strip())
+    }
+    return named or None
 
 
 class ChatCompletionsLLM:
@@ -202,6 +214,9 @@ class ChatCompletionsLLM:
                 {"role": "user", "content": f"Zustand: {state}\nEingabe: {input_text}"},
             ],
             "response_format": {"type": "json_object"},
+            # A model that runs on is cut off here instead of being read to the
+            # guest; the cut answer is no valid JSON and ends as `LLMError`.
+            "max_tokens": settings.llm_max_output_tokens,
             # The same input gives the same turn, as far as the model allows:
             # an eval that is red must be red again on the next run.
             "temperature": 0,

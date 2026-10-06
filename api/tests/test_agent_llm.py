@@ -118,6 +118,38 @@ def test_parse_turn_reads_a_tool_call_with_slots_and_a_failed_field():
     assert turn.understanding_failure == "guest_name"
 
 
+def test_parse_turn_drops_empty_slot_values():
+    """A model that fills fields it has nothing for must not erase what is
+    known: `phone: null` would wipe the caller ID (Codex PR #208, P2)."""
+    turn = parse_turn(
+        json.dumps(
+            {
+                "say": "Auf welchen Namen?",
+                "slots": {
+                    "phone": None,
+                    "guest_name": "",
+                    "note": " ",
+                    "party_size": 4,
+                },
+            }
+        )
+    )
+
+    assert turn.state_patch == {"party_size": 4}
+
+
+def test_parse_turn_with_only_empty_slot_values_has_no_patch():
+    turn = parse_turn('{"say": "Gern.", "slots": {"phone": null, "guest_name": ""}}')
+
+    assert turn.state_patch is None
+
+
+def test_parse_turn_keeps_a_zero_and_a_false_slot_value():
+    turn = parse_turn('{"say": "Gern.", "slots": {"children": 0, "delivery": false}}')
+
+    assert turn.state_patch == {"children": 0, "delivery": False}
+
+
 def test_parse_turn_takes_a_tool_call_without_args():
     assert parse_turn('{"tool": "get_service_status"}').tool_call == ToolCall(
         name="get_service_status"
@@ -160,6 +192,9 @@ def test_client_sends_prompt_state_and_input_and_returns_the_turn():
     body = json.loads(request.content)
     assert body["model"] == "test-model"
     assert body["response_format"] == {"type": "json_object"}
+    # A turn is a sentence or two: a model that runs on is cut off, and the cut
+    # answer is no valid turn (Codex PR #208, P2).
+    assert body["max_tokens"] == settings.llm_max_output_tokens
     system, user = body["messages"]
     assert system["role"] == "system"
     assert system["content"].startswith(SYSTEM)
