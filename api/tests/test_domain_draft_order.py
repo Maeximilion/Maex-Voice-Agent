@@ -271,8 +271,10 @@ def test_audit_haelt_keine_personendaten(session, tenant_id):
     # turns up by chance in the random order and call ids of the payload (main
     # CI run 872, "...5286b0a55558").
     assert "555 1234" not in text and "5551234" not in text
-    # And in any other spacing: the subscriber digits against the payload's digits.
-    assert "7215551234" not in "".join(filter(str.isdigit, text))
+    # And in any other spacing: the digits of the number as sent, without the
+    # trunk zero, against the digits of the payload.
+    number = "".join(filter(str.isdigit, req.customer.phone)).lstrip("0")
+    assert number not in "".join(filter(str.isdigit, text))
     assert draft_order(session, req, now=NOW) == first
 
 
