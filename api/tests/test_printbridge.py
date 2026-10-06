@@ -70,7 +70,8 @@ def test_bon_enthaelt_was_die_kueche_braucht():
     assert "Gedruckt 18:02" in text
     assert "KORREKTUR" not in text
     assert "5551234" not in text  # die Kueche braucht keine Telefonnummer
-    assert TEST_NOTICE not in text  # a real slip carries no test notice
+    assert "WhatsApp" not in text  # a real slip carries no test notice
+    assert b"\x1ba" not in data  # and nothing on it is centered
 
 
 def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
@@ -431,11 +432,17 @@ def test_probebon_ohne_server(monkeypatch):
     assert main(["--test"]) == 0
     assert "Probebon Umlaute äöü ß" in sent[0].decode("cp858")
     assert SAMPLE["customer_name"] in sent[0].decode("cp858")
-    # The test slip asks for a photo, above everything and as the last line.
+    # The test slip asks for a photo, above everything and as the last lines:
+    # centered, big and inverted like the banner, wrapped to half the width.
     text = sent[0].decode("cp858")
-    assert text.count(TEST_NOTICE) == 2
-    assert text.index(TEST_NOTICE) < text.index("NICHT IN KASSE")
-    assert text.rindex(TEST_NOTICE) > text.index("Gedruckt")
+    first, last = "Bitte an Maxi über", "WhatsApp senden"
+    assert f"{first} {last}" == TEST_NOTICE
+    for part in (first, last):
+        assert text.count(f"\x1b!\x30\x1dB\x01 {part.center(len(first))} \x1dB\x00") == 2
+    assert text.index(first) < text.index("NICHT IN KASSE")
+    assert text.rindex(first) > text.index("Gedruckt")
+    assert text.count("\x1ba\x01") == text.count("\x1ba\x00") == 2  # centered, then left
+    assert sent[0].endswith(b"\x1ba\x00\x1bd\x04" + CUT)
     assert json.dumps(SAMPLE)  # Probebon ist reines JSON wie ein echter Bon
     assert uuid.UUID(SAMPLE["order_id"])
 

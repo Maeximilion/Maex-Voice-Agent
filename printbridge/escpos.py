@@ -22,6 +22,7 @@ ENCODING = "cp858"
 BOLD_ON, BOLD_OFF = ESC + b"E\x01", ESC + b"E\x00"
 BIG_ON, BIG_OFF = ESC + b"!\x30", ESC + b"!\x00"  # doppelt hoch und breit
 INVERT_ON, INVERT_OFF = GS + b"B\x01", GS + b"B\x00"
+CENTER, LEFT = ESC + b"a\x01", ESC + b"a\x00"
 FEED = ESC + b"d\x04"
 CUT = GS + b"V\x42\x00"  # vorschieben und teilweise schneiden
 
@@ -85,6 +86,23 @@ def _tall(lines: bytes) -> bytes:
     return lines.replace(b"\n", b"\n\n")
 
 
+def _notice(text: str, width: int) -> list[bytes]:
+    """Test slip only: a centered block, big and inverted like the banner.
+
+    Every line is padded to the longest one, so the black bars form one block.
+    """
+    lines = textwrap.wrap(printable(text), width=width // 2 - 2)
+    if not lines:
+        return []
+    block = max(len(line) for line in lines)
+    out = [CENTER]
+    for line in lines:
+        bar = f" {line.center(block)} ".encode(ENCODING)
+        out += [BIG_ON, INVERT_ON, bar, INVERT_OFF, BIG_OFF, _tall(b"\n")]
+    out.append(LEFT)
+    return out
+
+
 def _euro(cents: int | None) -> str:
     cents = cents or 0
     return f"{cents // 100},{cents % 100:02d} EUR"
@@ -121,9 +139,9 @@ def render(
     Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
     """
     out = [INIT, CODEPAGE]
-    # Test slip only: one bold line above everything and again as the last line
+    # Test slip only: the same block above everything and again as the last lines
     # before the cut, so it is read whichever end of the slip is picked up.
-    notice_lines = [BOLD_ON, _wrapped(notice, width), BOLD_OFF] if notice else []
+    notice_lines = _notice(notice, width) if notice else []
     out += notice_lines
     # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen die
     # Steuerzeichen am Anfang der naechsten Zeile.
