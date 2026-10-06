@@ -75,6 +75,16 @@ def _wrapped(text: str, width: int, indent: str = "") -> bytes:
     return b"".join(_line(line) for line in lines)
 
 
+def _tall(lines: bytes) -> bytes:
+    """Line feeds for double-height lines.
+
+    The TM-T20II advances one normal line per newline whatever the character
+    height, so the line after a double-height one is printed into its lower
+    half (paper check 06.10.2026). A second newline gives it the room.
+    """
+    return lines.replace(b"\n", b"\n\n")
+
+
 def _euro(cents: int | None) -> str:
     cents = cents or 0
     return f"{cents // 100},{cents % 100:02d} EUR"
@@ -115,20 +125,25 @@ def render(
     # before the cut, so it is read whichever end of the slip is picked up.
     notice_lines = [BOLD_ON, _wrapped(notice, width), BOLD_OFF] if notice else []
     out += notice_lines
-    # End the line while double height is still on: the TM-T20II sizes the line
-    # feed by the mode in effect at the newline, otherwise the next line prints
-    # into the banner (paper check 06.10.2026).
+    # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen die
+    # Steuerzeichen am Anfang der naechsten Zeile.
     banner = printable(" NICHT IN KASSE ").encode(ENCODING)
-    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, b"\n", BIG_OFF]
+    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, BIG_OFF, _tall(b"\n")]
     out.append(_line("Bitte in die Kasse eingeben."))
     reason = ticket.get("correction_reason")
     if reason:
-        out += [BIG_ON, INVERT_ON, _line(" KORREKTUR "), INVERT_OFF, BIG_OFF]
+        out += [
+            BIG_ON,
+            INVERT_ON,
+            _tall(_line(" KORREKTUR ")),
+            INVERT_OFF,
+            BIG_OFF,
+        ]
         out.append(_line(f"Grund: {REASONS.get(reason, reason)}"))
         out.append(_line("Ersetzt den vorigen Bon dieser Bestellung."))
     kind = TYPES.get(ticket.get("type") or "", str(ticket.get("type") or "").upper())
     code = ticket.get("pickup_code") or ""
-    out += [BIG_ON, _wrapped(f"{kind} {code}".strip(), width // 2), BIG_OFF]
+    out += [BIG_ON, _tall(_wrapped(f"{kind} {code}".strip(), width // 2)), BIG_OFF]
     # Der Server liefert die Uhrzeiten in der Ortszeit des Betriebs mit; nur
     # ohne sie (Probebon) rechnet die Bruecke mit der Uhr ihres Rechners.
     ready = ticket.get("ready_time") or _clock(ticket.get("ready_at"))

@@ -21,7 +21,7 @@ from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
 from printbridge.bridge import SAMPLE, TEST_NOTICE, main, run_once
 from printbridge.client import Server, ServerError
-from printbridge.escpos import BIG_OFF, CUT, render
+from printbridge.escpos import CUT, render
 from printbridge.state import PrintedLog
 from printbridge.transport import (
     PrinterError,
@@ -86,13 +86,16 @@ def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
     )
 
 
-def test_banner_line_ends_while_double_height_is_on():
-    """The TM-T20II sizes a line feed by the print mode in effect when the line
-    ends. With double height switched off before the newline, the next line was
-    printed into the banner (paper check 06.10.2026)."""
-    data = render(TICKET)
-    start = data.index(b"NICHT IN KASSE")
-    assert data.index(b"\n", start) < data.index(BIG_OFF, start)
+def test_double_height_lines_get_a_second_line_feed():
+    """The TM-T20II advances one normal line per newline whatever the character
+    height: the line after the banner was printed into its lower half (paper
+    check 06.10.2026). Moving the newline in front of BIG_OFF changed nothing."""
+    ticket = {**TICKET, "revision": 2, "correction_reason": "wrong_quantity"}
+    data = render(ticket)
+    for tall in (b"NICHT IN KASSE", b"KORREKTUR", b"ABHOLUNG A17"):
+        end = data.index(b"\n", data.index(tall))
+        assert data[end : end + 2] == b"\n\n", tall
+    assert data.count(b"\n\n") == 3  # normal lines keep their single feed
 
 
 def test_korrektur_steht_oben_mit_grund_und_stand():
