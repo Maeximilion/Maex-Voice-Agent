@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.4
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.5
 
 ---
 
@@ -380,6 +380,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.39.5 · 06.10.2026:** CLAUDE.md §6: Claude merges every PR with green CI and a clean review on the head commit, except xhigh triggers (Maxi decides those)
 - **v1.39.4 · 06.10.2026:** Reasoning setting handed to PR #208 by comment; CLAUDE.md: findings for another open PR go there as a comment
 - **v1.39.3 · 06.10.2026:** To-do for T-2.4: LLM_* lines in .env.example; WSL memory how-to in docs/18 §5
 - **v1.39.2 · 06.10.2026:** Local tier for 12 to 16 GB swapped to qwen3:14b after the workbench measurement; duplicate item number in What's next fixed
