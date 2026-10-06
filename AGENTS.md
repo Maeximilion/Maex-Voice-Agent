@@ -17,10 +17,13 @@ How to review:
 
 ### Security and secrets (this repository is public)
 
-- A real operator, company, location or provider name, a real phone number or address, a credential,
-  token, call recording, transcript or customer datum anywhere (file, test, fixture, doc, commit
-  message, PR text) is P0. Names are placeholders: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`,
-  `<Kassensystem>`, `<Kassenanbieter>`, `example.com`.
+- The real name of the pilot restaurant, of its company or location, or of its telephony and
+  cash-register providers, a real phone number or address, a credential, token, call recording,
+  transcript or customer datum anywhere (file, test, fixture, doc, commit message, PR text) is P0.
+  These names are placeholders: `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`,
+  `<Kassenanbieter>`, `example.com`.
+- Names of software, tools and vendors the project uses or documents (GitHub, OpenAI, Anthropic,
+  n8n, PostgreSQL, Ollama) are not restricted and are not findings.
 - Secrets come from the environment only; `.env` is never committed.
 - A route under `/v1/tools` or `/v1/kitchen` that answers without its token check (`require_token` with `AGENT_API_TOKEN`, `require_kitchen_token`) is P1. `/health` is open by design.
 
