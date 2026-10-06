@@ -40,6 +40,14 @@ SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
+# The last resort of `_handoff`: the team is not reachable and there is no number
+# for a callback. Every sentence above promises the team; here nobody takes
+# over, so the guest hears exactly that (Codex PR #208, P1). Draft wording,
+# checked with the announcement texts of docs/05 §6.
+SAY_NOBODY_REACHABLE = (
+    "Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant "
+    "niemanden. Bitte rufen Sie später noch einmal an."
+)
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
 
@@ -180,6 +188,8 @@ class ConversationLoop:
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
         einen Rückruf anlegen. Ohne bekannte Rufnummer bleibt nur der ehrliche
         Fallback-Satz — raten (CLAUDE.md §2 Regel 2) ist keine Option.
+        `fallback_say` is spoken only when a transfer or a callback really
+        happened and its tool gave no sentence; the last resort has its own.
 
         `detail` ist der auslösende Kundenzug: ohne ihn bekäme das Team bei einer
         Vorab-Eskalation (kein Modell-Aufruf) nur eine feste Floskel statt der
@@ -214,7 +224,7 @@ class ConversationLoop:
                 )
 
         state.stage = "ended"
-        return TurnResult(state=state, say=[fallback_say], ended=True)
+        return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
 
 
 def _handoff_summary(reason: str, detail: str | None) -> str:

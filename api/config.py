@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     llm_model: str = ""
     llm_api_key: str = ""
     llm_timeout_seconds: float = 15.0
+    # Upper limit for one answer. A turn is a sentence or a tool call; a model
+    # that reasons before it answers needs more.
+    llm_max_output_tokens: int = 600
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
