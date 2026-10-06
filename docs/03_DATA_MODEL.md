@@ -104,7 +104,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | intent | TEXT | `reservation` / `pickup` / `delivery` / `info` / `complaint` / `unknown` |
 | outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error` |
 | transfer_reason | TEXT NULL | |
-| cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran or a price is missing, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
+| cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
 | tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
 | delete_after | DATE | Löschfrist |

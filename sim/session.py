@@ -149,6 +149,10 @@ class SimCall:
         # Only a real model counts tokens (`ChatCompletionsLLM.usage`); a
         # stand-in has none, and its call gets neither a model nor a cost.
         usage: Usage = getattr(self._llm, "usage", None) or Usage()
+        if not usage.requests:
+            # The caller hung up before the model was asked once: the call log
+            # must not name a model that never ran (Codex PR #211, P2).
+            usage = Usage()
         cost = cost_cents(usage)
         if usage.model is not None:
             log(

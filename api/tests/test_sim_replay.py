@@ -323,9 +323,54 @@ def test_call_with_a_model_logs_model_tokens_and_cost(
             "requests": 2,
             "prompt_tokens": 18000,
             "completion_tokens": 800,
+            "unmetered": 0,
             "cost_cents": 7,
         }
     ]
+
+
+def test_call_with_an_unmetered_answer_logs_no_cost(
+    session, tenant, monkeypatch, caplog
+):
+    """Prices are set, but the server sent no token numbers: the cost of the
+    call is unknown, not 0 (Codex PR #211, P1)."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    call = SimCall(
+        session, tenant, llm=model_answering('{"say": "Gern."}', {}), now=NOW
+    )
+    call.say("Hallo")
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model == "test-model"
+    assert row.cost_cents is None
+    (line,) = usage_lines(caplog)
+    assert line["unmetered"] == 1
+    assert line["cost_cents"] is None
+
+
+def test_call_that_never_asked_its_model_logs_no_model(
+    session, tenant, monkeypatch, caplog
+):
+    """The caller hangs up before the first sentence: the call log must not
+    claim that a model ran (Codex PR #211, P2)."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 5, "completion_tokens": 1}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        call.finish()
+
+    row = session.get(Call, call.call_id)
+    assert row.model is None
+    assert row.cost_cents is None
+    assert usage_lines(caplog) == []
 
 
 def test_call_with_a_model_without_prices_logs_tokens_and_no_cost(

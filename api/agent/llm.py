@@ -100,18 +100,22 @@ Die Eingabe ist entweder das, was der Gast gesagt hat, oder das Ergebnis deines 
 class Usage:
     """What one client has used since it was created. One client serves one
     call, so this is the usage of that call. `model` is None for a stand-in
-    that is no model. A failed request counts in `requests` and adds no tokens:
-    what a provider bills for it is unknown."""
+    that is no model. `unmetered` counts the requests whose tokens are unknown:
+    a failed one, since what a provider bills for it is open, and an answer
+    without usable token numbers. The token sums cover the other requests."""
 
     model: str | None = None
     requests: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    unmetered: int = 0
 
 
 def cost_cents(usage: Usage) -> int | None:
     """Model cost of a call in whole cents, or None when it is unknown: no
-    model, or a price missing in the settings. Unknown is never 0.
+    model, no request, a price missing in the settings, or one request whose
+    tokens are unknown - the sum is then a part, and a part priced as the whole
+    would understate the call (Codex PR #211, P1). Unknown is never 0.
 
     Rounded up, so a sum over calls never undercuts a budget.
     ponytail: whole cents per call overstate a cheap model (0.3 cents count as
@@ -120,6 +124,8 @@ def cost_cents(usage: Usage) -> int | None:
     price_in = settings.llm_input_cents_per_mtok
     price_out = settings.llm_output_cents_per_mtok
     if usage.model is None or price_in is None or price_out is None:
+        return None
+    if not usage.requests or usage.unmetered:
         return None
     total = usage.prompt_tokens * price_in + usage.completion_tokens * price_out
     return -(-total // 1_000_000)
@@ -221,7 +227,12 @@ class ChatCompletionsLLM:
             # an eval that is red must be red again on the next run.
             "temperature": 0,
         }
-        self.usage = replace(self.usage, requests=self.usage.requests + 1)
+        # Unmetered until the answer brings its token numbers (`_count`).
+        self.usage = replace(
+            self.usage,
+            requests=self.usage.requests + 1,
+            unmetered=self.usage.unmetered + 1,
+        )
         try:
             response = self._http.post("chat/completions", json=body)
             response.raise_for_status()
@@ -238,7 +249,7 @@ class ChatCompletionsLLM:
     def _count(self, payload: object) -> None:
         """Adds the tokens the server reports. Both numbers or nothing: half a
         count would read like a whole one. Missing or odd numbers add nothing,
-        they are never estimated."""
+        they are never estimated, and the request stays unmetered."""
         reported = payload.get("usage") if isinstance(payload, dict) else None
         if not isinstance(reported, dict):
             return
@@ -249,4 +260,5 @@ class ChatCompletionsLLM:
             self.usage,
             prompt_tokens=self.usage.prompt_tokens + tokens[0],
             completion_tokens=self.usage.completion_tokens + tokens[1],
+            unmetered=self.usage.unmetered - 1,
         )

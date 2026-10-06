@@ -1,5 +1,6 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -41,8 +42,8 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = 600
     # Price of the model in cents per million tokens. Without both, the cost
     # of a call is unknown and stays empty; 0 is a price (a local model).
-    llm_input_cents_per_mtok: int | None = None
-    llm_output_cents_per_mtok: int | None = None
+    llm_input_cents_per_mtok: int | None = Field(default=None, ge=0)
+    llm_output_cents_per_mtok: int | None = Field(default=None, ge=0)
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45

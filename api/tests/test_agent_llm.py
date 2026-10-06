@@ -4,6 +4,7 @@ import json
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from api.agent.llm import (
     OUTPUT_FORMAT,
@@ -16,7 +17,7 @@ from api.agent.llm import (
     cost_cents,
     parse_turn,
 )
-from api.config import settings
+from api.config import Settings, settings
 
 
 def test_turn_braucht_genau_eins_von_say_oder_tool_call():
@@ -306,7 +307,7 @@ def test_answer_without_usable_token_numbers_counts_as_a_request_only(usage):
     llm = client_with(handler)
 
     assert llm.next_turn(SYSTEM, STATE, "Hallo") == LLMTurn(say="Gern.")
-    assert llm.usage == Usage(model="test-model", requests=1)
+    assert llm.usage == Usage(model="test-model", requests=1, unmetered=1)
 
 
 def test_failed_request_counts_as_a_request_without_tokens():
@@ -315,7 +316,46 @@ def test_failed_request_counts_as_a_request_without_tokens():
     with pytest.raises(LLMError):
         llm.next_turn(SYSTEM, STATE, "Hallo")
 
-    assert llm.usage == Usage(model="test-model", requests=1)
+    assert llm.usage == Usage(model="test-model", requests=1, unmetered=1)
+
+
+def test_one_unmetered_request_makes_the_cost_of_the_call_unknown(monkeypatch):
+    """Tokens of one request are missing: the sum is a part, and a part priced
+    as the whole would be an understated cost in the call log (Codex PR #211,
+    P1). The metered tokens stay visible."""
+    prices(monkeypatch, 15, 60)
+    answers = iter([recorded('{"say": "Gern."}'), httpx.Response(500)])
+    llm = client_with(lambda request: next(answers))
+
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+    assert cost_cents(llm.usage) == 1
+    with pytest.raises(LLMError):
+        llm.next_turn(SYSTEM, STATE, "Einen Tisch bitte")
+
+    assert llm.usage == Usage(
+        model="test-model",
+        requests=2,
+        prompt_tokens=80,
+        completion_tokens=12,
+        unmetered=1,
+    )
+    assert cost_cents(llm.usage) is None
+
+
+def test_cost_before_any_request_is_unknown(monkeypatch):
+    prices(monkeypatch, 15, 60)
+
+    assert cost_cents(Usage(model="test-model")) is None
+
+
+@pytest.mark.parametrize(
+    "field", ["llm_input_cents_per_mtok", "llm_output_cents_per_mtok"]
+)
+def test_negative_price_is_rejected_when_the_settings_load(field):
+    """Otherwise the cost is understated, or negative, and closing the call
+    fails on `EndCallRequest.cost_cents` (Codex PR #211, P2)."""
+    with pytest.raises(ValidationError):
+        Settings(**{field: -1})
 
 
 def test_answer_outside_the_contract_still_costs_its_tokens():
@@ -336,7 +376,6 @@ def prices(monkeypatch, per_mtok_in, per_mtok_out):
 @pytest.mark.parametrize(
     ("prompt_tokens", "completion_tokens", "cents"),
     [
-        (0, 0, 0),
         (80, 12, 1),  # 0.00192 cents: any use at all is at least one cent
         (1_000_000, 0, 15),
         (1_000_000, 1_000_000, 75),
@@ -370,7 +409,9 @@ def test_cost_without_both_prices_is_unknown_not_zero(
 ):
     prices(monkeypatch, per_mtok_in, per_mtok_out)
 
-    assert cost_cents(Usage(model="test-model", prompt_tokens=9000)) is None
+    usage = Usage(model="test-model", requests=1, prompt_tokens=9000)
+
+    assert cost_cents(usage) is None
 
 
 def test_cost_without_a_model_is_unknown(monkeypatch):
