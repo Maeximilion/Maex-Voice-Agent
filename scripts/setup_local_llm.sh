@@ -157,16 +157,18 @@ say "   main model: ${main_model}"
 # ---------------------------------------------------------------------------
 step "3/5 Ollama"
 
+# Root (a container) has no sudo; everyone else needs it for apt and systemctl.
+sudo_cmd=()
+[ "$(id -u)" -eq 0 ] || sudo_cmd=(sudo)
+
 server_up() { curl -fsS --max-time 3 "${OLLAMA_URL}/api/version" >/dev/null 2>&1; }
 
 if command -v ollama >/dev/null; then
-    say "   installed: $(ollama --version 2>/dev/null | tail -n 1)"
+    say "   installed: $(ollama --version 2>/dev/null | tail -n 1 | sed "s/^Warning: client //")"
 elif [ "$allow_install" -eq 0 ]; then
     die 1 "Ollama is missing and --skip-install is set"
 else
     say "   not installed, installing with the official installer (asks for the sudo password)"
-    sudo_cmd=()
-    [ "$(id -u)" -eq 0 ] || sudo_cmd=(sudo)
     # The installer unpacks with zstd, which a minimal Ubuntu (WSL) lacks.
     if ! command -v zstd >/dev/null; then
         say "   zstd is missing, installing it first"
@@ -189,13 +191,13 @@ if server_up; then
 else
     if [ -d /run/systemd/system ] && systemctl list-unit-files ollama.service >/dev/null 2>&1; then
         say "   starting the service"
-        run sudo systemctl enable --now ollama
+        run "${sudo_cmd[@]}" systemctl enable --now ollama
     else
         # WSL without systemd: start the server in the background, log next to the user.
         say "   no systemd, starting 'ollama serve' in the background (log: ~/.ollama/serve.log)"
         run mkdir -p "${HOME}/.ollama"
         if [ "$dry_run" -eq 1 ]; then
-            say "   [dry-run] nohup ollama serve >~/.ollama/serve.log 2>&1 &"
+            say "   [dry-run] OLLAMA_KEEP_ALIVE=1h nohup ollama serve >~/.ollama/serve.log 2>&1 &"
         else
             OLLAMA_KEEP_ALIVE="${OLLAMA_KEEP_ALIVE:-1h}" nohup ollama serve >"${HOME}/.ollama/serve.log" 2>&1 &
         fi
