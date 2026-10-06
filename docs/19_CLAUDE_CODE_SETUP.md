@@ -341,7 +341,7 @@ Ubuntu takes the scripts and the shared settings keys of section 3 from the Wind
 ```bash
 WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.claude"
 mkdir -p ~/.claude/hooks
-[ -f ~/.claude/settings.json ] || echo '{}' > ~/.claude/settings.json
+[ -f ~/.claude/settings.json ] || (umask 077; echo '{}' > ~/.claude/settings.json)
 for f in sync-main.sh model-router.sh session-title.sh; do tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > ~/.claude/hooks/$f; bash -n ~/.claude/hooks/$f || echo "broken: $f"; done
 tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
   && jq '{hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null))' ~/.claude/settings.json > "$bak" \
@@ -355,13 +355,18 @@ tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
 jq -c '{env: has("env"), plugins: ((.enabledPlugins // {}) | keys), hooks: ((.hooks // {}) | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Before it rewrites anything, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. When any step fails, the run stops, removes what it created and says that the settings are unchanged.
+The last line has to show the plugin, the four hook groups and no `broken:` line before it, and `"env":true` on a machine that had an `env` block before. Before it rewrites anything, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. A settings file the block has to create is readable by its owner only. When any step fails, the run stops, removes what it created and says that the settings are unchanged.
 
-Undo, same console: put the values of the oldest backup back. Keys that did not exist before the restore stay.
+Undo, same console: put the values of the oldest backup back, written in one step like the restore. Keys that did not exist before the restore stay.
 
 ```bash
 old="$(ls -tr ~/.claude/settings.json.bak.* | head -n 1)"
-new=$(jq --slurpfile old "$old" '. + $old[0]' ~/.claude/settings.json) && printf '%s\n' "$new" > ~/.claude/settings.json
+tmp="$(mktemp ~/.claude/settings.json.new.XXXXXX)" \
+  && jq --slurpfile old "$old" '. + $old[0]' ~/.claude/settings.json > "$tmp" \
+  && jq -e . "$tmp" > /dev/null \
+  && chmod --reference="$HOME/.claude/settings.json" "$tmp" \
+  && mv "$tmp" ~/.claude/settings.json \
+  || { rm -f "$tmp"; echo "undo stopped, the settings are unchanged"; }
 ```
 
 Delete the backups once the check passed.
