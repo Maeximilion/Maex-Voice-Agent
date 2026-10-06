@@ -102,6 +102,7 @@ def render(
     ticket: dict[str, Any],
     width: int = DEFAULT_WIDTH,
     printed_at: datetime | None = None,
+    notice: str | None = None,
 ) -> bytes:
     """Ein Eingabezettel aus dem Ereignis `order.confirmed` (docs/04 §confirm).
 
@@ -110,6 +111,10 @@ def render(
     Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
     """
     out = [INIT, CODEPAGE]
+    # Test slip only: one bold line above everything and again as the last line
+    # before the cut, so it is read whichever end of the slip is picked up.
+    notice_lines = [BOLD_ON, _wrapped(notice, width), BOLD_OFF] if notice else []
+    out += notice_lines
     # End the line while double height is still on: the TM-T20II sizes the line
     # feed by the mode in effect at the newline, otherwise the next line prints
     # into the banner (paper check 06.10.2026).
@@ -152,5 +157,6 @@ def render(
     revision = int(ticket.get("revision") or 0)
     footer = f"Gedruckt {stamp}" + (f" - Stand {revision}" if revision else "")
     out.append(_line(footer))
+    out += notice_lines
     out += [FEED, CUT]
     return b"".join(out)

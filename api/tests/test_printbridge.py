@@ -19,7 +19,7 @@ from api.main import app
 from api.models import Order, OutboxEvent
 from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
-from printbridge.bridge import SAMPLE, main, run_once
+from printbridge.bridge import SAMPLE, TEST_NOTICE, main, run_once
 from printbridge.client import Server, ServerError
 from printbridge.escpos import BIG_OFF, CUT, render
 from printbridge.state import PrintedLog
@@ -70,6 +70,7 @@ def test_bon_enthaelt_was_die_kueche_braucht():
     assert "Gedruckt 18:02" in text
     assert "KORREKTUR" not in text
     assert "5551234" not in text  # die Kueche braucht keine Telefonnummer
+    assert TEST_NOTICE not in text  # a real slip carries no test notice
 
 
 def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
@@ -427,6 +428,11 @@ def test_probebon_ohne_server(monkeypatch):
     assert main(["--test"]) == 0
     assert "Probebon Umlaute äöü ß" in sent[0].decode("cp858")
     assert SAMPLE["customer_name"] in sent[0].decode("cp858")
+    # The test slip asks for a photo, above everything and as the last line.
+    text = sent[0].decode("cp858")
+    assert text.count(TEST_NOTICE) == 2
+    assert text.index(TEST_NOTICE) < text.index("NICHT IN KASSE")
+    assert text.rindex(TEST_NOTICE) > text.index("Gedruckt")
     assert json.dumps(SAMPLE)  # Probebon ist reines JSON wie ein echter Bon
     assert uuid.UUID(SAMPLE["order_id"])
 
