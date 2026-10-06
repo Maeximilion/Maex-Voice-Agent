@@ -518,3 +518,25 @@ def test_every_hangup_in_the_eval_suite_follows_a_goodbye(session, tenant):
         assert last.kind == "say", path.name
         assert any(word in (last.value or "") for word in goodbyes), path.name
     assert hung_up > 0
+
+
+def test_model_on_the_phone_line_gets_the_tool_reference(session, tenant):
+    """The same prompt as in the text phone and the evals: a model that works
+    there must not meet the phone line without the tools' arguments (own
+    review of PR #235)."""
+    prompts = []
+
+    class Listening:
+        def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+            prompts.append(system_prompt)
+            return LLMTurn(say="Auf Wiederhören.")
+
+    port = FakeTelephony()
+    port.play(
+        RESERVATION,
+        handler_for(session, tenant, port, llm_factory=lambda s: Listening()),
+    )
+
+    assert prompts
+    assert "## check_slot" in prompts[0]
+    assert "## confirm" in prompts[0]

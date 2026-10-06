@@ -15,7 +15,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import ChatCompletionsLLM
+from api.agent.llm import ChatCompletionsLLM, LLMError
 from api.config import settings
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
@@ -462,6 +462,18 @@ def test_call_names_its_usage_for_the_terminal(session, tenant, monkeypatch):
     assert "1 request" in line
     assert "9000" in line and "400" in line
     assert "4 cents" in line
+
+
+def test_model_that_is_not_usable_opens_no_call(session, tenant, monkeypatch):
+    """The model client is built before the call row is written: a model
+    without a server must not leave an open call behind (own review of PR
+    #235)."""
+    monkeypatch.setattr(settings, "llm_base_url", "")
+
+    with pytest.raises(LLMError):
+        SimCall(session, tenant, model="qwen3:14b", now=NOW)
+
+    assert session.scalars(select(Call)).all() == []
 
 
 def test_call_on_the_stand_in_has_no_usage_line(session, tenant):

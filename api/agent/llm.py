@@ -140,17 +140,25 @@ class _Envelope(BaseModel):
 
 
 def parse_turn(content: str) -> LLMTurn:
-    """The model's answer as an `LLMTurn`, or `LLMError`. Strict on purpose: an
-    answer with a sentence and a tool call is rejected, not picked from, because
-    the sentence may be the readback and the tool `confirm` (CLAUDE.md §2 rule
-    3). An empty string counts as absent; models fill unused fields with "".
+    """The model's answer as an `LLMTurn`, or `LLMError`.
+
+    A sentence next to a tool call: the tool call wins and the sentence is
+    dropped (Maxi, 06.10.2026). A real model does both on its first turn
+    ("Gerne prüfe ich das" plus `get_service_status`) whatever the format
+    says, and rejecting it ended every call in a handover. The model speaks
+    again once it has the tool result. The case this was strict about, a
+    readback with `confirm` in the same breath, is stopped by the core:
+    `guards.py` lets `confirm` through only after a yes to a draft that was
+    read back in an earlier turn (CLAUDE.md §2 rule 3).
+
+    An empty string counts as absent; models fill unused fields with "".
     Tool name and arguments are not checked here: `dispatch.py` validates them
     and answers the model with `invalid_input`."""
     try:
         envelope = _Envelope.model_validate_json(content)
         tool = (envelope.tool or "").strip()
         return LLMTurn(
-            say=(envelope.say or "").strip() or None,
+            say=None if tool else (envelope.say or "").strip() or None,
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
             state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,

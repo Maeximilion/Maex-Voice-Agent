@@ -141,6 +141,15 @@ class RunReport:
         crashed = [c.id for c in self.cases if c.error]
         if crashed:
             self.reasons.append(f"Abgestürzt: {', '.join(crashed)}")
+        usage = self.usage
+        if usage.requests and usage.unmetered == usage.requests:
+            # Every request failed or came back without token numbers: the
+            # cases then show handovers, not a model. Most often a mistyped
+            # model name or a server that is down.
+            self.reasons.append(
+                f"no request to model '{self.model}' succeeded: "
+                "check the model name and the server of LLM_BASE_URL"
+            )
         if self.previous:
             green_before = set(self.previous["passed_ids"])
             broken = [c.id for c in self.cases if c.id in green_before and not c.passed]
@@ -189,8 +198,8 @@ class RunReport:
         lines += [f"| {HARD[k]} | {v} | 0, hart |" for k, v in self.hard().items()]
         lines += [
             f"| Falsche Eskalation | {self.false_escalation_rate:.1%} | ≤ {FALSE_ESCALATION_LIMIT:.0%} |",
-            f"| Tokens je Fall | {self._shown(self.tokens_per_case)} | sinkend über die Versionen |",
-            f"| Kosten je Fall (Cent) | {self._shown(self.cost_per_case)} | ≤ Budget |",
+            f"| Tokens je Fall | {self._shown(self.tokens_per_case)} | falling from version to version |",
+            f"| Model cost per case (cents) | {self._shown(self.cost_per_case)} | within the budget |",
             "",
             f"Modell: `{self.model}` · Tags: {', '.join(self.tags) or 'alle'}",
         ]

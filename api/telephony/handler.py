@@ -183,7 +183,9 @@ class CallHandler:
         live.loop = ConversationLoop(
             live.session,
             self._llm_factory(live.session),
-            build_system_prompt(),
+            # The same prompt as the text phone and the evals (sim/session.py):
+            # a real model learns the tools from it.
+            build_system_prompt(tools=True),
             now=self._now,
         )
         live.state.greeted = True

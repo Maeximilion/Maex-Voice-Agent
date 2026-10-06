@@ -151,6 +151,26 @@ def test_parse_turn_keeps_a_zero_and_a_false_slot_value():
     assert turn.state_patch == {"children": 0, "delivery": False}
 
 
+@pytest.mark.parametrize(
+    ("said", "tool"),
+    [
+        ("Gerne prüfe ich die Verfügbarkeit.", "get_service_status"),
+        # A readback with `confirm` in the same breath: the tool call is taken
+        # here and stopped by the core, which lets `confirm` through only after
+        # a yes to a draft read back in an earlier turn (agent/guards.py).
+        ("Passt das so?", "confirm"),
+    ],
+)
+def test_parse_turn_with_a_sentence_and_a_tool_call_takes_the_tool_call(said, tool):
+    """Maxi, 06.10.2026: the tool call wins and the sentence is dropped. A
+    real model does both on its first turn whatever the format says; the model
+    speaks again once it has the tool result."""
+    turn = parse_turn(json.dumps({"say": said, "tool": tool, "args": {}}))
+
+    assert turn.say is None
+    assert turn.tool_call == ToolCall(name=tool)
+
+
 def test_parse_turn_takes_a_tool_call_without_args():
     assert parse_turn('{"tool": "get_service_status"}').tool_call == ToolCall(
         name="get_service_status"
@@ -164,9 +184,6 @@ def test_parse_turn_takes_a_tool_call_without_args():
         '["say", "Hallo"]',  # JSON, but not an object
         "{}",  # neither a sentence nor a tool
         '{"say": "  ", "tool": null}',  # blank counts as nothing
-        # A sentence next to a tool call could be a readback with `confirm` in
-        # the same breath (CLAUDE.md §2 rule 3): rejected, never picked from.
-        '{"say": "Passt das so?", "tool": "confirm", "args": {}}',
         '{"tool": "check_slot", "args": "party_size=4"}',
         '{"say": 5}',
         '{"say": "Hallo", "slots": ["party_size"]}',

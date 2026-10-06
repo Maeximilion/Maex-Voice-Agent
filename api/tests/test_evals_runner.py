@@ -1164,6 +1164,56 @@ def test_report_with_an_unmetered_request_shows_tokens_and_no_cost(monkeypatch):
     assert data["cost_per_case"] is None
 
 
+def test_run_in_which_no_request_reached_the_model_fails_with_a_hint():
+    """A mistyped model name: every request fails, every case ends in the
+    handover. That is a usage error, not a model that fails every case (own
+    review of PR #235)."""
+    report = _report(
+        [
+            _counted("a", requests=2, unmetered=2),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    assert report.verdict == "durchgefallen"
+    assert any("no request" in reason for reason in report.reasons)
+
+
+def test_run_with_some_failed_requests_is_judged_by_its_cases():
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=900, completion_tokens=40),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    assert report.verdict == "bestanden"
+
+
+def test_crashed_case_keeps_the_tokens_it_used(migrated_db_url, tmp_path, monkeypatch):
+    """A case that crashes after the model was asked still used its tokens;
+    without them the average per case reads too low (own review of PR #235)."""
+
+    class Counting(FakeLLM):
+        usage = Usage(model="m", requests=1, prompt_tokens=120, completion_tokens=9)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("judge broke")
+
+    monkeypatch.setattr(runner, "judge", broken)
+    cases = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}))
+    make = lambda now, menu: Counting([LLMTurn(say="Guten Tag.")])  # noqa: E731
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        result = runner.run_case(
+            session, runner.load_cases(cases, [])[0], make, runner.menu_plan()
+        )
+    engine.dispose()
+
+    assert result.error
+    assert (result.requests, result.prompt_tokens) == (1, 120)
+
+
 def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
     """Through the runner: the case result holds what its client counted."""
 

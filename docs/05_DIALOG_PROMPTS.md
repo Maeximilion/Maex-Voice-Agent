@@ -197,7 +197,7 @@ system prompt by the client and is not part of `prompts/system_vN.md`:
 
 | Field | Meaning |
 |---|---|
-| `say` or `tool` + `args` | exactly one of them: the sentence for the guest, or a tool call. Both in one answer is rejected, because the sentence may be the readback and the tool `confirm` |
+| `say` or `tool` + `args` | the sentence for the guest, or a tool call. The format asks for exactly one. When a model sends both, the tool call wins and the sentence is dropped (Maxi, 06.10.2026): a real model does it on its first turn, and the model speaks again once it has the tool result. A readback with `confirm` in the same answer is stopped by the core (guards below), not by the format |
 | `slots` | what the guest named in this turn; goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number |
 | `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
 

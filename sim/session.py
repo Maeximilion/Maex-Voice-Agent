@@ -104,6 +104,14 @@ class SimCall:
         self._fixed_now = now
         self._now = now or utcnow()
         self._tenant = tenant
+        # Before the call row is written: a model that is not usable raises
+        # here and must not leave an open call behind.
+        self._llm = llm or make_llm(
+            model,
+            now=self._now,
+            timezone=tenant.timezone,
+            menu=lambda: menu_numbers(session, tenant.id),
+        )
         started = start_call(
             session,
             StartCallRequest(
@@ -116,12 +124,6 @@ class SimCall:
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
-        self._llm = llm or make_llm(
-            model,
-            now=self._now,
-            timezone=tenant.timezone,
-            menu=lambda: menu_numbers(session, tenant.id),
-        )
         # With the tool reference: a real model learns the tools from the
         # prompt, the stand-in reads none of it.
         self._loop = ConversationLoop(

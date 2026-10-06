@@ -737,3 +737,44 @@ def test_model_sees_the_local_date_and_weekday(session, state):
     loop.run_turn(state, "Einen Tisch morgen um sieben")
 
     assert llm.calls[0][1]["now"] == "Dienstag, 2026-09-15T08:00+02:00"
+
+
+def test_guest_sentence_rides_along_on_a_tool_hop(session, state):
+    """Seen in the first run on a real model: after `get_service_status` the
+    model got only the tool result, no longer knew what the guest wanted and
+    called the same tool until the hop limit. Within one turn the sentence
+    stays visible; the next turn starts from the compact state again."""
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="get_service_status")),
+            LLMTurn(say="Für wie viele Personen?"),
+            LLMTurn(say="Gern."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Einen Tisch morgen um sieben")
+    loop.run_turn(state, "Für vier")
+
+    first, hop, next_turn = (call[1] for call in llm.calls)
+    assert "guest_said" not in first
+    assert hop["guest_said"] == "Einen Tisch morgen um sieben"
+    assert "guest_said" not in next_turn
+
+
+def test_model_sees_the_date_in_the_timezone_of_the_tenant(session):
+    """The tools compute with the timezone of the tenant row. The date in the
+    state must be the same day, or "morgen" lands on the wrong one around
+    midnight (own review of PR #235). 00:30 in Berlin is still Monday in New
+    York."""
+    abroad = uuid.UUID(
+        seed(session, tenant_name="Abroad", timezone="America/New_York").tenant_id
+    )
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=abroad)
+    night = datetime(2026, 9, 15, 0, 30, tzinfo=BERLIN)
+    llm = FakeLLM([LLMTurn(say="Guten Tag.")])
+    loop = ConversationLoop(session, llm, "system", now=night, clock=clock_from([0]))
+
+    loop.run_turn(state, "Einen Tisch morgen um sieben")
+
+    assert llm.calls[0][1]["now"] == "Montag, 2026-09-14T18:30-04:00"

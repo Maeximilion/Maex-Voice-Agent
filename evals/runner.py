@@ -39,7 +39,8 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
-from api.agent.llm import ChatCompletionsLLM, LLMClient, LLMError
+from api.agent.llm import LLMClient, Usage
+from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
@@ -104,14 +105,11 @@ def model_factory(
     gets them as in the text phone (`sim/session.py`). Any other name is a
     model on the server of `LLM_BASE_URL`; every case gets its own client, so
     its token count is the count of that case."""
-    if model != SCRIPTED:
-        try:
-            # Built once here, so a run without a server stops before the first
-            # case. Never a silent fall back to the script: a model comparison
-            # would compare the script with itself.
-            ChatCompletionsLLM.from_settings(model)
-        except LLMError as exc:
-            raise UsageError(f"Modell '{model}' nicht nutzbar: {exc}") from exc
+    if model != SCRIPTED and not settings.llm_base_url:
+        # Checked here, so a run without a server stops before the first case.
+        # Never a silent fall back to the script: a model comparison would
+        # compare the script with itself.
+        raise UsageError(f"model '{model}' needs a server: LLM_BASE_URL is not set")
     return lambda now, menu: make_llm(model, now=now, timezone=TIMEZONE, menu=menu)
 
 
@@ -183,6 +181,16 @@ def _repeat_confirm(session: Session, case, call, tenant, llm, now) -> list[str]
     )
 
 
+def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
+    """Tokens and requests of the case's model into its result. The scripted
+    stand-in counts nothing and leaves the zeros."""
+    counted = (llm.usage if llm else None) or Usage()
+    result.requests = counted.requests
+    result.prompt_tokens = counted.prompt_tokens
+    result.completion_tokens = counted.completion_tokens
+    result.unmetered = counted.unmetered
+
+
 def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
@@ -194,6 +202,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         expected_escalation=bool(expected.get("escalated")),
         pending=case.get("pending"),
     )
+    llm = None
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
         llm = RecordingLLM(make_llm(now, lambda: menu_numbers(session, tenant.id)))
@@ -215,6 +224,8 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
+        # What the model used before the crash still counts for the run.
+        _count_usage(result, llm)
         return result
 
     rec = llm.recording
@@ -231,11 +242,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     if rejected:
         diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
-    counted = call.usage()
-    result.requests = counted.requests
-    result.prompt_tokens = counted.prompt_tokens
-    result.completion_tokens = counted.completion_tokens
-    result.unmetered = counted.unmetered
+    _count_usage(result, llm)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
     result.unconfirmed = len(rec.unconfirmed) + seen.confirmed_without_confirm
