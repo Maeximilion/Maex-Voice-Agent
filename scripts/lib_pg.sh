@@ -248,16 +248,18 @@ read_dump() { # plain dump bytes of <file> on stdout
 # pg_restore <arguments> fed with the plain bytes of <file>. pg_restore stops at the end
 # marker without reading what follows (padding, a gpg trailer), so the writer of the
 # pipe is cut off by SIGPIPE and `pipefail` calls a good dump unreadable, depending on
-# timing. The rest is drained before the status is read; gpg still checks to the end.
+# timing. After a successful pg_restore the rest is drained; gpg still checks to the end.
 pg_restore_from() { # pg_restore_from <file> [pg_restore arguments]
     local file="$1"
     shift
-    read_dump "$file" | {
-        status=0
-        pg pg_restore "$@" || status=$?
+    # A real subshell, not a brace group: with `lastpipe` a group runs in the script
+    # itself and its `exit` would end the script. The rest is drained only after a
+    # success; a failed pg_restore fails the pipeline anyway and must not make a
+    # large (encrypted) dump read to its end first.
+    read_dump "$file" | (
+        pg pg_restore "$@" || exit "$?"
         cat >/dev/null
-        exit "$status"
-    }
+    )
 }
 
 # Read the whole dump, not only its table of contents: decrypts to the last byte

@@ -685,6 +685,27 @@ def test_a_dump_with_bytes_after_its_end_is_still_read_to_the_end(db, backup_dir
     assert done.returncode == 0, done.stderr
 
 
+def test_the_dump_check_does_not_end_the_script_when_bash_runs_the_last_pipe_in_place(
+    db, backup_dir
+):
+    """With `lastpipe` the last element of a pipeline runs in the script's own shell."""
+    plain = _run("backup.sh", "--no-encrypt", db_url=db, backup_dir=backup_dir)
+    assert plain.returncode == 0, plain.stderr
+    (dump,) = backup_dir.iterdir()
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+        BASHOPTS="lastpipe",
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "restore check passed" in done.stdout
+
+
 def test_restore_of_a_cut_off_dump_changes_nothing(db, backup_dir, passphrase_file):
     dump = _backup(db, backup_dir, passphrase_file)
     _sql(db, "update backup_probe set note = 'after'")
