@@ -200,4 +200,9 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
 
+**Verabschiedung**
+> „Vielen Dank für Ihren Anruf. Auf Wiederhören."
+
+The line is hung up only after a goodbye (Maxi, 06.10.2026). The code says this sentence before every hangup unless the agent's last sentence already parts ("bis dann", "bis gleich", "Auf Wiederhören"), so it is never said twice (`telephony/handler.py`). A transfer needs no goodbye: the transfer sentence comes before it.
+
 Hinweis: Alle Texte gehen vor dem ersten echten Anruf durch den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).

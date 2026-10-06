@@ -130,7 +130,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | Datei | Verantwortung |
 |---|---|
 | `port.py` | das Interface: `on_call_started`, `on_user_turn`, `on_dtmf`, `transfer`, `hangup`, `start_recording`, `caller_id` |
-| `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers or hangs up when the state says so, closes the call log; every failure ends with the outage sentence and a transfer |
+| `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers when the state says so, or says goodbye (unless the agent just did) and hangs up, closes the call log; every failure ends with the outage sentence and a transfer |
 | `adapters/<anbieter>.py` | übersetzt Webhooks und API des Anbieters auf das Interface |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
 | `router.py` | Webhook-Endpunkte, Signaturprüfung, Session-Zuordnung |

@@ -5,7 +5,7 @@ the provider (docs/11 §telephony). The code, not the model, says the AI disclos
 before anything else (docs/05 §6). The mode decides whether the agent answers at
 all (docs/02 §4). Each turn runs through the same `agent/loop.py` as `sim/` and the
 evals; when the conversation says transferred or over, the handler dials the team
-or hangs up, and writes the call log.
+or says goodbye and hangs up, and writes the call log.
 
 Every failure ends with the team (CLAUDE.md §2 rule 5): an exception anywhere in a
 call, from the database, the model or the adapter, is answered with the outage
@@ -45,6 +45,16 @@ GREETING = "Guten Tag, hier ist der KI-Assistent von {name}. Was kann ich für S
 SAY_OUTAGE = (
     "Bei mir gibt es gerade eine technische Störung. "
     "Ich verbinde Sie direkt mit dem Restaurant."
+)
+# The caller hears a goodbye before the line goes dead. The code adds it unless
+# the agent's last sentence already parts ("bis dann" after a reservation, "bis
+# gleich" after a pickup), so it is never said twice.
+FAREWELL = "Vielen Dank für Ihren Anruf. Auf Wiederhören."
+_GOODBYE = re.compile(
+    r"auf wiederh(ö|oe)ren|auf wiedersehen|tschüss|tschuess"
+    r"|bis (dann|gleich|bald|später|spaeter|morgen)\b"
+    r"|schönen (tag|abend)|schoenen (tag|abend)",
+    re.IGNORECASE,
 )
 
 # Keys other than digits (`*`, `#`) only end an entry on the keypad.
@@ -189,7 +199,7 @@ class CallHandler:
         if live.state.stage == "transferred":
             self._transfer(live, live.state.transfer_to or live.team_phone)
         elif result.ended or live.state.stage in CLOSING_STAGES:
-            self._hangup(live)
+            self._hangup(live, last_said=result.say[-1] if result.say else "")
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
         self._close(live.session_id)
@@ -197,7 +207,9 @@ class CallHandler:
         self._port.transfer(live.session_id, target)
         self._finish(live)
 
-    def _hangup(self, live: _LiveCall) -> None:
+    def _hangup(self, live: _LiveCall, *, last_said: str) -> None:
+        if not _GOODBYE.search(last_said):
+            self._port.say(live.session_id, FAREWELL)
         self._close(live.session_id)
         self._port.hangup(live.session_id)
         self._finish(live)

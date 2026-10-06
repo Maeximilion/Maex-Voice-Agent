@@ -21,11 +21,12 @@ from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMTurn
 from api.config import settings
+from api.domain.callbacks.create import SAY_NOTED
 from api.models import Call, Callback, Reservation, ServiceConfig
 from api.telephony.adapters.fake import FakeTelephony, load_call
-from api.telephony.handler import SAY_OUTAGE, CallHandler
+from api.telephony.handler import FAREWELL, SAY_OUTAGE, CallHandler
 from scripts.seed import seed
-from sim.scripted_llm import QUESTIONS, ScriptedLLM
+from sim.scripted_llm import QUESTIONS, SAY_CONFIRMED, ScriptedLLM
 from sim.session import menu_numbers, resolve_tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -480,9 +481,40 @@ def test_complaint_outside_opening_hours_becomes_a_callback(session, tenant):
 
     assert not port.transfers(sid)
     assert port.hangups(sid)
+    # The callback sentence says nothing to part with: the code adds the goodbye.
+    assert port.says(sid)[-2:] == [SAY_NOTED, FAREWELL]
+    assert port.actions[-1].kind == "hangup"
     call = the_call(session, sid)
     assert call.outcome == "callback"
     callback = session.scalars(
         select(Callback).where(Callback.call_id == call.id)
     ).one()
     assert callback.phone == "+497215551234"
+
+
+def test_hangup_comes_after_a_goodbye_said_once(session, tenant):
+    """The agent's own closing sentence already says goodbye ("bis dann"):
+    the code hangs up after it and does not add a second goodbye."""
+    port = FakeTelephony()
+    sid = port.play(RESERVATION, handler_for(session, tenant, port))
+
+    assert port.says(sid)[-1].endswith(SAY_CONFIRMED)
+    assert FAREWELL not in port.says(sid)
+    assert [a.kind for a in port.actions[-2:]] == ["say", "hangup"]
+
+
+def test_every_hangup_in_the_eval_suite_follows_a_goodbye(session, tenant):
+    """Whatever the case, the last thing the caller hears before the line goes
+    dead is a goodbye."""
+    goodbyes = ("Auf Wiederhören", "bis dann", "bis gleich")
+    hung_up = 0
+    for path in sorted(CASES.glob("*.json")):
+        port = FakeTelephony()
+        sid = port.play(load_call(path), handler_for(session, tenant, port))
+        if not port.hangups(sid):
+            continue
+        hung_up += 1
+        last = port.actions[-2]
+        assert last.kind == "say", path.name
+        assert any(word in (last.value or "") for word in goodbyes), path.name
+    assert hung_up > 0
