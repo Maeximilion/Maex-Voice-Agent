@@ -11,6 +11,7 @@ anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 """
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -22,10 +23,14 @@ from sqlalchemy.orm import Session
 from api.agent import escalation
 from api.agent.dispatch import ToolResult, dispatch
 from api.agent.ladder import UnderstandingLadder
-from api.agent.llm import LLMClient
+from api.agent.llm import LLMClient, LLMError
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 from api.config import settings
+from api.core.envelope import SAY_ON_FAILURE
+from api.core.logging import get_logger, log
 from api.schemas.callbacks import CallbackReason
+
+logger = get_logger("api.agent.loop")
 
 # Schutz gegen ein Modell, das sich zwischen Tool-Aufrufen verheddert und nie zu
 # einem Satz für den Kunden kommt: lieber sauber abbrechen als den Anruf endlos
@@ -102,9 +107,22 @@ class ConversationLoop:
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
 
-            turn = self._llm.next_turn(
-                self._system_prompt, self._prompt_state(state), pending_input
-            )
+            try:
+                turn = self._llm.next_turn(
+                    self._system_prompt, self._prompt_state(state), pending_input
+                )
+            except LLMError as exc:
+                # A model that is down or answers outside the contract is an
+                # outage: the call goes to the team, never into a retry loop
+                # with the guest waiting (CLAUDE.md §2 rule 5).
+                log(
+                    logger,
+                    logging.ERROR,
+                    "model failed, handing over to the team",
+                    call_id=str(state.call_id),
+                    error=str(exc),
+                )
+                return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
             if turn.state_patch:
                 apply_state_patch(state, turn.state_patch)
                 for field_name in turn.state_patch:

@@ -13,9 +13,10 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import FakeLLM, LLMTurn, ToolCall
+from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, SAY_STUCK, SAY_TIMEOUT, ConversationLoop
 from api.agent.state import ConversationState
+from api.core.envelope import SAY_ON_FAILURE
 from api.models import Call, Callback
 from scripts.seed import seed
 
@@ -360,3 +361,70 @@ def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):
     assert result.say == [SAY_STUCK]
     assert len(llm.calls) == MAX_TOOL_HOPS
     assert state.stage == "ended"
+
+
+class BrokenLLM:
+    """A model that is unreachable or answers outside the contract (T-2.4)."""
+
+    def next_turn(self, system_prompt, state_json, input_text):
+        raise LLMError("model call failed: ReadTimeout")
+
+
+def test_model_failure_hands_the_call_to_the_team(session, state):
+    """A model outage is an outage like any other: the phone rings at the
+    team, the caller is not left with an error (CLAUDE.md §2 rule 5)."""
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=OPEN_NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    assert result.ended is True
+    assert state.stage == "transferred"
+    assert state.transferred is True
+
+
+def test_model_failure_without_a_reachable_team_creates_a_callback(session, state):
+    state.slots["phone"] = "+4972215551234"
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    assert result.ended is True
+    assert state.stage == "callback"
+    callback = session.scalars(select(Callback)).one()
+    assert "Einen Tisch für vier bitte" in callback.summary
+
+
+def test_model_failure_without_a_phone_number_says_so_honestly(session, state):
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Hallo")
+
+    assert result.ended is True
+    assert result.say == [SAY_ON_FAILURE]
+    assert state.stage == "ended"
+
+
+def test_model_failure_after_a_tool_call_still_hands_over(session, state):
+    """The model answers once, then drops out in the middle of the turn."""
+
+    class DropsOut(FakeLLM):
+        def next_turn(self, system_prompt, state_json, input_text):
+            if not self._turns:
+                raise LLMError("model call failed: ConnectError")
+            return super().next_turn(system_prompt, state_json, input_text)
+
+    llm = DropsOut([LLMTurn(tool_call=ToolCall(name="get_service_status"))])
+    loop = ConversationLoop(
+        session, llm, "system", now=OPEN_NOW, clock=clock_from([0, 0, 0])
+    )
+
+    result = loop.run_turn(state, "Hallo")
+
+    assert result.ended is True
+    assert state.stage == "transferred"

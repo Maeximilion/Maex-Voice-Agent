@@ -179,6 +179,25 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
+system prompt, the compact state and one input per call, never a transcript. It answers
+with exactly one JSON object; the instruction for it (`OUTPUT_FORMAT`) is appended to the
+system prompt by the client and is not part of `prompts/system_vN.md`:
+```json
+{ "say": null, "tool": "check_slot", "args": { "party_size": 4, "reserved_for": "…" },
+  "slots": { "party_size": 4 }, "not_understood": null }
+```
+
+| Field | Meaning |
+|---|---|
+| `say` or `tool` + `args` | exactly one of them: the sentence for the guest, or a tool call. Both in one answer is rejected, because the sentence may be the readback and the tool `confirm` |
+| `slots` | what the guest named in this turn; goes into the compact state, anything not written here is gone on the next turn |
+| `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
+
+An answer outside this format, a timeout or an unreachable model is an outage: the core
+says the outage sentence (§6) and hands the call to the team, it does not ask the model
+again. Tool names and arguments are checked by `agent/dispatch.py`, not by the format.
+
 ---
 
 ## 6. Ansagetexte (Entwurf, C1 prüft rechtlich)
