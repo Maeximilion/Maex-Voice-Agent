@@ -727,3 +727,30 @@ def test_restore_of_a_cut_off_dump_changes_nothing(db, backup_dir, passphrase_fi
     assert "nothing changed" in done.stderr
     assert _note(db) == "after"
     assert _databases_like(f"{name}_") == []
+
+
+def test_restore_check_catches_a_damaged_gpg_trailer(db, backup_dir, passphrase_file):
+    """The last bytes of the file carry gpg's integrity check, after the dump itself.
+
+    pg_restore is done before gpg gets there, so only reading the stream to the end
+    notices the damage. This pins the detection; it does not prove the drain, which a
+    dump this small also survives without it (gpg finishes before pg_restore).
+    """
+    dump = _backup(db, backup_dir, passphrase_file)
+    damaged = bytearray(dump.read_bytes())
+    damaged[-1] ^= 0x01
+    dump.write_bytes(bytes(damaged))
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=passphrase_file,
+    )
+
+    assert done.returncode == 1
+    assert "cannot read the dump to its end; nothing changed" in done.stderr
+    name = make_url(db).database
+    assert _databases_like(f"{name}_") == []
