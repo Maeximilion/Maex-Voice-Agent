@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.0
+> Status: 06.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 1.39.1
 
 ---
 
@@ -118,7 +118,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 7. **Next sessions, one worktree and chat each** (handover 04.10.2026, text phone allergy guard, `docs/00_PCF.md` §13): the translation sweep (`docs/english-code-comments`, running, no PR yet). Built since: backup and restore scripts, daily cron and a rehearsed restore (04.10.2026), enough for the backup before the real import in item 3; T-9.3 stays open until the encrypted second storage exists (a cost decision with D3). Done from the T-4.12 follow-ups: the allergy guard (PR #168), the import dry run (PR #169), lunch menus (decided: not by phone), dependabot PRs #159 and #160 (merged), the four text phone points due "with the next sim change" (option in two groups, rejection plus replacement, digit against number word, allergy in the opening sentence; the two left in the table wait for the real model, T-2.4)
 8. **Demo of the operations view without a phone** (handover 05.10.2026, `docs/00_PCF.md` §13, carried over from the closed PR #191): steps for a local run with `make up`, the test menu and `sim.cli`; proposal `make demo` (test menu plus replayed calls in one command) waits for Maxi's yes
 9. **By hand, Maxi, after the AI review workflow is gone** (PR #217): stop and remove the runner service `ghrunner-wsl` on the WSL machine, remove the runner under Settings, Actions, Runners, and delete the secret `ZAI_API_KEY` and the variables `ZAI_API_BASE` and `REVIEW_MODEL` if they were set. Also open: the Codex review quota, see the changelog row of 06.10.2026
-10. **Local test model on the workbench** (06.10.2026): Maxi runs the handover in `docs/18_MODEL_SELECTION.md` §5 in a Claude Code session in Ubuntu (WSL): `scripts/setup_local_llm.sh` installs Ollama, pulls `mistral-small` and `qwen3:14b` and reports latency and GPU share; the numbers go into docs/18 §5. Then T-2.4 part 3 (`--model`, `reasoning_effort: "none"`) and part 4 (first eval run on the local model)
+10. **Local test model on the workbench, set up 06.10.2026** (docs/18 §5 "GPU numbers"): both models pass the test sentence. `mistral-small` runs 17 % on the CPU next to the Windows desktop's GPU share, warm 5.3 s; `qwen3:14b` runs fully on the GPU, warm 1.1 s, cold 14 s. The workbench `.env` uses `qwen3:14b`. `mistral-small` invented an absolute date for "Samstag" (the test prompt has no current date); watch for it in the first eval run. Next T-2.4 part 3 (`--model`, `reasoning_effort: "none"`) and part 4 (first eval run on the local model)
 10. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
@@ -371,6 +371,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v1.39.1 · 06.10.2026:** Local test model measured on the RTX 4080: qwen3:14b fully on GPU, warm 1.1 s; mistral-small 17 % on CPU, warm 5.3 s (docs/18 §5)
 - **v1.39.0 · 06.10.2026:** Model selection: docs/18, shortlist and local test model (D15, D16), scripts/setup_local_llm.sh
 - **v1.38.19 · 06.10.2026:** AI review workflow removed (script deleted in 661b130, workflow disabled by hand, self-hosted runner in a public repo)
 - **v1.38.18 · 06.10.2026:** AGENTS.md: review rules for Codex, drafted by Claude Code
