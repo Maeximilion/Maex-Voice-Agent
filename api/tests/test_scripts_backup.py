@@ -661,6 +661,51 @@ def test_passphrase_file_with_windows_line_ending_gives_the_same_key(
     assert done.returncode == 0, done.stderr
 
 
+def test_a_dump_with_bytes_after_its_end_is_still_read_to_the_end(db, backup_dir):
+    """pg_restore stops at the end marker; the writer of the pipe must not die of it.
+
+    Before the fix `cat` (or gpg) was killed by SIGPIPE whenever pg_restore finished
+    first, and `pipefail` turned that into "cannot read the dump", on about one run in
+    ten, for a perfectly good dump. Bytes after the end make the race certain.
+    """
+    plain = _run("backup.sh", "--no-encrypt", db_url=db, backup_dir=backup_dir)
+    assert plain.returncode == 0, plain.stderr
+    (dump,) = backup_dir.iterdir()
+    with dump.open("ab") as handle:
+        handle.write(b"\0" * (1 << 20))
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+    )
+
+    assert done.returncode == 0, done.stderr
+
+
+def test_the_dump_check_does_not_end_the_script_when_bash_runs_the_last_pipe_in_place(
+    db, backup_dir
+):
+    """With `lastpipe` the last element of a pipeline runs in the script's own shell."""
+    plain = _run("backup.sh", "--no-encrypt", db_url=db, backup_dir=backup_dir)
+    assert plain.returncode == 0, plain.stderr
+    (dump,) = backup_dir.iterdir()
+
+    done = _run(
+        "restore.sh",
+        dump.as_posix(),
+        "--check",
+        db_url=db,
+        backup_dir=backup_dir,
+        BASHOPTS="lastpipe",
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert "restore check passed" in done.stdout
+
+
 def test_restore_of_a_cut_off_dump_changes_nothing(db, backup_dir, passphrase_file):
     dump = _backup(db, backup_dir, passphrase_file)
     _sql(db, "update backup_probe set note = 'after'")
