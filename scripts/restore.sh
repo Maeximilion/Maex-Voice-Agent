@@ -92,7 +92,7 @@ trap drop_scratch EXIT
 pg_sql "$maintenance" "create database \"$scratch\" template template0" ||
     die 1 "cannot create the scratch database; nothing changed"
 scratch_exists=1
-read_dump "$file" | pg pg_restore --no-owner --no-privileges --exit-on-error --dbname "$scratch" ||
+pg_restore_from "$file" --no-owner --no-privileges --exit-on-error --dbname "$scratch" ||
     die 1 "pg_restore failed; nothing changed"
 
 revision="$(pg_sql "$scratch" "select version_num from alembic_version" 2>/dev/null || true)"
