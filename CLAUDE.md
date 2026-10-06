@@ -157,6 +157,8 @@ For code tasks use the personal skill `code-autopilot`. Where it differs from th
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Ask them as clickable choices (`AskUserQuestion`), not as free text in the chat. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
 
+**Findings for another open PR** (Maxi, 2026-10-06): a finding that belongs to an open PR of another session goes there as one comment: the finding, the evidence, the proposed change and where it is tracked. Never as an edit on that PR's branch from a different session.
+
 **Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). Merging a PR into `main` is also a wait point (Maxi, 2026-10-05): prepare the PR, get CI and evals green, report it ready, Maxi merges. Exception (Maxi, 2026-10-06): a PR that changes only `.md` files (`CLAUDE.md`, `docs/**/*.md`, `.claude/commands/*.md`; other files under `docs/` such as the CSV and HTML templates do not count) is merged by Claude once CI is green and the exact head commit has a clean review (Codex, or Claude's own if Codex is out of quota). Any other file in the diff, and every task PR, stays with Maxi.
 
 ### Session End
