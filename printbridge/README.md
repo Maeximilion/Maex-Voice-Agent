@@ -45,6 +45,8 @@ Erst ein Probebon, ohne Server und ohne echte Bestellung:
 python -m printbridge --test
 ```
 
+The test slip carries a notice block above the slip and again before the cut (centered, double size, white on black) that asks for a photo of the slip. A slip of a real order carries no such block. Checked on paper on 06.10.2026 (`EPSON TM-T20II Receipt`, Windows queue).
+
 Dann ein einzelner Durchlauf und danach der Dauerbetrieb:
 
 ```bash
