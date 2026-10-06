@@ -120,6 +120,8 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `dispatch.py` | Tool-Name → `domain`-Funktion, mit Zeitmessung. `search_menu` zerlegt hier einen Satz mit mehreren Positionen (`split_positions`) und sucht je Teil; `draft_order` bekommt den Schlüssel aus den Angaben des Anrufs |
 | `ladder.py` | die Verständnis-Leiter als Zustandsmaschine: zählt Fehlversuche, steigt die Stufe |
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
+| `guards.py` | what the core enforces whatever the model returns (05 §5): `confirm` only after an explicit yes to the draft read back before the turn, `draft_order` only with dishes from a clear match or from candidates the guest was asked about. A refused call goes back to the model as a failed result with a `hint` |
+| `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py` |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
 
 **Warum ein eigener Kern, wenn die Plattform einen hat?** Drei Gründe: Evals brauchen ihn, der Simulator braucht ihn, die Schattenmessung braucht ihn. Ob er auch im Betrieb läuft, ist Entscheidung **D7** (`docs/01_STATUS.md`). Läuft er, sind Test und Betrieb identisch. Läuft die Plattform ihren eigenen Loop, bleibt ein Rest Abweichung, den die Rollenspiele auffangen.
