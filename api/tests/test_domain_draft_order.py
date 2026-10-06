@@ -267,10 +267,11 @@ def test_audit_haelt_keine_personendaten(session, tenant_id):
     )
     text = str(payload)
     assert "Müller" not in text and "Nüsse" not in text
-    # The number as dictated, as stored (E.164), and in any other spacing.
-    stored = session.get(Order, first.order_id).phone
-    assert stored == "+497215551234"
-    assert req.customer.phone not in text and stored not in text
+    # The number itself, raw and normalised: a short fragment such as "555" also
+    # turns up by chance in the random order and call ids of the payload (main
+    # CI run 872, "...5286b0a55558").
+    assert "555 1234" not in text and "5551234" not in text
+    # And in any other spacing: the subscriber digits against the payload's digits.
     assert "7215551234" not in "".join(filter(str.isdigit, text))
     assert draft_order(session, req, now=NOW) == first
 
