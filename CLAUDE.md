@@ -136,6 +136,8 @@ Pick the model when the session starts. A model switch starts a cold cache, so e
 
 Mixed task: take the higher model and the higher effort. The `xhigh` triggers are hard rules 1, 2, 3 and 5 in concrete form; rule 4 (evals) and rule 6 (token budget) are process rules and do not raise the effort on their own, so token counting or cost logging stays at `high`. Decide from the task row and its Spec column. A row that names no area stays on the default (`high`); a row that names an area but leaves open whether one of the triggers applies takes `xhigh`. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
+**Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests, and `/gate` at every gate. No reminder for Markdown-only PRs.
+
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
 2. `docs/07_WORKPACKAGES.md` → choose next task with satisfied dependencies
