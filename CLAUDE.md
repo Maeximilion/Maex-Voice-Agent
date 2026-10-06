@@ -136,7 +136,9 @@ Pick the model when the session starts. A model switch starts a cold cache, so e
 
 Mixed task: take the higher model and the higher effort. The `xhigh` triggers are hard rules 1, 2, 3 and 5 in concrete form; rule 4 (evals) and rule 6 (token budget) are process rules and do not raise the effort on their own, so token counting or cost logging stays at `high`. Decide from the task row and its Spec column. A row that names no area stays on the default (`high`); a row that names an area but leaves open whether one of the triggers applies takes `xhigh`. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
-**Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests, and `/gate` at every gate. No reminder for Markdown-only PRs.
+**Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests and Markdown, and `/gate` at every gate where something other than `.md` files changed since the last gate tag. No reminder for Markdown-only work.
+
+**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none.
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
