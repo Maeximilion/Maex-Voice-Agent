@@ -78,6 +78,8 @@ CASES = [
 ]
 
 
+# Wall clock: runs serially with the latency tests, not under xdist (docs/13 §6).
+@pytest.mark.latency
 @pytest.mark.parametrize(
     ("call", "text"),
     [(call, text) for _, call, text in CASES],
