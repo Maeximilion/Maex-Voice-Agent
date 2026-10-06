@@ -438,10 +438,13 @@ def test_probebon_ohne_server(monkeypatch):
     first, last = "Bitte an Maxi über", "WhatsApp senden"
     assert f"{first} {last}" == TEST_NOTICE
     for part in (first, last):
-        assert text.count(f"\x1b!\x30\x1dB\x01 {part.center(len(first))} \x1dB\x00") == 2
+        assert (
+            text.count(f"\x1b!\x30\x1dB\x01 {part.center(len(first))} \x1dB\x00") == 2
+        )
     assert text.index(first) < text.index("NICHT IN KASSE")
     assert text.rindex(first) > text.index("Gedruckt")
-    assert text.count("\x1ba\x01") == text.count("\x1ba\x00") == 2  # centered, then left
+    # Each block switches to centered and back to left.
+    assert text.count("\x1ba\x01") == text.count("\x1ba\x00") == 2
     assert sent[0].endswith(b"\x1ba\x00\x1bd\x04" + CUT)
     assert json.dumps(SAMPLE)  # Probebon ist reines JSON wie ein echter Bon
     assert uuid.UUID(SAMPLE["order_id"])
