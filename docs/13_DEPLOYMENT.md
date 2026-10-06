@@ -8,7 +8,7 @@
 |---|---|---|
 | Voice-Plattform (Telefonie, Spracherkennung, Stimme) | beim Anbieter, EU-Rechenzentrum | Maxis PC |
 | Agent-API, Datenbank, GUI, n8n, Push-Server für das Team (D13) | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
-| Sprachmodell des Agenten | In operation: at the voice or model provider, processing in the EU. For development and tests: a local model on Maxi's PC is allowed, with invented test data only (text phone, evals). The model is swappable behind `agent/llm.py`, so a better one replaces it without touching the conversation core (T-2.4, T-5.3) | Maxi's PC in operation; real call content in a local model |
+| Sprachmodell des Agenten | In operation: at the voice or model provider, processing in the EU. For development and tests: a local model on Maxi's PC is allowed, with invented test data only (text phone, evals). The model is swappable behind `agent/llm.py`, so a better one replaces it without touching the conversation core (T-2.4, T-5.3). Candidates, local setup and `scripts/setup_local_llm.sh`: `docs/18_MODEL_SELECTION.md` | Maxi's PC in operation; real call content in a local model |
 | Entwicklung und Simulator | Maxis PC, nur zum Bauen und Testen | – |
 | Druckbrücke für den Eingabezettel am Haupt-Bondrucker (T-4.6, D2) | Rechner im Lokal, der den Bondrucker erreicht (Kassenrechner oder eigener Kleinrechner, offen: Maxi) | Maxis PC |
 | Transkription der Einlern-Aufnahmen (Stufe 4) | EU-Server: Transkriptionsdienst mit EU-Hosting und AVV, oder Whisper-Container auf dem Server (CPU reicht, läuft nachts) | Maxis PC |
@@ -56,7 +56,8 @@ Die Voice-Plattform muss unsere Tools über **öffentliches HTTPS** erreichen. O
 Maxis PC (nur Werkbank)
   docker compose up      → Postgres, API, n8n lokal zum Entwickeln
   sim/cli.py             → Gespräche ohne Telefon
-  local model (optional) → for sim and evals only, never for a real call (§0)
+  local model (optional) → for sim and evals only, never for a real call (§0);
+                           setup: bash scripts/setup_local_llm.sh (docs/18 §5)
   Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
 ```
 

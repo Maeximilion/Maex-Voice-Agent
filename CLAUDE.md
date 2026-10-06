@@ -113,6 +113,7 @@ maex-voice-agent/
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV contract between chat (digitization) and import | before T-4.2 |
 | `docs/15_README_STRATEGY.md` | When and how to maintain README and CHANGELOG, versioning per gate | at every gate, with new dependencies |
 | `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts | before collecting real call data |
+| `docs/18_MODEL_SELECTION.md` | Requirements on the model, operation shortlist, local test model, setup script, parallel calls | before work on `agent/llm.py`, before T-5.3 |
 | `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
 
 ---
