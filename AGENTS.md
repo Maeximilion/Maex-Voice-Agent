@@ -79,7 +79,8 @@ How to review:
 
 - `permissions:` is the least that works; no secrets in a workflow that runs for fork pull requests;
   no `pull_request_target` that checks out pull request code.
-- `ai-pr-review.yml` runs on a self-hosted runner. Any change that lets code from a fork run there is P0.
+- A change that adds a self-hosted runner, or lets code from a fork pull request run on one, is P0
+  (the repository is public).
 - A test is never skipped, disabled or quarantined to get green; a skip needs a platform reason
   written in the test.
 
