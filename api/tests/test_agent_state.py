@@ -250,3 +250,36 @@ def test_frage_zu_einem_gericht_laesst_den_entwurf_stehen():
     )
     assert state.order_id == order_id
     assert state.stage == "readback_pending"
+
+
+def test_greeted_reaches_the_model_only_once_set():
+    """The phone greeting comes from the code (telephony/handler.py); the model
+    learns it was said and does not greet a second time."""
+    state = make_state()
+    assert "greeted" not in state.to_prompt_json()
+
+    state.greeted = True
+
+    assert state.to_prompt_json()["greeted"] is True
+
+
+def test_available_transfer_keeps_the_target_number():
+    state = make_state()
+    apply_tool_result(
+        state,
+        "transfer_to_team",
+        ToolResult(ok=True, data={"available": True, "transfer_to": "+497215550000"}),
+    )
+    assert state.transfer_to == "+497215550000"
+    # The number is for the phone line, not for the model.
+    assert "transfer_to" not in state.to_prompt_json()
+
+
+def test_unavailable_transfer_keeps_no_target_number():
+    state = make_state()
+    apply_tool_result(
+        state,
+        "transfer_to_team",
+        ToolResult(ok=True, data={"available": False, "transfer_to": "+497215550000"}),
+    )
+    assert state.transfer_to is None

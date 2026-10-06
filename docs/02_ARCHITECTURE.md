@@ -113,6 +113,8 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 | `primary` | KI nimmt zuerst an, Team bleibt über die Durchwahl erreichbar. | 6 |
 | `paused` | KI ist aus, alle Anrufe gehen direkt ans Team. Der Not-Aus-Knopf der GUI. | jederzeit |
 
+A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the platform's routing says.
+
 ---
 
 ## 5. Ausfallverhalten
@@ -121,6 +123,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 |---|---|---|
 | Agent-API nicht erreichbar | Plattform bekommt Fehler → Agent sagt einen Satz und leitet ans Team weiter | Alarm an Maxi |
 | DB nicht erreichbar | API antwortet mit `service_unavailable`, Agent leitet weiter | Alarm |
+| Failure during a call on our side (database, model, adapter) | `telephony/handler.py` says the outage sentence (docs/05 §6) and transfers to the team extension, the call log gets `error`; without a database the number from `TEAM_PHONE` in `.env`; if the platform refuses the transfer, the error goes back to the webhook and the platform's own fallback takes the call | error log |
 | Voice-Plattform down | Rufumleitung greift nicht → Telefon klingelt normal beim Team | Alarm über Heartbeat |
 | n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm |
 | Internet weg | Telefon klingelt beim Team (Rufumleitung des Anbieters greift bei Nichterreichbarkeit) | offline sichtbar |
