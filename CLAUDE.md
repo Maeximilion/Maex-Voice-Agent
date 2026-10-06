@@ -133,7 +133,7 @@ Pick the model when the session starts. A model switch starts a cold cache, so e
 | Gate review, deep debugging when Opus 5.5 at `xhigh` also stalls | Fable 5.1 (`claude-fable-5-1`), only when Maxi asks | `high` |
 | File search, log reading | Haiku 4.5 (`claude-haiku-4-5`) or an Explore subagent | none (no effort setting) |
 
-Mixed task: take the higher model and the higher effort. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. Claude cannot read the session's effort setting, so `/start` names it and `/task` asks once whether it is set before it loads anything heavy. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
+Mixed task: take the higher model and the higher effort. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
