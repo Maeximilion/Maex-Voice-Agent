@@ -177,12 +177,17 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     """The order as the model now understands it. A change after the readback
     is a correction: the draft that was read out is no longer what the guest
     wants, and a later yes must not confirm it (CLAUDE.md §2 rule 3)."""
-    if _as_set(lines) == _as_set(state.cart):
-        # The same order, whatever the sequence of its lines and options: the
-        # state keeps the one that was read out (Codex PR #237, P2).
+    if same_order(lines, state.cart):
+        # The state keeps the sequence that was read out (Codex PR #237, P2).
         return
     order_corrected(state)
     state.cart = lines
+
+
+def same_order(lines: list[dict[str, Any]], other: list[dict[str, Any]]) -> bool:
+    """The same order, whatever the sequence of its lines and options and the
+    spelling of an option."""
+    return _as_set(lines) == _as_set(other)
 
 
 def _as_set(lines: list[dict[str, Any]]) -> list[str]:
@@ -283,22 +288,28 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:
-    """What the state keeps of a search hit. Of the options only the mandatory
-    groups with the names to choose from: no price, the total comes from
-    draft_order (CLAUDE.md §2 rule 1)."""
-    return {
-        "number": str(hit.get("number") or ""),
-        "name": str(hit.get("name") or ""),
-        # As of this search; for `guards.take_cart`, never shown to the model.
-        "sold_out": bool(hit.get("sold_out")),
-        "required": [
+    """What the state keeps of a search hit. Of the options the groups with the
+    names to choose from: no price, the total comes from draft_order (CLAUDE.md
+    §2 rule 1). `required` is shown to the model as `open` while nothing is
+    chosen; both lists are what `guards.take_cart` checks a line against."""
+
+    def groups(required: bool) -> list[dict[str, Any]]:
+        return [
             {
                 "group": group["group"],
                 "options": [option["name"] for option in group.get("options", [])],
             }
             for group in hit.get("option_groups") or []
-            if group.get("required")
-        ],
+            if bool(group.get("required")) is required
+        ]
+
+    return {
+        "number": str(hit.get("number") or ""),
+        "name": str(hit.get("name") or ""),
+        # As of this search; for `guards.take_cart`, never shown to the model.
+        "sold_out": bool(hit.get("sold_out")),
+        "required": groups(True),
+        "optional": groups(False),
     }
 
 
