@@ -11,3 +11,12 @@
           hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
 </div>
 {% endblock %}
+{% block scripts %}<script>
+  {# This page does not load app.js: show the red bar of base.html when a tap
+     fails for real (5xx, no network), or the form looks like it did nothing. #}
+  ["htmx:responseError", "htmx:sendError"].forEach(function (name) {
+    document.body.addEventListener(name, function () {
+      document.getElementById("stoerung").hidden = false;
+    });
+  });
+</script>{% endblock %}

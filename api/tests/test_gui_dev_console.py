@@ -50,6 +50,8 @@ def client(engine, monkeypatch):
     try:
         yield TestClient(app)
     finally:
+        for entry in dev.OPEN_CALLS.values():
+            entry.session.close()
         dev.OPEN_CALLS.clear()
 
 
@@ -245,6 +247,49 @@ def test_two_starts_at_once_leave_one_call(client, db, tenant_id, monkeypatch):
     t2.join(5)
 
     assert len(dev.OPEN_CALLS) == 1
+
+
+def test_failed_turn_rolls_the_session_back(client, tenant_id, monkeypatch):
+    call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    rolled_back = []
+    monkeypatch.setattr(
+        dev.OPEN_CALLS[call_id].session, "rollback", lambda: rolled_back.append(1)
+    )
+
+    def broken(self, text):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(dev.SimCall, "say", broken)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Hallo"})
+
+    assert rolled_back
+    assert call_id in dev.OPEN_CALLS
+
+
+def test_start_drops_a_stale_call_that_cannot_be_finished(
+    client, tenant_id, monkeypatch
+):
+    stale = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+
+    def broken(self):
+        raise RuntimeError("database gone")
+
+    monkeypatch.setattr(dev.SimCall, "finish", broken)
+
+    started = client.post(f"{BASE}/call", headers=HX)
+
+    assert started.status_code == 200
+    assert stale not in dev.OPEN_CALLS
+    assert len(dev.OPEN_CALLS) == 1
+
+
+def test_page_shows_a_failed_tap(client):
+    page = client.get(BASE)
+
+    assert "htmx:responseError" in page.text
+    assert 'id="stoerung"' in page.text
 
 
 def test_writes_need_the_htmx_header(client, tenant_id):

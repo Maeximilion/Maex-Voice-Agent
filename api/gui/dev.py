@@ -14,11 +14,13 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from api.core.errors import AppError
+from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.gui.router import _form, _require_htmx, templates
 from sim.session import SimCall, Turn, resolve_tenant
 
 router = APIRouter(prefix="/gui/dev", tags=["gui-dev"])
+logger = get_logger("api.gui.dev")
 
 NO_CALL = "Dieser Anruf ist nicht mehr offen. Bitte einen neuen Anruf starten."
 
@@ -81,7 +83,14 @@ def start(request: Request) -> HTMLResponse:
         for stale, old in list(OPEN_CALLS.items()):
             with old.lock:
                 if OPEN_CALLS.get(stale) is old:
-                    _finish(stale)
+                    try:
+                        _finish(stale)
+                    except Exception:
+                        # Unreachable by the page anyway: drop it, or one broken
+                        # call would block every new start until a restart.
+                        logger.exception("stale console call dropped: %s", stale)
+                        del OPEN_CALLS[stale]
+                        old.session.close()
         session = SessionLocal()
         try:
             tenant = resolve_tenant(session, None)
@@ -112,7 +121,13 @@ def say(
             return _view(request, None, problem=NO_CALL)
         if not text:
             return _view(request, entry)
-        turn = entry.call.say(text)
+        try:
+            turn = entry.call.say(text)
+        except Exception:
+            # The session outlives the request: without this a failed statement
+            # leaves it unusable for the retry (Codex PR #236).
+            entry.session.rollback()
+            raise
         entry.turns.append(turn)
         # A closing stage is the end of the call: no sentence after the goodbye.
         return _view(request, entry, ended=_finish(call_id) if turn.ended else None)
