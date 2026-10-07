@@ -205,12 +205,13 @@ def parse_turn(content: str) -> LLMTurn:
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
             state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,
-            # Empty counts as absent, as for the slots: a model that fills
-            # unused fields (`"cart": []`) must not erase the order.
-            # ponytail: an order can therefore not be emptied, only replaced;
-            # nothing is booked from it without draft_order and a yes. An
-            # explicit way to empty it when the call log shows the need.
-            cart=envelope.cart or None,
+            # null, "" and {} are a field left blank and say nothing. A list
+            # is a statement, also the empty one: the guest removed the last
+            # dish, and the draft that still holds it must not stay
+            # confirmable (Codex PR #237, P1).
+            cart=envelope.cart
+            if isinstance(envelope.cart, list)
+            else envelope.cart or None,
         )
     except ValueError as exc:  # pydantic's ValidationError is one, LLMTurn raises one
         raise LLMError("model answer outside the contract") from exc

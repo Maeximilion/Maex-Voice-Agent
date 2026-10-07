@@ -315,15 +315,66 @@ def test_refused_cart_after_the_readback_drops_the_draft():
     assert state.cart == [line(ENTE, 2)]
 
 
-def test_cart_does_not_touch_a_reservation_that_was_read_back():
-    state = new_state(stage="readback_pending", reservation_id=uuid.uuid4())
-    searched_ids = {ENTE}
-    state.known_item_ids |= searched_ids
+@pytest.mark.parametrize("cart", [[line(ENTE, 2)], [line(ENTE), line(SUPPE)]])
+def test_cart_change_drops_a_reservation_that_was_read_back_too(cart):
+    """The guest put an order together, switched to a table, heard the
+    reservation read back and then goes on with the order (Codex PR #237, P1).
+    The conversation has moved on, as with a menu search after a readback: a
+    yes to a question about the order must not book the table. A refused cart
+    counts the same, it is the same attempt."""
+    state = new_state()
+    searched(state, ENTE)
+    take_cart(state, [line(ENTE)])
+    reservation_id = uuid.uuid4()
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": str(reservation_id)}),
+    )
+    start = begin_turn(state)
+
+    take_cart(state, cart)
+
+    assert state.stage == "collecting"
+    assert state.reservation_id is None
+    confirm = ToolCall(
+        "confirm", {"entity": "reservation", "entity_id": str(reservation_id)}
+    )
+    assert refusal(state, start, "Ja", confirm) is not None
+
+
+def test_same_cart_keeps_a_reservation_that_was_read_back():
+    state = new_state()
+    searched(state, ENTE)
+    take_cart(state, [line(ENTE)])
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": str(uuid.uuid4())}),
+    )
 
     take_cart(state, [line(ENTE)])
 
     assert state.stage == "readback_pending"
     assert state.reservation_id is not None
+
+
+def test_emptied_cart_after_the_readback_drops_the_draft():
+    """The guest removes the only dish after the readback (Codex PR #237, P1):
+    the order is empty, and the draft that still holds the dish must not be
+    confirmable by the next yes."""
+    state = new_state()
+    searched(state, ENTE)
+    order_id = order_read_back(state, line(ENTE))
+    start = begin_turn(state)
+
+    assert take_cart(state, []) is None
+
+    assert state.cart == []
+    assert state.stage == "collecting"
+    assert state.order_id is None
+    confirm = ToolCall("confirm", {"entity": "order", "entity_id": order_id})
+    assert refusal(state, start, "Ja", confirm) is not None
 
 
 def test_confirmed_order_empties_the_cart():
@@ -346,12 +397,22 @@ def test_answer_carries_the_cart():
     assert turn.cart == [line(ENTE, 2)]
 
 
-@pytest.mark.parametrize("empty", [None, [], {}, ""])
-def test_empty_cart_in_an_answer_leaves_the_order_alone(empty):
-    """A model fills unused fields; that must not erase the order."""
-    turn = parse_turn(json.dumps({"say": "Gern.", "cart": empty}))
+@pytest.mark.parametrize("absent", [None, {}, ""])
+def test_absent_cart_in_an_answer_leaves_the_order_alone(absent):
+    """A model fills unused fields with null, "" or {}; that says nothing
+    about the order."""
+    turn = parse_turn(json.dumps({"say": "Gern.", "cart": absent}))
 
     assert turn.cart is None
+
+
+def test_empty_list_in_an_answer_is_an_empty_order():
+    """`[]` is a statement, not a blank: the whole order as it stands is
+    nothing (Codex PR #237, P1). Read as "unchanged" it left the draft with
+    the removed dish waiting for a yes."""
+    turn = parse_turn(json.dumps({"say": "Gern.", "cart": []}))
+
+    assert turn.cart == []
 
 
 def test_order_format_tells_the_model_about_the_cart():
@@ -599,14 +660,17 @@ def test_tool_call_next_to_a_refused_cart_is_not_dispatched(session, tenant_id, 
     assert state.known_item_ids == set()
 
 
+@pytest.mark.parametrize("emptied", [False, True])
 def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
-    session, tenant_id, state
+    session, tenant_id, state, emptied
 ):
-    """The guest changes the quantity after the readback, the model notes it
-    without drafting again and asks on. The yes to that question is no yes to
-    the order that was read out."""
+    """The guest changes the quantity after the readback, or removes the only
+    dish (Codex PR #237, P1). The model notes it without drafting again and
+    asks on. The yes to that question is no yes to the order that was read
+    out."""
     ente = item_id(session, tenant_id, "47")
     huhn = [{"group": "Fleisch", "name": "Huhn"}]
+    changed = [] if emptied else [line(ente, 3, options=huhn)]
     llm = FakeLLM(
         [
             LLMTurn(tool_call=ToolCall("search_menu", {"query": "die 47"})),
@@ -627,14 +691,7 @@ def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
     order = session.scalars(select(Order)).one()
     assert state.stage == "readback_pending"
 
-    llm = FakeLLM(
-        [
-            LLMTurn(
-                say="Gern, drei. Sonst noch etwas?",
-                cart=[line(ente, 3, options=huhn)],
-            )
-        ]
-    )
+    llm = FakeLLM([LLMTurn(say="Gern. Sonst noch etwas?", cart=changed)])
     ConversationLoop(session, llm, "system", now=NOW).run_turn(state, "Mach drei draus")
     llm = FakeLLM(
         [
@@ -650,4 +707,4 @@ def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
 
     session.refresh(order)
     assert order.status == "draft"
-    assert state.cart == [line(ente, 3, options=huhn)]
+    assert state.cart == changed

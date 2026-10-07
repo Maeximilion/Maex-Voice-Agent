@@ -183,9 +183,11 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
 
 
 def order_corrected(state: ConversationState) -> None:
-    """Drops an order draft that waits for its yes. A reservation that was read
-    back is not touched: the order is not what the guest was asked about."""
-    if state.stage == "readback_pending" and state.order_id is not None:
+    """Drops the draft that waits for its yes, an order or a reservation. A
+    reservation too: the guest who goes on with the order after a table was
+    read back has moved on, as with a menu search (`_supersedes`), and a yes
+    to a question about the order must not book the table (Codex PR #237, P1)."""
+    if state.stage == "readback_pending":
         _drop_readback(state, "draft_order")
 
 
