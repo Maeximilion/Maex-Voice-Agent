@@ -74,13 +74,7 @@ class RecordingLLM:
         self._inner = inner
         self.recording = Recording()
         # What the recording held before the open call (`_retract`).
-        self._before: tuple[int, int, int, dict[str, Any] | None, int | None] = (
-            0,
-            0,
-            0,
-            None,
-            None,
-        )
+        self._before: tuple[int, int, int, dict[str, Any] | None] = (0, 0, 0, None)
         # The call whose result arrives with the next input.
         self._open_call: tuple[str, dict[str, Any]] | None = None
 
@@ -129,14 +123,17 @@ class RecordingLLM:
         on a "Nein" that the core refused booked nothing. A call whose result
         never comes back keeps its entries, the careful side."""
         rec = self.recording
-        guessed, unconfirmed, rec.confirms, rec.last_confirm, rec.drafted_at = (
-            self._before
-        )
+        guessed, unconfirmed, rec.confirms, rec.last_confirm = self._before
         if len(rec.guessed) > guessed or len(rec.unconfirmed) > unconfirmed:
             last = rec.customer_lines[-1] if rec.customer_lines else ""
             rec.refused_attempts.append((name, last))
         del rec.guessed[guessed:]
         del rec.unconfirmed[unconfirmed:]
+        if name in DRAFT_TOOLS:
+            # No draft a yes could answer, not even the one before: a failed
+            # correction takes the readback away in the core (`agent/state.py`
+            # `_supersedes`), and the recorder has to agree (Codex PR #239).
+            rec.drafted_at = None
 
     def _observe_call(self, name: str, args: dict[str, Any]) -> None:
         rec = self.recording
@@ -146,7 +143,6 @@ class RecordingLLM:
             len(rec.unconfirmed),
             rec.confirms,
             rec.last_confirm,
-            rec.drafted_at,
         )
         rec.tool_calls.append(name)
         self._open_call = (name, dict(args))

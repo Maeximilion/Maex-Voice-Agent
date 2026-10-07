@@ -457,6 +457,37 @@ def test_refused_draft_is_no_draft_a_later_yes_could_confirm():
     assert rec.recording.unconfirmed == ["Ja, passt so."]
 
 
+def test_rejected_correction_leaves_no_draft_a_yes_could_confirm():
+    """A draft was read back, the correction of it is rejected, the guest says
+    yes and the model calls `confirm` (Codex PR #239, P2). The core refuses:
+    the failed correction took the readback away (`agent/state.py`
+    `_supersedes`). The recorder has to see it the same way, or the yes would
+    count as consent to the old draft and the refused confirm would not show
+    up as an attempt."""
+    draft = LLMTurn(tool_call=ToolCall("draft_order", {"items": []}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                draft,
+                LLMTurn(say="vorlesen"),
+                draft,
+                LLMTurn(say="Das ging nicht. Sonst noch etwas?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+                LLMTurn(say="Ich lese noch einmal vor."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _result("draft_order", ok=True))
+    rec.next_turn("", {}, "Doch zwei.")
+    rec.next_turn("", {}, _result("draft_order", ok=False))
+    rec.next_turn("", {}, "Ja, passt so.")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja, passt so.")]
+
+
 def test_tool_rejection_without_a_violation_is_no_refused_attempt():
     """A slot that is taken or a missing name is an ordinary no of a tool."""
     rec = RecordingLLM(
