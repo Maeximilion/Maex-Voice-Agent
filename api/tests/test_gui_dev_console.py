@@ -1,6 +1,7 @@
 """gui: simulator console in the browser, ENV=dev only (T-2.5, docs/11 §gui)."""
 
 import re
+import threading
 
 import pytest
 from fastapi import FastAPI
@@ -159,6 +160,44 @@ def test_new_call_hangs_up_a_call_the_page_lost(client, db, tenant_id):
     row = db.scalar(select(Call).where(Call.id == first))
     db.refresh(row)
     assert row.ended_at is not None
+
+
+def test_hang_up_waits_for_a_running_turn(client, db, tenant_id, monkeypatch):
+    call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    running, release = threading.Event(), threading.Event()
+
+    def slow_say(self, text):
+        running.set()
+        assert release.wait(5)
+        return Turn(customer=text, say=["Antwort"])
+
+    monkeypatch.setattr(dev.SimCall, "say", slow_say)
+    results = {}
+
+    def say():
+        results["say"] = client.post(
+            f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Hallo"}
+        )
+
+    def hang_up():
+        results["end"] = client.post(f"{BASE}/call/{call_id}/end", headers=HX)
+
+    t1 = threading.Thread(target=say)
+    t1.start()
+    assert running.wait(5)
+    t2 = threading.Thread(target=hang_up)
+    t2.start()
+    t2.join(0.5)
+    assert (
+        t2.is_alive()
+    )  # the hang-up waits, it does not close the session under the turn
+    release.set()
+    t1.join(5)
+    t2.join(5)
+
+    assert "Antwort" in results["say"].text
+    assert "Anruf beendet" in results["end"].text
+    assert call_id not in dev.OPEN_CALLS
 
 
 def test_writes_need_the_htmx_header(client, tenant_id):

@@ -5,6 +5,8 @@ API, like `sim.cli`, so a booking made here shows up on the tablet. Logic stays 
 `sim/session.py`; this module only keeps the open calls and renders them.
 """
 
+import threading
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, Request
@@ -27,6 +29,8 @@ class OpenCall:
     call: SimCall
     tenant_name: str
     turns: list[Turn] = field(default_factory=list)
+    # A sentence and a hang-up can arrive together; they share one session.
+    lock: threading.Lock = field(default_factory=threading.Lock)
 
 
 # ponytail: open calls live in this process only, one worker, dev tool. A restart
@@ -64,8 +68,10 @@ def console(request: Request) -> HTMLResponse:
 def start(request: Request) -> HTMLResponse:
     # A reloaded page has lost its call id: hang up what is still open instead of
     # keeping an unreachable call and its session (Codex PR #236, one user at a time).
-    for stale in list(OPEN_CALLS):
-        _finish(stale)
+    for stale, old in list(OPEN_CALLS.items()):
+        with old.lock:
+            if OPEN_CALLS.get(stale) is old:
+                _finish(stale)
     session = SessionLocal()
     try:
         tenant = resolve_tenant(session, None)
@@ -89,15 +95,17 @@ def say(
     request: Request, call_id: str, form: dict[str, str] = Depends(_form)
 ) -> HTMLResponse:
     entry = OPEN_CALLS.get(call_id)
-    if entry is None:
-        return _view(request, None, problem=NO_CALL)
     text = form.get("text", "").strip()
-    if not text:
-        return _view(request, entry)
-    turn = entry.call.say(text)
-    entry.turns.append(turn)
-    # A closing stage is the end of the call: no further sentence after the goodbye.
-    return _view(request, entry, ended=_finish(call_id) if turn.ended else None)
+    with entry.lock if entry else nullcontext():
+        # The hang-up may have won the lock while this request waited for it.
+        if entry is None or OPEN_CALLS.get(call_id) is not entry:
+            return _view(request, None, problem=NO_CALL)
+        if not text:
+            return _view(request, entry)
+        turn = entry.call.say(text)
+        entry.turns.append(turn)
+        # A closing stage is the end of the call: no sentence after the goodbye.
+        return _view(request, entry, ended=_finish(call_id) if turn.ended else None)
 
 
 @router.post(
@@ -108,6 +116,7 @@ def say(
 )
 def end(request: Request, call_id: str) -> HTMLResponse:
     entry = OPEN_CALLS.get(call_id)
-    if entry is None:
-        return _view(request, None, problem=NO_CALL)
-    return _view(request, entry, ended=_finish(call_id))
+    with entry.lock if entry else nullcontext():
+        if entry is None or OPEN_CALLS.get(call_id) is not entry:
+            return _view(request, None, problem=NO_CALL)
+        return _view(request, entry, ended=_finish(call_id))
