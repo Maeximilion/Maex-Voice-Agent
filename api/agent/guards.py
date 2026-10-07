@@ -10,17 +10,30 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 3: `confirm` only when the guest's current sentence is an explicit yes
   to the draft that was read back before this turn.
 - Rule 2: `draft_order` only with dishes from a clear match of `search_menu`,
-  or from candidates of an unclear match that the guest heard by name.
+  or from candidates of an unclear match that the guest heard by name. The
+  same holds for the order a model keeps across turns (`cart`, `take_cart`):
+  a dish nobody searched for never gets into the state, where the next turn
+  would read it as found.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
+  Of an order line it writes dish, quantity, options and note; number, name
+  and the options still open are added by the state from the search result.
 """
 
 import re
 from dataclasses import dataclass
+from typing import Any
+
+from pydantic import ValidationError
 
 from api.agent.consent import is_yes
-from api.agent.dispatch import ToolResult
+from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.llm import ToolCall
-from api.agent.state import ConversationState
+from api.agent.state import (
+    ConversationState,
+    cart_lines,
+    order_corrected,
+    replace_cart,
+)
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -31,6 +44,16 @@ HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
     "search_menu in diesem Anruf. Erst suchen; bei mehreren Treffern den Gast "
     "wählen lassen."
+)
+HINT_CART_ITEM = (
+    "Abgelehnt: `cart` nennt eine menu_item_id, die nicht aus einem eindeutigen "
+    "Treffer von search_menu in diesem Anruf stammt. Erst suchen; bei mehreren "
+    "Treffern den Gast wählen lassen. Die Bestellung im Zustand ist unverändert."
+)
+HINT_CART_FORM = (
+    "Abgelehnt: `cart` ist keine Liste von Positionen wie `items` von "
+    "draft_order (menu_item_id, quantity, optional options und note). Die "
+    "Bestellung im Zustand ist unverändert."
 )
 
 
@@ -81,6 +104,33 @@ def _named(heard: str, number: str, name: str) -> bool:
     )
 
 
+def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
+    """The order a model wants to keep for the next turn (`LLMTurn.cart`).
+    Taken as a whole or not at all: the order in the state is always one the
+    core accepted in full. None when it was taken; otherwise the failed result
+    the model gets instead of having its answer carried out.
+
+    A refused order is still an attempt to change the order: a draft that
+    waits for its yes is dropped as after a failed correction (`state.py`,
+    `_supersedes`), so a yes cannot confirm what the guest just changed."""
+    try:
+        lines = cart_lines(cart)
+    except ValidationError as exc:
+        # Field and problem, never the value: a note can hold what a guest said.
+        refused = ToolResult(
+            ok=False,
+            error_code="invalid_input",
+            hint=f"{HINT_CART_FORM} {validation_hint(exc)}",
+        )
+    else:
+        if all(line["menu_item_id"] in state.known_item_ids for line in lines):
+            replace_cart(state, lines)
+            return None
+        refused = _CART_ITEM
+    order_corrected(state)
+    return refused
+
+
 def refusal(
     state: ConversationState, start: TurnStart, user_text: str, call: ToolCall
 ) -> ToolResult | None:
@@ -95,6 +145,7 @@ def refusal(
 
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
+_CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITEM)
 
 
 def _readback_id(state: ConversationState) -> str | None:

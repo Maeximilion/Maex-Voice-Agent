@@ -54,6 +54,9 @@ SAY_NOBODY_REACHABLE = (
 )
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
+# Name under which a refused order of the model (`LLMTurn.cart`) goes back to
+# it and into `calls.tool_calls`. No tool: nothing is dispatched under it.
+CART = "cart"
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
 # Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
@@ -118,6 +121,8 @@ class ConversationLoop:
         # Leiter mit weniger als den vorgesehenen zwei echten Kundenversuchen je
         # Stufe hochtreiben (Codex-Review PR #102, P2).
         reported_failures: set[str] = set()
+        # The tools the model called in this guest turn, refused ones included.
+        called: list[str] = []
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -129,7 +134,9 @@ class ConversationLoop:
                     # sentence of this turn rides along, or the model no
                     # longer knows what the result is for.
                     self._prompt_state(
-                        state, None if pending_input is user_text else user_text
+                        state,
+                        None if pending_input is user_text else user_text,
+                        called,
                     ),
                     pending_input,
                 )
@@ -173,6 +180,19 @@ class ConversationLoop:
                         detail=user_text,
                     )
 
+            if turn.cart is not None:
+                # Rule 2 for what a model keeps across turns (guards.py). A
+                # refused order stops the whole answer: neither its sentence
+                # nor its tool call is carried out on an order the core did
+                # not take. It costs a tool hop like any refused call.
+                refused = guards.take_cart(state, turn.cart)
+                if refused is not None:
+                    log_refused(
+                        self._session, state.call_id, state.tenant_id, CART, refused
+                    )
+                    pending_input = _tool_result_as_input(CART, refused)
+                    continue
+
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
@@ -196,19 +216,29 @@ class ConversationLoop:
                 result = refused
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
-            apply_tool_result(state, turn.tool_call.name, result)
+            apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            called.append(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
 
     def _prompt_state(
-        self, state: ConversationState, guest_said: str | None = None
+        self,
+        state: ConversationState,
+        guest_said: str | None = None,
+        called: list[str] | None = None,
     ) -> dict[str, Any]:
         data = state.to_prompt_json()
         if guest_said:
             # Within one guest turn only: the next turn starts from the
             # compact state again, never from a transcript (docs/05 §5).
             data["guest_said"] = guest_said
+        if called:
+            # Also within the turn only. A model sees one tool result at a
+            # time and not that it asked for it: without this a real model
+            # called get_service_status again on its own result until the
+            # hop limit, and the call ended with the team.
+            data["called"] = list(called)
         # A model has no clock: "morgen um sieben" and "am Samstag" need today's
         # date and weekday. Local time of the restaurant, from the same clock
         # the tools get (`now`), so a replay with a fixed time stays the same.

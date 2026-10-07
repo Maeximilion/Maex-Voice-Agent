@@ -402,10 +402,14 @@ def test_failed_search_makes_nothing_usable():
 
 
 def test_item_ids_never_go_into_the_prompt_state():
+    """The core's memory is not the model's. A dish reaches the next turn only
+    as a line of the order the core took (test_agent_cart.py)."""
     state = new_state()
     searched(state, {"match_type": "exact_number", "results": [hit(ENTE)]})
+    searched(state, {"match_type": "ambiguous", "results": [hit(SUPPE), hit(PHO)]})
 
     assert ENTE not in str(state.to_prompt_json())
+    assert PHO not in str(state.to_prompt_json())
 
 
 @pytest.mark.parametrize(

@@ -7,14 +7,16 @@ Gesprächsdauer, der Verlauf schon.
 
 import uuid
 from contextlib import suppress
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.agent.dispatch import ToolResult
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
+from api.domain.menu.items import option_key
 from api.domain.menu.search import CLEAR_MATCHES
+from api.schemas.orders import MAX_ITEMS, OrderItemIn
 
 Stage = Literal[
     "start",
@@ -44,6 +46,24 @@ class ConversationState(BaseModel):
     # until the sentence that ends the turn shows which of them were named.
     known_item_ids: set[str] = Field(default_factory=set)
     offered_items: dict[str, tuple[str, str]] = Field(default_factory=dict)
+    # The order as it stands, lines in the form of `items` of draft_order. The
+    # model writes it (`LLMTurn.cart`), the core takes it only with dishes it
+    # knows (`guards.take_cart`), and it goes back with every turn: a model
+    # keeps nothing between turns, and without it a dish found in one turn is
+    # gone in the next.
+    cart: list[dict[str, Any]] = Field(default_factory=list)
+    # What search_menu said about a dish: id to number, name and mandatory
+    # option groups. Never sent as it is. The labels of the `cart` lines in the
+    # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
+    #
+    # Only the order goes back to the model, not what else a search delivered.
+    # A first version also showed the dishes a search had found and the order
+    # did not hold yet; on a real model the candidate the guest had NOT chosen
+    # stayed in sight, and two turns later the model ordered it (07.10.2026).
+    # ponytail: an answer like "die erste" to an offer can therefore not be
+    # resolved from the state, the model searches again or asks. A view of the
+    # open question for the one following turn if the call log shows the need.
+    seen_items: dict[str, dict[str, Any]] = Field(default_factory=dict)
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.
     greeted: bool = False
@@ -67,7 +87,30 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
+        if self.cart or self.seen_items:
+            # From the first menu search on, also while it is empty: the model
+            # has to write the dish it just found into it, and the client sends
+            # the rules for that only when the state carries the field
+            # (`agent/llm.py` `ORDER_FORMAT`). A call about a table never does.
+            data["cart"] = [self._line(line) for line in self.cart]
         return data
+
+    def _line(self, line: dict[str, Any]) -> dict[str, Any]:
+        """A line of the order as the model reads it: with the number and name
+        of the card, and with `open` for mandatory groups nothing was chosen
+        from yet. Without `open` a model would learn of a missing choice only
+        from a failed draft_order, and by then no longer know the group."""
+        seen = self.seen_items.get(line["menu_item_id"], {})
+        chosen = {option_key(option["group"]) for option in line.get("options", [])}
+        shown = {**line, **{k: seen[k] for k in ("number", "name") if seen.get(k)}}
+        still_open = [
+            group
+            for group in seen.get("required", [])
+            if option_key(group["group"]) not in chosen
+        ]
+        if still_open:
+            shown["open"] = still_open
+        return shown
 
 
 def initial_state(
@@ -106,7 +149,52 @@ def apply_state_patch(
     return named
 
 
-def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -> None:
+_LINES = TypeAdapter(Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)])
+
+
+def cart_lines(raw: Any) -> list[dict[str, Any]]:
+    """`items` of draft_order, or the `cart` of a model, as the lines the state
+    keeps: the same check as draft_order, and one form for the same order
+    (`options: []` and no options are the same line). Raises pydantic's
+    `ValidationError`. Which dishes a line may name is not checked here
+    (`guards.take_cart`)."""
+    lines = []
+    for item in _LINES.validate_python(raw):
+        line: dict[str, Any] = {
+            "menu_item_id": str(item.menu_item_id),
+            "quantity": item.quantity,
+        }
+        if item.options:
+            line["options"] = [option.model_dump() for option in item.options]
+        if note := (item.note or "").strip():
+            line["note"] = note
+        lines.append(line)
+    return lines
+
+
+def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
+    """The order as the model now understands it. A change after the readback
+    is a correction: the draft that was read out is no longer what the guest
+    wants, and a later yes must not confirm it (CLAUDE.md §2 rule 3)."""
+    if lines == state.cart:
+        return
+    order_corrected(state)
+    state.cart = lines
+
+
+def order_corrected(state: ConversationState) -> None:
+    """Drops an order draft that waits for its yes. A reservation that was read
+    back is not touched: the order is not what the guest was asked about."""
+    if state.stage == "readback_pending" and state.order_id is not None:
+        _drop_readback(state, "draft_order")
+
+
+def apply_tool_result(
+    state: ConversationState,
+    name: str,
+    result: ToolResult,
+    args: dict[str, Any] | None = None,
+) -> None:
     """Schreibt ein erfolgreiches Tool-Ergebnis in den Zustand. Fehlschläge ändern
     den Zustand nicht: das Modell entscheidet auf Basis von `say`/`error_code`,
     was als Nächstes versucht wird (Verständnis-Leiter, T-2.2).
@@ -131,9 +219,17 @@ def apply_tool_result(state: ConversationState, name: str, result: ToolResult) -
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
+        # The order in the state is the one that was read out, also when the
+        # model drafted without writing `cart` first: a correction after the
+        # readback starts from these lines.
+        with suppress(ValidationError):
+            state.cart = cart_lines((args or {}).get("items"))
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "confirm":
+        if state.order_id is not None:
+            # Booked: no longer an order that is being put together.
+            state.cart = []
         state.stage = "confirmed"
     elif name == "create_callback":
         state.stage = "callback"
@@ -149,15 +245,37 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
     parts = data.get("positions") if data.get("match_type") == "positions" else [data]
     for part in parts or []:
         hits = part.get("results") or []
-        if part.get("match_type") in CLEAR_MATCHES:
+        clear = part.get("match_type") in CLEAR_MATCHES
+        if clear:
             # The hit of a clear match is its first result, as everywhere else.
-            state.known_item_ids.update(str(h["menu_item_id"]) for h in hits[:1])
-        else:
+            hits = hits[:1]
+            state.known_item_ids.update(str(h["menu_item_id"]) for h in hits)
+        for h in hits:
+            state.seen_items[str(h["menu_item_id"])] = _seen(h)
+        if not clear:
             for h in hits:
                 state.offered_items[str(h["menu_item_id"])] = (
                     str(h.get("number") or ""),
                     str(h.get("name") or ""),
                 )
+
+
+def _seen(hit: dict[str, Any]) -> dict[str, Any]:
+    """What the state keeps of a search hit. Of the options only the mandatory
+    groups with the names to choose from: no price, the total comes from
+    draft_order (CLAUDE.md §2 rule 1)."""
+    return {
+        "number": str(hit.get("number") or ""),
+        "name": str(hit.get("name") or ""),
+        "required": [
+            {
+                "group": group["group"],
+                "options": [option["name"] for option in group.get("options", [])],
+            }
+            for group in hit.get("option_groups") or []
+            if group.get("required")
+        ],
+    }
 
 
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
