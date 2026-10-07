@@ -33,6 +33,10 @@ from api.agent.llm import LLMClient, LLMTurn, Usage
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
 # Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
 DRAFT_TOOLS = frozenset({"draft_order", "create_reservation"})
+# Take a readback away in the core whatever their result (`agent/state.py`
+# `_supersedes`): the guest is correcting, and a yes afterwards answers the new
+# question, not the old draft (Codex PR #239).
+SUPERSEDING_TOOLS = frozenset({"search_menu", "check_slot"})
 
 
 @dataclass
@@ -149,6 +153,8 @@ class RecordingLLM:
         last = rec.customer_lines[-1] if rec.customer_lines else ""
         if name in DRAFT_TOOLS:
             rec.drafted_at = len(rec.customer_lines)
+        elif name in SUPERSEDING_TOOLS:
+            rec.drafted_at = None
         if name == "draft_order":
             for item in args.get("items") or []:
                 item_id = str(item.get("menu_item_id", ""))

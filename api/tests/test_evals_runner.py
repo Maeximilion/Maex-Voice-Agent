@@ -488,6 +488,35 @@ def test_rejected_correction_leaves_no_draft_a_yes_could_confirm():
     assert rec.recording.refused_attempts == [("confirm", "Ja, passt so.")]
 
 
+@pytest.mark.parametrize("tool", ["search_menu", "check_slot"])
+def test_new_search_after_the_readback_leaves_no_draft_a_yes_could_confirm(tool):
+    """The core drops a readback after any menu search or slot check, also a
+    successful one (`agent/state.py` `_supersedes`): the guest is correcting.
+    A yes to the question that follows is no yes to the old draft, and the
+    `confirm` the core then refuses is an attempt (Codex PR #239, P2)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="vorlesen"),
+                LLMTurn(tool_call=ToolCall(tool, {})),
+                LLMTurn(say="Meinen Sie die 13?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+                LLMTurn(say="Ich lese noch einmal vor."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 12.")
+    rec.next_turn("", {}, _result("draft_order", ok=True))
+    rec.next_turn("", {}, "Doch die Suppe.")
+    rec.next_turn("", {}, _result(tool, ok=True))
+    rec.next_turn("", {}, "Ja.")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja.")]
+
+
 def test_tool_rejection_without_a_violation_is_no_refused_attempt():
     """A slot that is taken or a missing name is an ordinary no of a tool."""
     rec = RecordingLLM(
