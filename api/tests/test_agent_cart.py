@@ -326,6 +326,24 @@ def test_same_cart_in_another_order_keeps_the_draft():
     assert refusal(state, start, "Ja", confirm) is None
 
 
+def test_same_option_in_another_spelling_keeps_the_draft():
+    """draft_order compares group and option without case and repeated
+    spaces (`option_key`); the cart has to agree, or "huhn" for "Huhn" next
+    to the yes would cost a second readback (Codex PR #237, P2)."""
+    state = new_state()
+    searched(state, ENTE)
+    order_id = order_read_back(
+        state, line(ENTE, options=[{"group": "Fleisch", "name": "Huhn"}])
+    )
+    start = begin_turn(state)
+
+    take_cart(state, [line(ENTE, options=[{"group": "fleisch", "name": " huhn"}])])
+
+    assert state.stage == "readback_pending"
+    confirm = ToolCall("confirm", {"entity": "order", "entity_id": order_id})
+    assert refusal(state, start, "Ja", confirm) is None
+
+
 def test_same_dishes_in_other_quantities_are_a_changed_cart():
     state = new_state()
     searched(state, ENTE)

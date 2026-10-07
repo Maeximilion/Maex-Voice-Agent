@@ -192,7 +192,7 @@ def _as_set(lines: list[dict[str, Any]]) -> list[str]:
             {
                 **line,
                 "options": sorted(
-                    (option["group"], option["name"])
+                    (option_key(option["group"]), option_key(option["name"]))
                     for option in line.get("options", [])
                 ),
             },
