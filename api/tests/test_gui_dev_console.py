@@ -330,6 +330,15 @@ def test_page_shows_a_failed_tap(client):
 
     assert "htmx:responseError" in page.text
     assert 'id="stoerung"' in page.text
+    assert "htmx:afterRequest" in page.text  # a working tap clears the bar again
+
+
+def test_send_and_hang_up_share_one_request_queue(client, tenant_id):
+    form = client.post(f"{BASE}/call", headers=HX).text
+
+    # Without a shared hx-sync a late sentence answer could swap the form back in
+    # after the hang-up answer (Codex PR #236).
+    assert form.count('hx-sync="closest .card:queue last"') == 2
 
 
 def test_writes_need_the_htmx_header(client, tenant_id):

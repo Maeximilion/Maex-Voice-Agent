@@ -19,10 +19,10 @@
   <p><b>Anruf beendet: {{ ended.outcome }}, {{ ended.duration_seconds }} s</b></p>
   <button type="button" class="primary" hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
   {% else %}
-  <form hx-post="/gui/dev/console/call/{{ call_id }}/say" hx-target="#anruf" hx-swap="innerHTML">
+  <form hx-post="/gui/dev/console/call/{{ call_id }}/say" hx-target="#anruf" hx-swap="innerHTML" hx-sync="closest .card:queue last">
     <input type="text" name="text" autofocus autocomplete="off" aria-label="Kunde sagt" placeholder="Kunde sagt ...">
     <button type="submit" class="primary">Senden</button>
-    <button type="button" hx-post="/gui/dev/console/call/{{ call_id }}/end" hx-target="#anruf" hx-swap="innerHTML">Auflegen</button>
+    <button type="button" hx-post="/gui/dev/console/call/{{ call_id }}/end" hx-target="#anruf" hx-swap="innerHTML" hx-sync="closest .card:queue last">Auflegen</button>
   </form>
   {% endif %}
 </div>

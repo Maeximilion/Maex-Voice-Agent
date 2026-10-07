@@ -19,4 +19,8 @@
       document.getElementById("stoerung").hidden = false;
     });
   });
+  // A tap that works again clears the bar of the failed one before it.
+  document.body.addEventListener("htmx:afterRequest", function (e) {
+    if (e.detail.successful) document.getElementById("stoerung").hidden = true;
+  });
 </script>{% endblock %}
