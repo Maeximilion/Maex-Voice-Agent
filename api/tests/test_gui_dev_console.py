@@ -200,6 +200,53 @@ def test_hang_up_waits_for_a_running_turn(client, db, tenant_id, monkeypatch):
     assert call_id not in dev.OPEN_CALLS
 
 
+def test_failed_hang_up_keeps_the_call_for_a_retry(client, db, tenant_id, monkeypatch):
+    call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    real_finish = dev.SimCall.finish
+    calls = []
+
+    def flaky_finish(self):
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("database gone")
+        return real_finish(self)
+
+    monkeypatch.setattr(dev.SimCall, "finish", flaky_finish)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"{BASE}/call/{call_id}/end", headers=HX)
+    assert call_id in dev.OPEN_CALLS
+
+    retry = client.post(f"{BASE}/call/{call_id}/end", headers=HX)
+
+    assert "Anruf beendet" in retry.text
+    assert call_id not in dev.OPEN_CALLS
+
+
+def test_two_starts_at_once_leave_one_call(client, db, tenant_id, monkeypatch):
+    inside, release = threading.Event(), threading.Event()
+    real = dev.resolve_tenant
+
+    def slow_resolve(session, name):
+        inside.set()
+        assert release.wait(5)
+        return real(session, name)
+
+    monkeypatch.setattr(dev, "resolve_tenant", slow_resolve)
+    t1 = threading.Thread(target=lambda: client.post(f"{BASE}/call", headers=HX))
+    t2 = threading.Thread(target=lambda: client.post(f"{BASE}/call", headers=HX))
+    t1.start()
+    assert inside.wait(5)
+    t2.start()
+    t2.join(0.5)
+    assert t2.is_alive()  # the second start waits for the first
+    release.set()
+    t1.join(5)
+    t2.join(5)
+
+    assert len(dev.OPEN_CALLS) == 1
+
+
 def test_writes_need_the_htmx_header(client, tenant_id):
     assert client.post(f"{BASE}/call").status_code == 403
 

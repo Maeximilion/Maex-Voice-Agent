@@ -36,6 +36,8 @@ class OpenCall:
 # ponytail: open calls live in this process only, one worker, dev tool. A restart
 # drops them (the call row stays open); move to the database if it ever matters.
 OPEN_CALLS: dict[str, OpenCall] = {}
+# Two tabs starting a call at once must not both pass the clean-up (Codex PR #236).
+_START_LOCK = threading.Lock()
 
 
 def _view(request: Request, entry: OpenCall | None, **extra):
@@ -46,12 +48,19 @@ def _view(request: Request, entry: OpenCall | None, **extra):
 
 
 def _finish(call_id: str):
-    """Hang up and forget the call; the browser may have lost it (reload, restart)."""
-    entry = OPEN_CALLS.pop(call_id)
+    """Hang up and forget the call; the browser may have lost it (reload, restart).
+
+    The entry stays until the call row is closed: if the database fails here, a
+    retry still finds the call and can finish it (Codex PR #236)."""
+    entry = OPEN_CALLS[call_id]
     try:
-        return entry.call.finish()
-    finally:
-        entry.session.close()
+        ended = entry.call.finish()
+    except Exception:
+        entry.session.rollback()
+        raise
+    del OPEN_CALLS[call_id]
+    entry.session.close()
+    return ended
 
 
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
@@ -66,22 +75,23 @@ def console(request: Request) -> HTMLResponse:
     dependencies=[Depends(_require_htmx)],
 )
 def start(request: Request) -> HTMLResponse:
-    # A reloaded page has lost its call id: hang up what is still open instead of
-    # keeping an unreachable call and its session (Codex PR #236, one user at a time).
-    for stale, old in list(OPEN_CALLS.items()):
-        with old.lock:
-            if OPEN_CALLS.get(stale) is old:
-                _finish(stale)
-    session = SessionLocal()
-    try:
-        tenant = resolve_tenant(session, None)
-        call = SimCall(session, tenant)
-    except Exception as exc:
-        session.close()
-        if isinstance(exc, AppError):
-            return _view(request, None, problem=exc.message)
-        raise
-    entry = OPEN_CALLS[str(call.call_id)] = OpenCall(session, call, tenant.name)
+    with _START_LOCK:
+        # A reloaded page has lost its call id: hang up what is still open instead
+        # of keeping an unreachable call and its session (one user at a time).
+        for stale, old in list(OPEN_CALLS.items()):
+            with old.lock:
+                if OPEN_CALLS.get(stale) is old:
+                    _finish(stale)
+        session = SessionLocal()
+        try:
+            tenant = resolve_tenant(session, None)
+            call = SimCall(session, tenant)
+        except Exception as exc:
+            session.close()
+            if isinstance(exc, AppError):
+                return _view(request, None, problem=exc.message)
+            raise
+        entry = OPEN_CALLS[str(call.call_id)] = OpenCall(session, call, tenant.name)
     return _view(request, entry)
 
 
