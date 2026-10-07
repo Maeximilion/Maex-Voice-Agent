@@ -74,12 +74,13 @@ a SIP trunk; everything behind it is the same. Failure behaviour and transfer ar
 | | Test phase: the pilot's router as PBX | Operation: SIP trunk |
 |---|---|---|
 | Contract | none, one of the three existing numbers | a trunk with one number per restaurant |
+| Which number | one that customers do not call. The AI telephone is never assigned to the main number in the test phase, so no real customer call can reach the workbench (E9) | the restaurant's main number |
 | How calls arrive | the software is an internal IP telephone of the router | the restaurant forwards its number in its carrier's network, or ports it |
 | Caller number | delivered to an IP telephone | delivered |
 | Concurrent AI calls | 2 at most: each IP-telephone call takes 2 of the router's 4 connections. The test phase runs with 1. | by tariff; D16 (up to 3) needs this entry |
 | Reaching it | the workbench is not in the restaurant's network, so over a VPN to the router | registration from the server, TLS and SRTP |
 | Transfer to the team | from an IP telephone only partly supported by the router; the open point of T-10.2 | a bridged leg to a team number that is never forwarded to us |
-| When the software is off | the team telephones on the same number ring as before | the trunk's forwarding rules; the registration outlives a crash by up to its expiry |
+| When the software is off | the team telephones assigned to the same test number ring | the trunk's forwarding rules; the registration outlives a crash by up to its expiry |
 
 A provider-supplied router without a registrar (as at Maxi's home) cannot serve as the test entry.
 T-10.1 therefore has two steps: first on the workbench alone with a softphone, then against the
@@ -117,6 +118,8 @@ core runs in a worker thread, and the port methods only enqueue.
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer` |
 | The team does not pick up | the dial status | callback card for the team, the caller hears that nobody is reachable (T-10.8) |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
+
+**Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and

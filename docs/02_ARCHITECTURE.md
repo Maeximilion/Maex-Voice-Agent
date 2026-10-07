@@ -127,7 +127,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | Agent-API nicht erreichbar | the voice layer gets the error, says one sentence and transfers to the team (docs/20 §5, target, not yet measured) | Alarm an Maxi |
 | DB nicht erreichbar | API antwortet mit `service_unavailable`, Agent leitet weiter | Alarm |
 | Failure during a call on our side (database, model, adapter) | `telephony/handler.py` says the outage sentence (docs/05 §6) and transfers to the team extension, the call log gets `error`; without a database the number from `TEAM_PHONE` in `.env`; if the transfer fails, the dialplan dials the team number (docs/20 §5, target, not yet measured) | error log |
-| Voice layer down (`voice` or Asterisk, or the whole machine) | the dialplan dials the team number; if the machine is down, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
+| Voice layer down | `voice` down: the Asterisk dialplan dials the team number. Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
 | n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm |
 | Internet weg | Telefon klingelt beim Team (test phase: the router; operation: the trunk's forwarding rules; docs/20 §5, target, not yet measured) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |

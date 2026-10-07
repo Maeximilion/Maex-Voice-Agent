@@ -258,7 +258,7 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 ## 8. Legal Check (C1, before first real call)
 
-> Note: Not legal advice. Have a lawyer or data protection consultant review before go-live.
+> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision, and the question of the data protection officer (D9) stays open.
 
 - [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Recording:** Consent from customer and team (§201 StGB); announcement and way to object

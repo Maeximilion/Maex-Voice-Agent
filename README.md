@@ -15,7 +15,7 @@ The voice layer (telephony, speech recognition, voice output) is planned as our 
 |---|---|
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
-| Next Gate | G0: Provider, legal, budget clarified |
+| Next Gate | G0: budget, legal, voice path and stage order settled; open until the telephony path is measured |
 | As of | 2026-09-17 |
 
 **What works:**

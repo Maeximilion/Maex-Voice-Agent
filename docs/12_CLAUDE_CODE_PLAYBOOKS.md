@@ -138,8 +138,9 @@ For every package whose row in `docs/07_WORKPACKAGES.md` carries `Environment: U
      avoided, the script stops and prints the one command, with console and folder
    - clicks in a router's web interface and changes on Windows (.wslconfig, wsl --shutdown)
      are Maxi's
-   - credentials never go into the chat: they live in the .env of the main checkout, and the
-     kit reads them from there, also from a worktree
+   - credentials never go into the chat: they live in one file, the .env of the main checkout
+     (the repository folder in the Ubuntu home directory). A kit started from a worktree reads
+     that file; nothing creates a second .env in a worktree
 4. Only invented data and own test calls on the workbench. A real customer call runs on the
    EU server only (docs/13_DEPLOYMENT.md §0)
 ```

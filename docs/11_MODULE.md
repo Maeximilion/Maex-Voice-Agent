@@ -10,7 +10,7 @@
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
 │  EINGÄNGE          tools/ (HTTP-Vertrag)             gui/   sim/     │
-│                    telephony/ (eigene Sprachschicht, docs/20)        │
+│                    telephony/ (own voice layer, docs/20)             │
 ├──────────────────────────────────────────────────────────────────────┤
 │  GESPRÄCH          agent/   Loop, Prompt-Aufbau, Zustand, Dispatch   │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -30,7 +30,7 @@
 - `events/` wird von `domain/` nur durch **Schreiben in die Outbox-Tabelle** angestoßen. Kein direkter Aufruf nach außen.
 - `telephony/` knows the telephone access and the speech engines (the voice layer, docs/20). **Nobody else.**
 
-Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du eine Sprach-Engine oder den Telefonzugang tauschen, ohne eine Preisregel anzufassen. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
+Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du die Technik davor tauschen, ohne eine Preisregel anzufassen. Since 07.10.2026 that means a speech engine or the telephone access. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
 
 ---
 
@@ -145,7 +145,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 
 The port has two directions (T-1.13): `CallEvents` is what the media side of the voice layer reports (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`), implemented once by `handler.py`; `TelephonyPort` is what we make the line do (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`), implemented by each adapter. Calls are named by the session id of the media side (`calls.external_session_id`). `start_recording` is called nowhere before the legal check in docs/09. `fake.py` reads the eval case format (docs/08 §1) plus customer entries with `dtmf` or `hangup`, so every case in `evals/cases/` plays as a phone call. `router.py` and the other planned files come with the media adapter of our own voice layer (T-1.11, T-10.4).
 
-**Rule:** a different speech engine or a different access changes one file in `adapters/` and `.env`. Nothing else.
+**Rule:** a different speech engine changes one file in `adapters/` and `.env`. A different access (the pilot's router or a SIP trunk) changes the Asterisk configuration under `deploy/asterisk/` and `.env`. Nothing else.
 
 ### `tools/` – dünne HTTP-Hülle
 Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `domain` aufrufen, Hülle zurück, Dauer loggen. **Keine Fachlogik hier.** Wenn ein Tool wächst, ist die Logik in `domain/` falsch abgelegt.
@@ -191,7 +191,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 
-Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Alles ohne Telefon testbar.
+Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Everything is testable without a telephone.
 
 ### `evals/`
 - `runner.py` (Lauf, Wegwerf-Datenbank, CLI), `judge.py` (Abgleich mit dem Datenbankzustand), `recorder.py` (Beobachter am Modell für geratene Positionen und `confirm` ohne Ja), `report.py` (JSON, Markdown, Vergleich mit dem letzten Lauf), `scratch_db.py` (Wegwerf-Datenbanken, auch für die Tests) — siehe 08

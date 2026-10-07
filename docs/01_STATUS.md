@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 07.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.0
+> Status: 07.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.1
 
 ---
 
@@ -420,6 +420,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.1 · 07.10.2026:** Review of PR #240: test number never the main number, docs/00 section 8 follows D20, module rule and outage row corrected, /start names the environment
 - **v2.0.0 · 07.10.2026:** E1 flipped: own voice layer instead of a hosted platform (docs/20), D1 D3 D7 decided, D17 to D21, Block 1c T-10.x; G0 stays open until T-10.1 and T-10.2 are measured
 - **v1.39.13 · 07.10.2026:** T-2.4: the order in the conversation state (`cart`), taken by the core only with searched dishes; `called` on tool hops; open points from the pickup runs on a real model
 - **v1.39.12 · 07.10.2026:** T-2.5 done: simulator console in the browser (ENV=dev only)
