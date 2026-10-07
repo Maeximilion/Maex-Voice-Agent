@@ -333,12 +333,15 @@ def test_page_shows_a_failed_tap(client):
     assert "htmx:afterRequest" in page.text  # a working tap clears the bar again
 
 
-def test_send_and_hang_up_share_one_request_queue(client, tenant_id):
+def test_send_and_hang_up_cannot_overlap(client, tenant_id):
     form = client.post(f"{BASE}/call", headers=HX).text
 
-    # Without a shared hx-sync a late sentence answer could swap the form back in
-    # after the hang-up answer (Codex PR #236).
-    assert form.count('hx-sync="closest .card:queue last"') == 2
+    # Both taps disable the whole fieldset while their request runs, so a late
+    # sentence answer cannot swap the form back in after the hang-up answer, and
+    # no click is queued on a button the swap would remove (Codex PR #236).
+    assert 'hx-disabled-elt="find fieldset"' in form
+    assert 'hx-disabled-elt="closest fieldset"' in form
+    assert "hx-sync" not in form
 
 
 def test_writes_need_the_htmx_header(client, tenant_id):
