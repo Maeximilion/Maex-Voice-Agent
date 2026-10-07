@@ -235,6 +235,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **Legal (D21, part of the check in `docs/09_OPERATIONS_LEGAL.md`):** whether live audio streamed
   to a speech service without storage falls under the rules for recordings (E11). In the test phase
   no audio leaves the workbench.
+- **Texts that still name the voice platform:** the headers of `prompts/tools_v1.md` and `prompts/tools_v2.md`, comments in `api/telephony/`, `docs/03`, `docs/04`, `docs/08` and `docs/10`. They change with the first build package; a change under `prompts/` needs an eval run.
 - **Team reachability:** today `transfer_to_team` guesses from the opening hours whether somebody
   can answer; the real answer is the result of the transfer (T-10.8).
 

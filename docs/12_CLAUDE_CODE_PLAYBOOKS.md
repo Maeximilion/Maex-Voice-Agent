@@ -1,6 +1,6 @@
 # 12 – Claude-Code-Playbooks
 
-> Nicht jede Session ist gleich. Neun wiederkehrende Situationen, jede mit festem Ablauf.
+> Nicht jede Session ist gleich. Zehn wiederkehrende Situationen, jede mit festem Ablauf.
 > Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, `/handover`.
 
 ---
@@ -80,15 +80,15 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 6. Neue Gerichte ohne Alias → Liste an Maxi für den Chat
 ```
 
-## S7 – Anbieter-Adapter (nach D1)
+## S7 – Media adapter of the own voice layer (T-1.11)
 ```text
-1. telephony/port.py lesen – das Interface ist gesetzt
-2. Webhook-Beispiele des Anbieters in telephony/fixtures/ ablegen
-3. adapters/<anbieter>.py: Webhook → Port-Aufruf, Port → Anbieter-API
-4. Tests gegen die Fixtures, ohne Netz
-5. Signaturprüfung der Webhooks
-6. Erster echter Testanruf: nur mit Tunnel (docs/13_DEPLOYMENT.md §Entwicklung)
-7. Latenz, Anrufer-ID, DTMF, Weiterleitung, Unterbrechen → Protokoll in docs/01_STATUS.md
+1. Read telephony/port.py and docs/20_VOICE_LAYER.md §2 to §5 – port and session rules are set
+2. Put recorded frame sequences of the Asterisk media channel into telephony/fixtures/
+3. adapters/asterisk.py: frames → call session, call session → frames
+4. Tests against the fixtures, without network
+5. Token check on the media connection
+6. First test call on the workbench with a softphone, then at the pilot's router (S10)
+7. Latency, caller number, keys, transfer, interruption → measurement log in docs/20_VOICE_LAYER.md §11
 ```
 
 ## S8 – Deployment oder Update
@@ -115,6 +115,34 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 ```
 
 ---
+
+## S10 – Work package on the workbench (Ubuntu in WSL)
+
+For every package whose row in `docs/07_WORKPACKAGES.md` carries `Environment: Ubuntu (WSL) on the workbench`: installations, folder setup, anything that hosts or places test calls on Maxi's PC. Claude Code does this work in Ubuntu; Maxi does not type the steps by hand (Maxi, 07.10.2026).
+
+```text
+1. Start the session in Ubuntu, one of two equal ways:
+   - Claude Code app on Windows: new session, environment "WSL Ubuntu",
+     folder /home/<user>/Maex-Voice-Agent, then /task T-x.y
+   - Ubuntu terminal: cd ~/Maex-Voice-Agent, run claude, then /task T-x.y
+   "Local" in the app is NOT the same: it works on Windows in a separate checkout with its
+   own .env and branches, and the setup scripts are written for Linux. /task stops there.
+2. The package leaves a kit behind and runs it itself:
+   - a setup script under scripts/, repeatable, with --dry-run, that checks the environment
+     and puts everything into the right folders (model: scripts/setup_local_llm.sh)
+   - a handover section in the package's spec: start folder, the one command, what Maxi
+     has to have ready, what the result looks like
+   The same script later sets up the server.
+3. What Claude cannot do there:
+   - sudo asks for a password: kits use Docker, which runs without it. Where sudo cannot be
+     avoided, the script stops and prints the one command, with console and folder
+   - clicks in a router's web interface and changes on Windows (.wslconfig, wsl --shutdown)
+     are Maxi's
+   - credentials never go into the chat: they live in the .env of the main checkout, and the
+     kit reads them from there, also from a worktree
+4. Only invented data and own test calls on the workbench. A real customer call runs on the
+   EU server only (docs/13_DEPLOYMENT.md §0)
+```
 
 ## Wann Claude Code fragt
 
