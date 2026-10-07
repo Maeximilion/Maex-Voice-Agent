@@ -43,6 +43,9 @@ class CaseResult:
     diffs: list[str] = field(default_factory=list)
     guessed_items: int = 0
     unconfirmed: int = 0
+    # Calls that would have been a hard violation and did not go through
+    # (`evals/recorder.py`): no violation, a number to watch.
+    refused_attempts: int = 0
     expected_escalation: bool = False
     missed_escalation: bool = False
     false_escalation: bool = False
@@ -126,6 +129,12 @@ class RunReport:
         }
 
     @property
+    def refused_attempts(self) -> int:
+        """Soft on purpose: the core stopped these, nothing was booked. A model
+        that needs the core often is still the weaker one."""
+        return sum(c.refused_attempts for c in self.cases)
+
+    @property
     def false_escalation_rate(self) -> float:
         # Lösbar ist ein Fall, der keine Eskalation erwartet (docs/08 §2).
         solvable = [c for c in self.cases if not c.expected_escalation]
@@ -172,6 +181,7 @@ class RunReport:
             "accuracy": self.accuracy,
             "hard": self.hard(),
             "false_escalation_rate": self.false_escalation_rate,
+            "refused_attempts": self.refused_attempts,
             "tokens_per_case": self.tokens_per_case,
             "cost_per_case": self.cost_per_case,
             "verdict": self.verdict,
@@ -200,6 +210,7 @@ class RunReport:
         lines += [f"| {HARD[k]} | {v} | 0, hart |" for k, v in self.hard().items()]
         lines += [
             f"| Falsche Eskalation | {self.false_escalation_rate:.1%} | ≤ {FALSE_ESCALATION_LIMIT:.0%} |",
+            f"| Refused attempts | {self.refused_attempts} | falling from version to version |",
             f"| Tokens je Fall | {self._shown(self.tokens_per_case)} | falling from version to version |",
             f"| Model cost per case (cents) | {self._shown(self.cost_per_case)} | within the budget |",
             "",

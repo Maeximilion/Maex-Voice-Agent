@@ -249,6 +249,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     _count_usage(result, llm)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
+    result.refused_attempts = len(rec.refused_attempts)
     result.unconfirmed = len(rec.unconfirmed) + seen.confirmed_without_confirm
     result.missed_escalation = result.expected_escalation and not seen.escalated
     result.false_escalation = not result.expected_escalation and seen.escalated

@@ -10,6 +10,10 @@ ablesen, weil `calls.tool_calls` nur Name, Dauer und Erfolg festhält:
 - **Unbestätigter Vorgang:** ein `confirm`, vor dem der letzte Kundensatz kein
   Ja war (CLAUDE.md §2 Regel 3).
 
+Both count only for a call that went through. One the core refused or the tool
+rejected booked nothing; it is taken back and noted as a refused attempt
+(`Recording.refused_attempts`, docs/08 §2, Maxi 07.10.2026).
+
 Der Recorder sitzt deshalb an der Stelle, an der alles vorbeikommt: jeder
 Kundensatz und jedes Tool-Ergebnis geht als `user_input` ans Modell, jeder
 Tool-Aufruf kommt als `LLMTurn` zurück. Er verändert nichts, er schreibt nur mit.
@@ -29,6 +33,10 @@ from api.agent.llm import LLMClient, LLMTurn, Usage
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
 # Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
 DRAFT_TOOLS = frozenset({"draft_order", "create_reservation"})
+# Take a readback away in the core whatever their result (`agent/state.py`
+# `_supersedes`): the guest is correcting, and a yes afterwards answers the new
+# question, not the old draft (Codex PR #239).
+SUPERSEDING_TOOLS = frozenset({"search_menu", "check_slot"})
 
 
 @dataclass
@@ -55,6 +63,12 @@ class Recording:
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
+    # (tool, guest sentence before it) for every call that would have been a
+    # hard violation and did not go through: the core refused it
+    # (`agent/guards.py`) or the tool rejected it. Nothing was booked, so it
+    # is no violation; the number shows how often a model tries (Maxi,
+    # 07.10.2026).
+    refused_attempts: list[tuple[str, str]] = field(default_factory=list)
 
 
 class RecordingLLM:
@@ -63,6 +77,8 @@ class RecordingLLM:
     def __init__(self, inner: LLMClient):
         self._inner = inner
         self.recording = Recording()
+        # What the recording held before the open call (`_retract`).
+        self._before: tuple[int, int, int, dict[str, Any] | None] = (0, 0, 0, None)
         # The call whose result arrives with the next input.
         self._open_call: tuple[str, dict[str, Any]] | None = None
 
@@ -88,6 +104,10 @@ class RecordingLLM:
             self.recording.customer_lines.append(user_input)
             return
         call, self._open_call = self._open_call, None
+        if call is not None and not result.get("ok"):
+            # Whatever failed, the tool or the answer around it (a refused
+            # `cart` stops the call next to it), the call did not go through.
+            self._retract(call[0])
         if result.get("ok"):
             self.recording.ok_results.append(
                 (str(result.get("tool")), result.get("data") or {})
@@ -101,13 +121,40 @@ class RecordingLLM:
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 
+    def _retract(self, name: str) -> None:
+        """Takes back what `_observe_call` noted for a call that did not go
+        through. Hard is what happened, not what a model tried: a `confirm`
+        on a "Nein" that the core refused booked nothing. A call whose result
+        never comes back keeps its entries, the careful side."""
+        rec = self.recording
+        guessed, unconfirmed, rec.confirms, rec.last_confirm = self._before
+        if len(rec.guessed) > guessed or len(rec.unconfirmed) > unconfirmed:
+            last = rec.customer_lines[-1] if rec.customer_lines else ""
+            rec.refused_attempts.append((name, last))
+        del rec.guessed[guessed:]
+        del rec.unconfirmed[unconfirmed:]
+        if name in DRAFT_TOOLS:
+            # No draft a yes could answer, not even the one before: a failed
+            # correction takes the readback away in the core (`agent/state.py`
+            # `_supersedes`), and the recorder has to agree (Codex PR #239).
+            rec.drafted_at = None
+
     def _observe_call(self, name: str, args: dict[str, Any]) -> None:
         rec = self.recording
+        # The state before this call, for `_retract`.
+        self._before = (
+            len(rec.guessed),
+            len(rec.unconfirmed),
+            rec.confirms,
+            rec.last_confirm,
+        )
         rec.tool_calls.append(name)
         self._open_call = (name, dict(args))
         last = rec.customer_lines[-1] if rec.customer_lines else ""
         if name in DRAFT_TOOLS:
             rec.drafted_at = len(rec.customer_lines)
+        elif name in SUPERSEDING_TOOLS:
+            rec.drafted_at = None
         if name == "draft_order":
             for item in args.get("items") or []:
                 item_id = str(item.get("menu_item_id", ""))
