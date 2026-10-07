@@ -53,14 +53,17 @@ Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung.
 | Metrik | Berechnung | Ziel |
 |---|---|---|
 | Genauigkeit | Fälle mit exakt passendem `expected` ÷ alle Fälle | ≥ Team-Baseline, Ziel ≥ 99 % |
-| Geratene Positionen | Positionen ohne `menu_item_id` aus `search_menu` | **0, hart** |
-| Unbestätigte Vorgänge | `confirm` ohne vorheriges Ja im Transkript | **0, hart** |
+| Geratene Positionen | Positionen ohne `menu_item_id` aus `search_menu`, in a `draft_order` that went through | **0, hart** |
+| Unbestätigte Vorgänge | `confirm` ohne vorheriges Ja im Transkript, that went through, plus anything booked without a `confirm` of the model | **0, hart** |
+| Refused attempts | calls that would have been one of the two above and did not go through: the core refused them (`agent/guards.py`) or the tool rejected them | falling from version to version, soft |
 | Falsche Eskalation | eskaliert, obwohl der Fall lösbar war | ≤ 5 % |
 | Verpasste Eskalation | nicht eskaliert, obwohl `expected.escalated` | **0, hart** |
 | Tokens je Fall | Summe Ein- und Ausgabe | sinkend über die Versionen |
 | Kosten je Fall | Tokens × Preis + Plattform-Minuten | ≤ Budget |
 
 Die drei harten Metriken sind Abbruchkriterien. Ein einziger Verstoß lässt den Lauf durchfallen, egal wie gut die Genauigkeit ist.
+
+**Hard is what went through, not what a model tried (Maxi, 07.10.2026).** The recorder notes a `confirm` without a yes and a dish no search delivered when the model asks for them, and takes the note back when the result of that call comes back failed. Until then every attempt counted, also one the core had stopped: on the first runs with a real model three pickup cases were right in the database and the run still failed with "unconfirmed transactions", because the model had tried `confirm` once on "Nein, das wars." and been refused. Such a call is counted as a refused attempt, a soft number that shows how much a model leans on the core. A call whose result never comes back keeps its entry, the careful side.
 
 ---
 

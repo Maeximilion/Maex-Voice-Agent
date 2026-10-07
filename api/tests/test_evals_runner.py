@@ -363,6 +363,129 @@ def test_confirm_nach_nein_gilt_als_unbestaetigt():
     assert rec.recording.confirms == 2
 
 
+# --- Hard is what went through, not what a model tried (Maxi, 07.10.2026) ---------
+
+
+def _result(tool: str, ok: bool) -> str:
+    """A tool result as the loop hands it to the model. A refusal by the core
+    (`agent/guards.py`) and a rejection by the tool look the same here."""
+    if ok:
+        return json.dumps({"tool": tool, "ok": True, "data": {}})
+    return json.dumps({"tool": tool, "ok": False, "error_code": "conflict"})
+
+
+def _confirm_after_a_no(result: str) -> RecordingLLM:
+    confirm_turn = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="vorlesen"),
+                confirm_turn,
+                LLMTurn(say="Was soll ich ändern?"),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Nein, das stimmt nicht.")
+    rec.next_turn("", {}, result)
+    return rec
+
+
+def test_confirm_the_core_refused_is_an_attempt_not_a_violation():
+    """A real model that tries `confirm` on a "Nein" is stopped by the core and
+    nothing is booked. Counted as a hard violation it failed the whole run:
+    three pickup cases were right in the database and red only for that."""
+    rec = _confirm_after_a_no(_result("confirm", ok=False)).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == [("confirm", "Nein, das stimmt nicht.")]
+    # Not a confirm that happened: the repeat of a case and the count of
+    # bookings without a confirm work on the ones that went through.
+    assert rec.confirms == 0
+    assert rec.last_confirm is None
+
+
+def test_confirm_without_a_yes_that_went_through_is_a_violation():
+    rec = _confirm_after_a_no(_result("confirm", ok=True)).recording
+
+    assert rec.unconfirmed == ["Nein, das stimmt nicht."]
+    assert rec.refused_attempts == []
+    assert rec.confirms == 1
+    assert rec.last_confirm == {"entity_id": "x"}
+
+
+@pytest.mark.parametrize("ok", [True, False])
+def test_guessed_item_counts_only_when_the_draft_went_through(ok):
+    invented = str(uuid.uuid4())
+    items = [{"menu_item_id": invented}, {"menu_item_id": str(uuid.uuid4())}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": items})),
+                LLMTurn(say="Welches Gericht darf es sein?"),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die Ente.")
+    rec.next_turn("", {}, _result("draft_order", ok=ok))
+
+    guessed = [entry[0] for entry in rec.recording.guessed]
+    assert guessed == ([invented, items[1]["menu_item_id"]] if ok else [])
+    # One attempt per call, however many dishes it invented.
+    assert rec.recording.refused_attempts == (
+        [] if ok else [("draft_order", "Einmal die Ente.")]
+    )
+
+
+def test_refused_draft_is_no_draft_a_later_yes_could_confirm():
+    """The readback a yes answers must come from a draft that exists."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Auf welchen Namen?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _result("draft_order", ok=False))
+    rec.next_turn("", {}, "Ja, passt so.")
+
+    assert rec.recording.unconfirmed == ["Ja, passt so."]
+
+
+def test_tool_rejection_without_a_violation_is_no_refused_attempt():
+    """A slot that is taken or a missing name is an ordinary no of a tool."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("check_slot", {"party_size": 4})),
+                LLMTurn(say="Da ist leider nichts frei."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einen Tisch für vier.")
+    rec.next_turn("", {}, _result("check_slot", ok=False))
+
+    assert rec.recording.refused_attempts == []
+
+
+def test_report_shows_refused_attempts_without_failing_the_run():
+    report = _report(
+        [
+            CaseResult(id="a", name="a", tags=[], passed=True, refused_attempts=2),
+            CaseResult(id="b", name="b", tags=[], passed=True),
+        ]
+    )
+
+    assert report.to_json()["refused_attempts"] == 2
+    assert report.verdict == "bestanden"
+    assert "| Refused attempts | 2 |" in report.to_markdown()
+
+
 @pytest.mark.parametrize(
     ("text", "yes"),
     [
