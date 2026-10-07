@@ -21,6 +21,7 @@ from api.agent.dispatch import ToolResult
 from api.agent.guards import (
     HINT_CART_FORM,
     HINT_CART_ITEM,
+    HINT_CART_SOLD_OUT,
     begin_turn,
     note_said,
     refusal,
@@ -299,6 +300,81 @@ def test_same_cart_after_the_readback_keeps_the_draft():
     assert state.stage == "readback_pending"
     confirm = ToolCall("confirm", {"entity": "order", "entity_id": order_id})
     assert refusal(state, start, "Ja", confirm) is None
+
+
+def test_same_cart_in_another_order_keeps_the_draft():
+    """The sequence of lines and of options is no part of an order (Codex PR
+    #237, P2): a model that repeats the order the other way round with its
+    `confirm` has changed nothing, and the yes must not cost a second
+    readback. The state keeps the sequence that was read out."""
+    state = new_state()
+    searched(state, ENTE)
+    searched(state, PHO)
+    sauces = [
+        {"group": "Sauce", "name": "Erdnuss"},
+        {"group": "Fleisch", "name": "Huhn"},
+    ]
+    read_out = [line(ENTE, options=sauces), line(PHO, 2)]
+    order_id = order_read_back(state, *read_out)
+    start = begin_turn(state)
+
+    take_cart(state, [line(PHO, 2), line(ENTE, options=sauces[::-1])])
+
+    assert state.stage == "readback_pending"
+    assert state.cart == read_out
+    confirm = ToolCall("confirm", {"entity": "order", "entity_id": order_id})
+    assert refusal(state, start, "Ja", confirm) is None
+
+
+def test_same_dishes_in_other_quantities_are_a_changed_cart():
+    state = new_state()
+    searched(state, ENTE)
+    searched(state, PHO)
+    order_read_back(state, line(ENTE, 2), line(PHO))
+
+    take_cart(state, [line(PHO, 2), line(ENTE)])
+
+    assert state.stage == "collecting"
+
+
+def test_sold_out_dish_does_not_get_into_the_cart():
+    """A clear hit that is sold out is still a hit, and the format tells the
+    model to take up what was found (Codex PR #237, P2). In the state it would
+    stand like any other line, and the guest would hear of it only when
+    draft_order refuses at the very end."""
+    state = new_state()
+    searched(state, PHO)
+    searched(state, ENTE, sold_out=True)
+
+    refused = take_cart(state, [line(PHO), line(ENTE)])
+
+    assert refused is not None
+    assert refused.hint == HINT_CART_SOLD_OUT
+    assert state.cart == []
+
+    # Back on the menu by the next search: usable again.
+    searched(state, ENTE)
+    assert take_cart(state, [line(PHO), line(ENTE)]) is None
+
+
+@pytest.mark.parametrize("cart", [False, 0, 7, "zwei"])
+def test_cart_that_is_no_list_is_refused_not_ignored(cart):
+    """`false` and `0` are no field left blank (Codex PR #237, P1). Read as
+    "nothing said" they let the draft that was read back wait on, while the
+    model may have meant "the order is empty now". Refused, the draft is
+    dropped like after any failed correction."""
+    turn = parse_turn(json.dumps({"say": "Sonst noch etwas?", "cart": cart}))
+    state = new_state()
+    searched(state, ENTE)
+    order_read_back(state, line(ENTE))
+
+    refused = take_cart(state, turn.cart)
+
+    assert turn.cart is not None
+    assert refused is not None
+    assert refused.hint.startswith(HINT_CART_FORM)
+    assert state.stage == "collecting"
+    assert state.order_id is None
 
 
 def test_refused_cart_after_the_readback_drops_the_draft():

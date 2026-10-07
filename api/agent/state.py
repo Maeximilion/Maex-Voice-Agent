@@ -5,6 +5,7 @@ ganzen bisherigen Wortlaut erneut zu schicken: der Zustand wächst nicht mit der
 Gesprächsdauer, der Verlauf schon.
 """
 
+import json
 import uuid
 from contextlib import suppress
 from typing import Annotated, Any, Literal
@@ -176,10 +177,29 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     """The order as the model now understands it. A change after the readback
     is a correction: the draft that was read out is no longer what the guest
     wants, and a later yes must not confirm it (CLAUDE.md §2 rule 3)."""
-    if lines == state.cart:
+    if _as_set(lines) == _as_set(state.cart):
+        # The same order, whatever the sequence of its lines and options: the
+        # state keeps the one that was read out (Codex PR #237, P2).
         return
     order_corrected(state)
     state.cart = lines
+
+
+def _as_set(lines: list[dict[str, Any]]) -> list[str]:
+    """Lines for comparison. Sorted, not a set: two equal lines are two."""
+    return sorted(
+        json.dumps(
+            {
+                **line,
+                "options": sorted(
+                    (option["group"], option["name"])
+                    for option in line.get("options", [])
+                ),
+            },
+            sort_keys=True,
+        )
+        for line in lines
+    )
 
 
 def order_corrected(state: ConversationState) -> None:
@@ -269,6 +289,8 @@ def _seen(hit: dict[str, Any]) -> dict[str, Any]:
     return {
         "number": str(hit.get("number") or ""),
         "name": str(hit.get("name") or ""),
+        # As of this search; for `guards.take_cart`, never shown to the model.
+        "sold_out": bool(hit.get("sold_out")),
         "required": [
             {
                 "group": group["group"],

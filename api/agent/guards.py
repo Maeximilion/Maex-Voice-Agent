@@ -50,6 +50,11 @@ HINT_CART_ITEM = (
     "Treffer von search_menu in diesem Anruf stammt. Erst suchen; bei mehreren "
     "Treffern den Gast wählen lassen. Die Bestellung im Zustand ist unverändert."
 )
+HINT_CART_SOLD_OUT = (
+    "Abgelehnt: `cart` nennt ein Gericht, das heute aus ist. Es kommt nicht in "
+    "die Bestellung; sag dem Gast, dass es aus ist. Die Bestellung im Zustand ist "
+    "unverändert."
+)
 HINT_CART_FORM = (
     "Abgelehnt: `cart` ist keine Liste von Positionen wie `items` von "
     "draft_order (menu_item_id, quantity, optional options und note). Die "
@@ -123,10 +128,17 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             hint=f"{HINT_CART_FORM} {validation_hint(exc)}",
         )
     else:
-        if all(line["menu_item_id"] in state.known_item_ids for line in lines):
+        ids = [line["menu_item_id"] for line in lines]
+        if not all(item_id in state.known_item_ids for item_id in ids):
+            refused = _CART_ITEM
+        elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
+            # A clear hit that is sold out is known, and draft_order would
+            # refuse it in the end. In the state it would stand like any
+            # other line until then (Codex PR #237, P2).
+            refused = _CART_SOLD_OUT
+        else:
             replace_cart(state, lines)
             return None
-        refused = _CART_ITEM
     order_corrected(state)
     return refused
 
@@ -146,6 +158,7 @@ def refusal(
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
 _CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITEM)
+_CART_SOLD_OUT = ToolResult(ok=False, error_code="conflict", hint=HINT_CART_SOLD_OUT)
 
 
 def _readback_id(state: ConversationState) -> str | None:

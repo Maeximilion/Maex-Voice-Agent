@@ -205,13 +205,13 @@ def parse_turn(content: str) -> LLMTurn:
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
             state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,
-            # null, "" and {} are a field left blank and say nothing. A list
-            # is a statement, also the empty one: the guest removed the last
-            # dish, and the draft that still holds it must not stay
-            # confirmable (Codex PR #237, P1).
-            cart=envelope.cart
-            if isinstance(envelope.cart, list)
-            else envelope.cart or None,
+            # null, "" and {} are a field left blank and say nothing. Anything
+            # else is a statement the core has to judge: the empty list (the
+            # guest removed the last dish, and the draft that still holds it
+            # must not stay confirmable), and also `false` or `0`, which
+            # `take_cart` refuses and which drop the draft the same way
+            # (Codex PR #237, P1 twice).
+            cart=None if envelope.cart in (None, "", {}) else envelope.cart,
         )
     except ValueError as exc:  # pydantic's ValidationError is one, LLMTurn raises one
         raise LLMError("model answer outside the contract") from exc
