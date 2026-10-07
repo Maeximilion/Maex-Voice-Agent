@@ -9,8 +9,8 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────────┐
-│  EINGÄNGE          tools/ (HTTP für die Plattform)   gui/   sim/     │
-│                    telephony/ (Webhooks der Plattform)               │
+│  EINGÄNGE          tools/ (HTTP-Vertrag)             gui/   sim/     │
+│                    telephony/ (eigene Sprachschicht, docs/20)        │
 ├──────────────────────────────────────────────────────────────────────┤
 │  GESPRÄCH          agent/   Loop, Prompt-Aufbau, Zustand, Dispatch   │
 ├──────────────────────────────────────────────────────────────────────┤
@@ -28,9 +28,9 @@
 - `agent/` darf `domain/` benutzen, nie `tools/` (es ruft die Fachlogik direkt, ohne HTTP-Umweg).
 - `domain/` kennt nur `models/`, `schemas/`, `core/`. Es weiß nichts von HTTP, Telefon, HTMX oder n8n.
 - `events/` wird von `domain/` nur durch **Schreiben in die Outbox-Tabelle** angestoßen. Kein direkter Aufruf nach außen.
-- `telephony/` kennt den Anbieter. **Sonst niemand.**
+- `telephony/` knows the telephone access and the speech engines (the voice layer, docs/20). **Nobody else.**
 
-Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du die Voice-Plattform tauschen, ohne eine Preisregel anzufassen. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
+Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, kannst du eine Sprach-Engine oder den Telefonzugang tauschen, ohne eine Preisregel anzufassen. Und die Evals testen dieselbe Fachlogik, die im Betrieb läuft — nicht eine Kopie.
 
 ---
 
@@ -126,20 +126,26 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
 | `outcome.py` | outcome and intent of a call from the state, shared by `sim/session.py` and `telephony/handler.py` |
 
-**Warum ein eigener Kern, wenn die Plattform einen hat?** Drei Gründe: Evals brauchen ihn, der Simulator braucht ihn, die Schattenmessung braucht ihn. Ob er auch im Betrieb läuft, ist Entscheidung **D7** (`docs/01_STATUS.md`). Läuft er, sind Test und Betrieb identisch. Läuft die Plattform ihren eigenen Loop, bleibt ein Rest Abweichung, den die Rollenspiele auffangen.
+**Why our own core?** Evals need it, the simulator needs it, the shadow measurement needs it, and since D7 (decided 07.10.2026) it also runs in operation, called by the voice layer (docs/20 §2). Test and operation are identical.
 
 ### `telephony/` – der einzige Ort, der den Anbieter kennt
 | Datei | Verantwortung |
 |---|---|
-| `port.py` | das Interface: `on_call_started`, `on_user_turn`, `on_dtmf`, `transfer`, `hangup`, `start_recording`, `caller_id` |
+| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); docs/20 §4 plans additions (whether a sentence may be interrupted, silence, failure of the voice layer) |
 | `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers when the state says so, or says goodbye (unless the agent just did) and hangs up, closes the call log; every failure ends with the outage sentence and a transfer |
-| `adapters/<anbieter>.py` | übersetzt Webhooks und API des Anbieters auf das Interface |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
-| `router.py` | Webhook-Endpunkte, Signaturprüfung, Session-Zuordnung |
+| `app.py` | planned (docs/20 §2): the process of the service `voice` |
+| `session.py` | planned (docs/20 §2): call session, provider neutral |
+| `speech.py` | planned (docs/20 §2): the ports for ear (speech-to-text) and mouth (text-to-speech) |
+| `adapters/asterisk.py` | planned (docs/20 §2): media protocol of Asterisk, implements the port |
+| `adapters/stt_<engine>.py` | planned (docs/20 §2): one speech-to-text engine each |
+| `adapters/tts_<engine>.py` | planned (docs/20 §2): one text-to-speech engine each |
+| `adapters/fake_speech.py` | planned (docs/20 §2): fake ear and mouth for tests |
+| `router.py` | planned (docs/20 §2): the WebSocket endpoint for call audio and the dialplan callback |
 
-The port has two directions (T-1.13): `CallEvents` is what the platform reports (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`), implemented once by `handler.py`; `TelephonyPort` is what we make the platform do (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`), implemented by each adapter. Calls are named by the platform's session id (`calls.external_session_id`). `start_recording` is called nowhere before the legal check in docs/09. `fake.py` reads the eval case format (docs/08 §1) plus customer entries with `dtmf` or `hangup`, so every case in `evals/cases/` plays as a phone call. `router.py` comes with the first real adapter (T-1.11).
+The port has two directions (T-1.13): `CallEvents` is what the media side of the voice layer reports (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`), implemented once by `handler.py`; `TelephonyPort` is what we make the line do (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`), implemented by each adapter. Calls are named by the session id of the media side (`calls.external_session_id`). `start_recording` is called nowhere before the legal check in docs/09. `fake.py` reads the eval case format (docs/08 §1) plus customer entries with `dtmf` or `hangup`, so every case in `evals/cases/` plays as a phone call. `router.py` and the other planned files come with the media adapter of our own voice layer (T-1.11, T-10.4).
 
-**Regel:** Wechselt der Anbieter, ändert sich genau eine Datei in `adapters/` und `.env`. Sonst nichts.
+**Rule:** a different speech engine or a different access changes one file in `adapters/` and `.env`. Nothing else.
 
 ### `tools/` – dünne HTTP-Hülle
 Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `domain` aufrufen, Hülle zurück, Dauer loggen. **Keine Fachlogik hier.** Wenn ein Tool wächst, ist die Logik in `domain/` falsch abgelegt.
@@ -185,7 +191,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 
-Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Alles vor der Anbieterentscheidung testbar.
+Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Alles ohne Telefon testbar.
 
 ### `evals/`
 - `runner.py` (Lauf, Wegwerf-Datenbank, CLI), `judge.py` (Abgleich mit dem Datenbankzustand), `recorder.py` (Beobachter am Modell für geratene Positionen und `confirm` ohne Ja), `report.py` (JSON, Markdown, Vergleich mit dem letzten Lauf), `scratch_db.py` (Wegwerf-Datenbanken, auch für die Tests) — siehe 08
@@ -204,11 +210,11 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | 4 | `domain/reservations/` | Vehikel für den Durchstich | 1 |
 | 5 | `domain/callbacks/` | Eskalation muss vom ersten Tag funktionieren | 1 |
 | 6 | `domain/ordering/confirm` + `events/` | ein `confirm`, das für alles gilt | 1 |
-| 7 | `tools/` für die Stufe-1-Tools | die Plattform kann anklopfen | 1 |
+| 7 | `tools/` für die Stufe-1-Tools | the HTTP contract stands (docs/04); not on the call path of the own voice layer (docs/20 §2) | 1 |
 | 8 | `agent/` + `sim/` | **erstes Gespräch im Terminal** | 1 |
 | 9 | `gui/` Betrieb v0 | die Reservierung wird sichtbar | 1 |
-| 10 | `telephony/port` + `fake` | Interface steht, bevor der Anbieter feststeht | 1 |
-| 11 | `telephony/adapters/<anbieter>` | erst nach D1 | 1 |
+| 10 | `telephony/port` + `fake` | interface stands before the first real adapter | 1 |
+| 11 | `telephony/adapters/asterisk` | media adapter of the own voice layer, T-1.11 after T-10.4 (D1 is decided: no platform vendor) | 1 |
 | 12 | `domain/menu/numberwords` + `search` | Herz von Stufe 2, isoliert testbar | 2 |
 | 13 | `domain/menu/importer` + `domain/ordering/` komplett | Bestellung ende-zu-ende | 2 |
 | 14 | `evals/` vollständig | Gate G2 braucht Zahlen | 2 |
@@ -226,7 +232,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `tools/` | HTTP-Tests, prüfen nur Hülle und Auth | offen |
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
-| `telephony/adapters` | gegen aufgezeichnete Webhooks | fertig |
+| `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

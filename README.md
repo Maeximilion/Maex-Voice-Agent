@@ -2,7 +2,7 @@
 
 AI-powered phone intake for hospitality. An AI agent answers calls on the restaurant's main line, handles reservations, pickup, and delivery, and hands off confirmed transactions to kitchen, register, and team. Complaints and special cases escalate to a human. The team manages operations via a browser interface on a tablet.
 
-Telephony, speech recognition, and voice output run on an EU-hosted provider. This repository contains the domain logic, database, interface, and tests. Pilot operation, location, domain, and point-of-sale provider appear in docs as placeholders in angle brackets.
+The voice layer (telephony, speech recognition, voice output) is planned as our own, running on our own EU server: decided 07.10.2026, not built yet (`docs/20_VOICE_LAYER.md`). This repository contains the domain logic, database, interface, and tests. Pilot operation, location, domain, and point-of-sale provider appear in docs as placeholders in angle brackets.
 
 [![CI](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
@@ -38,7 +38,7 @@ Telephony, speech recognition, and voice output run on an EU-hosted provider. Th
 
 **Not yet working:**
 
-- No phone line, no provider chosen (decision D1). The provider-neutral part is built (`api/telephony/`, T-1.13): the port, the call handler with AI disclosure, mode check, transfer and outage fallback, and a fake adapter that plays eval cases as phone calls; the adapter for the chosen platform follows in T-1.11
+- No phone line yet: the own voice layer is decided (07.10.2026, no platform vendor) and not built or measured (`docs/20_VOICE_LAYER.md`). The provider-neutral part is built (`api/telephony/`, T-1.13): the port, the call handler with AI disclosure, mode check, transfer and outage fallback, and a fake adapter that plays eval cases as phone calls; the media adapter of the own voice layer follows in T-1.11
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
@@ -86,7 +86,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres database connection |
-| `AGENT_API_TOKEN` | Bearer token for voice platform to call tools |
+| `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`) |
 | `TEAM_PHONE` | Extension for forwarding to team |
 | `MAX_CALL_SECONDS` | Maximum call duration |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
@@ -144,12 +144,14 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/10_GLOSSARY.md` | Terms |
 | `docs/11_MODULE.md` | Layers, dependency rules, build plan per module |
 | `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Session workflows and slash commands |
-| `docs/13_DEPLOYMENT.md` | Operating locations, tunnel, EU server, backups, CI |
+| `docs/13_DEPLOYMENT.md` | Operating locations, EU server, backups, CI |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV format for menu digitization |
 | `docs/15_README_STRATEGY.md` | When and how to maintain this README |
 | `docs/16_GITHUB_PROJECT.md` | GitHub Project board: one project, derived from issues and PRs |
 | `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts |
+| `docs/18_MODEL_SELECTION.md` | Operation model, local test model, setup script, parallel calls |
 | `docs/19_CLAUDE_CODE_SETUP.md` | Personal Claude Code setup: user-level hooks, settings block, restore steps |
+| `docs/20_VOICE_LAYER.md` | Own voice layer: components, access, call session rules, outage map, cost model (decided 07.10.2026, not built) |
 
 ## Contributing
 
