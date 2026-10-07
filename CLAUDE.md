@@ -7,9 +7,9 @@
 
 ## 1. What We're Building
 
-An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints and edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
+An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints are to be resolved by fixed rules from the database, and what the rules do not cover goes to the team (D19, 07.10.2026; until T-10.11 is built the code hands a complaint to a human). Edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
 
-**Division of Labor:** An external voice platform handles telephony, speech recognition, and voice synthesis. We build the **logic, database, and interface**. The agent calls our tools via HTTPS.
+**Division of Labor (since 07.10.2026, E1 flipped):** there is no external voice platform. We build the **logic, database, interface and the voice layer**: Asterisk takes the call on our own server, speech-to-text and text-to-speech sit behind swappable ports, the conversation core decides (`docs/20_VOICE_LAYER.md`). The voice layer is decided, not built yet; a hosted platform is the last resort only.
 
 **Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
 
@@ -40,7 +40,7 @@ These six rules override any convenience. If a task violates them: **stop and as
 | Tests | pytest, pytest-asyncio, httpx | Default |
 | Lint/Format | ruff (Format + Lint), mypy non-strict mode | Default |
 | Operations | Docker Compose, Hosting in EU | Set |
-| Voice Platform | Open → decided in workpackage C2 | Open |
+| Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, not built |
 
 "Default" = suggestion, can change. If Maxi disagrees, this and `docs/01_STATUS.md` get updated.
 
@@ -74,7 +74,7 @@ maex-voice-agent/
 │   ├── domain/            Business logic without HTTP: menu · ordering · reservations
 │   │                      · delivery · customers · status · callbacks
 │   ├── agent/             Conversation loop, state, ladder, escalation
-│   ├── telephony/         Port + adapter per provider – ONLY place that knows it
+│   ├── telephony/         Port, call session, adapters (Asterisk, speech engines) – ONLY place that knows them
 │   ├── tools/             Thin HTTP wrapper /v1/tools/* around domain
 │   ├── events/            Outbox + dispatcher → n8n
 │   ├── jobs/              Cleanup, sync, daily report, holidays
@@ -108,7 +108,7 @@ maex-voice-agent/
 | `docs/08_EVALS.md` | Test case format, metrics, regression run | before every merge |
 | `docs/09_OPERATIONS_LEGAL.md` | Runbook, emergencies, legal checklist | before every go-live step |
 | `docs/11_MODULE.md` | **Layers, dependency rules, build plan per module, tests per module** | before any new file |
-| `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Nine session workflows (feature, bug, migration, prompt, import, adapter, deploy …) | at session start, per situation |
+| `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Ten session workflows (feature, bug, migration, prompt, import, adapter, deploy, work on the workbench …) | at session start, per situation |
 | `docs/13_DEPLOYMENT.md` | Tunnel for test calls, EU server, Caddy, backups, CI | before first test call |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV contract between chat (digitization) and import | before T-4.2 |
 | `docs/15_README_STRATEGY.md` | When and how to maintain README and CHANGELOG, versioning per gate | at every gate, with new dependencies |
@@ -116,6 +116,7 @@ maex-voice-agent/
 | `docs/18_MODEL_SELECTION.md` | Requirements on the model, operation shortlist, local test model, setup script, parallel calls | before work on `agent/llm.py`, before T-5.3 |
 | `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
 | `docs/19_CLAUDE_CODE_SETUP.md` | User-level hooks and settings outside the repository, backed up with restore steps for Windows and Ubuntu | before changing a hook or setting up a machine |
+| `docs/20_VOICE_LAYER.md` | **Own voice layer: decisions, components, access, call session rules, outage map, cost model, measurement log** | before work on `telephony/`, before any T-10.x |
 
 ---
 
@@ -123,6 +124,8 @@ maex-voice-agent/
 
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+
+**Where a task runs:** a work package row with the note `Environment: Ubuntu (WSL) on the workbench` runs only in a session started in Ubuntu on Maxi's PC, never Windows-local and never in the cloud. `/task` checks this before it reads anything else. Start, kits and limits: `docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10.
 
 ### Model Routing
 Pick the model when the session starts. A model switch starts a cold cache, so every doc read before the switch is paid for twice. `CLAUDE.md` itself loads at startup on whatever model is running and cannot be avoided; the saving covers what `/task` reads after its check (specs, modules). `/start` reads status and work packages on the starting model, so start the session on the model you expect to need. `/start` recommends the model for the task it suggests; `/task` checks the running model against the table before it reads anything else, and asks the user to switch on a mismatch (the user switches, Claude cannot).
@@ -237,7 +240,7 @@ A task is complete when **all** of these are true:
 | In Claude Code | In Claude Chats (see `docs/00_PCF.md` section 10) |
 |---|---|
 | API, tools, data model, migrations | C1 current state capture, baseline, legal check |
-| GUI | C2 provider research and selection |
+| GUI, own voice layer | C2: contracts and accounts for speech services, server, SIP trunk |
 | Eval runner and test cases | Negotiations, contracts, budget decisions |
 | n8n workflows as code export | Gate decisions with Maxi |
 | Import and ops scripts | Decisions involving money or law |

@@ -6,14 +6,14 @@
 
 | Baustein | Läuft auf | Nie auf |
 |---|---|---|
-| Voice-Plattform (Telefonie, Spracherkennung, Stimme) | beim Anbieter, EU-Rechenzentrum | Maxis PC |
+| Own voice layer (docs/20, planned): Asterisk, service `voice`, speech engines behind ports | In operation: EU server (§3), speech engines are EU speech services (D18). Test phase: the workbench, open speech models, invented data and own test calls only | Maxis PC in operation; a real customer call |
 | Agent-API, Datenbank, GUI, n8n, Push-Server für das Team (D13) | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
-| Sprachmodell des Agenten | In operation: at the voice or model provider, processing in the EU. For development and tests: a local model on Maxi's PC is allowed, with invented test data only (text phone, evals). The model is swappable behind `agent/llm.py`, so a better one replaces it without touching the conversation core (T-2.4, T-5.3). Candidates, local setup and `scripts/setup_local_llm.sh`: `docs/18_MODEL_SELECTION.md` | Maxi's PC in operation; real call content in a local model |
+| Sprachmodell des Agenten | In operation: at the model provider, processing in the EU. For development and tests: a local model on Maxi's PC is allowed, with invented test data only (text phone, evals). The model is swappable behind `agent/llm.py`, so a better one replaces it without touching the conversation core (T-2.4, T-5.3). Candidates, local setup and `scripts/setup_local_llm.sh`: `docs/18_MODEL_SELECTION.md` | Maxi's PC in operation; real call content in a local model |
 | Entwicklung und Simulator | Maxis PC, nur zum Bauen und Testen | – |
 | Druckbrücke für den Eingabezettel am Haupt-Bondrucker (T-4.6, D2) | Rechner im Lokal, der den Bondrucker erreicht (Kassenrechner oder eigener Kleinrechner, offen: Maxi) | Maxis PC |
 | Transkription der Einlern-Aufnahmen (Stufe 4) | EU-Server: Transkriptionsdienst mit EU-Hosting und AVV, oder Whisper-Container auf dem Server (CPU reicht, läuft nachts) | Maxis PC |
 
-**Regel:** Kein Anruf hängt jemals davon ab, ob ein Rechner bei Maxi eingeschaltet ist. Der PC ist Werkbank, nicht Betrieb.
+**Regel:** Kein Anruf hängt jemals davon ab, ob ein Rechner bei Maxi eingeschaltet ist. Der PC ist Werkbank, nicht Betrieb. Test calls with invented data may run on the workbench; a real customer call never does.
 
 ## 0a. What the restaurant needs
 
@@ -23,8 +23,8 @@ The product is a web application on the EU server, not a program installed in th
 |---|---|
 | A device with a current browser and internet: a tablet in the kitchen, optionally a PC | operations view (`/gui/`), later the admin view |
 | The address plus user name and password | access, Basic-Auth in `deploy/Caddyfile` (§3) |
-| The phone line routed to the voice platform | calls reach the agent (provider open, D1) |
-| A phone that rings at the team | the number `transfer_to_team` hands a call to, stored as `team_phone`. Nothing else uses it: it is no alert for a failed print bridge or for lost internet in the restaurant (that is the red card and the team push, see below). Where calls go when the voice platform is down depends on how the forward is set up, which is open with C2; `docs/02_ARCHITECTURE.md` §5 states the intended behaviour, not a tested one |
+| The phone line reaching our software | calls reach the agent: in the test phase the software is one more IP telephone at the pilot's router, in operation a SIP trunk (`docs/20_VOICE_LAYER.md` §3) |
+| A phone that rings at the team | the number `transfer_to_team` hands a call to, stored as `team_phone`. Nothing else uses it: it is no alert for a failed print bridge or for lost internet in the restaurant (that is the red card and the team push, see below). Where calls go when the voice layer is down: `docs/20_VOICE_LAYER.md` §5 states the intended behaviour (target, not yet measured), `docs/02_ARCHITECTURE.md` §5 repeats it |
 | From the first order on: the print bridge on one machine that reaches the main receipt printer at the register | until the register has an interface it prints every confirmed order as an input slip the team types in (D2, `docs/02_ARCHITECTURE.md` §2a); `printbridge/README.md`; today this needs Python 3.12 set up by hand |
 | A device that receives the team notifications: an app on a phone or the web page on the tablet | callbacks and failed handovers (D13, push server in §3); which devices is open (D14) |
 
@@ -33,20 +33,20 @@ Not needed in the restaurant: the repository, Docker, git, an installer for the 
 **Why no desktop program (.exe) for the product** (asked 05.10.2026):
 
 - A call must never depend on a computer in the restaurant being switched on, awake and not restarting for an update (rule above, CLAUDE.md §2 rule 5).
-- The voice platform has to reach the tools over public HTTPS at a fixed address (§1). A router in a restaurant offers neither without port forwarding or a tunnel.
+- The tablet, the print bridge and, in operation, the telephone access need a fixed public address (§1). A router in a restaurant offers that only with port forwarding or a tunnel.
 - On the hot path every tool call would travel over the restaurant's uplink instead of between two data centres (budget in `docs/04_API_TOOLS.md`).
 - Tablet, admin PC and print bridge show the same live state. The computer running the program would be a server anyway, only a worse one.
 - An update is one deploy on the server instead of one visit per computer.
-- Names, phone numbers and addresses are kept on one server whose backup is encrypted (§4; the second storage and the production server are still open) instead of on a computer next to the till.
+- Names, phone numbers and addresses are kept on one server whose backup is encrypted (§4; the production server and the second storage are decided, D3 of 07.10.2026, and not yet ordered) instead of on a computer next to the till.
 - Postgres and n8n do not fit into one program file; it would be a second product.
 
-The price of this choice: a monthly server bill, the server is ours to operate, and the restaurant depends on its internet connection: without it the tablet shows nothing new and the print bridge fetches no slips. The server only notices through an order: once a slip has waited 60 s without being fetched, the card turns red and `order.handover_failed` is queued for the team push (`docs/02_ARCHITECTURE.md` §5). Outside the mode `primary` a slip exists only after "Passt" on the tablet, so the 60 s start there. The bridge sends no heartbeat: an outage while no order waits goes unnoticed. Nobody outside the tablet is notified until the push server is set up on the server and a device has subscribed (D13, D14), and a tablet without internet does not show the red card either. What happens to the calls in that case depends on where the forward is done. Today the Fritz!Box on the same line does it; whether the provider can forward in its network is open with C2 (`docs/01_STATUS.md`, phone line).
+The price of this choice: a monthly server bill, the server is ours to operate, and the restaurant depends on its internet connection: without it the tablet shows nothing new and the print bridge fetches no slips. The server only notices through an order: once a slip has waited 60 s without being fetched, the card turns red and `order.handover_failed` is queued for the team push (`docs/02_ARCHITECTURE.md` §5). Outside the mode `primary` a slip exists only after "Passt" on the tablet, so the 60 s start there. The bridge sends no heartbeat: an outage while no order waits goes unnoticed. Nobody outside the tablet is notified until the push server is set up on the server and a device has subscribed (D13, D14), and a tablet without internet does not show the red card either. What happens to the calls in that case: `docs/20_VOICE_LAYER.md` §3 and §5 (test phase: the pilot's router; operation: the forwarding rules of the SIP trunk; target, not yet measured).
 
 Where an installer does make sense is the print bridge, the only software of ours that runs on site (T-9.6, proposal). The wish to start the view from an icon is met by a home-screen icon in the browser (T-3.7, proposal).
 
 ## 1. Warum das früh wichtig ist
 
-Die Voice-Plattform muss unsere Tools über **öffentliches HTTPS** erreichen. Ohne erreichbare Adresse gibt es keinen Testanruf. Das betrifft schon den PoC in Stufe 1, nicht erst den Betrieb.
+Tablet, print bridge and, in operation, the telephone access need a fixed **public HTTPS address**. The tunnel for test calls is no longer needed (T-9.1 dropped): no platform has to reach our tools from outside, and test calls with invented data run on the workbench (`docs/20_VOICE_LAYER.md` §3).
 
 ---
 
@@ -60,12 +60,12 @@ Maxis PC (nur Werkbank)
                            setup: bash scripts/setup_local_llm.sh (docs/18 §5)
                            use:   python -m sim.cli --model qwen3:14b
                                   make eval MODEL=qwen3:14b  (LLM_* in .env)
-  Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
+  voice layer (planned)  → Asterisk + service voice for test calls with invented data, docs/20; no tunnel
 ```
 
-**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000), n8n (5678) and the push server (8090) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. A tunnel on the same machine still reaches `localhost:8000`. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
+**Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000), n8n (5678) and the push server (8090) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
 
-**Tunnel** Vorschlag: `cloudflared tunnel --url http://localhost:8000` oder `ngrok http 8000`. Die URL wechselt bei jedem Start, in der Plattform eintragen. Nur für Tests, nie für echte Kunden.
+**No tunnel:** until 07.10.2026 this paragraph proposed a tunnel with a public URL for test calls from a hosted platform. With the own voice layer nothing outside calls into the workbench; the VPN to the pilot's router for the test phase is described in `docs/20_VOICE_LAYER.md` §3.
 
 ---
 
@@ -87,7 +87,7 @@ Annahme: Domainnamen sind Vorschläge.
 
 **Zugang zur Betriebsansicht:** `/gui/*` liegt hinter Basic-Auth im `deploy/Caddyfile`. Die Anwendung selbst prüft dort keinen Token - ein Browser schickt keinen Bearer-Kopf, und die GUI zeigt Gastnamen, Telefonnummern und Notizen. Benutzer und Passwort-Hash stehen als `GUI_BASIC_AUTH_USER` und `GUI_BASIC_AUTH_HASH` in der `.env` des Servers, nie im Repo. Hash erzeugen: `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<PASSWORT>'`. Wer stattdessen ein VPN vor den Server setzt, kann den Block entfernen - aber nicht beides weglassen.
 
-**Server** Vorschlag: kleiner VPS bei einem Anbieter mit Rechenzentrum in Deutschland, 2 vCPU, 4 GB RAM reichen für Stufe 1–6. Docker, Compose, `ufw` mit 22 und 443. Unattended Upgrades an.
+**Server (D3, decided 07.10.2026, in two stages):** test phase on the workbench (invented data and own test calls only); operation on an EU server, netcup VPS 1000 in Nuremberg, 4 vCPU / 8 GB (the voice layer adds Asterisk and a Python process, docs/20 §2). It is ordered when the first of these is due: the team uses tablet or print bridge against the real system, the measurement calls for G1, or the first real customer call. Docker, Compose, `ufw` mit 22 und 443. Unattended Upgrades an.
 
 **Druckbrücke:** holt Bons per HTTPS ab, im Router des Lokals bleibt alles zu. Einrichtung in `printbridge/README.md`; auf dem Server `KITCHEN_BRIDGE_TOKEN` und `KITCHEN_BRIDGE_TENANT_ID` setzen, ohne beide ist `/v1/kitchen/*` zu. Genau eine Brücke je Betrieb.
 
@@ -111,7 +111,7 @@ docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --b
 
 | Was | Wie | Wohin |
 |---|---|---|
-| Postgres | `pg_dump` täglich 03:00, `scripts/backup.sh` | verschlüsselt auf einen Zweitspeicher bei einem anderen EU-Anbieter (Object Storage) |
+| Postgres | `pg_dump` täglich 03:00, `scripts/backup.sh` | verschlüsselt auf einen Zweitspeicher bei einem anderen EU-Anbieter: Scaleway Object Storage (decided 07.10.2026, D3), ordered together with the server |
 | n8n-Workflows | Export nach `n8n/` bei jeder Änderung | Repo |
 | `.env` | manuell, verschlüsselt | Passwortmanager |
 
@@ -143,14 +143,14 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 
 **Cron:** `deploy/backup.cron` runs the backup daily at 03:00 and appends to `backups/backup.log`. Nobody is told yet when a night's backup fails: that alarm comes with the monitoring (T-8.3).
 
-**Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. Known limits: the restore uses `--no-owner --no-privileges`, right for today's single database user and to be revisited when roles are separated; without a local client on Linux, a database published on `127.0.0.1` only is not reachable from the client container (install a client or use the Compose network). Still open: the second storage at another EU provider (which provider is a cost decision, with D3), and the rehearsal on the production server once it exists (T-8.6).
+**Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. Known limits: the restore uses `--no-owner --no-privileges`, right for today's single database user and to be revisited when roles are separated; without a local client on Linux, a database published on `127.0.0.1` only is not reachable from the client container (install a client or use the Compose network). The second storage is decided (Scaleway Object Storage, D3 of 07.10.2026) and is ordered together with the server. Still open: the rehearsal on the production server once it exists (T-8.6).
 
 ---
 
 ## 5. Monitoring (Minimum)
 
 - `/health` alle 60 s von außen prüfen (kostenloser Uptime-Dienst Annahme), bei Ausfall SMS an Maxi
-- Heartbeat der Voice-Plattform, falls angeboten
+- Heartbeat of the voice layer (`voice` and Asterisk), planned with docs/20 §5
 - Outbox: Ereignisse mit Status `failed` → Alarm
 - Kosten je Tag über Schwelle → Alarm
 - Log-Rotation, 14 Tage lokal
@@ -171,5 +171,5 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 | Sim-Konsole in der GUI | an | aus |
 | `--reload` | an | aus |
 | Test-Mandant | ja | ja, für Rauchtests nach Deploy |
-| Anbieter | Testnummer | echte Nummer |
+| Telephone access | test number via the pilot's router (docs/20 §3) | real number |
 | Löschjob | aus | an |

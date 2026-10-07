@@ -24,7 +24,7 @@ Further limits:
 - **Operation: EU processing and a signed data processing agreement (DPA, German AVV)** (`docs/13_DEPLOYMENT.md` §0, assumption E9).
 - **Workbench: a local model, invented data only**, never a real call (same place).
 - **Swappable:** the core talks the chat completions format over HTTP (`ChatCompletionsLLM`, PR #208). A vendor that speaks it needs only `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`; any other vendor needs a second client class in `agent/llm.py`, nothing outside it.
-- **D7 is still open:** if the voice platform runs its own model loop instead of calling our core, the platform's model list limits this choice. For C2 this makes "the platform can call our own model endpoint" a selection criterion.
+- **D7 is decided (07.10.2026):** our own conversation core runs in operation, called by our own voice layer (`docs/20_VOICE_LAYER.md`). No platform's model list limits this choice.
 
 ## 2. What a model costs per call (first principles)
 
@@ -51,8 +51,8 @@ table; everything else needs a check on the vendor's own price page before a con
 Prompt caching lowers the input share further: the system prompt is the same on every
 turn.
 
-**Conclusion:** even the most expensive candidate costs a few cents per call. The voice
-platform bills per minute and dominates the bill. Token price is therefore a tie-breaker,
+**Conclusion:** even the most expensive candidate costs a few cents per call. The bill
+is now speech engines plus telephone access (`docs/20_VOICE_LAYER.md` §9). Token price is therefore a tie-breaker,
 not the decision; the decision is made by the hard eval metrics, latency and the EU path.
 
 ## 3. Operation model: candidates
@@ -172,7 +172,9 @@ under "GPU numbers" and docs/01_STATUS.md, on a new branch, and open a PR.
 | 1 to 3 agents at the restaurant | schedule plus overflow, see §7 |
 
 Open: the final operation model (T-5.3 measures it), the vendor contracts and DPAs (Maxi,
-in chat), D7 together with D1.
+in chat). D7 is decided (07.10.2026), see §1. T-10.10 (attached to T-5.3) compares the chain
+of speech-to-text, our core and text-to-speech with a model that hears the audio itself and
+with a speech-to-speech model on the same cases (`docs/20_VOICE_LAYER.md` §6).
 
 ## 7. One to three agents at the restaurant
 
@@ -180,14 +182,13 @@ An agent here means one AI call running at the same time as others. Three facts 
 what is possible:
 
 1. **The model is no limit and costs nothing while idle.** A hosted model bills per token; a second and third parallel call cost only their own tokens. There is nothing to switch on or off for the weekend at the model level.
-2. **The phone line is the limit today.** The Fritz!Box 6591 has 4 voice channels; a forward takes two and a transfer to the team one more, so the safe limit is **one** AI call at a time (`docs/01_STATUS.md`, phone line). Two or three need forwarding in the provider's network, or the number moved to the voice platform or a SIP provider (C2).
-3. **The voice platform may bill per parallel channel.** If it does, a schedule saves money; if it bills per minute only, a schedule protects the team from too many parallel orders.
+2. **The phone access is the limit.** The pilot's router path allows 2 AI calls at most (each IP-telephone call takes 2 of the router's 4 connections); the test phase runs with **one** (`docs/20_VOICE_LAYER.md` §3). D16 (decided 06.10.2026, up to 3 concurrent AI calls on weekend evenings) needs the SIP trunk entry.
+3. **The telephone access may bill per parallel channel** (a SIP trunk, by tariff). If it does, a schedule saves money; if it bills per minute only, a schedule protects the team from too many parallel orders.
 
 **Decision: schedule plus overflow.** One setting in the core, `max_concurrent_calls`, with
 a weekly schedule: weekdays 1, Friday to Sunday evenings up to 3 (values in the database,
 editable on the tablet later). A call above the limit is not taken by the AI; it rings at
-the team (rule 5, no call is lost). Built after D1, because it depends on how the platform
-signals a new call; proposed as a work package, not part of T-2.4.
+the team (rule 5, no call is lost). The limit and its weekly windows are a database value (T-10.9, `docs/20_VOICE_LAYER.md` §8), not part of T-2.4.
 
 ## 8. Next steps
 
@@ -195,8 +196,8 @@ signals a new call; proposed as a work package, not part of T-2.4.
 2. ~~T-2.4 part 3~~ **built 06.10.2026:** `--model` in sim and eval runner, `LLM_REASONING_EFFORT` (default empty, sent as `reasoning_effort` when set), tool reference in the prompt, `.env.example` documents every `LLM_*` setting with `qwen3:14b` as the workbench example. The cart in the conversation state followed on 07.10.2026: the order a model has understood so far travels in the compact state, so found dishes survive between turns (`docs/05_DIALOG_PROMPTS.md` §5).
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
-5. C2: "the platform can call our own model endpoint" as a criterion (D7); concurrency limits and per-channel pricing of the platforms.
-6. Proposal: work package for `max_concurrent_calls` with schedule (§7), after D1.
+5. T-10.10: the chain against an audio-in model and a speech-to-speech model on the same cases, attached to T-5.3 (`docs/20_VOICE_LAYER.md` §6).
+6. T-10.9: `max_concurrent_calls` with schedule as a database value (§7); D16 needs the SIP trunk entry (T-10.12), the test phase runs with one AI call.
 
 Sources (prices, 06.10.2026): Anthropic model table (cached 25.09.2026);
 [Mistral pricing overview](https://developer.puter.com/tutorials/mistral-api-pricing/),
