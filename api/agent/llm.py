@@ -41,12 +41,18 @@ class LLMTurn:
     `party_size`, `reserved_for`), an dem der Kunde gerade nicht verstanden
     wurde. `loop.py` zählt das über `agent/ladder.py` (docs/05 §2) und eskaliert
     selbst, wenn dieselbe Information dreimal die Stufe wechselt, ohne dass das
-    Modell das selbst nachhalten müsste."""
+    Modell das selbst nachhalten müsste.
+
+    `cart` is independent as well: the whole order as the model understands it
+    after this turn, lines in the form of `items` of draft_order. None leaves
+    the order in the state as it is. Whatever a model sends here is unchecked;
+    `guards.take_cart` decides whether the core takes it."""
 
     say: str | None = None
     tool_call: ToolCall | None = None
     state_patch: dict[str, Any] | None = None
     understanding_failure: str | None = None
+    cart: Any = None
 
     def __post_init__(self) -> None:
         if (self.say is None) == (self.tool_call is None):
@@ -95,6 +101,35 @@ Antworte immer mit genau einem JSON-Objekt, ohne Text davor oder danach:
 - `not_understood`: der Name der Angabe, die du gerade nicht verstanden hast (zum Beispiel `party_size`), sonst null.
 Die Eingabe ist entweder das, was der Gast gesagt hat, oder das Ergebnis deines letzten Tool-Aufrufs als JSON mit dem Feld `tool`."""
 
+# The same contract for a call that is about an order: with the field `cart`
+# and the names of the slots. Sent only while the state carries `cart`, which
+# it does from the first menu search on (`state.to_prompt_json`). A call about
+# a table gets `OUTPUT_FORMAT` as before: on a real model either addition cost
+# reservation cases that passed without it (6 of 6 with the short format, 4
+# with the slot names, 3 with the cart text, 1 with both; 07.10.2026), and a
+# reservation needs neither (CLAUDE.md §2 rule 6).
+_SLOTS_SHORT = "nur Neues oder Geändertes. Im nächsten Zug"
+_SLOTS_NAMED = (
+    "nur Neues oder Geändertes, unter genau diesen Namen: `guest_name`, `phone`, "
+    "`party_size`, `reserved_for`, `note`. Im nächsten Zug"
+)
+_CART_RULE = (
+    "- `cart`: die ganze Bestellung, wie sie nach diesem Zug steht, als Liste von "
+    "Positionen wie `items` von `draft_order` (`menu_item_id`, `quantity`, optional "
+    "`options` und `note`); null, wenn sich nichts geändert hat. Trag ein Gericht "
+    "ein, sobald `search_menu` es eindeutig gefunden oder der Gast es gewählt hat: "
+    "was nicht in `cart` steht, ist im nächsten Zug verloren. Im Zustand steht die "
+    "Bestellung unter `cart`; `open` nennt dort Pflichtoptionen, die noch fehlen. "
+    "Der `cart` ist noch keine Bestellung: erst `draft_order` legt sie an, mit dem "
+    "`cart` aus dem Zustand als `items`, und liefert den `readback`. `confirm` geht "
+    "nur mit einer `order_id` im Zustand.\n"
+)
+ORDER_FORMAT = (
+    OUTPUT_FORMAT.replace('"slots": {}, ', '"slots": {}, "cart": null, ')
+    .replace(_SLOTS_SHORT, _SLOTS_NAMED)
+    .replace("- `not_understood`", f"{_CART_RULE}- `not_understood`")
+)
+
 
 @dataclass(frozen=True)
 class Usage:
@@ -141,6 +176,9 @@ class _Envelope(BaseModel):
     tool: str | None = None
     args: dict[str, Any] | None = None
     slots: dict[str, Any] | None = None
+    # Any shape: a wrong one is refused with a hint the model can act on
+    # (`guards.take_cart`), not treated as an outage like a broken envelope.
+    cart: Any = None
     not_understood: str | None = None
 
 
@@ -167,6 +205,13 @@ def parse_turn(content: str) -> LLMTurn:
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
             state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,
+            # null, "" and {} are a field left blank and say nothing. Anything
+            # else is a statement the core has to judge: the empty list (the
+            # guest removed the last dish, and the draft that still holds it
+            # must not stay confirmable), and also `false` or `0`, which
+            # `take_cart` refuses and which drop the draft the same way
+            # (Codex PR #237, P1 twice).
+            cart=None if envelope.cart in (None, "", {}) else envelope.cart,
         )
     except ValueError as exc:  # pydantic's ValidationError is one, LLMTurn raises one
         raise LLMError("model answer outside the contract") from exc
@@ -234,10 +279,14 @@ class ChatCompletionsLLM:
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
     ) -> LLMTurn:
         state = json.dumps(state_json, ensure_ascii=False, default=str)
+        # The format follows the state: the rules for `cart` go out only once
+        # the state carries an order. At the end of the message, so the long
+        # part before it stays the same for a provider's prompt cache.
+        output_format = ORDER_FORMAT if "cart" in state_json else OUTPUT_FORMAT
         body = {
             "model": self._model,
             "messages": [
-                {"role": "system", "content": f"{system_prompt}\n\n{OUTPUT_FORMAT}"},
+                {"role": "system", "content": f"{system_prompt}\n\n{output_format}"},
                 {"role": "user", "content": f"Zustand: {state}\nEingabe: {input_text}"},
             ],
             "response_format": {"type": "json_object"},

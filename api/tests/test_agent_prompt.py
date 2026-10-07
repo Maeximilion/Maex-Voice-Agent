@@ -4,7 +4,7 @@ import math
 from pathlib import Path
 
 from api.agent.dispatch import TOOLS
-from api.agent.llm import OUTPUT_FORMAT
+from api.agent.llm import ORDER_FORMAT
 from api.agent.prompt import CORE_TOKEN_BUDGET, PROMPT_VERSION, build_system_prompt
 
 SYSTEM_CURRENT = (
@@ -68,8 +68,9 @@ def test_menu_index_comes_after_the_tool_reference():
 def test_what_the_core_sends_stays_inside_its_budget():
     """Rule 6 measured on what a model really gets on every request: system
     prompt, tool reference and answer format. The 800 of docs/05 §5 is the
-    budget of `system_vN.md` alone (test_prompts_v2.py)."""
-    sent = f"{build_system_prompt(tools=True)}\n\n{OUTPUT_FORMAT}"
+    budget of `system_vN.md` alone (test_prompts_v2.py). Measured with the
+    longer of the two formats, the one a call about an order gets."""
+    sent = f"{build_system_prompt(tools=True)}\n\n{ORDER_FORMAT}"
     tokens = math.ceil(len(sent) / 4)
 
     assert tokens < CORE_TOKEN_BUDGET, f"~{tokens} tokens, budget {CORE_TOKEN_BUDGET}"

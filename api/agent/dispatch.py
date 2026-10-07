@@ -388,13 +388,7 @@ def dispatch(
         try:
             result = adapter(session, call_id, tenant_id, args, now)
         except ValidationError as exc:
-            # Which field and what is wrong with it, never the value. A bare
-            # `invalid_input` gives a model nothing to act on: it repeats the
-            # call instead of asking the guest for what is missing.
-            hint = "; ".join(
-                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
-                for error in exc.errors()
-            )
+            hint = validation_hint(exc)
             raise InvalidInput(str(exc)) from exc
         outcome = ToolResult(
             ok=True,
@@ -412,6 +406,16 @@ def dispatch(
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     _log_call(session, call_id, tenant_id, name, duration_ms, outcome)
     return outcome
+
+
+def validation_hint(exc: ValidationError) -> str:
+    """Which field and what is wrong with it, never the value. A bare
+    `invalid_input` gives a model nothing to act on: it repeats the call
+    instead of asking the guest for what is missing."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+        for error in exc.errors()
+    )
 
 
 def log_refused(
