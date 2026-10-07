@@ -1,14 +1,14 @@
 # PCF – Maex Voice-Agent
 
 > **AI Call Intake for Delivery, Pickup, and Reservations**
-> Version 1.0 · 11.09.2026 · Status: released (Gate P passed)
+> Version 1.1 · 07.10.2026 · Status: released (Gate P passed) · E1 flipped on 07.10.2026: own voice layer, see section 3 and `docs/20_VOICE_LAYER.md`
 > This file is the Single Source of Truth for all project chats. Each chat reads it at the start and ends with a handover block (section 12).
 
 ---
 
 ## 1. Objective
 
-An AI agent answers calls on the landline of <Pilotbetrieb>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, and escalates complaints to humans. The interface is simple enough that the team operates it under stress without explanation.
+An AI agent answers calls on the landline of <Pilotbetrieb>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, resolves complaints by fixed rules from the database and passes what the rules do not cover to humans (D19, 07.10.2026; not built yet). The interface is simple enough that the team operates it under stress without explanation.
 
 ### Guiding Principles (First Principles)
 
@@ -43,7 +43,7 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 **In scope**
 - Reservations, pickups, deliveries (zone, flat fee, minimum order value)
 - Inquiries from configuration: hours, delivery area, wait time, allergens
-- Complaint or request for human → handoff or callback task
+- Complaint → resolved by fixed rules from the database, else a callback task (D19, 07.10.2026) · request for a human → handoff or callback task
 - GUI for operations (tablet) and admin
 - Learning phase (offline shadow mode) and eval suite
 
@@ -60,32 +60,35 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 
 | # | Decision | Rationale | Status |
 |---|---|---|---|
-| E1 | **Hybrid:** Telephony and speech processing via an EU-hosted specialist service; logic, DB, and GUI in-house | Heavy lifting (real-time audio, latency) is outsourced, error-critical logic built in-house, components remain swappable | set 11.09.2026 |
-| E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | Assumption, confirm in G0 via call mix |
+| E1 | ~~**Hybrid:** Telephony and speech processing via an EU-hosted specialist service; logic, DB, and GUI in-house~~ **Flipped 07.10.2026 (Maxi): no hosted voice platform, the voice layer is built in-house** (`docs/20_VOICE_LAYER.md`) | Until 07.10.2026: heavy lifting outsourced. Now: no platform fee, our code decides every sentence, independence from router and carrier. The price: estimated 5 to 8 weeks of work and uptime that is ours | set 11.09.2026, flipped 07.10.2026 |
+| E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | confirmed by Maxi 07.10.2026; the call mix is the owner's estimate (under 30 calls on weekdays, 30 to 60 on weekends), no measured baseline |
 | E3 | Rollout: Shadow → Overflow → Primary | Risk grows only with evidence | Assumption, holds until veto |
 | E4 | Register stays booking master (TSE); agent DB for agent data only | Legal certainty, single source of truth for revenue | Assumption, holds until veto |
 | E5 | Pilot <Pilotbetrieb>, number stays; menu, hours, zones from DB | Transferable to other locations later | Assumption, holds until veto |
 | E6 | Training = knowledge base + eval suite + offline shadow mode, no model fine-tuning | Cheaper, measurable, legally simpler | Assumption, holds until veto |
 | E7 | AI discloses itself as AI at the start of the call | EU AI Act Art. 50, in effect since 02.08.2026 | Mandatory |
-| E8 | Complaint, human request, cancellation → team immediately, else callback task | Trust, error containment | Assumption, holds until veto |
+| E8 | Human request, cancellation → team immediately, else callback task. **Complaint, changed 07.10.2026 (Maxi, D19):** the AI resolves it by fixed rules from the database; what the rules do not resolve is recorded and the team calls back | Trust, error containment; the goal is that the AI handles every call completely | changed 07.10.2026; complaints not built yet (T-10.11), the code still hands them to the team |
+| E15 | The own voice layer starts as a chain: speech-to-text, our conversation core, text-to-speech. Ear and mouth are swappable. A model that hears and speaks itself is measured against the chain on the same cases and replaces it only by numbers. A hosted voice platform is the last resort | The core and the eval suite stay as they are; research found speech-to-speech models weaker on tasks and not faster (not our numbers, T-10.10 measures) | set 07.10.2026 (Maxi) |
+| E16 | The product does not depend on a restaurant's router or carrier: the software speaks SIP. Nothing heavy runs in the restaurant. One model call per turn, no multi-agent setup on a live call | Sellable to other restaurants; cash-register PCs are weak; every extra model call costs time and adds a place to misunderstand | set 07.10.2026 (Maxi) |
 
 ---
 
-## 4. Architecture (Hybrid)
+## 4. Architecture (own voice layer since 07.10.2026)
 
 ```text
 Caller
   │
   ▼
 Landline <Pilotbetrieb> (existing provider)
-  │  Redirect / SIP
+  │  Test phase: our software is one more telephone at the router
+  │  Operation: forward or port to a SIP trunk
   │  Mode: Shadow · Overflow · Primary
   ▼
-Voice Platform (EU)
-  │  Speech recognition → Model → Voice synthesis
+Own voice layer (our server, docs/20_VOICE_LAYER.md)
+  │  Asterisk → speech recognition → conversation core → voice synthesis
   │  Touch tones · Interruption · Transfer
   │
-  │  Tools via HTTPS (hot path)
+  │  Tools in process (hot path)
   ▼
 Agent API ─────────► Agent DB (EU)
   │                      ▲
@@ -150,6 +153,8 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 
 **Gate G0 – Go/No-Go:** Budget approved · Legal framework clarified · Telephony path feasible · Vendor selected for PoC · Stage order confirmed per call mix
 
+Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path chosen for the test phase (`docs/20_VOICE_LAYER.md`), and "telephony path feasible" is shown by measurement at the pilot's router (T-10.1 and T-10.2), not on paper (Maxi, 07.10.2026). State per criterion: `docs/01_STATUS.md`, section Gates in Detail.
+
 ### Stage 1 – Reservation Through-cut
 **Goal:** The chain test number → AI → tool → DB → GUI runs once completely real. Reservation is the vehicle because it needs few data points and touches no money.
 - **C2** PoC on test number: latency, caller ID on redirect, touch tones, transfer, interruption
@@ -159,7 +164,7 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 - **C6** Operations GUI v0: reservations today, callbacks, switch "AI pause"
 - **C7 parallel** (after legal approval and testing): Begin recording real team calls with consent. Data collection in background from now on.
 
-**Gate G1:** 20 role-play calls (noise, dialect, interruption, human request) → 100% booked correctly or escalated cleanly · latency on target · cost per call measured · outage test: platform gone → call lands with team
+**Gate G1:** 20 role-play calls (noise, dialect, interruption, human request) → 100% booked correctly or escalated cleanly · latency on target · cost per call measured · outage test: voice layer gone → call lands with team
 
 ### Stage 2 – Pickup
 **Goal:** Menu understood reliably, order reaches kitchen correctly.
@@ -208,6 +213,8 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 
 ## 6. Vendor Criteria (C2)
 
+> Superseded for the voice platform on 07.10.2026 (E1 flipped). The must criteria still hold, now for the pieces of the own voice layer: speech-to-text, text-to-speech, model and telephone access (`docs/20_VOICE_LAYER.md`). The list stays as the checklist for the last resort, a hosted platform.
+
 **Must**
 - Data processing in the EU, DPA available
 - Good German speech recognition and voices
@@ -251,7 +258,7 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 
 ## 8. Legal Check (C1, before first real call)
 
-> Note: Not legal advice. Have a lawyer or data protection consultant review before go-live.
+> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision, and the question of the data protection officer (D9) stays open.
 
 - [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Recording:** Consent from customer and team (§201 StGB); announcement and way to object
@@ -266,18 +273,20 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 
 | # | Risk | Mitigation | Stage |
 |---|---|---|---|
-| R1 | Latency or unnatural voice → customers hang up | Measure latency in PoC, select vendor accordingly | 1 |
+| R1 | Latency or unnatural voice → customers hang up | Measure latency in the spike (T-10.3), choose the speech engines accordingly | 1 |
 | R2 | Dish names or dialect misunderstood | Vocabulary, numbers, keyboard, evals with real recordings | 2 |
-| R3 | Internet or platform down during peak | Fallback to team, alarm, "AI pause" | 1 |
+| R3 | Internet, server or voice layer down during peak | Fallback to team (`docs/20_VOICE_LAYER.md` §5, measured in T-10.2), alarm, "AI pause" | 1 |
 | R4 | Recording or AI disclosure legally challenged | Legal check before G0, vetted announcement text | 0 |
 | R5 | Menu or prices differ from register | one master, reconciliation test, "dish sold out" | 2 |
 | R6 | Wrong allergen information | DB values only, else team callback | 2 |
 | R7 | Costs spiral (spam, loops, long calls) | Max duration, loop protection, cost alarm | 1 |
-| R8 | Caller ID lost on redirect | Test in PoC; fallback: ask for number | 1 |
+| R8 | Caller ID lost on redirect | An IP telephone at the router and a SIP trunk receive it, a forward set in the router does not (research, tested in T-10.1); fallback: ask for number | 1 |
 | R9 | A change silently degrades quality | Regression evals, versioning | 2 |
 | R10 | Team doesn't use the GUI | 2-tap rule, team in role-plays | 1 |
-| R11 | Vendor lock-in or price increase | Logic, prompts, evals in-house, tools via webhook | 0 |
+| R11 | Vendor lock-in or price increase | Logic, prompts, evals and since 07.10.2026 the voice layer in-house; speech engines behind ports | 0 |
 | R12 | Double order from retry or network error | Idempotency key per order | 2 |
+| R13 | The self-built voice layer takes longer than estimated or stays unreliable (end of utterance, interruption, handing a call to the team) | Three spikes with go or no-go first; ways out in `docs/20_VOICE_LAYER.md` §13: SIP trunk, then a hosted platform | 1 |
+| R14 | The router path of the test phase fails or a router update changes it (handing over to the team, VPN, limit of two calls) | Test phase only; the entry for operation is a SIP trunk | 1 |
 
 ---
 
@@ -326,6 +335,9 @@ End: handover block per PCF section 12.
 ```
 
 ### C2 – Architecture, Telephony & Vendors
+
+> Superseded 07.10.2026: the comparison ran in Claude Code and ended with E1 flipped (`docs/20_VOICE_LAYER.md`). The prompt stays for the record.
+
 ```text
 Project Maex Voice-Agent · Chat C2 – Architecture, Telephony & Vendors (Stage 0–1)
 Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). E1 Hybrid is set.
@@ -821,9 +833,9 @@ Lessons: Claude Code web sandbox: Docker daemon doesn't start automatically and 
 |---|---|---|
 | POS system and interface | Stage 0 | C1 |
 | Phone provider, PBX, redirect | Stage 0 | C1 |
-| Budget monthly and one-time | before G0 | C1 |
-| Stage order final (call mix) | G0 | C0 |
-| Vendor and hosting | G0 | C2 |
+| ~~Budget monthly and one-time~~ decided 07.10.2026: D17 in `docs/01_STATUS.md` | before G0 | C1 |
+| ~~Stage order final (call mix)~~ confirmed 07.10.2026: E2 | G0 | C0 |
+| ~~Vendor and hosting~~ decided 07.10.2026: own voice layer (E1), hosting D3 | G0 | C2 |
 | DB tech | Stage 1 | C3 |
 | GUI tech | Stage 1 | C6 |
 | Voice: natural or synthetic | Stage 1 | C4 |
@@ -848,4 +860,5 @@ Lessons: Claude Code web sandbox: Docker daemon doesn't start automatically and 
 
 ## 16. Changelog
 
+- **v1.1 · 07.10.2026:** E1 flipped: own voice layer instead of a hosted platform (new E15, E16, `docs/20_VOICE_LAYER.md`). E2 confirmed, E8 changed for complaints (D19). Risks R13 and R14, vendor criteria and the C2 prompt marked superseded.
 - **v1.0 · 11.09.2026:** First version from C0 (loops 1–8). Contains objective, guiding principles, KPIs, hybrid architecture, stages 0–6 with gates, vendor criteria, data model, legal check, risks, and 8 work packages with start prompts.

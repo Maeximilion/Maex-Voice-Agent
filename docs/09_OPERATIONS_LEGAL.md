@@ -4,14 +4,15 @@
 
 ## 1. Rechts-Check
 
-> Hinweis: Keine Rechtsberatung. Vor dem ersten echten Anruf durch Anwalt oder Datenschutzberater prüfen lassen.
+> Decided 07.10.2026 (D20, Maxi): the checklist is worked through by putting the same question catalogue to two AI models independently (Gemini and Claude) and comparing the answers until every point is settled; no lawyer, no data protection consultant. Limits: this is not legal advice, two models can share the same error, liability stays with the controller. The question of the data protection officer (D9) stays open, because that role needs a person or a firm.
 > **Jeder offene Punkt blockiert die Aufgaben T-7.x und den Wechsel in den Modus `overflow`.**
 
 - [ ] **AI Act Art. 50** — KI-Hinweis im ersten Satz. Gilt seit 02.08.2026.
 - [ ] **Aufzeichnung** — Einwilligung von Kunde und Team (§201 StGB). Ansage plus ein Weg zu widersprechen, der zum Menschen führt.
 - [ ] **DSGVO** — Rechtsgrundlage je Zweck (Bestellung · Aufnahme · Auswertung)
 - [ ] **DSGVO** — Informationspflicht: kurze Ansage plus Datenschutzerklärung auf example.com
-- [ ] **DSGVO** — AVV mit Voice-Plattform, Hosting und jedem weiteren Dienstleister
+- [ ] **DSGVO** — data processing agreements (AVV) with today's processors: speech-to-text service, text-to-speech service, model provider, hosting, backup storage, later the SIP trunk provider. None in the test phase, where everything runs on the workbench
+- [ ] **DSGVO** — D21 (open question): does live audio streamed to a speech service without storage fall under the rules for recordings (E11)? In the test phase no audio leaves the workbench
 - [ ] **DSGVO** — Drittlandtransfer prüfen, falls ein Anbieter außerhalb der EU verarbeitet
 - [ ] **DSGVO** — Löschkonzept umgesetzt und getestet (`docs/03_DATA_MODEL.md`)
 - [ ] **DSGVO** — Verzeichnis der Verarbeitungstätigkeiten ergänzt
@@ -34,9 +35,9 @@
 |---|---|---|
 | Kunden beschweren sich über den Agenten | KI pausieren | Anruf-Log ansehen, Fall als Eval-Fall anlegen |
 | Bestellungen kommen nicht in der Küche an | `handover_state` in der GUI prüfen, „Nochmal senden"; liegt der Eingabezettel am Haupt-Bondrucker, wurde die Bestellung in die Kasse getippt? (D2: Küchenbon druckt nur die Kasse) | Drucker an, Papier, Deckel zu; läuft die Druckbrücke (`printbridge/README.md`, Probebon mit `--test`); Log „Alarm: Küchenbon" im Dienst `dispatcher`; Kassenverbindung |
-| Agent versteht auffällig schlecht | KI pausieren | Ist das Menü aktuell? Neue Gerichte ohne Alias? Plattform-Störung? |
+| Agent versteht auffällig schlecht | KI pausieren | Ist das Menü aktuell? Neue Gerichte ohne Alias? Voice layer or a speech engine failing (docs/20 §5)? |
 | Kosten laufen hoch | Kosten-Alarm prüfen | Anrufdauer, Schleifen, Spam-Nummern sperren |
-| Agent antwortet nicht | Rufumleitung greift automatisch | `/health`, Container-Logs, Plattform-Status |
+| Agent antwortet nicht | Rufumleitung greift automatisch | `/health`, Container-Logs, Status of `voice` and Asterisk (docs/20 §5, target, not yet measured) |
 | Datenbank weg | KI pausieren | letztes Backup prüfen, `scripts/restore.sh` |
 
 ### Menüänderung
