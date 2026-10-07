@@ -88,6 +88,16 @@ class SimCall:
         self._fixed_now = now
         self._now = now or utcnow()
         self._tenant = tenant
+        # Everything that can fail comes before the call row is written: a failure
+        # after `start_call` would leave an open call nobody can end.
+        self._llm = llm or ScriptedLLM(
+            now=self._now,
+            timezone=tenant.timezone,
+            menu=lambda: menu_numbers(session, tenant.id),
+        )
+        self._loop = ConversationLoop(
+            session, self._llm, build_system_prompt(), now=self._now
+        )
         started = start_call(
             session,
             StartCallRequest(
@@ -100,14 +110,6 @@ class SimCall:
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
-        self._llm = llm or ScriptedLLM(
-            now=self._now,
-            timezone=tenant.timezone,
-            menu=lambda: menu_numbers(session, tenant.id),
-        )
-        self._loop = ConversationLoop(
-            session, self._llm, build_system_prompt(), now=self._now
-        )
         self._logged = 0
         self._usage_logged = False
 

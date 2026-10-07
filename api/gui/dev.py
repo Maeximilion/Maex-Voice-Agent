@@ -22,6 +22,7 @@ from sim.session import SimCall, Turn, resolve_tenant
 router = APIRouter(prefix="/gui/dev", tags=["gui-dev"])
 logger = get_logger("api.gui.dev")
 
+TURN_FAILED = "Der Zug ist fehlgeschlagen, der Anruf wurde beendet. Bitte einen neuen Anruf starten."
 NO_CALL = "Dieser Anruf ist nicht mehr offen. Bitte einen neuen Anruf starten."
 
 
@@ -65,6 +66,11 @@ def _finish(call_id: str):
     return ended
 
 
+def _drop(call_id: str) -> None:
+    """Forget a call that cannot be finished; the page cannot reach it anyway."""
+    OPEN_CALLS.pop(call_id).session.close()
+
+
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 def console(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "dev/console.html", {})
@@ -89,8 +95,7 @@ def start(request: Request) -> HTMLResponse:
                         # Unreachable by the page anyway: drop it, or one broken
                         # call would block every new start until a restart.
                         logger.exception("stale console call dropped: %s", stale)
-                        del OPEN_CALLS[stale]
-                        old.session.close()
+                        _drop(stale)
         session = SessionLocal()
         try:
             tenant = resolve_tenant(session, None)
@@ -124,10 +129,17 @@ def say(
         try:
             turn = entry.call.say(text)
         except Exception:
-            # The session outlives the request: without this a failed statement
-            # leaves it unusable for the retry (Codex PR #236).
+            # A turn that failed half way may have committed tools and moved the
+            # state: a retry would start from a state the guest never reached
+            # (Codex PR #236). End the call instead and say so.
+            logger.exception("console turn failed, ending call %s", call_id)
             entry.session.rollback()
-            raise
+            try:
+                _finish(call_id)
+            except Exception:
+                logger.exception("console call could not be ended: %s", call_id)
+                _drop(call_id)
+            return _view(request, None, problem=TURN_FAILED)
         entry.turns.append(turn)
         # A closing stage is the end of the call: no sentence after the goodbye.
         return _view(request, entry, ended=_finish(call_id) if turn.ended else None)

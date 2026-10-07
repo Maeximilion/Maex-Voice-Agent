@@ -2,17 +2,18 @@
 
 import re
 import threading
+from zoneinfo import ZoneInfoNotFoundError
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.db import get_db
 from api.gui import dev, mount_gui
-from api.models import Call
+from api.models import Call, Tenant
 from api.tests.test_domain_draft_order import _tenant
 from sim.session import Turn
 
@@ -249,23 +250,33 @@ def test_two_starts_at_once_leave_one_call(client, db, tenant_id, monkeypatch):
     assert len(dev.OPEN_CALLS) == 1
 
 
-def test_failed_turn_rolls_the_session_back(client, tenant_id, monkeypatch):
+def test_failed_turn_ends_the_call_and_says_so(client, db, tenant_id, monkeypatch):
     call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
-    rolled_back = []
-    monkeypatch.setattr(
-        dev.OPEN_CALLS[call_id].session, "rollback", lambda: rolled_back.append(1)
-    )
 
     def broken(self, text):
         raise RuntimeError("database gone")
 
     monkeypatch.setattr(dev.SimCall, "say", broken)
 
-    with pytest.raises(RuntimeError):
-        client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Hallo"})
+    said = client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Hallo"})
 
-    assert rolled_back
-    assert call_id in dev.OPEN_CALLS
+    assert said.status_code == 200
+    assert "fehlgeschlagen" in said.text
+    assert call_id not in dev.OPEN_CALLS
+    row = db.scalar(select(Call).where(Call.id == call_id))
+    db.refresh(row)
+    assert row.ended_at is not None
+
+
+def test_failed_setup_leaves_no_open_call_row(client, db, tenant_id):
+    db.execute(update(Tenant).values(timezone="Europe/Berln"))
+    db.commit()
+
+    with pytest.raises(ZoneInfoNotFoundError):
+        client.post(f"{BASE}/call", headers=HX)
+
+    assert db.scalar(select(func.count()).select_from(Call)) == 0
+    assert not dev.OPEN_CALLS
 
 
 def test_start_drops_a_stale_call_that_cannot_be_finished(
