@@ -122,6 +122,11 @@ class SimCall:
             timezone=tenant.timezone,
             menu=lambda: menu_numbers(session, tenant.id),
         )
+        # With the tool reference: a real model learns the tools from the
+        # prompt, the stand-in reads none of it. Built before the call row too.
+        self._loop = ConversationLoop(
+            session, self._llm, build_system_prompt(tools=True), now=self._now
+        )
         started = start_call(
             session,
             StartCallRequest(
@@ -134,11 +139,6 @@ class SimCall:
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
-        # With the tool reference: a real model learns the tools from the
-        # prompt, the stand-in reads none of it.
-        self._loop = ConversationLoop(
-            session, self._llm, build_system_prompt(tools=True), now=self._now
-        )
         self._logged = 0
         self._usage_logged = False
 
