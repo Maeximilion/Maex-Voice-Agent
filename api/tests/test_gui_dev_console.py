@@ -296,6 +296,35 @@ def test_start_drops_a_stale_call_that_cannot_be_finished(
     assert len(dev.OPEN_CALLS) == 1
 
 
+def test_failed_hang_up_after_a_closing_turn_retries_only_the_hang_up(
+    client, tenant_id, monkeypatch
+):
+    call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    turns, finishes = [], []
+    real_finish = dev.SimCall.finish
+
+    def closing_say(self, text):
+        turns.append(text)
+        return Turn(customer=text, ended=True)
+
+    def flaky_finish(self):
+        finishes.append(1)
+        if len(finishes) == 1:
+            raise RuntimeError("database gone")
+        return real_finish(self)
+
+    monkeypatch.setattr(dev.SimCall, "say", closing_say)
+    monkeypatch.setattr(dev.SimCall, "finish", flaky_finish)
+
+    with pytest.raises(RuntimeError):
+        client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Ja"})
+    retry = client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Ja"})
+
+    assert turns == ["Ja"]  # the closing turn is not played a second time
+    assert "Anruf beendet" in retry.text
+    assert call_id not in dev.OPEN_CALLS
+
+
 def test_page_shows_a_failed_tap(client):
     page = client.get(BASE)
 

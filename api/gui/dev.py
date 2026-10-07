@@ -32,6 +32,8 @@ class OpenCall:
     call: SimCall
     tenant_name: str
     turns: list[Turn] = field(default_factory=list)
+    # The last turn closed the call but the hang-up failed: retry only the hang-up.
+    closing: bool = False
     # A sentence and a hang-up can arrive together; they share one session.
     lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -134,6 +136,8 @@ def say(
     with _locked(call_id) as entry:
         if entry is None:
             return _view(request, None, problem=NO_CALL)
+        if entry.closing:
+            return _view(request, entry, ended=_finish(call_id))
         if not text:
             return _view(request, entry)
         try:
@@ -151,6 +155,7 @@ def say(
                 _drop(call_id)
             return _view(request, None, problem=TURN_FAILED)
         entry.turns.append(turn)
+        entry.closing = turn.ended
         # A closing stage is the end of the call: no sentence after the goodbye.
         return _view(request, entry, ended=_finish(call_id) if turn.ended else None)
 
