@@ -58,6 +58,8 @@ Maxis PC (nur Werkbank)
   sim/cli.py             → Gespräche ohne Telefon
   local model (optional) → for sim and evals only, never for a real call (§0);
                            setup: bash scripts/setup_local_llm.sh (docs/18 §5)
+                           use:   python -m sim.cli --model qwen3:14b
+                                  make eval MODEL=qwen3:14b  (LLM_* in .env)
   Tunnel                 → öffentliche HTTPS-URL auf localhost:8000, nur für Testanrufe
 ```
 

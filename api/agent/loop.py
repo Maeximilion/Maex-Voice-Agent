@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, get_args
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
@@ -28,6 +29,9 @@ from api.agent.state import ConversationState, apply_state_patch, apply_tool_res
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
+from api.core.time import to_local, utcnow
+from api.domain.reservations.spoken import WEEKDAYS
+from api.models import Tenant
 from api.schemas.callbacks import CallbackReason
 
 logger = get_logger("api.agent.loop")
@@ -98,6 +102,8 @@ class ConversationLoop:
         self._clock = clock
         self._started = clock()
         self._ladder = UnderstandingLadder()
+        # Timezone of the call's tenant, read once (`_local_now`).
+        self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
         reason = escalation.check(user_text)
@@ -118,7 +124,14 @@ class ConversationLoop:
 
             try:
                 turn = self._llm.next_turn(
-                    self._system_prompt, self._prompt_state(state), pending_input
+                    self._system_prompt,
+                    # On a tool hop the input is the tool result: the guest's
+                    # sentence of this turn rides along, or the model no
+                    # longer knows what the result is for.
+                    self._prompt_state(
+                        state, None if pending_input is user_text else user_text
+                    ),
+                    pending_input,
                 )
             except LLMError as exc:
                 # A model that is down or answers outside the contract is an
@@ -188,14 +201,41 @@ class ConversationLoop:
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
 
-    def _prompt_state(self, state: ConversationState) -> dict[str, Any]:
+    def _prompt_state(
+        self, state: ConversationState, guest_said: str | None = None
+    ) -> dict[str, Any]:
         data = state.to_prompt_json()
+        if guest_said:
+            # Within one guest turn only: the next turn starts from the
+            # compact state again, never from a transcript (docs/05 §5).
+            data["guest_said"] = guest_said
+        # A model has no clock: "morgen um sieben" and "am Samstag" need today's
+        # date and weekday. Local time of the restaurant, from the same clock
+        # the tools get (`now`), so a replay with a fixed time stays the same.
+        local = self._local_now(state)
+        data["now"] = (
+            f"{WEEKDAYS[local.weekday()]}, {local.isoformat(timespec='minutes')}"
+        )
         hints = self._ladder.active_levels()
         if hints:
             # Sagt dem Modell, auf welcher Verständnis-Stufe eine Information
             # gerade steht (docs/05 §2), ohne den Verlauf mitzuschicken.
             data["ladder"] = hints
         return data
+
+    def _local_now(self, state: ConversationState) -> datetime:
+        """In the timezone of the tenant row, which is what the tools compute
+        with: the day the model reads and the day `check_slot` means must be
+        the same one, also around midnight. Read once per call; an unknown
+        tenant falls back to the setting, the tools then answer `not_found`."""
+        if self._zone is None:
+            self._zone = (
+                self._session.scalar(
+                    select(Tenant.timezone).where(Tenant.id == state.tenant_id)
+                )
+                or settings.tenant_timezone
+            )
+        return to_local(self._now or utcnow(), self._zone)
 
     def _dispatch(self, state: ConversationState, name: str, args: dict) -> ToolResult:
         return dispatch(

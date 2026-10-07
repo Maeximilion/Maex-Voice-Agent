@@ -109,6 +109,9 @@ class Usage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     unmetered: int = 0
+    # False when the prices of the settings are not this model's: they belong
+    # to `LLM_MODEL`, and `--model` may name another one.
+    priced: bool = True
 
 
 def cost_cents(usage: Usage) -> int | None:
@@ -123,7 +126,9 @@ def cost_cents(usage: Usage) -> int | None:
     `calls` once a KPI needs the exact cost (T-8.3)."""
     price_in = settings.llm_input_cents_per_mtok
     price_out = settings.llm_output_cents_per_mtok
-    if usage.model is None or price_in is None or price_out is None:
+    if usage.model is None or not usage.priced:
+        return None
+    if price_in is None or price_out is None:
         return None
     if not usage.requests or usage.unmetered:
         return None
@@ -140,17 +145,25 @@ class _Envelope(BaseModel):
 
 
 def parse_turn(content: str) -> LLMTurn:
-    """The model's answer as an `LLMTurn`, or `LLMError`. Strict on purpose: an
-    answer with a sentence and a tool call is rejected, not picked from, because
-    the sentence may be the readback and the tool `confirm` (CLAUDE.md §2 rule
-    3). An empty string counts as absent; models fill unused fields with "".
+    """The model's answer as an `LLMTurn`, or `LLMError`.
+
+    A sentence next to a tool call: the tool call wins and the sentence is
+    dropped (Maxi, 06.10.2026). A real model does both on its first turn
+    ("Gerne prüfe ich das" plus `get_service_status`) whatever the format
+    says, and rejecting it ended every call in a handover. The model speaks
+    again once it has the tool result. The case this was strict about, a
+    readback with `confirm` in the same breath, is stopped by the core:
+    `guards.py` lets `confirm` through only after a yes to a draft that was
+    read back in an earlier turn (CLAUDE.md §2 rule 3).
+
+    An empty string counts as absent; models fill unused fields with "".
     Tool name and arguments are not checked here: `dispatch.py` validates them
     and answers the model with `invalid_input`."""
     try:
         envelope = _Envelope.model_validate_json(content)
         tool = (envelope.tool or "").strip()
         return LLMTurn(
-            say=(envelope.say or "").strip() or None,
+            say=None if tool else (envelope.say or "").strip() or None,
             tool_call=ToolCall(name=tool, args=envelope.args or {}) if tool else None,
             state_patch=_named(envelope.slots),
             understanding_failure=(envelope.not_understood or "").strip() or None,
@@ -199,15 +212,23 @@ class ChatCompletionsLLM:
         )
 
     @classmethod
-    def from_settings(cls) -> "ChatCompletionsLLM":
-        if not settings.llm_base_url or not settings.llm_model:
+    def from_settings(cls, model: str | None = None) -> "ChatCompletionsLLM":
+        """`model` names another model on the server of the settings, as
+        `--model` does in the text phone and the eval runner."""
+        model = model or settings.llm_model
+        if not settings.llm_base_url or not model:
             raise LLMError("LLM_BASE_URL and LLM_MODEL must be set to use a model")
-        return cls(
+        llm = cls(
             settings.llm_base_url,
-            settings.llm_model,
+            model,
             settings.llm_api_key,
             timeout=settings.llm_timeout_seconds,
         )
+        llm.usage = replace(llm.usage, priced=model == settings.llm_model)
+        return llm
+
+    def close(self) -> None:
+        self._http.close()
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -227,6 +248,11 @@ class ChatCompletionsLLM:
             # an eval that is red must be red again on the next run.
             "temperature": 0,
         }
+        if settings.llm_reasoning_effort:
+            # A reasoning model thinks until the output limit and answers
+            # nothing unless told otherwise (docs/18 §5). Only sent when set: a
+            # server that does not know the parameter may reject the request.
+            body["reasoning_effort"] = settings.llm_reasoning_effort
         # Unmetered until the answer brings its token numbers (`_count`).
         self.usage = replace(
             self.usage,
@@ -249,7 +275,16 @@ class ChatCompletionsLLM:
     def _count(self, payload: object) -> None:
         """Adds the tokens the server reports. Both numbers or nothing: half a
         count would read like a whole one. Missing or odd numbers add nothing,
-        they are never estimated, and the request stays unmetered."""
+        they are never estimated, and the request stays unmetered.
+
+        Also takes the model name the server answered with: a hosted endpoint
+        resolves an alias to a dated model or routes to a fallback, and the
+        call log should name what really ran (Codex PR #211, P2).
+        ponytail: the last answer wins and the price stays the configured one;
+        per-model prices when a provider really mixes models within a call."""
+        answered = payload.get("model") if isinstance(payload, dict) else None
+        if isinstance(answered, str) and answered:
+            self.usage = replace(self.usage, model=answered)
         reported = payload.get("usage") if isinstance(payload, dict) else None
         if not isinstance(reported, dict):
             return

@@ -24,7 +24,7 @@ from typing import Any
 # The yes detector lives in the core since the core refuses a `confirm` without
 # a yes itself (agent/guards.py); the recorder measures with the same rule.
 from api.agent.consent import is_yes
-from api.agent.llm import LLMClient, LLMTurn
+from api.agent.llm import LLMClient, LLMTurn, Usage
 
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
 # Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
@@ -65,6 +65,13 @@ class RecordingLLM:
         self.recording = Recording()
         # The call whose result arrives with the next input.
         self._open_call: tuple[str, dict[str, Any]] | None = None
+
+    @property
+    def usage(self) -> Usage | None:
+        """What the wrapped model counted (`ChatCompletionsLLM.usage`), passed
+        on so the text phone and the report see it through the recorder. None
+        for the scripted stand-in, which counts nothing."""
+        return getattr(self._inner, "usage", None)
 
     def next_turn(
         self, system_prompt: str, state: dict[str, Any], user_input: str

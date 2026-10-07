@@ -157,7 +157,7 @@ Sofort und ohne Diskussion:
 | Hebel | Wirkung |
 |---|---|
 | Menü als Index, Details per Tool | größter Hebel, spart ~90 % des Menü-Anteils |
-| System-Prompt unter 800 Tokens | wird bei jedem Zug mitgeschickt |
+| System-Prompt unter 800 Tokens | wird bei jedem Zug mitgeschickt. The own core sends more than the file: system prompt, tool reference and answer format are about 2,240 estimated tokens together, with a budget of 2,600 for the whole message (Maxi, 06.10.2026; `agent/prompt.py` `CORE_TOKEN_BUDGET`, tested). To be shrunk with the numbers of the first eval run |
 | Kompakter Bestellstatus statt Gesprächsverlauf | der Verlauf wächst linear, der Status nicht |
 | Formulierungen für heikle Fälle als `say` aus dem Code | kürzere Antworten, konstante Wortwahl |
 | Prompt-Caching, falls die Plattform es kann | System-Prompt und Index werden zwischengespeichert |
@@ -179,6 +179,13 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**What a real model gets (T-2.4)** — the own core does not use the function calling of a
+platform. The system message is `prompts/system_vN.md`, then the tool reference (the
+sections of `prompts/tools_vN.md`, one per tool, without the file's notes for the voice
+platform), then the answer format below. The compact state carries `now`, the local date
+with weekday ("Dienstag, 2026-09-15T18:00+02:00"): a model has no clock, and "morgen um
+sieben" or "am Samstag" need one. It is the same clock the tools get.
+
 **Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
 system prompt, the compact state and one input per call, never a transcript. It answers
 with exactly one JSON object; the instruction for it (`OUTPUT_FORMAT`) is appended to the
@@ -190,7 +197,7 @@ system prompt by the client and is not part of `prompts/system_vN.md`:
 
 | Field | Meaning |
 |---|---|
-| `say` or `tool` + `args` | exactly one of them: the sentence for the guest, or a tool call. Both in one answer is rejected, because the sentence may be the readback and the tool `confirm` |
+| `say` or `tool` + `args` | the sentence for the guest, or a tool call. The format asks for exactly one. When a model sends both, the tool call wins and the sentence is dropped (Maxi, 06.10.2026): a real model does it on its first turn, and the model speaks again once it has the tool result. A readback with `confirm` in the same answer is stopped by the core (guards below), not by the format |
 | `slots` | what the guest named in this turn; goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number |
 | `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
 

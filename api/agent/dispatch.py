@@ -376,12 +376,25 @@ def dispatch(
 ) -> ToolResult:
     started = time.perf_counter()
     adapter = TOOLS.get(name)
+    # Call and tenant come from the code, never from the model. A real model
+    # passes them because the tool reference lists them for the HTTP path; an
+    # invented value must neither crash the adapter (two values for one
+    # keyword) nor point a tool at another call or tenant.
+    args = {k: v for k, v in args.items() if k not in ("call_id", "tenant_id")}
+    hint = None
     try:
         if adapter is None:
             raise InvalidInput(f"unbekanntes Tool: {name}")
         try:
             result = adapter(session, call_id, tenant_id, args, now)
         except ValidationError as exc:
+            # Which field and what is wrong with it, never the value. A bare
+            # `invalid_input` gives a model nothing to act on: it repeats the
+            # call instead of asking the guest for what is missing.
+            hint = "; ".join(
+                f"{'.'.join(str(part) for part in error['loc'])}: {error['msg']}"
+                for error in exc.errors()
+            )
             raise InvalidInput(str(exc)) from exc
         outcome = ToolResult(
             ok=True,
@@ -394,7 +407,7 @@ def dispatch(
         # rollback keeps an uncommitted remainder of a failed domain call from
         # being carried into the next tool call.
         session.rollback()
-        outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code)
+        outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code, hint=hint)
 
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     _log_call(session, call_id, tenant_id, name, duration_ms, outcome)
