@@ -27,3 +27,6 @@ api/ca-bundle.crt
 # Claude Code: personal settings and per-session worktrees stay local
 .claude/settings.local.json
 .claude/worktrees/
+
+# Spike T-10.1: rendered configs (with a test password), recordings, logs
+deploy/asterisk/run/

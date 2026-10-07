@@ -1,0 +1,53 @@
+# Spike T-10.1, step 1 (docs/20 §10): a test PBX, a scripted softphone and the
+# probe, alone on their own network. Started and judged by scripts/voice_spike.py,
+# which renders the configs into SPIKE_RUN first. No host port is published.
+# Not part of the product stack: the Compose services of the voice layer come
+# with T-1.11.
+name: voice-spike
+
+x-asterisk: &asterisk
+  # Asterisk 22.10.1 with chan_websocket. Pinned by digest, a third-party build.
+  image: andrius/asterisk:22.10.1_alpine-3.24-6bb254a@sha256:e598f443c1db2fcb5a7c5d5a2a2c2269d00ac92e24f97521ba3801fb8df84f39
+  environment:
+    PUID: ${SPIKE_UID}
+    PGID: ${SPIKE_GID}
+    ASTERISK_TERMINAL_OPTS: "-n"
+  healthcheck:
+    test: ["CMD", "asterisk", "-rx", "core waitfullybooted"]
+    interval: 2s
+    timeout: 5s
+    retries: 30
+
+services:
+  probe:
+    build: ../../api
+    user: "${SPIKE_UID}:${SPIKE_GID}"
+    command: ["uvicorn", "api.telephony.probe:app", "--host", "0.0.0.0", "--port", "8765"]
+    environment:
+      PROBE_OUT: /out
+    volumes:
+      - ../../api:/app/api:ro
+      - ${SPIKE_RUN}/probe:/out
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8765/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  pbx:
+    <<: *asterisk
+    depends_on:
+      probe:
+        condition: service_healthy
+    volumes:
+      - ${SPIKE_RUN}/pbx:/etc/asterisk
+
+  softphone:
+    <<: *asterisk
+    depends_on:
+      pbx:
+        condition: service_healthy
+    volumes:
+      - ${SPIKE_RUN}/softphone:/etc/asterisk
+      - ${SPIKE_RUN}/tones:/tones:ro
+      - ${SPIKE_RUN}/rec:/var/spool/asterisk/monitor
