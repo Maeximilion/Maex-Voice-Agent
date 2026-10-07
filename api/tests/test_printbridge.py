@@ -19,7 +19,7 @@ from api.main import app
 from api.models import Order, OutboxEvent
 from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
-from printbridge.bridge import SAMPLE, main, run_once
+from printbridge.bridge import SAMPLE, TEST_NOTICE, main, run_once
 from printbridge.client import Server, ServerError
 from printbridge.escpos import CUT, render
 from printbridge.state import PrintedLog
@@ -70,6 +70,8 @@ def test_bon_enthaelt_was_die_kueche_braucht():
     assert "Gedruckt 18:02" in text
     assert "KORREKTUR" not in text
     assert "5551234" not in text  # die Kueche braucht keine Telefonnummer
+    assert "WhatsApp" not in text  # a real slip carries no test notice
+    assert b"\x1ba" not in data  # and nothing on it is centered
 
 
 def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
@@ -83,6 +85,18 @@ def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
     assert (
         text.index("NICHT IN KASSE") < text.index("KORREKTUR") < text.index("ABHOLUNG")
     )
+
+
+def test_double_height_lines_get_a_second_line_feed():
+    """The TM-T20II advances one normal line per newline whatever the character
+    height: the line after the banner was printed into its lower half (paper
+    check 06.10.2026). Moving the newline in front of BIG_OFF changed nothing."""
+    ticket = {**TICKET, "revision": 2, "correction_reason": "wrong_quantity"}
+    data = render(ticket)
+    for tall in (b"NICHT IN KASSE", b"KORREKTUR", b"ABHOLUNG A17"):
+        end = data.index(b"\n", data.index(tall))
+        assert data[end : end + 2] == b"\n\n", tall
+    assert data.count(b"\n\n") == 3  # normal lines keep their single feed
 
 
 def test_korrektur_steht_oben_mit_grund_und_stand():
@@ -418,6 +432,20 @@ def test_probebon_ohne_server(monkeypatch):
     assert main(["--test"]) == 0
     assert "Probebon Umlaute äöü ß" in sent[0].decode("cp858")
     assert SAMPLE["customer_name"] in sent[0].decode("cp858")
+    # The test slip asks for a photo, above everything and as the last lines:
+    # centered, big and inverted like the banner, wrapped to half the width.
+    text = sent[0].decode("cp858")
+    first, last = "Bitte an Maxi über", "WhatsApp senden"
+    assert f"{first} {last}" == TEST_NOTICE
+    for part in (first, last):
+        assert (
+            text.count(f"\x1b!\x30\x1dB\x01 {part.center(len(first))} \x1dB\x00") == 2
+        )
+    assert text.index(first) < text.index("NICHT IN KASSE")
+    assert text.rindex(first) > text.index("Gedruckt")
+    # Each block switches to centered and back to left.
+    assert text.count("\x1ba\x01") == text.count("\x1ba\x00") == 2
+    assert sent[0].endswith(b"\x1ba\x00\x1bd\x04" + CUT)
     assert json.dumps(SAMPLE)  # Probebon ist reines JSON wie ein echter Bon
     assert uuid.UUID(SAMPLE["order_id"])
 
