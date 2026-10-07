@@ -1,0 +1,31 @@
+{# One open simulator call (T-2.5): transcript, tool calls with duration, state. #}
+{% if problem %}
+<p class="banner danger">{{ problem }}</p>
+<button type="button" class="primary" hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
+{% else %}
+<div class="card" data-call="{{ call_id }}">
+  <p class="muted">Anruf {{ call_id }} bei {{ entry.tenant_name }}</p>
+  {% for turn in entry.turns %}
+  <div class="sim-turn">
+    <div>Kunde: {{ turn.customer }}</div>
+    {% for t in turn.tools %}
+    <div class="muted">tool {{ t.name }} {{ "ok" if t.ok else "fehler" }} {{ t.duration_ms }} ms{% if t.error_code %} [{{ t.error_code }}]{% endif %}</div>
+    {% endfor %}
+    {% for s in turn.say %}<div><b>Agent: {{ s }}</b></div>{% endfor %}
+    <details><summary class="muted">Zustand</summary><pre>{{ turn.state }}</pre></details>
+  </div>
+  {% endfor %}
+  {% if ended %}
+  <p><b>Anruf beendet: {{ ended.outcome }}, {{ ended.duration_seconds }} s</b></p>
+  <button type="button" class="primary" hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
+  {% else %}
+  <form hx-post="/gui/dev/console/call/{{ call_id }}/say" hx-target="#anruf" hx-swap="innerHTML" hx-disabled-elt="find fieldset">
+    <fieldset style="border:0;margin:0;padding:0">
+    <input type="text" name="text" autofocus autocomplete="off" aria-label="Kunde sagt" placeholder="Kunde sagt ...">
+    <button type="submit" class="primary">Senden</button>
+    <button type="button" hx-post="/gui/dev/console/call/{{ call_id }}/end" hx-target="#anruf" hx-swap="innerHTML" hx-disabled-elt="closest fieldset">Auflegen</button>
+    </fieldset>
+  </form>
+  {% endif %}
+</div>
+{% endif %}

@@ -121,6 +121,7 @@ make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in C
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.cli --model qwen3:14b                 # the same on a local model (LLM_* in .env, docs/18 §5)
 python -m sim.replay evals/cases/<case>.json        # replay a transcript
+# with the stack up (make up): http://localhost:8000/gui/dev/console is the same text phone in the browser, ENV=dev only
 ```
 
 The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `.claude/commands/` holds `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, and `/handover` commands. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
