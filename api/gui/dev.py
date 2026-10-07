@@ -6,7 +6,7 @@ API, like `sim.cli`, so a booking made here shows up on the tablet. Logic stays 
 """
 
 import threading
-from contextlib import nullcontext
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, Depends, Request
@@ -66,6 +66,18 @@ def _finish(call_id: str):
     return ended
 
 
+@contextmanager
+def _locked(call_id: str):
+    """The open call under its own lock, or None. The hang-up may have won the
+    lock while this request waited for it, hence the second look."""
+    entry = OPEN_CALLS.get(call_id)
+    if entry is None:
+        yield None
+        return
+    with entry.lock:
+        yield entry if OPEN_CALLS.get(call_id) is entry else None
+
+
 def _drop(call_id: str) -> None:
     """Forget a call that cannot be finished; the page cannot reach it anyway."""
     OPEN_CALLS.pop(call_id).session.close()
@@ -118,11 +130,9 @@ def start(request: Request) -> HTMLResponse:
 def say(
     request: Request, call_id: str, form: dict[str, str] = Depends(_form)
 ) -> HTMLResponse:
-    entry = OPEN_CALLS.get(call_id)
     text = form.get("text", "").strip()
-    with entry.lock if entry else nullcontext():
-        # The hang-up may have won the lock while this request waited for it.
-        if entry is None or OPEN_CALLS.get(call_id) is not entry:
+    with _locked(call_id) as entry:
+        if entry is None:
             return _view(request, None, problem=NO_CALL)
         if not text:
             return _view(request, entry)
@@ -152,8 +162,7 @@ def say(
     dependencies=[Depends(_require_htmx)],
 )
 def end(request: Request, call_id: str) -> HTMLResponse:
-    entry = OPEN_CALLS.get(call_id)
-    with entry.lock if entry else nullcontext():
-        if entry is None or OPEN_CALLS.get(call_id) is not entry:
+    with _locked(call_id) as entry:
+        if entry is None:
             return _view(request, None, problem=NO_CALL)
         return _view(request, entry, ended=_finish(call_id))

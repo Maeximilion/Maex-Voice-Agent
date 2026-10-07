@@ -172,7 +172,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 ### `gui/`
 - `router.py` — Seiten und HTMX-Fragmente
 - `sse.py` — Ereignisstrom für Live-Updates (neue Bestellung, Rückruf, Modus)
-- `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py`
+- `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne
 - `dev/console.html` — der Simulator als Webseite, nur in `ENV=dev`
