@@ -11,9 +11,9 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.db import get_db
 from api.gui import dev, mount_gui
-from api.main import app
 from api.models import Call
 from api.tests.test_domain_draft_order import _tenant
+from sim.session import Turn
 
 HX = {"HX-Request": "true"}
 BASE = "/gui/dev/console"
@@ -41,11 +41,14 @@ def client(engine, monkeypatch):
         with Session(engine) as session:
             yield session
 
+    # CI runs with ENV=test, where the global app has no console: build one in dev.
+    monkeypatch.setattr(settings, "env", "dev")
+    app = FastAPI()
+    mount_gui(app)
     app.dependency_overrides[get_db] = override_get_db
     try:
         yield TestClient(app)
     finally:
-        app.dependency_overrides.pop(get_db, None)
         dev.OPEN_CALLS.clear()
 
 
@@ -110,22 +113,52 @@ def test_empty_sentence_changes_nothing(client, tenant_id):
     assert "Agent:" not in said.text
 
 
-def test_unknown_call_is_a_message_not_a_crash(client, tenant_id):
+def test_unknown_call_is_a_swappable_message(client, tenant_id):
     said = client.post(
         f"{BASE}/call/00000000-0000-0000-0000-000000000000/say",
         headers=HX,
         data={"text": "Hallo"},
     )
 
-    assert said.status_code == 404
-    assert "Anruf" in said.text
+    # 200, not 404: htmx does not swap a 4xx and the page would show nothing.
+    assert said.status_code == 200
+    assert "nicht mehr offen" in said.text
+    assert f'hx-post="{BASE}/call"' in said.text
 
 
 def test_missing_tenant_is_said_in_words(client):
     started = client.post(f"{BASE}/call", headers=HX)
 
-    assert started.status_code == 503
+    assert started.status_code == 200
     assert "make seed" in started.text
+
+
+def test_closing_turn_finishes_the_call(client, db, tenant_id, monkeypatch):
+    call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    monkeypatch.setattr(
+        dev.SimCall, "say", lambda self, text: Turn(customer=text, ended=True)
+    )
+
+    said = client.post(
+        f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Ja, danke"}
+    )
+
+    assert "Anruf beendet" in said.text
+    assert 'name="text"' not in said.text
+    assert call_id not in dev.OPEN_CALLS
+    row = db.scalar(select(Call).where(Call.id == call_id))
+    db.refresh(row)
+    assert row.ended_at is not None
+
+
+def test_new_call_hangs_up_a_call_the_page_lost(client, db, tenant_id):
+    first = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+    second = _call_id(client.post(f"{BASE}/call", headers=HX).text)
+
+    assert list(dev.OPEN_CALLS) == [second]
+    row = db.scalar(select(Call).where(Call.id == first))
+    db.refresh(row)
+    assert row.ended_at is not None
 
 
 def test_writes_need_the_htmx_header(client, tenant_id):

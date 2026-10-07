@@ -7,7 +7,7 @@ API, like `sim.cli`, so a booking made here shows up on the tablet. Logic stays 
 
 from dataclasses import dataclass, field
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
@@ -34,18 +34,20 @@ class OpenCall:
 OPEN_CALLS: dict[str, OpenCall] = {}
 
 
-def _view(request: Request, entry: OpenCall | None, *, status: int = 200, **extra):
+def _view(request: Request, entry: OpenCall | None, **extra):
     context = {"entry": entry, "call_id": entry and str(entry.call.call_id), **extra}
-    return templates.TemplateResponse(
-        request, "fragments/dev_anruf.html", context, status
-    )
+    # Always 200: htmx does not swap a 4xx, and the problem text with its
+    # "Neuer Anruf" button would never be shown (Codex PR #236).
+    return templates.TemplateResponse(request, "fragments/dev_anruf.html", context)
 
 
-def _entry(call_id: str) -> OpenCall:
-    entry = OPEN_CALLS.get(call_id)
-    if entry is None:
-        raise HTTPException(status_code=404, detail=NO_CALL)
-    return entry
+def _finish(call_id: str):
+    """Hang up and forget the call; the browser may have lost it (reload, restart)."""
+    entry = OPEN_CALLS.pop(call_id)
+    try:
+        return entry.call.finish()
+    finally:
+        entry.session.close()
 
 
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
@@ -60,6 +62,10 @@ def console(request: Request) -> HTMLResponse:
     dependencies=[Depends(_require_htmx)],
 )
 def start(request: Request) -> HTMLResponse:
+    # A reloaded page has lost its call id: hang up what is still open instead of
+    # keeping an unreachable call and its session (Codex PR #236, one user at a time).
+    for stale in list(OPEN_CALLS):
+        _finish(stale)
     session = SessionLocal()
     try:
         tenant = resolve_tenant(session, None)
@@ -67,7 +73,7 @@ def start(request: Request) -> HTMLResponse:
     except Exception as exc:
         session.close()
         if isinstance(exc, AppError):
-            return _view(request, None, status=503, problem=exc.message)
+            return _view(request, None, problem=exc.message)
         raise
     entry = OPEN_CALLS[str(call.call_id)] = OpenCall(session, call, tenant.name)
     return _view(request, entry)
@@ -82,11 +88,16 @@ def start(request: Request) -> HTMLResponse:
 def say(
     request: Request, call_id: str, form: dict[str, str] = Depends(_form)
 ) -> HTMLResponse:
-    entry = _entry(call_id)
+    entry = OPEN_CALLS.get(call_id)
+    if entry is None:
+        return _view(request, None, problem=NO_CALL)
     text = form.get("text", "").strip()
-    if text:
-        entry.turns.append(entry.call.say(text))
-    return _view(request, entry)
+    if not text:
+        return _view(request, entry)
+    turn = entry.call.say(text)
+    entry.turns.append(turn)
+    # A closing stage is the end of the call: no further sentence after the goodbye.
+    return _view(request, entry, ended=_finish(call_id) if turn.ended else None)
 
 
 @router.post(
@@ -96,10 +107,7 @@ def say(
     dependencies=[Depends(_require_htmx)],
 )
 def end(request: Request, call_id: str) -> HTMLResponse:
-    entry = _entry(call_id)
-    try:
-        ended = entry.call.finish()
-    finally:
-        OPEN_CALLS.pop(call_id, None)
-        entry.session.close()
-    return _view(request, entry, ended=ended)
+    entry = OPEN_CALLS.get(call_id)
+    if entry is None:
+        return _view(request, None, problem=NO_CALL)
+    return _view(request, entry, ended=_finish(call_id))
