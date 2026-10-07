@@ -762,6 +762,34 @@ def test_guest_sentence_rides_along_on_a_tool_hop(session, state):
     assert "guest_said" not in next_turn
 
 
+def test_model_sees_which_tools_it_called_in_this_turn(session, state):
+    """Seen on a real model with pickup orders: it got the result of
+    `get_service_status`, did not see that it had asked for it and asked
+    again, six times, until the call went to the team. The names stay
+    visible for the turn, a refused call included; the next turn starts
+    without them."""
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="get_service_status")),
+            LLMTurn(
+                tool_call=ToolCall("confirm", {"entity": "order", "entity_id": "x"})
+            ),
+            LLMTurn(say="Was darf es sein?"),
+            LLMTurn(say="Gern."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Ich möchte etwas zum Abholen bestellen")
+    loop.run_turn(state, "Die 47")
+
+    first, hop, second_hop, next_turn = (call[1] for call in llm.calls)
+    assert "called" not in first
+    assert hop["called"] == ["get_service_status"]
+    assert second_hop["called"] == ["get_service_status", "confirm"]
+    assert "called" not in next_turn
+
+
 def test_model_sees_the_date_in_the_timezone_of_the_tenant(session):
     """The tools compute with the timezone of the tenant row. The date in the
     state must be the same day, or "morgen" lands on the wrong one around
