@@ -23,6 +23,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from api.agent.llm import Usage, cost_cents
+from api.config import settings
+
 HARD = {
     "guessed_items": "Geratene Positionen",
     "unconfirmed": "Unbestätigte Vorgänge",
@@ -44,6 +47,12 @@ class CaseResult:
     missed_escalation: bool = False
     false_escalation: bool = False
     turns: int = 0
+    # What the model of this case used (`agent/llm.py` `Usage`); all 0 on the
+    # scripted stand-in. `unmetered` are requests without token numbers.
+    requests: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    unmetered: int = 0
     error: str | None = None
     # Bekannte Luecke mit Grund und Aufgabe (docs/08 §3): der Fall beschreibt das
     # Ziel, das der heutige Stand noch nicht kann. Er zaehlt in der Genauigkeit
@@ -73,6 +82,42 @@ class RunReport:
     def accuracy(self) -> float:
         return self.passed / self.total if self.total else 0.0
 
+    @property
+    def usage(self) -> Usage:
+        """All cases of the run as one count. The model name only says that a
+        real model ran: without a request there is nothing to price."""
+        return Usage(
+            model=self.model if any(c.requests for c in self.cases) else None,
+            requests=sum(c.requests for c in self.cases),
+            prompt_tokens=sum(c.prompt_tokens for c in self.cases),
+            completion_tokens=sum(c.completion_tokens for c in self.cases),
+            unmetered=sum(c.unmetered for c in self.cases),
+            priced=self.model == settings.llm_model,
+        )
+
+    @property
+    def tokens_per_case(self) -> int | None:
+        """Input plus output, averaged over all cases (docs/08 §2). None on
+        the scripted stand-in, which uses none."""
+        usage = self.usage
+        if usage.model is None or not self.total:
+            return None
+        return round((usage.prompt_tokens + usage.completion_tokens) / self.total)
+
+    @property
+    def cost_per_case(self) -> int | None:
+        """Model cost in whole cents per case, rounded up. The run is priced
+        once and then divided: pricing each case alone would round every cheap
+        case up to a cent. None when unknown (`agent/llm.py` `cost_cents`)."""
+        total = cost_cents(self.usage)
+        if total is None or not self.total:
+            return None
+        return -(-total // self.total)
+
+    @staticmethod
+    def _shown(value: int | None) -> str:
+        return "-" if value is None else str(value)
+
     def hard(self) -> dict[str, int]:
         return {
             "guessed_items": sum(c.guessed_items for c in self.cases),
@@ -98,6 +143,15 @@ class RunReport:
         crashed = [c.id for c in self.cases if c.error]
         if crashed:
             self.reasons.append(f"Abgestürzt: {', '.join(crashed)}")
+        usage = self.usage
+        if usage.requests and usage.unmetered == usage.requests:
+            # Every request failed or came back without token numbers: the
+            # cases then show handovers, not a model. Most often a mistyped
+            # model name or a server that is down.
+            self.reasons.append(
+                f"no request to model '{self.model}' succeeded: "
+                "check the model name and the server of LLM_BASE_URL"
+            )
         if self.previous:
             green_before = set(self.previous["passed_ids"])
             broken = [c.id for c in self.cases if c.id in green_before and not c.passed]
@@ -118,9 +172,8 @@ class RunReport:
             "accuracy": self.accuracy,
             "hard": self.hard(),
             "false_escalation_rate": self.false_escalation_rate,
-            # Das Skript-Modell verbraucht keine Tokens; Zählung kommt mit T-2.4.
-            "tokens_per_case": None,
-            "cost_per_case": None,
+            "tokens_per_case": self.tokens_per_case,
+            "cost_per_case": self.cost_per_case,
             "verdict": self.verdict,
             "reasons": self.reasons,
             "previous": self.previous,
@@ -147,7 +200,8 @@ class RunReport:
         lines += [f"| {HARD[k]} | {v} | 0, hart |" for k, v in self.hard().items()]
         lines += [
             f"| Falsche Eskalation | {self.false_escalation_rate:.1%} | ≤ {FALSE_ESCALATION_LIMIT:.0%} |",
-            "| Tokens je Fall | - | kommt mit T-2.4 |",
+            f"| Tokens je Fall | {self._shown(self.tokens_per_case)} | falling from version to version |",
+            f"| Model cost per case (cents) | {self._shown(self.cost_per_case)} | within the budget |",
             "",
             f"Modell: `{self.model}` · Tags: {', '.join(self.tags) or 'alle'}",
         ]

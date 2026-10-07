@@ -85,6 +85,64 @@ def test_check_slot_frei(session, tenant_id, call_id):
     assert result.data["available"] is True
 
 
+@pytest.mark.parametrize(
+    "tool",
+    ["get_service_status", "check_slot"],
+)
+def test_call_and_tenant_named_by_the_model_are_ignored(
+    session, tenant_id, call_id, tool
+):
+    """Seen in the first run on a real model: it passes `call_id` and
+    `tenant_id` because the tool reference lists them. The code decides both,
+    never the model: an invented value must neither crash the call nor point
+    a tool at another call or tenant."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        tool,
+        {
+            "call_id": "call_123",
+            "tenant_id": "tenant_456",
+            "reserved_for": berlin(DIENSTAG, 18, 30),
+            "party_size": 4,
+        }
+        if tool == "check_slot"
+        else {"call_id": "call_123", "tenant_id": "tenant_456"},
+        now=NOW,
+    )
+
+    assert result.ok
+
+
+def test_invalid_arguments_tell_the_model_which_field_is_wrong(
+    session, tenant_id, call_id
+):
+    """Seen in the first run on a real model: `create_reservation` without the
+    phone number came back as a bare `invalid_input`, and the model sent the
+    same call five times instead of asking the guest. The hint names the
+    field and the problem, never the value."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "party_size": "viele",
+            "reserved_for": berlin(DIENSTAG, 18, 30),
+        },
+        now=NOW,
+    )
+
+    assert result.ok is False
+    assert result.error_code == "invalid_input"
+    assert "phone" in result.hint
+    assert "party_size" in result.hint
+    assert "viele" not in result.hint
+    assert "Müller" not in result.hint
+
+
 def test_create_reservation_erzeugt_eigenen_idempotency_key(
     session, tenant_id, call_id
 ):

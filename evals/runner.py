@@ -39,7 +39,8 @@ from sqlalchemy import create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
-from api.agent.llm import LLMClient
+from api.agent.llm import LLMClient, Usage
+from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
@@ -58,9 +59,8 @@ from evals.scratch_db import create_scratch_db, drop_scratch_db, migrate
 from scripts.import_menu import read_files
 from scripts.seed import seed
 from sim.replay import customer_lines, replay
-from sim.scripted_llm import ScriptedLLM
 from sim.scripted_order import MenuNumbers
-from sim.session import menu_numbers, resolve_tenant
+from sim.session import SCRIPTED, make_llm, menu_numbers, resolve_tenant
 
 HERE = Path(__file__).resolve().parent
 CASES = HERE / "cases"
@@ -71,7 +71,6 @@ TIMEZONE = "Europe/Berlin"
 # Ein Dienstag im Abendfenster: Abholung und Reservierung offen. Ein Fall kann
 # mit "now" einen eigenen Zeitpunkt setzen (Schliesszeit, Tageswechsel).
 DEFAULT_NOW = datetime.fromisoformat("2026-09-15T18:00:00+02:00")
-MODELS = ("scripted",)
 
 
 class UsageError(ValueError):
@@ -103,13 +102,15 @@ def model_factory(
     model: str,
 ) -> Callable[[datetime, Callable[[], MenuNumbers]], LLMClient]:
     """`menu` reads the card numbers of the case's tenant: the scripted model
-    gets them as in the text phone (`sim/session.py`)."""
-    if model == "scripted":
-        return lambda now, menu: ScriptedLLM(now=now, timezone=TIMEZONE, menu=menu)
-    # Ein echtes Modell kommt mit T-2.4 (agent/llm.py); bis dahin kein stilles
-    # Zurückfallen auf das Skript, sonst verglich ein Modellvergleich das Skript
-    # mit sich selbst.
-    raise UsageError(f"Modell '{model}' gibt es noch nicht (kommt mit T-2.4)")
+    gets them as in the text phone (`sim/session.py`). Any other name is a
+    model on the server of `LLM_BASE_URL`; every case gets its own client, so
+    its token count is the count of that case."""
+    if model != SCRIPTED and not settings.llm_base_url:
+        # Checked here, so a run without a server stops before the first case.
+        # Never a silent fall back to the script: a model comparison would
+        # compare the script with itself.
+        raise UsageError(f"model '{model}' needs a server: LLM_BASE_URL is not set")
+    return lambda now, menu: make_llm(model, now=now, timezone=TIMEZONE, menu=menu)
 
 
 def menu_plan():
@@ -180,6 +181,16 @@ def _repeat_confirm(session: Session, case, call, tenant, llm, now) -> list[str]
     )
 
 
+def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
+    """Tokens and requests of the case's model into its result. The scripted
+    stand-in counts nothing and leaves the zeros."""
+    counted = (llm.usage if llm else None) or Usage()
+    result.requests = counted.requests
+    result.prompt_tokens = counted.prompt_tokens
+    result.completion_tokens = counted.completion_tokens
+    result.unmetered = counted.unmetered
+
+
 def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
@@ -191,9 +202,11 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         expected_escalation=bool(expected.get("escalated")),
         pending=case.get("pending"),
     )
+    llm = inner = None
     try:
         tenant = _prepare(session, DEFAULT_NOW, plan, name=f"{TENANT} {case['id']}")
-        llm = RecordingLLM(make_llm(now, lambda: menu_numbers(session, tenant.id)))
+        inner = make_llm(now, lambda: menu_numbers(session, tenant.id))
+        llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
         call, turns = replay(session, case, tenant, now=now, llm=llm)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)
@@ -212,7 +225,12 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"
+        # What the model used before the crash still counts for the run.
+        _count_usage(result, llm)
         return result
+    finally:
+        # One client per case: closed with it, the count stays readable.
+        getattr(inner, "close", lambda: None)()
 
     rec = llm.recording
     missing = missing_tools(
@@ -228,6 +246,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
     if rejected:
         diffs.append(f"tools: keine Ablehnung mit diesem Code {rejected}")
     result.turns = len(turns)
+    _count_usage(result, llm)
     result.diffs = diffs
     result.guessed_items = len(rec.guessed)
     result.unconfirmed = len(rec.unconfirmed) + seen.confirmed_without_confirm
@@ -308,7 +327,11 @@ def default_report_dir(cases_dir: Path) -> Path:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Eval-Suite laufen lassen (docs/08)")
     parser.add_argument("--tags", default="", help="Komma-Liste, z. B. abholung,noise")
-    parser.add_argument("--model", default="scripted", help=f"eines von {MODELS}")
+    parser.add_argument(
+        "--model",
+        default=SCRIPTED,
+        help="scripted (default), or the name of a model on the server of LLM_BASE_URL",
+    )
     parser.add_argument("--cases", type=Path, default=CASES)
     # Without a value run() picks the report folder per case folder.
     parser.add_argument("--report-dir", type=Path, default=None)

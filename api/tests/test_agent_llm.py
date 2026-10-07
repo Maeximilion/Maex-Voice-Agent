@@ -1,6 +1,7 @@
 """agent/llm.py: LLMTurn erzwingt genau ein Ergebnis, FakeLLM spielt Skripte ab."""
 
 import json
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -151,6 +152,26 @@ def test_parse_turn_keeps_a_zero_and_a_false_slot_value():
     assert turn.state_patch == {"children": 0, "delivery": False}
 
 
+@pytest.mark.parametrize(
+    ("said", "tool"),
+    [
+        ("Gerne prüfe ich die Verfügbarkeit.", "get_service_status"),
+        # A readback with `confirm` in the same breath: the tool call is taken
+        # here and stopped by the core, which lets `confirm` through only after
+        # a yes to a draft read back in an earlier turn (agent/guards.py).
+        ("Passt das so?", "confirm"),
+    ],
+)
+def test_parse_turn_with_a_sentence_and_a_tool_call_takes_the_tool_call(said, tool):
+    """Maxi, 06.10.2026: the tool call wins and the sentence is dropped. A
+    real model does both on its first turn whatever the format says; the model
+    speaks again once it has the tool result."""
+    turn = parse_turn(json.dumps({"say": said, "tool": tool, "args": {}}))
+
+    assert turn.say is None
+    assert turn.tool_call == ToolCall(name=tool)
+
+
 def test_parse_turn_takes_a_tool_call_without_args():
     assert parse_turn('{"tool": "get_service_status"}').tool_call == ToolCall(
         name="get_service_status"
@@ -164,9 +185,6 @@ def test_parse_turn_takes_a_tool_call_without_args():
         '["say", "Hallo"]',  # JSON, but not an object
         "{}",  # neither a sentence nor a tool
         '{"say": "  ", "tool": null}',  # blank counts as nothing
-        # A sentence next to a tool call could be a readback with `confirm` in
-        # the same breath (CLAUDE.md §2 rule 3): rejected, never picked from.
-        '{"say": "Passt das so?", "tool": "confirm", "args": {}}',
         '{"tool": "check_slot", "args": "party_size=4"}',
         '{"say": 5}',
         '{"say": "Hallo", "slots": ["party_size"]}',
@@ -270,6 +288,88 @@ def test_from_settings_builds_the_client_from_the_environment(monkeypatch):
     monkeypatch.setattr(settings, "llm_model", "local-model")
 
     assert isinstance(ChatCompletionsLLM.from_settings(), ChatCompletionsLLM)
+
+
+def test_from_settings_takes_another_model_on_the_same_server(monkeypatch):
+    """`--model qwen3:14b` in the text phone and the eval runner: the server
+    comes from the settings, the model from the call."""
+    monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
+    monkeypatch.setattr(settings, "llm_model", "")
+
+    llm = ChatCompletionsLLM.from_settings("qwen3:14b")
+
+    # The prices of the settings belong to `LLM_MODEL`, not to this one.
+    assert llm.usage == Usage(model="qwen3:14b", priced=False)
+
+
+def test_another_model_than_the_configured_one_has_no_cost(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    usage = Usage(model="qwen3:14b", requests=1, prompt_tokens=9000)
+
+    assert cost_cents(usage) == 3
+    assert cost_cents(replace(usage, priced=False)) is None
+
+
+def test_close_closes_the_http_client():
+    llm = ChatCompletionsLLM("http://model.test/v1", "m")
+
+    llm.close()
+
+    assert llm._http.is_closed
+
+
+@pytest.mark.parametrize(("effort", "sent"), [("none", True), ("", False)])
+def test_reasoning_effort_is_sent_only_when_it_is_set(monkeypatch, effort, sent):
+    """A reasoning model thinks until the output limit and answers nothing
+    unless it is told not to (docs/18 §5); a server that does not know the
+    parameter never sees it."""
+    monkeypatch.setattr(settings, "llm_reasoning_effort", effort)
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content))
+        return recorded('{"say": "Gern."}')
+
+    client_with(handler).next_turn(SYSTEM, STATE, "Hallo")
+
+    assert ("reasoning_effort" in seen[0]) is sent
+    if sent:
+        assert seen[0]["reasoning_effort"] == "none"
+
+
+def test_usage_names_the_model_the_server_answered_with():
+    """A hosted endpoint resolves an alias to a dated model or routes to a
+    fallback: the call log names what really answered (Codex PR #211, P2)."""
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            json={
+                "model": "test-model-2026-09",
+                "choices": [{"message": {"content": '{"say": "Gern."}'}}],
+                "usage": {"prompt_tokens": 80, "completion_tokens": 12},
+            },
+        )
+
+    llm = client_with(handler)
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage.model == "test-model-2026-09"
+
+
+@pytest.mark.parametrize("named", [None, "", 7])
+def test_usage_keeps_the_configured_model_when_the_answer_names_none(named):
+    def handler(request):
+        body = {"choices": [{"message": {"content": '{"say": "Gern."}'}}]}
+        if named is not None:
+            body["model"] = named
+        return httpx.Response(200, json=body)
+
+    llm = client_with(handler)
+    llm.next_turn(SYSTEM, STATE, "Hallo")
+
+    assert llm.usage.model == "test-model"
 
 
 def test_client_counts_the_tokens_of_every_answer():
