@@ -25,6 +25,7 @@ How to review:
 - Names of software, tools and vendors the project uses or documents (GitHub, OpenAI, Anthropic,
   n8n, PostgreSQL, Ollama) are not restricted and are not findings.
 - Secrets come from the environment only; `.env` is never committed.
+- A SIP trunk provider that carries the pilot's number is the pilot's telephony provider: it is written as "the SIP trunk provider" and its name lives in `.env`.
 - A route under `/v1/tools` or `/v1/kitchen` that answers without its token check (`require_token` with `AGENT_API_TOKEN`, `require_kitchen_token`) is P1. `/health` is open by design.
 
 ### Hard rules and dialog (`CLAUDE.md` section 2, `docs/08_EVALS.md`)
