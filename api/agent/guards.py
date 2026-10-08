@@ -33,7 +33,9 @@ from api.agent.state import (
     cart_lines,
     order_corrected,
     replace_cart,
+    same_order,
 )
+from api.domain.menu.items import option_key
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -54,6 +56,16 @@ HINT_CART_SOLD_OUT = (
     "Abgelehnt: `cart` nennt ein Gericht, das heute aus ist. Es kommt nicht in "
     "die Bestellung; sag dem Gast, dass es aus ist. Die Bestellung im Zustand ist "
     "unverändert."
+)
+HINT_CART_OPTION = (
+    "Abgelehnt: `cart` nennt eine Option, die es zu dem Gericht nicht gibt, "
+    "dieselbe Option zweimal oder zwei aus einer Pflichtgruppe. Die Optionen "
+    "eines Gerichts stehen im Ergebnis von search_menu und unter `open`. Die "
+    "Bestellung im Zustand ist unverändert."
+)
+HINT_DRAFT_DIFFERS = (
+    "Abgelehnt: die `items` von draft_order sind nicht der `cart` derselben "
+    "Antwort. Beide müssen dieselbe Bestellung sein."
 )
 HINT_CART_FORM = (
     "Abgelehnt: `cart` ist keine Liste von Positionen wie `items` von "
@@ -136,6 +148,11 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             # refuse it in the end. In the state it would stand like any
             # other line until then (Codex PR #237, P2).
             refused = _CART_SOLD_OUT
+        elif not all(
+            _options_fit(state.seen_items.get(line["menu_item_id"], {}), line)
+            for line in lines
+        ):
+            refused = _CART_OPTION
         else:
             replace_cart(state, lines)
             return None
@@ -143,22 +160,70 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
     return refused
 
 
+def _options_fit(seen: dict[str, Any], line: dict[str, Any]) -> bool:
+    """Every chosen option exists for the dish, none is chosen twice, and at
+    most one comes from a mandatory group: the check of draft_order
+    (`domain/ordering/validation.py`), against what the search delivered. A
+    mandatory group still without a choice is fine here, the state shows it as
+    `open`. Without the check "Rind" would stand in the state as the choice
+    for Fleisch and `open` would be gone (Codex PR #237, P2)."""
+    required = seen.get("required", [])
+    offered = {
+        (option_key(group["group"]), option_key(name))
+        for group in [*required, *seen.get("optional", [])]
+        for name in group["options"]
+    }
+    chosen = [
+        (option_key(option["group"]), option_key(option["name"]))
+        for option in line.get("options", [])
+    ]
+    groups = [group for group, _ in chosen]
+    return (
+        set(chosen) <= offered
+        and len(set(chosen)) == len(chosen)
+        and all(groups.count(option_key(group["group"])) <= 1 for group in required)
+    )
+
+
 def refusal(
-    state: ConversationState, start: TurnStart, user_text: str, call: ToolCall
+    state: ConversationState,
+    start: TurnStart,
+    user_text: str,
+    call: ToolCall,
+    *,
+    cart_sent: bool = False,
 ) -> ToolResult | None:
     """None lets the call through to `dispatch`; otherwise the failed result
-    the model gets instead."""
+    the model gets instead. `cart_sent`: the same answer carried a `cart`,
+    which the core has taken by now."""
     if call.name == "confirm":
         return None if _may_confirm(state, start, user_text, call) else _CONFIRM
-    if call.name == "draft_order" and not _all_known(state, call):
-        return _ITEM
+    if call.name == "draft_order":
+        if not _all_known(state, call):
+            return _ITEM
+        if cart_sent and not _drafts_the_cart(state, call):
+            return _DRAFT_DIFFERS
     return None
+
+
+def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:
+    """One answer, one order: with two in `cart` and one in the items of
+    draft_order the draft would win, overwrite the cart and be read back with
+    the wrong quantity (Codex PR #237, P2). Items in a wrong form are left to
+    the validation in dispatch."""
+    try:
+        items = cart_lines(call.args.get("items"))
+    except ValidationError:
+        return True
+    return same_order(items, state.cart)
 
 
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
 _CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITEM)
 _CART_SOLD_OUT = ToolResult(ok=False, error_code="conflict", hint=HINT_CART_SOLD_OUT)
+_CART_OPTION = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_OPTION)
+_DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIFFERS)
 
 
 def _readback_id(state: ConversationState) -> str | None:

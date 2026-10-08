@@ -21,7 +21,9 @@ from api.agent.dispatch import ToolResult
 from api.agent.guards import (
     HINT_CART_FORM,
     HINT_CART_ITEM,
+    HINT_CART_OPTION,
     HINT_CART_SOLD_OUT,
+    HINT_DRAFT_DIFFERS,
     begin_turn,
     note_said,
     refusal,
@@ -308,7 +310,7 @@ def test_same_cart_in_another_order_keeps_the_draft():
     `confirm` has changed nothing, and the yes must not cost a second
     readback. The state keeps the sequence that was read out."""
     state = new_state()
-    searched(state, ENTE)
+    searched(state, ENTE, option_groups=[FLEISCH, SAUCE])
     searched(state, PHO)
     sauces = [
         {"group": "Sauce", "name": "Erdnuss"},
@@ -331,7 +333,7 @@ def test_same_option_in_another_spelling_keeps_the_draft():
     spaces (`option_key`); the cart has to agree, or "huhn" for "Huhn" next
     to the yes would cost a second readback (Codex PR #237, P2)."""
     state = new_state()
-    searched(state, ENTE)
+    searched(state, ENTE, option_groups=[FLEISCH, SAUCE])
     order_id = order_read_back(
         state, line(ENTE, options=[{"group": "Fleisch", "name": "Huhn"}])
     )
@@ -373,6 +375,59 @@ def test_sold_out_dish_does_not_get_into_the_cart():
     # Back on the menu by the next search: usable again.
     searched(state, ENTE)
     assert take_cart(state, [line(PHO), line(ENTE)]) is None
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        # Not on the card for this dish.
+        [{"group": "Fleisch", "name": "Rind"}],
+        # A group the dish does not have.
+        [{"group": "Beilage", "name": "Reis"}],
+        # Two from a group of which exactly one is chosen.
+        [{"group": "Fleisch", "name": "Ente"}, {"group": "Fleisch", "name": "Huhn"}],
+        # The same option twice, in two spellings.
+        [{"group": "Sauce", "name": "Erdnuss"}, {"group": "sauce", "name": "erdnuss"}],
+    ],
+)
+def test_cart_with_an_option_the_dish_does_not_have_is_refused(options):
+    """Taken as it came, "Rind" would stand in the state as the choice for
+    Fleisch: `open` disappears, the model treats the group as settled and may
+    confirm it to the guest, and only draft_order says no at the very end
+    (Codex PR #237, P2). The options of a line are checked against what the
+    search delivered for the dish, the way draft_order checks them."""
+    state = new_state()
+    searched(state, ENTE, option_groups=[FLEISCH, SAUCE])
+
+    refused = take_cart(state, [line(ENTE, options=options)])
+
+    assert refused is not None
+    assert refused.hint == HINT_CART_OPTION
+    assert state.cart == []
+
+
+def test_cart_with_options_of_the_dish_is_taken():
+    state = new_state()
+    searched(state, ENTE, option_groups=[FLEISCH, SAUCE])
+    chosen = [
+        {"group": "fleisch", "name": "huhn"},
+        {"group": "Sauce", "name": "Erdnuss"},
+    ]
+
+    assert take_cart(state, [line(ENTE, options=chosen)]) is None
+    assert "open" not in state.to_prompt_json()["cart"][0]
+
+
+def test_option_on_a_dish_without_options_is_refused():
+    state = new_state()
+    searched(state, PHO)
+
+    refused = take_cart(
+        state, [line(PHO, options=[{"group": "Fleisch", "name": "Huhn"}])]
+    )
+
+    assert refused is not None
+    assert refused.hint == HINT_CART_OPTION
 
 
 @pytest.mark.parametrize("cart", [False, 0, 7, "zwei"])
@@ -733,6 +788,46 @@ def test_refused_cart_stops_the_answer_and_tells_the_model(session, state):
     logged = session.scalars(select(Call.tool_calls)).one()[-1]
     assert logged["name"] == "cart"
     assert logged["ok"] is False
+    # The model sees on the next hop that it tried, as for a refused tool
+    # call: otherwise it can repeat the same cart until the hop limit (Codex
+    # PR #237, P2).
+    assert llm.calls[1][1]["called"] == ["cart"]
+
+
+@pytest.mark.parametrize(("drafted", "created"), [(1, 0), (2, 1)])
+def test_draft_that_differs_from_the_cart_of_the_same_answer_is_refused(
+    session, tenant_id, state, drafted, created
+):
+    """One answer says two in `cart` and one in the items of `draft_order`
+    (Codex PR #237, P2). The draft would win, overwrite the cart and be read
+    back with the wrong quantity. The model has to say one thing."""
+    ente = item_id(session, tenant_id, "47")
+    huhn = [{"group": "Fleisch", "name": "Huhn"}]
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall("search_menu", {"query": "die 47"})),
+            LLMTurn(
+                tool_call=ToolCall(
+                    "draft_order",
+                    {
+                        "type": "pickup",
+                        "customer": {"name": "Müller", "phone": "+4972215551234"},
+                        "items": [line(ente, drafted, options=huhn)],
+                    },
+                ),
+                cart=[line(ente, 2, options=huhn)],
+            ),
+            LLMTurn(say="Einen Moment."),
+        ]
+    )
+
+    ConversationLoop(session, llm, "system", now=NOW).run_turn(state, "zweimal die 47")
+
+    assert len(session.scalars(select(Order)).all()) == created
+    assert state.cart == [line(ente, 2, options=huhn)]
+    answer = json.loads(llm.calls[2][2])
+    assert answer["tool"] == "draft_order"
+    assert answer.get("hint") == (None if created else HINT_DRAFT_DIFFERS)
 
 
 def test_tool_call_next_to_a_refused_cart_is_not_dispatched(session, tenant_id, state):

@@ -121,7 +121,8 @@ class ConversationLoop:
         # Leiter mit weniger als den vorgesehenen zwei echten Kundenversuchen je
         # Stufe hochtreiben (Codex-Review PR #102, P2).
         reported_failures: set[str] = set()
-        # The tools the model called in this guest turn, refused ones included.
+        # The tools the model called in this guest turn, refused ones and a
+        # refused `cart` included.
         called: list[str] = []
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
@@ -190,6 +191,7 @@ class ConversationLoop:
                     log_refused(
                         self._session, state.call_id, state.tenant_id, CART, refused
                     )
+                    called.append(CART)
                     pending_input = _tool_result_as_input(CART, refused)
                     continue
 
@@ -204,7 +206,13 @@ class ConversationLoop:
                 )
 
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
-            refused = guards.refusal(state, start, user_text, turn.tool_call)
+            refused = guards.refusal(
+                state,
+                start,
+                user_text,
+                turn.tool_call,
+                cart_sent=turn.cart is not None,
+            )
             if refused is not None:
                 log_refused(
                     self._session,
