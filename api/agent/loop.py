@@ -25,7 +25,12 @@ from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+    note_intent,
+)
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
@@ -113,6 +118,8 @@ class ConversationLoop:
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
+        # Before the model: the request of this very turn carries it already.
+        note_intent(state, user_text)
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,

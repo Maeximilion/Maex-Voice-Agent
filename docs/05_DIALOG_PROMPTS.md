@@ -240,6 +240,28 @@ had **not** chosen stayed in sight, and two turns later the model ordered it
 (`abholung_0072`, 07.10.2026). The price: an answer like "die erste" to an offer cannot be
 resolved from the state, the model searches again with what the guest said, or asks.
 
+**What the guest called for in the compact state (T-2.4, 08.10.2026)** — `intent` says
+what the call is about, `pickup` or `reservation`. A model cannot write it (it is no guest
+slot), and until a draft existed the state of the next turn did not carry it: on a real
+model "Es zwölf bitte", one turn after "ich möchte etwas zum Abholen bestellen", was read
+as a table for twelve. The core hears the wish in the guest's own sentence before the
+model is asked (`agent/intent.py`), the way the escalation triggers of §4 are heard:
+
+| The sentence names | `intent` |
+|---|---|
+| a pickup ("abholen", "Abholung", "mitnehmen") | `pickup` |
+| a table ("Tisch", "reservieren", "Platz"; as the start of a word, "Vegetarisches" names none) | `reservation` |
+| an order and nothing else ("bestellen") | `pickup`; with a table word it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
+| both, neither, or a delivery | unchanged |
+
+The wish is taken only while no draft waits for its yes and nothing is booked or handed
+over (`stage` is `start` or `collecting`). From the draft on `intent` follows the tools as
+before, and it is what the call log says the call was about. It is a hint for the model,
+not a decision: which tool is called stays with the model, and the guards below do not
+read it. It costs no prompt text; the field stood in the state before. A wish in other
+words ("ich hole es dann ab") is missed, and the state stays as it was. Not measured on
+a real model yet: due with the first full run, against the baseline of `main`.
+
 An answer outside this format, a timeout or an unreachable model is an outage: the core
 says the outage sentence (§6) and hands the call to the team, it does not ask the model
 again. An answer is limited to `LLM_MAX_OUTPUT_TOKENS`; one that is cut off there is no

@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.agent.dispatch import ToolResult
+from api.agent.intent import heard
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
@@ -148,6 +149,19 @@ def apply_state_patch(
     named = {key: value for key, value in patch.items() if key in GUEST_SLOTS}
     state.slots.update(named)
     return named
+
+
+def note_intent(state: ConversationState, guest_text: str) -> None:
+    """Keeps what the guest called for (`agent/intent.py`) for the turns after
+    this one. Only while no draft waits for its yes and nothing is booked or
+    handed over: from the draft on `intent` follows the tools as before, and
+    it is what the call log says the call was about (`agent/outcome.py`). A
+    sentence that names no wish leaves it as it is.
+    ponytail: a second wish after a booking ("und noch etwas zum Abholen") is
+    not noted. The model reads it in the sentence itself, and from the first
+    menu search on the state carries the order (`cart`)."""
+    if state.stage in ("start", "collecting") and (wish := heard(guest_text)):
+        state.intent = wish
 
 
 _LINES = TypeAdapter(Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)])
