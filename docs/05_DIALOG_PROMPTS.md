@@ -250,17 +250,24 @@ model is asked (`agent/intent.py`), the way the escalation triggers of §4 are h
 | The sentence names | `intent` |
 |---|---|
 | a pickup ("abholen", "Abholung", "mitnehmen") | `pickup` |
-| a table ("Tisch", "Platz" and their plurals as whole words, "reservieren" and "Reservierung" anywhere; "Vegetarisches" or a guest named Tischler names none) | `reservation` |
-| an order and nothing else ("bestellen") | `pickup`, and only in a call that has no wish yet: the weakest signal never replaces a known wish ("können wir das Essen vorbestellen?" in a call about a table). With a table word it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
-| both, neither, a delivery, or a negation ("nicht zum Abholen", "kein Tisch") | unchanged |
+| a table ("Tisch" and its plurals as a whole word, "reservieren" and "Reservierung" anywhere; "Vegetarisches", a guest named Tischler or an address at a "Platz" name none) | `reservation` |
+| an order and nothing else ("bestellen") | `pickup`, unless something table-like is named, compounds included ("einen Vierertisch bestellen" says nothing). With "Tisch" it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
+| both, neither, a delivery, or a word that rules something out ("nicht", "kein", "nein", "ohne", "statt") | nothing |
 
-The wish is taken only while no draft waits for its yes and nothing is booked or handed
-over (`stage` is `start` or `collecting`). From the draft on `intent` follows the tools as
-before, and it is what the call log says the call was about. It is a hint for the model,
+Only the first wish of a call is taken: it fills an empty `intent`, and a word in a later
+sentence never replaces it ("dürfen wir unseren Hund mitnehmen?" in a call about a
+table). From the draft on `intent` follows the tools as before, and it is what the call
+log says the call was about. A guest who changes their mind before a draft keeps the
+first wish in the state until a tool of the other flow drafts; the model reads the
+change in the sentence itself. It is a hint for the model,
 not a decision: which tool is called stays with the model, and the guards below do not
 read it. It costs no prompt text; the field stood in the state before. The rule is strict
 on purpose: a wish that is wrongly heard stands in every turn after it, a wish that is
-missed ("ich hole es dann ab") leaves the state as it was. Not measured on
+missed ("ich hole es dann ab", "haben Sie noch Platz?") leaves the state as it was.
+Words are not understanding: "ich wollte meine Jacke abholen" as the first such
+sentence of a call is heard as a pickup. If the call log shows that often, the model
+writes the wish instead, which needs a line in the answer format and a run against the
+baseline. Not measured on
 a real model yet: due with the first full run, against the baseline of `main`.
 
 An answer outside this format, a timeout or an unreachable model is an outage: the core

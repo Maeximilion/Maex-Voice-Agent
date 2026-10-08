@@ -300,50 +300,60 @@ def test_what_the_guest_called_for_is_kept():
     assert state.to_prompt_json()["intent"] == "pickup"
 
 
-def test_guest_who_changes_their_mind_before_a_draft_is_followed():
-    state = make_state()
-
-    note_intent(state, "Ich möchte etwas zum Abholen bestellen")
-    note_intent(state, "Ach nein, lieber einen Tisch für vier")
-
-    assert state.intent == "reservation"
-
-
-def test_question_about_ordering_food_keeps_the_table():
+@pytest.mark.parametrize(
+    "later",
+    [
+        "Dürfen wir unseren Hund mitnehmen?",
+        "Kann man die Reste dann mitnehmen?",
+        "Wir kommen zu viert, zwei davon muss ich noch abholen",
+        "Können wir das Essen schon vorbestellen?",
+    ],
+)
+def test_word_in_a_later_sentence_does_not_replace_the_table(later):
+    """Own review of PR #241: a side question with a pickup word flipped a
+    call about a table to a pickup. Only the first wish of a call is taken."""
     state = make_state()
 
     note_intent(state, "Einen Tisch für vier morgen um sieben")
-    note_intent(state, "Können wir das Essen schon vorbestellen?")
+    note_intent(state, later)
 
     assert state.intent == "reservation"
 
 
-def test_guest_name_that_begins_like_a_table_word_keeps_the_pickup():
+@pytest.mark.parametrize(
+    "later",
+    [
+        "Auf den Namen Tischler",
+        "Ich hole es selbst, an welchem Tisch melde ich mich?",
+        "Wir sitzen dann aber nicht am Tisch, oder?",
+    ],
+)
+def test_word_in_a_later_sentence_does_not_replace_the_pickup(later):
     state = make_state()
 
     note_intent(state, "Ich möchte etwas zum Abholen bestellen")
-    note_intent(state, "Auf den Namen Tischler")
+    note_intent(state, later)
 
     assert state.intent == "pickup"
 
 
-def test_wish_after_a_dropped_readback_is_followed():
-    state = make_state(stage="collecting", intent="reservation")
-
-    note_intent(state, "Dann lieber etwas zum Mitnehmen")
-
-    assert state.intent == "pickup"
-
-
-@pytest.mark.parametrize("stage", ["readback_pending", "confirmed", "callback"])
-def test_wish_next_to_a_draft_or_a_booking_does_not_relabel_it(stage):
-    """The draft that was read back, or the booking, says what the call is
-    about: `intent` goes into the call log with it (`agent/outcome.py`). A
-    guest who moves on is followed by the tools, as before."""
-    state = make_state(stage=stage, intent="reservation")
+def test_wish_set_by_a_draft_is_not_replaced_either():
+    """From the draft on `intent` follows the tools (`apply_tool_result`,
+    `_drop_readback`), and it goes into the call log with the booking."""
+    state = make_state(stage="readback_pending", intent="reservation")
 
     note_intent(state, "Und kann ich auch etwas zum Abholen bestellen?")
 
+    assert state.intent == "reservation"
+
+
+def test_first_wish_comes_after_a_sentence_without_one():
+    state = make_state()
+
+    note_intent(state, "Guten Tag")
+    assert state.intent is None
+
+    note_intent(state, "Einen Tisch für zwei bitte")
     assert state.intent == "reservation"
 
 

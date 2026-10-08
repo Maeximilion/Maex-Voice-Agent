@@ -12,14 +12,17 @@ model, and what an order or a booking may hold stays with `guards.py`. Strict
 on purpose: a wish that is missed leaves the state as it was, which is what
 every call got before; a wish that is wrongly heard stands in every turn after
 it. So a sentence that names two wishes, rules something out or names none
-says nothing.
+says nothing, and `state.note_intent` takes only the first wish of a call.
 
 The stand-in model in `sim/` keeps its own word lists, as it does for the yes
 (`agent/consent.py`): it is not the thing this rule is there for.
 
-ponytail: the word lists are hand-made. A wish in other words ("ich hole es
-dann ab", "wir kommen zu viert") is missed. Add a word when the call log
-shows it.
+ponytail: the word lists are hand-made, and words are not understanding. A
+wish in other words ("ich hole es dann ab", "haben Sie noch Platz?") is
+missed; a pickup word that means something else in the first such sentence of
+a call ("ich wollte meine Jacke abholen") is heard as a pickup. If the call
+log shows either often, let the model write the wish instead: that needs a
+line in the answer format and a run against the baseline (docs/05 §5).
 """
 
 import re
@@ -29,29 +32,29 @@ HeardIntent = Literal["pickup", "reservation"]
 
 # Anywhere in a word: Abholung, abholen, abzuholen, Selbstabholer, mitnehmen.
 _PICKUP = re.compile(r"ab(?:zu)?hol|mit(?:zu)?nehm")
-# Whole words: a guest named Tischler or Platzer asks for no table, nor does
+# "Tisch" as a whole word: a guest named Tischler asks for no table, nor does
 # "Vegetarisches" or "Mittagstisch". "reservier" anywhere (Tischreservierung,
-# reserviert), and not shorter: a Gran Reserva is a wine.
-_TABLE = re.compile(r"\b(?:tisch(?:e[ns]?)?|platz|pl(?:ä|ae)tze)\b|reservier")
+# reserviert), and not shorter: a Gran Reserva is a wine. "Platz" is no table
+# word: it also stands in every second address.
+_TABLE = re.compile(r"\btisch(?:e[ns]?)?\b|reservier")
 # Not offered by phone yet. Heard so that "bestellen, zum Liefern" is not read
 # as a pickup; a value of its own comes with delivery (T-6.5).
 _DELIVERY = re.compile(r"liefer")
 # "Nicht zum Abholen, wir essen bei Ihnen" names what the guest does not want.
-# ponytail: any negation silences the sentence, also "die 23 zum Abholen, aber
-# nicht scharf". That sentence names a dish, and the order then stands in the
-# state (`cart`).
-_NEGATION = re.compile(r"\b(?:nicht|kein)")
+# ponytail: any of these words silences the sentence, also "die 23 zum
+# Abholen, aber ohne Zwiebeln". That sentence names a dish, and the order then
+# stands in the state (`cart`).
+_NEGATION = re.compile(r"\b(?:nicht|kein|nein|ohne|(?:an)?statt)")
 # "bestellen" alone is no pickup, a guest also orders a table (Codex PR #130):
-# it counts only when nothing else is named.
+# it counts only when nothing table-like is named, compounds included
+# ("einen Vierertisch bestellen", "vier Sitzplätze bestellen").
 # ponytail: until delivery is built an order by phone is a pickup (T-6.5).
 _ORDER = re.compile(r"bestell")
+_TABLE_LIKE = re.compile(r"tisch|platz|pl(?:ä|ae)tz|reserv")
 
 
-def heard(text: str, known: str | None = None) -> HeardIntent | None:
-    """The one wish the sentence names, or None. `known` is the wish the state
-    holds already: "bestellen" alone starts a pickup only in a call that has
-    none yet and never talks a known wish away ("können wir das Essen
-    vorbestellen?" in a call about a table)."""
+def heard(text: str) -> HeardIntent | None:
+    """The one wish the sentence names, or None."""
     lowered = text.lower()
     pickup = bool(_PICKUP.search(lowered))
     table = bool(_TABLE.search(lowered))
@@ -61,4 +64,6 @@ def heard(text: str, known: str | None = None) -> HeardIntent | None:
         return "pickup"
     if table:
         return "reservation"
-    return "pickup" if known is None and _ORDER.search(lowered) else None
+    if _ORDER.search(lowered) and not _TABLE_LIKE.search(lowered):
+        return "pickup"
+    return None

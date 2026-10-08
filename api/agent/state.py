@@ -153,16 +153,16 @@ def apply_state_patch(
 
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
-    this one. Only while no draft waits for its yes and nothing is booked or
-    handed over: from the draft on `intent` follows the tools as before, and
-    it is what the call log says the call was about (`agent/outcome.py`). A
-    sentence that names no wish leaves it as it is.
-    ponytail: a second wish after a booking ("und noch etwas zum Abholen") is
-    not noted. The model reads it in the sentence itself, and from the first
-    menu search on the state carries the order (`cart`)."""
-    if state.stage in ("start", "collecting") and (
-        wish := heard(guest_text, state.intent)
-    ):
+    this one. It only fills an empty `intent`: a word in a later sentence
+    never replaces what the state holds ("dürfen wir unseren Hund mitnehmen?"
+    in a call about a table), and from the draft on `intent` follows the
+    tools as before. It is also what the call log says the call was about
+    (`agent/outcome.py`).
+    ponytail: a guest who changes their mind before a draft, or wants a second
+    thing after a booking, keeps the first wish in the state until a tool of
+    the other flow drafts. The model reads the change in the sentence itself,
+    and from the first menu search on the state carries the order (`cart`)."""
+    if state.intent is None and (wish := heard(guest_text)):
         state.intent = wish
 
 
