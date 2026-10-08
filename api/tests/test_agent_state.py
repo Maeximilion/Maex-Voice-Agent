@@ -309,6 +309,24 @@ def test_guest_who_changes_their_mind_before_a_draft_is_followed():
     assert state.intent == "reservation"
 
 
+def test_question_about_ordering_food_keeps_the_table():
+    state = make_state()
+
+    note_intent(state, "Einen Tisch für vier morgen um sieben")
+    note_intent(state, "Können wir das Essen schon vorbestellen?")
+
+    assert state.intent == "reservation"
+
+
+def test_guest_name_that_begins_like_a_table_word_keeps_the_pickup():
+    state = make_state()
+
+    note_intent(state, "Ich möchte etwas zum Abholen bestellen")
+    note_intent(state, "Auf den Namen Tischler")
+
+    assert state.intent == "pickup"
+
+
 def test_wish_after_a_dropped_readback_is_followed():
     state = make_state(stage="collecting", intent="reservation")
 

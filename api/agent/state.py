@@ -160,7 +160,9 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     ponytail: a second wish after a booking ("und noch etwas zum Abholen") is
     not noted. The model reads it in the sentence itself, and from the first
     menu search on the state carries the order (`cart`)."""
-    if state.stage in ("start", "collecting") and (wish := heard(guest_text)):
+    if state.stage in ("start", "collecting") and (
+        wish := heard(guest_text, state.intent)
+    ):
         state.intent = wish
 
 

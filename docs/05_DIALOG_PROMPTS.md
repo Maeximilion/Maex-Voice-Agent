@@ -250,16 +250,17 @@ model is asked (`agent/intent.py`), the way the escalation triggers of §4 are h
 | The sentence names | `intent` |
 |---|---|
 | a pickup ("abholen", "Abholung", "mitnehmen") | `pickup` |
-| a table ("Tisch", "reservieren", "Platz"; as the start of a word, "Vegetarisches" names none) | `reservation` |
-| an order and nothing else ("bestellen") | `pickup`; with a table word it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
-| both, neither, or a delivery | unchanged |
+| a table ("Tisch", "Platz" and their plurals as whole words, "reservieren" and "Reservierung" anywhere; "Vegetarisches" or a guest named Tischler names none) | `reservation` |
+| an order and nothing else ("bestellen") | `pickup`, and only in a call that has no wish yet: the weakest signal never replaces a known wish ("können wir das Essen vorbestellen?" in a call about a table). With a table word it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
+| both, neither, a delivery, or a negation ("nicht zum Abholen", "kein Tisch") | unchanged |
 
 The wish is taken only while no draft waits for its yes and nothing is booked or handed
 over (`stage` is `start` or `collecting`). From the draft on `intent` follows the tools as
 before, and it is what the call log says the call was about. It is a hint for the model,
 not a decision: which tool is called stays with the model, and the guards below do not
-read it. It costs no prompt text; the field stood in the state before. A wish in other
-words ("ich hole es dann ab") is missed, and the state stays as it was. Not measured on
+read it. It costs no prompt text; the field stood in the state before. The rule is strict
+on purpose: a wish that is wrongly heard stands in every turn after it, a wish that is
+missed ("ich hole es dann ab") leaves the state as it was. Not measured on
 a real model yet: due with the first full run, against the baseline of `main`.
 
 An answer outside this format, a timeout or an unreachable model is an outage: the core
