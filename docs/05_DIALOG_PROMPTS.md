@@ -250,13 +250,15 @@ model is asked (`agent/intent.py`), the way the escalation triggers of §4 are h
 | The sentence names | `intent` |
 |---|---|
 | a pickup ("abholen", "Abholung", "mitnehmen") | `pickup` |
-| a table ("Tisch" and its plurals as a whole word, "reservieren" and "Reservierung" anywhere; "Vegetarisches", a guest named Tischler or an address at a "Platz" name none) | `reservation` |
+| a table ("Tisch" and its plurals as a whole word, "reservieren" and "Reservierung" anywhere; "Asiatisches", a guest named Tischler or an address at a "Platz" name none) | `reservation` |
 | an order and nothing else ("bestellen") | `pickup`, unless something table-like is named, compounds included ("einen Vierertisch bestellen" says nothing). With "Tisch" it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
-| both, neither, a delivery, or a word that rules something out ("nicht", "kein", "nein", "ohne", "statt") | nothing |
+| both (a pickup word next to anything table-like, compounds such as "Vierertisch" and "Platz" included), neither, a delivery, or a word that rules something out ("nicht", "kein", "nein", "ohne", "statt") | nothing |
 
 Only the first wish of a call is taken: it fills an empty `intent`, and a word in a later
 sentence never replaces it ("dürfen wir unseren Hund mitnehmen?" in a call about a
-table). From the draft on `intent` follows the tools as before, and it is what the call
+table). It is never taken against what the state shows already: with an order in the
+state (`cart`) no table is heard, with a party size or a time in `slots` no pickup. From
+the draft on `intent` follows the tools as before, and it is what the call
 log says the call was about. A guest who changes their mind before a draft keeps the
 first wish in the state until a tool of the other flow drafts; the model reads the
 change in the sentence itself. It is a hint for the model,

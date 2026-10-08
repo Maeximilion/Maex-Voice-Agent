@@ -33,7 +33,7 @@ HeardIntent = Literal["pickup", "reservation"]
 # Anywhere in a word: Abholung, abholen, abzuholen, Selbstabholer, mitnehmen.
 _PICKUP = re.compile(r"ab(?:zu)?hol|mit(?:zu)?nehm")
 # "Tisch" as a whole word: a guest named Tischler asks for no table, nor does
-# "Vegetarisches" or "Mittagstisch". "reservier" anywhere (Tischreservierung,
+# "Asiatisches" or "Mittagstisch". "reservier" anywhere (Tischreservierung,
 # reserviert), and not shorter: a Gran Reserva is a wine. "Platz" is no table
 # word: it also stands in every second address.
 _TABLE = re.compile(r"\btisch(?:e[ns]?)?\b|reservier")
@@ -46,24 +46,26 @@ _DELIVERY = re.compile(r"liefer")
 # stands in the state (`cart`).
 _NEGATION = re.compile(r"\b(?:nicht|kein|nein|ohne|(?:an)?statt)")
 # "bestellen" alone is no pickup, a guest also orders a table (Codex PR #130):
-# it counts only when nothing table-like is named, compounds included
-# ("einen Vierertisch bestellen", "vier Sitzplätze bestellen").
+# it counts only when nothing table-like is named.
 # ponytail: until delivery is built an order by phone is a pickup (T-6.5).
 _ORDER = re.compile(r"bestell")
+# Anything that may be a table, compounds included ("Vierertisch",
+# "Sitzplätze"): not sure enough to be heard as one, but enough to make a
+# pickup or an order word next to it say nothing. It also holds "tisch" in
+# "etwas Asiatisches zum Mitnehmen": that wish is missed, which is the safe side.
 _TABLE_LIKE = re.compile(r"tisch|platz|pl(?:ä|ae)tz|reserv")
 
 
 def heard(text: str) -> HeardIntent | None:
     """The one wish the sentence names, or None."""
     lowered = text.lower()
-    pickup = bool(_PICKUP.search(lowered))
-    table = bool(_TABLE.search(lowered))
-    if (pickup and table) or _DELIVERY.search(lowered) or _NEGATION.search(lowered):
+    if _DELIVERY.search(lowered) or _NEGATION.search(lowered):
         return None
-    if pickup:
-        return "pickup"
-    if table:
+    table_like = bool(_TABLE_LIKE.search(lowered))
+    if _PICKUP.search(lowered):
+        # Next to anything table-like it is two wishes, or one that words
+        # cannot tell ("noch Platz für zwei, oder sollen wir es mitnehmen?").
+        return None if table_like else "pickup"
+    if _TABLE.search(lowered):
         return "reservation"
-    if _ORDER.search(lowered) and not _TABLE_LIKE.search(lowered):
-        return "pickup"
-    return None
+    return "pickup" if _ORDER.search(lowered) and not table_like else None

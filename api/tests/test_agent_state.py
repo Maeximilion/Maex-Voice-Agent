@@ -5,6 +5,7 @@ import uuid
 import pytest
 
 from api.agent.dispatch import ToolResult
+from api.agent.intent import heard
 from api.agent.outcome import call_outcome
 from api.agent.state import (
     ConversationState,
@@ -313,6 +314,7 @@ def test_word_in_a_later_sentence_does_not_replace_the_table(later):
     """Own review of PR #241: a side question with a pickup word flipped a
     call about a table to a pickup. Only the first wish of a call is taken."""
     state = make_state()
+    assert heard(later) == "pickup"  # on its own the sentence is a pickup
 
     note_intent(state, "Einen Tisch für vier morgen um sieben")
     note_intent(state, later)
@@ -323,17 +325,41 @@ def test_word_in_a_later_sentence_does_not_replace_the_table(later):
 @pytest.mark.parametrize(
     "later",
     [
-        "Auf den Namen Tischler",
         "Ich hole es selbst, an welchem Tisch melde ich mich?",
-        "Wir sitzen dann aber nicht am Tisch, oder?",
+        "Können wir solange an einem Tisch warten?",
     ],
 )
 def test_word_in_a_later_sentence_does_not_replace_the_pickup(later):
     state = make_state()
+    assert heard(later) == "reservation"  # on its own the sentence is a table
 
     note_intent(state, "Ich möchte etwas zum Abholen bestellen")
     note_intent(state, later)
 
+    assert state.intent == "pickup"
+
+
+def test_wish_is_not_taken_against_the_table_details_in_the_state():
+    """Second review of PR #241: a guest asks for a table without the word
+    ("haben Sie morgen um sieben noch was frei für vier?"), the model notes
+    the party size, and a side question then made the call a pickup."""
+    state = make_state(slots={"party_size": 4})
+
+    note_intent(state, "Können wir die Reste dann mitnehmen?")
+    note_intent(state, "Können wir das Essen schon vorbestellen?")
+    assert state.intent is None
+
+    note_intent(state, "Ich möchte einen Tisch reservieren")
+    assert state.intent == "reservation"
+
+
+def test_wish_is_not_taken_against_the_order_in_the_state():
+    state = make_state(cart=[{"menu_item_id": str(uuid.uuid4()), "quantity": 1}])
+
+    note_intent(state, "An welchem Tisch warte ich dann?")
+    assert state.intent is None
+
+    note_intent(state, "Das ist zum Mitnehmen")
     assert state.intent == "pickup"
 
 

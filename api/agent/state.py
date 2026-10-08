@@ -158,11 +158,23 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     in a call about a table), and from the draft on `intent` follows the
     tools as before. It is also what the call log says the call was about
     (`agent/outcome.py`).
+
+    And never against what the state shows already: a guest who gave a party
+    size and never said "Tisch" asks "können wir die Reste mitnehmen?", and a
+    guest whose order stands in the state asks at which table to wait.
     ponytail: a guest who changes their mind before a draft, or wants a second
     thing after a booking, keeps the first wish in the state until a tool of
     the other flow drafts. The model reads the change in the sentence itself,
     and from the first menu search on the state carries the order (`cart`)."""
-    if state.intent is None and (wish := heard(guest_text)):
+    if state.intent is not None or (wish := heard(guest_text)) is None:
+        return
+    if state.cart or state.seen_items:
+        shown = "pickup"
+    elif state.slots.keys() & {"party_size", "reserved_for"}:
+        shown = "reservation"
+    else:
+        shown = wish
+    if shown == wish:
         state.intent = wish
 
 
