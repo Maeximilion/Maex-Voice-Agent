@@ -5,11 +5,14 @@ import uuid
 import pytest
 
 from api.agent.dispatch import ToolResult
+from api.agent.intent import heard
+from api.agent.outcome import call_outcome
 from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
     initial_state,
+    note_intent,
 )
 
 CALL_ID = uuid.uuid4()
@@ -283,3 +286,132 @@ def test_unavailable_transfer_keeps_no_target_number():
         ToolResult(ok=True, data={"available": False, "transfer_to": "+497215550000"}),
     )
     assert state.transfer_to is None
+
+
+def test_what_the_guest_called_for_is_kept():
+    """Seen on a real model (07.10.2026): after "ich möchte etwas zum Abholen
+    bestellen" the next turn began from a state without that wish, and "Es
+    zwölf bitte" was read as a table for twelve. A model keeps nothing between
+    turns and cannot write `intent`, so the core hears it."""
+    state = make_state()
+
+    note_intent(state, "Ich möchte etwas zum Abholen bestellen")
+    note_intent(state, "Es zwölf bitte")
+
+    assert state.to_prompt_json()["intent"] == "pickup"
+
+
+@pytest.mark.parametrize(
+    "later",
+    [
+        "Dürfen wir unseren Hund mitnehmen?",
+        "Kann man die Reste dann mitnehmen?",
+        "Wir kommen zu viert, zwei davon muss ich noch abholen",
+        "Können wir das Essen schon vorbestellen?",
+    ],
+)
+def test_word_in_a_later_sentence_does_not_replace_the_table(later):
+    """Own review of PR #241: a side question with a pickup word flipped a
+    call about a table to a pickup. Only the first wish of a call is taken."""
+    state = make_state()
+    assert heard(later) == "pickup"  # on its own the sentence is a pickup
+
+    note_intent(state, "Einen Tisch für vier morgen um sieben")
+    note_intent(state, later)
+
+    assert state.intent == "reservation"
+
+
+@pytest.mark.parametrize(
+    "later",
+    [
+        "Ich hole es selbst, an welchem Tisch melde ich mich?",
+        "Können wir solange an einem Tisch warten?",
+    ],
+)
+def test_word_in_a_later_sentence_does_not_replace_the_pickup(later):
+    state = make_state()
+    assert heard(later) == "reservation"  # on its own the sentence is a table
+
+    note_intent(state, "Ich möchte etwas zum Abholen bestellen")
+    note_intent(state, later)
+
+    assert state.intent == "pickup"
+
+
+def test_wish_is_not_taken_against_the_table_details_in_the_state():
+    """Second review of PR #241: a guest asks for a table without the word
+    ("haben Sie morgen um sieben noch was frei für vier?"), the model notes
+    the party size, and a side question then made the call a pickup."""
+    state = make_state(slots={"party_size": 4})
+
+    note_intent(state, "Können wir die Reste dann mitnehmen?")
+    note_intent(state, "Können wir das Essen schon vorbestellen?")
+    assert state.intent is None
+
+    note_intent(state, "Ich möchte einen Tisch reservieren")
+    assert state.intent == "reservation"
+
+
+def test_wish_is_not_taken_against_the_order_in_the_state():
+    state = make_state(cart=[{"menu_item_id": str(uuid.uuid4()), "quantity": 1}])
+
+    note_intent(state, "An welchem Tisch warte ich dann?")
+    assert state.intent is None
+
+    note_intent(state, "Das ist zum Mitnehmen")
+    assert state.intent == "pickup"
+
+
+def test_table_details_outrank_a_menu_question():
+    """Review of the head of PR #241: a search that was only a question fills
+    `seen_items`, and it counted as an order although the state held a party
+    size."""
+    state = make_state(
+        slots={"party_size": 4},
+        seen_items={str(uuid.uuid4()): {"number": "23", "name": "Pho Bo"}},
+    )
+
+    note_intent(state, "Können wir die Reste dann mitnehmen?")
+    assert state.intent is None
+
+    note_intent(state, "Ich möchte einen Tisch reservieren")
+    assert state.intent == "reservation"
+
+
+def test_a_time_alone_shows_a_table_and_a_search_alone_an_order():
+    table = make_state(slots={"reserved_for": "2026-09-16T19:00"})
+    note_intent(table, "Kann man bei Ihnen auch etwas mitnehmen?")
+    assert table.intent is None
+
+    order = make_state(seen_items={str(uuid.uuid4()): {"number": "23"}})
+    note_intent(order, "Können wir solange an einem Tisch warten?")
+    assert order.intent is None
+
+
+def test_wish_set_by_a_draft_is_not_replaced_either():
+    """From the draft on `intent` follows the tools (`apply_tool_result`,
+    `_drop_readback`), and it goes into the call log with the booking."""
+    state = make_state(stage="readback_pending", intent="reservation")
+
+    note_intent(state, "Und kann ich auch etwas zum Abholen bestellen?")
+
+    assert state.intent == "reservation"
+
+
+def test_first_wish_comes_after_a_sentence_without_one():
+    state = make_state()
+
+    note_intent(state, "Guten Tag")
+    assert state.intent is None
+
+    note_intent(state, "Einen Tisch für zwei bitte")
+    assert state.intent == "reservation"
+
+
+def test_call_that_ends_before_a_draft_is_logged_with_its_wish():
+    state = make_state()
+
+    note_intent(state, "Ich möchte etwas zum Abholen bestellen")
+
+    assert call_outcome(state) == ("abandoned", "pickup")

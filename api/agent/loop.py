@@ -25,7 +25,12 @@ from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+    note_intent,
+)
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
@@ -109,6 +114,9 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        # First of all: the request of this very turn carries it already, and a
+        # call that goes to the team right here is logged with what it was about.
+        note_intent(state, user_text)
         reason = escalation.check(user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)

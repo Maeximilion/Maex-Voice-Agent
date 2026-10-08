@@ -240,6 +240,40 @@ had **not** chosen stayed in sight, and two turns later the model ordered it
 (`abholung_0072`, 07.10.2026). The price: an answer like "die erste" to an offer cannot be
 resolved from the state, the model searches again with what the guest said, or asks.
 
+**What the guest called for in the compact state (T-2.4, 08.10.2026)** — `intent` says
+what the call is about, `pickup` or `reservation`. A model cannot write it (it is no guest
+slot), and until a draft existed the state of the next turn did not carry it: on a real
+model "Es zwölf bitte", one turn after "ich möchte etwas zum Abholen bestellen", was read
+as a table for twelve. The core hears the wish in the guest's own sentence before the
+model is asked (`agent/intent.py`), the way the escalation triggers of §4 are heard:
+
+| The sentence names | `intent` |
+|---|---|
+| a pickup ("abholen", "Abholung", "abgeholt", "mitnehmen") | `pickup` |
+| a table ("Tisch" and its plurals as a whole word, "reservieren" and "Reservierung" anywhere; "Asiatisches", a guest named Tischler or an address at a "Platz" name none) | `reservation` |
+| an order and nothing else ("bestellen") | `pickup`, unless something table-like is named, compounds included ("einen Vierertisch bestellen" says nothing). With "Tisch" it is a reservation. Until delivery is built an order by phone is a pickup (T-6.5) |
+| both (a pickup word next to anything table-like, compounds such as "Vierertisch" and "Platz" included), neither, a delivery ("liefern", "nach Hause"), or a word that rules something out ("nicht", "kein", "nein", "ohne", "statt" as whole words; "ohnehin" rules nothing out) | nothing |
+
+Only the first wish of a call is taken: it fills an empty `intent`, and a word in a later
+sentence never replaces it ("dürfen wir unseren Hund mitnehmen?" in a call about a
+table). It is never taken against what the state shows already: with an order in the
+state (`cart`) no table is heard, with a party size or a time in `slots` no pickup, and
+after a menu search without either no table. The wish is noted before the escalation
+triggers of §4 are checked, so a call that goes to the team in that sentence is logged
+with it. From the draft on `intent` follows the tools as before, and it is what the call
+log says the call was about. A guest who changes their mind before a draft keeps the
+first wish in the state until a tool of the other flow drafts; the model reads the
+change in the sentence itself. It is a hint for the model,
+not a decision: which tool is called stays with the model, and the guards below do not
+read it. It costs no prompt text; the field stood in the state before. The rule is strict
+on purpose: a wish that is wrongly heard stands in every turn after it, a wish that is
+missed ("ich hole es dann ab", "haben Sie noch Platz?") leaves the state as it was.
+Words are not understanding: "ich wollte meine Jacke abholen" as the first such
+sentence of a call is heard as a pickup. If the call log shows that often, the model
+writes the wish instead, which needs a line in the answer format and a run against the
+baseline. Not measured on
+a real model yet: due with the first full run, against the baseline of `main`.
+
 An answer outside this format, a timeout or an unreachable model is an outage: the core
 says the outage sentence (§6) and hands the call to the team, it does not ask the model
 again. An answer is limited to `LLM_MAX_OUTPUT_TOKENS`; one that is cut off there is no
