@@ -114,12 +114,13 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        # First of all: the request of this very turn carries it already, and a
+        # call that goes to the team right here is logged with what it was about.
+        note_intent(state, user_text)
         reason = escalation.check(user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
-        # Before the model: the request of this very turn carries it already.
-        note_intent(state, user_text)
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,

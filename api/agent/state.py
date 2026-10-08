@@ -168,10 +168,14 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     and from the first menu search on the state carries the order (`cart`)."""
     if state.intent is not None or (wish := heard(guest_text)) is None:
         return
-    if state.cart or state.seen_items:
+    # An order outranks table details, and those a search that may have been
+    # only a question ("haben Sie auch vegetarische Gerichte?").
+    if state.cart:
         shown = "pickup"
     elif state.slots.keys() & {"party_size", "reserved_for"}:
         shown = "reservation"
+    elif state.seen_items:
+        shown = "pickup"
     else:
         shown = wish
     if shown == wish:

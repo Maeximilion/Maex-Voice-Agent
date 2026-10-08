@@ -774,6 +774,21 @@ def test_model_sees_what_the_guest_called_for_on_the_next_turn(session, state):
     assert [call[1]["intent"] for call in llm.calls] == ["pickup", "pickup"]
 
 
+def test_wish_in_a_sentence_that_escalates_is_still_noted(session, state):
+    """Codex PR #241: the escalation returned before the wish was noted, and
+    the call log of a call that went to the team said nothing about it."""
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(
+        state, "Ich möchte etwas zum Abholen bestellen und mit einem Menschen sprechen"
+    )
+
+    assert result.ended
+    assert llm.calls == []
+    assert state.intent == "pickup"
+
+
 def test_model_sees_which_tools_it_called_in_this_turn(session, state):
     """Seen on a real model with pickup orders: it got the result of
     `get_service_status`, did not see that it had asked for it and asked

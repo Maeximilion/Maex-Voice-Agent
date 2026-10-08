@@ -30,21 +30,24 @@ from typing import Literal
 
 HeardIntent = Literal["pickup", "reservation"]
 
-# Anywhere in a word: Abholung, abholen, abzuholen, Selbstabholer, mitnehmen.
-_PICKUP = re.compile(r"ab(?:zu)?hol|mit(?:zu)?nehm")
+# Anywhere in a word: Abholung, abholen, abzuholen, abgeholt, Selbstabholer,
+# mitnehmen.
+_PICKUP = re.compile(r"ab(?:zu|ge)?hol|mit(?:zu)?nehm")
 # "Tisch" as a whole word: a guest named Tischler asks for no table, nor does
 # "Asiatisches" or "Mittagstisch". "reservier" anywhere (Tischreservierung,
 # reserviert), and not shorter: a Gran Reserva is a wine. "Platz" is no table
 # word: it also stands in every second address.
 _TABLE = re.compile(r"\btisch(?:e[ns]?)?\b|reservier")
-# Not offered by phone yet. Heard so that "bestellen, zum Liefern" is not read
-# as a pickup; a value of its own comes with delivery (T-6.5).
-_DELIVERY = re.compile(r"liefer")
+# Not offered by phone yet. Heard so that "bestellen, zum Liefern" and "Essen
+# nach Hause bestellen" are not read as a pickup; a value of its own comes
+# with delivery (T-6.5).
+_DELIVERY = re.compile(r"liefer|nach\s+hause")
 # "Nicht zum Abholen, wir essen bei Ihnen" names what the guest does not want.
 # ponytail: any of these words silences the sentence, also "die 23 zum
 # Abholen, aber ohne Zwiebeln". That sentence names a dish, and the order then
 # stands in the state (`cart`).
-_NEGATION = re.compile(r"\b(?:nicht|kein|nein|ohne|(?:an)?statt)")
+# Whole words: "ohnehin" rules nothing out.
+_NEGATION = re.compile(r"\b(?:nichts?|kein(?:e[mnrs]?)?|nein|ohne|(?:an)?statt)\b")
 # "bestellen" alone is no pickup, a guest also orders a table (Codex PR #130):
 # it counts only when nothing table-like is named.
 # ponytail: until delivery is built an order by phone is a pickup (T-6.5).

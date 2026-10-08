@@ -363,6 +363,32 @@ def test_wish_is_not_taken_against_the_order_in_the_state():
     assert state.intent == "pickup"
 
 
+def test_table_details_outrank_a_menu_question():
+    """Review of the head of PR #241: a search that was only a question fills
+    `seen_items`, and it counted as an order although the state held a party
+    size."""
+    state = make_state(
+        slots={"party_size": 4},
+        seen_items={str(uuid.uuid4()): {"number": "23", "name": "Pho Bo"}},
+    )
+
+    note_intent(state, "Können wir die Reste dann mitnehmen?")
+    assert state.intent is None
+
+    note_intent(state, "Ich möchte einen Tisch reservieren")
+    assert state.intent == "reservation"
+
+
+def test_a_time_alone_shows_a_table_and_a_search_alone_an_order():
+    table = make_state(slots={"reserved_for": "2026-09-16T19:00"})
+    note_intent(table, "Kann man bei Ihnen auch etwas mitnehmen?")
+    assert table.intent is None
+
+    order = make_state(seen_items={str(uuid.uuid4()): {"number": "23"}})
+    note_intent(order, "Können wir solange an einem Tisch warten?")
+    assert order.intent is None
+
+
 def test_wish_set_by_a_draft_is_not_replaced_either():
     """From the draft on `intent` follows the tools (`apply_tool_result`,
     `_drop_readback`), and it goes into the call log with the booking."""

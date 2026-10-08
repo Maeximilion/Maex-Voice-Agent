@@ -15,6 +15,7 @@ from api.agent.intent import heard
         "Ich würde gern etwas zur Selbstabholung bestellen",
         "Kann ich bei Ihnen auch etwas mitnehmen?",
         "Ich hätte gern was abzuholen",
+        "Kann das heute Abend abgeholt werden?",
         "Haben Sie auch etwas Vegetarisches zum Mitnehmen?",
         "ABHOLUNG",
     ],
@@ -30,6 +31,8 @@ def test_pickup_is_heard(sentence):
         "Ich möchte reservieren",
         "Eine Tischreservierung für morgen Abend",
         "Haben Sie noch Tische frei?",
+        # "ohnehin" begins like "ohne" and rules nothing out (Codex PR #241).
+        "Ich möchte ohnehin einen Tisch reservieren",
     ],
 )
 def test_a_table_is_heard(sentence):
@@ -72,6 +75,7 @@ def test_ordering_something_table_like_is_no_pickup(sentence):
         # Delivery is not offered yet and must not be read as a pickup.
         "Ich möchte etwas bestellen, zum Liefern",
         "Können Sie mir das liefern, oder muss ich es abholen?",
+        "Ich möchte Essen nach Hause bestellen",
         # No wish at all.
         "Es zwölf bitte",
         "Die 23 und einmal Pho Bo",
