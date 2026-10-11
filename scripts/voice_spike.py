@@ -88,16 +88,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"voice_spike: {exc}", file=sys.stderr)
         return 1
     finally:
-        if not args.dry_run:
-            (run_dir / "pbx.log").write_text(
-                stack.compose("logs", "--no-color", "pbx", "softphone")
-            )
-        if not args.keep:
-            step("Stop the containers")
-            stack.compose("down", "--volumes")
+        tidy_up(stack, keep=args.keep)
     if args.dry_run:
         return 0
     return report(checks, run_dir)
+
+
+def tidy_up(stack: "Stack", *, keep: bool) -> None:
+    """Save the containers' output and stop them. A failure here is reported and
+    never hides the one that brought us here."""
+    try:
+        if not stack.dry_run:
+            output = stack.compose("logs", "--no-color", "pbx", "softphone")
+            (stack.run_dir / "pbx.log").write_text(output)
+        if not keep:
+            step("Stop the containers")
+            stack.compose("down", "--volumes")
+    except (SpikeError, OSError) as exc:
+        print(f"voice_spike: tidying up failed: {exc}", file=sys.stderr)
 
 
 def step(*words: object) -> None:
@@ -188,7 +196,10 @@ def place(stack: Stack, extens: tuple[str, ...]) -> dict[str, dict[str, Any]]:
         ):
             break
         if time.monotonic() - started > CALL_TIMEOUT_SECONDS:
-            raise SpikeError(f"calls to {', '.join(extens)} did not end; see pbx.log")
+            raise SpikeError(
+                f"no finished call to {', '.join(extens)} in the probe's logs after "
+                f"{CALL_TIMEOUT_SECONDS} s; see pbx.log in the run directory"
+            )
     seconds = time.monotonic() - started
     # Saved so a later scenario does not delete what this one produced.
     keep = stack.run_dir / "calls" / "-".join(extens)
@@ -287,7 +298,9 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
             (
                 f"{label}: playback is paced",
                 spoken is not None and abs(spoken - plan.seconds) <= PACING_TOLERANCE,
-                f"{plan.seconds} s of audio sent at once, queue empty after {spoken} s",
+                f"{plan.seconds} s of audio sent at once, queue empty after {spoken:.2f} s"
+                if spoken is not None
+                else "the queue never reported empty",
             ),
         ]
     if len(calls) > 1:

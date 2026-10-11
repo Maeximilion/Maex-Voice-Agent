@@ -215,6 +215,43 @@ too old for the media channel, so Asterisk runs as a container; `sudo` asks for 
 does not; WSL sits behind address translation, and whether call audio passes it is the first thing
 the test shows.
 
+### Handover: T-10.1 step 1, the media channel on the workbench (run 07.10. and 11.10.2026)
+
+| | |
+|---|---|
+| Start folder | the repository folder in the Ubuntu home directory (or a worktree of it), Ubuntu terminal |
+| The one command | `python3 -m scripts.voice_spike` (about 40 s; `--dry-run` prints the steps, `--keep` leaves the containers running) |
+| Maxi has to have ready | Docker Desktop running with the WSL integration. No account, no `.env` entry, no sudo |
+| What the result looks like | one line `pass` or `FAIL` per point, "28 of 28 points passed", exit code 0; `deploy/asterisk/run/report.json` holds the same list, `pbx.log` next to it the output of both telephone containers |
+
+What it starts (`deploy/asterisk/docker-compose.spike.yml`, project `voice-spike`, own network, no
+host port published): a test PBX (Asterisk 22.10.1, image pinned by digest), a scripted softphone (a
+second Asterisk that dials in over SIP with G.711 A-law, plays a tone, presses keys and records what
+it hears) and the probe (`api/telephony/probe.py`), which stands where the service `voice` will
+stand. The softphone's password is made new on every run and exists only in `deploy/asterisk/run/`,
+which git ignores. Only invented numbers and test tones.
+
+What step 1 does not answer: a call from a softphone on Windows through WSL's address translation
+was not tried. Step 2 answers the direction that matters, because there Asterisk registers outwards
+at the pilot's router over a VPN; nothing in the plan needs a telephone that reaches into WSL.
+
+What the media adapter (T-1.11) and the outage spike (T-10.2) can build on, all seen in the run:
+
+- The dial string `WebSocket/<connection>/c(slin16)f(json)v(...)` gives 16 kHz signed linear in
+  both directions and JSON control frames; Asterisk resamples from the 8 kHz of the telephone line.
+  The dialed extension and the caller number arrive as URI parameters of the WebSocket request.
+- Audio from the caller comes as one binary frame of 640 bytes every 20 ms; the last frame of a
+  playback on the far side can be shorter (552 bytes seen), so the ear must not assume a size.
+- Audio to the caller can be sent as fast as it is produced, in messages of whole frames up to
+  65,500 bytes. Asterisk paces it. `REPORT_QUEUE_DRAINED` answers when the last frame was played
+  (the moment a read-back is over), `FLUSH_MEDIA` drops what is queued (the caller speaks over a
+  sentence), `HANGUP` after `QUEUE_DRAINED` ends the call only when everything was spoken.
+- `connection_id` in `MEDIA_START` is the name of the connection in `websocket_client.conf`, the
+  same for every call. The call is named by `channel_id`.
+- With the voice service not reachable, `Dial` gives up after the connection timeout (2 s set, one
+  try) and the dialplan goes on to its next line. That line is where the outage fallback of T-10.2
+  belongs.
+
 ---
 
 ## 11. Measurement log
@@ -223,7 +260,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 
 | Date | Package | What was measured | Result |
 |---|---|---|---|
-| | | nothing yet | |
+| 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run twice, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 19.96 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, a key after 2 s, the caller heard 2.18 s, the tone ended 7 to 12 ms after `FLUSH_MEDIA`, queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
 
 ---
 
@@ -241,6 +278,12 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **Texts that still name the voice platform:** the headers of `prompts/tools_v1.md` and `prompts/tools_v2.md`, comments in `api/telephony/`, `docs/03`, `docs/04`, `docs/08` and `docs/10`. They change with the first build package; a change under `prompts/` needs an eval run.
 - **Team reachability:** today `transfer_to_team` guesses from the opening hours whether somebody
   can answer; the real answer is the result of the transfer (T-10.8).
+- **From T-10.1 step 1, for T-1.11:** the media socket of the spike has no access control, which is
+  fine on a network of its own without a published port; the service `voice` needs one (the
+  connection in `websocket_client.conf` can carry a user name and password, and TLS). The Asterisk
+  image is a third-party build, pinned by digest; for operation decide between that and an image
+  built from the official source. The containers of the voice layer are to start as an unprivileged user from the beginning (the probe does,
+  Asterisk drops root itself).
 
 ---
 

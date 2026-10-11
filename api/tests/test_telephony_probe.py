@@ -9,8 +9,9 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from api.telephony.adapters.asterisk import MAX_MESSAGE_BYTES
 from api.telephony.audio import tone
-from api.telephony.probe import MAX_MESSAGE_BYTES, app
+from api.telephony.probe import app
 
 FRAME = 640
 MEDIA_START = json.dumps(

@@ -137,7 +137,9 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `app.py` | planned (docs/20 §2): the process of the service `voice` |
 | `session.py` | planned (docs/20 §2): call session, provider neutral |
 | `speech.py` | planned (docs/20 §2): the ports for ear (speech-to-text) and mouth (text-to-speech) |
-| `adapters/asterisk.py` | planned (docs/20 §2): media protocol of Asterisk, implements the port |
+| `adapters/asterisk.py` | media channel of Asterisk. Exists since T-10.1: the wire format only (events, commands, message limit), checked against frames recorded from Asterisk 22.10.1 (`api/tests/fixtures/asterisk_media_*.jsonl`). Planned with T-1.11 (docs/20 §2): the adapter that implements the port on top of it |
+| `audio.py` | test tones in raw call audio: make one, find its frequency and its span (T-10.1). Standard library only |
+| `probe.py` | measuring endpoint of the spike T-10.1: stands where `voice` will stand, plays a tone per dialed extension, reacts to keys, logs every control frame. Plain ASGI, no database, no settings. Driven by `scripts/voice_spike.py`; the Asterisk configuration of the spike is `deploy/asterisk/` (docs/20 §10) |
 | `adapters/stt_<engine>.py` | planned (docs/20 §2): one speech-to-text engine each |
 | `adapters/tts_<engine>.py` | planned (docs/20 §2): one text-to-speech engine each |
 | `adapters/fake_speech.py` | planned (docs/20 §2): fake ear and mouth for tests |
