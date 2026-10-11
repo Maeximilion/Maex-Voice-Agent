@@ -10,5 +10,5 @@
 | `seed_zones.py` | Delivery zones from zone list (from delivery service project) | T-6.3 |
 | `call_log.py` | Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: C1 baseline, `--cases` eval drafts | – (C1) |
 | `setup_local_llm.sh` | Local test model on the workbench: installs Ollama, picks the model by GPU memory, checks one invented order line against the answer contract, prints the `.env` lines; `--dry-run`. Invented data only | T-2.4, docs/18 §5 |
-| `voice_spike.py` | Kit of the spike T-10.1 step 1: starts a test PBX, a scripted softphone and the probe as containers, places the test calls and judges them point by point; `--dry-run`, `--keep`. Docker only, no sudo, invented data only | T-10.1, docs/20 §10 |
+| `voice_spike.py` | Kit of the spike T-10.1 step 1: starts a test PBX, a scripted softphone and the probe as containers, places the test calls and judges them point by point; `--dry-run`, `--keep`, `--down`. Docker only, no sudo, invented data only | T-10.1, docs/20 §10 |
 | `status_bump.py` | Auto-advance version, date, changelog line in `docs/01_STATUS.md` | – (Meta/Tooling) |

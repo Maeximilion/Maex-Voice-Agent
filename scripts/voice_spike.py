@@ -1,10 +1,10 @@
 """Kit of the spike T-10.1, step 1: call audio over the media channel, on the workbench.
 
-    python3 -m scripts.voice_spike [--dry-run] [--keep] [--run-dir DIR]
+    python3 -m scripts.voice_spike [--dry-run] [--keep] [--down] [--run-dir DIR]
 
     --dry-run   check the environment and print every step, change nothing
-    --keep      leave the three containers running afterwards (stop them with
-                `docker compose -p voice-spike down`)
+    --keep      leave the three containers running afterwards
+    --down      only stop the containers a run with --keep left behind
     --run-dir   where rendered configs, recordings and logs go
                 (default deploy/asterisk/run, ignored by git)
 
@@ -49,6 +49,10 @@ CALL_TIMEOUT_SECONDS = 45
 PACING_TOLERANCE = 0.3
 STOP_LIMIT = 0.5
 HANGUP_LIMIT = 10.0
+# What the media channel delivers at 16 kHz: 640 bytes every 20 ms.
+FRAME_BYTES = 640
+FRAME_MS = 20
+FRAME_MS_TOLERANCE = 2
 
 Check = tuple[str, bool, str]
 
@@ -63,6 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--down", action="store_true")
     parser.add_argument("--run-dir", type=Path, default=CONFIG_DIR / "run")
     args = parser.parse_args(argv)
     run_dir = args.run_dir.resolve()
@@ -72,6 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"voice_spike: {problem}", file=sys.stderr)
         return 2
     stack = Stack(run_dir, dry_run=args.dry_run)
+    if args.down:
+        return 0 if stop(stack) else 1
+    tidied = True
     try:
         step("Render configs and test tones into", run_dir)
         if not args.dry_run:
@@ -88,24 +96,38 @@ def main(argv: list[str] | None = None) -> int:
         print(f"voice_spike: {exc}", file=sys.stderr)
         return 1
     finally:
-        tidy_up(stack, keep=args.keep)
-    if args.dry_run:
-        return 0
-    return report(checks, run_dir)
+        # Both always run, and neither hides the failure that brought us here.
+        tidied = save_output(stack)
+        if not args.keep:
+            tidied = stop(stack) and tidied
+    # The points are printed either way; a broken stop still fails the run.
+    result = 0 if args.dry_run else report(checks, run_dir)
+    return result if tidied else 1
 
 
-def tidy_up(stack: "Stack", *, keep: bool) -> None:
-    """Save the containers' output and stop them. A failure here is reported and
-    never hides the one that brought us here."""
+def save_output(stack: "Stack") -> bool:
+    """What both telephone containers printed, as pbx.log in the run directory."""
+    if stack.dry_run:
+        return True
     try:
-        if not stack.dry_run:
-            output = stack.compose("logs", "--no-color", "pbx", "softphone")
-            (stack.run_dir / "pbx.log").write_text(output)
-        if not keep:
-            step("Stop the containers")
-            stack.compose("down", "--volumes")
+        output = stack.compose("logs", "--no-color", "pbx", "softphone")
+        (stack.run_dir / "pbx.log").write_text(output)
     except (SpikeError, OSError) as exc:
-        print(f"voice_spike: tidying up failed: {exc}", file=sys.stderr)
+        print(
+            f"voice_spike: saving the containers' output failed: {exc}", file=sys.stderr
+        )
+        return False
+    return True
+
+
+def stop(stack: "Stack") -> bool:
+    step("Stop the containers")
+    try:
+        stack.compose("down", "--volumes")
+    except SpikeError as exc:
+        print(f"voice_spike: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def step(*words: object) -> None:
@@ -264,11 +286,13 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
         span = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
         drained = events(log, "in", "event", "QUEUE_DRAINED")
         spoken = drained[0]["t"] - sent_at(log) if drained else None
+        heard_seconds = span[1] - span[0] if span else 0.0
         checks += [
             (
                 f"{label}: media channel connects",
                 start.get("format") == "slin16"
-                and start.get("optimal_frame_size") == 640,
+                and start.get("optimal_frame_size") == FRAME_BYTES
+                and steady_frames(summary),
                 f"format {start.get('format')}, frame {start.get('optimal_frame_size')} bytes, "
                 f"{summary['frame_interval_ms']} ms between frames",
             ),
@@ -279,10 +303,9 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
             ),
             (
                 f"{label}: audio to the caller",
-                heard == plan.tone_hz and span is not None,
-                f"caller heard {heard} Hz for {span[1] - span[0]:.2f} s"
-                if span
-                else f"heard {heard}",
+                heard == plan.tone_hz
+                and abs(heard_seconds - plan.seconds) <= PACING_TOLERANCE,
+                f"caller heard {heard} Hz for {heard_seconds:.2f} of {plan.seconds} s",
             ),
             (
                 f"{label}: audio from the caller",
@@ -317,6 +340,21 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
             )
         )
     return checks
+
+
+def steady_frames(summary: dict[str, Any]) -> bool:
+    """The caller's audio came as the stream the ear will get: frames of 640 bytes
+    every 20 ms. One shorter frame is allowed, the end of the caller's playback."""
+    sizes = {int(size): count for size, count in summary["frame_bytes"].items()}
+    short = {size: count for size, count in sizes.items() if size != FRAME_BYTES}
+    interval = summary["frame_interval_ms"]
+    return (
+        sizes.get(FRAME_BYTES, 0) > 0
+        and all(size < FRAME_BYTES for size in short)
+        and sum(short.values()) <= 1
+        and interval is not None
+        and abs(interval - FRAME_MS) <= FRAME_MS_TOLERANCE
+    )
 
 
 def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:

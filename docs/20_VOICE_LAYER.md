@@ -220,7 +220,7 @@ the test shows.
 | | |
 |---|---|
 | Start folder | the repository folder in the Ubuntu home directory (or a worktree of it), Ubuntu terminal |
-| The one command | `python3 -m scripts.voice_spike` (about 40 s; `--dry-run` prints the steps, `--keep` leaves the containers running) |
+| The one command | `python3 -m scripts.voice_spike` (about 40 s; `--dry-run` prints the steps, `--keep` leaves the containers running, `--down` stops them again) |
 | Maxi has to have ready | Docker Desktop running with the WSL integration. No account, no `.env` entry, no sudo |
 | What the result looks like | one line `pass` or `FAIL` per point, "28 of 28 points passed", exit code 0; `deploy/asterisk/run/report.json` holds the same list, `pbx.log` next to it the output of both telephone containers |
 
