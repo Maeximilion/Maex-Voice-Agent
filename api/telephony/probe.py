@@ -73,6 +73,7 @@ class ProbeCall:
         self._frame_bytes: Counter[int] = Counter()
         self._first_audio: float | None = None
         self._last_audio: float | None = None
+        self._longest_gap: float | None = None
         self._digits = ""
         out_dir.mkdir(parents=True, exist_ok=True)
         # The extension comes off the wire: only its digits and letters name a file.
@@ -104,6 +105,9 @@ class ProbeCall:
         now = self._elapsed()
         if self._first_audio is None:
             self._first_audio = now
+        if self._last_audio is not None:
+            # The mean alone hides bursts: 0 and 40 ms in turn average 20 too.
+            self._longest_gap = max(self._longest_gap or 0.0, now - self._last_audio)
         self._last_audio = now
         self._bytes_in += len(data)
         self._frame_bytes[len(data)] += 1
@@ -130,6 +134,9 @@ class ProbeCall:
             first_audio_t=self._first_audio,
             frame_bytes={str(size): count for size, count in self._frame_bytes.items()},
             frame_interval_ms=interval,
+            frame_gap_max_ms=None
+            if self._longest_gap is None
+            else round(self._longest_gap * 1000, 2),
             digits=self._digits,
         )
         self._log.close()

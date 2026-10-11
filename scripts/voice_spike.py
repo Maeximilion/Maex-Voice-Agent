@@ -35,7 +35,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from api.telephony.audio import dominant, tone, tone_span
+from api.telephony.audio import dominant, tone, tone_seconds
 from api.telephony.probe import CALLER_TONES, PLANS, STOP_KEY
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -48,11 +48,16 @@ CALL_TIMEOUT_SECONDS = 45
 # Tolerances of the judgement, all in seconds.
 PACING_TOLERANCE = 0.3
 STOP_LIMIT = 0.5
+# The tone may seem to end this much before the flush: the edges of the 20 ms
+# windows in the recording and the start of the playback are not exact.
+STOP_SKEW = 0.1
 HANGUP_LIMIT = 10.0
 # What the media channel delivers at 16 kHz: 640 bytes every 20 ms.
 FRAME_BYTES = 640
 FRAME_MS = 20
 FRAME_MS_TOLERANCE = 2
+# No frame more than two frame times late. Measured on the workbench: 20 to 28 ms.
+FRAME_GAP_LIMIT_MS = 60
 
 Check = tuple[str, bool, str]
 
@@ -283,10 +288,9 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
         summary = log[-1]
         number = f"+4972215550{exten}"
         heard = dominant(call["heard"], probe_tones, LINE_RATE)
-        span = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
+        heard_seconds = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
         drained = events(log, "in", "event", "QUEUE_DRAINED")
         spoken = drained[0]["t"] - sent_at(log) if drained else None
-        heard_seconds = span[1] - span[0] if span else 0.0
         checks += [
             (
                 f"{label}: media channel connects",
@@ -294,7 +298,8 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
                 and start.get("optimal_frame_size") == FRAME_BYTES
                 and steady_frames(summary),
                 f"format {start.get('format')}, frame {start.get('optimal_frame_size')} bytes, "
-                f"{summary['frame_interval_ms']} ms between frames",
+                f"{summary['frame_interval_ms']} ms between frames, "
+                f"longest gap {summary['frame_gap_max_ms']} ms",
             ),
             (
                 f"{label}: caller number arrives",
@@ -344,16 +349,19 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
 
 def steady_frames(summary: dict[str, Any]) -> bool:
     """The caller's audio came as the stream the ear will get: frames of 640 bytes
-    every 20 ms. One shorter frame is allowed, the end of the caller's playback."""
+    every 20 ms on average and no gap longer than FRAME_GAP_LIMIT_MS. One shorter
+    frame is allowed, the end of the caller's playback."""
     sizes = {int(size): count for size, count in summary["frame_bytes"].items()}
     short = {size: count for size, count in sizes.items() if size != FRAME_BYTES}
-    interval = summary["frame_interval_ms"]
+    interval, longest = summary["frame_interval_ms"], summary["frame_gap_max_ms"]
     return (
         sizes.get(FRAME_BYTES, 0) > 0
         and all(size < FRAME_BYTES for size in short)
         and sum(short.values()) <= 1
         and interval is not None
         and abs(interval - FRAME_MS) <= FRAME_MS_TOLERANCE
+        and longest is not None
+        and longest <= FRAME_GAP_LIMIT_MS
     )
 
 
@@ -362,22 +370,23 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
     log, plan = call["log"], PLANS["610"]
     flush = events(log, "out", "command", "FLUSH_MEDIA")
     status = events(log, "in", "event", "STATUS")
-    span = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
-    if not flush or span is None:
+    heard = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
+    if not flush or not heard:
         return [
             (
                 "610: a key stops the playback",
                 False,
-                f"flush sent: {bool(flush)}, tone heard: {span}",
+                f"flush sent: {bool(flush)}, tone heard: {heard:.2f} s",
             )
         ]
-    # How much longer the caller heard the tone than we let it play.
-    overrun = (span[1] - span[0]) - (flush[0]["t"] - sent_at(log))
+    # How much longer the caller heard the tone than we let it play. Less than
+    # that means the tone ended by itself, and the flush stopped nothing.
+    overrun = heard - (flush[0]["t"] - sent_at(log))
     return [
         (
             "610: a key stops the playback",
-            log[-1]["digits"] == STOP_KEY and abs(overrun) <= STOP_LIMIT,
-            f"{plan.seconds} s queued, caller heard {span[1] - span[0]:.2f} s, "
+            log[-1]["digits"] == STOP_KEY and -STOP_SKEW <= overrun <= STOP_LIMIT,
+            f"{plan.seconds} s queued, caller heard {heard:.2f} s, "
             f"stopped {overrun * 1000:.0f} ms after the flush",
         ),
         (
@@ -393,8 +402,7 @@ def judge_hangup(calls: dict[str, dict[str, Any]]) -> list[Check]:
     log, plan = call["log"], PLANS["611"]
     drained = events(log, "in", "event", "QUEUE_DRAINED")
     hangup = events(log, "out", "command", "HANGUP")
-    span = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
-    heard = span[1] - span[0] if span else 0.0
+    heard = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
     return [
         (
             "611: we hang up after everything was spoken",

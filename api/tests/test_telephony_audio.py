@@ -2,7 +2,7 @@
 
 import pytest
 
-from api.telephony.audio import dominant, level, tone, tone_span
+from api.telephony.audio import dominant, level, tone, tone_seconds
 
 RATE = 16000
 
@@ -33,26 +33,26 @@ def test_dominant_is_none_for_a_tone_that_is_no_candidate():
     assert dominant(tone(300, 0.5, RATE), [1000, 1200], RATE) is None
 
 
-def test_tone_span_gives_start_and_end_inside_silence():
+def test_tone_seconds_is_how_long_the_tone_sounds_inside_silence():
     pcm = bytes(RATE * 2) + tone(440, 2.0, RATE) + bytes(RATE)
 
-    start, end = tone_span(pcm, 440, RATE)
-
-    assert start == pytest.approx(1.0, abs=0.03)
-    assert end == pytest.approx(3.0, abs=0.03)
+    assert tone_seconds(pcm, 440, RATE) == pytest.approx(2.0, abs=0.03)
 
 
-def test_tone_span_ignores_another_tone():
+def test_tone_seconds_does_not_count_a_gap_in_the_tone():
+    pcm = tone(440, 0.4, RATE) + bytes(int(3.2 * RATE) * 2) + tone(440, 0.4, RATE)
+
+    assert tone_seconds(pcm, 440, RATE) == pytest.approx(0.8, abs=0.03)
+
+
+def test_tone_seconds_ignores_another_tone():
     pcm = tone(554, 1.0, RATE) + tone(440, 1.0, RATE)
 
-    start, end = tone_span(pcm, 440, RATE)
-
-    assert start == pytest.approx(1.0, abs=0.03)
-    assert end == pytest.approx(2.0, abs=0.03)
+    assert tone_seconds(pcm, 440, RATE) == pytest.approx(1.0, abs=0.03)
 
 
-def test_tone_span_is_none_without_the_tone():
-    assert tone_span(bytes(RATE), 440, RATE) is None
+def test_tone_seconds_is_zero_without_the_tone():
+    assert tone_seconds(bytes(RATE), 440, RATE) == 0.0
 
 
 def test_an_odd_trailing_byte_is_dropped_not_an_error():

@@ -42,22 +42,20 @@ def dominant(pcm: bytes, candidates: Iterable[int], rate: int) -> int | None:
     return best if _level(samples, best, rate) >= FLOOR / 2 else None
 
 
-def tone_span(pcm: bytes, freq_hz: int, rate: int) -> tuple[float, float] | None:
-    """Start and end in seconds of `freq_hz` in `pcm`, None when it never sounds.
+def tone_seconds(pcm: bytes, freq_hz: int, rate: int) -> float:
+    """How long `freq_hz` sounds in `pcm` in total. A gap in the tone is not
+    counted, so a dropout in the middle shortens the result.
 
-    Looked at in windows of 20 ms, one frame of the phone line, so both ends are
-    exact to about that.
+    Looked at in windows of 20 ms, one frame of the phone line; a window the tone
+    only partly fills may not count, so each edge is exact to about that.
     """
     samples = _samples(pcm)
     window = rate // 50
-    hits = [
-        start
+    sounding = sum(
+        _level(samples[start : start + window], freq_hz, rate) >= FLOOR
         for start in range(0, len(samples) - window + 1, window)
-        if _level(samples[start : start + window], freq_hz, rate) >= FLOOR
-    ]
-    if not hits:
-        return None
-    return hits[0] / rate, (hits[-1] + window) / rate
+    )
+    return sounding * window / rate
 
 
 def _samples(pcm: bytes) -> array:

@@ -251,6 +251,12 @@ What the media adapter (T-1.11) and the outage spike (T-10.2) can build on, all 
 - With the voice service not reachable, `Dial` gives up after the connection timeout (2 s set, one
   try) and the dialplan goes on to its next line. That line is where the outage fallback of T-10.2
   belongs.
+- Seen once and not explained for certain: in one run the softphone pressed its key 0.8 s into the
+  call instead of 2 s. The timestamps of both telephone containers in that run do not add up with
+  the probe's clock, and Asterisk's waits follow the wall clock, so a clock step in WSL is the likely
+  cause (the machine had slept for days). The judgement did not depend on it: it uses the probe's
+  monotonic clock and the samples in the recording. For operation it means the server's clock has to
+  be adjusted gradually, not in steps.
 
 ---
 
@@ -260,7 +266,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 
 | Date | Package | What was measured | Result |
 |---|---|---|---|
-| 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run twice, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 19.96 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, a key after 2 s, the caller heard 2.18 s, the tone ended 7 to 12 ms after `FLUSH_MEDIA`, queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
+| 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run several times, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 19.96 ms on average, the longest gap between two frames 20 to 28 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, a key after 2 s, the caller heard 2.18 s, the tone ended 7 to 13 ms after `FLUSH_MEDIA`, queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
 
 ---
 
