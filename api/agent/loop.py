@@ -114,10 +114,14 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
-        # First of all: the request of this very turn carries it already, and a
-        # call that goes to the team right here is logged with what it was about.
-        note_intent(state, user_text)
         reason = escalation.check(user_text)
+        if reason != "complaint":
+            # Before the model and before a handoff: the request of this very
+            # turn carries it already, and a call that goes to the team right
+            # here is logged with what it was about. Not on a complaint: one
+            # about an order is no request for a pickup, and the reason of
+            # the transfer says what that call was.
+            note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 

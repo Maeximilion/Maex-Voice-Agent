@@ -789,6 +789,18 @@ def test_wish_in_a_sentence_that_escalates_is_still_noted(session, state):
     assert state.intent == "pickup"
 
 
+def test_complaint_about_an_order_is_not_logged_as_a_pickup(session, state):
+    """Codex PR #241: the order word in a complaint made the call a pickup in
+    the call log. The reason of the transfer says what such a call was."""
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Ich möchte mich über meine Bestellung beschweren")
+
+    assert result.ended
+    assert state.intent is None
+
+
 def test_model_sees_which_tools_it_called_in_this_turn(session, state):
     """Seen on a real model with pickup orders: it got the result of
     `get_service_status`, did not see that it had asked for it and asked

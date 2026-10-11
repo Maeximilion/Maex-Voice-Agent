@@ -16,6 +16,7 @@ from api.agent.intent import heard
         "Kann ich bei Ihnen auch etwas mitnehmen?",
         "Ich hätte gern was abzuholen",
         "Kann das heute Abend abgeholt werden?",
+        "Etwas zum Mitnehmen für nach Hause, bitte",
         "Haben Sie auch etwas Vegetarisches zum Mitnehmen?",
         "ABHOLUNG",
     ],
@@ -33,6 +34,8 @@ def test_pickup_is_heard(sentence):
         "Haben Sie noch Tische frei?",
         # "ohnehin" begins like "ohne" and rules nothing out (Codex PR #241).
         "Ich möchte ohnehin einen Tisch reservieren",
+        # Going home is no delivery (Codex PR #241).
+        "Bevor wir nach Hause fahren, möchte ich einen Tisch reservieren",
     ],
 )
 def test_a_table_is_heard(sentence):
@@ -123,7 +126,7 @@ def test_ruled_out_cases_depend_on_the_negation_rule(sentence, monkeypatch):
         "Eine Flasche Gran Reserva",
         # "Platz" is no table word: it stands in addresses.
         "Sind Sie das Restaurant am Berliner Platz?",
-        "Konrad-Adenauer-Platz 5",
+        "Beispiel-Platz 5",
         "Platzer ist mein Name",
     ],
 )

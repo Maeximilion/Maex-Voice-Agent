@@ -154,14 +154,15 @@ def apply_state_patch(
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
     this one. It only fills an empty `intent`: a word in a later sentence
-    never replaces what the state holds ("dürfen wir unseren Hund mitnehmen?"
-    in a call about a table), and from the draft on `intent` follows the
-    tools as before. It is also what the call log says the call was about
+    never replaces what the state holds (a side question about taking the dog
+    along, in a call about a table), and from the draft on `intent` follows
+    the tools as before. It is also what the call log says the call was about
     (`agent/outcome.py`).
 
     And never against what the state shows already: a guest who gave a party
-    size and never said "Tisch" asks "können wir die Reste mitnehmen?", and a
-    guest whose order stands in the state asks at which table to wait.
+    size without the word for a table asks whether the leftovers can be taken
+    along, and a guest whose order stands in the state asks at which table to
+    wait.
     ponytail: a guest who changes their mind before a draft, or wants a second
     thing after a booking, keeps the first wish in the state until a tool of
     the other flow drafts. The model reads the change in the sentence itself,
@@ -169,7 +170,7 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     if state.intent is not None or (wish := heard(guest_text)) is None:
         return
     # An order outranks table details, and those a search that may have been
-    # only a question ("haben Sie auch vegetarische Gerichte?").
+    # only a question about the menu.
     if state.cart:
         shown = "pickup"
     elif state.slots.keys() & {"party_size", "reserved_for"}:
