@@ -1,6 +1,7 @@
 """Settings: production refuses to start on a token anyone knows."""
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import ValidationError
@@ -12,9 +13,11 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 LONG_ENOUGH = "k" * 32
 
 
-def _settings(**values: str) -> Settings:
+def _settings(**values: Any) -> Settings:
     # No .env and no process environment: only what the test names.
-    return Settings(_env_file=None, **values)
+    # pydantic-settings takes `_env_file` at runtime; without its mypy plugin
+    # the signature mypy sees holds the fields only.
+    return Settings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
 def test_the_placeholder_is_what_the_example_file_ships():

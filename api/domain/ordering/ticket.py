@@ -29,14 +29,15 @@ from api.models import AuditLog, Order, OutboxEvent
 
 def revision(session: Session, order: Order) -> int:
     """Wie oft das Team die Positionen korrigiert hat."""
-    return session.scalar(
+    # scalar_one: a count without GROUP BY is always exactly one row.
+    return session.execute(
         select(func.count(AuditLog.id)).where(
             AuditLog.tenant_id == order.tenant_id,
             AuditLog.entity == "order",
             AuditLog.entity_id == order.id,
             AuditLog.action == ACTION_CORRECTED,
         )
-    )
+    ).scalar_one()
 
 
 def send_ticket(

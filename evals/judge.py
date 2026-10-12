@@ -192,7 +192,7 @@ def _valid_tool(entry: Any) -> bool:
 def missing_tools(
     wanted: list[Any],
     ok_results: list[tuple[str, dict[str, Any]]],
-    error_results: list[tuple[str, str]] = (),
+    error_results: Sequence[tuple[str, str]] = (),
 ) -> list[Any]:
     """Erwartete Tool-Aufrufe ohne erfolgreiches Ergebnis. Mit `number` nur,
     wenn das Ergebnis genau dieses Gericht betrifft: Allergene der 24 beantworten
@@ -348,7 +348,8 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
 def _reserved_local(session: Session, call, done_res) -> str | None:
     if not done_res or call is None:
         return None
-    zone = session.get(Tenant, call.tenant_id).timezone
+    # get_one: the call's foreign key guarantees the tenant.
+    zone = session.get_one(Tenant, call.tenant_id).timezone
     return to_local(done_res[-1].reserved_for, zone).strftime(LOCAL_MINUTE)
 
 
@@ -388,12 +389,12 @@ def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | Non
         text = fold(value or "")
         return set("".join(ch if ch.isalnum() else " " for ch in text).split())
 
-    def same(key: str) -> bool:
+    def same(key: str, booked: dict[str, str]) -> bool:
         if key in ADDRESS_WORD_KEYS:
-            return words(want[key]) <= words(got.get(key))
-        return norm(want[key]) == norm(got.get(key))
+            return words(want[key]) <= words(booked.get(key))
+        return norm(want[key]) == norm(booked.get(key))
 
-    if got is not None and all(same(k) for k in want):
+    if got is not None and all(same(k, got) for k in want):
         return None
     return f"address: erwartet {want!r}, gebucht {got!r}"
 

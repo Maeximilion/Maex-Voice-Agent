@@ -20,6 +20,7 @@ test:
 
 lint:
 	docker compose exec api ruff check api scripts evals printbridge sim db
+	docker compose exec api mypy
 
 fmt:
 	docker compose exec api ruff format api scripts evals printbridge sim db

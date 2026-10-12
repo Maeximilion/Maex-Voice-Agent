@@ -33,9 +33,9 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import create_engine, update
+from sqlalchemy import CursorResult, create_engine, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
@@ -150,10 +150,15 @@ def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) ->
     """
     if not numbers:
         return
-    changed = session.execute(
-        update(MenuItem)
-        .where(MenuItem.tenant_id == tenant_id, MenuItem.number.in_(numbers))
-        .values(sold_out_until=_end_of_business_day(now))
+    # An UPDATE comes back as a CursorResult; SQLAlchemy 2.1 annotates
+    # Session.execute as the plain Result, which has no rowcount.
+    changed = cast(
+        CursorResult[Any],
+        session.execute(
+            update(MenuItem)
+            .where(MenuItem.tenant_id == tenant_id, MenuItem.number.in_(numbers))
+            .values(sold_out_until=_end_of_business_day(now))
+        ),
     ).rowcount
     if changed != len(set(numbers)):
         raise CaseError(
@@ -292,12 +297,11 @@ def run(
     stamp = stamp or datetime.now(UTC)
 
     own_db = db_url is None
-    if own_db:
-        db_url = create_scratch_db(prefix="maex_eval")
-    engine = create_engine(db_url)
+    url = create_scratch_db(prefix="maex_eval") if db_url is None else db_url
+    engine = create_engine(url)
     try:
         if own_db:
-            migrate(db_url)
+            migrate(url)
         with Session(engine) as session:
             # Kaputte Karte bricht den Lauf ab, statt jeden Fall rot zu zeigen.
             plan = menu_plan()
@@ -305,7 +309,7 @@ def run(
     finally:
         engine.dispose()
         if own_db and not keep_db:
-            drop_scratch_db(db_url)
+            drop_scratch_db(url)
 
     report = RunReport(
         run_at=stamp.isoformat(timespec="seconds"),

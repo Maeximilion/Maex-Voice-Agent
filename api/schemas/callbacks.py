@@ -10,6 +10,7 @@ from api.schemas.common import ToolRequest
 CallbackReason = Literal[
     "complaint", "not_understood", "human_requested", "out_of_scope"
 ]
+CallbackStatus = Literal["open", "done"]
 
 
 class CreateCallbackRequest(ToolRequest):
@@ -20,7 +21,7 @@ class CreateCallbackRequest(ToolRequest):
 
 class CallbackTask(BaseModel):
     callback_id: uuid.UUID
-    status: Literal["open", "done"]
+    status: CallbackStatus
     phone: str
     reason: CallbackReason
     summary: str
