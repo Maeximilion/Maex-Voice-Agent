@@ -163,7 +163,14 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 
 Next to the `test` job (reviewed 12.10.2026, no workflow does the work of another): `docker-smoke` builds the API image and checks health and token auth in the running container; `dependency-review` fails a pull request that adds a dependency with a known high or critical vulnerability; `pr-title` holds the title to Conventional Commits; CodeQL runs as GitHub's default setup (Python, JavaScript, Actions); `projektpflege` maintains the board once a day (`docs/16_GITHUB_PROJECT.md`). Lint covers `api scripts evals printbridge sim db`, the same list in `make lint`. Actions are pinned to a commit SHA with the version as a comment; Dependabot moves both. The `test` job stops after 15 minutes.
 
-**Required checks on `main`** live in the repository settings, not in a workflow: `.github/rulesets/main.json` is the ruleset as it should be (pull request required, no force push, no deletion, and the checks `test`, `docker-smoke`, `title`, `dependency-review` green on the head commit). Without it a red pull request can be merged, and hard rule 4 holds by habit only. Apply it with `gh api -X PUT repos/<owner>/<repo>/rulesets/<id> --input .github/rulesets/main.json`, the id from `gh api repos/<owner>/<repo>/rulesets`. A job renamed in `ci.yml` has to be renamed there too, otherwise the old name never reports and every pull request waits.
+**Required checks on `main`** live in the repository settings, not in a workflow: `.github/rulesets/main.json` is the ruleset as it should be (pull request required, no force push, no deletion, and the checks `test`, `docker-smoke`, `title`, `dependency-review` green on the head commit). Without it a red pull request can be merged, and hard rule 4 holds by habit only. Apply it from the repository folder, on a checkout that has the file. `gh` fills `{owner}` and `{repo}` from the checkout itself; the number is the ruleset's id, which the first command prints:
+
+```bash
+gh api "repos/{owner}/{repo}/rulesets" --jq '.[] | "\(.id) \(.name) \(.enforcement)"'
+gh api -X PUT "repos/{owner}/{repo}/rulesets/24583491" --input .github/rulesets/main.json
+```
+
+A job renamed in `ci.yml` has to be renamed there too, otherwise the old name never reports and every pull request waits.
 
 ---
 
