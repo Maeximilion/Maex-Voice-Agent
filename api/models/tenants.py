@@ -107,6 +107,10 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     __tablename__ = "capacity"
     __table_args__ = (
         CheckConstraint("weekday BETWEEN 0 AND 6", name="ck_capacity_weekday"),
+        # A grid of zero minutes never ends (`CapacityWindow.grid`); zero guests
+        # closes a window for reservations and is a setting (migration 006).
+        CheckConstraint("slot_minutes > 0", name="ck_capacity_slot_minutes"),
+        CheckConstraint("max_guests >= 0", name="ck_capacity_max_guests"),
     )
 
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
