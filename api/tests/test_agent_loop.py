@@ -577,15 +577,19 @@ def test_confirm_of_a_draft_the_guest_never_heard_stays_a_draft(
     llm = confirming(state, then_say="Ich lese es Ihnen noch einmal vor.")
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
-    loop.run_turn(state, "Ja")
+    result = loop.run_turn(state, "Ja")
 
     session.refresh(reservation)
     assert reservation.status == "draft"
-    refused = json.loads(llm.calls[1][2])
-    assert (refused["tool"], refused["ok"]) == ("confirm", False)
-    assert refused["hint"] == HINT_CONFIRM
-    # The model is handed the sentence it has to read out.
-    assert llm.calls[1][1]["readback"].startswith("Ein Tisch für vier Personen")
+    # The model had the sentence in its state and did not say it. On the yes
+    # the core reads the draft out itself and asks the model nothing more
+    # (`guards.reread_on_yes`): its announcement is never spoken.
+    assert llm.calls[0][1]["readback"].startswith("Ein Tisch für vier Personen")
+    assert len(llm.calls) == 1
+    assert result.say == [llm.calls[0][1]["readback"]]
+    logged = session.scalars(select(Call.tool_calls)).one()[-1]
+    assert (logged["name"], logged["ok"]) == ("confirm", False)
+    assert logged["error_code"] == "conflict"
 
 
 def test_confirm_in_the_turn_of_the_draft_stays_a_draft(session, state):

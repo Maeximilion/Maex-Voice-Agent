@@ -1721,3 +1721,98 @@ def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
         120,
         9,
     )
+
+
+# --- A `confirm` without a result, and the guest speaks again -------------------
+# The core refused a yes for a draft nobody heard last and read the draft out
+# itself, without asking the model again (`agent/loop.py`,
+# `guards.reread_on_yes`).
+
+
+def _reread_then_booked(first_confirm: LLMTurn, said_first: str = "Ja") -> RecordingLLM:
+    """A model that talks past the draft and returns `confirm` on the guest's
+    sentence. No result comes back for it: the guest speaks again, says "Ja",
+    and that `confirm` goes through."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                first_confirm,
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, said_first)
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+    return rec
+
+
+def test_a_yes_the_core_answered_with_the_draft_is_no_violation():
+    """The first `confirm` was not carried out and the guest heard the draft:
+    the yes after it is a yes to the draft."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+
+    rec = _reread_then_booked(confirm)
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+    assert rec.recording.confirms == 1
+
+
+def test_a_cart_next_to_that_confirm_is_taken_back_in_the_recording():
+    """The core left the `cart` aside. The recorder saw it first and dropped
+    the draft for it; with the guest's next sentence the draft is back."""
+    other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    confirm = LLMTurn(
+        tool_call=ToolCall("confirm", {"entity_id": "x"}), cart=other_order
+    )
+
+    rec = _reread_then_booked(confirm)
+
+    assert rec.recording.unconfirmed == []
+
+
+def test_a_confirm_without_a_result_on_another_sentence_keeps_its_entry():
+    """Only a yes for a draft that was not read out is answered with the
+    draft. Any other `confirm` whose result never came stays what the
+    recorder took it for, the careful side."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+
+    rec = _reread_then_booked(confirm, said_first="Nein, lieber später.")
+
+    assert rec.recording.unconfirmed == ["Nein, lieber später.", "Ja"]
+
+
+def test_a_yes_before_the_draft_of_the_same_turn_is_no_violation_either():
+    """The guest says "Ja" to the agent's question, and the model drafts and
+    returns `confirm` in that one turn. The core reads the new draft out
+    instead of booking it and gives no result; the transcript may end there
+    (Codex PR #273)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(say="Soll ich das so aufnehmen?"),
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _draft_result())
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1

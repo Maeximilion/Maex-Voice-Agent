@@ -169,7 +169,14 @@ class ConversationLoop:
                     error=str(exc),
                 )
                 return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
-            if turn.state_patch:
+            # Rule 3: a `confirm` on a yes for a draft the guest has not heard
+            # last. The core puts the draft's question itself and ends the
+            # turn (below, once the time limit is checked). Nothing that
+            # stands next to the call is taken: the guest said yes and nothing
+            # else, and a patch, a `cart` or a step on the ladder could drop
+            # the draft or end the call before the question is put.
+            reread = guards.reread_on_yes(state, start, user_text, turn.tool_call)
+            if turn.state_patch and reread is None:
                 # Only what was taken counts as understood: a name outside
                 # `GUEST_SLOTS` is dropped and is no success on the ladder.
                 for field_name in apply_state_patch(state, turn.state_patch):
@@ -182,6 +189,21 @@ class ConversationLoop:
             # team is not reachable (Codex PR #222, P1).
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+
+            if reread is not None and turn.tool_call is not None:
+                # In `calls.tool_calls` like any refused call. The model is
+                # not asked again: its answer could only be replaced.
+                refused = guards.refusal(state, start, user_text, turn.tool_call)
+                assert refused is not None  # `reread_on_yes`: a refused `confirm`
+                log_refused(
+                    self._session,
+                    state.call_id,
+                    state.tenant_id,
+                    turn.tool_call.name,
+                    refused,
+                )
+                guards.note_said(state, reread)
+                return TurnResult(state=state, say=[reread])
 
             if (
                 turn.understanding_failure

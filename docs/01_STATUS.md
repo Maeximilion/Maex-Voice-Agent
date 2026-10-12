@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.2
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.8
 
 ---
 
@@ -379,6 +379,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 12.10.2026 | **After a refused yes the core reads the draft out itself** (on top of #251, eval `reservierung_0032`, companion `reservierung_0033`): a `confirm` on a yes for a draft the guest has not heard last is refused and the turn ends with the draft's sentence, without another model call and without taking a `cart`, a patch or a ladder report that stood next to it (`guards.reread_on_yes`, `agent/loop.py`). Before, the stand-in handed such a call to the team. On a no the model answers itself. A first version asked the model once more and replaced its sentence; three review rounds each found one more side effect of that extra answer, so it was cut. Tests in `api/tests/test_agent_reread.py` for reservations and orders on database, audit log and outbox, and three for the eval recorder in `api/tests/test_evals_runner.py`. Stand-in only, no real model |
 | 12.10.2026 | **Bug: the phone line ignored the tenant's `max_call_seconds`** (audit finding, P2): `call_routing` carries the limit, `CallHandler` passes it to the loop, read once per call. 8 new tests through the whole handler with a clock the test sets (`test_telephony.py`, `test_domain_call_routing.py`): before and after the limit, a tenant above the setting, two tenants, a change that applies from the next call, the callback when nobody is there, an answer that comes after the limit; 6 fail without the fix. No change in the conversation core |
 | 12.10.2026 | **Handover T-10.3 local engines, pull automation, real menu**: PR #245 (speech kit), #247 (pull automation), #248 (spoken total) merged; ear Parakeet v3 on the CPU, mouth Piper thorsten, no clean go (silent wrong numbers 1.5 and 2.1 % against the 2 % limit); the real menu is in the workbench database (173 dishes, "Nummer 9" names the register's dish in the read-back, checked in the text phone); PR #268 (`--menu`, `--judge-only`) merged since |
 | 12.10.2026 | **Handover, security audit and its follow-ups (#249 to #252):** the audit's findings are on `main` in nine pull requests: production exposure (#253), the print bridge (#254), the CI review (#255), draft reservations hold seats only while their call can confirm them (#256, closes #250), a question is no yes and a yes confirms only a draft that was read out with its question (#258, closes #251), impossible dates and the envelope (#262), migration 006 with the bounds on capacity and party size (#263), mypy in CI (#264, closes #249), a hashed lock file and Caddy pinned (#265). #252 stays open; Maxi decided its open points on 12.10.2026, they are item 13 under "What's Next" and a comment on the issue. Not applied yet, by Maxi: the ruleset on `main` (`.github/rulesets/main.json`, docs/13 §6). Not seen working yet: Dependabot on the lock file layout |
@@ -471,6 +472,12 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.8 · 12.10.2026:** Codex review of 998b842 on PR #273: the recorder also knows a yes for a draft made in the same turn
+- **v2.1.7 · 12.10.2026:** Own review of PR #273: the core ends the turn of a refused yes with the draft's sentence and no longer asks the model again
+- **v2.1.6 · 12.10.2026:** Codex review of c0c5005 on PR #273: what stands next to the refused confirm is left aside too, the ladder included, and the recorder counts no held-back call
+- **v2.1.5 · 12.10.2026:** Codex review of 1b8d12b on PR #273: while the draft is read out again, no tool result, cart or patch can drop it
+- **v2.1.4 · 12.10.2026:** Codex review of d9fe3e1 on PR #273: no other tool is carried out before the draft is read out, and the eval recorder follows what the guest hears
+- **v2.1.3 · 12.10.2026:** After a refused yes the core reads the draft out itself, evals reservierung_0032 and 0033 (on top of #251)
 - **v2.1.2 · 12.10.2026:** Audit finding fixed: the phone line ends a call by the tenant's max_call_seconds, read with the routing
 - **v2.1.1 · 12.10.2026:** Real menu imported into the workbench database (173 dishes), handover of 12.10.2026
 - **v2.1.0 · 12.10.2026:** Handover: the security audit is on main in nine pull requests; Maxi's decisions on the open points of #252 are item 13 under What's Next
