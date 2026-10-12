@@ -245,7 +245,9 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
                         "audio_seconds": round(len(audio) / EAR_RATE, 2),
                     }
                 )
-            del hear
+            # Both hold the model: with the cut still alive, the next ear
+            # would load next to this one (Codex PR #268).
+            del hear, fit
         except Exception as exc:  # noqa: BLE001 - whatever an engine raises
             # An engine that does not start or breaks is a result of the spike.
             ears[spec["id"]] = {"error": f"{type(exc).__name__}: {exc}"[:300]}

@@ -952,3 +952,16 @@ def test_the_kits_run_folder_counts_only_where_git_ignores_it(
     (tmp_path / "outside").mkdir()
     (speech / "run").symlink_to(tmp_path / "outside", target_is_directory=True)
     assert kit.main(["--menu", str(menu), "--dry-run"]) == 0
+
+
+# --- Codex review of PR #268, ninth round ------------------------------------------
+
+
+def test_an_empty_row_is_skipped_as_the_import_skips_it(tmp_path):
+    """A spreadsheet leaves rows of separators behind; the import reads past
+    them (`importer._rows`), and so does the kit."""
+    menu = own_menu(
+        tmp_path,
+        "number;name;category;active\n7;Suppe;Suppen;ja\n;;;\n ; ; ; \n8;Salat;Vorspeisen;ja\n",
+    )
+    assert [m["number"] for m in kit.build_plan(None, menu)["menu"]] == ["7", "8"]

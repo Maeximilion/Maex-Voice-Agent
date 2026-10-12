@@ -321,13 +321,13 @@ top of `api/telephony/speech_spike.py`.
 
 ```bash
 # Ubuntu terminal, repository folder (it needs the `.env` every Compose command needs).
-# KASSE is the folder with the register copies; set it to yours. It is mounted read-only.
+# REGISTER_DIR is the folder with the register copies; set it to yours. It is mounted read-only.
 # Exit 1 with the allergen errors is expected.
-KASSE="$HOME/kasse"
+REGISTER_DIR="$HOME/register"
 mkdir -p imports
 docker compose run --rm --no-deps --user "$(id -u):$(id -g)" -e HOME=/tmp \
-  -v "$KASSE:/kasse:ro" -v "$PWD/imports:/app/imports" \
-  api python -m scripts.kasse_to_csv /kasse --out imports
+  -v "$REGISTER_DIR:/register:ro" -v "$PWD/imports:/app/imports" \
+  api python -m scripts.kasse_to_csv /register --out imports
 python3 -m scripts.speech_spike --menu imports/menu_items.csv   # about 45 minutes for 173 dishes
 python3 -m scripts.speech_spike --judge-only                    # after a change to the number rule
 ```

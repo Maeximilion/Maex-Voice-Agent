@@ -289,12 +289,17 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
     with (menu or MENU).open(encoding="utf-8-sig", newline="") as f:
         # Line 1 is the header. What the import refuses is refused here too, or
         # the run would measure a menu that cannot be imported (Codex PR #268).
-        for at, row in enumerate(csv.DictReader(f, delimiter=";"), start=2):
-            # As the import reads the flag (`importer._bool`): " NEIN " is no.
-            if (row.get("active") or "").strip().lower() == "nein":
+        for at, raw in enumerate(csv.DictReader(f, delimiter=";"), start=2):
+            # As the import reads a row (`importer._rows`): a row that ends
+            # early has no value for its last columns, and a row of nothing but
+            # separators is no dish.
+            row = {k: (v or "").strip() for k, v in raw.items() if k is not None}
+            if not any(row.values()):
                 continue
-            # A row that ends early has no value for its last columns.
-            dish = {k: (row[k] or "").strip() for k in ("number", "name", "category")}
+            # As the import reads the flag (`importer._bool`): " NEIN " is no.
+            if row.get("active", "").lower() == "nein":
+                continue
+            dish = {k: row[k] for k in ("number", "name", "category")}
             if not all(dish.values()):
                 # A dish without a name would be "heard" in every transcript.
                 raise ValueError(f"row {at}: number, name and category are required")
