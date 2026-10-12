@@ -28,6 +28,8 @@ from typing import Any
 
 import numpy as np
 
+from api.telephony.speech_spike import terms_that_fit
+
 LINE_RATE = 8000
 EAR_RATE = 16000
 BAND_HZ = (300, 3400)
@@ -103,7 +105,18 @@ def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
             download_root=str(models / "whisper"),
             local_files_only=True,
         )
-        hotwords = ", ".join(key_terms) if spec.get("key_terms") else None
+        terms: list[str] = []
+        if spec.get("key_terms"):
+            # The engine keeps fewer than half its prompt for them, counted
+            # with a leading blank (faster-whisper `get_prompt`).
+            def tokens(text: str) -> int:
+                encoded = model.hf_tokenizer.encode(
+                    " " + text, add_special_tokens=False
+                )
+                return len(encoded.ids)
+
+            terms = terms_that_fit(tokens, key_terms, model.max_length // 2)
+        hotwords = ", ".join(terms) or None
 
         def hear(audio: np.ndarray) -> str:
             segments, _ = model.transcribe(
@@ -114,6 +127,9 @@ def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
             )
             return " ".join(segment.text.strip() for segment in segments)
 
+        if spec.get("key_terms"):
+            # How many of the plan's key terms this ear really got.
+            hear.key_terms = len(terms)  # type: ignore[attr-defined]
         return hear
     if spec["engine"] == "parakeet":
         import onnx_asr
@@ -192,6 +208,8 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
             info: dict[str, Any] = {
                 "load_seconds": round(time.monotonic() - started, 1)
             }
+            if hasattr(hear, "key_terms"):
+                info["key_terms"] = hear.key_terms
             after = gpu_mib() if before is not None else None
             if before is not None and after is not None:
                 info["gpu_mib"] = after - before

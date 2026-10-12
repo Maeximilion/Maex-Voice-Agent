@@ -429,6 +429,12 @@ OWN_MENU = (
 )
 
 
+def own_menu_file() -> Path:
+    import tempfile
+
+    return own_menu(Path(tempfile.mkdtemp()))
+
+
 def own_menu(tmp_path: Path, text: str = OWN_MENU) -> Path:
     path = tmp_path / "menu_items.csv"
     # The register export may start with a byte order mark.
@@ -463,11 +469,19 @@ def test_with_a_menu_file_its_names_and_card_numbers_are_spoken(tmp_path):
     assert len({s["id"] for s in plan["sentences"]}) == len(plan["sentences"])
 
 
-def test_without_a_menu_file_the_plan_names_no_menu_and_no_card_sentences():
+def test_without_a_menu_file_the_plan_holds_the_eval_menu_and_no_card_sentences():
+    """Codex PR #268: a recorded run is judged again with the menu it was
+    recorded with, also when the eval menu has changed since."""
     plan = kit.build_plan(None)
-    assert "menu" not in plan
+    assert plan["own_menu"] is False
+    with kit.MENU.open(encoding="utf-8", newline="") as f:
+        rows = [r for r in csv.DictReader(f, delimiter=";") if r["active"] != "nein"]
+    assert plan["menu"] == [
+        {"number": r["number"], "category": r["category"]} for r in rows
+    ]
     assert not any(s["id"].startswith("c") for s in plan["sentences"])
     assert None not in {s["expect"] for s in plan["sentences"]}
+    assert kit.build_plan(None, own_menu_file())["own_menu"] is True
 
 
 def test_a_limit_shortens_the_card_numbers_as_well(tmp_path):
@@ -598,3 +612,86 @@ def test_a_real_menu_is_not_written_into_a_folder_git_could_track(
     assert kit.main(["--menu", str(menu), "--dry-run"]) == 0
     # Without a menu the eval sentences may go anywhere, as before.
     assert kit.main(["--run-dir", str(inside), "--dry-run"]) == 0
+
+
+# --- Codex review of PR #268, second round ----------------------------------------
+
+
+def test_the_report_of_the_eval_menu_names_no_own_menu(tmp_path, monkeypatch):
+    fake_containers(monkeypatch, "r")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 0
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["own_menu_dishes"] == 0
+
+
+def test_judge_only_removes_the_old_verdict_before_it_judges(
+    tmp_path, monkeypatch, capsys
+):
+    """A judge that breaks must not leave the verdict of the run before: exit 1
+    is also what a no-go returns."""
+    fake_containers(monkeypatch, "w")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 1
+    assert (tmp_path / "judged.json").exists() and (tmp_path / "report.json").exists()
+
+    def broken(command, dry_run, cwd=None):
+        raise kit.SpikeError("the judge broke")
+
+    monkeypatch.setattr(kit, "docker", broken)
+    assert kit.main(["--run-dir", str(tmp_path), "--judge-only"]) == 1
+    assert not (tmp_path / "judged.json").exists()
+    assert not (tmp_path / "report.json").exists()
+    assert (tmp_path / "plan.json").exists() and (tmp_path / "heard.json").exists()
+
+
+def test_dish_names_are_counted_with_and_without_their_key_term(capsys, tmp_path):
+    """An ear's prompt takes a limited number of key terms. The first 2 of the 3
+    names fit: their dishes are counted apart from the one that was heard
+    without its term, or the share would depend on the order of the menu."""
+    plan = kit.build_plan(None)
+    plan["sentences"] = [
+        {"id": "n0", "kind": "number", "say": "Nummer 23", "expect": "23"},
+        *(
+            {"id": f"d{i}", "kind": "dish", "say": "x", "expect": name}
+            for i, name in enumerate(["Edamame", "Gyoza", "Pho Bo"])
+        ),
+    ]
+    plan["key_terms"] = ["Edamame", "Gyoza", "Pho Bo"]
+    plan["ears"] = [{"id": "terms"}]
+    row = {"voice": plan["voices"][0], "ear": "terms", "seconds": 0.1, "on_card": False}
+    judged = [
+        {**row, "id": "n0", "kind": "number", "expect": "23", "verdict": "right"},
+        {**row, "id": "d0", "kind": "dish", "expect": "Edamame", "verdict": "right"},
+        {**row, "id": "d1", "kind": "dish", "expect": "Gyoza", "verdict": "right"},
+        {**row, "id": "d2", "kind": "dish", "expect": "Pho Bo", "verdict": "asked"},
+    ]
+    heard = {
+        "ears": {"terms": {"load_seconds": 1, "key_terms": 2}},
+        "mouths": [
+            {"voice": v, "first_audio_seconds": 0.1, "seconds": 1, "audio_seconds": 2}
+            for v in plan["voices"]
+        ],
+        "turn_end": [],
+    }
+    report = kit.summarize(plan, heard, judged)
+    [ear] = report["ears"]
+    assert ear["key_terms"] == 2 and ear["key_terms_given"] == 3
+    assert ear["dishes_with_term_share"] == 1.0
+    assert ear["dishes_without_term_share"] == 0.0
+    kit.print_report(report, tmp_path)
+    out = capsys.readouterr().out
+    assert "terms: 2 of 3 dish names fit the ear's prompt as key terms" in out
+    assert "100.0 %" in out and "0.0 %" in out
+
+
+def test_only_the_key_terms_that_fit_the_prompt_are_handed_to_the_ear():
+    """Codex PR #268: the engine cuts a prompt that is too long without a word.
+    The bench cuts at a whole term and says how many it kept."""
+
+    def words(text: str) -> int:
+        return len(text.replace(",", " ").split())
+
+    terms = ["Pho Bo", "Edamame", "Gebratene Nudeln", "Gyoza"]
+    assert kit.terms_that_fit(words, terms, limit=4) == ["Pho Bo", "Edamame"]
+    assert kit.terms_that_fit(words, terms, limit=100) == terms
+    assert kit.terms_that_fit(words, terms, limit=1) == []
+    assert kit.terms_that_fit(words, [], limit=4) == []

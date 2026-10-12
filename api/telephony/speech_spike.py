@@ -209,6 +209,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     dry = args.dry_run
     try:
+        if recorded and not dry:
+            # The verdict of the run before must not outlive a judge that
+            # breaks: exit 1 is also what a no-go returns (Codex PR #268).
+            for name in ("judged.json", "report.json"):
+                (run_dir / name).unlink(missing_ok=True)
         if not recorded:
             step("Write the plan into", run_dir)
             if not dry:
@@ -311,9 +316,25 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
         "agent": list(AGENT_SENTENCES),
         "silences_ms": list(SILENCES_MS),
     }
-    if menu:
-        plan["menu"] = [{k: d[k] for k in ("number", "category")} for d in dishes]
+    # The menu the run is judged against travels with it: a recorded run is
+    # judged again (--judge-only) with the numbers it was recorded with, also
+    # when the eval menu has changed since (Codex PR #268).
+    plan["menu"] = [{k: d[k] for k in ("number", "category")} for d in dishes]
+    plan["own_menu"] = menu is not None
     return plan
+
+
+def terms_that_fit(tokens: Any, terms: list[str], limit: int) -> list[str]:
+    """The leading key terms whose list stays under an ear's limit of tokens;
+    `tokens` counts them for a text. The engine cuts a prompt that is too long
+    without a word, in the middle of a term; cut at a whole term, the run knows
+    which dishes were heard with theirs (`speech_bench.load_ear`)."""
+    kept: list[str] = []
+    for term in terms:
+        if tokens(", ".join([*kept, term])) >= limit:
+            break
+        kept.append(term)
+    return kept
 
 
 def gpu_in_docker() -> bool:
@@ -359,7 +380,12 @@ def summarize(
     plan: dict[str, Any], heard: dict[str, Any], judged: list[dict[str, Any]]
 ) -> dict[str, Any]:
     ears = [
-        _ear(spec["id"], heard["ears"].get(spec["id"], {"error": "not run"}), judged)
+        _ear(
+            spec["id"],
+            heard["ears"].get(spec["id"], {"error": "not run"}),
+            judged,
+            len(plan.get("key_terms", [])),
+        )
         for spec in plan["ears"]
     ]
     sampled = {spec["id"] for spec in plan["ears"] if "sample" in spec}
@@ -420,7 +446,7 @@ def summarize(
         "sentences": len(plan["sentences"]),
         "all_sentences": plan["all_sentences"],
         # 0: the eval menu. Else the dishes of the menu given with --menu.
-        "own_menu_dishes": len(plan.get("menu", [])),
+        "own_menu_dishes": len(plan["menu"]) if plan.get("own_menu") else 0,
         "ears": ears,
         "mouths": mouths,
         "turn_end": turn_end,
@@ -445,15 +471,29 @@ def summarize(
 
 
 def _ear(
-    ear_id: str, info: dict[str, Any], judged: list[dict[str, Any]]
+    ear_id: str, info: dict[str, Any], judged: list[dict[str, Any]], given: int = 0
 ) -> dict[str, Any]:
     rows = [r for r in judged if r["ear"] == ear_id]
     numbers = [r for r in rows if r["kind"] == "number"]
     if "error" in info or not numbers:
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     seconds = sorted(r["seconds"] for r in rows)
+    terms: dict[str, Any] = {}
+    if info.get("key_terms") is not None:
+        # Dish d<i> is the i-th key term: only the leading ones fit the ear's
+        # prompt, so the others were heard without their term (Codex PR #268).
+        dishes = [r for r in rows if r["kind"] == "dish"]
+        fit = [r for r in dishes if int(r["id"][1:]) < info["key_terms"]]
+        rest = [r for r in dishes if int(r["id"][1:]) >= info["key_terms"]]
+        terms = {
+            "key_terms": info["key_terms"],
+            "key_terms_given": given,
+            "dishes_with_term_share": _share(fit, "right"),
+            "dishes_without_term_share": _share(rest, "right"),
+        }
     return {
         "id": ear_id,
+        **terms,
         "utterances": len(rows),
         "right_share": _share(numbers, "right"),
         "asked_share": _share(numbers, "asked"),
@@ -523,6 +563,14 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
             f"{e['median_seconds']:>10.2f}{e['p95_seconds']:>8.2f}"
             f"{e['load_seconds']:>8}{e['gpu_mib'] if e['gpu_mib'] is not None else '-':>9}"
         )
+    for e in report["ears"]:
+        if e.get("key_terms") is not None:
+            print(
+                f"{e['id']}: {e['key_terms']} of {e['key_terms_given']} dish names fit "
+                f"the ear's prompt as key terms; dish names right with their term "
+                f"{pct(e['dishes_with_term_share']).strip()}, without "
+                f"{pct(e['dishes_without_term_share']).strip()}"
+            )
     step("Mouths: speed, and card numbers the best ear understood from the voice")
     print(f"{'voice':<26}{'first audio s':>14}{'x real time':>13}{'understood':>12}")
     for m in report["mouths"]:
