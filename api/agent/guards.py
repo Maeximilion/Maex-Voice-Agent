@@ -8,7 +8,10 @@ tool result with a `hint`. It costs one of the turn's tool hops, so a model
 that insists ends in the handoff to the team, not in a booking.
 
 - Rule 3: `confirm` only when the guest's current sentence is an explicit yes
-  to the draft that was read back before this turn.
+  to the draft that was read back before this turn. Read back means that the
+  last sentence the guest heard was the draft's `readback` (`note_said`,
+  `consent.read_out`). A draft the model built and then talked past is none,
+  and neither is one that was read out before another question (#251).
 - Rule 2: `draft_order` only with dishes from a clear match of `search_menu`,
   or from candidates of an unclear match that the guest heard by name. The
   same holds for the order a model keeps across turns (`cart`, `take_cart`):
@@ -31,7 +34,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from api.agent.consent import is_yes
+from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.guest_details import (
     e164,
@@ -52,7 +55,8 @@ from api.domain.menu.items import option_key
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
     "Abgelehnt: kein ausdrückliches Ja des Gastes auf den zuletzt vorgelesenen "
-    "Entwurf. Erst den readback vorlesen, dann auf ein klares Ja warten."
+    "Entwurf. Erst den readback wörtlich vorlesen (steht im Zustand, solange er "
+    "nicht vorgelesen ist), dann auf ein klares Ja warten."
 )
 HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
@@ -106,12 +110,23 @@ class TurnStart:
 
 
 def begin_turn(state: ConversationState) -> TurnStart:
-    """Call once per guest turn, before the model."""
-    return TurnStart(readback_id=_readback_id(state))
+    """Call once per guest turn, before the model. A draft whose sentence the
+    guest has not heard was not read back, whatever the stage says."""
+    return TurnStart(readback_id=_readback_id(state) if state.readback_heard else None)
 
 
 def note_said(state: ConversationState, say: str) -> None:
-    """Call with the sentence that ends a turn. A candidate of an unclear
+    """Call with the sentence that ends a turn. It decides two things the
+    guest's next sentence is measured against: whether the draft that waits
+    for its yes was read out (rule 3), and which offered dishes were named
+    (rule 2).
+
+    Only the last sentence counts. A side question the model answers after
+    the read-back takes it back: the guest's next "Ja" would follow that
+    answer. The model then reads the draft out again, and finds the sentence in
+    its state for that (`ConversationState.to_prompt_json`).
+
+    A candidate of an unclear
     search may enter an order only once the guest heard it: by its full name
     or as "Nummer <card number>". A model that does not pass the offer on and
     asks for something else makes no candidate usable (Codex PR #222, P1).
@@ -123,6 +138,7 @@ def note_said(state: ConversationState, say: str) -> None:
     And whether the sentence asked for the guest's number: then the digits of
     the answer are a number to call without a word that says so
     (`state.note_guest_details`)."""
+    state.readback_heard = state.readback is not None and read_out(say, state.readback)
     state.asked_for_phone = names_a_phone_number(say)
     heard = say.lower()
     named = {

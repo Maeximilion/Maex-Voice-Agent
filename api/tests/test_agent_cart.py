@@ -98,16 +98,23 @@ def line(item_id, quantity=1, **fields):
     return {"menu_item_id": item_id, "quantity": quantity, **fields}
 
 
+# Names no dish on purpose: a read-back also counts as naming offered dishes.
+READ_OUT = "Ihre Bestellung zur Abholung, auf den Namen Müller. Passt das so?"
+
+
 def order_read_back(state, *lines):
     """A state in which an order with these lines was read to the guest."""
     order_id = uuid.uuid4()
     apply_tool_result(
         state,
         "draft_order",
-        ToolResult(ok=True, data={"order_id": str(order_id)}),
+        ToolResult(ok=True, data={"order_id": str(order_id), "readback": READ_OUT}),
         {"type": "pickup", "items": list(lines)},
     )
     assert state.stage == "readback_pending"
+    # Read to the guest means spoken: without the sentence a yes confirms
+    # nothing (guards.note_said, #251).
+    note_said(state, READ_OUT)
     return str(order_id)
 
 

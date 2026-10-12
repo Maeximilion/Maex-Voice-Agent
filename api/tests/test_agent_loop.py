@@ -469,11 +469,18 @@ def test_model_failure_after_a_tool_call_still_hands_over(session, state):
 READBACK_TURN = "Einen Tisch für vier morgen um sieben auf Müller"
 
 
-def read_back_reservation(session, state):
-    """One guest turn that ends with a draft read back to the guest."""
-    llm = FakeLLM(
-        [
-            LLMTurn(
+class DraftsATable:
+    """Drafts the table, then speaks. Without `then_say` it reads the sentence
+    of the tool result out word for word, as the prompt asks."""
+
+    def __init__(self, then_say: str | None = None):
+        self._then_say = then_say
+        self.calls: list[tuple[str, dict, str]] = []
+
+    def next_turn(self, system_prompt, state_json, input_text):
+        self.calls.append((system_prompt, state_json, input_text))
+        if len(self.calls) == 1:
+            return LLMTurn(
                 tool_call=ToolCall(
                     "create_reservation",
                     {
@@ -483,10 +490,14 @@ def read_back_reservation(session, state):
                         "reserved_for": "2026-09-16T19:00:00+02:00",
                     },
                 )
-            ),
-            LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?"),
-        ]
-    )
+            )
+        return LLMTurn(say=self._then_say or json.loads(input_text)["data"]["readback"])
+
+
+def read_back_reservation(session, state, then_say: str | None = None):
+    """One guest turn that ends with a draft read back to the guest, or, with
+    `then_say`, with a draft and another sentence."""
+    llm = DraftsATable(then_say)
     ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0])).run_turn(
         state, READBACK_TURN
     )
@@ -545,6 +556,36 @@ def test_confirm_after_a_yes_books(session, state):
     session.refresh(reservation)
     assert reservation.status == "confirmed"
     assert state.stage == "confirmed"
+
+
+@pytest.mark.parametrize(
+    "instead",
+    [
+        # Another question: the yes answers that one.
+        "Darf es sonst noch etwas sein?",
+        # A read-back in the model's own words, with the name left out.
+        "Ein Tisch für vier morgen um sieben. Passt das so?",
+    ],
+)
+def test_confirm_of_a_draft_the_guest_never_heard_stays_a_draft(
+    session, state, instead
+):
+    """#251: the model drafts and then says something else than the sentence of
+    the draft. A "Ja" after that is no yes to the table, whatever the model
+    does with it."""
+    reservation = read_back_reservation(session, state, then_say=instead)
+    llm = confirming(state, then_say="Ich lese es Ihnen noch einmal vor.")
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Ja")
+
+    session.refresh(reservation)
+    assert reservation.status == "draft"
+    refused = json.loads(llm.calls[1][2])
+    assert (refused["tool"], refused["ok"]) == ("confirm", False)
+    assert refused["hint"] == HINT_CONFIRM
+    # The model is handed the sentence it has to read out.
+    assert llm.calls[1][1]["readback"].startswith("Ein Tisch für vier Personen")
 
 
 def test_confirm_in_the_turn_of_the_draft_stays_a_draft(session, state):

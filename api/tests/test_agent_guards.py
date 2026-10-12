@@ -24,11 +24,34 @@ def new_state(**fields):
     return ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), **fields)
 
 
+READBACK = (
+    "Ein Tisch für vier Personen morgen um sieben Uhr, auf den Namen Müller. "
+    "Passt das so?"
+)
+
+
 def read_back(entity="reservation"):
     """A state in which a draft was read to the guest in an earlier turn."""
     draft_id = uuid.uuid4()
-    state = new_state(stage="readback_pending", **{f"{entity}_id": draft_id})
+    state = new_state(
+        stage="readback_pending",
+        readback=READBACK,
+        readback_heard=True,
+        **{f"{entity}_id": draft_id},
+    )
     return state, str(draft_id)
+
+
+def drafted():
+    """A state right after the draft tool answered: nothing was said yet."""
+    state = new_state()
+    draft_id = str(uuid.uuid4())
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": draft_id, "readback": READBACK}),
+    )
+    return state, draft_id
 
 
 def confirm(entity_id, entity="reservation"):
@@ -187,10 +210,264 @@ def test_confirm_without_any_draft_is_refused():
         ("Nein, ja doch nicht", False),
         ("Im Januar", False),
         ("", False),
+        # A question asks whether it is right, it does not say so (#251).
+        ("Ist das richtig?", False),
+        ("Stimmt das so?", False),
+        ("Passt das?", False),
+        ("Ja?", False),
+        ("Ja, passt das so?", False),
+        # Speech recognition drops the question mark: verb before "das" or "es"
+        # is the word order of a question.
+        ("Ist das richtig", False),
+        ("Ist das okay", False),
+        ("Stimmt das so", False),
+        ("Passt das", False),
+        ("Ist es so richtig", False),
+        ("Ja ist das richtig", False),
+        # "alles" after "ist" asks as well.
+        ("Ist alles richtig", False),
+        ("Ist alles in Ordnung", False),
+        ("Ja ist alles korrekt", False),
+        # The same words as a statement stay a yes.
+        ("Das ist richtig.", True),
+        ("Das stimmt so.", True),
+        ("Das passt.", True),
+        ("Ja, das passt so.", True),
+        ("Passt.", True),
+        ("Stimmt.", True),
+        ("Ja, es ist alles richtig.", True),
+        ("Genau, das ist es.", True),
+        ("Ja, das stimmt alles.", True),
+        ("Ja, es passt alles.", True),
+        ("Ja, es ist alles richtig so.", True),
+        # "Passt alles" and "Stimmt alles" are a yes with the "es" left out,
+        # the first one word for word from the eval targets (abholung_0064).
+        ("Ja, passt alles.", True),
+        ("Passt alles", True),
+        ("Stimmt alles so", True),
+        # Punctuation is not spoken: a comma between verb and subject changes
+        # nothing about the question (Codex, PR #258). The end of a sentence
+        # does: what follows is a statement of its own.
+        ("Stimmt, das so", False),
+        ("Ist, das richtig", False),
+        ("Ja, stimmt, das so", False),
+        ("Stimmt. Das passt.", True),
+        ("Ja. Das stimmt so.", True),
+        # With another word in the first place the verb comes second: a
+        # statement, whatever follows the verb (Codex, PR #258).
+        ("Natürlich ist das richtig.", True),
+        ("Ja, natürlich passt das so.", True),
+        ("Genau so ist das richtig.", True),
+        ("Sicher stimmt das.", True),
+        # An assent or a thanks in front stands outside the clause.
+        ("Genau, ist das richtig", False),
+        ("Danke, passt das so", False),
+        # No verb at all: "Alles richtig" asks as often as it answers, and the
+        # text has no voice (Codex, PR #258). A yes only with a word that
+        # cannot ask next to it.
+        ("Alles richtig", False),
+        ("Alles korrekt so", False),
+        ("Alles okay", False),
+        ("Alles so richtig, danke", False),
+        ("Ja, alles richtig", True),
+        ("Genau, alles korrekt so.", True),
+        ("Alles richtig. Passt.", True),
+        # No subject: "Ist so richtig" is "Ist das so richtig?" as much as
+        # "Das ist so richtig" (Codex, PR #258). The same rule.
+        ("Ist so richtig", False),
+        ("Ist richtig", False),
+        ("Ist okay so", False),
+        ("Danke, ist okay", False),
+        ("Ja, ist okay.", True),
+        ("Ja, ist so richtig.", True),
+        # Verbs that are an assent themselves need no subject.
+        ("Passt so.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):
     assert is_yes(text) is yes
+
+
+# --- Rule 3: a yes confirms only what the guest heard (#251) ---------------------
+
+
+def test_confirm_of_a_draft_that_was_never_read_out_is_refused():
+    """The model drafts, then asks something else. The guest's "Ja" answers
+    that question, not a table and a time they never heard."""
+    state, draft_id = drafted()
+    note_said(state, "Darf es sonst noch etwas sein?")
+
+    start = begin_turn(state)
+
+    assert start.readback_id is None
+    assert refusal(state, start, "Ja", confirm(draft_id))
+
+
+def test_confirm_after_the_sentence_was_spoken_is_let_through():
+    state, draft_id = drafted()
+    note_said(state, READBACK)
+
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+BODY = READBACK.removesuffix(" Passt das so?")
+
+
+@pytest.mark.parametrize(
+    ("said", "heard"),
+    [
+        (READBACK, True),
+        (f"Ich wiederhole: {READBACK}", True),
+        # In front of the read-back: polite words, or a sentence that has ended.
+        (f"Gerne, {READBACK}", True),
+        (f"Gerne, zur Kontrolle: {READBACK}", True),
+        (f"Also {READBACK}", True),
+        # A lead-in is a whole phrase. One word of it in front of the draft
+        # changes what is said: "Noch ein Tisch ..." is another table (Codex,
+        # PR #258).
+        (f"Noch {READBACK}", False),
+        (f"Also noch {READBACK}", False),
+        (f"Ich wiederhole noch {READBACK}", False),
+        # A sentence of its own in front may say anything about the draft, and
+        # punctuation is no proof that it does not (Codex, PR #258).
+        (f"Wir haben bis 22 Uhr geöffnet. {READBACK}", False),
+        (f"Das ist falsch: {READBACK}", False),
+        (f"Das ist falsch: {BODY}.", False),
+        # Words that run into the read-back change what it says (Codex, PR
+        # #258): "Einmal statt zweimal ..." is another order.
+        (f"Leider nicht {READBACK}", False),
+        (f"Statt {READBACK}", False),
+        (f"Nicht wie besprochen {READBACK}", False),
+        (READBACK.upper(), True),
+        (READBACK.replace(",", "").replace(".", " "), True),
+        # The closing question may be the model's own; the content may not.
+        (f"{BODY} Ist das so richtig?", True),
+        (f"{BODY} Stimmt das?", True),
+        # Without the question for the yes, a "Ja" answers nothing.
+        (BODY, False),
+        # A question of filler words alone asks something else.
+        (f"{BODY}. Ist es sicher?", False),
+        # An assent word in another role: "richtig" means "really" here, and
+        # the question is about safety (Codex, PR #258). Only fixed forms ask
+        # for the yes.
+        (f"{BODY}. Ist es richtig sicher?", False),
+        (f"{BODY}. Passt das wirklich so?", False),
+        (f"{BODY}. Stimmt das so und passt es?", False),
+        (f"{BODY}. Passt es so?", True),
+        (f"{BODY}. Ist das korrekt?", True),
+        (f"{BODY}. Ist das in Ordnung so?", False),
+        # Another question after the read-back: the yes would answer that one.
+        (f"{READBACK} Möchten Sie noch einen Hochstuhl?", False),
+        (f"{BODY} Möchten Sie noch einen Hochstuhl?", False),
+        (f"{READBACK} Und zu trinken?", False),
+        # The name left out, a number changed, half of it: not the draft.
+        ("Ein Tisch für vier Personen morgen um sieben Uhr. Passt das so?", False),
+        (READBACK.replace("vier", "zwei"), False),
+        (READBACK.replace("Müller", "Möller"), False),
+        ("Ein Tisch für vier Personen. Passt das so?", False),
+        ("Passt das so?", False),
+        ("", False),
+    ],
+)
+def test_the_guest_heard_the_draft_when_its_words_were_spoken(said, heard):
+    state, _ = drafted()
+
+    note_said(state, said)
+
+    assert state.readback_heard is heard
+
+
+def test_a_read_back_that_is_one_question_has_to_be_spoken_whole():
+    """Nothing to cut when the sentence has no part before its question."""
+    state, _ = drafted()
+    state.readback = "Zweimal die 47 zur Abholung, richtig?"
+
+    note_said(state, "Richtig?")
+    assert not state.readback_heard
+
+    note_said(state, "Zweimal die 47 zur Abholung, richtig?")
+    assert state.readback_heard
+
+
+def test_only_the_last_sentence_counts_as_the_read_back():
+    """Read out, then a side question answered: the guest's next "Ja" follows
+    the answer, not the draft. The model has to read it out again, and gets the
+    sentence for it."""
+    state, draft_id = drafted()
+    note_said(state, READBACK)
+    assert state.readback_heard
+
+    note_said(state, "Wir haben bis 22 Uhr geöffnet.")
+
+    assert not state.readback_heard
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+    assert state.to_prompt_json()["readback"] == READBACK
+
+    note_said(state, f"Wir haben bis 22 Uhr geöffnet. {READBACK}")
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
+    note_said(state, f"Gern. {READBACK}")
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+def test_a_booked_draft_is_not_handed_to_the_model_again():
+    """After the yes the closing sentence is not the read-back. The sentence of
+    the booked draft must not go back to the model as one it still has to read
+    out (Codex, PR #258)."""
+    state, _ = drafted()
+    note_said(state, READBACK)
+    apply_tool_result(state, "confirm", ToolResult(ok=True, data={}))
+
+    note_said(state, "Vielen Dank, bis morgen.")
+
+    assert state.readback is None
+    assert "readback" not in state.to_prompt_json()
+
+
+def test_the_sentence_goes_to_the_model_only_while_a_draft_waits():
+    state, _ = drafted()
+    state.stage = "collecting"
+
+    assert "readback" not in state.to_prompt_json()
+
+
+def test_a_new_draft_has_to_be_read_out_again():
+    state, _ = read_back()
+    assert state.readback_heard
+
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(
+            ok=True,
+            data={"reservation_id": str(uuid.uuid4()), "readback": "Ein neuer Satz."},
+        ),
+    )
+
+    assert state.readback == "Ein neuer Satz."
+    assert not state.readback_heard
+
+
+def test_a_dropped_draft_takes_its_sentence_with_it():
+    """A new slot check after the read-back drops the draft (state.py); the old
+    sentence must not count as heard for whatever comes next."""
+    state, _ = read_back()
+
+    apply_tool_result(state, "check_slot", ToolResult(ok=True, data={}))
+
+    assert state.readback is None
+    assert not state.readback_heard
+
+
+def test_the_model_gets_the_sentence_until_the_guest_heard_it():
+    """After a refused `confirm` the model has to read the draft out, and it
+    keeps nothing between turns. Once heard, the sentence is not sent again."""
+    state, _ = drafted()
+    assert state.to_prompt_json()["readback"] == READBACK
+
+    note_said(state, READBACK)
+
+    assert "readback" not in state.to_prompt_json()
 
 
 # --- Rule 2: an order only takes ids from a clear match or the guest's choice ---
