@@ -1720,3 +1720,142 @@ def test_a_repeated_heard_number_picks_neither_of_two_offered_dishes(session, su
     assert "Meinen Sie" in " ".join(turns[2].say)
     [order] = orders(session)
     assert [n for n, _, _ in positions(session, order)] == ["12"]
+
+
+# --- A correction at the read-back (eval abholung_0079) ---------------------------
+
+
+def _vorgelesen(session, tenant, bestellung: list[str], *danach: str):
+    """An order up to its read-back, then what the guest says to it."""
+    return replay(
+        session,
+        case(
+            "Ich moechte etwas zum Abholen bestellen.",
+            *bestellung,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            *danach,
+        ),
+        tenant,
+        now=NOW,
+    )
+
+
+def _booked(session) -> list[list[tuple[str, int, list]]]:
+    return [
+        [(n.lower(), q, opts) for n, q, opts in positions(session, order)]
+        for order in orders(session)
+        if order.status == "confirmed"
+    ]
+
+
+def test_a_number_named_at_the_readback_replaces_the_dish_with_the_same_digits(
+    session, sushi
+):
+    """Maxi, 12.10.2026: "Falsch, ich meinte die Nummer 25c". The ear lost or
+    changed the letter; the guest names the right number, that one dish is
+    replaced, quantity and the rest of the order stay, and the new order is
+    read back before any yes."""
+    _, turns = _vorgelesen(
+        session,
+        sushi,
+        ["Zweimal die 25.", "Und noch die 13."],
+        "Falsch, ich meinte die Nummer 25g.",
+        "Ja.",
+    )
+    again = " ".join(turns[-2].say)
+    assert "Zweimal Nummer 25g" in again and "Einmal Nummer 13" in again
+    assert again.endswith("Passt das so?")
+    assert _booked(session) == [[("25g", 2, []), ("13", 1, [])]]
+    # The order that was read back first is never confirmed (rule 3).
+    assert sorted(o.status for o in orders(session)) == ["confirmed", "draft"]
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("Nein, ich meinte die 24.", "24"),
+        ("Falsch, die Nummer 24.", "24"),
+        ("Nein, die vierundzwanzig bitte.", "24"),
+    ],
+)
+def test_with_one_dish_in_the_order_any_named_number_replaces_it(
+    session, tenant, said, number
+):
+    _vorgelesen(session, tenant, ["Die 23."], said, "Ja.")
+    assert _booked(session) == [[(number, 1, [])]]
+
+
+def test_the_s_number_meant_instead_of_the_plain_one_replaces_it(session, sushi):
+    """ "S zwölf" heard as 12: at the read-back the guest hears the soup."""
+    _vorgelesen(session, sushi, ["Die 12."], "Nein, ich meinte die S 12.", "Ja.")
+    assert _booked(session) == [[("s12", 1, [])]]
+
+
+def test_a_correction_keeps_the_note_and_takes_a_quantity_that_is_said(session, tenant):
+    _vorgelesen(
+        session, tenant, ["Die 23 ohne Karotten."], "Nein, zweimal die 24.", "Ja."
+    )
+    assert _booked(session) == [[("24", 2, [])]]
+    [order] = [o for o in orders(session) if o.status == "confirmed"]
+    assert _notes(session, order) == ["ohne Karotten"]
+
+
+def test_a_second_correction_replaces_again(session, tenant):
+    _vorgelesen(
+        session,
+        tenant,
+        ["Die 23."],
+        "Nein, ich meinte die 24.",
+        "Nein, ich meinte die 13.",
+        "Ja.",
+    )
+    assert _booked(session) == [[("13", 1, [])]]
+    assert sorted(o.status for o in orders(session)) == ["confirmed", "draft", "draft"]
+
+
+@pytest.mark.parametrize(
+    ("bestellung", "said"),
+    [
+        # Two dishes and a number that stands for neither: which one is meant?
+        (["Die 23.", "Und noch die 13."], "Nein, ich meinte die 47."),
+        # Not on the menu.
+        (["Die 23."], "Nein, ich meinte die 99."),
+        # The number that was read back already: nothing to replace.
+        (["Die 23."], "Nein, ich meinte die 23."),
+        # Two numbers, or none: not one clear correction.
+        (["Die 23."], "Nein, die 24 oder die 13."),
+        (["Die 23."], "Nein, das stimmt nicht."),
+        (["Die 23."], "Nein."),
+        # A number that is no card number: a time, a duration.
+        (["Die 23."], "Nein, um 13 Uhr."),
+        (["Die 23."], "Nein, in 24 Minuten."),
+        # One more dish is no replacement, and "nicht" takes a dish away.
+        (["Die 23."], "Nein, und noch die 13."),
+        (["Die 23."], "Nein, die 13 auch."),
+        (["Die 23."], "Nein, die 24 nicht."),
+    ],
+)
+def test_a_no_that_is_no_clear_correction_starts_the_order_again(
+    session, tenant, bestellung, said
+):
+    """Never a guess: as before, the order is taken anew and nothing is booked."""
+    _, turns = _vorgelesen(session, tenant, bestellung, said, "Ja.")
+    assert "Dann noch einmal von vorn" in " ".join(turns[-2].say)
+    assert _booked(session) == []
+
+
+def test_a_corrected_dish_with_a_mandatory_choice_asks_for_it(session, tenant):
+    """The 47 needs its meat: the choice is asked, never preset."""
+    _, turns = _vorgelesen(
+        session,
+        tenant,
+        ["Die 23."],
+        "Nein, ich meinte die 47.",
+        "Huhn.",
+        "Nein, das wars.",
+        "Ja.",
+    )
+    assert "Huhn" in " ".join(turns[-4].say)
+    assert _booked(session) == [[("47", 1, ["Huhn"])]]
