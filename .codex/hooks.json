@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash 'C:\\Users\\Maxi\\Documents\\GitHub\\Maex-Voice-Agent\\.codex\\hooks\\sync_main.sh'",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}
