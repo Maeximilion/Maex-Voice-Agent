@@ -165,6 +165,14 @@ class RecordingLLM:
             self.recording.ok_results.append(
                 (str(result.get("tool")), result.get("data") or {})
             )
+            if result.get("tool") == "confirm":
+                # Booked: no draft waits any more, as in the state of the core
+                # (`agent/state.py`). The sentence said once more in the
+                # closing answer is no read-back a second yes could follow.
+                self.recording.readback = None
+                self._drop_draft()
+                if call is not None and call[1].get("entity") == "order":
+                    self._cart = []
             if call is not None and call[0] == result.get("tool"):
                 self.recording.ok_calls.append(call)
         elif result.get("error_code"):

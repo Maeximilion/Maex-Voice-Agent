@@ -149,13 +149,25 @@ def _asks(lowered: str) -> bool:
     ]
     if any(_verb_first(sentence.split()) for sentence in sentences):
         return True
-    # "Alles richtig" has no verb to go by: it is the short form of the question
-    # "Ist alles richtig?" as much as of the answer, and text has no voice that
-    # rises or falls. It counts as a yes only next to a word that cannot ask.
+    # Two short forms leave out what would tell them apart. "Alles richtig" has
+    # no verb: the question "Ist alles richtig?" as much as the answer. "Ist so
+    # richtig" has no subject: "Ist das so richtig?" as much as "Das ist so
+    # richtig". Text has no voice that rises or falls, so either counts as a
+    # yes only next to a word that cannot ask ("Ja, ist okay").
     words = {word for sentence in sentences for word in sentence.split()}
     return not words & _PLAIN_YES and any(
-        _ELLIPTIC.search(sentence) for sentence in sentences
+        _ELLIPTIC.search(sentence) or _opens_with_ist(sentence.split())
+        for sentence in sentences
     )
+
+
+def _opens_with_ist(words: list[str]) -> bool:
+    """ "Ist ..." as the first word of its clause, an assent or a thanks in
+    front not counted: the verb without a subject before it."""
+    at = 0
+    while at < len(words) and (words[at] in _YES or words[at] in _OUTSIDE_THE_CLAUSE):
+        at += 1
+    return at < len(words) and words[at] == "ist"
 
 
 def _verb_first(words: list[str]) -> bool:
