@@ -132,11 +132,7 @@ def note_said(state: ConversationState, say: str) -> None:
     "Möchten Sie am Fenster sitzen?", or after the answer to a question in
     between, is a yes to that."""
     state.asked_for_phone = names_a_phone_number(say)
-    state.readback_asked = (
-        state.stage == "readback_pending"
-        and bool(state.readback)
-        and say.rstrip().endswith(state.readback)
-    )
+    state.readback_asked = _ends_with_readback(state, say)
     heard = say.lower()
     named = {
         item_id
@@ -328,9 +324,18 @@ def read_out(state: ConversationState, say: str) -> str:
     without the question it answers; and what the guest agrees to is the
     sentence from the database, total included (CLAUDE.md §2 rules 1 and 3)."""
     readback = unheard_readback(state)
-    if readback and not say.rstrip().endswith(readback):
+    if readback and not _ends_with_readback(state, say):
         return readback
     return say
+
+
+def _ends_with_readback(state: ConversationState, say: str) -> bool:
+    """The readback of the draft that waits is the last thing in `say`."""
+    return (
+        state.stage == "readback_pending"
+        and bool(state.readback)
+        and say.rstrip().endswith(state.readback)
+    )
 
 
 def _readback_id(state: ConversationState) -> str | None:

@@ -173,6 +173,29 @@ def test_only_a_sentence_that_ends_with_the_readback_keeps_its_question_open(
     assert (unheard_readback(state) is None) is open_question
 
 
+def test_blanks_around_a_readback_do_not_keep_it_from_being_heard():
+    state = new_state()
+    draft_id = str(uuid.uuid4())
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(
+            ok=True, data={"reservation_id": draft_id, "readback": f" {READBACK}\n"}
+        ),
+    )
+    note_said(state, read_out(state, "Alles klar."))
+    start = begin_turn(state)
+
+    assert refusal(state, start, "Ja", confirm(draft_id)) is None
+
+
+def test_the_readback_and_its_flag_never_go_to_the_model():
+    state, _ = read_back()
+
+    assert READBACK not in str(state.to_prompt_json())
+    assert not {"readback", "readback_asked"} & state.to_prompt_json().keys()
+
+
 def test_the_same_draft_made_again_has_to_be_read_out_again():
     state, draft_id = read_back()
     apply_tool_result(

@@ -397,7 +397,8 @@ def _awaits_readback(state: ConversationState, result: ToolResult) -> None:
     """A new draft, or the same one drafted again: nobody has heard its
     readback yet, whatever was read out before."""
     state.stage = "readback_pending"
-    state.readback = result.data.get("readback")
+    # Without blanks around it: what was said is compared with it at its end.
+    state.readback = (result.data.get("readback") or "").strip() or None
     state.readback_asked = False
 
 
