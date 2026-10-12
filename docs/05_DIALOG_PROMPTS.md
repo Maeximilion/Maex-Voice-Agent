@@ -79,8 +79,8 @@ PR #127). Das gilt für Reservierung und Abholung.
    belegt    → Alternativen aus dem Tool anbieten (max. 2) → erneut check_slot
    geschlossen → `say` vorlesen (fragt nach anderer Uhrzeit, keine Alternative) → erneut check_slot
    nichts    → create_callback
-   team_callback → der Kern legt den Rückruf selbst an (Satz des Tools, dann der Satz des Rückrufs), der Anruf endet; ohne Rufnummer fragt das Modell danach, der Kern legt an, sobald sie genannt ist
-   zu weit im Voraus → `say` vorlesen (nennt die Grenze, fragt nach einem früheren Tag) → erneut check_slot
+   team_callback → the core creates the callback itself (the tool's sentence, then the callback's), the call ends; without a number the model asks for one and the core creates the callback in the turn that brings it
+   too far ahead → read out `say` (names the limit, asks for an earlier day) → check_slot again
 ```
 `team_callback` and the horizon are the restaurant's limits for a reservation by phone (#252, `service_config`, docs/04 §check_slot): above 8 guests, and on the same day above 5, the agent books nothing and the team calls back to confirm and talk it through; no table more than 90 days ahead. The callback after `team_callback` is created by the conversation core, not by the model (`agent/loop.py`, docs/04 §check_slot); a model only asks for the number when none is known, told so by a hint with that tool result, not by the system prompt.
 

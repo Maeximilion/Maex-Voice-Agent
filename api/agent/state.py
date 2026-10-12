@@ -94,7 +94,7 @@ class ConversationState(BaseModel):
     # Memory of the core, never sent to the model: the wish for a table the
     # agent does not book itself (`team_callback`, #252), as the summary of
     # the callback, while no number to call back is known. The core creates
-    # the callback as soon as one is (`loop.py`).
+    # the callback in the turn that brings one (`loop.py`).
     team_table: str | None = None
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.

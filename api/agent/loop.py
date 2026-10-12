@@ -133,12 +133,6 @@ class ConversationLoop:
             note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
-        if state.team_table:
-            # A table for the team has waited for a number to call back, and
-            # this sentence may have brought it.
-            handed = self._table_to_team(state)
-            if handed is not None:
-                return handed
 
         start = guards.begin_turn(state)
         pending_input = user_text
@@ -245,6 +239,17 @@ class ConversationLoop:
                     continue
 
             if turn.tool_call is None:
+                if state.team_table:
+                    # A table for the team has waited for a number to call
+                    # back, and this sentence of the guest may have brought
+                    # it. Only now, once the model had its turn: "wir sind
+                    # doch nur fünf, meine Nummer ist ..." is a new wish, and
+                    # the answer of the code for it has taken the old one
+                    # back by now (Codex PR #280). What the model says instead
+                    # is not spoken, the call ends with the callback.
+                    handed = self._table_to_team(state)
+                    if handed is not None:
+                        return handed
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
                 # What the guest hears decides which offered dishes count as
@@ -286,13 +291,19 @@ class ConversationLoop:
                 # speaks the sentence first ends its turn with it, and a guest
                 # who hangs up then would be lost (Codex PR #280). Any other
                 # answer means the guest is on another wish by now.
-                team = result.data.get("team_callback")
+                waiting = state.team_table
                 state.team_table = (
-                    self._table_wish(state, turn.tool_call.args) if team else None
+                    self._table_wish(state, turn.tool_call.args)
+                    if result.data.get("team_callback")
+                    else None
                 )
-                handed = self._table_to_team(state, result.say) if team else None
-                if handed is not None:
-                    return handed
+                if state.team_table:
+                    # The sentence of the tool, unless the guest heard it for
+                    # this very wish already and only the number was open.
+                    lead = None if state.team_table == waiting else result.say
+                    handed = self._table_to_team(state, lead)
+                    if handed is not None:
+                        return handed
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
@@ -368,10 +379,10 @@ class ConversationLoop:
     ) -> TurnResult | None:
         """The wish in `state.team_table` becomes a callback and the call ends
         with it. None while no number to call back is known: then the model
-        asks for one, and the turn that brings it comes through here again
-        before any model is asked. `lead` is the sentence of the tool, spoken
-        in front of the one that promises the callback. A callback that fails
-        goes the way of every failure (`_handoff`)."""
+        asks for one, and the turn that brings it comes through here again,
+        whatever the model does with that sentence. `lead` is the sentence of
+        the tool, spoken in front of the one that promises the callback. A
+        callback that fails goes the way of every failure (`_handoff`)."""
         phone = state.slots.get("phone")
         if not phone:
             return None

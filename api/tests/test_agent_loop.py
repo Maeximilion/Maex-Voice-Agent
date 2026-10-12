@@ -1137,37 +1137,86 @@ def test_a_table_for_the_team_becomes_a_callback_without_the_model(session, stat
     assert state.team_table is None
 
 
-def test_a_table_for_the_team_waits_for_a_number_to_call_back(session, state):
-    """Caller ID withheld: nobody to call back yet. The model gets the tool's
-    result with its hint and asks; the sentence that brings the number ends
-    with the callback before any model is asked."""
+ASK_NUMBER = f"{TEAM_SAY}. Unter welcher Telefonnummer sind Sie erreichbar?"
+
+
+def _waiting_for_a_number(session, state, then):
+    """Caller ID withheld: `check_slot` for nine, the model asks for a number.
+    `then` are the model's turns on the sentences after that."""
     state.caller_phone = None
     llm, loop = _team_loop(
         session,
         [
             LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY)),
-            LLMTurn(
-                say=f"{TEAM_SAY}. Unter welcher Telefonnummer sind Sie erreichbar?"
-            ),
+            LLMTurn(say=ASK_NUMBER),
+            *then,
         ],
     )
-
     asked = loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+    assert asked.say == [ASK_NUMBER] and asked.ended is False
+    assert state.team_table == f"{WISH}."
+    assert session.scalars(select(Callback)).all() == []
+    return llm, loop
 
+
+def test_a_table_for_the_team_waits_for_a_number_to_call_back(session, state):
+    """Nobody to call back yet: the model gets the tool's result with its hint
+    and asks. The turn that brings the number ends with the callback, whatever
+    the model says on it; its sentence is not spoken."""
+    llm, loop = _waiting_for_a_number(
+        session, state, [LLMTurn(say="Vielen Dank, das habe ich.")]
+    )
     after_check = json.loads(llm.calls[1][2])
     assert after_check["data"]["team_callback"] is True
     assert after_check["hint"] == HINT_TEAM_CALLBACK
-    assert asked.ended is False and state.team_table == f"{WISH}."
-    assert session.scalars(select(Callback)).all() == []
 
     done = loop.run_turn(state, "Meine Nummer ist 0721 5551234.")
 
-    assert len(llm.calls) == 2  # no third model call
     assert done.ended is True and state.stage == "callback"
     assert len(done.say) == 1
     assert done.say[0].startswith("Ich habe Ihre Nummer notiert.")
     callback = session.scalars(select(Callback)).one()
     assert (callback.phone, callback.summary) == ("+497215551234", f"{WISH}.")
+
+
+def test_the_sentence_for_a_team_table_is_not_said_twice(session, state):
+    """With the number the model checks the same wish again: the guest heard
+    the tool's sentence for it a turn ago, only the callback's follows."""
+    _, loop = _waiting_for_a_number(
+        session,
+        state,
+        [LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY))],
+    )
+
+    done = loop.run_turn(state, "Meine Nummer ist 0721 5551234.")
+
+    assert done.ended is True and len(done.say) == 1
+    assert done.say[0].startswith("Ich habe Ihre Nummer notiert.")
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
+def test_a_correction_next_to_the_number_is_taken_first(session, state):
+    """ "Wir sind doch nur fünf, meine Nummer ist ...": five the agent books
+    itself. The number alone must not send the wish for nine to the team
+    (Codex PR #280)."""
+    five = {**NINE_ON_SATURDAY, "party_size": 5}
+    _, loop = _waiting_for_a_number(
+        session,
+        state,
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=five)),
+            LLMTurn(say="Für fünf Personen ist das frei. Auf welchen Namen?"),
+        ],
+    )
+
+    result = loop.run_turn(
+        state, "Wir sind doch nur fünf, meine Nummer ist 0721 5551234."
+    )
+
+    assert result.ended is False
+    assert result.say == ["Für fünf Personen ist das frei. Auf welchen Namen?"]
+    assert state.team_table is None
+    assert session.scalars(select(Callback)).all() == []
 
 
 def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
