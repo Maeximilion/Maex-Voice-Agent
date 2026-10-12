@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.30
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.0
 
 ---
 
@@ -162,9 +162,9 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 10. **Local test model on the workbench, set up 06.10.2026** (docs/18 §5 "GPU numbers"): both models pass the test sentence. `mistral-small` runs 17 % on the CPU next to the Windows desktop's GPU share, warm 5.3 s; `qwen3:14b` runs fully on the GPU, warm 1.1 s, cold 14 s. The workbench `.env` uses `qwen3:14b`. WSL memory (31 of 64 GiB visible) only matters for models larger than `qwen3:14b`; how to raise it: docs/18 §5. `mistral-small` invented an absolute date for "Samstag" (the test prompt has no current date); watch for it in the first eval run. Next T-2.4 part 3 (`--model`, `reasoning_effort: "none"`) and part 4 (first eval run on the local model)
 11. **Own voice layer: T-10.1 step 1 done 11.10.2026, T-10.3 measured for the local engines 12.10.2026 (summary above). Next: step 2 at the pilot's router, which needs Maxi (a new IP telephone at the router, a VPN to it, one of the three numbers that customers do not call). From T-10.3, with Maxi: listen to the samples and confirm the thresholds; accounts for the EU speech services only when their measurement is due. T-10.4 (call session) waits for T-10.1.** The three spikes (D1 decided 07.10.2026, `docs/20_VOICE_LAYER.md`): T-10.1 (Asterisk with call audio over WebSocket, first on the workbench with a softphone, then as an IP telephone at the pilot's router over a VPN), T-10.2 (hard rule 5 on the wire; G0 waits for both) and T-10.3 (ear and mouth). They run in a session started in Ubuntu (WSL) on Maxi's PC. Port, handler and fake adapter of T-1.13 stay; T-1.11 is now the media adapter of our own layer. Open from T-1.13, Maxi's call: when the team is not reachable (outside opening hours) and the number is withheld, `agent/loop.py` says "Ich gebe an das Team weiter" or "Ich verbinde Sie sofort mit dem Team" and then the line ends, because no transfer and no callback is possible. Proposal: ask for a callback number in that case instead of ending
 12. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
-13. **Follow-ups of the security audit (#252), decided by Maxi on 12.10.2026, not built.** One pull request each, all `xhigh` (a migration, bookings, the fate of a call); the values go into `service_config`, never into code (rule 1):
+13. **Follow-ups of the security audit (#252), decided by Maxi on 12.10.2026, not built.** One pull request each, routed by the table in CLAUDE.md §6; the values go into `service_config`, never into code (rule 1). `xhigh`: the migration with the new fields, the reservation limits, the order threshold and the silence deadline (bookings, money, the fate of a call). `high`: the Postgres role (`deploy/`, `scripts/`) and the callback mark (`domain/` next to `gui/`). `medium`: the note on the operations view (docs):
     - **Reservations by phone:** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person; a call by the agent itself is an idea of Maxi's, not decided and not possible before the voice layer can place calls.
-    - **Orders:** above 150 euros the order waits for the team's "Passt" on the tablet before a slip prints, whatever the mode.
+    - **Orders:** above 150 euros the order waits for the team's approval on the tablet before a slip prints, whatever the mode.
     - **Silence while the model answers:** 15 seconds until the handover if the agent can say "Bitte warten Sie einen Moment" in between, 10 seconds if it cannot. Saying a sentence while a turn runs needs the voice layer (T-1.11); until then 10.
     - **Postgres:** a role without superuser for the application, the superuser for backup, restore and migrations.
     - **Callback numbers:** the tablet marks a number that differs from the caller ID.
@@ -466,7 +466,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.0.30 · 12.10.2026:** Handover: the security audit is on main in nine pull requests; Maxi's decisions on the open points of #252 are item 13 under What's Next
+- **v2.1.0 · 12.10.2026:** Handover: the security audit is on main in nine pull requests; Maxi's decisions on the open points of #252 are item 13 under What's Next
 - **v2.0.29 · 12.10.2026:** Correction at the read-back: a card number named after a no replaces the dish and the order is read back again (eval abholung_0079)
 - **v2.0.28 · 12.10.2026:** Public-repo inventory: the last real place name in a test input is replaced by an invented one; operation name, team phone, host names and printer address already come from .env only
 - **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
