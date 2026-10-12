@@ -203,7 +203,7 @@ system prompt by the client and is not part of `prompts/system_vN.md`:
 | Field | Meaning |
 |---|---|
 | `say` or `tool` + `args` | the sentence for the guest, or a tool call. The format asks for exactly one. When a model sends both, the tool call wins and the sentence is dropped (Maxi, 06.10.2026): a real model does it on its first turn, and the model speaks again once it has the tool result. A readback with `confirm` in the same answer is stopped by the core (guards below), not by the format |
-| `slots` | what the guest named in this turn, under the names the core takes (`guest_name`, `phone`, `party_size`, `reserved_for`, `note`; the format for an order lists them, since a real model wrote `customer_name` there and lost the name); goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number |
+| `slots` | what the guest named in this turn, under the names the core takes (`guest_name`, `phone`, `party_size`, `reserved_for`, `note`; the format for an order lists them, since a real model wrote `customer_name` there and lost the name); goes into the compact state, anything not written here is gone on the next turn. Empty values (`null`, `""`) are dropped, so a model that fills unused fields cannot erase a known phone number. A `guest_name` or `phone` the guest did not say is dropped as well (guards below) |
 | `cart` | only in the format for an order (below). The whole order as it stands after this turn, lines in the form of `items` of `draft_order` (`menu_item_id`, `quantity`, optional `options` and `note`); `null` when nothing changed. A field left blank (`null`, `""`, `{}`) says nothing; a list is the order, also the empty one: `[]` empties it, for the guest who removes the last dish. Anything else (`false`, `0`, a text) is refused like a cart in a wrong form (Codex PR #237). The core takes it only when every dish is one an order may name (guards below). The format says that a cart is no order yet: only `draft_order` creates one and delivers the readback, and `confirm` needs an `order_id` in the state. Without that sentence a real model called `confirm` on its cart as soon as the guest had nothing more to add |
 | `not_understood` | the name of the detail that was not understood; the code counts it on the understanding ladder (§2) |
 
@@ -290,6 +290,7 @@ dispatched, the loop checks:
 | 2, never guess | `draft_order` takes a `menu_item_id` only from a clear match of `search_menu` in this call (`exact_number`, `alias`, `fuzzy_single`), or from a candidate of an unclear result that the guest heard: the sentence that ended a turn named it by its full name, as whole words ("Reis" is not named by "Preis"), or as "Nummer <card number>". A model that keeps the offer to itself makes no candidate usable | `draft_order` is not dispatched |
 | 2, for the order across turns | the `cart` of an answer is taken whole or not at all: every line must have the form of an order item and name a dish as above, and none that was sold out at its last search (a clear hit that is sold out is still a hit; in the state it would stand like any other line until `draft_order` refuses at the end). The options of a line are checked the way `draft_order` checks them, against what the search delivered for the dish: each must exist, none twice, at most one from a mandatory group (a wrong one would stand as the choice and `open` would be gone). And a `draft_order` in the same answer must draft that cart: with other items it is refused. Otherwise a dish nobody searched for would stand in the state, where the next turn reads it as found | nothing of the answer is carried out, neither its sentence nor its tool call; the order in the state stays as it was |
 | 3, for a changed order | a `cart` that differs from the order that was read back (the sequence of lines and of options does not count, nor case and spacing of an option, as in `draft_order`: a model may repeat the order the other way round or write "huhn" for "Huhn"), or one that was refused, is a correction: the draft that waits for its yes is dropped and `stage` goes back to `collecting`. That holds for a reservation that was read back as well: the guest who goes on with the order has moved on, as with a menu search after a readback (Codex PR #237) | a later yes can confirm neither the order the guest just changed nor a table the conversation has left |
+| 2, for the guest's name and phone number | a name or a number a model writes is taken only as the guest said it in this call (`agent/guest_details.py`). A name: every word of it was a whole word of a guest sentence, umlauts in either spelling, or was spelled letter by letter in one sentence (§2, rung 3). A number: it is the caller ID, or one run of digits of a guest sentence; compared in E.164, so another spelling counts and a missing or changed digit does not. The core hears both in the guest's sentence before the model is asked and keeps the words and numbers of the call, no sentence, and nothing of it goes to the model. Checked in `slots` and in the arguments of `create_reservation`, `draft_order` and `create_callback` | in `slots` the detail is dropped without a hint, the slot stays as it was (an invented number never replaces the caller ID) and it is no success on the ladder; a tool call is not dispatched, and the hint says to ask the guest, or to take `phone` from `slots` digit for digit |
 | 1, facts from the database | a model writes only guest details into `slots` (`GUEST_SLOTS`: party size, date and time, name, phone, note). A tool result copied there (`open`, `closes_at`, a price) is dropped | the field never reaches the next prompt |
 
 A refused call goes back to the model as a failed tool result with `error_code` and a
@@ -299,6 +300,20 @@ offered dishes the guest's answer means is left to the model and measured by the
 the readback and its yes come after it. The call time limit is read again when the
 model has answered: an answer that arrives too late is neither spoken nor dispatched,
 but what it heard (a phone number) is taken first, for the callback of the handoff.
+
+**Limits of the check on name and number (T-2.4, 12.10.2026)** — it is words, not
+understanding, and strict on purpose: what it misses costs the guest one more question,
+what it wrongly took would book under a stranger. Which of the words a guest said is the
+name stays with the model; the readback follows. A title the guest did not say ("Herr
+Müller" after "Müller") is refused like any added word. Not heard yet: a number said in
+words ("null eins sieben ..."), digit groups separated by a comma or named in two
+sentences, letter names when spelling ("Doppel-L", "Ypsilon"), a name written with another
+accent than it was said with, and a spelling the agent proposed and the guest only agreed
+to ("Maier mit a-i?" - "Ja"). How numbers and letters arrive as text is decided by the ear
+of the voice layer (T-10.5); the check is extended there. A number the guest gave too
+short to be one still counts as said: the tool then answers that it was not understood,
+where dropping it would let the booking go on under the caller ID. No prompt text changed:
+the model learns of the rule from the hint of a refused call.
 
 ---
 

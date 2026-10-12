@@ -122,6 +122,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `ladder.py` | die Verständnis-Leiter als Zustandsmaschine: zählt Fehlversuche, steigt die Stufe |
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
 | `guards.py` | what the core enforces whatever the model returns (05 §5): `confirm` only after an explicit yes to the draft read back before the turn, `draft_order` only with dishes from a clear match or from candidates the guest heard by name. A refused call goes back to the model as a failed result with a `hint` |
+| `guest_details.py` | whether the guest said a name or a phone number (`name_said`, `number_known`): whole words or a spelled name, the caller ID or a run of digits in E.164. `state.py` keeps the words and numbers of the call and drops an unsaid name or number from `slots`; `guards.py` refuses `create_reservation`, `draft_order` and `create_callback` with one |
 | `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py` |
 | `intent.py` | what the guest called for, pickup or table, heard in their own sentence **before** the model (`heard`); `state.py` keeps the first wish of a call as `intent` until a draft exists |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |

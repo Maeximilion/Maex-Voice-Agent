@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.agent.dispatch import ToolResult
+from api.agent.guest_details import name_said, number_known, numbers_said, words_said
 from api.agent.intent import heard
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
@@ -66,6 +67,13 @@ class ConversationState(BaseModel):
     # resolved from the state, the model searches again or asks. A view of the
     # open question for the one following turn if the call log shows the need.
     seen_items: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    # Memory of the core, never sent to the model (agent/guest_details.py,
+    # rule 2): the number the guest calls from, and the words and numbers the
+    # guest said in this call. A name or phone number a model writes is taken
+    # only when it stands in there. No sentence is kept.
+    caller_phone: str | None = None
+    said_words: set[str] = Field(default_factory=set)
+    said_numbers: set[str] = Field(default_factory=set)
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.
     greeted: bool = False
@@ -123,11 +131,16 @@ def initial_state(
     fragt nicht danach (Maxi, PR #127). Nennt der Gast eine andere, ueberschreibt
     sein `state_patch` sie. Unterdrueckt oder keine gueltige Nummer: der Slot
     bleibt leer, und der Agent fragt wie bisher."""
-    slots: dict[str, Any] = {}
+    caller_phone = None
     if caller_id:
         with suppress(InvalidInput):
-            slots["phone"] = normalize_phone(caller_id)
-    return ConversationState(call_id=call_id, tenant_id=tenant_id, slots=slots)
+            caller_phone = normalize_phone(caller_id)
+    return ConversationState(
+        call_id=call_id,
+        tenant_id=tenant_id,
+        slots={"phone": caller_phone} if caller_phone else {},
+        caller_phone=caller_phone,
+    )
 
 
 # What a guest can say about a reservation or an order. Anything else a model
@@ -145,10 +158,33 @@ def apply_state_patch(
     (`LLMTurn.state_patch`), bevor sie mit dem nächsten Zug verloren gehen. Reine
     Gesprächsangaben (Name, Datum, Personenzahl, ...), keine Fachdaten aus der DB
     (CLAUDE.md §2 Regel 1 betrifft Preise/Zeiten/Verfügbarkeit/Allergene, nicht das,
-    was der Gast gesagt hat). Returns what was taken: only `GUEST_SLOTS`."""
-    named = {key: value for key, value in patch.items() if key in GUEST_SLOTS}
+    was der Gast gesagt hat). Returns what was taken: only `GUEST_SLOTS`, and
+    of those a name or a phone number only when the guest said it
+    (`agent/guest_details.py`). What is dropped leaves the slot as it was: an
+    invented number never replaces the caller ID."""
+    named = {
+        key: value
+        for key, value in patch.items()
+        if key in GUEST_SLOTS and _said_by_the_guest(state, key, value)
+    }
     state.slots.update(named)
     return named
+
+
+def _said_by_the_guest(state: ConversationState, slot: str, value: Any) -> bool:
+    if slot == "guest_name":
+        return name_said(value, state.said_words)
+    if slot == "phone":
+        return number_known(value, state.caller_phone, state.said_numbers)
+    return True
+
+
+def note_guest_details(state: ConversationState, guest_text: str) -> None:
+    """Keeps the words and numbers of a guest sentence, for every turn after
+    it. Call it before the model is asked: what the guest names in a sentence
+    is written by the model in the answer to that very sentence."""
+    state.said_words |= words_said(guest_text)
+    state.said_numbers |= numbers_said(guest_text)
 
 
 def note_intent(state: ConversationState, guest_text: str) -> None:

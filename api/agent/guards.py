@@ -14,6 +14,11 @@ that insists ends in the handoff to the team, not in a booking.
   same holds for the order a model keeps across turns (`cart`, `take_cart`):
   a dish nobody searched for never gets into the state, where the next turn
   would read it as found.
+- Rule 2 for the guest: a tool that books under a name or a phone number
+  (`create_reservation`, `draft_order`, `create_callback`) gets them only as
+  the guest said them, the number also when it is the caller ID
+  (`agent/guest_details.py`). The same check keeps them out of `slots`
+  (`state.apply_state_patch`), without a hint: there the answer goes on.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
@@ -27,6 +32,7 @@ from pydantic import ValidationError
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult, validation_hint
+from api.agent.guest_details import name_said, number_known
 from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
@@ -71,6 +77,16 @@ HINT_CART_FORM = (
     "Abgelehnt: `cart` ist keine Liste von Positionen wie `items` von "
     "draft_order (menu_item_id, quantity, optional options und note). Die "
     "Bestellung im Zustand ist unverändert."
+)
+HINT_GUEST_NAME = (
+    "Abgelehnt: diesen Namen hat der Gast in diesem Anruf nicht gesagt. Nie einen "
+    "Namen erfinden oder einen Platzhalter eintragen. Frag den Gast nach dem "
+    "Namen und übernimm ihn so, wie er ihn sagt."
+)
+HINT_GUEST_PHONE = (
+    "Abgelehnt: diese Rufnummer hat der Gast in diesem Anruf nicht gesagt, und "
+    "sie ist nicht die Nummer, von der er anruft. Steht `phone` in `slots`, nimm "
+    "genau diese, Ziffer für Ziffer. Sonst frag den Gast nach der Rufnummer."
 )
 
 
@@ -198,12 +214,34 @@ def refusal(
     which the core has taken by now."""
     if call.name == "confirm":
         return None if _may_confirm(state, start, user_text, call) else _CONFIRM
+    name, phone = _guest_details(call)
+    if name is not None and not name_said(name, state.said_words):
+        return _GUEST_NAME
+    if phone is not None and not number_known(
+        phone, state.caller_phone, state.said_numbers
+    ):
+        return _GUEST_PHONE
     if call.name == "draft_order":
         if not _all_known(state, call):
             return _ITEM
         if cart_sent and not _drafts_the_cart(state, call):
             return _DRAFT_DIFFERS
     return None
+
+
+def _guest_details(call: ToolCall) -> tuple[Any, Any]:
+    """Name and phone number a call books under, None for what it does not
+    carry. A detail that is missing is left to the validation in dispatch,
+    which names the field."""
+    args = call.args
+    if call.name == "create_reservation":
+        return args.get("guest_name"), args.get("phone")
+    if call.name == "create_callback":
+        return None, args.get("phone")
+    customer = args.get("customer") if call.name == "draft_order" else None
+    if isinstance(customer, dict):
+        return customer.get("name"), customer.get("phone")
+    return None, None
 
 
 def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:
@@ -224,6 +262,8 @@ _CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITE
 _CART_SOLD_OUT = ToolResult(ok=False, error_code="conflict", hint=HINT_CART_SOLD_OUT)
 _CART_OPTION = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_OPTION)
 _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIFFERS)
+_GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
+_GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 
 
 def _readback_id(state: ConversationState) -> str | None:
