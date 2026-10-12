@@ -94,6 +94,8 @@
 ```
 Beschwerden stehen immer oben und haben einen eigenen Ton.
 
+A number the call did not come from is marked under the number (#252, 12.10.2026): "Andere Nummer als der Anruf" with the line "Anruf kam von …" when the guest named a number other than the caller ID, "Anruf ohne Rufnummer" when the caller's number was withheld. The guest's own number carries no mark. "Anrufen" always dials the number the guest named; the mark only tells the team that the line does not back it. Where the number comes from is decided in `domain/callbacks/board.py` (`number_origin`), the words in `gui/router.py`.
+
 ### Der Knopf „Gericht aus"
 Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap = ausverkauft bis Betriebsschluss. Der Agent bietet das Gericht ab sofort nicht mehr an und nennt eine Alternative.
 
