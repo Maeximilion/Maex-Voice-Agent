@@ -130,7 +130,7 @@ Spec: `docs/20_VOICE_LAYER.md`. The three spikes come first and each ends with g
 
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
-| T-6.1 | #57 | Migration 006 (Kunden, Adressen, Zonen; 005 ging an T-1.14) | 03 | T-4.1 | offen |
+| T-6.1 | #57 | Migration with the next free number (Kunden, Adressen, Zonen; 005 went to T-1.14, 006 and 007 to #252) | 03 | T-4.1 | offen |
 | T-6.2 | #58 | Tool `find_customer` mit Normalisierung der Rufnummer | 04 | T-6.1 | offen |
 | T-6.3 | #59 | Tool `check_delivery`, PLZ-Variante | 04 | T-6.1, D5 | offen |
 | T-6.9 | #60 | `scripts/seed_zones.py`: Lieferzonen aus der bestehenden Liefergebietsliste des Pilotbetriebs | 03, 04 | T-6.1, D5 | offen |

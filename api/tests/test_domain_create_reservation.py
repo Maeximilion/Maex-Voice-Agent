@@ -27,6 +27,7 @@ from api.models import (
 from api.schemas.calls import EndCallRequest
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
+from api.tests.conftest import lift_party_limits
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -156,6 +157,7 @@ def test_schluessel_eines_anderen_anrufs_ist_conflict(session, tenant_id, call_i
 
 
 def test_voller_abend_ist_conflict_ohne_mittag(session, tenant_id, call_id):
+    lift_party_limits(session, tenant_id)
     # T-1.14: Alternativen nur im selben Service; der Abend ist ganz voll.
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     with pytest.raises(Conflict) as exc:
@@ -242,6 +244,7 @@ def test_readback_morgen_eine_person_mit_hinweis(session, tenant_id, call_id):
 
 
 def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
+    lift_party_limits(session, tenant_id)
     draft = create_reservation(
         session,
         request(
@@ -259,6 +262,7 @@ def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
 
 
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
+    lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=39), now=NOW)
     create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
     with pytest.raises(Conflict):
@@ -295,6 +299,7 @@ def _hang_up(session, tenant_id, call_id, at: datetime) -> None:
 
 def test_a_draft_of_a_live_call_keeps_its_seats(session, tenant_id, call_id):
     """While the guest is on the line nobody else gets the table."""
+    lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     other = _other_call(session, tenant_id)
 
@@ -305,6 +310,7 @@ def test_a_draft_of_a_live_call_keeps_its_seats(session, tenant_id, call_id):
 def test_a_draft_of_an_ended_call_gives_its_seats_back(session, tenant_id, call_id):
     """Forty seats asked for, then hung up at the read-back: the evening must
     not stay full for everyone who calls after."""
+    lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     _hang_up(session, tenant_id, call_id, NOW + timedelta(minutes=1))
     other = _other_call(session, tenant_id)
@@ -320,6 +326,7 @@ def test_a_draft_of_an_ended_call_gives_its_seats_back(session, tenant_id, call_
 def test_a_draft_past_the_call_limit_gives_its_seats_back(session, tenant_id, call_id):
     """A call that never got its end event (process died, line dropped) must not
     hold seats for good either: no call lasts longer than the limit."""
+    lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
     other = _other_call(session, tenant_id)
     limit = _call_limit(session, tenant_id)
@@ -341,6 +348,7 @@ def test_a_draft_past_the_call_limit_gives_its_seats_back(session, tenant_id, ca
 
 def test_a_confirmed_table_keeps_its_seats_after_the_call(session, tenant_id, call_id):
     """Only drafts expire. A yes is a booking, whatever the call did after."""
+    lift_party_limits(session, tenant_id)
     draft = create_reservation(
         session, request(tenant_id, call_id, party_size=40), now=NOW
     )
@@ -391,6 +399,7 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
         tenant = uuid.UUID(
             seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
         )
+        lift_party_limits(s, tenant)
         call = Call(
             tenant_id=tenant,
             external_session_id="ext",
@@ -499,3 +508,33 @@ def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
         b.rollback()
         a.rollback()
     engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("day", "party_size", "heard"),
+    [
+        (DIENSTAG, 6, "sechs Personen noch heute"),  # same day, above 5
+        (MITTWOCH, 9, "neun Personen kann ich"),  # any day, above 8
+        (date(2026, 12, 15), 2, "höchstens 90 Tage im Voraus"),  # day 91
+    ],
+)
+def test_beyond_the_limits_of_the_restaurant_nothing_is_drafted(
+    session, tenant_id, call_id, day, party_size, heard
+):
+    wish = request(
+        tenant_id, call_id, party_size=party_size, reserved_for=berlin(day, 18, 30)
+    )
+    with pytest.raises(Conflict) as exc:
+        create_reservation(session, wish, now=NOW)
+    assert heard in exc.value.say
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 0
+
+
+@pytest.mark.parametrize(("day", "party_size"), [(DIENSTAG, 5), (MITTWOCH, 8)])
+def test_at_the_limits_the_agent_drafts_the_table(
+    session, tenant_id, call_id, day, party_size
+):
+    wish = request(
+        tenant_id, call_id, party_size=party_size, reserved_for=berlin(day, 18, 30)
+    )
+    assert create_reservation(session, wish, now=NOW).party_size == party_size

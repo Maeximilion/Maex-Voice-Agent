@@ -344,3 +344,84 @@ def test_refusal_for_another_reason_still_goes_to_the_team(llm):
     turn = llm.next_turn("", {**START, "slots": WITH_CALLER_ID}, refused)
 
     assert turn.tool_call.name == "transfer_to_team"
+
+
+# -- A table the team decides on (`check_slot`: `team_callback`, #252) ------------
+TEAM_SAY = (
+    "Für neun Personen kann ich den Tisch nicht selbst zusagen, das bespricht "
+    "das Team persönlich mit Ihnen."
+)
+NOTED = "Ich habe Ihre Nummer notiert."
+TEAM_TABLE = {
+    "party_size": 9,
+    "reserved_for": "2026-09-19T19:00:00+02:00",
+    "guest_name": "Müller",
+    "phone": "+4972215551234",
+}
+
+
+def team_table(llm: ScriptedLLM, state: dict):
+    """Through the status to the answer of `check_slot` for a table of nine."""
+    nach_status(llm, state)
+    return llm.next_turn(
+        "",
+        state,
+        tool_result(
+            "check_slot",
+            data={"available": False, "alternatives": [], "team_callback": True},
+            say=TEAM_SAY,
+        ),
+    )
+
+
+def test_a_table_for_the_team_becomes_a_callback_with_the_wish(llm):
+    state = {**START, "slots": TEAM_TABLE}
+    turn = team_table(llm, state)
+
+    assert turn.tool_call is not None and turn.say is None
+    assert turn.tool_call.name == "create_callback"
+    assert turn.tool_call.args == {
+        "phone": "+4972215551234",
+        "reason": "out_of_scope",
+        "summary": (
+            "Reservierungswunsch, vom Team zu bestätigen: 9 Personen, "
+            "19.09.2026 19:00 Uhr, Name Müller."
+        ),
+    }
+    done = llm.next_turn("", state, tool_result("create_callback", data={}, say=NOTED))
+    # The promise of the callback is spoken once the callback exists.
+    assert done.say == f"{TEAM_SAY} {NOTED}" and done.tool_call is None
+
+
+def test_a_table_for_the_team_asks_for_what_the_core_did_not_take(llm):
+    slots = {k: v for k, v in TEAM_TABLE.items() if k != "guest_name"}
+    state = {**START, "slots": slots}
+    # With a detail open the script asks for it before any `check_slot`; the
+    # core can drop a name between the two (agent/guest_details.py).
+    llm.next_turn("", state, "Guten Tag")
+    turn = llm.next_turn(
+        "",
+        state,
+        tool_result(
+            "check_slot",
+            data={"available": False, "alternatives": [], "team_callback": True},
+            say=TEAM_SAY,
+        ),
+    )
+    assert turn.tool_call is None
+    assert turn.say == QUESTIONS["guest_name"]
+    assert turn.understanding_failure == "guest_name"
+
+
+def test_the_sentence_of_a_failed_callback_is_not_spoken_later(llm):
+    state = {**START, "slots": TEAM_TABLE}
+    team_table(llm, state)
+    failed = llm.next_turn(
+        "", state, tool_result("create_callback", ok=False, say="Störung.")
+    )
+    assert failed.say == "Störung."
+
+    later = llm.next_turn("", state, "Liefern Sie auch nach Hause?")
+    assert later.tool_call is not None and later.tool_call.name == "create_callback"
+    done = llm.next_turn("", state, tool_result("create_callback", data={}, say=NOTED))
+    assert done.say == NOTED

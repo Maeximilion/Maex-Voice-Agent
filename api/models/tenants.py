@@ -47,6 +47,18 @@ class ServiceConfig(Timestamps, Base):
             "reservation_last_start_minutes >= 0",
             name="ck_service_config_reservation_last_start_minutes",
         ),
+        CheckConstraint(
+            "reservation_max_days_ahead >= 0",
+            name="ck_service_config_reservation_max_days_ahead",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size >= 0",
+            name="ck_service_config_reservation_max_party_size",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size_same_day >= 0",
+            name="ck_service_config_reservation_max_party_size_same_day",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -75,6 +87,18 @@ class ServiceConfig(Timestamps, Base):
     )
     reservation_last_start_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"
+    )
+    # Limits for a reservation by phone (#252, migration 007): how many days
+    # ahead, and up to which party size the agent books itself. Above it, and
+    # on the same day above the smaller limit, the team calls back.
+    reservation_max_days_ahead: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="90"
+    )
+    reservation_max_party_size: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="8"
+    )
+    reservation_max_party_size_same_day: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
     )
 
 

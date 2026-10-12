@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import dispatch
+from api.agent.dispatch import HINT_TEAM_CALLBACK, dispatch
 from api.models import Call
 from scripts.seed import seed
 
@@ -372,3 +372,39 @@ def test_the_last_days_that_do_work_are_not_refused_as_off_the_calendar(
     )
 
     assert "reserved_for" not in (result.hint or "")
+
+
+def test_a_table_for_the_team_tells_the_model_what_follows(session, tenant_id, call_id):
+    """The steps after `team_callback` travel with that result and are in no
+    system prompt (#252)."""
+    wish = {"reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
+    team = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 6}, now=NOW
+    )
+    assert team.ok and team.data["team_callback"] is True
+    assert team.hint == HINT_TEAM_CALLBACK
+    assert team.say and "sechs Personen noch heute" in team.say
+
+    free = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 5}, now=NOW
+    )
+    assert free.data["available"] is True and free.hint is None
+
+
+def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
+    """A model that skips `check_slot` gets no draft either."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 6,
+            "reserved_for": berlin(DIENSTAG, 18, 30).isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.say and "nicht selbst zusagen" in result.say

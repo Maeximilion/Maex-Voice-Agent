@@ -15,6 +15,7 @@ from api.domain.reservations import create_reservation
 from api.models import AuditLog, Call, OutboxEvent, Reservation, ServiceConfig
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
+from api.tests.conftest import lift_party_limits
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -231,6 +232,7 @@ def _after_the_limit(session, tenant_id) -> datetime:
 
 def test_a_full_table_confirms_itself(session, tenant_id, call_id):
     """The draft counts its own seats; confirming must not trip over them."""
+    lift_party_limits(session, tenant_id)
     draft_id = make_draft(session, tenant_id, call_id, party_size=40)
 
     result = confirm(session, request(tenant_id, call_id, draft_id), now=NOW)
@@ -243,6 +245,7 @@ def test_an_old_draft_is_confirmed_while_its_seats_are_free(
 ):
     """Past the limit the draft no longer holds the seats, but nobody took
     them: a late yes is still a yes."""
+    lift_party_limits(session, tenant_id)
     draft_id = make_draft(session, tenant_id, call_id, party_size=40)
 
     late = _after_the_limit(session, tenant_id)
@@ -256,6 +259,7 @@ def test_a_draft_whose_seats_went_to_someone_else_is_refused(
 ):
     """The seats were given away once the draft stopped holding them. A yes
     that comes after must not put two parties on the same seats."""
+    lift_party_limits(session, tenant_id)
     old = make_draft(session, tenant_id, call_id, party_size=40)
     late = _after_the_limit(session, tenant_id)
     other_call = _second_call(session, tenant_id)
@@ -280,6 +284,7 @@ def test_two_old_drafts_for_the_same_seats_confirm_only_once(migrated_db_url):
         tenant = uuid.UUID(
             seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
         )
+        lift_party_limits(s, tenant)
         limit = timedelta(seconds=s.get(ServiceConfig, tenant).max_call_seconds + 1)
         calls = [_second_call(s, tenant), _second_call(s, tenant)]
         # The second draft is only possible because the first one has expired.

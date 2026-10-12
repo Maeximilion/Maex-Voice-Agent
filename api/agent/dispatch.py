@@ -46,6 +46,15 @@ from api.schemas.transfer import TransferToTeamRequest
 
 logger = get_logger("api.agent.dispatch")
 
+# What follows a `check_slot` that hands the table to the team (#252). Sent
+# with that result only: the system prompt of every other call stays as short
+# as it is (CLAUDE.md §2 rule 6).
+HINT_TEAM_CALLBACK = (
+    "Der Tisch wird nicht gebucht, kein create_reservation. Sprich das say. "
+    "Kläre Name und Rufnummer, dann create_callback (reason: out_of_scope, "
+    "summary: Reservierungswunsch mit Personenzahl, Tag, Uhrzeit und Name)."
+)
+
 Adapter = Callable[
     [Session, uuid.UUID, uuid.UUID, dict[str, Any], datetime | None], BaseModel
 ]
@@ -390,10 +399,12 @@ def dispatch(
         except ValidationError as exc:
             hint = validation_hint(exc)
             raise InvalidInput(str(exc)) from exc
+        data = result.model_dump(mode="json")
         outcome = ToolResult(
             ok=True,
-            data=result.model_dump(mode="json"),
+            data=data,
             say=getattr(result, "say", None),
+            hint=HINT_TEAM_CALLBACK if data.get("team_callback") else None,
         )
     except AppError as exc:
         # Like `get_db` in `api/db.py` on an HTTP error: here the session lives

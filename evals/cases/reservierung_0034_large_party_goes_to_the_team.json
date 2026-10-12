@@ -1,0 +1,33 @@
+{
+  "id": "reservierung_0034",
+  "name": "Twelve guests: above the limit the agent books itself, the team calls back (#252)",
+  "tags": [
+    "reservierung",
+    "gruppe",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich haette gern einen Tisch fuer zwoelf Personen am Samstag um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": false,
+    "escalated": true,
+    "tools": [
+      "check_slot",
+      "create_callback"
+    ]
+  }
+}

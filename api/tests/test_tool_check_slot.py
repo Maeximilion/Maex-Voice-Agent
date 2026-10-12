@@ -62,7 +62,8 @@ def test_antwort_folgt_der_huelle(client):
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True and "say" in body
-    assert set(body["data"]) == {"available", "alternatives"}
+    assert set(body["data"]) == {"available", "alternatives", "team_callback"}
+    assert body["data"]["team_callback"] is False
     assert body["data"]["available"] is True
 
 
@@ -119,3 +120,16 @@ def test_a_date_no_calendar_holds_is_invalid_input(client):
     r = _call(http, tenant_id, reserved_for="9999-12-31T23:59:00-12:00")
 
     assert r.json()["error"]["code"] == "invalid_input"
+
+
+def test_a_party_above_the_limit_answers_team_callback(client):
+    http, tenant_id = client
+    r = _call(http, tenant_id, party_size=9)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["data"] == {
+        "available": False,
+        "alternatives": [],
+        "team_callback": True,
+    }
+    assert body["say"].startswith("Für neun Personen kann ich den Tisch nicht selbst")
