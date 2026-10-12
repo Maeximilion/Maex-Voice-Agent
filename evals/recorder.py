@@ -265,8 +265,9 @@ class RecordingLLM:
             rec.drafted_at,
             rec.read_out,
         )
-        after_draft = drafted_at is not None and len(rec.customer_lines) > drafted_at
-        if not (after_draft and not was_read_out and is_yes(said)):
+        # Also for a draft made in this very turn: the core reads that one out
+        # on a bare yes just the same (Codex PR #273).
+        if drafted_at is None or was_read_out or not is_yes(said):
             return False
         self._cart_left_aside = self._before_cart is not None
         self._cart, rec.drafted_at, rec.read_out = order, drafted_at, was_read_out

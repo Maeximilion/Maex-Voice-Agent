@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.34
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.35
 
 ---
 
@@ -458,6 +458,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.35 · 12.10.2026:** Codex review of 998b842 on PR #273: the recorder also knows a yes for a draft made in the same turn
 - **v2.0.34 · 12.10.2026:** Own review of PR #273: the core ends the turn of a refused yes with the draft's sentence and no longer asks the model again
 - **v2.0.33 · 12.10.2026:** Codex review of c0c5005 on PR #273: what stands next to the refused confirm is left aside too, the ladder included, and the recorder counts no held-back call
 - **v2.0.32 · 12.10.2026:** Codex review of 1b8d12b on PR #273: while the draft is read out again, no tool result, cart or patch can drop it

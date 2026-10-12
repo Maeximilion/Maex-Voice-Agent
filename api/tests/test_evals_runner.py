@@ -1786,3 +1786,33 @@ def test_a_confirm_without_a_result_on_another_sentence_keeps_its_entry():
     rec = _reread_then_booked(confirm, said_first="Nein, lieber später.")
 
     assert rec.recording.unconfirmed == ["Nein, lieber später.", "Ja"]
+
+
+def test_a_yes_before_the_draft_of_the_same_turn_is_no_violation_either():
+    """The guest says "Ja" to the agent's question, and the model drafts and
+    returns `confirm` in that one turn. The core reads the new draft out
+    instead of booking it and gives no result; the transcript may end there
+    (Codex PR #273)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(say="Soll ich das so aufnehmen?"),
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _draft_result())
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1
