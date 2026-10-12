@@ -6,18 +6,13 @@ is in test_agent_loop.py. The guest sentences are German, the detection only
 reads what a guest says on the phone.
 """
 
+import time
 import uuid
 
 import pytest
 
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE, begin_turn, refusal
-from api.agent.guest_details import (
-    name_said,
-    number_known,
-    numbers_said,
-    same_number,
-    words_said,
-)
+from api.agent.guest_details import name_said, number_known, numbers_said, words_said
 from api.agent.llm import ToolCall
 from api.agent.state import apply_state_patch, initial_state, note_guest_details
 
@@ -132,7 +127,14 @@ def test_spelled_name_counts_only_within_one_sentence():
 
 @pytest.mark.parametrize(
     "written",
-    ["+491712345678", "01712345678", "0171 2345678", "0171/234-5678", "00491712345678"],
+    [
+        "+491712345678",
+        "01712345678",
+        "0171 2345678",
+        "0171/234-5678",
+        "00491712345678",
+        "(0171) 2345678",
+    ],
 )
 def test_number_the_guest_said_is_known_in_any_spelling(written):
     said_numbers = numbers("Meine Nummer ist 0171 2345678.")
@@ -215,22 +217,50 @@ def test_number_without_an_area_code_is_no_phone_number(written):
     assert number_known(written, None, numbers("Meine Nummer ist 555 1234")) is False
 
 
-def test_same_number_in_two_spellings():
-    assert same_number("07221 5551234", CALLER) is True
-    assert same_number("+497221555123", CALLER) is False
-    assert same_number("unbekannt", "unbekannt") is False
-    assert same_number(None, None) is False
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Meine Nummer ist 0171 2345678. 19 Uhr passt.",
+        "Am 16.09. 0171 2345678 bitte",
+        "Für 4. 0171 2345678. 2 Kinder sind dabei.",
+        "Erreichbar unter (0171) 2345678",
+    ],
+)
+def test_period_that_ends_a_sentence_ends_the_number(sentence):
+    """Own review of PR #244: joined with the digits behind the period, the
+    number the guest said was another one, or none."""
+    assert numbers(sentence) == {"+491712345678"}
 
 
-def test_number_too_short_to_be_one_stays_known_as_the_guest_said_it():
-    """The tool then says that the number was not understood, in its own
-    sentence. Dropped here, the booking would go on under the caller ID while
-    the guest believes to have given another number."""
-    said_numbers = numbers("Unter 0171 2 bitte")
+@pytest.mark.parametrize("written", ["0", "07", "0171", "0171 2", "0" * 30])
+def test_run_too_short_or_too_long_to_be_a_phone_number_is_none(written):
+    """Own review of PR #244: kept by its digits, "um 0 Uhr" was a number a
+    model could put into `slots` in the place of the caller ID."""
+    said_numbers = numbers(f"Um 0 Uhr, die 07, unter 0171 2, oder {written}")
 
-    assert number_known("0171 2", CALLER, said_numbers) is True
-    assert number_known("01712", CALLER, said_numbers) is True
-    assert number_known("0171 3", CALLER, said_numbers) is False
+    assert said_numbers == set()
+    assert number_known(written, CALLER, said_numbers) is False
+
+
+def test_patterns_on_guest_text_stay_linear():
+    """Guest text has no length limit on the text phone. The same inputs as
+    for the menu patterns (test_domain_menu_regex_cost.py)."""
+    started = time.perf_counter()
+    for text in (
+        " " * 20_000,
+        "1" * 20_000,
+        "+" * 20_000,
+        "a" * 20_000,
+        "1 a" * 10_000,
+        "+1(" * 10_000,
+        "1. " * 10_000,
+        "a " * 20_000,
+    ):
+        words_said(text)
+        numbers_said(text)
+        name_said(text, set())
+
+    assert time.perf_counter() - started < 2
 
 
 # --- The state: what a model writes into the slots ---
@@ -262,9 +292,18 @@ def test_what_the_guest_said_never_goes_into_the_prompt():
 def test_patch_with_what_the_guest_said_is_taken():
     state = heard("Auf Müller, und bitte unter 0171 2345678", caller=CALLER)
     patch = {"guest_name": "Müller", "phone": "0171 2345678", "party_size": 4}
+    taken = {**patch, "phone": "+491712345678"}
 
-    assert apply_state_patch(state, patch) == patch
-    assert state.slots == patch
+    assert apply_state_patch(state, patch) == taken
+    assert state.slots == taken
+
+
+@pytest.mark.parametrize("written", ["0", "07", "0171 2"])
+def test_short_run_the_guest_said_never_replaces_the_caller_id(written):
+    state = heard("Um 0 Uhr die 07, erreichbar unter 0171 2", caller=CALLER)
+
+    assert apply_state_patch(state, {"phone": written}) == {}
+    assert state.slots["phone"] == CALLER
 
 
 def test_patch_with_an_invented_name_is_dropped():

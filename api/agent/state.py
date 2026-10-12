@@ -13,7 +13,13 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.agent.dispatch import ToolResult
-from api.agent.guest_details import name_said, number_known, numbers_said, words_said
+from api.agent.guest_details import (
+    e164,
+    name_said,
+    number_known,
+    numbers_said,
+    words_said,
+)
 from api.agent.intent import heard
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
@@ -167,6 +173,9 @@ def apply_state_patch(
         for key, value in patch.items()
         if key in GUEST_SLOTS and _said_by_the_guest(state, key, value)
     }
+    if "phone" in named:
+        # One spelling from entry on, as for the caller ID (CLAUDE.md §8).
+        named["phone"] = e164(named["phone"])
     state.slots.update(named)
     return named
 

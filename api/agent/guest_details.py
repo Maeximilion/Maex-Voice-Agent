@@ -38,6 +38,9 @@ agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). Each
 ends in a question for the guest, never in a booking. The ear of the voice layer
 decides how numbers and letters arrive as text (T-10.5); read them here once
 it shows that.
+ponytail: a name is known from guest sentences only. Once a known caller's
+name comes from the database (`find_customer`, stage 3), that name has to
+count as well, the way the caller ID does for the number.
 """
 
 import re
@@ -53,6 +56,8 @@ _IN_A_NAME = "-'.,"
 # One number as it is said or typed: digits with the separators
 # `normalize_phone` drops between them. A comma or a word ends it.
 _DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().]*")
+# A period before a blank ends a sentence, and the number with it.
+_SENTENCE_END = re.compile(r"\.\s+")
 # A date or a time begins with one or two digits and a separator. No phone
 # number does: an area code has three digits or more, the zero included.
 _DATE_LIKE = re.compile(r"\d{1,2}[./-]")
@@ -85,41 +90,42 @@ def name_said(name: object, words: set[str]) -> bool:
 
 
 def numbers_said(sentence: str) -> set[str]:
-    """The phone numbers of a guest sentence, each run of digits as one."""
-    keys = {_key(run.group()) for run in _DIGIT_RUN.finditer(sentence)}
-    return keys - {""}
+    """The phone numbers of a guest sentence in E.164, each run of digits as
+    one. A period that ends a sentence ends the run: in "0171 2345678. 19 Uhr
+    passt" the number is not twelve digits long, and in "am 16.09. 0171
+    2345678" it does not begin with the date."""
+    runs = (
+        piece
+        for run in _DIGIT_RUN.findall(sentence)
+        for piece in _SENTENCE_END.split(run)
+    )
+    return {number for piece in runs if (number := e164(piece))}
 
 
 def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:
     """`caller` is the caller ID in E.164, `numbers` what the guest said. A
     model may write the number in another spelling, never with other digits."""
-    key = _key(number)
-    return bool(key) and (key == caller or key in numbers)
+    written = e164(number)
+    return bool(written) and (written == caller or written in numbers)
 
 
-def same_number(number: object, other: object) -> bool:
-    """Two spellings of one phone number."""
-    return bool(_key(number)) and _key(number) == _key(other)
-
-
-def _key(written: object) -> str:
-    """One form for the same number: E.164. Empty for what is no phone number
-    as it is said: only a run that begins with the zero of an area code or the
-    plus of a country code is one. A date, a time, a number of guests or a
-    year are digits too, and `normalize_phone` would make "16.09.2026" the
-    number +16092026 (Codex PR #244, P1). A number without an area code is
-    none either: it would be stored as an international one.
-
-    A number in that form that is too short keeps its digits and so still
-    counts as said: the tool then answers that it was not understood, in its
-    own sentence, where dropping it here would let the booking go on under the
-    caller ID."""
+def e164(written: object) -> str:
+    """The phone number in E.164, the one form the same number has. Empty for
+    what is no phone number as it is said: only digits that begin with the
+    zero of an area code or the plus of a country code are one. A date, a
+    time, a number of guests or a year are digits too, and `normalize_phone`
+    would make "16.09.2026" the number +16092026 (Codex PR #244, P1). A number
+    without an area code is none either: it would be stored as an
+    international one. Nor is one that is too short or too long: kept by its
+    digits, "um 0 Uhr" would be a number a model could put in the place of
+    the caller ID."""
     if not isinstance(written, str):
         return ""
-    text = written.strip()
+    # "(0721) 5551234" begins with the area code as well.
+    text = written.strip().lstrip("( ")
     if not text.startswith(("0", "+")) or _DATE_LIKE.match(text):
         return ""
     try:
-        return normalize_phone(text)
+        return normalize_phone(written)
     except InvalidInput:
-        return "".join(filter(str.isdigit, text))
+        return ""

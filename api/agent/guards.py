@@ -33,7 +33,7 @@ from pydantic import ValidationError
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult, validation_hint
-from api.agent.guest_details import name_said, number_known, same_number
+from api.agent.guest_details import e164, name_said, number_known
 from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
@@ -87,8 +87,9 @@ HINT_GUEST_NAME = (
 HINT_GUEST_PHONE = (
     "Abgelehnt: unter dieser Rufnummer wird nichts angelegt. Es gilt `phone` aus "
     "`slots`, Ziffer für Ziffer. Eine andere Nummer gilt nur, wenn der Gast sie in "
-    "diesem Anruf mit Vorwahl gesagt hat; trag sie dann zuerst in `slots` ein. "
-    "Steht keine in `slots`, frag den Gast nach der Rufnummer mit Vorwahl."
+    "diesem Anruf mit Vorwahl gesagt hat; trag sie dann zuerst als `phone` in "
+    "`slots` ein. Steht kein `phone` in `slots`, frag den Gast nach der "
+    "Rufnummer mit Vorwahl."
 )
 
 
@@ -254,7 +255,8 @@ def _phone_counts(state: ConversationState, phone: Any) -> bool:
     Without a number in the state it must be one the guest said."""
     current = state.slots.get("phone")
     if current is not None:
-        return same_number(phone, current)
+        written = e164(phone)
+        return bool(written) and written == e164(current)
     return number_known(phone, state.caller_phone, state.said_numbers)
 
 

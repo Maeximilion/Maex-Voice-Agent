@@ -962,7 +962,7 @@ def test_number_the_guest_says_in_this_very_turn_books(session, state):
 
     loop.run_turn(state, READBACK_TURN + ", meine Nummer ist 0171 2345678")
 
-    assert state.slots == {"guest_name": "Müller", "phone": "0171 2345678"}
+    assert state.slots == {"guest_name": "Müller", "phone": "+491712345678"}
     assert session.scalars(select(Reservation)).one().phone == "+491712345678"
 
 

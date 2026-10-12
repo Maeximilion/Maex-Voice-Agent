@@ -312,9 +312,13 @@ separated by a comma or named in two
 sentences, letter names when spelling ("Doppel-L", "Ypsilon"), a name written with another
 accent than it was said with, and a spelling the agent proposed and the guest only agreed
 to ("Maier mit a-i?" - "Ja"). How numbers and letters arrive as text is decided by the ear
-of the voice layer (T-10.5); the check is extended there. A number the guest gave too
-short to be one still counts as said: the tool then answers that it was not understood,
-where dropping it would let the booking go on under the caller ID. No prompt text changed:
+of the voice layer (T-10.5); the check is extended there. A run too short or too
+long to be a phone number is none either: kept by its digits, "um 0 Uhr" would be a number
+a model could put in the place of the caller ID (own review of PR #244). A period that
+ends a sentence ends the number ("0171 2345678. 19 Uhr passt" names one number, not a
+longer one). A number that is taken stands in `slots` in E.164, whatever spelling the
+model used. A name is known from guest sentences only: once a known caller's name comes
+from the database (`find_customer`, stage 3), that name has to count as well. No prompt text changed:
 the model learns of the rule from the hint of a refused call.
 
 ---
