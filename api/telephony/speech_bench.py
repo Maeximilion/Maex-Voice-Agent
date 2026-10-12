@@ -28,12 +28,23 @@ from typing import Any
 
 import numpy as np
 
+from api.telephony.speech_spike import (
+    MENU_COPY,
+    key_terms_for,
+    menu_errors,
+    terms_that_fit,
+)
+
 LINE_RATE = 8000
 EAR_RATE = 16000
 BAND_HZ = (300, 3400)
 _TAPS = 255
 
-Ear = Callable[[np.ndarray], str]
+# What an ear makes of an utterance, given the key terms for it.
+Ear = Callable[[np.ndarray, list[str]], str]
+# The key terms of a window an ear takes: none for an ear without key terms,
+# for the others what fits its prompt.
+Fit = Callable[[list[str]], list[str]]
 
 
 def telephone(pcm: bytes, rate: int) -> np.ndarray:
@@ -92,7 +103,9 @@ def fetch(run: Path, plan: dict[str, Any]) -> None:
             )
 
 
-def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
+def load_ear(spec: dict[str, Any], models: Path) -> tuple[Ear, Fit]:
+    """The ear, and what it keeps of a window of key terms. The terms are cut
+    before the ear hears, so the run can say what each utterance really got."""
     if spec["engine"] == "whisper":
         from faster_whisper import WhisperModel
 
@@ -103,23 +116,37 @@ def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
             download_root=str(models / "whisper"),
             local_files_only=True,
         )
-        hotwords = ", ".join(key_terms) if spec.get("key_terms") else None
 
-        def hear(audio: np.ndarray) -> str:
+        # The engine keeps fewer than half its prompt for key terms, counted
+        # with a leading blank (faster-whisper `get_prompt`), and cuts a longer
+        # list without a word: cut here, at a whole term.
+        def tokens(text: str) -> int:
+            encoded = model.hf_tokenizer.encode(" " + text, add_special_tokens=False)
+            return len(encoded.ids)
+
+        def fit(terms: list[str]) -> list[str]:
+            if not spec.get("key_terms"):
+                return []
+            return terms_that_fit(tokens, terms, model.max_length // 2)
+
+        def hear(audio: np.ndarray, terms: list[str]) -> str:
             segments, _ = model.transcribe(
                 audio,
                 language="de",
                 condition_on_previous_text=False,
-                hotwords=hotwords,
+                hotwords=", ".join(terms) or None,
             )
             return " ".join(segment.text.strip() for segment in segments)
 
-        return hear
+        return hear, fit
     if spec["engine"] == "parakeet":
         import onnx_asr
 
         parakeet = onnx_asr.load_model(spec["model"], models / spec["model"])
-        return lambda audio: parakeet.recognize(audio, sample_rate=EAR_RATE)
+        return (
+            lambda audio, terms: parakeet.recognize(audio, sample_rate=EAR_RATE),
+            lambda terms: [],
+        )
     raise ValueError(f"unknown ear engine {spec['engine']!r}")
 
 
@@ -184,14 +211,17 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
     for spec in plan["ears"]:
         print("ear:", spec["id"], flush=True)
         rows: list[dict[str, Any]] = []
+        hear: Ear | None = None
+        fit: Fit | None = None
         try:
             before = gpu_mib() if spec.get("device") == "cuda" else None
             started = time.monotonic()
-            hear = load_ear(spec, models, plan["key_terms"])
-            hear(next(iter(spoken.values())))  # warm up, not timed below
+            hear, fit = load_ear(spec, models)
+            hear(next(iter(spoken.values())), [])  # warm up, not timed below
             info: dict[str, Any] = {
                 "load_seconds": round(time.monotonic() - started, 1)
             }
+            names = plan["key_terms"]
             after = gpu_mib() if before is not None else None
             if before is not None and after is not None:
                 info["gpu_mib"] = after - before
@@ -200,22 +230,31 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
             every = max(1, len(spoken) // spec.get("sample", len(spoken)))
             for (sentence_id, name), audio in list(spoken.items())[::every]:
                 started = time.monotonic()
-                text = hear(audio)
+                # A window of the names per utterance, never the menu (hard
+                # rule 6): sentence "d7" is dish 7, "n7" and "c7" the seventh
+                # of theirs. Cut to what the ear takes before it hears.
+                terms = fit(key_terms_for(names, int(sentence_id[1:])))
+                text = hear(audio, terms)
                 rows.append(
                     {
                         "id": sentence_id,
                         "voice": name,
                         "ear": spec["id"],
                         "text": text,
+                        # Only for an ear that takes key terms: how many it got.
+                        **({"key_terms": len(terms)} if spec.get("key_terms") else {}),
                         "seconds": round(time.monotonic() - started, 3),
                         "audio_seconds": round(len(audio) / EAR_RATE, 2),
                     }
                 )
-            del hear
         except Exception as exc:  # noqa: BLE001 - whatever an engine raises
             # An engine that does not start or breaks is a result of the spike.
             ears[spec["id"]] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
             continue
+        finally:
+            # Both hold the model. Dropped whether the ear ran through or broke
+            # on the way, or the next ear would load next to it (Codex PR #268).
+            hear = fit = None
         ears[spec["id"]] = info
         heard += rows
 
@@ -247,9 +286,15 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] not in ("fetch", "measure"):
+    if len(argv) != 2 or argv[0] not in ("check", "fetch", "measure"):
         print(__doc__, file=sys.stderr)
         return 2
+    if argv[0] == "check":
+        # The copy of the menu given with --menu, by the rules of the import.
+        errors = menu_errors(Path(argv[1]) / MENU_COPY)
+        for error in errors:
+            print("menu:", error, file=sys.stderr)
+        return 1 if errors else 0
     run = Path(argv[1])
     plan = json.loads((run / "plan.json").read_text(encoding="utf-8"))
     if argv[0] == "fetch":
