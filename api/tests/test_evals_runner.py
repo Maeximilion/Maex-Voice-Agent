@@ -1839,3 +1839,55 @@ def test_a_cart_is_not_taken_by_the_recorder_while_the_draft_is_read_out_again()
     rec.next_turn("", {}, _result("confirm", True))
 
     assert rec.recording.unconfirmed == []
+
+
+def test_a_cart_next_to_the_refused_confirm_is_taken_back_in_the_recording():
+    """The core leaves a `cart` aside that stands next to a `confirm` it
+    refuses with the draft's sentence. The recorder sees the `cart` first and
+    learns of the refusal with the result: the draft is back then."""
+    other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    confirm = ToolCall("confirm", {"entity_id": "x"})
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                LLMTurn(tool_call=confirm, cart=other_order),
+                LLMTurn(say="Ist gebucht."),
+                LLMTurn(tool_call=confirm),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _refused_yes(READBACK))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
+
+
+def test_a_held_back_confirm_whose_result_never_comes_is_no_violation():
+    """A model that answers the refusal with `confirm` again, as the last hop
+    of the turn: the core holds it back and the call goes to the team. Nothing
+    was carried out, so nothing is counted."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                confirm,
+                confirm,
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _refused_yes(READBACK))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 0

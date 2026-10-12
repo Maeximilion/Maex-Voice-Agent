@@ -330,6 +330,19 @@ def unheard_readback(state: ConversationState) -> str | None:
     return None
 
 
+def puts_the_draft_again(
+    state: ConversationState, start: TurnStart, user_text: str, call: ToolCall | None
+) -> bool:
+    """Is this the `confirm` that will be refused with the draft's sentence?
+    The loop asks before it takes anything that stands next to the call: a
+    `cart` in the same answer would drop the draft first, and the refusal
+    would then carry no sentence (Codex PR #273)."""
+    if call is None or call.name != "confirm":
+        return False
+    refused = refusal(state, start, user_text, call)
+    return refused is not None and bool(refused.say)
+
+
 def reread_first(state: ConversationState) -> ToolResult:
     """What any further tool call of a turn gets once a yes was refused for
     an unheard draft. The guest said yes and nothing else: no transfer, no

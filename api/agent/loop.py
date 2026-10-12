@@ -175,12 +175,17 @@ class ConversationLoop:
                     error=str(exc),
                 )
                 return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
-            # Once the draft is to be read out again, nothing of a further
-            # answer is carried out but its sentence: no patch, no `cart`, no
-            # tool. The guest said yes and nothing else, and each of them can
-            # drop the draft the guest has to hear (a phone number in a patch
-            # does, `state._number_set`).
-            if turn.state_patch and not reread_due:
+            # Once the draft is to be read out again, nothing of an answer is
+            # carried out but its sentence: no patch, no `cart`, no tool, and
+            # no step on the understanding ladder. The guest said yes and
+            # nothing else, and each of them can drop the draft the guest has
+            # to hear or end the call before it is said (a phone number in a
+            # patch drops it, `state._number_set`). That holds from the
+            # answer on that carries the `confirm` to be refused.
+            aside = reread_due or guards.puts_the_draft_again(
+                state, start, user_text, turn.tool_call
+            )
+            if turn.state_patch and not aside:
                 # Only what was taken counts as understood: a name outside
                 # `GUEST_SLOTS` is dropped and is no success on the ladder.
                 for field_name in apply_state_patch(state, turn.state_patch):
@@ -196,6 +201,7 @@ class ConversationLoop:
 
             if (
                 turn.understanding_failure
+                and not aside
                 and turn.understanding_failure not in reported_failures
             ):
                 reported_failures.add(turn.understanding_failure)
@@ -210,7 +216,7 @@ class ConversationLoop:
 
             # Not while the draft is to be read out again (above): a changed
             # or refused order would drop it (Codex PR #273).
-            if turn.cart is not None and not reread_due:
+            if turn.cart is not None and not aside:
                 # Rule 2 for what a model keeps across turns (guards.py). A
                 # refused order stops the whole answer: neither its sentence
                 # nor its tool call is carried out on an order the core did

@@ -25,6 +25,7 @@ from api.agent.guards import (
     refusal,
     reread,
 )
+from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, ConversationLoop
 from api.agent.state import ConversationState, apply_tool_result
@@ -460,3 +461,74 @@ def test_what_stands_next_to_the_answer_is_not_taken_before_the_reread(
 
     assert status(session, flow, draft_id) == "confirmed"
     assert booked(session, flow) == (1, 1)
+
+
+def other_cart(flow: Flow) -> list[dict[str, Any]]:
+    """An order that differs from what was drafted: taken as a change in the
+    order flow, refused for its unknown dish in a call about a table. Either
+    way it drops the draft that waits."""
+    if flow.entity == "order":
+        dish = flow.calls[-1].args["items"][0]["menu_item_id"]
+        return [{"menu_item_id": dish, "quantity": 5}]
+    return [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+
+
+def test_what_stands_next_to_the_refused_confirm_itself_is_not_taken(
+    session, state, flow
+):
+    """The answer that carries the `confirm` also carries a changed order and
+    a patch. Taken first, they would drop the draft, the refusal would carry
+    no sentence and "Ist gebucht." would be spoken (Codex PR #273)."""
+    readback, draft_id = refused_yes(session, state, flow)
+    answer = LLMTurn(
+        tool_call=flow.confirm(draft_id),
+        cart=other_cart(flow),
+        state_patch={"phone": CALLER},
+    )
+    model = Model(answer, say="Ist gebucht.")
+
+    said = turn(session, state, "Ja", model)
+
+    assert said == [readback]
+    told = json.loads(model.inputs[1])
+    assert (told["tool"], told["hint"], told["say"]) == (
+        "confirm",
+        HINT_CONFIRM,
+        readback,
+    )
+    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)
+
+
+def test_the_understanding_ladder_does_not_end_the_call_before_the_reread(
+    session, state, flow
+):
+    """One more reported failure would end the call with the team. In the
+    turn of the reread the model's report is left aside like everything else
+    next to its sentence (Codex PR #273)."""
+    readback, draft_id = refused_yes(session, state, flow)
+    loop = ConversationLoop(
+        session,
+        Model(
+            flow.confirm(draft_id),
+            LLMTurn(say="Wie war Ihre Nummer?", understanding_failure="phone"),
+        ),
+        "system",
+        now=NOW,
+        clock=lambda: 0,
+    )
+    probe, needed = UnderstandingLadder(), 0
+    while not probe.should_end_call("phone"):
+        probe.record_failure("phone")
+        needed += 1
+    for _ in range(needed - 1):
+        loop._ladder.record_failure("phone")
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.say == [readback]
+    assert result.ended is False and not state.transferred

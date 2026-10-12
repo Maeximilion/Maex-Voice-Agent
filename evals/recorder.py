@@ -102,6 +102,10 @@ class RecordingLLM:
         # this guest turn with the draft's sentence, whatever the model says
         # (`guards.reread`).
         self._reread_due = False
+        # What a `cart` next to a `confirm` changed in this recording, to be
+        # taken back when that `confirm` turns out to be refused with the
+        # draft's sentence: the core left the `cart` aside then.
+        self._cart_undo: tuple[list[dict[str, Any]], int | None, bool] | None = None
 
     @property
     def usage(self) -> Usage | None:
@@ -115,9 +119,14 @@ class RecordingLLM:
     ) -> LLMTurn:
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input)
+        self._cart_undo = None
         if turn.cart is not None and not self._reread_due:
             # Not while the core reads the draft out again: it takes no
-            # `cart` then (`agent/loop.py`).
+            # `cart` then (`agent/loop.py`). Whether this very answer begins
+            # that is known only with the result of its `confirm`.
+            if turn.tool_call is not None and turn.tool_call.name == "confirm":
+                rec = self.recording
+                self._cart_undo = (self._cart, rec.drafted_at, rec.read_out)
             # First, as in the core (`agent/loop.py`): the `cart` is taken
             # before the answer next to it is carried out. A changed order
             # drops the draft that waited; a `draft_order` in the same answer
@@ -171,6 +180,9 @@ class RecordingLLM:
         ):
             # Only the core's refusal of a yes carries the draft's sentence.
             self._reread_due = True
+            if self._cart_undo is not None:
+                rec = self.recording
+                self._cart, rec.drafted_at, rec.read_out = self._cart_undo
         if result.get("tool") == CART and not result.get("ok"):
             # The core refused the `cart`: the answer next to it was neither
             # spoken nor carried out, the order stays what it was, and a draft
@@ -244,9 +256,11 @@ class RecordingLLM:
         last = rec.customer_lines[-1] if rec.customer_lines else ""
         if self._reread_due:
             # Held back by the core until the draft is read out again
-            # (`guards.reread_first`): the draft that waits stays as it is.
-            pass
-        elif name in DRAFT_TOOLS:
+            # (`guards.reread_first`): never carried out, so there is nothing
+            # to measure, also when its result never comes back because it
+            # was the last hop of the turn (Codex PR #273).
+            return
+        if name in DRAFT_TOOLS:
             rec.drafted_at = len(rec.customer_lines)
         elif name in SUPERSEDING_TOOLS:
             rec.drafted_at = None
