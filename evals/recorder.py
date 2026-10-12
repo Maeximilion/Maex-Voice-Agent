@@ -98,6 +98,10 @@ class RecordingLLM:
         # drops the draft (`state.replace_cart`, `guards.take_cart`).
         self._cart: list[dict[str, Any]] = []
         self._cart_before: list[dict[str, Any]] = []
+        # The core refused a yes for a draft nobody heard last and will end
+        # this guest turn with the draft's sentence, whatever the model says
+        # (`guards.reread`).
+        self._reread_due = False
 
     @property
     def usage(self) -> Usage | None:
@@ -121,7 +125,12 @@ class RecordingLLM:
             self._observe_call(turn.tool_call.name, turn.tool_call.args)
         elif turn.say is not None:
             rec = self.recording
-            rec.read_out = rec.readback is not None and read_out(turn.say, rec.readback)
+            # What the guest hears, not what the model returned: where the
+            # core puts the draft's sentence in place of the model's, the
+            # draft was read out (Codex PR #273).
+            rec.read_out = rec.readback is not None and (
+                self._reread_due or read_out(turn.say, rec.readback)
+            )
         return turn
 
     def _observe_cart(self, cart: Any) -> None:
@@ -149,8 +158,17 @@ class RecordingLLM:
         result = _tool_result(user_input)
         if result is None:
             self.recording.customer_lines.append(user_input)
+            self._reread_due = False
             return
         call, self._open_call = self._open_call, None
+        if (
+            result.get("tool") == "confirm"
+            and not result.get("ok")
+            and self.recording.readback is not None
+            and result.get("say") == self.recording.readback
+        ):
+            # Only the core's refusal of a yes carries the draft's sentence.
+            self._reread_due = True
         if result.get("tool") == CART and not result.get("ok"):
             # The core refused the `cart`: the answer next to it was neither
             # spoken nor carried out, the order stays what it was, and a draft

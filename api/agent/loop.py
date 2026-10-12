@@ -141,7 +141,10 @@ class ConversationLoop:
         # refused `cart` included.
         called: list[str] = []
         # Rule 3: a yes was refused for a draft the guest had not heard last.
-        # The turn then ends with the sentence of that draft (`guards.reread`).
+        # The turn then ends with the sentence of that draft (`guards.reread`),
+        # and no other tool is carried out before (`guards.reread_first`). A
+        # model that still returns nothing but tool calls runs into the hop
+        # limit and the team, like any stuck turn.
         reread_due = False
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
@@ -228,12 +231,18 @@ class ConversationLoop:
                 )
 
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
-            refused = guards.refusal(
-                state,
-                start,
-                user_text,
-                turn.tool_call,
-                cart_sent=turn.cart is not None,
+            # Once the draft is to be read out again, no tool is carried out
+            # in this turn any more.
+            refused = (
+                guards.reread_first(state)
+                if reread_due
+                else guards.refusal(
+                    state,
+                    start,
+                    user_text,
+                    turn.tool_call,
+                    cart_sent=turn.cart is not None,
+                )
             )
             if refused is not None:
                 log_refused(

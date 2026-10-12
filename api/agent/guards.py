@@ -58,6 +58,11 @@ HINT_CONFIRM = (
     "Entwurf. Erst den readback wörtlich vorlesen (steht im Zustand, solange er "
     "nicht vorgelesen ist), dann auf ein klares Ja warten."
 )
+HINT_REREAD = (
+    "Abgelehnt: in diesem Zug wird kein Tool mehr ausgeführt. Der Gast hat Ja "
+    "gesagt, ohne den Entwurf zuletzt gehört zu haben. Lies den Satz aus `say` "
+    "wörtlich vor und warte auf das Ja."
+)
 HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
     "search_menu in diesem Anruf. Erst suchen; bei mehreren Treffern den Gast "
@@ -323,6 +328,18 @@ def unheard_readback(state: ConversationState) -> str | None:
     if state.stage == "readback_pending" and not state.readback_heard:
         return state.readback
     return None
+
+
+def reread_first(state: ConversationState) -> ToolResult:
+    """What any further tool call of a turn gets once a yes was refused for
+    an unheard draft. The guest said yes and nothing else: no transfer, no
+    second `confirm` and no search is carried out on that sentence, or the
+    turn would end with the team, or with nothing, instead of the question
+    the guest has to hear (Codex PR #273). It costs a tool hop like any
+    refused call."""
+    return ToolResult(
+        ok=False, error_code="conflict", hint=HINT_REREAD, say=unheard_readback(state)
+    )
 
 
 def reread(state: ConversationState, say: str) -> str:

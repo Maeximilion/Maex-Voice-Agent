@@ -17,9 +17,16 @@ from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult
-from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, refusal, reread
+from api.agent.guards import (
+    HINT_CONFIRM,
+    HINT_REREAD,
+    begin_turn,
+    note_said,
+    refusal,
+    reread,
+)
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import ConversationLoop
+from api.agent.loop import MAX_TOOL_HOPS, ConversationLoop
 from api.agent.state import ConversationState, apply_tool_result
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
@@ -331,3 +338,61 @@ def test_reread_leaves_the_sentence_alone_when_no_draft_waits_unheard():
 
     assert reread(heard, "Ja, Hunde sind willkommen.") == "Ja, Hunde sind willkommen."
     assert reread(nothing, "Guten Tag.") == "Guten Tag."
+
+
+# --- nothing else is carried out before the draft is read out (Codex PR #273) ---
+
+TRANSFER = ToolCall("transfer_to_team", {"reason": "not_understood"})
+
+
+def refused_yes(session, state, flow: Flow) -> tuple[str, uuid.UUID]:
+    """A draft that was read out, then another answer: the next yes is refused."""
+    readback = read_to_the_guest(session, state, flow)
+    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
+    return readback, flow.draft_id(state)
+
+
+def test_a_transfer_after_the_refused_yes_is_not_carried_out(session, state, flow):
+    """The model answers the refusal with a transfer, as the stand-in did. The
+    guest said yes and nothing else: the call stays, the draft is read out."""
+    readback, draft_id = refused_yes(session, state, flow)
+    model = Model(flow.confirm(draft_id), TRANSFER, say="Ich verbinde Sie.")
+
+    said = turn(session, state, "Ja", model)
+
+    assert said == [readback]
+    told = json.loads(model.inputs[2])
+    assert (told["tool"], told["ok"]) == ("transfer_to_team", False)
+    assert (told["hint"], told["say"]) == (HINT_REREAD, readback)
+    assert state.stage == "readback_pending" and not state.transferred
+    assert status(session, flow, draft_id) == "draft"
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)
+
+
+def test_a_second_confirm_after_the_refused_yes_books_nothing(session, state, flow):
+    readback, draft_id = refused_yes(session, state, flow)
+    again = flow.confirm(draft_id)
+
+    said = turn(session, state, "Ja", Model(again, again, say="Ist gebucht."))
+
+    assert said == [readback]
+    assert status(session, flow, draft_id) == "draft"
+    assert booked(session, flow) == (0, 0)
+
+
+def test_a_model_that_returns_only_tools_ends_with_the_team(session, state, flow):
+    """The last resort stays what it is for any stuck turn (rule 5): the hop
+    limit, then the team. Nothing is booked on the way."""
+    _, draft_id = refused_yes(session, state, flow)
+    model = Model(flow.confirm(draft_id), *[TRANSFER] * MAX_TOOL_HOPS)
+    loop = ConversationLoop(session, model, "system", now=NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.ended is True and state.transferred
+    assert status(session, flow, draft_id) == "draft"
+    assert booked(session, flow) == (0, 0)

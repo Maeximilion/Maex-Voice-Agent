@@ -1721,3 +1721,58 @@ def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
         120,
         9,
     )
+
+
+# --- The recorder hears what the guest hears (Codex PR #273) ---------------------
+
+
+def _refused_yes(say: str | None) -> str:
+    """The core's refusal of a `confirm`. On a yes for a draft nobody heard
+    last it carries the draft's sentence, which the core then speaks itself
+    where the model says something else (`guards.reread`)."""
+    result = {"tool": "confirm", "ok": False, "error_code": "conflict", "hint": "x"}
+    if say is not None:
+        result["say"] = say
+    return json.dumps(result)
+
+
+def _booked_after_a_refused_yes(refusal: str) -> RecordingLLM:
+    """A model that talks past the draft, gets its `confirm` on "Ja" refused,
+    answers "Ist gebucht." and returns `confirm` again on the next "Ja"."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                confirm,
+                LLMTurn(say="Ist gebucht."),
+                confirm,
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, refusal)
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+    return rec
+
+
+def test_a_draft_the_core_read_out_in_place_of_the_model_was_read_out():
+    """The refusal carried the draft's sentence, so the guest heard it instead
+    of "Ist gebucht.": the yes after it is a yes to the draft."""
+    rec = _booked_after_a_refused_yes(_refused_yes(READBACK))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_a_refusal_without_the_sentence_leaves_the_draft_unread():
+    """A refusal that carries no sentence changes nothing about what the guest
+    heard: the model's "Ist gebucht." is no read-back."""
+    rec = _booked_after_a_refused_yes(_refused_yes(None))
+
+    assert rec.recording.unconfirmed == ["Ja"]
