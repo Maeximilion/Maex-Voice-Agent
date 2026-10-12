@@ -2,7 +2,7 @@
 
 import pytest
 
-from api.telephony.audio import dominant, level, tone, tone_seconds
+from api.telephony.audio import dominant, level, tone, tone_end, tone_seconds
 
 RATE = 16000
 
@@ -59,6 +59,17 @@ def test_tone_seconds_ignores_another_tone():
     pcm = tone(554, 1.0, RATE) + tone(440, 1.0, RATE)
 
     assert tone_seconds(pcm, 440, RATE) == pytest.approx(1.0, abs=0.03)
+
+
+def test_tone_end_is_where_the_tone_stops_not_how_long_it_was():
+    pcm = bytes(RATE * 2) + tone(440, 2.0, RATE) + bytes(RATE * 2)
+
+    assert tone_end(pcm, 440, RATE) == pytest.approx(3.0, abs=0.03)
+
+
+def test_tone_end_is_none_without_the_tone():
+    assert tone_end(bytes(RATE), 440, RATE) is None
+    assert tone_end(b"", 440, RATE) is None
 
 
 def test_tone_seconds_is_zero_without_the_tone():

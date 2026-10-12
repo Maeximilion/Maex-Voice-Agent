@@ -42,7 +42,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from api.telephony.audio import dominant, tone, tone_seconds
+from api.telephony.audio import dominant, tone, tone_end, tone_seconds
 from api.telephony.probe import CALLER_TONES, PLANS, STOP_KEY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -115,6 +115,10 @@ def main(argv: list[str] | None = None) -> int:
     tidied = True
     try:
         step("Render configs and test tones into", run_dir)
+        if not args.dry_run:
+            # First of all: whatever breaks from here on, the results of an
+            # earlier run must not stay behind looking like this one's.
+            clear_results(run_dir)
         # A stack left by --keep still has the old folders mounted, and `up` would
         # not recreate it: stop it before the folders are replaced.
         stack.compose("down", "--volumes")
@@ -238,6 +242,13 @@ def usable_run_dir(run_dir: Path) -> bool:
     return (run_dir / RUN_MARKER).exists() or not any(run_dir.iterdir())
 
 
+def clear_results(run_dir: Path) -> None:
+    """Remove what an earlier run reported: its points, its output, its calls."""
+    shutil.rmtree(run_dir / "calls", ignore_errors=True)
+    for name in ("report.json", "pbx.log"):
+        (run_dir / name).unlink(missing_ok=True)
+
+
 def render(run_dir: Path) -> None:
     """Configs with a fresh password, the caller's tones, empty result folders."""
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -254,11 +265,6 @@ def render(run_dir: Path) -> None:
     for name in ("tones", "rec", "probe"):
         shutil.rmtree(run_dir / name, ignore_errors=True)
         (run_dir / name).mkdir(parents=True)
-    # Results of an earlier run: a run that breaks must not leave them behind
-    # looking like its own.
-    shutil.rmtree(run_dir / "calls", ignore_errors=True)
-    for name in ("report.json", "pbx.log"):
-        (run_dir / name).unlink(missing_ok=True)
     for exten, freq in CALLER_TONES.items():
         with wave.open(str(run_dir / "tones" / f"caller-{exten}.wav"), "wb") as out:
             out.setnchannels(1)
@@ -468,7 +474,8 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
     flush = events(log, "out", "command", "FLUSH_MEDIA")
     status = events(log, "in", "event", "STATUS")
     heard = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
-    if not flush or not heard:
+    end = tone_end(call["heard"], plan.tone_hz, LINE_RATE)
+    if not flush or end is None:
         return [
             (
                 "610: a key stops the playback",
@@ -476,15 +483,17 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
                 f"flush sent: {bool(flush)}, tone heard: {heard:.2f} s",
             )
         ]
-    # How much longer the caller heard the tone than we let it play. Less than
-    # that means the tone ended by itself, and the flush stopped nothing.
-    overrun = heard - (flush[0]["t"] - sent_at(log))
+    # How long after the flush the caller still heard the tone: where it ends in
+    # the recording against when we flushed, both counted from the start of the
+    # call. Much later, the flush stopped nothing in time; clearly earlier, the
+    # tone ended by itself.
+    overrun = end - (flush[0]["t"] - sent_at(log))
     return [
         (
             "610: a key stops the playback",
             log[-1]["digits"] == STOP_KEY and -STOP_SKEW <= overrun <= STOP_LIMIT,
             f"{plan.seconds} s queued, caller heard {heard:.2f} s, "
-            f"stopped {overrun * 1000:.0f} ms after the flush "
+            f"the tone ended {overrun * 1000:+.0f} ms from the flush "
             "(counted in 20 ms windows: exact to one or two frames)",
         ),
         (

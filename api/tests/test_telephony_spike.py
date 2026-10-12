@@ -200,6 +200,13 @@ def test_a_tone_that_ended_before_the_flush_was_not_stopped_by_it():
     ]
 
 
+def test_a_tone_that_started_late_and_ran_past_the_flush_fails():
+    calls = stopped(flush_at=2.17, heard_seconds=2.18)
+    calls["610"]["heard"] = bytes(LINE * 2) + calls["610"]["heard"]
+
+    assert failed(spike.judge_stop(calls)) == ["610: a key stops the playback"]
+
+
 def test_a_tone_that_plays_on_after_the_flush_fails():
     assert failed(spike.judge_stop(stopped(flush_at=2.17, heard_seconds=4.0))) == [
         "610: a key stops the playback"
@@ -297,19 +304,41 @@ def test_only_a_new_an_empty_or_an_own_folder_is_a_run_directory(tmp_path):
     assert not spike.usable_run_dir(tmp_path)
 
 
-def test_render_removes_the_results_of_an_earlier_run(tmp_path):
+def test_the_results_of_an_earlier_run_are_removed(tmp_path):
     run = tmp_path / "run"
     spike.render(run)
     (run / "report.json").write_text("[]")
     (run / "pbx.log").write_text("old")
     (run / "calls" / "601").mkdir(parents=True)
 
-    spike.render(run)
+    spike.clear_results(run)
 
     assert not (run / "report.json").exists()
     assert not (run / "pbx.log").exists()
     assert not (run / "calls").exists()
     assert (run / "pbx" / "pjsip.conf").exists()
+
+
+def test_clearing_results_needs_no_run_directory(tmp_path):
+    spike.clear_results(tmp_path / "never-made")
+
+
+def test_a_run_that_breaks_at_its_first_step_leaves_no_old_report(
+    tmp_path, monkeypatch
+):
+    run = tmp_path / "run"
+    spike.render(run)
+    (run / "report.json").write_text("[]")
+    monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(spike, "docker_problem", lambda: None)
+
+    def broken(self, *args):
+        raise spike.SpikeError("the daemon is gone")
+
+    monkeypatch.setattr(spike.Stack, "compose", broken)
+
+    assert spike.main(["--run-dir", str(run)]) == 1
+    assert not (run / "report.json").exists()
 
 
 def test_render_marks_its_run_directory(tmp_path):

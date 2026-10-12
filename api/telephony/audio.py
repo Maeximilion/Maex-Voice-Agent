@@ -54,13 +54,25 @@ def tone_seconds(pcm: bytes, freq_hz: int, rate: int) -> float:
     Looked at in windows of 20 ms, one frame of the phone line; a window the tone
     only partly fills may not count, so each edge is exact to about that.
     """
+    return len(_sounding(pcm, freq_hz, rate)) * (rate // 50) / rate
+
+
+def tone_end(pcm: bytes, freq_hz: int, rate: int) -> float | None:
+    """The second in `pcm` at which `freq_hz` sounds for the last time, None when
+    it never does. Where a tone stops, which its length alone does not tell."""
+    sounding = _sounding(pcm, freq_hz, rate)
+    return (sounding[-1] + rate // 50) / rate if sounding else None
+
+
+def _sounding(pcm: bytes, freq_hz: int, rate: int) -> list[int]:
+    """Where the 20 ms windows start, in samples, in which `freq_hz` sounds."""
     samples = _samples(pcm)
     window = rate // 50
-    sounding = sum(
-        _level(samples[start : start + window], freq_hz, rate) >= FLOOR
+    return [
+        start
         for start in range(0, len(samples) - window + 1, window)
-    )
-    return sounding * window / rate
+        if _level(samples[start : start + window], freq_hz, rate) >= FLOOR
+    ]
 
 
 def _samples(pcm: bytes) -> array:
