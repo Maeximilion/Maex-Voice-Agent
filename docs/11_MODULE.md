@@ -142,6 +142,8 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `audio.py` | test tones in raw call audio: make one, find its frequency and how long it sounds (T-10.1). Standard library only |
 | `probe.py` | measuring endpoint of the spike T-10.1: stands where `voice` will stand, plays a tone per dialed extension, reacts to keys, logs every control frame. Plain ASGI, no database, no settings. Driven by `spike.py`; the Asterisk configuration of the spike is `deploy/asterisk/` (docs/20 §10) |
 | `spike.py` | kit of the spike T-10.1: starts the test PBX, the scripted softphone and the probe as containers, places the calls and judges them from the probe's logs and the softphone's recordings. In `telephony/` because it drives the PBX; `scripts/voice_spike.py` is only its entry. Standard library only |
+| `speech_bench.py` | bench of the spike T-10.3, runs inside the image of `deploy/speech/`: downloads the open engines' model files, speaks the sentences of a plan with every voice, sends them through the band of a telephone line (`telephone`), lets every ear transcribe them and writes what was heard with the timings. Judges nothing and knows nothing of the menu. The only file here that needs numpy; the engine packages are imported where they are used and live in that image only |
+| `speech_spike.py` | kit of the spike T-10.3: names the candidates (ears, voices), builds the plan from the eval files, runs bench and judge (`evals/heard.py`) as containers, the last two without a network, and prints the tables and the pick. `scripts/speech_spike.py` is only its entry. Standard library only |
 | `adapters/stt_<engine>.py` | planned (docs/20 §2): one speech-to-text engine each |
 | `adapters/tts_<engine>.py` | planned (docs/20 §2): one text-to-speech engine each |
 | `adapters/fake_speech.py` | planned (docs/20 §2): fake ear and mouth for tests |
@@ -199,6 +201,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 
 ### `evals/`
 - `runner.py` (Lauf, Wegwerf-Datenbank, CLI), `judge.py` (Abgleich mit dem Datenbankzustand), `recorder.py` (Beobachter am Modell für geratene Positionen und `confirm` ohne Ja), `report.py` (JSON, Markdown, Vergleich mit dem letzten Lauf), `scratch_db.py` (Wegwerf-Datenbanken, auch für die Tests) — siehe 08
+- `heard.py` - judges what a speech-to-text engine heard against what was said: a number sentence by the rule that resolves it on the phone (`number_eval.resolve`) as right, asked or silently wrong, a dish name letter by letter. Knows no engine; written for the spike T-10.3, the audio evals of T-10.7 judge the same way
 - `menu/` — Evalkarte im Importformat (docs/14), Testdaten
 - `cases/<bereich>_<nr>_<name>.json` — optional `now`, `caller_id`, `sold_out`, `repeat_confirm`, `pending` (bekannte Lücke mit Aufgabe, docs/08 §3)
 

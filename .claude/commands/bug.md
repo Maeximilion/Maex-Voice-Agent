@@ -1,6 +1,6 @@
 Handle this production error: $ARGUMENTS
 
-Order is mandatory:
+Order is mandatory, after loading the skill `code-autopilot` (Skill tool; where it is not installed, say so in one line and go on):
 1. FIRST create an eval case in `evals/cases/` describing the error (format: `docs/08_EVALS.md`). Expected behavior is correct behavior.
 2. Run `make eval` for this case. It MUST be red. If green, case is wrongly described — fix it before proceeding.
 3. Find root cause: which module from `docs/11_MODULE.md`? Name file and function.
