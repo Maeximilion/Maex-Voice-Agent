@@ -10,6 +10,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from api.telephony import probe
 from api.telephony.adapters.asterisk import MAX_MESSAGE_BYTES
 from api.telephony.audio import tone
 from api.telephony.probe import app
@@ -127,6 +128,31 @@ def test_what_the_caller_plays_is_named_in_the_summary(out):
     assert 0 <= summary["frame_gap_max_ms"] < 1000
     assert summary["tones_in"]["1000"] == pytest.approx(1.0, abs=0.03)
     assert summary["tones_in"]["1200"] == 0.0
+
+
+def test_the_summary_says_when_the_callers_tone_began_not_when_audio_began(
+    tmp_path, monkeypatch
+):
+    class Clock:
+        now = 50.0
+
+        def monotonic(self) -> float:
+            return self.now
+
+    clock = Clock()
+    monkeypatch.setattr(probe, "time", clock)
+    call = probe.ProbeCall("610", None, tmp_path)
+    audio = bytes(FRAME * 25) + tone(1000, 1.0, 16000)  # half a second of silence first
+
+    for start in range(0, len(audio), FRAME):
+        clock.now += 0.02
+        call.on_audio(audio[start : start + FRAME])
+    call.close()
+
+    (path,) = tmp_path.glob("*.jsonl")
+    summary = json.loads(path.read_text(encoding="utf-8").splitlines()[-1])
+    assert summary["tones_in_at"]["1000"] == pytest.approx(0.52, abs=0.03)
+    assert summary["tones_in_at"]["1200"] is None
 
 
 def test_an_extension_without_a_plan_gets_silence_and_a_log_line(out):

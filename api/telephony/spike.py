@@ -505,9 +505,9 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
     heard = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
     ours = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
     # The caller's own tone is on both clocks: where it starts in the softphone's
-    # recording, and when its first frame reached the probe.
+    # recording, and when the frame it starts in reached the probe.
     mark = tone_span(call["sent"], CALLER_TONES["610"], LINE_RATE)
-    mark_at_probe = log[-1]["first_audio_t"]
+    mark_at_probe = log[-1]["tones_in_at"].get(str(CALLER_TONES["610"]))
     if not flush or ours is None or mark is None or mark_at_probe is None:
         return [
             (
@@ -522,11 +522,17 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
     # nothing in time; clearly earlier, the tone ended by itself.
     flush_in_recording = mark[0] + (flush[0]["t"] - mark_at_probe)
     overrun = ours[1] - flush_in_recording
+    # And the tone has to have played until then: a blip at the right moment is
+    # no playback that was stopped.
+    let_play = flush[0]["t"] - sent_at(log)
     return [
         (
             "610: a key stops the playback",
-            log[-1]["digits"] == STOP_KEY and -STOP_SKEW <= overrun <= STOP_LIMIT,
-            f"{plan.seconds} s queued, caller heard {heard:.2f} s, "
+            log[-1]["digits"] == STOP_KEY
+            and -STOP_SKEW <= overrun <= STOP_LIMIT
+            and abs(heard - let_play) <= PACING_TOLERANCE,
+            f"{plan.seconds} s queued, caller heard {heard:.2f} of the "
+            f"{let_play:.2f} s we let it play, "
             f"the tone ended {overrun * 1000:+.0f} ms from the flush "
             "(counted in 20 ms windows: exact to one or two frames)",
         ),

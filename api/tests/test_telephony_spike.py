@@ -20,7 +20,7 @@ def call(
     *,
     heard: bytes | None = None,
     sent: bytes = b"",
-    first_audio_t: float | None = 0.05,
+    mark_at_probe: float | None = 0.05,
     digits: str | None = None,
     tones_in: dict[str, float] | None = None,
     mono: float = 100.0,
@@ -64,7 +64,7 @@ def call(
             "dir": "probe",
             "closed": True,
             "heard_hz": CALLER_TONES.get(exten),
-            "first_audio_t": first_audio_t,
+            "tones_in_at": {"1000": mark_at_probe},
             "tones_in": tones_in,
             "audio_in_seconds": 2.997,
             "frame_bytes": {"640": 149, "552": 1},
@@ -188,11 +188,13 @@ def stopped(
     *,
     recorder_early: float = 0.0,
     tone_late: float = 0.0,
+    mark_late: float = 0.0,
     mark: bool = True,
 ) -> dict:
     """A call to 610: we flush at `flush_at` on the probe's clock, the caller heard
     our tone for `heard_seconds`. `recorder_early` puts silence in front of both
-    recordings, `tone_late` only in front of what the caller heard."""
+    recordings, `tone_late` only in front of what the caller heard, `mark_late`
+    in front of the caller's own tone, on the line as in the recording."""
     events = [
         (flush_at, "in", {"event": "DTMF_END", "digit": "5"}),
         (flush_at, "out", {"command": "FLUSH_MEDIA"}),
@@ -200,7 +202,9 @@ def stopped(
     ]
     lead = bytes(int(recorder_early * LINE) * 2)
     heard = lead + bytes(int(tone_late * LINE) * 2) + tone(440, heard_seconds, LINE)
-    sent = lead + tone(CALLER_TONES["610"], 3, LINE) if mark else lead
+    sent = lead + bytes(int(mark_late * LINE) * 2)
+    if mark:
+        sent += tone(CALLER_TONES["610"], 3, LINE)
     return {
         "610": call(
             "610",
@@ -208,7 +212,7 @@ def stopped(
             events=events,
             heard=heard + bytes(LINE * 4),
             sent=sent + bytes(LINE * 4),
-            first_audio_t=MARK_AT_PROBE if mark else None,
+            mark_at_probe=MARK_AT_PROBE + mark_late if mark else None,
         )
     }
 
@@ -221,6 +225,18 @@ def test_a_recorder_that_started_before_the_audio_changes_nothing():
     calls = stopped(flush_at=3.25, heard_seconds=3.21, recorder_early=0.5)
 
     assert failed(spike.judge_stop(calls)) == []
+
+
+def test_silence_on_the_line_before_the_callers_tone_changes_nothing():
+    calls = stopped(flush_at=3.25, heard_seconds=3.21, mark_late=0.5)
+
+    assert failed(spike.judge_stop(calls)) == []
+
+
+def test_a_blip_of_tone_at_the_moment_of_the_flush_is_no_stopped_playback():
+    calls = stopped(flush_at=3.25, heard_seconds=0.02, tone_late=3.18)
+
+    assert failed(spike.judge_stop(calls)) == STOP_FAILS
 
 
 def test_a_tone_that_ended_before_the_flush_was_not_stopped_by_it():

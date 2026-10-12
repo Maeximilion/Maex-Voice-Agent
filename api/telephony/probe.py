@@ -14,6 +14,7 @@ The log directory is `PROBE_OUT` (default `/out`).
 """
 
 import asyncio
+import bisect
 import functools
 import json
 import os
@@ -35,7 +36,7 @@ from api.telephony.adapters.asterisk import (
     parse_event,
     sample_rate,
 )
-from api.telephony.audio import dominant, tone, tone_seconds
+from api.telephony.audio import dominant, tone, tone_seconds, tone_span
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,9 @@ class ProbeCall:
         self._started = time.monotonic()
         self._rate = 16000
         self._heard = bytearray()
+        # Where each kept frame starts in `_heard`, and when it arrived.
+        self._frame_starts: list[int] = []
+        self._frame_times: list[float] = []
         self._bytes_in = 0
         self._frame_bytes: Counter[int] = Counter()
         self._first_audio: float | None = None
@@ -129,6 +133,8 @@ class ProbeCall:
         self._bytes_in += len(data)
         self._frame_bytes[len(data)] += 1
         if len(self._heard) < _KEEP_SECONDS * self._rate * 2:
+            self._frame_starts.append(len(self._heard))
+            self._frame_times.append(now)
             self._heard += data
         return []
 
@@ -154,8 +160,12 @@ class ProbeCall:
                 str(hz): tone_seconds(heard, hz, self._rate)
                 for hz in CALLER_TONES.values()
             },
+            # When each caller tone began, on this log's clock. Not when audio
+            # began: a line may carry silence first.
+            tones_in_at={
+                str(hz): self._onset(heard, hz) for hz in CALLER_TONES.values()
+            },
             audio_in_seconds=round(self._bytes_in / (self._rate * 2), 3),
-            first_audio_t=self._first_audio,
             frame_bytes={str(size): count for size, count in self._frame_bytes.items()},
             frame_interval_ms=interval,
             frame_gap_max_ms=None
@@ -164,6 +174,15 @@ class ProbeCall:
             digits=self._digits,
         )
         self._log.close()
+
+    def _onset(self, heard: bytes, tone_hz: int) -> float | None:
+        """When the frame arrived in which `tone_hz` begins, None when it never
+        sounds."""
+        span = tone_span(heard, tone_hz, self._rate)
+        if span is None:
+            return None
+        at = int(span[0] * self._rate) * 2
+        return self._frame_times[bisect.bisect_right(self._frame_starts, at) - 1]
 
     def _start(self, data: dict[str, Any]) -> list[str | bytes]:
         try:
