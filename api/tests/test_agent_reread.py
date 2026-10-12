@@ -349,7 +349,9 @@ def refused_yes(session, state, flow: Flow) -> tuple[str, uuid.UUID]:
     """A draft that was read out, then another answer: the next yes is refused."""
     readback = read_to_the_guest(session, state, flow)
     turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
-    return readback, flow.draft_id(state)
+    draft_id = flow.draft_id(state)
+    assert draft_id is not None
+    return readback, draft_id
 
 
 def test_a_transfer_after_the_refused_yes_is_not_carried_out(session, state, flow):
