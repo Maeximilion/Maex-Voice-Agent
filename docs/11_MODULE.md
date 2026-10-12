@@ -123,6 +123,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
 | `guards.py` | what the core enforces whatever the model returns (05 §5): `confirm` only after an explicit yes to the draft read back before the turn, `draft_order` only with dishes from a clear match or from candidates the guest heard by name. A refused call goes back to the model as a failed result with a `hint` |
 | `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py` |
+| `intent.py` | what the guest called for, pickup or table, heard in their own sentence **before** the model (`heard`); `state.py` keeps the first wish of a call as `intent` until a draft exists |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
 | `outcome.py` | outcome and intent of a call from the state, shared by `sim/session.py` and `telephony/handler.py` |
 
