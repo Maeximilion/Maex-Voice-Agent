@@ -1,6 +1,11 @@
 version: 2
 
 updates:
+  # /api holds a pip-compile pair: requirements.in (ranges, the file edited by hand) and
+  # requirements.txt (compiled from it by `make lock`: exact versions with hashes, never
+  # edited by hand). This is the layout of Dependabot's pip-compile support: it reads the
+  # command from the header of the .txt and recompiles it. A pull request that changes
+  # only the .in is incomplete; run `make lock` on it.
   - package-ecosystem: pip
     directory: /api
     schedule:

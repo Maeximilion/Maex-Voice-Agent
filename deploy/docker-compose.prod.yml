@@ -26,7 +26,8 @@ services:
       - NTFY_BEHIND_PROXY=true
 
   caddy:
-    image: caddy:2-alpine
+    # Pinned like n8n and ntfy: a floating tag changes the proxy on the next pull. Dependabot proposes updates.
+    image: caddy:2.11.7-alpine
     restart: always
     environment:
       # Zugang zur Betriebsansicht. Ohne diese Werte startet Caddy zwar,

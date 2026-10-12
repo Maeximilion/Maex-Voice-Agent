@@ -15,6 +15,8 @@ make test                   # Run suite against real database
 
 Requirements: Docker with Compose, Python 3.12 for runs outside containers.
 
+Adding or bumping a Python dependency: edit `api/requirements.in` (version ranges), run `make lock` and commit it together with the regenerated `api/requirements.txt`. That file holds the exact versions with hashes that the image and CI install; it is never edited by hand. `make lock ARGS="--upgrade-package <name>"` moves one pin inside its range, `make lock ARGS=--upgrade` all of them; Dependabot proposes the routine bumps. Two branches that both changed the dependencies: the one that merges second runs `make lock` again after taking `main`. The lock is for Linux and Python 3.12; on a Windows host install `api/requirements.in` instead (README, Quick Start).
+
 ## Workflow for a Change
 
 1. Choose a task from `docs/07_WORKPACKAGES.md` whose dependencies are done. Each task has an issue (column "Issue").

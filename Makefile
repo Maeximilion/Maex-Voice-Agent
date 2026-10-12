@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern backup
+.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern backup lock
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -36,3 +36,11 @@ eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 
 backup:
 	bash scripts/backup.sh
+
+# Rebuilds api/requirements.txt (exact versions with hashes) from api/requirements.in,
+# in the base image of api/Dockerfile: the pins are for Linux and Python 3.12.
+# Existing pins stay; ARGS="--upgrade-package jinja2" moves one, ARGS=--upgrade all.
+lock:     ## Lock file from api/requirements.in, optional ARGS=--upgrade
+	MSYS_NO_PATHCONV=1 docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+		-v "$(CURDIR)/api:/work" -w /work python:3.12-slim sh -c \
+		"pip install --quiet --user --no-warn-script-location pip-tools==7.6.2 && python -m piptools compile --quiet --generate-hashes --strip-extras --output-file=requirements.txt $(ARGS) requirements.in"

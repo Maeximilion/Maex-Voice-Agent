@@ -46,6 +46,7 @@ from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
 from evals.judge import (
     CaseError,
+    heard_readback,
     judge,
     missing_tools,
     observe,
@@ -226,6 +227,12 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
                 diffs.append(
                     f"alternatives: erwartet {expected['alternatives']!r}, "
                     f"angeboten {offered!r}"
+                )
+        if "readback" in expected:
+            spoken = heard_readback(turns)
+            if expected["readback"] not in (spoken or ""):
+                diffs.append(
+                    f"readback: expected {expected['readback']!r} in {spoken!r}"
                 )
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()

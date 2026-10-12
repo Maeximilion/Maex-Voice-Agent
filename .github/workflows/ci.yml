@@ -59,7 +59,8 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r api/requirements.txt
+      # The compiled lock file: exact versions, every download checked against its hash.
+      - run: pip install --require-hashes -r api/requirements.txt
       - run: ruff check api scripts evals printbridge sim db
       - run: ruff format --check api scripts evals printbridge sim db
       # Types, non-strict. Paths and settings: pyproject.toml, [tool.mypy].

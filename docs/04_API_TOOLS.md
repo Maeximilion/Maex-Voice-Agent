@@ -380,7 +380,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
     "items_total_cents": 1480, "delivery_fee_cents": 250, "total_cents": 1730,
     "ready_at": "2026-09-15T18:50:00Z",
     "warnings": [],
-    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17,30 Euro, Lieferung in etwa 50 Minuten an die Rheinstraße 54. Passt das so?"
+    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30, Lieferung in etwa 50 Minuten an die Rheinstraße 54. Passt das so?"
   },
   "say": null
 }
@@ -403,7 +403,7 @@ Verstoß → `ok: false` mit passendem Code und `say`.
 - Dieselbe Option zweimal ergibt `invalid_input` mit `say` („Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"). Zwei Kartenzeilen oder Gruppen, die sich nur in der Schreibweise unterscheiden, ergeben `service_unavailable` mit Übergabe ans Team statt einer geratenen Zeile; der Import lehnt solche Zeilen ab. Ebenso eine Optionswahl, die den Preis unter null drückt: ein Kartenfehler, den der Gast nicht korrigieren kann.
 - Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
 - `ready_at` = jetzt + `service_config.pickup_wait_minutes`, auf die volle Minute **aufgerundet** (in UTC): angesagt wird nie weniger als die Wartezeit. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
-- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
+- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. The total is spoken as two plain numbers, never with a decimal comma: „17 Euro 30", a round amount „7 Euro", below one euro „50 Cent", single cents with their unit („17 Euro 5 Cent"), a lone one as a word („ein Euro 50"; a voice reads „1 Euro" as „eins Euro"). A voice that does not know prices reads „17,30 Euro" as „siebzehn Komma drei null Euro" (Maxi, 12.10.2026); the surcharge in the `say` of `search_menu` uses the same form („50 Cent Aufpreis"). Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
 
 ---
 
