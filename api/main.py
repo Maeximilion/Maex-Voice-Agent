@@ -26,7 +26,16 @@ from api.tools.router import router as tools_router
 configure_logging(settings.log_level)
 logger = get_logger("api")
 
-app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
+# The interactive description and the schema list every path. They help while
+# developing and tell everyone else what to aim at, so they exist in dev only.
+_DESCRIBED = settings.env == "dev"
+app = FastAPI(
+    title="Maex Voice-Agent API",
+    version="0.1.0",
+    docs_url="/docs" if _DESCRIBED else None,
+    redoc_url="/redoc" if _DESCRIBED else None,
+    openapi_url="/openapi.json" if _DESCRIBED else None,
+)
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.include_router(tools_router)

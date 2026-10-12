@@ -1,5 +1,14 @@
-# Domains sind Vorschläge – in .env/DNS anpassen
-agent.example.com {
+# The three names come from .env on the server (AGENT_DOMAIN, N8N_DOMAIN,
+# PUSH_DOMAIN), so going live changes no tracked file. The defaults are
+# placeholders (CLAUDE.md §1).
+(transport) {
+    # A browser that reached the site once never falls back to plain HTTP,
+    # where the shared access of the tablet could be read off the line.
+    header Strict-Transport-Security "max-age=31536000"
+}
+
+{$AGENT_DOMAIN:agent.example.com} {
+    import transport
     encode gzip
 
     # Die Betriebsansicht zeigt Gastnamen, Telefonnummern und Notizen. Die
@@ -11,16 +20,44 @@ agent.example.com {
     basic_auth @gui {
         {$GUI_BASIC_AUTH_USER} {$GUI_BASIC_AUTH_HASH}
     }
+    # The buttons of the view act on one tap; no other page may frame them.
+    header @gui Content-Security-Policy "frame-ancestors 'none'"
 
-    reverse_proxy api:8000
+    # Public is what something outside this server needs: the operations view,
+    # the print bridge in the restaurant and the health check. The tools and
+    # the call endpoints under /v1 are used inside the Docker network only (the
+    # voice layer runs on this server, docs/20) and are not proxied: a token
+    # that is never offered to the internet cannot be tried from there.
+    @public path /gui /gui/* /v1/kitchen/* /health
+    handle @public {
+        # Forms and the bridge send a few hundred bytes.
+        request_body {
+            max_size 256KB
+        }
+        reverse_proxy api:8000
+    }
+    handle {
+        respond 404
+    }
 }
 
-n8n.example.com {
+{$N8N_DOMAIN:n8n.example.com} {
+    import transport
+
+    # The editor of the workflows. n8n 2 ignores N8N_BASIC_AUTH_*: without this
+    # block the first visitor of a fresh instance creates the owner account, and
+    # from inside n8n the operations view is reachable without any access check.
+    # The dispatcher does not come through here, it posts to n8n:5678 inside the
+    # Docker network. Hash as above.
+    basic_auth {
+        {$N8N_EDITOR_AUTH_USER} {$N8N_EDITOR_AUTH_HASH}
+    }
     reverse_proxy n8n:5678
 }
 
 # Push server for the team's devices (D13). It checks access itself: closed by
 # default, the user "team" may only read the topic "team" (docker-compose.yml).
-push.example.com {
+{$PUSH_DOMAIN:push.example.com} {
+    import transport
     reverse_proxy push:80
 }
