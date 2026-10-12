@@ -197,7 +197,7 @@ HX = {"HX-Request": "true"}
 
 def config_von(engine, tenant_id) -> ServiceConfig:
     with Session(engine) as s:
-        config = s.get(ServiceConfig, tenant_id)
+        config = s.get_one(ServiceConfig, tenant_id)
         s.expunge(config)
         return config
 

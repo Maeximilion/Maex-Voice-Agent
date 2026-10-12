@@ -64,7 +64,7 @@ def _order_id(event: OutboxEvent) -> uuid.UUID:
     return uuid.UUID(event.payload["order_id"])
 
 
-def _newest_revision(session: Session, event: OutboxEvent) -> int:
+def _newest_revision(session: Session, event: OutboxEvent) -> int | None:
     """Hoechste Revision unter allen Bons dieser Bestellung."""
     return session.scalar(
         select(cast(OutboxEvent.payload["revision"].astext, Integer))
@@ -179,7 +179,13 @@ def _supersede(event: OutboxEvent, newest: int, now: datetime) -> None:
 
 def _local_times(session: Session, tenant_id: uuid.UUID, now: datetime) -> tuple:
     """Zeitzone des Betriebs: der Bon zeigt Europe/Berlin, egal wo die Bruecke laeuft."""
-    tz = ZoneInfo(session.scalar(select(Tenant.timezone).where(Tenant.id == tenant_id)))
+    # scalar_one: only called with tickets of this tenant, and their foreign key
+    # guarantees the row.
+    tz = ZoneInfo(
+        session.execute(
+            select(Tenant.timezone).where(Tenant.id == tenant_id)
+        ).scalar_one()
+    )
     return tz, now.astimezone(tz).strftime("%H:%M")
 
 

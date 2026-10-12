@@ -72,7 +72,9 @@ def send_to_n8n(event: OutboxEvent, client: httpx.Client | None = None) -> None:
         },
         # n8n wertet den Schluessel aus, um denselben Vorgang nicht zweimal zu verarbeiten.
         headers={"X-Idempotency-Key": str(event.id)},
-        auth=auth,
+        # httpx annotates Client.post without None, but passes auth on to
+        # Client.request, which takes None as "no auth" like httpx.post does.
+        auth=auth,  # type: ignore[arg-type]
         timeout=settings.n8n_timeout_seconds,
     )
     response.raise_for_status()

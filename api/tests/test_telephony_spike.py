@@ -195,7 +195,7 @@ def stopped(
     our tone for `heard_seconds`. `recorder_early` puts silence in front of both
     recordings, `tone_late` only in front of what the caller heard, `mark_late`
     in front of the caller's own tone, on the line as in the recording."""
-    events = [
+    events: list[tuple[float, str, dict]] = [
         (flush_at, "in", {"event": "DTMF_END", "digit": "5"}),
         (flush_at, "out", {"command": "FLUSH_MEDIA"}),
         (flush_at, "in", {"event": "STATUS", "queue_length": 0}),

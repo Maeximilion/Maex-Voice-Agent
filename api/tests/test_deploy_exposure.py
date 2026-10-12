@@ -36,7 +36,8 @@ ROOT_USERS = {"", "0", "root"}
 def _sites(text: str) -> dict[str, str]:
     """Site address -> body, for every top-level block that is not a snippet."""
     sites: dict[str, str] = {}
-    depth, address, body = 0, "", []
+    depth, address = 0, ""
+    body: list[str] = []
     for line in text.splitlines():
         stripped = line.split("#", 1)[0].rstrip() if depth == 0 else line.rstrip()
         if depth == 0:

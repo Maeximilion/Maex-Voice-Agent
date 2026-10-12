@@ -168,14 +168,14 @@ def publish(out: Path, output: Output) -> None:
     moves += [(None, out / name) for name in output.remove]
     done: list[tuple[Path, Path | None]] = []
     try:
-        for tmp, path in moves:
+        for source, path in moves:
             backup = None
             if path.exists():
                 backup = path.with_name(path.name + ".bak")
                 os.replace(path, backup)
             done.append((path, backup))
-            if tmp is not None:
-                os.replace(tmp, path)
+            if source is not None:
+                os.replace(source, path)
     except BaseException:
         failed = []
         for path, backup in reversed(done):

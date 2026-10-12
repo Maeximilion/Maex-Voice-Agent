@@ -40,9 +40,12 @@ class DraftOrderRequest(ToolRequest):
     items: list[OrderItemIn] = Field(min_length=1, max_length=MAX_ITEMS)
 
 
+OrderStatus = Literal["draft", "confirmed", "approved", "handed_over", "cancelled"]
+
+
 class OrderDraft(BaseModel):
     order_id: uuid.UUID
-    status: Literal["draft", "confirmed", "approved", "handed_over", "cancelled"]
+    status: OrderStatus
     items_total_cents: int
     delivery_fee_cents: int
     total_cents: int

@@ -150,7 +150,7 @@ def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict
                 say=SAY_OPTION_TWICE.format(**say_args),
             )
 
-    options = [
+    options: list[dict] = [
         {
             "group": opt.group_name,
             "option": opt.option_name,
