@@ -316,7 +316,11 @@ of the voice layer (T-10.5); the check is extended there. A run too short or too
 long to be a phone number is none either: kept by its digits, "um 0 Uhr" would be a number
 a model could put in the place of the caller ID (own review of PR #244). A period that
 ends a sentence ends the number ("0171 2345678. 19 Uhr passt" names one number, not a
-longer one). A number that is taken stands in `slots` in E.164, whatever spelling the
+longer one). A dash between blanks is read both ways, as the end of the number ("0171
+2345678 - 19 Uhr passt") and as a part of it ("0721 - 5551234"). Which of two phone
+numbers a guest said is the one to call stays with the model, as with the words of a name;
+the core has no rule for the context a number stands in. A number taken from speech is
+not read back today (Open Points in `docs/01_STATUS.md`). A number that is taken stands in `slots` in E.164, whatever spelling the
 model used. A name is known from guest sentences only: once a known caller's name comes
 from the database (`find_customer`, stage 3), that name has to count as well. No prompt text changed:
 the model learns of the rule from the hint of a refused call.

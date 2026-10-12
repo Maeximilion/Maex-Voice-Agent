@@ -232,6 +232,26 @@ def test_period_that_ends_a_sentence_ends_the_number(sentence):
     assert numbers(sentence) == {"+491712345678"}
 
 
+@pytest.mark.parametrize(
+    ("sentence", "said_numbers"),
+    [
+        # The dash ends the number ...
+        ("Meine Nummer ist 0171 2345678 - 19 Uhr passt", {"+491712345678"}),
+        ("0171 2345678 - 0172 3456789", {"+491712345678", "+491723456789"}),
+        # ... or stands inside it.
+        ("Unter 0721 - 5551234 bitte", {"+497215551234"}),
+        ("0171 - 234 - 5678", {"+491712345678"}),
+    ],
+)
+def test_dash_between_blanks_is_read_both_ways(sentence, said_numbers):
+    """Codex PR #244, P2: joined with the 19 behind the dash, the number the
+    guest said was another one."""
+    assert said_numbers <= numbers(sentence)
+    assert number_known("+491712345678", None, numbers(sentence)) is (
+        "+491712345678" in said_numbers
+    )
+
+
 @pytest.mark.parametrize("written", ["0", "07", "0171", "0171 2", "0" * 30])
 def test_run_too_short_or_too_long_to_be_a_phone_number_is_none(written):
     """Own review of PR #244: kept by its digits, "um 0 Uhr" was a number a
@@ -254,6 +274,8 @@ def test_patterns_on_guest_text_stay_linear():
         "1 a" * 10_000,
         "+1(" * 10_000,
         "1. " * 10_000,
+        "1 - " * 5_000,
+        "1" + " " * 20_000 + "-",
         "a " * 20_000,
     ):
         words_said(text)

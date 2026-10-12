@@ -93,13 +93,19 @@ def numbers_said(sentence: str) -> set[str]:
     """The phone numbers of a guest sentence in E.164, each run of digits as
     one. A period that ends a sentence ends the run: in "0171 2345678. 19 Uhr
     passt" the number is not twelve digits long, and in "am 16.09. 0171
-    2345678" it does not begin with the date."""
-    runs = (
+    2345678" it does not begin with the date.
+
+    A dash between blanks is read both ways, it may end the number ("0171
+    2345678 - 19 Uhr passt") or stand inside it ("0721 - 5551234"): the run as
+    a whole and its parts each count when they are a number (Codex PR #244,
+    P2)."""
+    pieces = [
         piece
         for run in _DIGIT_RUN.findall(sentence)
         for piece in _SENTENCE_END.split(run)
-    )
-    return {number for piece in runs if (number := e164(piece))}
+    ]
+    parts = (part for piece in pieces for part in piece.split(" - "))
+    return {number for text in (*pieces, *parts) if (number := e164(text))}
 
 
 def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:
