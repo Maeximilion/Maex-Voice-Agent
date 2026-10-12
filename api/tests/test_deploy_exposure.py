@@ -171,6 +171,16 @@ def test_own_code_does_not_run_as_root_in_production():
         assert user.split(":")[0] not in ROOT_USERS, f"{service} runs as root"
 
 
+def test_own_code_knows_it_runs_in_production():
+    """`.env` on the server may still say ENV=dev, the example does. A service
+    without the override would start on the placeholder token: the guard in
+    `api/config.py` asks ENV (Codex, PR #253)."""
+    production = _services(_load(PROD))
+    for service in OWN_CODE:
+        environment = production.get(service, {}).get("environment") or {}
+        assert environment.get("ENV") == "prod", f"{service} has no ENV: prod"
+
+
 def test_mount_helpers_read_both_spellings():
     assert _target("./api:/app/api:ro") == "/app/api"
     assert _read_only("./api:/app/api:ro") and not _read_only("./api:/app/api")

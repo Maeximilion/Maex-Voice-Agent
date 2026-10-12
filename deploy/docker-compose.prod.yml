@@ -36,6 +36,10 @@ services:
       - ./docs:/app/docs:ro
 
   dispatcher:
+    environment:
+      # As for api: .env may still say ENV=dev, and the check of the token
+      # in api/config.py asks ENV.
+      ENV: prod
     user: "10001:10001"
     volumes:
       - ./api:/app/api:ro
