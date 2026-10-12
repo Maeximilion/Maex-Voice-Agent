@@ -482,7 +482,7 @@ def test_fehlerhafte_datei_wird_nicht_geloescht(tmp_path, monkeypatch):
         "in die Kaiser-Str. 12",
         "Kaiser Strasse 12a",
         "Hausnummer 7",
-        "nach 76547 Sinzheim",
+        "nach 12345 Musterstadt",
     ],
 )
 def test_adresse_ohne_bekannte_endung(text):
