@@ -1,17 +1,31 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
-from pydantic import Field
+from typing import Self
+
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The value .env.example ships. Public, so in production it is no token at all.
+TOKEN_PLACEHOLDER = "change_me_long_random"
+# 32 characters is what `openssl rand -hex 16` prints.
+TOKEN_MIN_LENGTH = 32
+# Where a short or known token is fine. Every other value of ENV counts as
+# production, a misspelled one included.
+LOCAL_ENVS = frozenset({"dev", "test"})
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    # hide_input_in_errors: a value that fails validation is a secret or sits next
+    # to one, and the error goes to the log.
+    model_config = SettingsConfigDict(
+        env_file=".env", extra="ignore", hide_input_in_errors=True
+    )
 
     env: str = "dev"
     log_level: str = "INFO"
 
     database_url: str = "postgresql+psycopg://maex:change_me@db:5432/maex_agent"
-    agent_api_token: str = "change_me_long_random"
+    agent_api_token: str = TOKEN_PLACEHOLDER
 
     tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"
@@ -54,6 +68,26 @@ class Settings(BaseSettings):
 
     # Anrufprotokoll (docs/17): Loeschfrist der CSV in Tagen, D10
     call_log_retention_days: int | None = None
+
+    @model_validator(mode="after")
+    def _production_needs_a_real_token(self) -> Self:
+        """Refuse to start outside dev and test on a token anyone can know.
+
+        The token is all that stands between the network and the write tools.
+        A server set up from .env.example with the line left as it is, or left
+        out, would otherwise run on a value that is printed in this repository.
+        """
+        token = self.agent_api_token
+        if self.env not in LOCAL_ENVS and (
+            token == TOKEN_PLACEHOLDER or len(token) < TOKEN_MIN_LENGTH
+        ):
+            # The value itself stays out of the message: it ends up in a log.
+            raise ValueError(
+                "AGENT_API_TOKEN is the placeholder or shorter than "
+                f"{TOKEN_MIN_LENGTH} characters; set a random one in .env "
+                "(openssl rand -hex 32)"
+            )
+        return self
 
 
 settings = Settings()

@@ -86,7 +86,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | Variable | Purpose |
 |---|---|
 | `DATABASE_URL` | Postgres database connection |
-| `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`) |
+| `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). In `ENV=prod` the API does not start on the placeholder or on fewer than 32 characters (`openssl rand -hex 32`) |
 | `TEAM_PHONE` | Extension for forwarding to team |
 | `MAX_CALL_SECONDS` | Maximum call duration |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |

@@ -152,7 +152,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 
 ## 7. Sicherheit
 
-- Agent-API nur über HTTPS, Authentifizierung per Bearer-Token (`AGENT_API_TOKEN`)
+- Agent-API nur über HTTPS, Authentifizierung per Bearer-Token (`AGENT_API_TOKEN`) Since 12.10.2026 the proxy no longer passes `/v1/tools/*` on: the voice layer calls it inside the Docker network (`docs/13_DEPLOYMENT.md` §3).
 - Rate-Limit je Session, damit ein hängender Agent keine Kosten produziert
 - Maximale Anrufdauer, danach automatische Weiterleitung ans Team
 - Schleifenschutz: `transfer_to_team` leitet nur auf die Durchwahl, nie auf die Hauptnummer
