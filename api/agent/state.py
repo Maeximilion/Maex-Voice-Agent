@@ -263,6 +263,12 @@ def apply_tool_result(
     Entwurf nicht mehr, was er will, auch wenn die Korrektur scheitert."""
     if state.stage == "readback_pending" and _supersedes(name, result):
         _drop_readback(state, name)
+    if state.stage == "readback_pending" and _refused_for_good(name, result):
+        # The intent stays: the guest still wants the table or the order, only
+        # not this draft. `_drop_readback` would set it from the tool's name.
+        intent = state.intent
+        _drop_readback(state, name)
+        state.intent = intent
     if not result.ok:
         return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
@@ -367,6 +373,27 @@ def _supersedes(name: str, result: ToolResult) -> bool:
     if name == "check_slot" or name in _MENU_LOOKUP:
         return True
     return name in _CORRECTING and not result.ok
+
+
+def _refused_for_good(name: str, result: ToolResult) -> bool:
+    """`confirm` reached the domain and the domain said no to the draft itself:
+    its seats went to someone else, or it was cancelled (`conflict`). It can
+    never be confirmed as it is. Left in the state it would still wait for its
+    yes, and a "Ja" to the next question would try again and book it once the
+    reason has passed (Codex PR #256). Any other failure of `confirm` is a slip
+    of the call (`invalid_input`, `not_found` on a wrong `entity`) and says
+    nothing about the draft.
+
+    The core's own refusal (`guards.py`: no yes from the guest) is a conflict
+    too, and it comes through here like a tool result. It is about the guest's
+    sentence, not about the draft, which stays; it is told apart by its `hint`,
+    which only the core sets."""
+    return (
+        name == "confirm"
+        and not result.ok
+        and result.error_code == "conflict"
+        and result.hint is None
+    )
 
 
 def _drop_readback(state: ConversationState, name: str) -> None:

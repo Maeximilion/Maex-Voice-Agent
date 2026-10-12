@@ -196,6 +196,52 @@ def test_neue_slotpruefung_nach_dem_vorlesen_nimmt_den_alten_entwurf_raus():
     assert state.stage == "collecting"
 
 
+@pytest.mark.parametrize(
+    ("entity", "intent"), [("reservation", "reservation"), ("order", "pickup")]
+)
+def test_a_draft_the_domain_refuses_to_confirm_leaves_the_state(entity, intent):
+    """`confirm` answers conflict: the seats of an old draft went to someone
+    else, or the draft was cancelled. It can never be confirmed as it is. Left
+    in the state, a later "Ja" to another question would try again, and book it
+    once the reason has passed (Codex, PR #256). The guest still wants what
+    they asked for, so the intent stays."""
+    state = make_state(
+        stage="readback_pending", intent=intent, **{f"{entity}_id": uuid.uuid4()}
+    )
+
+    apply_tool_result(
+        state,
+        "confirm",
+        ToolResult(ok=False, error_code="conflict", say="... vergeben worden."),
+    )
+
+    assert state.stage == "collecting"
+    assert state.reservation_id is None and state.order_id is None
+    assert state.intent == intent
+    assert f"{entity}_id" not in state.to_prompt_json()
+
+
+@pytest.mark.parametrize(
+    "failed",
+    [
+        ToolResult(ok=False, error_code="invalid_input"),
+        ToolResult(ok=False, error_code="not_found"),
+        # The core's own refusal for a missing yes: a conflict with a hint.
+        ToolResult(ok=False, error_code="conflict", hint="Abgelehnt: kein Ja."),
+    ],
+)
+def test_a_confirm_that_failed_for_another_reason_keeps_the_draft(failed):
+    """A malformed call, a wrong `entity` or a missing yes is no verdict on the
+    draft: the guest must not hear the whole read-back again for it."""
+    draft_id = uuid.uuid4()
+    state = make_state(stage="readback_pending", reservation_id=draft_id)
+
+    apply_tool_result(state, "confirm", failed)
+
+    assert state.stage == "readback_pending"
+    assert state.reservation_id == draft_id
+
+
 def test_fehler_ohne_offenes_vorlesen_aendert_nichts():
     order_id = uuid.uuid4()
     state = make_state(stage="confirmed", order_id=order_id)
