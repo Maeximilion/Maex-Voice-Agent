@@ -1,0 +1,21 @@
+---
+name: "source-command-start"
+description: "Migrated source command `start`"
+---
+
+# source-command-start
+
+Use this skill when the user asks to run the migrated source command `start`.
+
+## Command Template
+
+Session start for the Maex Voice Agent.
+
+1. Sync: the project's SessionStart hook already fetched and fast-forwarded a clean `main`. Confirm with `git status -sb`. If a hook warning appeared (lock file, divergence, uncommitted changes on `main`), stop and report; never stash, reset or force.
+2. Tidy up, only what is verifiably finished: a local branch whose remote is gone, or whose PR is merged with the same head SHA (check as in `/done` step 8), is deleted together with its worktree. Branches with unpushed commits, a PR closed without merge, or no PR stay; list each in one line. Touch nothing else.
+3. Read `AGENTS.md` in full.
+4. Read `docs/01_STATUS.md` and `docs/07_WORKPACKAGES.md`.
+5. Summarize in max 6 lines: current stage, next gate, open blockers, tasks with in-progress status.
+5a. Security alerts: run `gh api --paginate 'repos/{owner}/{repo}/code-scanning/alerts?state=open&per_page=100' --jq '.[].number'` and the same for `dependabot/alerts`, and count the lines of the output yourself (`--paginate` so that more than 100 alerts are all counted). Do not pipe into `wc -l`: that hides a failing `gh api`, and a non-zero exit or an error message is the API error to report, never a count of zero. If either is above zero, add one line with the counts, the highest severity and the affected files, and list fixing them among the suggestions in step 6. With zero open alerts say nothing. An API error (for example a feature that is switched off) is reported in one line, not treated as zero.
+6. Suggest 1–3 ready tasks (all dependencies done), mark one as recommendation and justify in one sentence. Name the model and effort from the "Model Routing" table in `CLAUDE.md` for each task. The table names Claude models, which a Codex session cannot switch to: state the routed model and effort as the recommendation for the Claude Code session that will run `/task`, and do not ask for a switch here. If a task's row carries the note `Environment: Ubuntu (WSL) on the workbench` and `grep -qi microsoft /proc/version` fails in this session, say that too: the task needs a session started in Ubuntu on Maxi's PC (docs/12_CLAUDE_CODE_PLAYBOOKS.md, S10).
+7. Wait for your choice. Don't build yet.
