@@ -332,13 +332,23 @@ class Setup:
                 select(Order.handover_state).where(Order.id == self.order_id)
             )
 
-    def expire_lease(self) -> None:
-        """Leihfrist vorbei: der Bon ist wieder faellig."""
+    def make_due(self) -> None:
+        """Every pending ticket is due, whatever the wall clock did meanwhile.
+
+        A fresh ticket's due time is the database's now(), and
+        /v1/kitchen/claim compares it with the server's clock a few
+        milliseconds later. Where the wall clock is set back in between, the
+        ticket is not due yet and the one claim of a test hands out nothing:
+        Docker Desktop's VM sets its clock back every 30 seconds, by 20 to
+        220 ms under load (measured 12.10.2026). A real bridge asks again two
+        seconds later, a test does not. Also what the end of a lease looks
+        like: the ticket is due again.
+        """
         with Session(self.engine) as s:
             s.execute(
                 update(OutboxEvent)
                 .where(OutboxEvent.status == "pending")
-                .values(next_attempt_at=datetime.now(UTC) - timedelta(seconds=1))
+                .values(next_attempt_at=datetime.now(UTC) - timedelta(minutes=1))
             )
             s.commit()
 
@@ -371,8 +381,10 @@ def setup(migrated_db_url, monkeypatch):
         return _Response(response.content)
 
     server = Server("http://localhost", "bruecke-geheim", str(tenant_id), opener=opener)
+    ready = Setup(server, opener, str(tenant_id), engine, order_id)
+    ready.make_due()
     try:
-        yield Setup(server, opener, str(tenant_id), engine, order_id)
+        yield ready
     finally:
         app.dependency_overrides.clear()
         engine.dispose()
@@ -410,7 +422,7 @@ def test_verlorene_rueckmeldung_druckt_nicht_zweimal(setup, tmp_path):
     assert setup.handover() == "pending"
 
     # Nach der Leihfrist kommt derselbe Bon wieder: erkannt, kein zweiter Zettel.
-    setup.expire_lease()
+    setup.make_due()
     assert run_once(setup.server, printer, log) == 0
     assert len(printer.bons) == 1
     assert setup.handover() == "sent"
