@@ -595,6 +595,50 @@ def test_the_compose_network_always_takes_the_client_from_the_image():
     assert done.stdout.strip() == "docker --network maex_default"
 
 
+@pytest.mark.parametrize(
+    ("gnupghome", "made"),
+    [
+        ("{tmp}/named", "named"),
+        # Empty counts as not set, for gpg as well: its default below HOME.
+        ("", "home/.gnupg"),
+        # gpg expands the tilde itself, and cron hands the value over as written.
+        ("~/kept_apart", "home/kept_apart"),
+    ],
+)
+def test_the_gpg_home_exists_before_gpg_is_called(
+    tmp_path, passphrase_file, gnupghome, made
+):
+    # gpg creates a missing home without a lock: of two backups that started
+    # together on a machine without one, one died with "can't create directory ...
+    # File exists" (CI run 38240153911). So the gate before every gpg call makes it.
+    env = {
+        "BACKUP_PASSPHRASE_FILE": passphrase_file.as_posix(),
+        "HOME": (tmp_path / "home").as_posix(),
+        "GNUPGHOME": gnupghome.format(tmp=tmp_path.as_posix()),
+    }
+
+    first = _lib("require_passphrase", **env)
+    again = _lib("require_passphrase", **env)
+
+    assert first.returncode == 0, first.stderr
+    assert again.returncode == 0, again.stderr
+    assert (tmp_path / made).is_dir()
+    if os.name != "nt":
+        assert (tmp_path / made).stat().st_mode & 0o077 == 0
+
+
+def test_a_gpg_home_that_cannot_be_made_stops_the_script(tmp_path, passphrase_file):
+    done = _lib(
+        "require_passphrase",
+        BACKUP_PASSPHRASE_FILE=passphrase_file.as_posix(),
+        # A file where the directory should be.
+        GNUPGHOME=passphrase_file.as_posix(),
+    )
+
+    assert done.returncode == 2
+    assert "gpg home" in done.stderr
+
+
 def test_major_version_is_read_from_a_version_line():
     done = _lib(
         "echo 'pg_dump (PostgreSQL) 16.4 (Ubuntu 16.4-1.pgdg24.04+1)' | pg_major; "

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.9
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.10
 
 ---
 
@@ -356,6 +356,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 12.10.2026 | **Backup and restore no longer race on the gpg home (T-9.3, flaky CI test):** CI run 38240153911 (PR #244, commit `df98ccf`) failed with `test_two_backups_in_the_same_second_never_share_a_file` alone: one of the two backups died with `gpg: Fatal: can't create directory '/home/runner/.gnupg': File exists`, which the script reports as "pg_dump failed, nothing kept". gpg creates a missing home directory without a lock, and the runner has none until the first gpg call of a run, so the test failed whenever it was that first call. Not a test-only problem: the nightly cron and a backup by hand can meet the same way on a fresh server. `require_passphrase` in `scripts/lib_pg.sh`, the one gate before every gpg call of `backup.sh` and `restore.sh`, now creates the home gpg will use, asked from `gpgconf --list-dirs homedir`, with `mkdir -p` under umask 077; the test itself is unchanged. Measured in the project image plus gpg 2.4.7 and the Postgres 16 client, against a throwaway Postgres 16: two bare `gpg --symmetric` on a fresh HOME, 270 of 300 rounds with the fatal error, with the directory made first 0 of 300 (and 0 of 100 with six at once); the test with a fresh, empty HOME per round red 3 of 3 before, green 50 of 50 after; the whole file with four workers and a fresh HOME 12 of 12 green; the suite once, 3448 passed (in that image without the two tests that need a docker command, which fail there on `main` as well). New tests `test_the_gpg_home_exists_before_gpg_is_called` (named by `GNUPGHOME`, the default below HOME, and a `GNUPGHOME` with a tilde) and `test_a_gpg_home_that_cannot_be_made_stops_the_script` (exit 2), red 3 of 3 before. They call the gate and not gpg: gpg-agent keeps its socket in the home, and in Git Bash a home as long as pytest's `tmp_path` is too long for it (204 characters failed, 11 worked). In Git Bash on Windows the cases were run by hand, pytest was not; that run showed `mkdir -m 700` creating the directory and then failing there, hence the umask. **Codex review PR #246 (P2) fixed:** the first version built the path from `GNUPGHOME` itself, which gpg reads differently than a shell: with `~/x` as cron hands it over, the script made `./~/x` and gpg used `$HOME/x`. The home is now asked from gpgconf (test case red before, green after); the two-backups test with a fresh HOME 30 of 30 and the whole file 6 of 6 green again |
 | 08.10.2026 | **T-2.4 part 4, the guest's wish kept across turns:** the core hears pickup or table in the guest's sentence and keeps the first wish of a call as `intent` until a draft exists (`agent/intent.py`, `state.note_intent`, called by `loop.py` before the model). No prompt change, no migration. 72 new tests; evals on the stand-in unchanged (27/27, targets 1/27). Not measured on a real model, the server was down; due with the first full run |
 | 08.10.2026 | **Handover T-2.4:** part 3 (PR #235), the cart in the conversation state (PR #237), the evals counting what went through (PR #239) and the cart follow-ups (PR #238) are on `main`. Next: the guard against an invented guest name and phone number, branch `task/T-2.4-guest-details-guard` |
 | 07.10.2026 | **Decisions on the way to G0, no code:** E1 flipped (own voice layer, `docs/20_VOICE_LAYER.md`), D1, D3 and D7 decided, new D17 to D21, E2 confirmed, E8 changed for complaints; Block 1c with T-10.1 to T-10.12 in `docs/07_WORKPACKAGES.md`, T-1.11 rewritten, T-9.1 dropped; `/task` checks the environment of a package (`docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10). G0 stays open until T-10.1 and T-10.2 are measured. Research behind it: three web research runs on 07.10.2026, none of it verified by us |
@@ -436,6 +437,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.10 · 12.10.2026:** Backup and restore create the gpg home themselves; two runs on a fresh machine no longer race gpg's own unlocked creation (flaky CI test)
 - **v2.0.9 · 12.10.2026:** Open points from Maxi's listening test: spoken total (25,70 Euro), speech kit on the real menu
 - **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services
 - **v2.0.7 · 12.10.2026:** T-10.3 local engines measured: Parakeet v3 on the CPU and Piper thorsten, a recommendation and no clean go; /task and /bug load code-autopilot, /task prints the title where the app has no rename tool
