@@ -357,6 +357,7 @@ def test_only_the_candidate_that_was_named_becomes_usable(said):
     [
         "Um 13 Uhr oder um 47 nach?",  # a number without "Nummer" is no card number
         "Das macht 13,47 Euro.",
+        "Macht 13 Euro 47, abholbereit in etwa 20 Minuten.",  # as the read-back says it
         "Nummer 147 habe ich nicht.",
         "Ente haben wir.",  # half a name names nothing
     ],

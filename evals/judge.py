@@ -11,6 +11,7 @@ ein Tippfehler ("confimed") prüfte sonst nichts und sähe bestanden aus.
 
 import re
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -35,6 +36,8 @@ from api.models import (
     Tenant,
 )
 from api.models.orders import ORDER_TYPES
+from evals.recorder import DRAFT_TOOLS
+from sim.session import Turn
 
 CONFIRMED = ("confirmed", "approved", "handed_over")
 EXPECTED_KEYS = frozenset(
@@ -65,6 +68,10 @@ EXPECTED_KEYS = frozenset(
         # Phone number of the confirmed transaction in E.164: with a suppressed
         # caller ID the spoken number counts, not any other valid one (Codex PR #162).
         "phone",
+        # A piece of the last read-back as the caller heard it, word for word.
+        # The code writes that sentence and the agent has to read it out as it
+        # is: it names the amount the guest says yes to (eval abholung_0076).
+        "readback",
     }
 )
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
@@ -140,6 +147,11 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         or not all(isinstance(v, str) and v.strip() for v in address.values())
     ):
         raise CaseError(f"{source}: address nennt nur Felder aus {ADDRESS_KEYS}")
+    if "readback" in case["expected"]:
+        # Also null: the key says that the sentence is checked (Codex PR #248).
+        spoken = case["expected"]["readback"]
+        if not (isinstance(spoken, str) and spoken.strip()):
+            raise CaseError(f"{source}: readback is a piece of the read-back sentence")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -230,6 +242,19 @@ def offered_alternatives(
         to_local(datetime.fromisoformat(a), tz_name).strftime(LOCAL_MINUTE)
         for a in refused[-1].get("alternatives", [])
     ]
+
+
+def heard_readback(turns: Sequence[Turn]) -> str | None:
+    """What the agent said in the last turn in which a draft succeeded, an order
+    or a reservation. The caller's ear counts, not the text the tool returned: a
+    model that rewords the amount or leaves it out is red (Codex PR #248). None
+    when the call never got to a draft: such a case is red, not unchecked."""
+    said = [
+        " ".join(turn.say)
+        for turn in turns
+        if any(t.get("ok") and t.get("name") in DRAFT_TOOLS for t in turn.tools)
+    ]
+    return said[-1] if said else None
 
 
 @dataclass
