@@ -8,6 +8,8 @@ from contextlib import contextmanager
 import pytest
 from alembic import command
 
+from api.models import ServiceConfig
+
 # Von hier importieren die Migrationstests weiterhin alembic_config.
 from evals.scratch_db import (  # noqa: F401
     ALEMBIC_INI,
@@ -131,3 +133,13 @@ def migrated_db_url(migrated_template_url):
         yield url
     finally:
         drop_scratch_db(url)
+
+
+def lift_party_limits(session, tenant_id) -> None:
+    """For tests about capacity, which fill a window with one large party. What
+    the agent books itself is limited (#252, `service_config`); those limits
+    have tests of their own (`test_domain_slots.py`)."""
+    config = session.get(ServiceConfig, tenant_id)
+    config.reservation_max_party_size = 1000
+    config.reservation_max_party_size_same_day = 1000
+    session.commit()

@@ -372,3 +372,59 @@ def test_the_last_days_that_do_work_are_not_refused_as_off_the_calendar(
     )
 
     assert "reserved_for" not in (result.hint or "")
+
+
+def test_a_table_for_the_team_carries_the_signal(session, tenant_id, call_id):
+    """`team_callback` is what the conversation loop hands the wish over on
+    (#252)."""
+    wish = {"reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
+    team = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 6}, now=NOW
+    )
+    assert team.ok and team.data["team_callback"] is True
+    assert team.say and "sechs Personen noch heute" in team.say
+
+    free = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 5}, now=NOW
+    )
+    assert free.data["available"] is True and free.data["team_callback"] is False
+
+
+def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
+    """A model that skips `check_slot` gets no draft either."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 6,
+            "reserved_for": berlin(DIENSTAG, 18, 30).isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.say and "nicht selbst zusagen" in result.say
+    # The same signal as on `check_slot`: the core hands the wish to the team.
+    assert result.data == {"team_callback": True}
+
+
+def test_a_full_evening_is_a_conflict_without_the_signal(session, tenant_id, call_id):
+    monday = berlin(DIENSTAG + timedelta(days=6), 18, 30)
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 2,
+            "reserved_for": monday.isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.data == {} and result.hint is None

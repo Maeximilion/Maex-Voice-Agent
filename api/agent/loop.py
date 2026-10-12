@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
+from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
 from api.agent.state import (
@@ -39,6 +40,7 @@ from api.core.time import to_local, utcnow
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Tenant
 from api.schemas.callbacks import CallbackReason
+from api.schemas.reservations import CheckSlotRequest
 
 logger = get_logger("api.agent.loop")
 
@@ -77,6 +79,8 @@ _HANDOFF_SUMMARIES = {
     "not_understood": "Anliegen konnte automatisch nicht geklärt werden.",
 }
 _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
+# How the card of a table the team decides on begins (`team_callback`, #252).
+SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
@@ -263,6 +267,13 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if result.data.get("team_callback"):
+                # A table that is free, but the team decides (#252). The core
+                # hands the wish over here and now, and the model is not asked
+                # again: it answers with a sentence or a tool call, never
+                # both, so the tool's sentence would end its turn, and a guest
+                # who hangs up then would be lost (Codex PR #280).
+                return self._table_to_team(state, turn.tool_call.args, result.say)
             called.append(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
@@ -317,6 +328,59 @@ class ConversationLoop:
         return dispatch(
             self._session, state.call_id, state.tenant_id, name, args, now=self._now
         )
+
+    def _table_to_team(
+        self, state: ConversationState, args: dict[str, Any], lead: str | None
+    ) -> TurnResult:
+        """The wish for a table the agent does not book itself goes to the
+        team and the call ends: as a callback under the number in the state,
+        after `lead`, the sentence of the tool. Without a number there is
+        nobody to call back, and a callback can fail: both go the way of
+        every handover (`_handoff`), a transfer where the team is reachable.
+
+        ponytail: a caller whose number is withheld is not asked for one, and
+        outside the opening hours hears the last sentence of `_handoff`. Asking
+        would need the wish to wait across turns, and every rule for when it
+        still stands either lost a wish or sent a stale one (Codex PR #280).
+        The same open point as for every handover (docs/01_STATUS.md)."""
+        wish = self._table_wish(state, args)
+        phone = state.slots.get("phone")
+        if phone:
+            callback = self._dispatch(
+                state,
+                "create_callback",
+                {"phone": phone, "reason": "out_of_scope", "summary": wish},
+            )
+            apply_tool_result(state, "create_callback", callback)
+            if callback.ok:
+                said = [s for s in (lead, callback.say) if s]
+                return TurnResult(state=state, say=said, ended=True)
+        handed = self._handoff(state, SAY_ESCALATION, "out_of_scope", wish)
+        handed.say = [s for s in (lead, *handed.say) if s]
+        return handed
+
+    def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
+        """The wish as the team reads it on the card. Party size and time are
+        read the way the tool read them (`CheckSlotRequest`), not from the raw
+        arguments: a time a model wrote as seconds since 1970 or in another
+        zone is shown as the restaurant's clock shows it. A name only when the
+        guest said it in this call: `check_slot` takes no name, so one a model
+        wrote next to its arguments has passed no guard (Codex PR #280)."""
+        wish = CheckSlotRequest.model_validate(
+            {
+                "call_id": state.call_id,
+                "tenant_id": state.tenant_id,
+                "reserved_for": args.get("reserved_for"),
+                "party_size": args.get("party_size"),
+            }
+        )
+        when = wish.reserved_for.astimezone(self._local_now(state).tzinfo)
+        names = (args.get("guest_name"), state.slots.get("guest_name"))
+        name = next((n for n in names if name_said(n, state.said_words)), None)
+        parts = [f"{wish.party_size} Personen", f"{when:%d.%m.%Y %H:%M} Uhr"]
+        if name:
+            parts.append(f"Name {name}")
+        return f"{SUMMARY_TEAM_TABLE} {', '.join(parts)}."
 
     def _handoff(
         self,

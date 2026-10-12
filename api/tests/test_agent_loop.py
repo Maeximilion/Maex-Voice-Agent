@@ -1100,3 +1100,129 @@ def test_model_that_insists_on_an_invented_name_ends_with_the_team(
 
     assert result.ended is True
     assert session.scalars(select(Reservation)).all() == []
+
+
+# -- A table the team decides on (`team_callback`, #252) ---------------------------
+# Seed: the agent books up to 8 guests itself. Above that the core hands the
+# wish to the team in the turn that learns of it, and the model is not asked
+# again: a model that speaks the tool's sentence first ends its turn with it,
+# and a guest who hangs up then would be lost (Codex PR #280).
+TEAM_SAY = "Für neun Personen kann ich den Tisch nicht selbst zusagen"
+NINE_ON_SATURDAY = {"reserved_for": "2026-09-19T19:00:00+02:00", "party_size": 9}
+WISH = "Reservierungswunsch, vom Team zu bestätigen: 9 Personen, 19.09.2026 19:00 Uhr"
+
+
+def _ask_for_nine(session, state, now=NOW, tool="check_slot", **more):
+    """One turn with a model that has one answer: the call for the table. A
+    second question to it would fail the test (`FakeLLM`)."""
+    call = ToolCall(name=tool, args={**NINE_ON_SATURDAY, **more})
+    llm = FakeLLM([LLMTurn(tool_call=call)])
+    loop = ConversationLoop(session, llm, "system", now=now, clock=clock_from([0]))
+    return loop.run_turn(state, "Neun Personen am Samstag um 19 Uhr, auf Müller.")
+
+
+def test_a_table_for_the_team_becomes_a_callback_without_the_model(session, state):
+    state.slots.update(phone=CALLER, guest_name="Müller")
+
+    result = _ask_for_nine(session, state)
+
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert result.say[1].startswith("Ich habe Ihre Nummer notiert.")
+    callback = session.scalars(select(Callback)).one()
+    assert (callback.reason, callback.phone) == ("out_of_scope", CALLER)
+    assert callback.summary == f"{WISH}, Name Müller."
+    assert session.scalars(select(Reservation)).all() == []
+
+
+def test_a_team_table_without_a_name_is_handed_over_all_the_same(session, state):
+    """The number is what the team needs. Waiting for the name would bring the
+    call back that ends without the team."""
+    state.slots["phone"] = CALLER
+
+    result = _ask_for_nine(session, state)
+
+    assert result.ended is True
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
+def test_a_name_nobody_said_does_not_reach_the_card(session, state):
+    """`check_slot` takes no name and ignores one a model writes next to its
+    arguments. The card names the guest only as the guest did: "Müller" from
+    the sentence, never the model's "Mustermann" (Codex PR #280)."""
+    state.slots.update(phone=CALLER, guest_name="Müller")
+
+    _ask_for_nine(session, state, guest_name="Mustermann")
+
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
+
+
+def test_a_time_in_seconds_reads_as_the_restaurants_clock_on_the_card(session, state):
+    """The tool takes a time as seconds since 1970 too. The card shows what
+    the tool read, in the restaurant's zone, not the raw number (Codex PR
+    #280)."""
+    state.slots["phone"] = CALLER
+    seconds = int(datetime(2026, 9, 19, 19, 0, tzinfo=BERLIN).timestamp())
+
+    _ask_for_nine(session, state, reserved_for=seconds)
+
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
+def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
+    """A model that skips `check_slot`: `create_reservation` drafts nothing and
+    the core hands the wish over all the same. The time in the summary is the
+    restaurant's, whatever zone the model wrote."""
+    state.slots["phone"] = CALLER
+
+    result = _ask_for_nine(
+        session,
+        state,
+        tool="create_reservation",
+        guest_name="Müller",
+        phone=CALLER,
+        reserved_for="2026-09-19T17:00:00Z",
+    )
+
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
+    assert session.scalars(select(Reservation)).all() == []
+
+
+def test_a_team_table_without_a_number_is_transferred(session, state):
+    """Caller ID withheld: nobody to call back, so the call goes to the team
+    itself, which is on the line in the evening."""
+    state.caller_phone = None
+
+    result = _ask_for_nine(session, state, now=OPEN_NOW)
+
+    assert result.ended is True and state.stage == "transferred"
+    assert result.say[0].startswith(TEAM_SAY) and len(result.say) == 2
+    assert session.scalars(select(Callback)).all() == []
+    assert session.get(Call, state.call_id).transfer_reason == "out_of_scope"
+
+
+def test_a_team_table_without_a_number_and_without_the_team_says_so(session, state):
+    """Before the restaurant opens and without a number there is no way to the
+    team: the guest hears that, after the sentence about the table, and is not
+    promised a callback."""
+    state.caller_phone = None
+
+    result = _ask_for_nine(session, state)
+
+    assert result.ended is True and state.stage == "ended"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert result.say[1] == SAY_NOBODY_REACHABLE
+    assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_callback_that_fails_still_ends_with_the_team(session, state):
+    """The number in the state is none a callback takes: the call goes the way
+    of every handover, here to the team that is on the line in the evening."""
+    state.slots["phone"] = "12"
+
+    result = _ask_for_nine(session, state, now=OPEN_NOW)
+
+    assert result.ended is True and state.stage == "transferred"
+    assert session.scalars(select(Callback)).all() == []

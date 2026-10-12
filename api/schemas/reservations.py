@@ -39,6 +39,9 @@ class CheckSlotRequest(ToolRequest):
 class SlotCheck(BaseModel):
     available: bool
     alternatives: list[datetime] = Field(default_factory=list)
+    # The party is larger than the agent books itself (`service_config`): no
+    # draft, the wish goes to the team as a callback.
+    team_callback: bool = False
     say: str | None = Field(default=None, exclude=True)
 
 

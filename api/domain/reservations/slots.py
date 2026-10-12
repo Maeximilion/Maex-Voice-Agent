@@ -5,6 +5,12 @@ frühestens `reservation_lead_minutes` nach Öffnung und spätestens
 `reservation_last_start_minutes` vor Schluss (T-1.14, D12). Alternativen kommen nur aus
 dem Service des Wunsches; außerhalb der Öffnung heißt es „geschlossen", nur morgens vor
 der ersten Öffnung darf ein späterer Service desselben Tages einspringen.
+
+Limits for a reservation by phone (#252), all three from `service_config`: no
+table further ahead than `reservation_max_days_ahead` days, and a table that is
+free is booked by the agent only up to `reservation_max_party_size` guests, on
+the same day up to `reservation_max_party_size_same_day`. Above that the answer
+is `team_callback`: the wish goes to the team, which calls back.
 """
 
 import uuid
@@ -21,7 +27,12 @@ from api.domain.reservations.capacity import (
     booked_guests,
     capacity_windows,
 )
-from api.domain.reservations.spoken import WEEKDAYS, spoken_daytime, spoken_time
+from api.domain.reservations.spoken import (
+    WEEKDAYS,
+    spoken_daytime,
+    spoken_party_size,
+    spoken_time,
+)
 from api.domain.status.hours import (
     Window,
     load_hours,
@@ -69,6 +80,11 @@ def check_slot(
 
     zone = ZoneInfo(tenant.timezone)
     local = reserved_for.astimezone(zone)
+    # Calendar days of the restaurant, not hours: at ten in the evening the
+    # last day of the horizon can still be booked for its whole evening.
+    days_ahead = (local.date() - now.astimezone(zone).date()).days
+    if days_ahead > config.reservation_max_days_ahead:
+        return _unavailable([], _say_too_far_ahead(config.reservation_max_days_ahead))
     # Fenster des Vortags reichen über Mitternacht (18:00 bis 01:00), deshalb beide Tage.
     yesterday, today = local.date() - timedelta(days=1), local.date()
 
@@ -113,6 +129,21 @@ def check_slot(
 
     service = open_window_at(hours, local, DINEIN, zone)
     if service is not None and fits(local, service):
+        # Free by the numbers. Whether the agent books it itself is the
+        # restaurant's rule (#252): above the limit, and on the same day above
+        # the smaller one, the team calls back. Only here: a closed day stays
+        # closed and a full evening full, whatever the size of the party.
+        limit = config.reservation_max_party_size
+        if days_ahead == 0:
+            limit = min(limit, config.reservation_max_party_size_same_day)
+        if party_size > limit:
+            # "noch heute" only where the day is the reason.
+            today_only = party_size <= config.reservation_max_party_size
+            return SlotCheck(
+                available=False,
+                team_callback=True,
+                say=_say_team_decides(party_size, today_only),
+            )
         return SlotCheck(available=True)
 
     # In UTC gemessen: zwei Zeiten derselben ZoneInfo zieht Python als Wandzeit ab,
@@ -203,6 +234,24 @@ def _unavailable(chosen: list[datetime], say: str) -> SlotCheck:
         available=False,
         alternatives=[slot.astimezone(UTC) for slot in chosen],
         say=say,
+    )
+
+
+def _say_too_far_ahead(max_days: int) -> str:
+    span = "einen Tag" if max_days == 1 else f"{max_days} Tage"
+    return (
+        f"So weit im Voraus kann ich noch keinen Tisch reservieren, höchstens {span} "
+        "im Voraus. Welcher frühere Tag passt Ihnen?"
+    )
+
+
+def _say_team_decides(party_size: int, today_only: bool) -> str:
+    """No promise of a callback: that sentence comes from `create_callback`,
+    once the callback exists."""
+    today = " noch heute" if today_only else ""
+    return (
+        f"Für {spoken_party_size(party_size)}{today} kann ich den Tisch nicht selbst "
+        "zusagen, das bespricht das Team persönlich mit Ihnen."
     )
 
 

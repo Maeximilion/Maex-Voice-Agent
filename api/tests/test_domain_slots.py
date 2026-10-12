@@ -137,6 +137,13 @@ def test_kleine_gruppe_passt_noch_in_fast_volles_fenster(session, tenant_id, boo
 
 
 def test_entwurf_zaehlt_storno_und_geloeschte_nicht(session, tenant_id, book):
+    # A party of 30 probes the whole window; the party limits have their own tests.
+    _set_config(
+        session,
+        tenant_id,
+        reservation_max_party_size=30,
+        reservation_max_party_size_same_day=30,
+    )
     book(berlin(DIENSTAG, 18, 0), 38, status="draft")
     assert (
         check_slot(session, tenant_id, berlin(DIENSTAG, 18, 0), 4, now=NOW).available
@@ -599,3 +606,136 @@ def test_unbekannter_mandant_ist_not_found(session, tenant_id):
 )
 def test_gesprochene_uhrzeit(hh, mm, expected):
     assert spoken_time(berlin(DIENSTAG, hh, mm)) == expected
+
+
+# -- Limits for a reservation by phone (#252, migration 007) ----------------------
+# Seed defaults: 90 days ahead, the agent books up to 8 guests itself, on the
+# same day up to 5. Above that the table is free by the numbers and still not
+# booked: the team calls back.
+SAMSTAG = date(2026, 9, 19)
+
+
+def _set_config(session, tenant_id, **values) -> None:
+    config = session.get(ServiceConfig, tenant_id)
+    for name, value in values.items():
+        setattr(config, name, value)
+    session.commit()
+
+
+def test_a_party_at_the_limit_is_booked_by_the_agent(session, tenant_id):
+    result = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 8, now=NOW)
+    assert result.available is True
+    assert result.team_callback is False and result.say is None
+
+
+def test_a_party_above_the_limit_goes_to_the_team(session, tenant_id):
+    result = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 9, now=NOW)
+    assert result.available is False and result.team_callback is True
+    assert result.alternatives == []
+    assert result.say.startswith("Für neun Personen kann ich den Tisch nicht selbst")
+    assert "heute" not in result.say
+
+
+def test_on_the_same_day_the_smaller_limit_counts(session, tenant_id):
+    five = check_slot(session, tenant_id, berlin(DIENSTAG, 19), 5, now=NOW)
+    six = check_slot(session, tenant_id, berlin(DIENSTAG, 19), 6, now=NOW)
+    assert five.available is True and five.team_callback is False
+    assert six.available is False and six.team_callback is True
+    assert six.say.startswith("Für sechs Personen noch heute kann ich den Tisch")
+
+
+def test_the_same_day_is_the_day_of_the_restaurant_not_of_utc(session, tenant_id):
+    # 23:30 on Tuesday in Berlin: lunch on Wednesday is tomorrow.
+    late = datetime(2026, 9, 15, 23, 30, tzinfo=BERLIN)
+    tomorrow = check_slot(
+        session, tenant_id, berlin(date(2026, 9, 16), 12), 6, now=late
+    )
+    assert tomorrow.available is True
+    # 00:30 on Wednesday in Berlin is still Tuesday in UTC: the evening of
+    # that Wednesday is today.
+    night = datetime(2026, 9, 16, 0, 30, tzinfo=BERLIN)
+    today = check_slot(
+        session, tenant_id, berlin(date(2026, 9, 16), 19), 6, now=night.astimezone(UTC)
+    )
+    assert today.team_callback is True
+
+
+def test_the_party_limits_come_from_the_database(session, tenant_id):
+    _set_config(
+        session,
+        tenant_id,
+        reservation_max_party_size=10,
+        reservation_max_party_size_same_day=10,
+    )
+    assert check_slot(session, tenant_id, berlin(SAMSTAG, 19), 10, now=NOW).available
+    assert check_slot(session, tenant_id, berlin(DIENSTAG, 19), 10, now=NOW).available
+    above = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 11, now=NOW)
+    assert above.team_callback is True
+
+
+def test_a_same_day_limit_above_the_general_one_lifts_nothing(session, tenant_id):
+    _set_config(session, tenant_id, reservation_max_party_size_same_day=20)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 19), 9, now=NOW)
+    assert result.team_callback is True
+    assert "heute" not in result.say
+
+
+def test_a_limit_of_zero_sends_every_table_to_the_team(session, tenant_id):
+    _set_config(session, tenant_id, reservation_max_party_size=0)
+    result = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 1, now=NOW)
+    assert result.team_callback is True
+    assert result.say.startswith("Für eine Person kann ich")
+
+
+def test_a_large_party_hears_closed_and_full_like_any_other(session, tenant_id, book):
+    # Only a table that is free by the numbers goes to the team: a closed day
+    # stays closed, a full evening full, and the guest can name another time.
+    closed = check_slot(session, tenant_id, berlin(date(2026, 9, 21), 19), 12, now=NOW)
+    assert closed.team_callback is False
+    assert closed.say == "Am Montag haben wir leider geschlossen."
+    book(berlin(SAMSTAG, 19), 35)
+    full = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 12, now=NOW)
+    assert full.available is False and full.team_callback is False
+    assert "leider nichts frei" in full.say
+
+
+def test_the_last_day_of_the_horizon_can_be_booked_the_next_one_not(session, tenant_id):
+    _set_config(session, tenant_id, reservation_max_days_ahead=4)
+    last = check_slot(session, tenant_id, berlin(SAMSTAG, 19), 2, now=NOW)
+    assert last.available is True
+    beyond = check_slot(session, tenant_id, berlin(date(2026, 9, 20), 19), 2, now=NOW)
+    assert beyond.available is False and beyond.team_callback is False
+    assert beyond.alternatives == []
+    assert "höchstens 4 Tage im Voraus" in beyond.say
+
+
+def test_the_default_horizon_is_ninety_days(session, tenant_id):
+    # 13.12.2026 is day 89 and a Sunday, 15.12. is day 91 and a Tuesday; day 90
+    # is a Monday, the day off.
+    inside = check_slot(session, tenant_id, berlin(date(2026, 12, 13), 19), 2, now=NOW)
+    assert inside.available is True
+    beyond = check_slot(session, tenant_id, berlin(date(2026, 12, 15), 19), 2, now=NOW)
+    assert beyond.available is False
+    assert "höchstens 90 Tage im Voraus" in beyond.say
+
+
+def test_the_horizon_counts_days_of_the_restaurant_not_hours(session, tenant_id):
+    # At 22:00 the evening four days on is less than 96 hours away, the lunch
+    # of the fifth day more than 96 and less than 120: the calendar day decides.
+    _set_config(session, tenant_id, reservation_max_days_ahead=4)
+    late = datetime(2026, 9, 15, 22, 0, tzinfo=BERLIN)
+    assert check_slot(session, tenant_id, berlin(SAMSTAG, 21), 2, now=late).available
+    fifth = check_slot(session, tenant_id, berlin(date(2026, 9, 20), 12), 2, now=late)
+    assert fifth.available is False and "höchstens 4 Tage" in fifth.say
+
+
+def test_beyond_the_horizon_a_large_party_is_not_taken_either(session, tenant_id):
+    result = check_slot(session, tenant_id, berlin(date(2026, 12, 15), 19), 12, now=NOW)
+    assert result.available is False and result.team_callback is False
+    assert "Tage im Voraus" in result.say
+
+
+def test_a_horizon_of_one_day_is_said_in_the_singular(session, tenant_id):
+    _set_config(session, tenant_id, reservation_max_days_ahead=1)
+    result = check_slot(session, tenant_id, berlin(date(2026, 9, 17), 19), 2, now=NOW)
+    assert "höchstens einen Tag im Voraus" in result.say

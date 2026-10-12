@@ -47,6 +47,26 @@ class ServiceConfig(Timestamps, Base):
             "reservation_last_start_minutes >= 0",
             name="ck_service_config_reservation_last_start_minutes",
         ),
+        CheckConstraint(
+            "reservation_max_days_ahead >= 0",
+            name="ck_service_config_reservation_max_days_ahead",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size >= 0",
+            name="ck_service_config_reservation_max_party_size",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size_same_day >= 0",
+            name="ck_service_config_reservation_max_party_size_same_day",
+        ),
+        CheckConstraint(
+            "order_approval_above_cents >= 0",
+            name="ck_service_config_order_approval_above_cents",
+        ),
+        CheckConstraint(
+            "turn_deadline_seconds >= 1",
+            name="ck_service_config_turn_deadline_seconds",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -75,6 +95,28 @@ class ServiceConfig(Timestamps, Base):
     )
     reservation_last_start_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"
+    )
+    # Limits for a reservation by phone (#252, migration 007): how many days
+    # ahead, and up to which party size the agent books itself. Above it, and
+    # on the same day above the smaller limit, the team calls back.
+    reservation_max_days_ahead: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="90"
+    )
+    reservation_max_party_size: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="8"
+    )
+    reservation_max_party_size_same_day: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
+    )
+    # The two other limits of #252, in the same migration and read by nothing
+    # yet: an order above this amount waits for the team's approval before a
+    # slip prints, and a guest waits this long in silence for the model before
+    # the call goes to the team. Each gets its pull request.
+    order_approval_above_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="15000"
+    )
+    turn_deadline_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="10"
     )
 
 

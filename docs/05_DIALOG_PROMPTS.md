@@ -79,7 +79,11 @@ PR #127). Das gilt für Reservierung und Abholung.
    belegt    → Alternativen aus dem Tool anbieten (max. 2) → erneut check_slot
    geschlossen → `say` vorlesen (fragt nach anderer Uhrzeit, keine Alternative) → erneut check_slot
    nichts    → create_callback
+   team_callback → the core creates the callback itself (the tool's sentence, then the callback's), the call ends; without a number it hands over like every handover (transfer, or the sentence that nobody can be reached)
+   too far ahead → read out `say` (names the limit, asks for an earlier day) → check_slot again
 ```
+`team_callback` and the horizon are the restaurant's limits for a reservation by phone (#252, `service_config`, docs/04 §check_slot): above 8 guests, and on the same day above 5, the agent books nothing and the team calls back to confirm and talk it through; no table more than 90 days ahead. The callback after `team_callback` is created by the conversation core in the same turn, not by the model (`agent/loop.py`, docs/04 §check_slot): the model never sees that result, and neither the system prompt nor the tool reference says anything about it.
+
 `check_slot` bietet nur Termine im selben Service an (T-1.14, docs/04 §check_slot). Außerhalb der Öffnung gibt es keine Alternative: der Satz sagt "geschlossen" und fragt nach einer anderen Uhrzeit, das ist kein Fall für `create_callback`. Morgens vor der ersten Öffnung kommen Termine aus einem späteren Service desselben Tages, ab sechs Stunden Abstand mit Tageszeit ("abends um sieben").
 
 ### Abholung

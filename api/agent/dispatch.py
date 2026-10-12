@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from api.core.errors import AppError, InvalidInput
+from api.core.errors import AppError, InvalidInput, TeamDecides
 from api.core.ids import idempotency_key
 from api.core.logging import get_logger, log
 from api.core.tool_log import append_tool_call
@@ -401,7 +401,17 @@ def dispatch(
         # rollback keeps an uncommitted remainder of a failed domain call from
         # being carried into the next tool call.
         session.rollback()
-        outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code, hint=hint)
+        outcome = ToolResult(
+            ok=False,
+            # `create_reservation` for a table the team decides on (#252): the
+            # same signal as on `check_slot`, for the loop, which hands the
+            # wish over on it. A model that skipped the check ends with the
+            # team too.
+            data={"team_callback": True} if isinstance(exc, TeamDecides) else {},
+            say=exc.say,
+            error_code=exc.code,
+            hint=hint,
+        )
 
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     _log_call(session, call_id, tenant_id, name, duration_ms, outcome)

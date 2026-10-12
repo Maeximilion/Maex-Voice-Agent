@@ -39,6 +39,11 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call and ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here, and what the text phone runs on. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
 | reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
 | reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
+| reservation_max_days_ahead | INT ≥ 0 | how many days ahead a table can be booked by phone, counted in calendar days of the restaurant, default 90 (#252, migration 007). 0: today only |
+| reservation_max_party_size | INT ≥ 0 | largest party the agent books itself, default 8 (#252, migration 007). Above it `check_slot` answers `team_callback` and the team calls back. 0: the team confirms every table |
+| reservation_max_party_size_same_day | INT ≥ 0 | the same limit for a table on the same day, default 5 (#252, migration 007). The smaller of the two counts on that day |
+| order_approval_above_cents | INT ≥ 0 | an order above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000 (#252, migration 007). **Read by nothing yet**, its behaviour has a pull request of its own to come |
+| turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the model before the call goes to the team; default 10 (#252, migration 007). **Read by nothing yet**, its behaviour has a pull request of its own to come |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -334,5 +339,7 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
 | 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
 | 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
-| 006 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 007 | `eval_cases`, `eval_runs` |
+| 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
+| 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` and `turn_deadline_seconds`: the two other limits of #252, in the same migration and not read yet |
+| planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
+| planned, next free number | `eval_cases`, `eval_runs` |
