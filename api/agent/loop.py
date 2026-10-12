@@ -175,7 +175,12 @@ class ConversationLoop:
                     error=str(exc),
                 )
                 return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
-            if turn.state_patch:
+            # Once the draft is to be read out again, nothing of a further
+            # answer is carried out but its sentence: no patch, no `cart`, no
+            # tool. The guest said yes and nothing else, and each of them can
+            # drop the draft the guest has to hear (a phone number in a patch
+            # does, `state._number_set`).
+            if turn.state_patch and not reread_due:
                 # Only what was taken counts as understood: a name outside
                 # `GUEST_SLOTS` is dropped and is no success on the ladder.
                 for field_name in apply_state_patch(state, turn.state_patch):
@@ -203,7 +208,9 @@ class ConversationLoop:
                         detail=user_text,
                     )
 
-            if turn.cart is not None:
+            # Not while the draft is to be read out again (above): a changed
+            # or refused order would drop it (Codex PR #273).
+            if turn.cart is not None and not reread_due:
                 # Rule 2 for what a model keeps across turns (guards.py). A
                 # refused order stops the whole answer: neither its sentence
                 # nor its tool call is carried out on an order the core did
@@ -233,9 +240,10 @@ class ConversationLoop:
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
             # Once the draft is to be read out again, no tool is carried out
             # in this turn any more.
+            blocked = reread_due
             refused = (
                 guards.reread_first(state)
-                if reread_due
+                if blocked
                 else guards.refusal(
                     state,
                     start,
@@ -257,7 +265,14 @@ class ConversationLoop:
                 result = refused
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
-            apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if not blocked:
+                # A call that was only held back for the reread says nothing
+                # about the draft: a search or a new draft the model tried on
+                # a bare yes is no correction by the guest, and must not drop
+                # the draft the way a failed correction does (Codex PR #273).
+                apply_tool_result(
+                    state, turn.tool_call.name, result, turn.tool_call.args
+                )
             called.append(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 

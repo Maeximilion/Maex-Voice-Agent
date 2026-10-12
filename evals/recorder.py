@@ -115,7 +115,9 @@ class RecordingLLM:
     ) -> LLMTurn:
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input)
-        if turn.cart is not None:
+        if turn.cart is not None and not self._reread_due:
+            # Not while the core reads the draft out again: it takes no
+            # `cart` then (`agent/loop.py`).
             # First, as in the core (`agent/loop.py`): the `cart` is taken
             # before the answer next to it is carried out. A changed order
             # drops the draft that waited; a `draft_order` in the same answer
@@ -222,7 +224,7 @@ class RecordingLLM:
             rec.refused_attempts.append((name, last))
         del rec.guessed[guessed:]
         del rec.unconfirmed[unconfirmed:]
-        if name in DRAFT_TOOLS:
+        if name in DRAFT_TOOLS and not self._reread_due:
             # No draft a yes could answer, not even the one before: a failed
             # correction takes the readback away in the core (`agent/state.py`
             # `_supersedes`), and the recorder has to agree (Codex PR #239).
@@ -240,7 +242,11 @@ class RecordingLLM:
         rec.tool_calls.append(name)
         self._open_call = (name, dict(args))
         last = rec.customer_lines[-1] if rec.customer_lines else ""
-        if name in DRAFT_TOOLS:
+        if self._reread_due:
+            # Held back by the core until the draft is read out again
+            # (`guards.reread_first`): the draft that waits stays as it is.
+            pass
+        elif name in DRAFT_TOOLS:
             rec.drafted_at = len(rec.customer_lines)
         elif name in SUPERSEDING_TOOLS:
             rec.drafted_at = None

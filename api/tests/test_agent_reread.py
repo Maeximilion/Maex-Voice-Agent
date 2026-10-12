@@ -125,17 +125,18 @@ def flow(request, session, tenant_id) -> Flow:
 class Model:
     """Plays its tool calls, then speaks: `say`, or without one the sentence of
     the tool result it just got (`say` of a refusal, `readback` of a draft),
-    the way the prompt asks for it."""
+    the way the prompt asks for it. A step may be a whole answer."""
 
-    def __init__(self, *calls: ToolCall, say: str | None = None):
-        self._calls = list(calls)
+    def __init__(self, *steps: ToolCall | LLMTurn, say: str | None = None):
+        self._steps = list(steps)
         self._say = say
         self.inputs: list[str] = []
 
     def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
         self.inputs.append(input_text)
-        if self._calls:
-            return LLMTurn(tool_call=self._calls.pop(0))
+        if self._steps:
+            step = self._steps.pop(0)
+            return step if isinstance(step, LLMTurn) else LLMTurn(tool_call=step)
         if self._say is not None:
             return LLMTurn(say=self._say)
         result = json.loads(input_text)
@@ -398,3 +399,64 @@ def test_a_model_that_returns_only_tools_ends_with_the_team(session, state, flow
     assert result.ended is True and state.transferred
     assert status(session, flow, draft_id) == "draft"
     assert booked(session, flow) == (0, 0)
+
+
+HELD_BACK = {
+    "search": ToolCall("search_menu", {"query": "die 23"}),
+    "slot": ToolCall(
+        "check_slot", {"party_size": 2, "reserved_for": "2026-09-15T20:00:00+02:00"}
+    ),
+}
+
+
+@pytest.mark.parametrize("tried", ["search", "slot", "draft"])
+def test_a_tool_held_back_for_the_reread_does_not_drop_the_draft(
+    session, state, flow, tried
+):
+    """A search, a slot check or a new draft is how a correction begins, and
+    a failed one drops the draft that waits (`state.apply_tool_result`). Held
+    back after a bare yes it is none: the draft stays, is read out, and the
+    yes to it books (Codex PR #273)."""
+    readback, draft_id = refused_yes(session, state, flow)
+    call = flow.calls[-1] if tried == "draft" else HELD_BACK[tried]
+    model = Model(flow.confirm(draft_id), call, say="Einen Moment.")
+
+    said = turn(session, state, "Ja", model)
+
+    assert said == [readback]
+    assert json.loads(model.inputs[2])["hint"] == HINT_REREAD
+    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
+    assert session.scalar(select(func.count()).select_from(flow.model)) == 1
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)
+
+
+@pytest.mark.parametrize(
+    "beside",
+    [
+        {"cart": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]},
+        {"state_patch": {"phone": CALLER}},
+    ],
+    ids=["cart", "patch"],
+)
+def test_what_stands_next_to_the_answer_is_not_taken_before_the_reread(
+    session, state, flow, beside
+):
+    """A changed or refused `cart` drops the draft that waits, and so does a
+    phone number in a patch. After a bare yes the model's answer carries one:
+    it is left aside, the draft stays and is read out (Codex PR #273)."""
+    readback, draft_id = refused_yes(session, state, flow)
+    answer = LLMTurn(say="Ich habe etwas geändert.", **beside)
+
+    said = turn(session, state, "Ja", Model(flow.confirm(draft_id), answer))
+
+    assert said == [readback]
+    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)

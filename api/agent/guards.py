@@ -336,7 +336,9 @@ def reread_first(state: ConversationState) -> ToolResult:
     second `confirm` and no search is carried out on that sentence, or the
     turn would end with the team, or with nothing, instead of the question
     the guest has to hear (Codex PR #273). It costs a tool hop like any
-    refused call."""
+    refused call, and it leaves the draft alone: the loop does not pass it
+    through `state.apply_tool_result`, where a failed search or draft counts
+    as a correction and drops what waits."""
     return ToolResult(
         ok=False, error_code="conflict", hint=HINT_REREAD, say=unheard_readback(state)
     )

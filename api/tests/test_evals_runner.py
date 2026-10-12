@@ -1776,3 +1776,66 @@ def test_a_refusal_without_the_sentence_leaves_the_draft_unread():
     rec = _booked_after_a_refused_yes(_refused_yes(None))
 
     assert rec.recording.unconfirmed == ["Ja"]
+
+
+def _held_back(tool: str) -> str:
+    """What a tool call gets while the core reads the draft out again."""
+    return json.dumps(
+        {"tool": tool, "ok": False, "error_code": "conflict", "say": READBACK}
+    )
+
+
+def test_a_call_held_back_for_the_reread_leaves_the_draft_in_the_recording():
+    """The core keeps the draft when it holds a search back after a refused
+    yes, and the recorder has to agree: the yes after the reread is a yes to
+    that draft (Codex PR #273)."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                confirm,
+                LLMTurn(tool_call=ToolCall("search_menu", {"query": "die 13"})),
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Einen Moment."),
+                confirm,
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _refused_yes(READBACK))
+    rec.next_turn("", {}, _held_back("search_menu"))
+    rec.next_turn("", {}, _held_back("draft_order"))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
+
+
+def test_a_cart_is_not_taken_by_the_recorder_while_the_draft_is_read_out_again():
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                confirm,
+                LLMTurn(say="Ich habe die Bestellung geändert.", cart=other_order),
+                confirm,
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _refused_yes(READBACK))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
