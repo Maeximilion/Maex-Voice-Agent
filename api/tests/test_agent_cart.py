@@ -821,7 +821,9 @@ def test_draft_that_differs_from_the_cart_of_the_same_answer_is_refused(
         ]
     )
 
-    ConversationLoop(session, llm, "system", now=NOW).run_turn(state, "zweimal die 47")
+    ConversationLoop(session, llm, "system", now=NOW).run_turn(
+        state, "zweimal die 47, auf Müller"
+    )
 
     assert len(session.scalars(select(Order)).all()) == created
     assert state.cart == [line(ente, 2, options=huhn)]
@@ -876,7 +878,9 @@ def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
             LLMTurn(say="Zweimal Ente knusprig mit Huhn. Passt das so?"),
         ]
     )
-    ConversationLoop(session, llm, "system", now=NOW).run_turn(state, "zweimal die 47")
+    ConversationLoop(session, llm, "system", now=NOW).run_turn(
+        state, "zweimal die 47, auf Müller"
+    )
     order = session.scalars(select(Order)).one()
     assert state.stage == "readback_pending"
 

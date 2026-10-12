@@ -13,7 +13,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from sim.scripted_llm import GREETING, QUESTIONS, SAY_ASK_AGAIN, ScriptedLLM
+from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
+from sim.scripted_llm import (
+    GREETING,
+    QUESTIONS,
+    SAY_ASK_AGAIN,
+    SAY_PHONE_AGAIN,
+    ScriptedLLM,
+)
 
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Dienstag, Abendfenster
@@ -277,3 +284,63 @@ def test_no_second_greeting_when_the_phone_already_greeted(llm):
     assert turn.say is not None
     assert GREETING not in turn.say
     assert QUESTIONS["reserved_for"] in turn.say
+
+
+def test_detail_the_core_did_not_take_is_asked_for_again(llm):
+    """The core drops a phone number without its area code
+    (agent/guest_details.py), so the state of the next hop lacks what this
+    script read from the sentence. It asks again; before, building the draft
+    from the state ended the turn with a KeyError."""
+    taken = {
+        "party_size": 2,
+        "reserved_for": "2026-09-16T19:00:00+02:00",
+        "guest_name": "Mueller",
+    }
+
+    turn = llm.next_turn(
+        "",
+        {**START, "slots": taken},
+        tool_result("check_slot", data={"available": True}),
+    )
+
+    assert turn.tool_call is None
+    assert turn.say == QUESTIONS["phone"]
+    assert turn.understanding_failure == "phone"
+
+
+# With a caller ID the state always holds a number; without one it holds none.
+WITH_CALLER_ID = {"guest_name": "Mueller", "phone": "+497215551234"}
+
+
+@pytest.mark.parametrize("taken", [WITH_CALLER_ID, {}])
+@pytest.mark.parametrize(
+    ("tool", "hint", "question", "field"),
+    [
+        ("draft_order", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_callback", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_reservation", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_reservation", HINT_GUEST_NAME, QUESTIONS["guest_name"], "guest_name"),
+    ],
+)
+def test_call_the_core_refused_for_a_guest_detail_asks_for_it_again(
+    llm, taken, tool, hint, question, field
+):
+    """Codex PR #244, P1, and the review after it: handed over instead, the
+    call ended outside the opening hours with "Ich gebe an das Team weiter"
+    and neither a transfer nor a callback, also when the state held the caller
+    ID and so lacked nothing."""
+    refused = tool_result(tool, ok=False, error_code="invalid_input", hint=hint)
+
+    turn = llm.next_turn("", {**START, "slots": taken}, refused)
+
+    assert turn.tool_call is None
+    assert turn.say == question
+    assert turn.understanding_failure == field
+
+
+def test_refusal_for_another_reason_still_goes_to_the_team(llm):
+    refused = tool_result("draft_order", ok=False, error_code="conflict", hint="x")
+
+    turn = llm.next_turn("", {**START, "slots": WITH_CALLER_ID}, refused)
+
+    assert turn.tool_call.name == "transfer_to_team"
