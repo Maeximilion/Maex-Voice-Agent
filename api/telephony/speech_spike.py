@@ -142,6 +142,12 @@ AGENT_SENTENCES = (
 )
 SILENCES_MS = (300, 500, 700)
 
+# How many dish names an ear gets as key terms with one utterance. Never the
+# menu: the full menu goes into no model context (hard rule 6), and an ear's
+# prompt is one. It would not fit either: the pilot's 173 names are about six
+# times what the prompt takes (docs/20 §11).
+KEY_TERMS = 10
+
 # Thresholds of docs/20 §6.
 WRONG_LIMIT = 0.02
 VOICE_TO_VOICE_SECONDS = 1.5
@@ -348,6 +354,18 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
     return plan
 
 
+def key_terms_for(names: list[str], index: int) -> list[str]:
+    """The key terms for one utterance: a window of the menu's names that
+    starts at `index` and wraps around. For the sentence of dish `index` that
+    is its own name first, so every dish is heard with its term; a number
+    sentence gets the window at its own index. At most KEY_TERMS and always
+    fewer than the menu has, except for a menu of one dish."""
+    if not names:
+        return []
+    size = max(1, min(KEY_TERMS, len(names) - 1))
+    return [names[(index + k) % len(names)] for k in range(size)]
+
+
 def terms_that_fit(tokens: Any, terms: list[str], limit: int) -> list[str]:
     """The leading key terms whose list stays under an ear's limit of tokens;
     `tokens` counts them for a text. The engine cuts a prompt that is too long
@@ -543,18 +561,8 @@ def _ear(
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     seconds = sorted(r["seconds"] for r in rows)
     terms: dict[str, Any] = {}
-    if info.get("key_terms") is not None:
-        # Dish d<i> is the i-th key term: only the leading ones fit the ear's
-        # prompt, so the others were heard without their term (Codex PR #268).
-        dishes = [r for r in rows if r["kind"] == "dish"]
-        fit = [r for r in dishes if int(r["id"][1:]) < info["key_terms"]]
-        rest = [r for r in dishes if int(r["id"][1:]) >= info["key_terms"]]
-        terms = {
-            "key_terms": info["key_terms"],
-            "key_terms_given": given,
-            "dishes_with_term_share": _share(fit, "right"),
-            "dishes_without_term_share": _share(rest, "right"),
-        }
+    if info.get("key_terms_each") is not None:
+        terms = {"key_terms_each": info["key_terms_each"], "key_terms_given": given}
     return {
         "id": ear_id,
         **terms,
@@ -628,12 +636,11 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
             f"{e['load_seconds']:>8}{e['gpu_mib'] if e['gpu_mib'] is not None else '-':>9}"
         )
     for e in report["ears"]:
-        if e.get("key_terms") is not None:
+        if e.get("key_terms_each") is not None:
             print(
-                f"{e['id']}: {e['key_terms']} of {e['key_terms_given']} dish names fit "
-                f"the ear's prompt as key terms; dish names right with their term "
-                f"{pct(e['dishes_with_term_share']).strip()}, without "
-                f"{pct(e['dishes_without_term_share']).strip()}"
+                f"{e['id']}: every utterance heard with {e['key_terms_each']} of "
+                f"{e['key_terms_given']} dish names as key terms, a dish with its own "
+                "among them"
             )
     step("Mouths: speed, and card numbers the best ear understood from the voice")
     print(f"{'voice':<26}{'first audio s':>14}{'x real time':>13}{'understood':>12}")

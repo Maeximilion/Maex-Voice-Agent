@@ -28,14 +28,21 @@ from typing import Any
 
 import numpy as np
 
-from api.telephony.speech_spike import MENU_MOUNT, menu_errors, terms_that_fit
+from api.telephony.speech_spike import (
+    KEY_TERMS,
+    MENU_MOUNT,
+    key_terms_for,
+    menu_errors,
+    terms_that_fit,
+)
 
 LINE_RATE = 8000
 EAR_RATE = 16000
 BAND_HZ = (300, 3400)
 _TAPS = 255
 
-Ear = Callable[[np.ndarray], str]
+# What an ear makes of an utterance, given the key terms for it.
+Ear = Callable[[np.ndarray, list[str]], str]
 
 
 def telephone(pcm: bytes, rate: int) -> np.ndarray:
@@ -94,7 +101,7 @@ def fetch(run: Path, plan: dict[str, Any]) -> None:
             )
 
 
-def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
+def load_ear(spec: dict[str, Any], models: Path) -> Ear:
     if spec["engine"] == "whisper":
         from faster_whisper import WhisperModel
 
@@ -105,20 +112,19 @@ def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
             download_root=str(models / "whisper"),
             local_files_only=True,
         )
-        terms: list[str] = []
-        if spec.get("key_terms"):
-            # The engine keeps fewer than half its prompt for them, counted
-            # with a leading blank (faster-whisper `get_prompt`).
-            def tokens(text: str) -> int:
-                encoded = model.hf_tokenizer.encode(
-                    " " + text, add_special_tokens=False
-                )
-                return len(encoded.ids)
 
-            terms = terms_that_fit(tokens, key_terms, model.max_length // 2)
-        hotwords = ", ".join(terms) or None
+        # The engine keeps fewer than half its prompt for key terms, counted
+        # with a leading blank (faster-whisper `get_prompt`), and cuts a longer
+        # list without a word: cut here, at a whole term.
+        def tokens(text: str) -> int:
+            encoded = model.hf_tokenizer.encode(" " + text, add_special_tokens=False)
+            return len(encoded.ids)
 
-        def hear(audio: np.ndarray) -> str:
+        def hear(audio: np.ndarray, terms: list[str]) -> str:
+            hotwords = None
+            if spec.get("key_terms"):
+                kept = terms_that_fit(tokens, terms, model.max_length // 2)
+                hotwords = ", ".join(kept) or None
             segments, _ = model.transcribe(
                 audio,
                 language="de",
@@ -127,15 +133,12 @@ def load_ear(spec: dict[str, Any], models: Path, key_terms: list[str]) -> Ear:
             )
             return " ".join(segment.text.strip() for segment in segments)
 
-        if spec.get("key_terms"):
-            # How many of the plan's key terms this ear really got.
-            hear.key_terms = len(terms)  # type: ignore[attr-defined]
         return hear
     if spec["engine"] == "parakeet":
         import onnx_asr
 
         parakeet = onnx_asr.load_model(spec["model"], models / spec["model"])
-        return lambda audio: parakeet.recognize(audio, sample_rate=EAR_RATE)
+        return lambda audio, terms: parakeet.recognize(audio, sample_rate=EAR_RATE)
     raise ValueError(f"unknown ear engine {spec['engine']!r}")
 
 
@@ -203,13 +206,17 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
         try:
             before = gpu_mib() if spec.get("device") == "cuda" else None
             started = time.monotonic()
-            hear = load_ear(spec, models, plan["key_terms"])
-            hear(next(iter(spoken.values())))  # warm up, not timed below
+            hear = load_ear(spec, models)
+            hear(next(iter(spoken.values())), [])  # warm up, not timed below
             info: dict[str, Any] = {
                 "load_seconds": round(time.monotonic() - started, 1)
             }
-            if hasattr(hear, "key_terms"):
-                info["key_terms"] = hear.key_terms
+            names = plan["key_terms"]
+            if spec.get("key_terms"):
+                # A window of the names per utterance, never the menu (hard
+                # rule 6, `key_terms_for`).
+                info["key_terms_each"] = len(key_terms_for(names, 0))
+                assert info["key_terms_each"] <= KEY_TERMS
             after = gpu_mib() if before is not None else None
             if before is not None and after is not None:
                 info["gpu_mib"] = after - before
@@ -218,7 +225,8 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
             every = max(1, len(spoken) // spec.get("sample", len(spoken)))
             for (sentence_id, name), audio in list(spoken.items())[::every]:
                 started = time.monotonic()
-                text = hear(audio)
+                # Sentence "d7" is dish 7, "n7" and "c7" the seventh of theirs.
+                text = hear(audio, key_terms_for(names, int(sentence_id[1:])))
                 rows.append(
                     {
                         "id": sentence_id,

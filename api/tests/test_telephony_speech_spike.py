@@ -643,29 +643,45 @@ def test_judge_only_removes_the_old_verdict_before_it_judges(
     assert (tmp_path / "plan.json").exists() and (tmp_path / "heard.json").exists()
 
 
-def test_dish_names_are_counted_with_and_without_their_key_term(capsys, tmp_path):
-    """An ear's prompt takes a limited number of key terms. The first 2 of the 3
-    names fit: their dishes are counted apart from the one that was heard
-    without its term, or the share would depend on the order of the menu."""
+def test_an_utterance_gets_a_window_of_key_terms_never_the_whole_menu():
+    """Hard rule 6: the full menu goes into no model context, and an ear's
+    prompt is one (Codex PR #268, P1). Each utterance gets a few names; a dish
+    sentence its own name first, so every dish is heard with its term."""
+    names = [f"Gericht {i}" for i in range(25)]
+    window = kit.key_terms_for(names, 3)
+    assert window == [f"Gericht {i}" for i in range(3, 3 + kit.KEY_TERMS)]
+    assert kit.key_terms_for(names, 22)[:4] == [
+        "Gericht 22",
+        "Gericht 23",
+        "Gericht 24",
+        "Gericht 0",
+    ]
+    # An index beyond the menu (a number sentence) wraps around.
+    assert kit.key_terms_for(names, 53)[0] == "Gericht 3"
+    # A menu smaller than the window is never handed over whole.
+    for size in (2, 5, kit.KEY_TERMS, kit.KEY_TERMS + 1):
+        few = names[:size]
+        for index in range(size):
+            got = kit.key_terms_for(few, index)
+            assert got[0] == few[index] and len(set(got)) == len(got) < size
+    assert kit.key_terms_for(["Suppe"], 0) == ["Suppe"]
+    assert kit.key_terms_for([], 0) == []
+
+
+def test_the_report_says_how_many_key_terms_an_utterance_got(capsys, tmp_path):
     plan = kit.build_plan(None)
     plan["sentences"] = [
         {"id": "n0", "kind": "number", "say": "Nummer 23", "expect": "23"},
-        *(
-            {"id": f"d{i}", "kind": "dish", "say": "x", "expect": name}
-            for i, name in enumerate(["Edamame", "Gyoza", "Pho Bo"])
-        ),
+        {"id": "d0", "kind": "dish", "say": "x", "expect": "Edamame"},
     ]
-    plan["key_terms"] = ["Edamame", "Gyoza", "Pho Bo"]
     plan["ears"] = [{"id": "terms"}]
     row = {"voice": plan["voices"][0], "ear": "terms", "seconds": 0.1, "on_card": False}
     judged = [
         {**row, "id": "n0", "kind": "number", "expect": "23", "verdict": "right"},
         {**row, "id": "d0", "kind": "dish", "expect": "Edamame", "verdict": "right"},
-        {**row, "id": "d1", "kind": "dish", "expect": "Gyoza", "verdict": "right"},
-        {**row, "id": "d2", "kind": "dish", "expect": "Pho Bo", "verdict": "asked"},
     ]
     heard = {
-        "ears": {"terms": {"load_seconds": 1, "key_terms": 2}},
+        "ears": {"terms": {"load_seconds": 1, "key_terms_each": 10}},
         "mouths": [
             {"voice": v, "first_audio_seconds": 0.1, "seconds": 1, "audio_seconds": 2}
             for v in plan["voices"]
@@ -674,13 +690,15 @@ def test_dish_names_are_counted_with_and_without_their_key_term(capsys, tmp_path
     }
     report = kit.summarize(plan, heard, judged)
     [ear] = report["ears"]
-    assert ear["key_terms"] == 2 and ear["key_terms_given"] == 3
-    assert ear["dishes_with_term_share"] == 1.0
-    assert ear["dishes_without_term_share"] == 0.0
+    assert ear["key_terms_each"] == 10 and ear["key_terms_given"] == len(
+        plan["key_terms"]
+    )
     kit.print_report(report, tmp_path)
     out = capsys.readouterr().out
-    assert "terms: 2 of 3 dish names fit the ear's prompt as key terms" in out
-    assert "100.0 %" in out and "0.0 %" in out
+    assert (
+        f"terms: every utterance heard with 10 of {len(plan['key_terms'])} dish names"
+        in out
+    )
 
 
 def test_only_the_key_terms_that_fit_the_prompt_are_handed_to_the_ear():
