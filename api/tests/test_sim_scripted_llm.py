@@ -344,34 +344,3 @@ def test_refusal_for_another_reason_still_goes_to_the_team(llm):
     turn = llm.next_turn("", {**START, "slots": WITH_CALLER_ID}, refused)
 
     assert turn.tool_call.name == "transfer_to_team"
-
-
-# -- A table the team decides on (`check_slot`: `team_callback`, #252) ------------
-# The core creates the callback itself. The script hears of such a table only
-# while the core has no number to call back.
-TEAM_SAY = (
-    "Für neun Personen kann ich den Tisch nicht selbst zusagen, das bespricht "
-    "das Team persönlich mit Ihnen."
-)
-
-
-def test_a_table_for_the_team_says_so_and_asks_for_the_number(llm):
-    slots = {
-        "party_size": 9,
-        "reserved_for": "2026-09-19T19:00:00+02:00",
-        "guest_name": "Müller",
-    }
-    state = {**START, "slots": slots}
-    llm.next_turn("", state, "Guten Tag")
-    turn = llm.next_turn(
-        "",
-        state,
-        tool_result(
-            "check_slot",
-            data={"available": False, "alternatives": [], "team_callback": True},
-            say=TEAM_SAY,
-        ),
-    )
-    assert turn.tool_call is None
-    assert turn.say == f"{TEAM_SAY} {QUESTIONS['phone']}"
-    assert turn.understanding_failure == "phone"

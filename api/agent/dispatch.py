@@ -46,17 +46,6 @@ from api.schemas.transfer import TransferToTeamRequest
 
 logger = get_logger("api.agent.dispatch")
 
-# For a table the team decides on (#252, `team_callback`). The callback is
-# created by the core, not by the model (`loop.py`); a model reads this only
-# while no number to call back is known. Sent with that result alone: the
-# system prompt of every other call stays as short as it is (CLAUDE.md §2
-# rule 6).
-HINT_TEAM_CALLBACK = (
-    "Der Tisch wird nicht gebucht, kein create_reservation. Sprich das say und "
-    "frag nach der Rufnummer für den Rückruf des Teams. Den Rückruf legt das "
-    "System selbst an, sobald der Gast die Nummer genannt hat."
-)
-
 Adapter = Callable[
     [Session, uuid.UUID, uuid.UUID, dict[str, Any], datetime | None], BaseModel
 ]
@@ -401,12 +390,10 @@ def dispatch(
         except ValidationError as exc:
             hint = validation_hint(exc)
             raise InvalidInput(str(exc)) from exc
-        data = result.model_dump(mode="json")
         outcome = ToolResult(
             ok=True,
-            data=data,
+            data=result.model_dump(mode="json"),
             say=getattr(result, "say", None),
-            hint=HINT_TEAM_CALLBACK if data.get("team_callback") else None,
         )
     except AppError as exc:
         # Like `get_db` in `api/db.py` on an HTTP error: here the session lives
@@ -414,16 +401,16 @@ def dispatch(
         # rollback keeps an uncommitted remainder of a failed domain call from
         # being carried into the next tool call.
         session.rollback()
-        # `create_reservation` for a table the team decides on: the same
-        # signal as on `check_slot`, so a model that skipped the check ends
-        # with the team too.
-        team = isinstance(exc, TeamDecides)
         outcome = ToolResult(
             ok=False,
-            data={"team_callback": True} if team else {},
+            # `create_reservation` for a table the team decides on (#252): the
+            # same signal as on `check_slot`, for the loop, which hands the
+            # wish over on it. A model that skipped the check ends with the
+            # team too.
+            data={"team_callback": True} if isinstance(exc, TeamDecides) else {},
             say=exc.say,
             error_code=exc.code,
-            hint=HINT_TEAM_CALLBACK if team else hint,
+            hint=hint,
         )
 
     duration_ms = round((time.perf_counter() - started) * 1000, 1)

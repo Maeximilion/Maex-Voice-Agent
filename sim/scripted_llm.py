@@ -335,11 +335,7 @@ class ScriptedLLM:
             if name == "confirm" and "pickup_code" in data:
                 return self._pickup.on_confirmed(data)
         if name == "check_slot":
-            # `team_callback` (#252): free, but the team decides. The core
-            # creates the callback itself and this script hears of it only
-            # while the core has no number to call back: then the tool's
-            # sentence comes first, and the question for what is missing.
-            if data.get("available") or data.get("team_callback"):
+            if data.get("available"):
                 # The state is what the core took. A detail this script read
                 # from the sentence may be missing there: the core keeps no
                 # name or number the guest did not say as such, a number
@@ -347,8 +343,7 @@ class ScriptedLLM:
                 missing = _missing(slots)
                 if missing:
                     return LLMTurn(
-                        say=_join(say, QUESTIONS[missing]),
-                        understanding_failure=missing,
+                        say=QUESTIONS[missing], understanding_failure=missing
                     )
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
             # Alternativen stehen im vorgeschriebenen Satz aus dem Code (docs/05 §5).

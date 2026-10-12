@@ -61,8 +61,6 @@ SAY_NOBODY_REACHABLE = (
 )
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
-# With the team already: handed over, or noted as a callback.
-ENDED_OR_NOTED = ENDED_STAGES | {"callback"}
 # Name under which a refused order of the model (`LLMTurn.cart`) goes back to
 # it and into `calls.tool_calls`. No tool: nothing is dispatched under it.
 CART = "cart"
@@ -80,11 +78,7 @@ _HANDOFF_SUMMARIES = {
     "not_understood": "Anliegen konnte automatisch nicht geklärt werden.",
 }
 _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
-# The two tools that answer for a table, and the card the team reads when the
-# answer is `team_callback` (#252).
-_TABLE_TOOLS = frozenset({"check_slot", "create_reservation"})
-# A result of one of these means the guest is ordering by now.
-_ORDER_TOOLS = frozenset({"search_menu", "get_item_details", "draft_order"})
+# How the card of a table the team decides on begins (`team_callback`, #252).
 SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
@@ -243,17 +237,6 @@ class ConversationLoop:
                     continue
 
             if turn.tool_call is None:
-                if state.team_table:
-                    # A table for the team has waited for a number to call
-                    # back, and this sentence of the guest may have brought
-                    # it. Only now, once the model had its turn: "wir sind
-                    # doch nur fünf, meine Nummer ist ..." is a new wish, and
-                    # the answer of the code for it has taken the old one
-                    # back by now (Codex PR #280). What the model says instead
-                    # is not spoken, the call ends with the callback.
-                    handed = self._table_to_team(state)
-                    if handed is not None:
-                        return handed
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
                 # What the guest hears decides which offered dishes count as
@@ -283,41 +266,14 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if result.data.get("team_callback"):
+                # A table that is free, but the team decides (#252). The core
+                # hands the wish over here and now, and the model is not asked
+                # again: it answers with a sentence or a tool call, never
+                # both, so the tool's sentence would end its turn, and a guest
+                # who hangs up then would be lost (Codex PR #280).
+                return self._table_to_team(state, turn.tool_call.args, result.say)
             called.append(turn.tool_call.name)
-            if (
-                refused is None
-                and turn.tool_call.name in _TABLE_TOOLS
-                and (result.ok or result.error_code == "conflict")
-            ):
-                # The code has answered for a table. `team_callback`: free, but
-                # the team decides (#252). The core creates the callback
-                # itself, with the sentence of the tool in front: a model that
-                # speaks the sentence first ends its turn with it, and a guest
-                # who hangs up then would be lost (Codex PR #280). Any other
-                # answer means the guest is on another wish by now.
-                waiting = state.team_table
-                state.team_table = (
-                    self._table_wish(state, turn.tool_call.args)
-                    if result.data.get("team_callback")
-                    else None
-                )
-                if state.team_table:
-                    # The sentence of the tool, unless the guest heard it for
-                    # this very wish already and only the number was open.
-                    lead = None if state.team_table == waiting else result.say
-                    handed = self._table_to_team(state, lead)
-                    if handed is not None:
-                        return handed
-            elif state.stage in ENDED_OR_NOTED or (
-                result.ok and turn.tool_call.name in _ORDER_TOOLS
-            ):
-                # A wish that waits for a number is not handed over behind
-                # this: the call is with the team already, or the guest has
-                # moved on to an order ("vergessen Sie den Tisch, ich nehme
-                # die 23 zum Abholen"), which a callback for the table would
-                # cut off (Codex PR #280). Only a result of the code counts,
-                # not that a model called the tool.
-                state.team_table = None
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
@@ -372,6 +328,36 @@ class ConversationLoop:
             self._session, state.call_id, state.tenant_id, name, args, now=self._now
         )
 
+    def _table_to_team(
+        self, state: ConversationState, args: dict[str, Any], lead: str | None
+    ) -> TurnResult:
+        """The wish for a table the agent does not book itself goes to the
+        team and the call ends: as a callback under the number in the state,
+        after `lead`, the sentence of the tool. Without a number there is
+        nobody to call back, and a callback can fail: both go the way of
+        every handover (`_handoff`), a transfer where the team is reachable.
+
+        ponytail: a caller whose number is withheld is not asked for one, and
+        outside the opening hours hears the last sentence of `_handoff`. Asking
+        would need the wish to wait across turns, and every rule for when it
+        still stands either lost a wish or sent a stale one (Codex PR #280).
+        The same open point as for every handover (docs/01_STATUS.md)."""
+        wish = self._table_wish(state, args)
+        phone = state.slots.get("phone")
+        if phone:
+            callback = self._dispatch(
+                state,
+                "create_callback",
+                {"phone": phone, "reason": "out_of_scope", "summary": wish},
+            )
+            apply_tool_result(state, "create_callback", callback)
+            if callback.ok:
+                said = [s for s in (lead, callback.say) if s]
+                return TurnResult(state=state, say=said, ended=True)
+        handed = self._handoff(state, SAY_ESCALATION, "out_of_scope", wish)
+        handed.say = [s for s in (lead, *handed.say) if s]
+        return handed
+
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
         """The wish as the team reads it on the card, from the arguments the
         tool took: the time as the restaurant's clock shows it, whatever zone
@@ -387,31 +373,6 @@ class ConversationLoop:
         if name:
             parts.append(f"Name {name}")
         return f"{SUMMARY_TEAM_TABLE} {', '.join(parts)}."
-
-    def _table_to_team(
-        self, state: ConversationState, lead: str | None = None
-    ) -> TurnResult | None:
-        """The wish in `state.team_table` becomes a callback and the call ends
-        with it. None while no number to call back is known: then the model
-        asks for one, and the turn that brings it comes through here again,
-        whatever the model does with that sentence. `lead` is the sentence of
-        the tool, spoken in front of the one that promises the callback. A
-        callback that fails goes the way of every failure (`_handoff`)."""
-        phone = state.slots.get("phone")
-        if not phone:
-            return None
-        callback = self._dispatch(
-            state,
-            "create_callback",
-            {"phone": phone, "reason": "out_of_scope", "summary": state.team_table},
-        )
-        apply_tool_result(state, "create_callback", callback)
-        if not callback.ok:
-            return self._handoff(state, SAY_STUCK, detail=state.team_table)
-        state.team_table = None
-        return TurnResult(
-            state=state, say=[s for s in (lead, callback.say) if s], ended=True
-        )
 
     def _handoff(
         self,

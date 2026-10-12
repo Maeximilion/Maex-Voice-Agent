@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import HINT_TEAM_CALLBACK, dispatch
+from api.agent.dispatch import dispatch
 from api.models import Call
 from scripts.seed import seed
 
@@ -374,21 +374,20 @@ def test_the_last_days_that_do_work_are_not_refused_as_off_the_calendar(
     assert "reserved_for" not in (result.hint or "")
 
 
-def test_a_table_for_the_team_tells_the_model_what_follows(session, tenant_id, call_id):
-    """The steps after `team_callback` travel with that result and are in no
-    system prompt (#252)."""
+def test_a_table_for_the_team_carries_the_signal(session, tenant_id, call_id):
+    """`team_callback` is what the conversation loop hands the wish over on
+    (#252)."""
     wish = {"reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
     team = dispatch(
         session, call_id, tenant_id, "check_slot", {**wish, "party_size": 6}, now=NOW
     )
     assert team.ok and team.data["team_callback"] is True
-    assert team.hint == HINT_TEAM_CALLBACK
     assert team.say and "sechs Personen noch heute" in team.say
 
     free = dispatch(
         session, call_id, tenant_id, "check_slot", {**wish, "party_size": 5}, now=NOW
     )
-    assert free.data["available"] is True and free.hint is None
+    assert free.data["available"] is True and free.data["team_callback"] is False
 
 
 def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
@@ -410,7 +409,6 @@ def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
     assert result.say and "nicht selbst zusagen" in result.say
     # The same signal as on `check_slot`: the core hands the wish to the team.
     assert result.data == {"team_callback": True}
-    assert result.hint == HINT_TEAM_CALLBACK
 
 
 def test_a_full_evening_is_a_conflict_without_the_signal(session, tenant_id, call_id):
