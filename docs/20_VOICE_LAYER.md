@@ -231,7 +231,8 @@ it hears) and the probe (`api/telephony/probe.py`), which stands where the servi
 stand. The softphone's password is made new on every run and exists only in `deploy/asterisk/run/`,
 which git ignores. Only invented numbers and test tones. The kit refuses to run as root, because the
 containers take the caller's uid, and a run first stops what an earlier run with `--keep` left
-behind. The kit itself is `api/telephony/spike.py`; `scripts/voice_spike.py` is its entry.
+behind. It clears folders only in a run folder it made itself (marked `.voice-spike-run`) or in an
+empty one, and refuses any other. The kit itself is `api/telephony/spike.py`; `scripts/voice_spike.py` is its entry.
 
 What step 1 does not answer: a call from a softphone on Windows through WSL's address translation
 was not tried. Step 2 answers the direction that matters, because there Asterisk registers outwards

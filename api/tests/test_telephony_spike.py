@@ -110,6 +110,14 @@ def test_another_callers_tone_at_the_probe_is_cross_talk():
     ]
 
 
+def test_a_caller_tone_that_mostly_got_lost_fails_audio_from_the_caller():
+    tones_in = {"1000": 0.1, "1200": 0.0, "1400": 0.0}
+
+    assert failed(spike.judge_two_way({"601": call("601", tones_in=tones_in)})) == [
+        "601: audio from the caller"
+    ]
+
+
 def test_a_wrong_key_fails_the_key_event():
     assert failed(spike.judge_two_way({"601": call("601", digits="7")})) == [
         "601: key event"
@@ -259,5 +267,38 @@ def test_the_config_folder_is_refused_as_run_directory(monkeypatch, capsys):
     monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
 
     assert spike.main(["--run-dir", str(spike.CONFIG_DIR)]) == 2
-    assert "templates" in capsys.readouterr().err
+    assert "not a run directory" in capsys.readouterr().err
     assert (spike.CONFIG_DIR / "pbx" / "pjsip.conf").exists()
+
+
+def test_a_folder_with_somebodys_files_is_refused_and_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
+    (tmp_path / "rec").mkdir()
+    (tmp_path / "rec" / "holiday.wav").write_bytes(b"mine")
+
+    assert spike.main(["--run-dir", str(tmp_path)]) == 2
+    assert (tmp_path / "rec" / "holiday.wav").read_bytes() == b"mine"
+
+
+def test_only_a_new_an_empty_or_an_own_folder_is_a_run_directory(tmp_path):
+    own = tmp_path / "own"
+    own.mkdir()
+    (own / spike.RUN_MARKER).touch()
+    (own / "rec").mkdir()
+    a_file = tmp_path / "file"
+    a_file.write_text("x")
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    assert spike.usable_run_dir(tmp_path / "new")
+    assert spike.usable_run_dir(empty)
+    assert spike.usable_run_dir(own)
+    assert not spike.usable_run_dir(a_file)
+    assert not spike.usable_run_dir(tmp_path)
+
+
+def test_render_marks_its_run_directory(tmp_path):
+    spike.render(tmp_path / "run")
+
+    assert (tmp_path / "run" / spike.RUN_MARKER).exists()
+    assert spike.usable_run_dir(tmp_path / "run")

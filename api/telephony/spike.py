@@ -49,8 +49,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "deploy" / "asterisk"
 COMPOSE_FILE = CONFIG_DIR / "docker-compose.spike.yml"
 PASSWORD_MARK = "@SOFTPHONE_PASSWORD@"
+# Marks a run directory as made by this kit, so it may be cleared again.
+RUN_MARKER = ".voice-spike-run"
 # The softphone's line is a telephone line: 8 kHz.
 LINE_RATE = 8000
+# How long the softphone plays its tone.
+CALLER_TONE_SECONDS = 3
 CALL_TIMEOUT_SECONDS = 45
 # Tolerances of the judgement, all in seconds.
 PACING_TOLERANCE = 0.3
@@ -93,10 +97,11 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if run_dir == CONFIG_DIR:
+    if not usable_run_dir(run_dir):
         print(
-            f"voice_spike: --run-dir must not be {CONFIG_DIR}: rendering there "
-            "would delete the config templates",
+            f"voice_spike: {run_dir} is not a run directory of this kit (it holds "
+            f"files and no {RUN_MARKER}). The kit clears folders in its run "
+            "directory: name an empty or a new one",
             file=sys.stderr,
         )
         return 2
@@ -223,8 +228,20 @@ class Stack:
         return self.compose("exec", "-T", "softphone", "asterisk", "-rx", cli_command)
 
 
+def usable_run_dir(run_dir: Path) -> bool:
+    """A folder the kit may clear: one it made before, an empty one, or none yet.
+    Anything else (the home directory, the config folder) is somebody's data."""
+    if not run_dir.exists():
+        return True
+    if not run_dir.is_dir():
+        return False
+    return (run_dir / RUN_MARKER).exists() or not any(run_dir.iterdir())
+
+
 def render(run_dir: Path) -> None:
     """Configs with a fresh password, the caller's tones, empty result folders."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / RUN_MARKER).touch()
     password = secrets.token_hex(16)
     for name in ("pbx", "softphone"):
         target = run_dir / name
@@ -242,7 +259,7 @@ def render(run_dir: Path) -> None:
             out.setnchannels(1)
             out.setsampwidth(2)
             out.setframerate(LINE_RATE)
-            out.writeframes(tone(freq, 3, LINE_RATE))
+            out.writeframes(tone(freq, CALLER_TONE_SECONDS, LINE_RATE))
 
 
 def place(stack: Stack, extens: tuple[str, ...]) -> dict[str, dict[str, Any]]:
@@ -351,6 +368,7 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
             tone_seconds(call["heard"], hz, LINE_RATE)
             for hz in probe_tones - {plan.tone_hz}
         )
+        own_in = summary["tones_in"][str(CALLER_TONES[exten])]
         foreign_in = max(
             seconds
             for hz, seconds in summary["tones_in"].items()
@@ -384,9 +402,10 @@ def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:
             (
                 f"{label}: audio from the caller",
                 summary["heard_hz"] == CALLER_TONES[exten]
-                and summary["audio_in_seconds"] >= 2.5
+                and abs(own_in - CALLER_TONE_SECONDS) <= PACING_TOLERANCE
                 and foreign_in <= CROSS_TALK_LIMIT,
-                f"probe heard {summary['heard_hz']} Hz in {summary['audio_in_seconds']} s of audio, "
+                f"probe heard {summary['heard_hz']} Hz for {own_in:.2f} of "
+                f"{CALLER_TONE_SECONDS} s, "
                 f"{foreign_in:.2f} s of another call's tone",
             ),
             (

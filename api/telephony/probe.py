@@ -217,7 +217,8 @@ async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
             if message["type"] != "websocket.receive":
                 break
             if message.get("text") is not None:
-                frames = call.on_text(message["text"])
+                # In a thread: making a tone would hold up other calls' frames.
+                frames = await asyncio.to_thread(call.on_text, message["text"])
             else:
                 frames = call.on_audio(message.get("bytes") or b"")
             for frame in frames:
