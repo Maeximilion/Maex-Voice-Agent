@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.28
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.29
 
 ---
 
 ## Summary
+
+**Security follow-up recorded (12.10.2026, PR #272).** `docs/13_DEPLOYMENT.md` section 8 records the token regression proof, secret-scan scope, test results and live GitHub controls. `main` already blocks force pushes and deletion for all actors; normal branch/PR work is unaffected. Private vulnerability reporting is now enabled. Required CI checks are still absent from the live ruleset despite the desired configuration in the repository; applying them remains open. No force push, merge or deployment was performed.
 
 **Production token validation follow-up (12.10.2026).** The startup check rejects whitespace anywhere in `AGENT_API_TOKEN`, so padding cannot make a placeholder or short value pass the length check. Request authentication shares the same production policy and refuses invalid settings even if startup validation was bypassed. Development and test tokens retain their existing behavior; the production proxy still keeps tool and call endpoints internal. Regression tests cover padded, blank and short values, unknown environments, valid tokens and the public health check.
 
@@ -455,6 +457,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.29 · 12.10.2026:** Record PR #272 security verification and live GitHub protections
 - **v2.0.28 · 12.10.2026:** Reject whitespace in production agent tokens at startup and on requests
 - **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
 - **v2.0.26 · 12.10.2026:** Bug fixed: S12 heard as 'ist zwölf' asks which dish instead of taking the 12 (eval abholung_0077); letter dropped completely and ending g heard as 'die' left for Maxi

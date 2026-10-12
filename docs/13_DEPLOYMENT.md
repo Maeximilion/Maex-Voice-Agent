@@ -196,3 +196,44 @@ A job renamed in `ci.yml` has to be renamed there too, otherwise the old name ne
 | Test-Mandant | ja | ja, für Rauchtests nach Deploy |
 | Telephone access | test number via the pilot's router (docs/20 §3) | real number |
 | Löschjob | aus | an |
+
+---
+
+## 8. Public Repository Security Follow-up (12.10.2026)
+
+This is a dated verification record for [PR #272](https://github.com/Maeximilion/Maex-Voice-Agent/pull/272), not a claim that every possible vulnerability has been excluded. The tested code revision is `0856f51961a0d95524b0c2f648b8530222852d13`, based on `4eef0e0ad58b05732ab257e86297597e9fb09247`. The later documentation commit does not change that code.
+
+### Token fix and verification
+
+- Production startup rejects whitespace anywhere in the agent token. Request authentication repeats the same policy if settings validation was bypassed. Tokens are compared exactly, never silently trimmed. Development/test behavior and the public health endpoint stay unchanged.
+- Updated regression tests against the parent code: 21 failed, 22 passed. Against the fix: 43 passed. The full local suite and separate latency partition: 3,953 passed, 52 existing environment skips in the disposable test image.
+- Real Uvicorn HTTP requests returned 200 for health, 401 for a wrong token and 200 for a valid synthetic token. Thirty authenticated service-status requests against a disposable local PostgreSQL 16 database had p95 6.55 ms and maximum 8.95 ms.
+- All eight GitHub checks passed on the tested code revision, including CI, Docker startup, dependency review and CodeQL. [CI run](https://github.com/Maeximilion/Maex-Voice-Agent/actions/runs/38288599561). Independent review found no actionable P1/P2 defect. A later head needs its own green checks and review before merge.
+- No production deployment or live credential validation was performed. The production proxy keeps tool and call endpoints internal; this finding did not establish exposure through that proxy.
+
+### Secret and dependency scan scope
+
+Gitleaks 8.30.1, with trusted default rules and full redaction, found no secrets in the 451 tracked files of the reviewed checkout, six nonignored local untracked files, reachable Git history, or the complete contents of 3,421 historical blobs and 817 commit messages. The fix commit was scanned separately. This does not cover unreachable objects, other clones or previously published material outside the scanned history, and a pattern scan cannot prove that all credentials are absent.
+
+No open GitHub secret-scanning, Dependabot or code-scanning alerts were returned at the audit. OSV returned no affected entries for 40 locked Python packages and five explicit speech-package pins. Container operating-system packages and the resolved transitive speech dependencies were not scanned. Known remaining hardening work stays in [issue #252](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252); this PR does not close it.
+
+### GitHub access and force-push protection
+
+The following settings were read from GitHub, rather than inferred from files in the checkout:
+
+| Control | Observed state |
+|---|---|
+| Secret scanning and push protection | Enabled |
+| Private vulnerability reporting | Enabled during this audit, matching `SECURITY.md` |
+| Effective rules for `main` | Active ruleset `24583491`: PR required, deletion blocked, force pushes blocked |
+| Bypass actors for that ruleset | None; the authenticated administrator cannot bypass it |
+| PR branch `dev-codex/252-token-validation` | No matching branch rules; authorized writers can update it |
+| Required CI status checks | Not present in the live ruleset; the desired configuration in `.github/rulesets/main.json` has not been applied |
+
+The older ruleset named `Main` is disabled. The legacy branch-protection endpoint returns 404, but the effective rules endpoint confirms that `main` is protected by the active ruleset. Do not treat that 404 alone as evidence of missing protection.
+
+Public visibility allows reading and forking, not pushing to the upstream repository. The collaborator inventory returned only the owner account and no pending invitations. One writable deploy key also exists; installed GitHub Apps could not be fully inventoried with the available token. This is therefore not a complete audit of every write credential.
+
+GitHub identifies the authenticated account, app or key, not the name of an AI tool. Claude Code or Codex using the owner's credentials get that credential's permissions and the same branch rules. Normal feature-branch pushes and pull requests remain possible. Force pushes to `main` are blocked for the owner and those tools too; no exceptions were added. No destructive push was used to test protection. Future access grants and credential changes need the same review.
+
+**Follow-up:** apply the reviewed required-check configuration from section 6 if CI must be enforced by GitHub before merging. Passing checks on one PR do not establish that enforcement. Keep the force-push and deletion rules active; updating this PR needs only a normal commit and push.
