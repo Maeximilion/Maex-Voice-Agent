@@ -176,6 +176,9 @@ def apply_state_patch(
     if "phone" in named:
         # One spelling from entry on, as for the caller ID (CLAUDE.md §8).
         named["phone"] = e164(named["phone"])
+    if "guest_name" in named:
+        # As it was checked: the blanks around a name are no part of it.
+        named["guest_name"] = named["guest_name"].strip()
     state.slots.update(named)
     return named
 

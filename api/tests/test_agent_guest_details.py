@@ -104,6 +104,9 @@ def test_name_the_guest_spelled_is_taken(sentence, name):
         "Müller,,",
         "'Müller'",
         "Müller--Müller",
+        # Blanks the tools would store as written (the review after it).
+        "Müller\n\n  Müller",
+        "Müller  Müller",
         # No name at all.
         "",
         "   ",
@@ -131,6 +134,11 @@ def test_letter_that_is_no_part_of_the_spelling_is_not_joined_to_it():
         "Ich nehme die 23a. Mein Name ist M E I E R.",
         "Einmal die 23 a bitte, auf M E I E R",
         "S 12 und auf den Namen M, E, I, E, R",
+        # The review after it: a blank or an apostrophe instead of the digit.
+        "Ich nehme die 23 a. M E I E R",
+        "Ich bin's, M E I E R",
+        "Ich buchstabier's: M E I E R",
+        "So schreibt man's: M-E-I-E-R",
     ):
         assert name_said("Meier", said(sentence)) is True
         assert name_said("Ameier", said(sentence)) is False
@@ -247,57 +255,70 @@ def test_number_without_an_area_code_is_no_phone_number(written):
 @pytest.mark.parametrize(
     "sentence",
     [
-        "Meine Nummer ist 0171 2345678. 19 Uhr passt.",
-        "Am 16.09. 0171 2345678 bitte",
-        "Für 4. 0171 2345678. 2 Kinder sind dabei.",
+        "Meine Nummer ist 0171 2345678, bitte.",
+        "0171 2345678 - danke",
+        "Unter 0171/234-5678 erreichbar",
         "Erreichbar unter (0171) 2345678",
+        "Tel.: (0171) 234 56 78, und wir sind zu viert",
+        "+49 (0)171 2345678",
+        # Digits before the number are other digits: a count, a date, a dish.
+        "Am 16.09. 0171 2345678 bitte",
+        "Für 4, 0171 2345678",
+        "Tisch für 4 am 16.09. um 19 Uhr, meine Nummer ist 0171 2345678",
+        "Die 23 bitte, auf Müller, 0171 2345678",
+        # Of two numbers the guest ends with the one that counts.
+        "Die alte war 0172 3456789, die neue ist 0171 2345678",
+        "0172 3456789 - 0171 2345678",
     ],
 )
-def test_period_that_ends_a_sentence_ends_the_number(sentence):
-    """Own review of PR #244: joined with the digits behind the period, the
-    number the guest said was another one, or none."""
+def test_last_digits_of_a_turn_are_the_number(sentence):
     assert numbers(sentence) == {"+491712345678"}
 
 
 @pytest.mark.parametrize(
     "sentence",
     [
-        # The dash or the comma may end the number ...
+        # Read as one, a number nobody said (Codex PR #244, P1).
         "Meine Nummer ist 0171 2345678 - 19 Uhr passt",
-        "0171 2345678 - 0172 3456789",
+        "Meine Nummer ist 0171 2345678. 19 Uhr passt.",
         "0171 2345678, 4 Personen",
-        "Für 4, 0171 2345678",
-        # ... or stand inside it. The digits do not say which.
-        "Unter 0721 - 5551234 bitte",
+        "Für 4. 0171 2345678. 2 Kinder sind dabei.",
+        "Erreichbar unter 0171 2345678 / 4 Personen",
+        "0171 2345678 (19 Uhr)",
+        # Read in parts, a number with digits missing (the review after it).
+        "Meine Nummer ist 0171 234. 5678",
+        "0171 234... 5678",
+        "0171 234 \u2013 5678",
+        "0171 234 \u2014 5678",
+        "0171 234 äh 5678",
+        "0721 555 und dann 1234",
         "0171 - 234 - 5678",
         "0171 234 - 5678",
         "0171 234 -5678",
         "0721 555, 1234",
+        "Unter 0721 - 5551234 bitte",
+        "Unter 0721 / 5551234 bitte",
+        # A date written with blanks, with other digits behind it.
+        "Am 01 10 2026 um 19 Uhr",
     ],
 )
-def test_run_whose_end_is_unclear_is_no_number(sentence):
-    """Codex PR #244, P1: taken whole, the first sentence is +49171234567819,
-    a number nobody said. Taken apart, "0171 234 - 5678" is +49171234, one
-    with digits missing. Neither is known, nor is the number that may have
-    been meant: the guest is asked again."""
+def test_digits_followed_by_more_digits_are_no_number(sentence):
+    """The number may go on behind them, or it ended and they are something
+    else: the digits do not say which. Neither reading is known, nor is the
+    number that may have been meant; the guest is asked again."""
     said_numbers = numbers(sentence)
 
     assert said_numbers == set()
-    for written in ("+49171234567819", "+49171234", "+49721555", "+491712345678"):
+    for written in (
+        "+49171234567819",
+        "+4917123456784",
+        "+49171234",
+        "+49721555",
+        "+491102026",
+        "+491712345678",
+        "+497215551234",
+    ):
         assert number_known(written, None, said_numbers) is False
-
-
-@pytest.mark.parametrize(
-    "sentence",
-    [
-        "Meine Nummer ist 0171 2345678, bitte.",
-        "0171 2345678 - danke",
-        "Unter 0171/234-5678 erreichbar",
-        "Tel.: (0171) 234 56 78, und wir sind zu viert",
-    ],
-)
-def test_comma_or_dash_before_a_word_ends_the_number(sentence):
-    assert numbers(sentence) == {"+491712345678"}
 
 
 @pytest.mark.parametrize("written", ["0", "07", "0171", "0171 2", "0" * 30])
@@ -324,6 +345,9 @@ def test_patterns_on_guest_text_stay_linear():
         "1. " * 10_000,
         "1 - " * 5_000,
         "1" + " " * 20_000 + "-",
+        "1, " * 10_000,
+        "a, " * 10_000,
+        "a's " * 10_000,
         "a " * 20_000,
     ):
         words_said(text)
@@ -374,6 +398,15 @@ def test_short_run_the_guest_said_never_replaces_the_caller_id(written):
 
     assert apply_state_patch(state, {"phone": written}) == {}
     assert state.slots["phone"] == CALLER
+
+
+def test_name_is_kept_without_the_blanks_around_it():
+    state = heard("Auf Müller bitte")
+
+    assert apply_state_patch(state, {"guest_name": "  Müller\n"}) == {
+        "guest_name": "Müller"
+    }
+    assert state.slots == {"guest_name": "Müller"}
 
 
 def test_patch_with_an_invented_name_is_dropped():

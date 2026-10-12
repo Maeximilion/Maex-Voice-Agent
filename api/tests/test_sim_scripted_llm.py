@@ -13,8 +13,14 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from sim.scripted_llm import GREETING, QUESTIONS, SAY_ASK_AGAIN, ScriptedLLM
-from sim.scripted_order import SAY_NAME, SAY_PHONE
+from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
+from sim.scripted_llm import (
+    GREETING,
+    QUESTIONS,
+    SAY_ASK_AGAIN,
+    SAY_PHONE_AGAIN,
+    ScriptedLLM,
+)
 
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Dienstag, Abendfenster
@@ -302,21 +308,28 @@ def test_detail_the_core_did_not_take_is_asked_for_again(llm):
     assert turn.understanding_failure == "phone"
 
 
+# With a caller ID the state always holds a number; without one it holds none.
+WITH_CALLER_ID = {"guest_name": "Mueller", "phone": "+497215551234"}
+
+
+@pytest.mark.parametrize("taken", [WITH_CALLER_ID, {}])
 @pytest.mark.parametrize(
-    ("tool", "taken", "question", "field"),
+    ("tool", "hint", "question", "field"),
     [
-        ("draft_order", {"guest_name": "Mueller"}, SAY_PHONE, "phone"),
-        ("draft_order", {"phone": "+497215551234"}, SAY_NAME, "guest_name"),
-        ("create_callback", {}, QUESTIONS["phone"], "phone"),
+        ("draft_order", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_callback", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_reservation", HINT_GUEST_PHONE, SAY_PHONE_AGAIN, "phone"),
+        ("create_reservation", HINT_GUEST_NAME, QUESTIONS["guest_name"], "guest_name"),
     ],
 )
-def test_refused_order_or_callback_asks_for_what_the_core_did_not_take(
-    llm, tool, taken, question, field
+def test_call_the_core_refused_for_a_guest_detail_asks_for_it_again(
+    llm, taken, tool, hint, question, field
 ):
-    """Codex PR #244, P1: handed over instead, the call ended outside the
-    opening hours with "Ich gebe an das Team weiter" and neither a transfer
-    nor a callback."""
-    refused = tool_result(tool, ok=False, error_code="invalid_input", hint="Abgelehnt")
+    """Codex PR #244, P1, and the review after it: handed over instead, the
+    call ended outside the opening hours with "Ich gebe an das Team weiter"
+    and neither a transfer nor a callback, also when the state held the caller
+    ID and so lacked nothing."""
+    refused = tool_result(tool, ok=False, error_code="invalid_input", hint=hint)
 
     turn = llm.next_turn("", {**START, "slots": taken}, refused)
 
@@ -325,10 +338,9 @@ def test_refused_order_or_callback_asks_for_what_the_core_did_not_take(
     assert turn.understanding_failure == field
 
 
-def test_refused_order_with_every_detail_in_the_state_still_goes_to_the_team(llm):
-    taken = {"guest_name": "Mueller", "phone": "+497215551234"}
-    refused = tool_result("draft_order", ok=False, error_code="conflict")
+def test_refusal_for_another_reason_still_goes_to_the_team(llm):
+    refused = tool_result("draft_order", ok=False, error_code="conflict", hint="x")
 
-    turn = llm.next_turn("", {**START, "slots": taken}, refused)
+    turn = llm.next_turn("", {**START, "slots": WITH_CALLER_ID}, refused)
 
     assert turn.tool_call.name == "transfer_to_team"

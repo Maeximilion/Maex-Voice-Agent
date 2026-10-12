@@ -290,7 +290,7 @@ dispatched, the loop checks:
 | 2, never guess | `draft_order` takes a `menu_item_id` only from a clear match of `search_menu` in this call (`exact_number`, `alias`, `fuzzy_single`), or from a candidate of an unclear result that the guest heard: the sentence that ended a turn named it by its full name, as whole words ("Reis" is not named by "Preis"), or as "Nummer <card number>". A model that keeps the offer to itself makes no candidate usable | `draft_order` is not dispatched |
 | 2, for the order across turns | the `cart` of an answer is taken whole or not at all: every line must have the form of an order item and name a dish as above, and none that was sold out at its last search (a clear hit that is sold out is still a hit; in the state it would stand like any other line until `draft_order` refuses at the end). The options of a line are checked the way `draft_order` checks them, against what the search delivered for the dish: each must exist, none twice, at most one from a mandatory group (a wrong one would stand as the choice and `open` would be gone). And a `draft_order` in the same answer must draft that cart: with other items it is refused. Otherwise a dish nobody searched for would stand in the state, where the next turn reads it as found | nothing of the answer is carried out, neither its sentence nor its tool call; the order in the state stays as it was |
 | 3, for a changed order | a `cart` that differs from the order that was read back (the sequence of lines and of options does not count, nor case and spacing of an option, as in `draft_order`: a model may repeat the order the other way round or write "huhn" for "Huhn"), or one that was refused, is a correction: the draft that waits for its yes is dropped and `stage` goes back to `collecting`. That holds for a reservation that was read back as well: the guest who goes on with the order has moved on, as with a menu search after a readback (Codex PR #237) | a later yes can confirm neither the order the guest just changed nor a table the conversation has left |
-| 2, for the guest's name and phone number | a name or a number a model writes is taken only as the guest said it in this call (`agent/guest_details.py`). A name: every word of it was a whole word of a guest sentence, umlauts in either spelling, or was spelled letter by letter in one sentence (§2, rung 3), and the name holds nothing but those words (a digit or a bracket a model adds was not said either; Codex PR #244). A number: it is the caller ID, or one run of digits of a guest sentence that begins with the zero of an area code or the plus of a country code; compared in E.164, so another spelling counts and a missing or changed digit does not. A date, a time or a number without an area code is no phone number, whatever its digits would make in E.164 ("16.09.2026" is not +16092026; Codex PR #244). The core hears both in the guest's sentence before the model is asked and keeps the words and numbers of the call, no sentence, and nothing of it goes to the model. Checked in `slots` and in the arguments of `create_reservation`, `draft_order` and `create_callback`. With a number in `slots`, a tool call must book under that one: a guest who names another number than the caller ID is reached under it (§3), and a model that writes it into `slots` and books under the caller ID all the same is refused (Codex PR #244) | in `slots` the detail is dropped without a hint, the slot stays as it was (an invented number never replaces the caller ID) and it is no success on the ladder; a tool call is not dispatched, and the hint says to ask the guest (for a number: with its area code), or to take `phone` from `slots` digit for digit and to write another number the guest named into `slots` first |
+| 2, for the guest's name and phone number | a name or a number a model writes is taken only as the guest said it in this call (`agent/guest_details.py`). A name: every word of it was a whole word of a guest sentence, umlauts in either spelling, or was spelled letter by letter in one sentence (§2, rung 3), and the name holds nothing but those words (a digit or a bracket a model adds was not said either; Codex PR #244). A number: it is the caller ID, or the last digits of a guest turn when they begin with the zero of an area code or the plus of a country code (digits followed by more digits are none, the number may go on); compared in E.164, so another spelling counts and a missing or changed digit does not. A date, a time or a number without an area code is no phone number, whatever its digits would make in E.164 ("16.09.2026" is not +16092026; Codex PR #244). The core hears both in the guest's sentence before the model is asked and keeps the words and numbers of the call, no sentence, and nothing of it goes to the model. Checked in `slots` and in the arguments of `create_reservation`, `draft_order` and `create_callback`. With a number in `slots`, a tool call must book under that one: a guest who names another number than the caller ID is reached under it (§3), and a model that writes it into `slots` and books under the caller ID all the same is refused (Codex PR #244) | in `slots` the detail is dropped without a hint, the slot stays as it was (an invented number never replaces the caller ID) and it is no success on the ladder; a tool call is not dispatched, and the hint says to ask the guest (for a number: with its area code), or to take `phone` from `slots` digit for digit and to write another number the guest named into `slots` first |
 | 1, facts from the database | a model writes only guest details into `slots` (`GUEST_SLOTS`: party size, date and time, name, phone, note). A tool result copied there (`open`, `closes_at`, a price) is dropped | the field never reaches the next prompt |
 
 A refused call goes back to the model as a failed tool result with `error_code` and a
@@ -301,35 +301,51 @@ the readback and its yes come after it. The call time limit is read again when t
 model has answered: an answer that arrives too late is neither spoken nor dispatched,
 but what it heard (a phone number) is taken first, for the callback of the handoff.
 
-**Limits of the check on name and number (T-2.4, 12.10.2026)** — it is words, not
-understanding, and strict on purpose: what it misses costs the guest one more question,
-what it wrongly took would book under a stranger. Which of the words a guest said is the
-name stays with the model; the readback follows. A title the guest did not say ("Herr
-Müller" after "Müller") is refused like any added word. Not heard yet: a number said in
-words ("null eins sieben ..."), a number without its area code or with a country code and
-no plus (the hint tells the model to ask for the number with its area code), digit groups
-separated by a comma or named in two
-sentences, letter names when spelling ("Doppel-L", "Ypsilon"), a name written with another
-accent than it was said with, and a spelling the agent proposed and the guest only agreed
-to ("Maier mit a-i?" - "Ja"). How numbers and letters arrive as text is decided by the ear
-of the voice layer (T-10.5); the check is extended there. A run too short or too
-long to be a phone number is none either: kept by its digits, "um 0 Uhr" would be a number
-a model could put in the place of the caller ID (own review of PR #244). A period that
-ends a sentence ends the number ("0171 2345678. 19 Uhr passt" names one number, not a
-longer one). A run with a comma or a spaced dash between its digits is no number, as a whole or in
-parts: "0171 2345678 - 19 Uhr passt" and "0721 - 5551234" look alike, taken whole the first
-is a number nobody said, taken apart "0171 234 - 5678" is one with digits missing (Codex
-PR #244, P1); the guest is asked again. Before a word, a comma or a dash simply ends the
-number. Digits that follow a number after a blank only are read as one number with it.
-In a name a separator counts only between two of its words, one at a time ("---Müller---"
-is refused), and a spelled name is a row of single letters that follow each other: another
-word or a digit ends the row, and the letter of a card number ("23a") is none of it. Which of two phone
-numbers a guest said is the one to call stays with the model, as with the words of a name;
-the core has no rule for the context a number stands in. A number taken from speech is
-not read back today (Open Points in `docs/01_STATUS.md`). A number that is taken stands in `slots` in E.164, whatever spelling the
-model used. A name is known from guest sentences only: once a known caller's name comes
-from the database (`find_customer`, stage 3), that name has to count as well. No prompt text changed:
-the model learns of the rule from the hint of a refused call.
+**How a name and a number are heard, and the limits (T-2.4, 12.10.2026)** — it is words,
+not understanding, and strict on purpose: what it misses costs the guest one more
+question, what it wrongly took would book under a stranger.
+
+*The name.* Every word of it was a whole word of a guest sentence, or the guest spelled
+it: a row of single letters with nothing but blanks, commas or hyphens between them ("M E
+I E R", "M-E-I-E-R", "M wie Martha, A wie Anton"). Another word or a period ends the row,
+and a letter that hangs on a digit or an apostrophe is none of it (the a of "23a", the s
+of "ich bin's"). The name a model writes must be those words and nothing else, with one
+separator between two of them; "Müller 999", "---Müller---" and a name with a line break
+in it are refused. Which of the said words is the name stays with the model, the readback
+follows. A title the guest did not say ("Herr Müller" after "Müller") is refused like any
+added word.
+
+*The number.* Of one guest turn only the last digits can be the phone number, and only
+when they begin with the zero of an area code or the plus of a country code and are a
+valid number. Digits that are followed by more digits are none: the number may go on
+behind them ("0171 234 äh 5678", "0171 234. 5678", "0721 555 und dann 1234" begin with a
+valid number that has digits missing) or it ended and they are something else ("0171
+2345678 - 19 Uhr passt" read as one is a number nobody said). The digits do not say which,
+so the guest is asked again and says the number alone. Digits before the number do no
+harm ("für 4 am 16.09., meine Nummer ist 0171 2345678"). Inside a number may stand blanks,
+a slash or a hyphen without blanks, brackets around the area code and a period between
+digits; a comma, a period before a blank, and a dash or slash next to a blank end it. A
+date, a time, a run too short or too long, and a number without its area code are no
+phone number. A number that is taken stands in `slots` in E.164.
+
+*Not heard, each costing one more question and never a booking:* a number said in words
+("null eins sieben ..."), a number without its area code or with a country code and no
+plus, a number followed by other digits in the same turn, one written with a dash or a
+slash between blanks ("0721 / 5551234") or named in two turns, letter names when spelling
+("Doppel-L", "Ypsilon"), a name with another accent than it was said with, and a spelling
+the agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). How numbers and
+letters arrive as text is decided by the ear of the voice layer (T-10.5); the check is
+extended there.
+
+*Not stopped:* blanks alone do not tell where a number ends, so "0171 2345678 19 Uhr" is
+read as one number of thirteen digits, and a date written with blanks as the last digits
+of a turn ("am 01 10 2026") as a number; a model that writes exactly those digits passes.
+Which of two phone numbers a guest said is the one to call stays with the model, as with
+the words of a name: the core has no rule for the context a number stands in, and a
+number taken from speech is not read back today (Open Points in `docs/01_STATUS.md`). A
+name is known from guest sentences only: once a known caller's name comes from the
+database (`find_customer`, stage 3), that name has to count as well. No prompt text
+changed: the model learns of the rule from the hint of a refused call.
 
 ---
 
