@@ -79,6 +79,8 @@ pytest -q
 ruff check api scripts evals printbridge sim db && ruff format --check api scripts evals printbridge sim db
 ```
 
+Dependencies: `api/requirements.in` lists what the project needs, as version ranges, and is the file edited by hand. `api/requirements.txt` is compiled from it (`make lock`, pip-tools in the `python:3.12-slim` image) and pins every package, the indirect ones included, to one version with hashes; the image build and CI install it with `--require-hashes`, so both run the same versions. To add or bump a dependency, edit `requirements.in`, run `make lock`, commit both files; `make lock ARGS="--upgrade-package <name>"` moves one pin inside its range, `ARGS=--upgrade` all of them. The compiled file is for Linux and Python 3.12 (containers, CI, server). A venv on a Windows host cannot install it (checked 12.10.2026: `uvloop` is pinned and has no Windows build, and `tzdata` and `colorama`, which Windows needs, are missing, which hash mode refuses); use `pip install -r api/requirements.in` there, or the container.
+
 ## Configuration
 
 All settings come from `.env`. Template and description of all variables: `.env.example`. Most important:
