@@ -458,6 +458,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.0.29 · 12.10.2026:** Correction at the read-back: a card number named after a no replaces the dish and the order is read back again (eval abholung_0079)
+- **v2.0.28 · 12.10.2026:** Public-repo inventory: the last real place name in a test input is replaced by an invented one; operation name, team phone, host names and printer address already come from .env only
 - **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
 - **v2.0.26 · 12.10.2026:** Bug fixed: S12 heard as 'ist zwölf' asks which dish instead of taking the 12 (eval abholung_0077); letter dropped completely and ending g heard as 'die' left for Maxi
 - **v2.0.25 · 12.10.2026:** Bug fixed: the read-back speaks the total as two plain numbers (25 Euro 70, 50 Cent), eval abholung_0076; evals can expect a piece of the read-back
