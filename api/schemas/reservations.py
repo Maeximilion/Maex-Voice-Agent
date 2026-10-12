@@ -8,8 +8,10 @@ from pydantic import AfterValidator, AwareDatetime, BaseModel, Field
 
 from api.schemas.common import ToolRequest
 
-# The slot check looks at the day before and the day after in local time.
-_CALENDAR_MARGIN = timedelta(days=2)
+# What the slot check adds to a moment: a time zone (at most 14 hours either
+# way) and one day, for the window of the evening before and the one that
+# closes after midnight. Not more, or the last days that do work are refused.
+_CALENDAR_MARGIN = timedelta(days=1, hours=14)
 
 
 def _on_the_calendar(value: datetime) -> datetime:
@@ -22,7 +24,7 @@ def _on_the_calendar(value: datetime) -> datetime:
         at = value.astimezone(UTC)
         _ = at - _CALENDAR_MARGIN, at + _CALENDAR_MARGIN
     except OverflowError as exc:
-        raise ValueError("Zeitpunkt liegt außerhalb des Kalenders") from exc
+        raise ValueError("moment is outside the calendar") from exc
     return value
 
 

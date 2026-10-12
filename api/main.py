@@ -85,7 +85,10 @@ def http_exception_handler(_request: Request, exc: HTTPException) -> JSONRespons
     only, the errors the framework raises itself (unknown path, wrong method, a
     body its parser gives up on) answered `{"detail": ...}` past the envelope."""
     code = "not_found" if exc.status_code == 404 else "invalid_input"
-    return envelope.fail(code, str(exc.detail), status=exc.status_code)
+    response = envelope.fail(code, str(exc.detail), status=exc.status_code)
+    # What the framework says besides the body, `Allow` on a 405 for one.
+    response.headers.update(exc.headers or {})
+    return response
 
 
 @app.exception_handler(Exception)

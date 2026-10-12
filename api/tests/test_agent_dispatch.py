@@ -352,3 +352,23 @@ def test_a_date_no_calendar_holds_is_invalid_input(
     assert result.ok is False
     assert result.error_code == "invalid_input"
     assert "reserved_for" in result.hint
+
+
+@pytest.mark.parametrize(
+    "when", ["9999-12-30T00:00:00+00:00", "0001-01-03T00:00:00+00:00"]
+)
+def test_the_last_days_that_do_work_are_not_refused_as_off_the_calendar(
+    session, tenant_id, call_id, when
+):
+    """No booking horizon by the back door: a moment the arithmetic can handle
+    gets the answer of the slot check, whatever that is (Codex, PR #262)."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_slot",
+        {"reserved_for": when, "party_size": 2},
+        now=NOW,
+    )
+
+    assert "reserved_for" not in (result.hint or "")

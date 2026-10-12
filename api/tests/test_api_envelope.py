@@ -27,6 +27,8 @@ def test_a_wrong_method_answers_in_the_envelope():
     r = client.get("/v1/tools/ping")
 
     assert r.status_code == 405
+    # Which method would have worked stays in the answer.
+    assert r.headers["allow"] == "POST"
     body = r.json()
     assert body["ok"] is False
     assert body["error"]["code"] == "invalid_input"
