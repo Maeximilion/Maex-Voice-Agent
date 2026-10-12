@@ -27,6 +27,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import cast
 
 API_URL = "https://api.github.com"
 LABEL = "projektpflege"
@@ -194,11 +195,15 @@ def apply(repo: str, token: str, issue: dict | None, todo: Plan) -> str:
             # 422: das Label gibt es schon. Jeder andere Fehler ist echt.
             if "422" not in str(exc):
                 raise
-        created = rest(
-            "POST",
-            f"{base}/issues",
-            token,
-            {"title": TITLE, "body": todo.body, "labels": [LABEL]},
+        # GitHub answers a created issue with the issue, a JSON object.
+        created = cast(
+            dict,
+            rest(
+                "POST",
+                f"{base}/issues",
+                token,
+                {"title": TITLE, "body": todo.body, "labels": [LABEL]},
+            ),
         )
         return f"Issue angelegt: {created['html_url']}"
 
@@ -267,7 +272,7 @@ def main() -> int:
             (issue.get("body") or "") if issue else None,
             findings,
             mention,
-            closed=bool(issue) and issue.get("state") == "closed",
+            closed=bool(issue and issue.get("state") == "closed"),
         )
         if args.dry_run:
             print(f"Geplant: {todo.action}")
