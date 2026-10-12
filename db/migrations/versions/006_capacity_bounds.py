@@ -10,8 +10,8 @@ An existing row outside the bounds stops the upgrade. Nothing is changed
 silently: what the value should have been is the restaurant's decision.
 
 Revision: 006
-Vorgänger: 005
-Erstellt: 2026-10-12
+Revises: 005
+Created: 2026-10-12
 """
 
 from collections.abc import Sequence
