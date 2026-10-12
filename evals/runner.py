@@ -46,8 +46,8 @@ from api.domain.menu.importer import apply, parse
 from api.models import MenuItem
 from evals.judge import (
     CaseError,
+    heard_readback,
     judge,
-    last_readback,
     missing_tools,
     observe,
     offered_alternatives,
@@ -224,7 +224,7 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
                     f"angeboten {offered!r}"
                 )
         if "readback" in expected:
-            spoken = last_readback(llm.recording.ok_results)
+            spoken = heard_readback(turns)
             if expected["readback"] not in (spoken or ""):
                 diffs.append(
                     f"readback: expected {expected['readback']!r} in {spoken!r}"

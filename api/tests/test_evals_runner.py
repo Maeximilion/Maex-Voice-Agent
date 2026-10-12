@@ -21,14 +21,14 @@ from evals import runner
 from evals.judge import (
     CaseError,
     Observed,
+    heard_readback,
     judge,
-    last_readback,
     observe,
     offered_alternatives,
 )
 from evals.recorder import RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
-from sim.session import SimCall
+from sim.session import SimCall, Turn
 
 CASES = Path(runner.__file__).parent / "cases"
 
@@ -319,6 +319,11 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"readback": ["Macht 25 Euro 70,"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": None},
         },
     ],
 )
@@ -1236,22 +1241,39 @@ def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
 # --- The read-back sentence (expected.readback) --------------------------------
 
 
-def test_last_readback_is_the_one_of_the_last_draft():
-    results = [
-        ("draft_order", {"readback": "Einmal Nummer 13. Macht 11 Euro 90."}),
-        ("search_menu", {"items": []}),
-        ("draft_order", {"readback": "Zweimal Nummer 13. Macht 23 Euro 80."}),
-        ("confirm", {"status": "confirmed"}),
+def _turn(say: str, *tools: tuple[str, bool]) -> Turn:
+    return Turn(
+        customer="...",
+        say=[say],
+        tools=[{"name": name, "ok": ok} for name, ok in tools],
+    )
+
+
+def test_heard_readback_is_what_was_said_in_the_turn_of_the_last_draft():
+    turns = [
+        _turn("Einmal Nummer 13. Macht 11 Euro 90.", ("draft_order", True)),
+        _turn("Zweimal Nummer 13. Macht 23 Euro 80.", ("draft_order", True)),
+        _turn("Ist bestellt.", ("confirm", True)),
     ]
-    assert last_readback(results) == "Zweimal Nummer 13. Macht 23 Euro 80."
+    assert heard_readback(turns) == "Zweimal Nummer 13. Macht 23 Euro 80."
 
 
-def test_without_a_draft_there_is_no_readback():
-    assert last_readback([]) is None
-    assert last_readback([("search_menu", {"items": []})]) is None
+def test_heard_readback_is_the_agents_sentence_not_the_tools():
+    """Codex PR #248: the tool returned the right sentence, the model said its
+    own. The caller heard the model."""
+    turns = [_turn("Das macht dann 25,70 Euro.", ("draft_order", True))]
+    assert "Macht 25 Euro 70," not in heard_readback(turns)
 
 
-def test_readback_piece_is_checked_against_what_the_code_read_out(
+def test_without_a_draft_that_succeeded_nothing_was_read_back():
+    assert heard_readback([]) is None
+    assert heard_readback([_turn("Nummer 13 Pho Bo.", ("search_menu", True))]) is None
+    assert heard_readback([_turn("Wie ist Ihr Name?", ("draft_order", False))]) is None
+    # A reservation is read back the same way.
+    assert heard_readback([_turn("Ein Tisch.", ("create_reservation", True))])
+
+
+def test_readback_piece_is_checked_against_what_the_caller_heard(
     migrated_db_url, tmp_path
 ):
     """A piece that was read out is green, another one is red, and a call that
