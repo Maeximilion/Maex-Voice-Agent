@@ -26,10 +26,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
+from pydantic import ValidationError
+
 # The yes detector lives in the core since the core refuses a `confirm` without
 # a yes itself (agent/guards.py); the recorder measures with the same rule.
 from api.agent.consent import is_yes, read_out
 from api.agent.llm import LLMClient, LLMTurn, Usage
+from api.agent.state import cart_lines, same_order
 
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
 # Legen einen Entwurf an, der vorgelesen und dann bestaetigt werden muss.
@@ -38,6 +41,8 @@ DRAFT_TOOLS = frozenset({"draft_order", "create_reservation"})
 # `_supersedes`): the guest is correcting, and a yes afterwards answers the new
 # question, not the old draft (Codex PR #239).
 SUPERSEDING_TOOLS = frozenset({"search_menu", "check_slot"})
+# The name under which a refused `cart` comes back (`agent/loop.py`).
+CART = "cart"
 
 
 @dataclass
@@ -87,6 +92,12 @@ class RecordingLLM:
         self._before: tuple[int, int, int, dict[str, Any] | None] = (0, 0, 0, None)
         # The call whose result arrives with the next input.
         self._open_call: tuple[str, dict[str, Any]] | None = None
+        # The order as the core holds it (`ConversationState.cart`): the lines
+        # of the last draft, or of the last `cart` the core took. A `cart`
+        # that differs from it after a read-back is a correction, and the core
+        # drops the draft (`state.replace_cart`, `guards.take_cart`).
+        self._cart: list[dict[str, Any]] = []
+        self._cart_before: list[dict[str, Any]] = []
 
     @property
     def usage(self) -> Usage | None:
@@ -105,7 +116,27 @@ class RecordingLLM:
         elif turn.say is not None:
             rec = self.recording
             rec.read_out = bool(rec.readback) and read_out(turn.say, rec.readback)
+        if turn.cart is not None:
+            self._observe_cart(turn.cart)
         return turn
+
+    def _observe_cart(self, cart: Any) -> None:
+        """A `cart` next to the answer. The core checks it before it speaks or
+        dispatches (`guards.take_cart`): a changed order after a read-back is a
+        correction and drops the draft, and so does a `cart` it refuses. A
+        refusal comes back as the next input and is handled there."""
+        try:
+            lines = cart_lines(cart)
+        except ValidationError:
+            return
+        if same_order(lines, self._cart):
+            return
+        self._cart_before, self._cart = self._cart, lines
+        self._drop_draft()
+
+    def _drop_draft(self) -> None:
+        self.recording.drafted_at = None
+        self.recording.read_out = False
 
     def _observe_input(self, user_input: str) -> None:
         result = _tool_result(user_input)
@@ -113,6 +144,12 @@ class RecordingLLM:
             self.recording.customer_lines.append(user_input)
             return
         call, self._open_call = self._open_call, None
+        if result.get("tool") == CART and not result.get("ok"):
+            # The core refused the `cart`: the answer next to it was neither
+            # spoken nor carried out, the order stays what it was, and a draft
+            # that waited for its yes is gone (`guards.take_cart`).
+            self._cart = self._cart_before
+            self._drop_draft()
         if call is not None and not result.get("ok"):
             # Whatever failed, the tool or the answer around it (a refused
             # `cart` stops the call next to it), the call did not go through.
@@ -131,6 +168,12 @@ class RecordingLLM:
             # A new draft is a new sentence, and nobody heard it yet.
             self.recording.readback = (result.get("data") or {}).get("readback")
             self.recording.read_out = False
+            if call is not None and call[0] == "draft_order":
+                # The order in the state is the one that was drafted.
+                try:
+                    self._cart = cart_lines(call[1].get("items"))
+                except ValidationError:
+                    self._cart = []
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 

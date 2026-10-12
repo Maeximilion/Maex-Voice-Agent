@@ -301,7 +301,12 @@ BODY = READBACK.removesuffix(" Passt das so?")
         (f"Ich wiederhole: {READBACK}", True),
         # In front of the read-back: polite words, or a sentence that has ended.
         (f"Gerne, {READBACK}", True),
-        (f"Wir haben bis 22 Uhr geöffnet. {READBACK}", True),
+        (f"Also noch einmal zur Kontrolle: {READBACK}", True),
+        # A sentence of its own in front may say anything about the draft, and
+        # punctuation is no proof that it does not (Codex, PR #258).
+        (f"Wir haben bis 22 Uhr geöffnet. {READBACK}", False),
+        (f"Das ist falsch: {READBACK}", False),
+        (f"Das ist falsch: {BODY}.", False),
         # Words that run into the read-back change what it says (Codex, PR
         # #258): "Einmal statt zweimal ..." is another order.
         (f"Leider nicht {READBACK}", False),
@@ -312,7 +317,11 @@ BODY = READBACK.removesuffix(" Passt das so?")
         # The closing question may be the model's own; the content may not.
         (f"{BODY} Ist das so richtig?", True),
         (f"{BODY} Stimmt das?", True),
-        (BODY, True),
+        # Without the question for the yes, a "Ja" answers nothing.
+        (BODY, False),
+        # A question of filler words alone asks something else.
+        (f"{BODY}. Ist es sicher?", False),
+        (f"{BODY}. Ist das in Ordnung so?", False),
         # Another question after the read-back: the yes would answer that one.
         (f"{READBACK} Möchten Sie noch einen Hochstuhl?", False),
         (f"{BODY} Möchten Sie noch einen Hochstuhl?", False),
@@ -360,8 +369,32 @@ def test_only_the_last_sentence_counts_as_the_read_back():
     assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
     assert state.to_prompt_json()["readback"] == READBACK
 
+    note_said(state, f"Wir haben bis 22 Uhr geöffnet. {READBACK}")
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
     note_said(state, f"Gern. {READBACK}")
     assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+def test_a_booked_draft_is_not_handed_to_the_model_again():
+    """After the yes the closing sentence is not the read-back. The sentence of
+    the booked draft must not go back to the model as one it still has to read
+    out (Codex, PR #258)."""
+    state, _ = drafted()
+    note_said(state, READBACK)
+    apply_tool_result(state, "confirm", ToolResult(ok=True, data={}))
+
+    note_said(state, "Vielen Dank, bis morgen.")
+
+    assert state.readback is None
+    assert "readback" not in state.to_prompt_json()
+
+
+def test_the_sentence_goes_to_the_model_only_while_a_draft_waits():
+    state, _ = drafted()
+    state.stage = "collecting"
+
+    assert "readback" not in state.to_prompt_json()
 
 
 def test_a_new_draft_has_to_be_read_out_again():

@@ -114,7 +114,11 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
-        if self.readback and not self.readback_heard:
+        if (
+            self.stage == "readback_pending"
+            and self.readback
+            and not self.readback_heard
+        ):
             # The draft is not what the guest heard last. A `confirm` is
             # refused until it is, and a model that keeps nothing between
             # turns needs the sentence to read it out. Gone again once heard.
@@ -389,6 +393,11 @@ def apply_tool_result(
             # Booked: no longer an order that is being put together.
             state.cart = []
         state.stage = "confirmed"
+        # Booked: nothing waits to be read out. Left in place, the sentence
+        # would go back to the model with the next turn, as if it still had to
+        # read a draft that no longer is one (Codex PR #258).
+        state.readback = None
+        state.readback_heard = False
     elif name == "create_callback":
         state.stage = "callback"
     elif name == "transfer_to_team" and result.data.get("available"):

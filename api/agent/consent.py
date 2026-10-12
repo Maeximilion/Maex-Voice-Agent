@@ -21,9 +21,9 @@ while the statement puts them the other way round ("Das ist richtig", "Das
 passt").
 
 Read out (`read_out`) means: the sentence that ended a turn held the words of
-the draft and ended with them, or with a closing question made of the words
-above ("Passt das so?", "Ist das so richtig?"). Another question behind the
-read-back would be what the guest's yes answers.
+the draft, then the question that asks for the yes ("Passt das so?", "Ist das
+so richtig?"), and nothing that could change either. Another question behind
+the read-back would be what the guest's yes answers.
 
 Strict on purpose: a yes that is missed costs the guest one more question, a
 yes that is wrongly heard books a table or an order nobody agreed to.
@@ -113,7 +113,13 @@ _PLAIN_YES = frozenset(
 )
 # Where one sentence ends and the next begins, as far as the text shows it.
 _SENTENCE_END = re.compile(r"[.!;]")
-_BREAK = frozenset(".!?:;")
+# Words a model may put in front of a read-back that say nothing about it:
+# "Ich wiederhole", "Also noch einmal", "Zur Kontrolle". Hand-made and closed
+# like the lists above; no word in it can deny or change what follows.
+_LEAD_IN = frozenset(
+    {"ich", "wiederhole", "also", "noch", "nochmal", "einmal", "zur", "kontrolle"}
+    | {"sicherheit", "zusammengefasst", "zusammenfassung"}
+)
 
 
 def _asks(lowered: str) -> bool:
@@ -165,38 +171,46 @@ def _without_closing_question(readback: str) -> str:
     return text[:cut] if text.endswith("?") and cut != -1 else text
 
 
+def _asks_to_confirm(words: list[str]) -> bool:
+    """A closing question the guest's yes can answer: assent and filler words
+    only, and an assent word among them ("Passt das so?", "Ist das so
+    richtig?"). "Ist es sicher?" is made of filler words alone and asks
+    something else."""
+    return _polite(words) and any(word in _YES for word in words)
+
+
 def read_out(say: str, readback: str) -> bool:
-    """Did this sentence read the draft to the guest, and end with it?
+    """Did this sentence read the draft to the guest and ask for a yes to it?
 
-    The words of the draft, in order and without a gap: a read-back that leaves
-    the name out or says another number is not this draft. Case and punctuation
-    do not count, they are not spoken.
+    Three parts, on the words alone (case and punctuation are not spoken):
 
-    What comes after may only be the closing question, in the draft's words or
-    the model's own, as long as it is made of assent and filler words. "...
-    Möchten Sie noch einen Hochstuhl?" is not: the guest's yes would answer
-    the high chair.
-
-    What comes before must not run into the draft: "Einmal statt zweimal
-    Nummer 23 ..." holds every word of "Zweimal Nummer 23 ..." and says another
-    order. So the draft begins the sentence, or follows polite words ("Gerne,
-    ..."), or follows a sentence that has ended ("Wir haben bis 22 Uhr
-    geöffnet. ...", "Ich wiederhole: ...").
+    - The words of the draft, in order and without a gap: a read-back that
+      leaves the name out or says another number is not this draft.
+    - Behind them the question that asks for the yes, in the draft's words or
+      the model's own (`_asks_to_confirm`), and nothing else. Without it the
+      guest's "Ja" answers whatever was said last: "Das ist falsch: <draft>."
+      asks nothing, and "<draft>. Möchten Sie noch einen Hochstuhl?" asks
+      about the high chair. A read-back that is a question as a whole needs
+      no second one.
+    - In front of them nothing, or words that say nothing about the draft:
+      polite ones ("Gerne, ...") and the lead-ins of `_LEAD_IN` ("Ich
+      wiederhole: ..."). Any other word may change what follows ("Einmal
+      statt zweimal ...", "Das ist falsch: ..."), and punctuation is no proof
+      that it does not.
     """
-    draft = _SPOKEN.findall(_without_closing_question(readback).lower())
-    lowered = say.lower()
-    tokens = list(_SPOKEN.finditer(lowered))
-    said = [token.group() for token in tokens]
+    body = _without_closing_question(readback)
+    draft = _SPOKEN.findall(body.lower())
+    said = _SPOKEN.findall(say.lower())
     size = len(draft)
     if not size:
         return False
+    asks_itself = body.rstrip().endswith("?")
     for at in range(len(said) - size + 1):
-        if said[at : at + size] != draft or not _polite(said[at + size :]):
+        if said[at : at + size] != draft:
             continue
-        if (
-            at == 0
-            or _polite(said[:at])
-            or _BREAK & set(lowered[tokens[at - 1].end() : tokens[at].start()])
-        ):
+        after = said[at + size :]
+        if not (_asks_to_confirm(after) or (asks_itself and not after)):
+            continue
+        if all(word in _LEAD_IN or _polite([word]) for word in said[:at]):
             return True
     return False

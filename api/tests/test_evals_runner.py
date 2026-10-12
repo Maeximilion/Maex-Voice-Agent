@@ -450,6 +450,70 @@ def test_confirm_of_a_draft_nobody_heard_that_the_core_refused_is_an_attempt(sai
     assert rec.refused_attempts == [("confirm", "Ja")]
 
 
+ITEM = "11111111-1111-1111-1111-111111111111"
+DRAFTED = [{"menu_item_id": ITEM, "quantity": 1}]
+
+
+def _read_back_with_a_cart(cart, *inputs: str, then=()) -> RecordingLLM:
+    """Drafts one dish, then reads the draft out with `cart` next to the
+    sentence, and returns `confirm` on the guest's "Ja". `then`: what the model
+    answers in between, to a refused `cart`."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": DRAFTED})),
+                LLMTurn(say=READBACK, cart=cart),
+                *then,
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    for text in inputs:
+        rec.next_turn("", {}, text)
+    return rec
+
+
+def test_a_changed_cart_next_to_the_read_back_drops_the_draft():
+    """The core takes a `cart` that differs from the draft as a correction and
+    drops the draft, whatever the sentence next to it says. The "Ja" after it
+    confirms nothing, and the recorder has to see it the same way, or the
+    attempt is missing from the report (Codex, PR #258)."""
+    changed = [{"menu_item_id": ITEM, "quantity": 2}]
+    rec = _read_back_with_a_cart(changed, "Ja", _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_a_refused_cart_next_to_the_read_back_drops_the_draft():
+    """A `cart` the core refuses stops the whole answer and drops the draft
+    (`guards.take_cart`). The model reads the sentence out once more, but there
+    is no draft left that a yes could confirm."""
+    refused_cart = json.dumps({"tool": "cart", "ok": False, "error_code": "conflict"})
+    rec = _read_back_with_a_cart(
+        DRAFTED,
+        refused_cart,
+        "Ja",
+        _result("confirm", ok=False),
+        then=[LLMTurn(say=READBACK)],
+    )
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_the_same_cart_next_to_the_read_back_changes_nothing():
+    """A model that repeats the order with its answer has corrected nothing."""
+    rec = _read_back_with_a_cart(DRAFTED, "Ja", _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == []
+    assert rec.recording.confirms == 1
+
+
 def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
     rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
 
