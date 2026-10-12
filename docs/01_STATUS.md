@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.29
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.30
 
 ---
 
@@ -370,6 +370,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 12.10.2026 | **Flaky test: the kitchen tests over HTTP trusted the wall clock** (`test_druckfehler_macht_die_karte_rot`, once `'pending' == 'failed'` in a full local run): no lost ack and no stale read, `/v1/kitchen/claim` handed out no ticket. A fresh ticket's due time is the database's `now()`, the endpoint compares it with `datetime.now(UTC)` about 16 ms later, and Docker Desktop's VM sets its wall clock back every 30 seconds (19 of 20 steps backwards in ten minutes, 20 to 220 ms under load). Reproduced on demand with the confirm 8 ms before the next step: 10 of 12 runs red before, 12 of 12 green after. Fix in the tests only: `Setup.make_due` (was `expire_lease`) runs in the `setup` fixture of `api/tests/test_printbridge.py`, and `test_http_token_und_huelle` does the same; the domain tests already hand in a `now` one second ahead. Assumption: the code stays as it is, because a real bridge asks again after two seconds and the same step costs one ticket one poll. Not built: a rule "a ticket never tried is due whatever the clock says" in `claim_tickets`, which would also remove that delay but forbids a ticket scheduled for later. |
 | 12.10.2026 | **Correction at the read-back** (eval `abholung_0079`): a card number named after a no replaces the dish with the same digits or the only dish, keeps quantity, note and the rest of the order, and the order is read back again; anything less clear starts again |
 | 12.10.2026 | **Tests: the speech kit's tests pass as root too** (audit finding, P2): four tests of `api/tests/test_telephony_speech_spike.py` failed under `make test`, because the API container is root and `speech_spike.main` refuses root before the mocked run starts. The module's tests now give the kit an ordinary uid (its own view of `os` only, pytest keeps the real one for its temporary folders), and a separate test pins that root is refused before Docker is asked or the run directory is touched. No change outside the test file. Run as uid 0 and as uid 1000 |
 | 12.10.2026 | **Bug: S12 heard as "ist zwölf"** (eval `abholung_0077`): "ist" directly before a number keeps the S number as a candidate where the menu has the prefix, the search asks by name, never takes such a number without a question. 14 lines in the number eval (195), re-judged on the transcripts of T-10.3: picked ear 12 to 8 silent wrong numbers of 724 |
@@ -457,6 +458,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.30 · 12.10.2026:** Flaky kitchen test fixed: the HTTP tests make their ticket due instead of trusting a wall clock that Docker Desktop's VM sets back every 30 seconds
 - **v2.0.29 · 12.10.2026:** Correction at the read-back: a card number named after a no replaces the dish and the order is read back again (eval abholung_0079)
 - **v2.0.28 · 12.10.2026:** Public-repo inventory: the last real place name in a test input is replaced by an invented one; operation name, team phone, host names and printer address already come from .env only
 - **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
