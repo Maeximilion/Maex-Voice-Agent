@@ -135,7 +135,19 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    einer Zahl ohne Präfix. Nur ein Zahlwort davor ist die Menge („zwei S
    zwölf"). Buchstabiert („Es zwölf") zählt nur am Satzanfang, auch nach Wunsch
    oder Gruß („Ich hätte gern Es zwölf", „Hallo, Es zwölf"), nie nach einem Verb
-   („nehme ich es zwei" ist kein S2). Eine genannte, nicht vorhandene Nummer
+   („nehme ich es zwei" ist kein S2). A word the speech recognition writes for a
+   letter adds a candidate: every engine measured writes „S zwölf" as „ist zwölf"
+   (T-10.3), so „ist" directly before a number, set apart from it, keeps the S
+   number next to the plain one („12 oder s12"), after any lead („Ich nehme ist
+   zwölf"). Such a number is never taken without a question, whichever of the two
+   the menu has (Codex PR #257): with both the search asks by name („Meinen Sie
+   Nummer 12, Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with one it offers
+   that one („Meinen Sie Nummer S7, Gurken Maki?", `ambiguous` with one result),
+   because the dish that exists may not be the one that was said. With none it is
+   `not_found`. Next to another dish („Ist zwölf und Pho Bo") it is a position of
+   its own, like the S12 said clearly. Only where the menu has the prefix S, and only in a
+   pure number sentence: next to a name the sentence is what it was („das ist 5g
+   Zucker"). Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
    Marker oder gesprochenes Wort sind (`x`, `st`, `nr`, `no`, `hm`, `ja`, `es`,
    `so`, `um`, `zu`, `da`, `du`, `er`, `ob`), lehnt der Import mit eigener

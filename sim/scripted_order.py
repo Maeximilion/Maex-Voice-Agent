@@ -432,7 +432,12 @@ class PickupScript:
         # Prefixes of the offered numbers ("S1 oder SM1?" - "SM eins", T-4.12).
         offered = CardFormat.from_items((h["number"], "") for h in self._suggestions)
         ref, _ = sole_item_number(text, offered)
-        if ref is not None:
+        # "Ist eins" again after "Meinen Sie Nummer S1 ...?" is the same open
+        # question: 1 or S1 by the letters of the menu, whatever was offered. A
+        # number that went through a heard letter picks nothing; the name or a
+        # yes does (Codex PR #257).
+        on_menu, _ = sole_item_number(text, self._menu().card)
+        if ref is not None and not (on_menu is not None and on_menu.heard):
             cards = {canonical_card(c) for c in ref.cards}
             by_number = [
                 h for h in self._suggestions if canonical_card(h["number"]) in cards

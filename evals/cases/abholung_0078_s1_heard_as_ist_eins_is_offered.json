@@ -1,0 +1,52 @@
+{
+  "id": "abholung_0078",
+  "name": "S1 heard as 'ist eins', only S1 is on the menu: the agent offers it and takes it on a yes",
+  "tags": [
+    "abholung",
+    "menu",
+    "nummer",
+    "praefix",
+    "mehrdeutig",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Ist eins."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "s1",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}
