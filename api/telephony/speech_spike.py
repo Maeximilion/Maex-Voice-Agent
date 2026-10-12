@@ -293,7 +293,8 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
             # As the import reads the flag (`importer._bool`): " NEIN " is no.
             if (row.get("active") or "").strip().lower() == "nein":
                 continue
-            dish = {key: row[key].strip() for key in ("number", "name", "category")}
+            # A row that ends early has no value for its last columns.
+            dish = {k: (row[k] or "").strip() for k in ("number", "name", "category")}
             if not all(dish.values()):
                 # A dish without a name would be "heard" in every transcript.
                 raise ValueError(f"row {at}: number, name and category are required")
@@ -359,10 +360,9 @@ def key_terms_for(names: list[str], index: int) -> list[str]:
     starts at `index` and wraps around. For the sentence of dish `index` that
     is its own name first, so every dish is heard with its term; a number
     sentence gets the window at its own index. At most KEY_TERMS and always
-    fewer than the menu has, except for a menu of one dish."""
-    if not names:
-        return []
-    size = max(1, min(KEY_TERMS, len(names) - 1))
+    fewer than the menu has: a menu of one dish gets no key term at all, its one
+    name would be the whole menu (Codex PR #268)."""
+    size = min(KEY_TERMS, len(names) - 1)
     return [names[(index + k) % len(names)] for k in range(size)]
 
 
@@ -561,8 +561,20 @@ def _ear(
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     seconds = sorted(r["seconds"] for r in rows)
     terms: dict[str, Any] = {}
-    if info.get("key_terms_each") is not None:
-        terms = {"key_terms_each": info["key_terms_each"], "key_terms_given": given}
+    got = [r["key_terms"] for r in rows if r.get("key_terms") is not None]
+    if got:
+        # Per utterance, what the ear really got after its prompt was cut. A
+        # window starts with the dish's own name and is cut from its end, so a
+        # dish sentence had its term whenever it had any (Codex PR #268).
+        dishes = [r for r in rows if r["kind"] == "dish"]
+        terms = {
+            "key_terms_min": min(got),
+            "key_terms_max": max(got),
+            "key_terms_given": given,
+            "dishes_with_own_term_share": _part(
+                dishes, lambda r: (r.get("key_terms") or 0) > 0
+            ),
+        }
     return {
         "id": ear_id,
         **terms,
@@ -636,11 +648,14 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
             f"{e['load_seconds']:>8}{e['gpu_mib'] if e['gpu_mib'] is not None else '-':>9}"
         )
     for e in report["ears"]:
-        if e.get("key_terms_each") is not None:
+        if e.get("key_terms_max") is not None:
+            low, high = e["key_terms_min"], e["key_terms_max"]
             print(
-                f"{e['id']}: every utterance heard with {e['key_terms_each']} of "
-                f"{e['key_terms_given']} dish names as key terms, a dish with its own "
-                "among them"
+                f"{e['id']}: an utterance was heard with "
+                f"{high if low == high else f'{low} to {high}'} of "
+                f"{e['key_terms_given']} dish names as key terms; "
+                f"{pct(e['dishes_with_own_term_share']).strip()} of the dish sentences "
+                "with their own name among them"
             )
     step("Mouths: speed, and card numbers the best ear understood from the voice")
     print(f"{'voice':<26}{'first audio s':>14}{'x real time':>13}{'understood':>12}")

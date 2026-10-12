@@ -664,24 +664,57 @@ def test_an_utterance_gets_a_window_of_key_terms_never_the_whole_menu():
         for index in range(size):
             got = kit.key_terms_for(few, index)
             assert got[0] == few[index] and len(set(got)) == len(got) < size
-    assert kit.key_terms_for(["Suppe"], 0) == ["Suppe"]
+    # One dish is the whole menu: no key term at all (Codex PR #268, P1).
+    assert kit.key_terms_for(["Suppe"], 0) == []
     assert kit.key_terms_for([], 0) == []
 
 
-def test_the_report_says_how_many_key_terms_an_utterance_got(capsys, tmp_path):
+def test_the_report_counts_the_key_terms_an_utterance_really_got(capsys, tmp_path):
+    """What the ear got after its prompt was cut, per utterance, not the size of
+    the window before: a dish whose own name did not fit was heard without a
+    key term and must not be counted as heard with one (Codex PR #268)."""
     plan = kit.build_plan(None)
     plan["sentences"] = [
         {"id": "n0", "kind": "number", "say": "Nummer 23", "expect": "23"},
-        {"id": "d0", "kind": "dish", "say": "x", "expect": "Edamame"},
+        *(
+            {"id": f"d{i}", "kind": "dish", "say": "x", "expect": name}
+            for i, name in enumerate(["Edamame", "Gyoza", "Pho Bo"])
+        ),
     ]
-    plan["ears"] = [{"id": "terms"}]
-    row = {"voice": plan["voices"][0], "ear": "terms", "seconds": 0.1, "on_card": False}
+    plan["key_terms"] = ["Edamame", "Gyoza", "Pho Bo"]
+    plan["ears"] = [{"id": "terms"}, {"id": "plain"}]
+    base = {"voice": plan["voices"][0], "seconds": 0.1, "on_card": False}
+    number = {"id": "n0", "kind": "number", "expect": "23", "verdict": "right"}
     judged = [
-        {**row, "id": "n0", "kind": "number", "expect": "23", "verdict": "right"},
-        {**row, "id": "d0", "kind": "dish", "expect": "Edamame", "verdict": "right"},
+        {**base, **number, "ear": "terms", "key_terms": 2},
+        {
+            **base,
+            "ear": "terms",
+            "id": "d0",
+            "kind": "dish",
+            "verdict": "right",
+            "key_terms": 2,
+        },
+        {
+            **base,
+            "ear": "terms",
+            "id": "d1",
+            "kind": "dish",
+            "verdict": "right",
+            "key_terms": 1,
+        },
+        {
+            **base,
+            "ear": "terms",
+            "id": "d2",
+            "kind": "dish",
+            "verdict": "asked",
+            "key_terms": 0,
+        },
+        {**base, **number, "ear": "plain"},
     ]
     heard = {
-        "ears": {"terms": {"load_seconds": 1, "key_terms_each": 10}},
+        "ears": {"terms": {"load_seconds": 1}, "plain": {"load_seconds": 1}},
         "mouths": [
             {"voice": v, "first_audio_seconds": 0.1, "seconds": 1, "audio_seconds": 2}
             for v in plan["voices"]
@@ -689,16 +722,31 @@ def test_the_report_says_how_many_key_terms_an_utterance_got(capsys, tmp_path):
         "turn_end": [],
     }
     report = kit.summarize(plan, heard, judged)
-    [ear] = report["ears"]
-    assert ear["key_terms_each"] == 10 and ear["key_terms_given"] == len(
-        plan["key_terms"]
-    )
+    terms, plain = report["ears"]
+    assert (terms["key_terms_min"], terms["key_terms_max"]) == (0, 2)
+    assert terms["key_terms_given"] == 3
+    assert terms["dishes_with_own_term_share"] == round(2 / 3, 4)
+    assert "key_terms_max" not in plain
     kit.print_report(report, tmp_path)
     out = capsys.readouterr().out
     assert (
-        f"terms: every utterance heard with 10 of {len(plan['key_terms'])} dish names"
-        in out
+        "terms: an utterance was heard with 0 to 2 of 3 dish names as key terms" in out
     )
+    assert "66.7 % of the dish sentences with their own name among them" in out
+    assert "plain:" not in out
+
+
+def test_a_short_row_is_refused_like_a_blank_field(tmp_path, monkeypatch, capsys):
+    """A row that ends early gives no value at all for the last columns: that
+    is a missing field, not a crash (Codex PR #268)."""
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    menu = own_menu(
+        tmp_path, "number;name;category;active\n8;Salat;Vorspeisen;ja\n7;Suppe\n"
+    )
+    with pytest.raises(ValueError, match="row 3"):
+        kit.build_plan(None, menu)
+    assert kit.main(["--menu", str(menu), "--run-dir", str(tmp_path / "r")]) == 2
+    assert "no menu in the import format" in capsys.readouterr().err
 
 
 def test_only_the_key_terms_that_fit_the_prompt_are_handed_to_the_ear():
