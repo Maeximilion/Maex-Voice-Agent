@@ -128,6 +128,9 @@ class PickupScript:
         # A correction at the read-back that is being looked up: the cart line
         # it replaces and the quantity, if the guest said one.
         self._replace: tuple[int, int | None] | None = None
+        # A corrected order waits for the mandatory choice of its new dish:
+        # with the answer it is complete again and goes back to the read-back.
+        self._complete = False
 
     # -- Customer turn ------------------------------------------------------
 
@@ -252,13 +255,17 @@ class PickupScript:
         instead, and the quantity if one was said. Only where it is no guess:
         behind the no the sentence is one card number and nothing else (rule A,
         `sole_item_number`), so "um 13 Uhr" or "in 24 Minuten" name no dish; no
-        word adds a dish or takes one away ("und noch die 13", "die 24 nicht");
+        word adds a dish or takes one away ("und noch die 13", "und die 13",
+        "die 24 nicht");
         and there is exactly one line the number can stand for - the one with
         the same digits ("25c" for a 25d that was read back, "S12" for the 12),
         else the only line of the order. A number that went through a heard
         letter ("ist zwölf") names nothing."""
         said = _CORRECTION_LEAD.sub("", text)
-        if _CORRECTION_STOP & set(_words(said)):
+        words = _words(said)
+        # "und die 13" continues the order; inside a number ("drei und
+        # zwanzig") the word adds nothing (Codex PR #271).
+        if _CORRECTION_STOP & set(words) or words[:1] == ["und"]:
             return None
         ref, unclear = sole_item_number(said, self._menu().card)
         if unclear or ref is None or not ref.valid or len(ref.cards) != 1 or ref.heard:
@@ -273,26 +280,33 @@ class PickupScript:
         ]
         if len(lines) != 1:
             lines = [0] if len(self.cart) == 1 else []
-        return (lines[0], ref.text, find_quantity(said)) if lines else None
+        return (lines[0], ref.text, _correction_quantity(said)) if lines else None
 
-    def _replaced(self, data: dict[str, Any], slots: dict[str, Any]) -> LLMTurn:
+    def _replaced(
+        self, data: dict[str, Any], slots: dict[str, Any], say: str | None = None
+    ) -> LLMTurn:
         """The search for a correction came back: the one dish takes the place
         of the line, with its quantity and its note for the kitchen. Options
         belong to the old dish and go; a mandatory choice of the new one is
-        asked (`_next`). Anything but one clear dish starts the order again."""
+        asked, and its answer leads back to the read-back (`_next`). Anything
+        but one clear dish starts the order again; a dish that is out today
+        with the sentence the search wrote for it."""
         (at, quantity), self._replace = self._replace, None
         hits = data.get("results") or []
-        if (
-            data.get("match_type") not in CLEAR_MATCHES
-            or len(hits) != 1
-            or hits[0].get("sold_out")
-        ):
+        if data.get("match_type") not in CLEAR_MATCHES or len(hits) != 1:
             return self._restart()
+        if hits[0].get("sold_out"):
+            turn = self._restart()
+            return LLMTurn(say=_join(say, turn.say))
         old = self.cart[at]
         self._add(hits[0], "", quantity or old.quantity)
         new = self.cart.pop()
         new.note = new.note or old.note
         self.cart[at] = new
+        # The order was complete before the correction: once the new dish has
+        # its mandatory choice, it is drafted again instead of "Darf es noch
+        # etwas sein?" (Codex PR #271).
+        self._complete = True
         return self._next(slots, {})
 
     # -- Tool result -------------------------------------------------------
@@ -307,7 +321,7 @@ class PickupScript:
         """`say` repeats what was clearly understood (from the code, Maxi PR #127);
         the script speaks it like a model that follows the rule in the prompt."""
         if self._replace is not None:
-            return self._replaced(data, slots)
+            return self._replaced(data, slots, say)
         reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
@@ -381,10 +395,14 @@ class PickupScript:
         goes along. None if no follow-up question was open.
 
         A correction at the read-back that names a number the menu does not
-        have starts the order again."""
+        have starts the order again; a lookup that failed without a sentence
+        for the guest is answered with None as well."""
         if self._replace is not None:
             self._replace = None
-            return self._restart()
+            # Without a sentence for the guest the search did not answer at all:
+            # that is an outage, and the caller hands the call to the team
+            # (rule 5, Codex PR #271). The order stays as it was read back.
+            return self._restart() if say else None
         if self._reopen is None:
             return None
         self._suggestions, self._suggestion_query = self._reopen
@@ -655,6 +673,9 @@ class PickupScript:
         if self.phase == "choose":
             # This is always the follow-up question with the suggestions (_take).
             return LLMTurn(say=_join(lead) or SAY_WHAT, state_patch=state_patch)
+        if self._complete and not any(i.pending for i in self.cart):
+            self._complete = False
+            self.phase = "customer"
         if any(i.pending for i in self.cart):
             self.phase = "option"
             item, group = self._open_option()
@@ -781,6 +802,19 @@ _CORRECTION_STOP = frozenset(
         "keine",
     }
 )
+
+
+def _correction_quantity(said: str) -> int | None:
+    """The quantity said with a correction: marked ("zweimal", "2 x"), or bare
+    directly before the marker ("zwei Nummer 24", Codex PR #271). Not
+    `_stated_quantity`: that takes the "drei" of "die drei und zwanzig" for a
+    quantity, which is the number itself."""
+    marked = find_quantity(said)
+    if marked:
+        return marked
+    words = _words(said)
+    at = next((i for i, w in enumerate(words) if w in ("nummer", "nr")), 0)
+    return parse_cardinal(words[at - 1]) if at else None
 
 
 def _digits(card: str) -> str:

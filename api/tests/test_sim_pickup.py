@@ -1725,17 +1725,17 @@ def test_a_repeated_heard_number_picks_neither_of_two_offered_dishes(session, su
 # --- A correction at the read-back (eval abholung_0079) ---------------------------
 
 
-def _vorgelesen(session, tenant, bestellung: list[str], *danach: str):
+def _read_back(session, tenant, order: list[str], *after: str):
     """An order up to its read-back, then what the guest says to it."""
     return replay(
         session,
         case(
             "Ich moechte etwas zum Abholen bestellen.",
-            *bestellung,
+            *order,
             "Nein, das wars.",
             "Auf den Namen Mueller.",
             "0721 5551234",
-            *danach,
+            *after,
         ),
         tenant,
         now=NOW,
@@ -1757,7 +1757,7 @@ def test_a_number_named_at_the_readback_replaces_the_dish_with_the_same_digits(
     changed the letter; the guest names the right number, that one dish is
     replaced, quantity and the rest of the order stay, and the new order is
     read back before any yes."""
-    _, turns = _vorgelesen(
+    _, turns = _read_back(
         session,
         sushi,
         ["Zweimal die 25.", "Und noch die 13."],
@@ -1783,18 +1783,18 @@ def test_a_number_named_at_the_readback_replaces_the_dish_with_the_same_digits(
 def test_with_one_dish_in_the_order_any_named_number_replaces_it(
     session, tenant, said, number
 ):
-    _vorgelesen(session, tenant, ["Die 23."], said, "Ja.")
+    _read_back(session, tenant, ["Die 23."], said, "Ja.")
     assert _booked(session) == [[(number, 1, [])]]
 
 
 def test_the_s_number_meant_instead_of_the_plain_one_replaces_it(session, sushi):
     """ "S zwölf" heard as 12: at the read-back the guest hears the soup."""
-    _vorgelesen(session, sushi, ["Die 12."], "Nein, ich meinte die S 12.", "Ja.")
+    _read_back(session, sushi, ["Die 12."], "Nein, ich meinte die S 12.", "Ja.")
     assert _booked(session) == [[("s12", 1, [])]]
 
 
 def test_a_correction_keeps_the_note_and_takes_a_quantity_that_is_said(session, tenant):
-    _vorgelesen(
+    _read_back(
         session, tenant, ["Die 23 ohne Karotten."], "Nein, zweimal die 24.", "Ja."
     )
     assert _booked(session) == [[("24", 2, [])]]
@@ -1803,7 +1803,7 @@ def test_a_correction_keeps_the_note_and_takes_a_quantity_that_is_said(session, 
 
 
 def test_a_second_correction_replaces_again(session, tenant):
-    _vorgelesen(
+    _read_back(
         session,
         tenant,
         ["Die 23."],
@@ -1816,7 +1816,7 @@ def test_a_second_correction_replaces_again(session, tenant):
 
 
 @pytest.mark.parametrize(
-    ("bestellung", "said"),
+    ("order", "said"),
     [
         # Two dishes and a number that stands for neither: which one is meant?
         (["Die 23.", "Und noch die 13."], "Nein, ich meinte die 47."),
@@ -1833,29 +1833,88 @@ def test_a_second_correction_replaces_again(session, tenant):
         (["Die 23."], "Nein, in 24 Minuten."),
         # One more dish is no replacement, and "nicht" takes a dish away.
         (["Die 23."], "Nein, und noch die 13."),
+        (["Die 23."], "Nein, und die 13."),
+        (["Die 23."], "Nein, und die 24."),
         (["Die 23."], "Nein, die 13 auch."),
         (["Die 23."], "Nein, die 24 nicht."),
     ],
 )
 def test_a_no_that_is_no_clear_correction_starts_the_order_again(
-    session, tenant, bestellung, said
+    session, tenant, order, said
 ):
     """Never a guess: as before, the order is taken anew and nothing is booked."""
-    _, turns = _vorgelesen(session, tenant, bestellung, said, "Ja.")
+    _, turns = _read_back(session, tenant, order, said, "Ja.")
     assert "Dann noch einmal von vorn" in " ".join(turns[-2].say)
     assert _booked(session) == []
 
 
 def test_a_corrected_dish_with_a_mandatory_choice_asks_for_it(session, tenant):
-    """The 47 needs its meat: the choice is asked, never preset."""
-    _, turns = _vorgelesen(
-        session,
-        tenant,
-        ["Die 23."],
-        "Nein, ich meinte die 47.",
-        "Huhn.",
-        "Nein, das wars.",
-        "Ja.",
+    """The 47 needs its meat: the choice is asked, never preset. With the answer
+    the order is complete again and is read back, without "Darf es noch etwas
+    sein?" in between (Codex PR #271)."""
+    _, turns = _read_back(
+        session, tenant, ["Die 23."], "Nein, ich meinte die 47.", "Huhn.", "Ja."
     )
-    assert "Huhn" in " ".join(turns[-4].say)
+    assert "Huhn" in " ".join(turns[-3].say)
+    again = " ".join(turns[-2].say)
+    assert "Einmal Nummer 47" in again and again.endswith("Passt das so?")
     assert _booked(session) == [[("47", 1, ["Huhn"])]]
+
+
+def test_a_number_word_with_und_is_still_one_number(session, tenant):
+    """ "drei und zwanzig" is how an ear writes 23: the "und" inside the number
+    adds no dish."""
+    _read_back(session, tenant, ["Die 24."], "Nein, die drei und zwanzig.", "Ja.")
+    assert _booked(session) == [[("23", 1, [])]]
+
+
+@pytest.mark.parametrize(
+    "said", ["Nein, zwei Nummer 24.", "Nein, zweimal die 24.", "Nein, 2 x die 24."]
+)
+def test_a_quantity_in_front_of_the_corrected_number_counts(session, tenant, said):
+    """Codex PR #271: also the bare one before "Nummer", as in the search."""
+    _read_back(session, tenant, ["Die 23."], said, "Ja.")
+    assert _booked(session) == [[("24", 2, [])]]
+
+
+def test_a_correction_to_a_dish_that_is_sold_out_says_so(session, tenant):
+    """Codex PR #271: the guest hears why the correction was not taken, in the
+    sentence the search wrote, before the order starts again."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant.id, MenuItem.number == "24")
+        .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
+    )
+    session.commit()
+    _, turns = _read_back(
+        session, tenant, ["Die 23."], "Nein, ich meinte die 24.", "Ja."
+    )
+    said = " ".join(turns[-2].say)
+    assert "heute leider aus" in said and "Dann noch einmal von vorn" in said
+    assert _booked(session) == []
+
+
+def test_a_correction_whose_lookup_fails_is_left_to_the_handoff():
+    """Codex PR #271, P1: a search that fails without a sentence for the guest
+    is an outage. The script answers nothing, so the caller of it hands the
+    call to the team (rule 5); only a number the menu does not have starts the
+    order again."""
+    from sim.scripted_order import CartItem, PickupScript
+
+    def corrected() -> PickupScript:
+        script = PickupScript()
+        script.cart = [CartItem("id-23", "23", "Frühlingsrollen", 1)]
+        script.phase = "customer"
+        script.readback_for = "order-1"
+        turn = script.on_readback(False, "Nein, ich meinte die 24.")
+        assert turn.tool_call is not None and turn.tool_call.name == "search_menu"
+        return script
+
+    outage = corrected()
+    assert outage.on_search_failed(None) is None
+    assert outage.cart and outage.readback_for is None
+
+    missing = corrected()
+    turn = missing.on_search_failed("Die Nummer 24 habe ich nicht auf der Karte.")
+    assert turn is not None and "Dann noch einmal von vorn" in (turn.say or "")
+    assert missing.cart == []

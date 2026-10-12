@@ -184,12 +184,15 @@ number is confirmed before anything is booked, so a wrong one has to be correcta
 "Falsch, ich meinte die Nummer 25c". One card number named clearly replaces the one dish
 it can stand for, the one with the same digits ("25c" for a 25d that was read back, "S12"
 for the 12) or the only dish of the order. Quantity and note for the kitchen stay, a
-quantity said with the correction counts ("nein, zweimal die 24"), the rest of the order
-stays, and the new order is read back in full before a yes. The draft that was read back
+quantity said with the correction counts ("nein, zweimal die 24", "nein, zwei Nummer 24"),
+the rest of the order stays, a mandatory choice of the new dish is asked, and the new order is
+read back in full before a yes. The draft that was read back
 first stays a draft. Behind the no the sentence has to be the card number alone: anything
 else (two numbers, a number that is not on the menu, two dishes the number could stand for,
-a time such as "um 13 Uhr", one more dish with "und noch die 13", a dish taken away with
-"nicht", a name, a bare no) starts the order again, as before: never a guess. The scripted stand-in does this since 12.10.2026
+a time such as "um 13 Uhr", one more dish with "und die 13" or "und noch die 13", a dish
+taken away with "nicht", a name, a bare no) starts the order again, as before: never a guess.
+A corrected dish that is out today is said with the sentence of the search before the order
+starts again, and a lookup that fails without an answer hands the call to the team (rule 5). The scripted stand-in does this since 12.10.2026
 (`sim/scripted_order.py` `_correction`, eval `abholung_0079`); a real model is told the same
 by the system prompt ("Ändert der Gast etwas, lege den Vorgang neu an"), and the core drops
 the old draft whichever of them drives the call.
