@@ -1035,6 +1035,22 @@ def test_prefixed_number_and_name_are_two_positions(session, sushi):
     assert err.value.say == SAY_IN_TURN
 
 
+def test_heard_number_and_name_are_two_positions(session, sushi):
+    """Codex PR #257: "S zwölf und Pho Bo" arrives as "Ist zwölf und Pho Bo".
+    The number that needs a question is a position of its own, as the S12 that
+    was said clearly; kept whole, the sentence found Pho Bo alone and the first
+    dish dropped out without a word."""
+    assert position_parts(session, sushi, "Ist zwölf und Pho Bo", now=NOW) == [
+        "Ist zwölf",
+        "Pho Bo",
+    ]
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "Ist zwölf und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+    # Each part then gets its own answer: the question, and the dish.
+    assert suche(session, sushi, "Ist zwölf").match_type == "ambiguous"
+
+
 def test_category_word_without_hit_names_card_numbers(session, sushi):
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Sushi 99")

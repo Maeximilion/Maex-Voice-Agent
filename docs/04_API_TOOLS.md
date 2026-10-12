@@ -144,7 +144,8 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Nummer 12, Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with one it offers
    that one („Meinen Sie Nummer S7, Gurken Maki?", `ambiguous` with one result),
    because the dish that exists may not be the one that was said. With none it is
-   `not_found`. Only where the menu has the prefix S, and only in a
+   `not_found`. Next to another dish („Ist zwölf und Pho Bo") it is a position of
+   its own, like the S12 said clearly. Only where the menu has the prefix S, and only in a
    pure number sentence: next to a name the sentence is what it was („das ist 5g
    Zucker"). Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
