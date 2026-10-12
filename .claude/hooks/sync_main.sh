@@ -11,32 +11,53 @@ if ! git -C "$root" fetch --prune --quiet 2>/dev/null; then
   warn "git fetch failed"
   exit 0
 fi
+# Sets `primary` (the main folder, listed first) and `main_dir` (where main is checked
+# out, or empty). NUL-separated, so a path with a line break in it stays one path; git
+# before 2.36 has no -z, there the lines of the plain list stand in for the records.
+worktrees() {
+  primary= main_dir= w=
+  while IFS= read -r -d '' line; do
+    case "$line" in
+      "worktree "*) w=${line#worktree }; [ -n "$primary" ] || primary=$w ;;
+      "branch refs/heads/main") main_dir=$w ;;
+    esac
+  done < <(git -C "$root" worktree list --porcelain -z 2>/dev/null \
+    || git -C "$root" worktree list --porcelain | tr '\n' '\0')
+}
+# A branch is in main when its commits are there, or its changes are: after a squash
+# merge the commits never land. Then either merging the branch into origin/main changes
+# nothing (needs git 2.38), or, where main has moved on over the same lines since,
+# GitHub lists a merged pull request with exactly this head commit (needs gh).
+in_main() {
+  git -C "$primary" merge-base --is-ancestor "$1" origin/main 2>/dev/null && return 0
+  merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null | head -n 1)"
+  [ -n "$merged" ] && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ] && return 0
+  tip="$(git -C "$primary" rev-parse "$1" 2>/dev/null)"
+  (cd "$primary" && timeout 10 gh pr list --state merged --head "$1" --json headRefOid \
+    --jq '.[].headRefOid' 2>/dev/null) | grep -qx "$tip"
+}
+
 # The main folder left on a finished branch goes back to main, or its files stay at the
 # old state while every ref is current (12.10.2026: a kit merged that day was "not
 # there"). Finished means: nothing uncommitted, the remote branch is gone, and its work
 # is in origin/main. Only that folder; session worktrees are tidied by /start.
-# In main is a branch whose commits are there, or whose changes are: after a squash
-# merge the commits never land, but merging the branch into origin/main then changes
-# nothing. A git without `merge-tree --write-tree` (before 2.38) answers no.
-in_main() {
-  git -C "$primary" merge-base --is-ancestor "$1" origin/main 2>/dev/null && return 0
-  merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null | head -n 1)"
-  [ -n "$merged" ] && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ]
-}
-primary="$(git -C "$root" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10); exit}')"
+worktrees
 branch="$(git -C "$primary" branch --show-current 2>/dev/null)"
 if [ -n "$branch" ] && [ "$branch" != main ] \
   && [ -z "$(git -C "$primary" status --porcelain 2>/dev/null)" ] \
   && [ "$(git -C "$primary" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ] \
   && in_main "$branch"; then
-  # Refused when main is checked out in another worktree: then that one is synced below.
-  git -C "$primary" switch --quiet main 2>/dev/null || true
+  if [ -n "$main_dir" ]; then
+    # Git checks a branch out in one folder only; which of the two gives way is not the hook's call.
+    warn "the main folder is on the finished branch $branch and main is checked out in $main_dir, not switched"
+  else
+    git -C "$primary" switch --quiet main 2>/dev/null \
+      || warn "the main folder is on the finished branch $branch and could not be switched to main"
+    worktrees
+  fi
 fi
 
 # main is checked out in at most one worktree, often not the one this session runs in.
-main_dir="$(git -C "$root" worktree list --porcelain 2>/dev/null | awk '
-  /^worktree /{w=substr($0,10)}
-  /^branch refs\/heads\/main$/{print w; exit}')"
 if [ -z "$main_dir" ]; then
   # Checked out nowhere: move the branch itself, so the next task starts from today's main.
   git -C "$root" fetch --quiet origin main:main 2>/dev/null \

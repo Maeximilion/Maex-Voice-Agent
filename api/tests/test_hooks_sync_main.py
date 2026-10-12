@@ -24,7 +24,7 @@ HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "sync_main.sh
 
 
 @pytest.fixture
-def repos(tmp_path):
+def repos(tmp_path, request):
     missing = "bash" if BASH is None else None if shutil.which("git") else "git"
     if missing:
         if os.environ.get("CI"):
@@ -34,8 +34,20 @@ def repos(tmp_path):
     # No user or system git config: the result must not depend on the machine.
     empty_config = tmp_path / "gitconfig"
     empty_config.write_text("", encoding="utf-8")
+    # A stand-in for gh: the head commits GitHub would list as merged are the lines of
+    # a file, and there is none unless a test writes it. The real gh must never be
+    # asked about a throwaway repository.
+    merged_heads = tmp_path / "merged_heads"
+    fake_gh = tmp_path / "bin" / "gh"
+    fake_gh.parent.mkdir()
+    fake_gh.write_text(
+        '#!/bin/sh\ncat "$FAKE_GH_MERGED" 2>/dev/null\n', encoding="utf-8"
+    )
+    fake_gh.chmod(0o755)
     env = {
         **os.environ,
+        "PATH": f"{fake_gh.parent}{os.pathsep}{os.environ['PATH']}",
+        "FAKE_GH_MERGED": str(merged_heads),
         "GIT_CONFIG_GLOBAL": str(empty_config),
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_AUTHOR_NAME": "test",
@@ -58,7 +70,7 @@ def repos(tmp_path):
 
     origin = tmp_path / "origin.git"
     upstream = tmp_path / "upstream"
-    main_checkout = tmp_path / "main_checkout"
+    main_checkout = tmp_path / getattr(request, "param", "main_checkout")
     feature = tmp_path / "feature"
 
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
@@ -112,8 +124,18 @@ def repos(tmp_path):
             git(upstream, "push", "-q", "origin", "main")
         git(upstream, "push", "-q", "origin", "--delete", name)
 
+    def change_on_origin(file: str) -> None:
+        """A later commit on origin's main that rewrites a file a branch added."""
+        git(upstream, "pull", "-q", "origin", "main")
+        (upstream / file).write_text("changed later\n", encoding="utf-8")
+        git(upstream, "commit", "-q", "-am", f"{file} changed later")
+        git(upstream, "push", "-q", "origin", "main")
+
     return SimpleNamespace(
         git=git,
+        tmp_path=tmp_path,
+        merged_heads=merged_heads,
+        change_on_origin=change_on_origin,
         finish_branch=finish_branch,
         main_checkout=main_checkout,
         land_on_origin=land_on_origin,
@@ -232,3 +254,52 @@ def test_a_local_main_that_diverged_is_reported_and_left_alone(repos):
 
     assert "was not updated" in repos.run_hook()
     assert repos.git(repos.main_checkout, "rev-parse", "main") == local
+
+
+def test_a_squash_merge_that_main_has_changed_since_needs_githubs_word(repos):
+    # Codex PR #247: main rewrote the same file after the squash merge, so merging the
+    # old branch into today's main conflicts and proves nothing either way.
+    repos.finish_branch("squashed", squash=True)
+    repos.change_on_origin("squashed.txt")
+
+    repos.run_hook()
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+
+    # A merged pull request with another head commit is not this branch.
+    repos.merged_heads.write_text("0" * 40 + "\n", encoding="utf-8")
+    repos.run_hook()
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+
+    tip = repos.git(repos.main_checkout, "rev-parse", "squashed")
+    repos.merged_heads.write_text(f"{'0' * 40}\n{tip}\n", encoding="utf-8")
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+    changed = repos.main_checkout / "squashed.txt"
+    assert changed.read_text(encoding="utf-8") == "changed later\n"
+
+
+def test_main_checked_out_in_another_folder_is_reported_not_switched(repos):
+    # Codex PR #247: git checks a branch out in one folder only, the switch would fail.
+    repos.finish_branch("finished")
+    elsewhere = repos.tmp_path / "main_elsewhere"
+    repos.git(repos.main_checkout, "worktree", "add", "-q", str(elsewhere), "main")
+
+    output = repos.run_hook()
+
+    assert "is on the finished branch finished" in output
+    assert "main_elsewhere" in output and "not switched" in output
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "finished"
+    # The folder that has main is synced all the same.
+    assert repos.commits_behind() == 0
+    assert (elsewhere / "finished.txt").exists()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows has no line break in a path")
+@pytest.mark.parametrize("repos", ["main\ncheckout"], indirect=True)
+def test_a_main_folder_with_a_line_break_in_its_path_is_still_found(repos):
+    # Codex PR #247: the plain worktree list breaks such a path over two lines.
+    repos.finish_branch("finished")
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+    assert repos.commits_behind() == 0
