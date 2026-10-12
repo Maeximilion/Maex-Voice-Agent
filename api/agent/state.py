@@ -86,6 +86,14 @@ class ConversationState(BaseModel):
     # The sentence that ended the last turn asked for the guest's number
     # (`guards.note_said`): the answer needs no word for what its digits are.
     asked_for_phone: bool = False
+    # Memory of the core, never sent to the model (guards.py, rule 3): the
+    # readback of the draft that waits for its yes, as the tool delivered it,
+    # and whether it ended the last turn (`guards.note_said`). Only then is it
+    # what the guest answers: a draft alone, or one with another sentence
+    # after its readback, waits for no yes. Read only while `stage` is
+    # readback_pending; a dropped draft leaves its text behind.
+    readback: str | None = None
+    readback_asked: bool = False
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.
     greeted: bool = False
@@ -359,12 +367,12 @@ def apply_tool_result(
         state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
         state.order_id = None
-        state.stage = "readback_pending"
+        _awaits_readback(state, result)
     elif name == "draft_order":
         state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
-        state.stage = "readback_pending"
+        _awaits_readback(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
         # readback starts from these lines.
@@ -383,6 +391,14 @@ def apply_tool_result(
         state.transferred = True
         state.stage = "transferred"
         state.transfer_to = result.data.get("transfer_to")
+
+
+def _awaits_readback(state: ConversationState, result: ToolResult) -> None:
+    """A new draft, or the same one drafted again: nobody has heard its
+    readback yet, whatever was read out before."""
+    state.stage = "readback_pending"
+    state.readback = result.data.get("readback")
+    state.readback_asked = False
 
 
 def _note_search(state: ConversationState, data: dict[str, Any]) -> None:

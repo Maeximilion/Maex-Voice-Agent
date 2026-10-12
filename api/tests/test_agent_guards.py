@@ -10,7 +10,13 @@ import pytest
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult
-from api.agent.guards import begin_turn, note_said, refusal
+from api.agent.guards import (
+    begin_turn,
+    note_said,
+    read_out,
+    refusal,
+    unheard_readback,
+)
 from api.agent.llm import ToolCall
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 
@@ -24,11 +30,27 @@ def new_state(**fields):
     return ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), **fields)
 
 
+READBACK = "Ein Tisch für vier Personen heute um sieben Uhr. Passt das so?"
+DRAFT_TOOL = {"reservation": "create_reservation", "order": "draft_order"}
+
+
+def drafted(state, entity="reservation") -> str:
+    """The tool delivered a draft with its readback; nothing is said yet."""
+    draft_id = str(uuid.uuid4())
+    apply_tool_result(
+        state,
+        DRAFT_TOOL[entity],
+        ToolResult(ok=True, data={f"{entity}_id": draft_id, "readback": READBACK}),
+    )
+    return draft_id
+
+
 def read_back(entity="reservation"):
     """A state in which a draft was read to the guest in an earlier turn."""
-    draft_id = uuid.uuid4()
-    state = new_state(stage="readback_pending", **{f"{entity}_id": draft_id})
-    return state, str(draft_id)
+    state = new_state()
+    draft_id = drafted(state, entity)
+    note_said(state, READBACK)
+    return state, draft_id
 
 
 def confirm(entity_id, entity="reservation"):
@@ -113,6 +135,64 @@ def test_confirm_in_the_turn_that_created_the_draft_is_refused():
     )
 
     assert refusal(state, start, "Ja, guten Tag", confirm(str(draft_id))) is not None
+
+
+@pytest.mark.parametrize("entity", ["reservation", "order"])
+def test_confirm_of_a_draft_nobody_read_out_is_refused(entity):
+    """The audit case of 12.10.2026: the model drafts, asks something else,
+    and the guest says yes to that. A draft alone waits for no yes."""
+    state = new_state()
+    draft_id = drafted(state, entity)
+    note_said(state, "Möchten Sie am Fenster sitzen?")
+    start = begin_turn(state)
+
+    assert refusal(state, start, "Ja", confirm(draft_id, entity)) is not None
+    assert unheard_readback(state) == READBACK
+
+
+@pytest.mark.parametrize(
+    ("said", "open_question"),
+    [
+        (READBACK, True),
+        (f"Gern. {READBACK}", True),
+        (f"{READBACK} \n", True),
+        # The last thing heard is another question, or the model's own words.
+        (f"{READBACK} Möchten Sie am Fenster sitzen?", False),
+        ("Ein Tisch für vier um sieben. Passt das so?", False),
+        ("Ja, Hunde sind willkommen.", False),
+    ],
+)
+def test_only_a_sentence_that_ends_with_the_readback_keeps_its_question_open(
+    said, open_question
+):
+    state, draft_id = read_back()
+    note_said(state, said)
+    start = begin_turn(state)
+
+    assert (refusal(state, start, "Ja", confirm(draft_id)) is None) is open_question
+    assert (unheard_readback(state) is None) is open_question
+
+
+def test_the_same_draft_made_again_has_to_be_read_out_again():
+    state, draft_id = read_back()
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": draft_id, "readback": READBACK}),
+    )
+
+    assert unheard_readback(state) == READBACK
+    assert read_out(state, "Alles klar.") == READBACK
+    assert read_out(state, f"Gern. {READBACK}") == f"Gern. {READBACK}"
+
+
+def test_nothing_is_read_out_without_a_draft_that_waits():
+    state, _ = read_back()
+    assert read_out(state, "Ja, Hunde sind willkommen.") == "Ja, Hunde sind willkommen."
+    apply_tool_result(state, "check_slot", ToolResult(ok=True, data={}))
+
+    assert unheard_readback(state) is None
+    assert read_out(state, "Um acht ist frei.") == "Um acht ist frei."
 
 
 def test_confirm_of_another_id_than_the_read_back_one_is_refused():

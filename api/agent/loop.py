@@ -140,6 +140,10 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
+        # Rule 3: a turn in which a tool delivered a draft, or a `confirm` did
+        # not go through, ends with the readback of the draft that waits, if
+        # the guest has not heard it as the last thing (guards.py).
+        readback_due = False
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -214,8 +218,11 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                if readback_due:
+                    say = guards.read_out(state, say)
                 # What the guest hears decides which offered dishes count as
-                # put to them (guards.py, rule 2).
+                # put to them, and whether a draft waits for its yes
+                # (guards.py, rules 2 and 3).
                 guards.note_said(state, say)
                 return TurnResult(
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
@@ -241,6 +248,10 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if "readback" in result.data or (
+                turn.tool_call.name == "confirm" and not result.ok
+            ):
+                readback_due = True
             called.append(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 

@@ -101,12 +101,14 @@ def line(item_id, quantity=1, **fields):
 def order_read_back(state, *lines):
     """A state in which an order with these lines was read to the guest."""
     order_id = uuid.uuid4()
+    readback = "Macht 15,50 Euro. Passt das so?"
     apply_tool_result(
         state,
         "draft_order",
-        ToolResult(ok=True, data={"order_id": str(order_id)}),
+        ToolResult(ok=True, data={"order_id": str(order_id), "readback": readback}),
         {"type": "pickup", "items": list(lines)},
     )
+    note_said(state, readback)
     assert state.stage == "readback_pending"
     return str(order_id)
 

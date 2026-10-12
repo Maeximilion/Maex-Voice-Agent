@@ -8,7 +8,10 @@ tool result with a `hint`. It costs one of the turn's tool hops, so a model
 that insists ends in the handoff to the team, not in a booking.
 
 - Rule 3: `confirm` only when the guest's current sentence is an explicit yes
-  to the draft that was read back before this turn.
+  to the draft that was read back before this turn. Read back means its
+  readback ended that turn, word for word: a draft alone waits for no yes, and
+  neither does one with another sentence after its readback. The core says the
+  readback itself where a model does not (`read_out`, `unheard_readback`).
 - Rule 2: `draft_order` only with dishes from a clear match of `search_menu`,
   or from candidates of an unclear match that the guest heard by name. The
   same holds for the order a model keeps across turns (`cart`, `take_cart`):
@@ -26,7 +29,7 @@ that insists ends in the handoff to the team, not in a booking.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from pydantic import ValidationError
@@ -122,8 +125,18 @@ def note_said(state: ConversationState, say: str) -> None:
 
     And whether the sentence asked for the guest's number: then the digits of
     the answer are a number to call without a word that says so
-    (`state.note_guest_details`)."""
+    (`state.note_guest_details`).
+
+    And whether it ended with the readback of the draft that waits: only then
+    can the yes of the next turn mean that draft (rule 3). A yes after
+    "Möchten Sie am Fenster sitzen?", or after the answer to a question in
+    between, is a yes to that."""
     state.asked_for_phone = names_a_phone_number(say)
+    state.readback_asked = (
+        state.stage == "readback_pending"
+        and bool(state.readback)
+        and say.rstrip().endswith(state.readback)
+    )
     heard = say.lower()
     named = {
         item_id
@@ -225,7 +238,12 @@ def refusal(
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
     which the core has taken by now."""
     if call.name == "confirm":
-        return None if _may_confirm(state, start, user_text, call) else _CONFIRM
+        if _may_confirm(state, start, user_text, call):
+            return None
+        # With a draft the guest has not heard as the last thing, the model
+        # gets the readback as the sentence to say: the yes may have meant
+        # another question. The loop says it where the model does not.
+        return replace(_CONFIRM, say=unheard_readback(state))
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
@@ -292,8 +310,31 @@ _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_N
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 
 
+def unheard_readback(state: ConversationState) -> str | None:
+    """The readback of a draft that waits while it is not the last thing the
+    guest heard: right after the draft, or once another sentence ended a turn.
+    No yes can mean that draft until the readback is said (rule 3)."""
+    if state.stage == "readback_pending" and not state.readback_asked:
+        return state.readback
+    return None
+
+
+def read_out(state: ConversationState, say: str) -> str:
+    """The sentence that ends a turn in which a draft was made or a `confirm`
+    did not go through: the model's when it ends with the readback that is
+    still unheard, or when none is; else the readback alone. A model that
+    asks something else after the draft, says the booking in its own words,
+    or answers "gebucht" to a yes that was refused, would leave the next yes
+    without the question it answers; and what the guest agrees to is the
+    sentence from the database, total included (CLAUDE.md §2 rules 1 and 3)."""
+    readback = unheard_readback(state)
+    if readback and not say.rstrip().endswith(readback):
+        return readback
+    return say
+
+
 def _readback_id(state: ConversationState) -> str | None:
-    if state.stage != "readback_pending":
+    if state.stage != "readback_pending" or not state.readback_asked:
         return None
     draft = state.order_id or state.reservation_id
     return str(draft) if draft else None
