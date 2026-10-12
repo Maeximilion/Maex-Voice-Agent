@@ -11,7 +11,13 @@ import uuid
 import pytest
 
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE, begin_turn, refusal
-from api.agent.guest_details import name_said, number_known, numbers_said, words_said
+from api.agent.guest_details import (
+    name_said,
+    number_known,
+    numbers_said,
+    same_number,
+    words_said,
+)
 from api.agent.llm import ToolCall
 from api.agent.state import apply_state_patch, initial_state, note_guest_details
 
@@ -89,6 +95,13 @@ def test_name_the_guest_spelled_is_taken(sentence, name):
         # Part of a word, or a word that only begins like one that was said.
         "Müll",
         "Abhol",
+        # The word that was said, with something added that is no word: the
+        # tool would store it as written (Codex PR #244, P2).
+        "Müller 999",
+        "Müller2",
+        "Müller!!!",
+        "Müller (Stammgast)",
+        "Müller_",
         # No name at all.
         "",
         "   ",
@@ -100,6 +113,13 @@ def test_name_nobody_said_is_not_taken(name):
     words = said("Guten Tag, ich möchte etwas zum Abholen bestellen", "Auf Müller")
 
     assert name_said(name, words) is False
+
+
+@pytest.mark.parametrize("name", ["O'Brien", "Müller, Anna", "Dr. Müller", " Müller "])
+def test_what_stands_between_the_words_of_a_name_is_part_of_it(name):
+    words = said("Auf Doktor Anna Müller, Dr. Müller, oder O'Brien")
+
+    assert name_said(name, words) is True
 
 
 def test_spelled_name_counts_only_within_one_sentence():
@@ -167,15 +187,50 @@ def test_digits_from_two_places_of_a_sentence_are_two_numbers():
     assert number_known("2347", None, said_numbers) is False
 
 
+@pytest.mark.parametrize(
+    ("sentence", "written"),
+    [
+        # Codex PR #244, P1: `normalize_phone` makes +16092026 of this date.
+        ("Einen Tisch am 16.09.2026 auf Müller", "16.09.2026"),
+        ("Einen Tisch am 16.09.2026 auf Müller", "16092026"),
+        ("Einen Tisch am 16.09.2026 auf Müller", "+16092026"),
+        # A day below ten begins like an area code.
+        ("Am 01.10.2026 um 19 Uhr", "01.10.2026"),
+        ("Am 01.10.2026 um 19 Uhr", "+491102026"),
+        ("Am 01/10/2026 bitte", "01/10/2026"),
+        ("Am 01-10-2026 bitte", "+491102026"),
+        ("Am 2026-10-01 bitte", "2026-10-01"),
+        ("Am 2026-10-01 bitte", "+20261001"),
+        ("Um 09.30 Uhr für 12 Personen", "09.30"),
+    ],
+)
+def test_date_or_time_the_guest_said_is_no_phone_number(sentence, written):
+    assert number_known(written, None, numbers(sentence)) is False
+
+
+@pytest.mark.parametrize("written", ["5551234", "555 1234", "+5551234"])
+def test_number_without_an_area_code_is_no_phone_number(written):
+    """`normalize_phone` would store it as an international one. Refused, the
+    model asks for the number with its area code."""
+    assert number_known(written, None, numbers("Meine Nummer ist 555 1234")) is False
+
+
+def test_same_number_in_two_spellings():
+    assert same_number("07221 5551234", CALLER) is True
+    assert same_number("+497221555123", CALLER) is False
+    assert same_number("unbekannt", "unbekannt") is False
+    assert same_number(None, None) is False
+
+
 def test_number_too_short_to_be_one_stays_known_as_the_guest_said_it():
     """The tool then says that the number was not understood, in its own
     sentence. Dropped here, the booking would go on under the caller ID while
     the guest believes to have given another number."""
-    said_numbers = numbers("Unter 555 12 bitte")
+    said_numbers = numbers("Unter 0171 2 bitte")
 
-    assert number_known("555 12", CALLER, said_numbers) is True
-    assert number_known("55512", CALLER, said_numbers) is True
-    assert number_known("555 13", CALLER, said_numbers) is False
+    assert number_known("0171 2", CALLER, said_numbers) is True
+    assert number_known("01712", CALLER, said_numbers) is True
+    assert number_known("0171 3", CALLER, said_numbers) is False
 
 
 # --- The state: what a model writes into the slots ---
@@ -282,21 +337,81 @@ def refused(state, call):
     return refusal(state, begin_turn(state), "", call)
 
 
+OTHER = "0171 2345678"
+NAMES_ANOTHER_NUMBER = "Auf Müller, erreichbar unter 0171 2345678"
+
+
 @pytest.mark.parametrize(
     "call",
     [
         reservation(guest_name="Müller", phone=CALLER),
-        reservation(guest_name="Müller", phone="0171 2345678"),
+        reservation(guest_name="Müller", phone="07221 5551234"),
         order(name="Müller", phone=CALLER),
-        order(name="Müller", phone="+491712345678"),
         callback(CALLER),
-        callback("0171 2345678"),
     ],
 )
-def test_call_with_what_the_guest_said_passes(call):
-    state = heard("Auf Müller, erreichbar unter 0171 2345678", caller=CALLER)
+def test_call_under_the_number_in_the_state_passes(call):
+    state = heard("Auf Müller bitte", caller=CALLER)
 
     assert refused(state, call) is None
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        reservation(guest_name="Müller", phone=OTHER),
+        order(name="Müller", phone="+491712345678"),
+        callback("0171/2345678"),
+    ],
+)
+def test_call_under_another_number_the_guest_named_passes(call):
+    """The model wrote it into `slots` first, as the answer format asks."""
+    state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
+    apply_state_patch(state, {"phone": OTHER})
+
+    assert refused(state, call) is None
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        reservation(guest_name="Müller", phone=CALLER),
+        order(name="Müller", phone=CALLER),
+        callback(CALLER),
+    ],
+)
+def test_call_under_the_caller_id_after_the_guest_named_another_is_refused(call):
+    """Codex PR #244, P2: the model puts the new number into `slots` and books
+    under the number the guest calls from. Both were known in the call."""
+    state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
+    apply_state_patch(state, {"phone": OTHER})
+
+    assert refused(state, call).hint == HINT_GUEST_PHONE
+
+
+def test_number_the_guest_named_counts_once_it_stands_in_the_state():
+    """The other way round: the number in the call, the old one in `slots`.
+    Which of the two the guest wants is not for the core to pick."""
+    state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
+
+    assert refused(state, order(name="Müller", phone=OTHER)).hint == HINT_GUEST_PHONE
+
+
+def test_without_a_number_in_the_state_one_the_guest_said_passes():
+    state = heard(NAMES_ANOTHER_NUMBER)
+
+    assert refused(state, order(name="Müller", phone="+491712345678")) is None
+
+
+@pytest.mark.parametrize("written", ["16.09.2026", "16092026", "+16092026"])
+def test_date_the_guest_said_books_nothing_as_a_phone_number(written):
+    """Codex PR #244, P1, with a suppressed caller ID."""
+    state = heard("Einen Tisch am 16.09.2026 auf Müller")
+
+    assert apply_state_patch(state, {"phone": written}) == {}
+    call = reservation(guest_name="Müller", phone=written)
+    assert refused(state, call).hint == HINT_GUEST_PHONE
+    assert refused(state, callback(written)).hint == HINT_GUEST_PHONE
 
 
 @pytest.mark.parametrize(

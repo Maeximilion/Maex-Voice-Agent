@@ -18,7 +18,8 @@ that insists ends in the handoff to the team, not in a booking.
   (`create_reservation`, `draft_order`, `create_callback`) gets them only as
   the guest said them, the number also when it is the caller ID
   (`agent/guest_details.py`). The same check keeps them out of `slots`
-  (`state.apply_state_patch`), without a hint: there the answer goes on.
+  (`state.apply_state_patch`), without a hint: there the answer goes on. With
+  a number in `slots`, that one is the number a call books under.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
@@ -32,7 +33,7 @@ from pydantic import ValidationError
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult, validation_hint
-from api.agent.guest_details import name_said, number_known
+from api.agent.guest_details import name_said, number_known, same_number
 from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
@@ -79,14 +80,15 @@ HINT_CART_FORM = (
     "Bestellung im Zustand ist unverändert."
 )
 HINT_GUEST_NAME = (
-    "Abgelehnt: diesen Namen hat der Gast in diesem Anruf nicht gesagt. Nie einen "
-    "Namen erfinden oder einen Platzhalter eintragen. Frag den Gast nach dem "
-    "Namen und übernimm ihn so, wie er ihn sagt."
+    "Abgelehnt: diesen Namen hat der Gast in diesem Anruf so nicht gesagt. Nie "
+    "einen Namen erfinden, ergänzen oder einen Platzhalter eintragen. Frag den "
+    "Gast nach dem Namen und übernimm ihn so, wie er ihn sagt, ohne Zusatz."
 )
 HINT_GUEST_PHONE = (
-    "Abgelehnt: diese Rufnummer hat der Gast in diesem Anruf nicht gesagt, und "
-    "sie ist nicht die Nummer, von der er anruft. Steht `phone` in `slots`, nimm "
-    "genau diese, Ziffer für Ziffer. Sonst frag den Gast nach der Rufnummer."
+    "Abgelehnt: unter dieser Rufnummer wird nichts angelegt. Es gilt `phone` aus "
+    "`slots`, Ziffer für Ziffer. Eine andere Nummer gilt nur, wenn der Gast sie in "
+    "diesem Anruf mit Vorwahl gesagt hat; trag sie dann zuerst in `slots` ein. "
+    "Steht keine in `slots`, frag den Gast nach der Rufnummer mit Vorwahl."
 )
 
 
@@ -217,9 +219,7 @@ def refusal(
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
-    if phone is not None and not number_known(
-        phone, state.caller_phone, state.said_numbers
-    ):
+    if phone is not None and not _phone_counts(state, phone):
         return _GUEST_PHONE
     if call.name == "draft_order":
         if not _all_known(state, call):
@@ -242,6 +242,20 @@ def _guest_details(call: ToolCall) -> tuple[Any, Any]:
     if isinstance(customer, dict):
         return customer.get("name"), customer.get("phone")
     return None, None
+
+
+def _phone_counts(state: ConversationState, phone: Any) -> bool:
+    """The number a call books under is the one the state holds, which
+    `apply_state_patch` took from the caller ID or from the guest. Any number
+    known in the call is not enough: a guest who names another number than
+    the one they call from is reached under that one (docs/05 §3), and a
+    model that writes it into `slots` and books under the caller ID all the
+    same would go unnoticed, the number is not read back (Codex PR #244, P2).
+    Without a number in the state it must be one the guest said."""
+    current = state.slots.get("phone")
+    if current is not None:
+        return same_number(phone, current)
+    return number_known(phone, state.caller_phone, state.said_numbers)
 
 
 def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:

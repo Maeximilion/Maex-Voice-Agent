@@ -966,6 +966,39 @@ def test_number_the_guest_says_in_this_very_turn_books(session, state):
     assert session.scalars(select(Reservation)).one().phone == "+491712345678"
 
 
+def test_reservation_goes_under_the_number_the_guest_chose(session, called_state):
+    """Codex PR #244, P2: the guest names another number than the one they
+    call from, the model writes it into `slots` and books under the caller ID
+    all the same. The number is not read back, so nobody would notice."""
+
+    class BooksUnderTheCallerId:
+        """First under the caller ID, then under the number of the state."""
+
+        calls = 0
+
+        def next_turn(self, system_prompt, state_json, input_text):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMTurn(
+                    tool_call=reserving("Müller", CALLER),
+                    state_patch={"guest_name": "Müller", "phone": "0171 2345678"},
+                )
+            if self.calls == 2:
+                self.hint = json.loads(input_text)["hint"]
+                return LLMTurn(
+                    tool_call=reserving("Müller", state_json["slots"]["phone"])
+                )
+            return LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?")
+
+    llm = BooksUnderTheCallerId()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(called_state, READBACK_TURN + ", bitte unter 0171 2345678")
+
+    assert llm.hint == HINT_GUEST_PHONE
+    assert session.scalars(select(Reservation)).one().phone == "+491712345678"
+
+
 def test_callback_to_a_number_nobody_said_is_not_created(session, state):
     """The team would call a stranger back."""
     llm = FakeLLM(

@@ -14,9 +14,12 @@ and the numbers of the call (`state.note_guest_details`), and takes from a
 model only what stands in there:
 
 - a name, when each of its words was said as a whole word in this call, or
-  was spelled letter by letter in one sentence (docs/05 §2, rung 3);
-- a number, when it is the caller ID or a number the guest said: one run of
-  digits in one sentence, compared in E.164.
+  was spelled letter by letter in one sentence (docs/05 §2, rung 3), and it
+  holds nothing but those words;
+- a number, when it is the caller ID or a phone number the guest said: one run
+  of digits in one sentence that begins with an area code or a country code,
+  compared in E.164. A date, a time or a number without an area code is no
+  phone number, whatever a model makes of its digits.
 
 Which of the words a guest said is the name stays with the model, and the
 readback follows it. Strict on purpose: a name or number that is missed costs
@@ -27,7 +30,8 @@ The sentences behind each rule are the cases of
 `api/tests/test_agent_guest_details.py`.
 
 ponytail: words are not understanding. Not heard: a number said in words
-("null eins sieben ..."), digit groups a guest separates with a comma or
+("null eins sieben ..."), a number without its area code or with a country
+code and no plus, digit groups a guest separates with a comma or
 names in two sentences, letter names when spelling ("Doppel-L", "Ypsilon"),
 a name written with another accent than it was said with, and a spelling the
 agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). Each
@@ -44,9 +48,14 @@ from api.domain.menu.numberwords import fold
 
 # Letters only: digits and punctuation belong to no name.
 _WORD = re.compile(r"[^\W\d_]+")
+# What may stand between the words of a name, next to spaces.
+_IN_A_NAME = "-'.,"
 # One number as it is said or typed: digits with the separators
 # `normalize_phone` drops between them. A comma or a word ends it.
 _DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().]*")
+# A date or a time begins with one or two digits and a separator. No phone
+# number does: an area code has three digits or more, the zero included.
+_DATE_LIKE = re.compile(r"\d{1,2}[./-]")
 
 
 def words_said(sentence: str) -> set[str]:
@@ -60,34 +69,57 @@ def words_said(sentence: str) -> set[str]:
 
 
 def name_said(name: object, words: set[str]) -> bool:
-    """Every word of the name is one the guest said. A name without a letter
+    """Every word of the name is one the guest said, and the name is nothing
+    but those words: a digit or a bracket a model adds was not said either,
+    and the tool would store it (Codex PR #244, P2). A name without a letter
     is none."""
     if not isinstance(name, str):
         return False
     parts = [fold(word) for word in _WORD.findall(name.lower())]
-    return bool(parts) and all(part in words for part in parts)
+    between = _WORD.sub("", name)
+    return (
+        bool(parts)
+        and all(part in words for part in parts)
+        and all(char.isspace() or char in _IN_A_NAME for char in between)
+    )
 
 
 def numbers_said(sentence: str) -> set[str]:
-    """The numbers of a guest sentence, each run of digits as one."""
-    return {_key(run.group()) for run in _DIGIT_RUN.finditer(sentence)}
+    """The phone numbers of a guest sentence, each run of digits as one."""
+    keys = {_key(run.group()) for run in _DIGIT_RUN.finditer(sentence)}
+    return keys - {""}
 
 
 def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:
     """`caller` is the caller ID in E.164, `numbers` what the guest said. A
     model may write the number in another spelling, never with other digits."""
-    if not isinstance(number, str):
-        return False
     key = _key(number)
     return bool(key) and (key == caller or key in numbers)
 
 
-def _key(written: str) -> str:
-    """One form for the same number: E.164. What is no phone number keeps its
-    digits, so a number the guest gave too short still counts as said: the
-    tool then answers that it was not understood, in its own sentence, where
-    dropping it here would let the booking go on under the caller ID."""
+def same_number(number: object, other: object) -> bool:
+    """Two spellings of one phone number."""
+    return bool(_key(number)) and _key(number) == _key(other)
+
+
+def _key(written: object) -> str:
+    """One form for the same number: E.164. Empty for what is no phone number
+    as it is said: only a run that begins with the zero of an area code or the
+    plus of a country code is one. A date, a time, a number of guests or a
+    year are digits too, and `normalize_phone` would make "16.09.2026" the
+    number +16092026 (Codex PR #244, P1). A number without an area code is
+    none either: it would be stored as an international one.
+
+    A number in that form that is too short keeps its digits and so still
+    counts as said: the tool then answers that it was not understood, in its
+    own sentence, where dropping it here would let the booking go on under the
+    caller ID."""
+    if not isinstance(written, str):
+        return ""
+    text = written.strip()
+    if not text.startswith(("0", "+")) or _DATE_LIKE.match(text):
+        return ""
     try:
-        return normalize_phone(written)
+        return normalize_phone(text)
     except InvalidInput:
-        return "".join(filter(str.isdigit, written))
+        return "".join(filter(str.isdigit, text))
