@@ -106,6 +106,8 @@ def test_name_the_guest_spelled_is_taken(sentence, name):
         "Müller--Müller",
         # Blanks the tools would store as written (the review after it).
         "Müller\n\n  Müller",
+        "Müller\nMüller",
+        "Müller\tMüller",
         "Müller  Müller",
         # No name at all.
         "",
@@ -136,6 +138,8 @@ def test_letter_that_is_no_part_of_the_spelling_is_not_joined_to_it():
         "S 12 und auf den Namen M, E, I, E, R",
         # The review after it: a blank or an apostrophe instead of the digit.
         "Ich nehme die 23 a. M E I E R",
+        "Die 23 a, M E I E R",
+        "Die 23 a M E I E R",
         "Ich bin's, M E I E R",
         "Ich buchstabier's: M E I E R",
         "So schreibt man's: M-E-I-E-R",
@@ -143,6 +147,24 @@ def test_letter_that_is_no_part_of_the_spelling_is_not_joined_to_it():
         assert name_said("Meier", said(sentence)) is True
         assert name_said("Ameier", said(sentence)) is False
         assert name_said("Smeier", said(sentence)) is False
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Review of 31a3a81: periods between the letters.
+        "M.E.I.E.R.",
+        "M. E. I. E. R.",
+        "M wie Martha. E wie Emil. I wie Ida. E wie Emil. R wie Richard.",
+        # Digits next to the row are no part of it and take no letter away.
+        "M E I E R 19 Uhr",
+        "M E I E R 4 Personen",
+        "Für 4 M E I E R",
+        "Tisch 5, M E I E R",
+    ],
+)
+def test_spelled_name_keeps_its_letters(sentence):
+    assert name_said("Meier", said(sentence)) is True
 
 
 def test_two_names_spelled_in_one_sentence_are_two():
@@ -245,6 +267,37 @@ def test_date_or_time_the_guest_said_is_no_phone_number(sentence, written):
     assert number_known(written, None, numbers(sentence)) is False
 
 
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Einen Tisch am 01 10 2026 auf Müller",
+        "Am 1 10 2026 bitte",
+        "Am 01 10 26",
+        "Tisch für vier am 09 12 2026",
+    ],
+)
+def test_date_written_with_blanks_is_no_phone_number(sentence):
+    """Codex PR #244, P1: without the periods "01 10 2026" passed the date
+    check and became +491102026."""
+    said_numbers = numbers(sentence)
+
+    assert said_numbers == set()
+    for written in ("01 10 2026", "01102026", "+491102026", "01 10 26", "+4911026"):
+        assert number_known(written, None, said_numbers) is False
+
+
+def test_trunk_zero_in_brackets_keeps_the_country_code():
+    """Review of 31a3a81: read at the bracket as two, the tail of the Austrian
+    number became a German one."""
+    assert numbers("Erreichbar unter +43 (0)664 1234567") == {"+436641234567"}
+    assert number_known("+496641234567", None, numbers("+43 (0)664 1234567")) is False
+
+
+def test_three_groups_that_are_no_date_stay_a_number():
+    """There is no month 21: a number someone writes in groups of two."""
+    assert numbers("Unter 07 21 5551 erreichbar") == {"+497215551"}
+
+
 @pytest.mark.parametrize("written", ["5551234", "555 1234", "+5551234"])
 def test_number_without_an_area_code_is_no_phone_number(written):
     """`normalize_phone` would store it as an international one. Refused, the
@@ -266,9 +319,9 @@ def test_number_without_an_area_code_is_no_phone_number(written):
         "Für 4, 0171 2345678",
         "Tisch für 4 am 16.09. um 19 Uhr, meine Nummer ist 0171 2345678",
         "Die 23 bitte, auf Müller, 0171 2345678",
-        # Of two numbers the guest ends with the one that counts.
-        "Die alte war 0172 3456789, die neue ist 0171 2345678",
-        "0172 3456789 - 0171 2345678",
+        # The trunk zero in brackets belongs to the number it stands in.
+        "+49 (0) 171 2345678",
+        "0049 (0)171 2345678",
     ],
 )
 def test_last_digits_of_a_turn_are_the_number(sentence):
@@ -300,6 +353,18 @@ def test_last_digits_of_a_turn_are_the_number(sentence):
         "Unter 0721 / 5551234 bitte",
         # A date written with blanks, with other digits behind it.
         "Am 01 10 2026 um 19 Uhr",
+        # The last digits are a valid number, and only the tail of the one
+        # the guest said (review of 31a3a81).
+        "Meine Nummer ist 0171 20, 034567",
+        "0171 20 - 034567",
+        "0171 20. 034567",
+        "0171 20 äh 034567",
+        "0043, 0664 1234567",
+        "0033, 06 12 34 56 78",
+        "49 171 20 äh 034567",
+        # Two numbers: which of them is meant is not for the core to pick.
+        "Die alte war 0172 3456789, die neue ist 0171 2345678",
+        "0172 3456789 - 0171 2345678",
     ],
 )
 def test_digits_followed_by_more_digits_are_no_number(sentence):
@@ -317,6 +382,9 @@ def test_digits_followed_by_more_digits_are_no_number(sentence):
         "+491102026",
         "+491712345678",
         "+497215551234",
+        "+4934567",
+        "+496641234567",
+        "+49612345678",
     ):
         assert number_known(written, None, said_numbers) is False
 

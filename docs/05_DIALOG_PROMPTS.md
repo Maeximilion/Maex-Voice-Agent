@@ -306,10 +306,10 @@ not understanding, and strict on purpose: what it misses costs the guest one mor
 question, what it wrongly took would book under a stranger.
 
 *The name.* Every word of it was a whole word of a guest sentence, or the guest spelled
-it: a row of single letters with nothing but blanks, commas or hyphens between them ("M E
-I E R", "M-E-I-E-R", "M wie Martha, A wie Anton"). Another word or a period ends the row,
-and a letter that hangs on a digit or an apostrophe is none of it (the a of "23a", the s
-of "ich bin's"). The name a model writes must be those words and nothing else, with one
+it: a row of single letters with nothing but blanks, commas, hyphens or periods between
+them ("M E I E R", "M-E-I-E-R", "M. E. I. E. R.", "M wie Martha, A wie Anton"). Another
+word ends the row, and a letter that belongs to a card number or hangs on an apostrophe is none of it (the a
+of "23a" and of "23 a", the s of "ich bin's"). The name a model writes must be those words and nothing else, with one
 separator between two of them; "Müller 999", "---Müller---" and a name with a line break
 in it are refused. Which of the said words is the name stays with the model, the readback
 follows. A title the guest did not say ("Herr Müller" after "Müller") is refused like any
@@ -321,25 +321,28 @@ valid number. Digits that are followed by more digits are none: the number may g
 behind them ("0171 234 äh 5678", "0171 234. 5678", "0721 555 und dann 1234" begin with a
 valid number that has digits missing) or it ended and they are something else ("0171
 2345678 - 19 Uhr passt" read as one is a number nobody said). The digits do not say which,
-so the guest is asked again and says the number alone. Digits before the number do no
-harm ("für 4 am 16.09., meine Nummer ist 0171 2345678"). Inside a number may stand blanks,
+so the guest is asked again and says the number alone. The same holds when other digits
+of the turn may be the head of the number, because they begin with a zero or a plus or are
+six or more: "0171 20, 034567" and "0043, 0664 1234567" end with a valid German number
+nobody said, and of two numbers in one turn the core picks neither. A count, a date or a
+dish before the number does no harm ("für 4 am 16.09., meine Nummer ist 0171 2345678").
+The trunk zero in brackets belongs to its number ("+43 (0)664 1234567"). Inside a number may stand blanks,
 a slash or a hyphen without blanks, brackets around the area code and a period between
 digits; a comma, a period before a blank, and a dash or slash next to a blank end it. A
-date, a time, a run too short or too long, and a number without its area code are no
-phone number. A number that is taken stands in `slots` in E.164.
+date (also one written with blanks, "01 10 2026"), a time, a run too short or too long,
+and a number without its area code are no phone number. A number that is taken stands in `slots` in E.164.
 
 *Not heard, each costing one more question and never a booking:* a number said in words
 ("null eins sieben ..."), a number without its area code or with a country code and no
-plus, a number followed by other digits in the same turn, one written with a dash or a
-slash between blanks ("0721 / 5551234") or named in two turns, letter names when spelling
+plus, a number followed by other digits in the same turn or named next to a second one,
+one written with a dash or a slash between blanks ("0721 / 5551234") or named in two turns, letter names when spelling
 ("Doppel-L", "Ypsilon"), a name with another accent than it was said with, and a spelling
 the agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). How numbers and
 letters arrive as text is decided by the ear of the voice layer (T-10.5); the check is
 extended there.
 
 *Not stopped:* blanks alone do not tell where a number ends, so "0171 2345678 19 Uhr" is
-read as one number of thirteen digits, and a date written with blanks as the last digits
-of a turn ("am 01 10 2026") as a number; a model that writes exactly those digits passes.
+read as one number of thirteen digits; a model that writes exactly those digits passes.
 Which of two phone numbers a guest said is the one to call stays with the model, as with
 the words of a name: the core has no rule for the context a number stands in, and a
 number taken from speech is not read back today (Open Points in `docs/01_STATUS.md`). A
