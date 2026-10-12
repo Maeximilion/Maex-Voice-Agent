@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.27
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.29
 
 ---
 
@@ -370,6 +370,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Date | What |
 |---|---|
 | 12.10.2026 | **Correction at the read-back** (eval `abholung_0079`): a card number named after a no replaces the dish with the same digits or the only dish, keeps quantity, note and the rest of the order, and the order is read back again; anything less clear starts again |
+| 12.10.2026 | **Tests: the speech kit's tests pass as root too** (audit finding, P2): four tests of `api/tests/test_telephony_speech_spike.py` failed under `make test`, because the API container is root and `speech_spike.main` refuses root before the mocked run starts. The module's tests now give the kit an ordinary uid (its own view of `os` only, pytest keeps the real one for its temporary folders), and a separate test pins that root is refused before Docker is asked or the run directory is touched. No change outside the test file. Run as uid 0 and as uid 1000 |
 | 12.10.2026 | **Bug: S12 heard as "ist zwölf"** (eval `abholung_0077`): "ist" directly before a number keeps the S number as a candidate where the menu has the prefix, the search asks by name, never takes such a number without a question. 14 lines in the number eval (195), re-judged on the transcripts of T-10.3: picked ear 12 to 8 silent wrong numbers of 724 |
 | 12.10.2026 | **Bug: the spoken total** (eval `abholung_0076`): `spoken_euro` writes "25 Euro 70", "7 Euro", "50 Cent", "17 Euro 5 Cent" and "ein Euro 50" instead of "25,70 Euro"; the read-back and the surcharge sentence of `search_menu` follow. `expected.readback` in the eval judge. Checked against the phonemes of the test-phase voice for 0 to 300 Euro |
 | 12.10.2026 | **T-2.4 part 4, the guard for guest details:** a name is taken from a model only when the guest said or spelled it, a phone number only when it is the caller ID or a number the guest said (`agent/guest_details.py`, `state.note_guest_details`, called by `loop.py` before anything else). An unsaid one is dropped from `slots`; `create_reservation`, `draft_order` and `create_callback` are refused with a hint (`guards.py`). No prompt change, no migration. 141 new tests, 36 fail with the check off; evals on the stand-in case by case as on `main`, plus the new case `reservierung_0031` (28/28, targets 1/27, numbers 181/181). Not measured on a real model. Found on the way: a number without an area code becomes an international one (Open Points) |
@@ -455,7 +456,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.0.27 · 12.10.2026:** Correction at the read-back: a card number named after a no replaces the dish and the order is read back again (eval abholung_0079)
+- **v2.0.29 · 12.10.2026:** Correction at the read-back: a card number named after a no replaces the dish and the order is read back again (eval abholung_0079)
+- **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
 - **v2.0.26 · 12.10.2026:** Bug fixed: S12 heard as 'ist zwölf' asks which dish instead of taking the 12 (eval abholung_0077); letter dropped completely and ending g heard as 'die' left for Maxi
 - **v2.0.25 · 12.10.2026:** Bug fixed: the read-back speaks the total as two plain numbers (25 Euro 70, 50 Cent), eval abholung_0076; evals can expect a piece of the read-back
 - **v2.0.23 · 12.10.2026:** The seven open review threads of PR #244 fixed: the number needs a word for it and is written down by the core, names are counted, unspaced hyphen, spaced date, trailing period, Unicode form
