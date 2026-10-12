@@ -68,3 +68,11 @@ def test_routing_reads_the_mode_fresh_from_the_database(session, tenant):
 def test_unknown_tenant_is_not_found(session, tenant):
     with pytest.raises(NotFound):
         call_routing(session, uuid.uuid4())
+
+
+def test_routing_carries_the_tenants_call_limit(session, tenant):
+    """The phone line ends a call by this value, not by the setting of the
+    same name (audit 12.10.2026)."""
+    set_config(session, tenant.id, max_call_seconds=30)
+
+    assert call_routing(session, tenant.id).max_call_seconds == 30
