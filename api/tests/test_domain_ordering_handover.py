@@ -287,6 +287,11 @@ def test_http_token_und_huelle(http, session, tenant_id, order_id, monkeypatch):
     assert http.post("/v1/kitchen/claim", json=body, headers=agent).status_code == 401
     auth = {"Authorization": "Bearer bruecke-geheim"}
 
+    # Over HTTP the server reads its own clock, no test can hand it _now():
+    # where the wall clock was set back since the confirm, the ticket would
+    # not be due yet (Setup.make_due in test_printbridge.py).
+    session.execute(update(OutboxEvent).values(next_attempt_at=_now(-60)))
+    session.commit()
     response = http.post("/v1/kitchen/claim", json=body, headers=auth)
     assert response.status_code == 200
     [ticket] = response.json()["data"]["tickets"]
