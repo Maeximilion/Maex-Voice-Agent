@@ -36,7 +36,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | pickup_wait_minutes | INT | aktuelle Wartezeit Abholung |
 | delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
 | team_phone | TEXT | Durchwahl für `transfer_to_team` |
-| max_call_seconds | INT | Kostenbremse, Default 420 |
+| max_call_seconds | INT | Kostenbremse, Default 420. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
 | reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
 | reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
 

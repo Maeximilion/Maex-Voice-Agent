@@ -418,6 +418,8 @@ Der einzige Übergang von `draft` nach `confirmed`.
 
 **Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `pickup_code` bleibt bei Reservierungen `null`.
 
+**Reservations, seats checked again (#250):** a draft holds its seats only while its call can confirm it: the call has not ended and the draft is younger than `service_config.max_call_seconds`. An older draft no longer counts in `check_slot`, so its seats may be given to someone else. `confirm` therefore checks the window again, under the same day lock as `create_reservation` and without the draft's own seats, and answers `conflict` with `say` "Dieser Tisch ist in der Zwischenzeit leider vergeben worden. Zu welcher anderen Uhrzeit passt es Ihnen?" when the party no longer fits. Seats only: opening hours and lead times were checked when the draft was made. Within a live call the check always passes, because the draft still holds what it asks for.
+
 **Bestellungen** (`domain/ordering/confirm.py`, seit 23.09.2026):
 
 - `pickup_code` ist „A" plus laufende Nummer je Mandant und Betriebstag (A1, A2, …; Betriebstag ab 05:00, `core/time`). Der Tag kommt aus dem Anlagezeitpunkt der Bestellung. Zwei gleichzeitige Bestätigungen zählen nacheinander (Sperre je Mandant und Tag), nie zweimal derselbe Code.

@@ -2,7 +2,7 @@
 
 import threading
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,9 +12,20 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
-from api.domain.reservations import create as reservations_create
+from api.domain.calls import end_call
+from api.domain.confirm import confirm
+from api.domain.reservations import capacity as reservations_capacity
 from api.domain.reservations import create_reservation
-from api.models import AuditLog, Call, Capacity, OpeningHours, Reservation
+from api.models import (
+    AuditLog,
+    Call,
+    Capacity,
+    OpeningHours,
+    Reservation,
+    ServiceConfig,
+)
+from api.schemas.calls import EndCallRequest
+from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
 from scripts.seed import seed
 
@@ -254,6 +265,106 @@ def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id)
         create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
 
 
+# --- A draft holds its seats only while its call can still confirm it (#250) ---
+
+
+def _other_call(session, tenant_id) -> uuid.UUID:
+    call = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-2",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(call)
+    session.commit()
+    return call.id
+
+
+def _call_limit(session, tenant_id) -> timedelta:
+    """From the database, like the code under test: no number of its own."""
+    return timedelta(seconds=session.get(ServiceConfig, tenant_id).max_call_seconds)
+
+
+def _hang_up(session, tenant_id, call_id, at: datetime) -> None:
+    end_call(
+        session,
+        EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome="abandoned"),
+        now=at,
+    )
+
+
+def test_a_draft_of_a_live_call_keeps_its_seats(session, tenant_id, call_id):
+    """While the guest is on the line nobody else gets the table."""
+    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
+    other = _other_call(session, tenant_id)
+
+    with pytest.raises(Conflict):
+        create_reservation(session, request(tenant_id, other, party_size=2), now=NOW)
+
+
+def test_a_draft_of_an_ended_call_gives_its_seats_back(session, tenant_id, call_id):
+    """Forty seats asked for, then hung up at the read-back: the evening must
+    not stay full for everyone who calls after."""
+    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
+    _hang_up(session, tenant_id, call_id, NOW + timedelta(minutes=1))
+    other = _other_call(session, tenant_id)
+
+    later = NOW + timedelta(minutes=2)
+    draft = create_reservation(
+        session, request(tenant_id, other, party_size=40), now=later
+    )
+
+    assert draft.status == "draft"
+
+
+def test_a_draft_past_the_call_limit_gives_its_seats_back(session, tenant_id, call_id):
+    """A call that never got its end event (process died, line dropped) must not
+    hold seats for good either: no call lasts longer than the limit."""
+    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
+    other = _other_call(session, tenant_id)
+    limit = _call_limit(session, tenant_id)
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            request(tenant_id, other, party_size=2),
+            now=NOW + limit - timedelta(seconds=1),
+        )
+    draft = create_reservation(
+        session,
+        request(tenant_id, other, party_size=2),
+        now=NOW + limit + timedelta(seconds=1),
+    )
+
+    assert draft.status == "draft"
+
+
+def test_a_confirmed_table_keeps_its_seats_after_the_call(session, tenant_id, call_id):
+    """Only drafts expire. A yes is a booking, whatever the call did after."""
+    draft = create_reservation(
+        session, request(tenant_id, call_id, party_size=40), now=NOW
+    )
+    confirm(
+        session,
+        ConfirmRequest(
+            call_id=call_id,
+            tenant_id=tenant_id,
+            entity="reservation",
+            entity_id=draft.reservation_id,
+            idempotency_key=uuid.uuid4().hex,
+        ),
+        now=NOW,
+    )
+    _hang_up(session, tenant_id, call_id, NOW + timedelta(minutes=1))
+    other = _other_call(session, tenant_id)
+    much_later = NOW + _call_limit(session, tenant_id) * 3
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session, request(tenant_id, other, party_size=2), now=much_later
+        )
+
+
 def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
     """Gleicher Schlüssel, gleiche Antwort — auch wenn der Tag zwischen den Aufrufen wechselt."""
     kurz_vor_mitternacht = datetime(2026, 9, 15, 23, 50, tzinfo=BERLIN)
@@ -370,7 +481,7 @@ def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
 
     with Session(engine) as a, Session(engine) as b:
         # A prueft gerade Montag 23:30, die Transaktion ist offen.
-        reservations_create._lock_capacity_days(a, tenant, montag)
+        reservations_capacity.lock_capacity_days(a, tenant, montag)
         b.execute(text("SET LOCAL statement_timeout = 300"))
         with pytest.raises(OperationalError) as waited:
             create_reservation(
