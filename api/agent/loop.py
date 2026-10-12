@@ -140,6 +140,9 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
+        # Rule 3: a yes was refused for a draft the guest had not heard last.
+        # The turn then ends with the sentence of that draft (`guards.reread`).
+        reread_due = False
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -214,8 +217,11 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                if reread_due:
+                    say = guards.reread(state, say)
                 # What the guest hears decides which offered dishes count as
-                # put to them (guards.py, rule 2).
+                # put to them, and whether a draft was read out (guards.py,
+                # rules 2 and 3).
                 guards.note_said(state, say)
                 return TurnResult(
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
@@ -237,6 +243,8 @@ class ConversationLoop:
                     turn.tool_call.name,
                     refused,
                 )
+                # Of the refusals only that of a `confirm` carries a sentence.
+                reread_due = reread_due or bool(refused.say)
                 result = refused
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
