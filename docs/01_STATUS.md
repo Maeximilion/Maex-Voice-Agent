@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.19
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.21
 
 ---
 
@@ -447,15 +447,17 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.0.19 · 12.10.2026:** Verification of 8835fa3 and Codex on 31a3a81 (PR #244): an hour is no head of a number, digits in pairs are; three open points
-- **v2.0.18 · 12.10.2026:** Codex review of ce93c95 and verification of 31a3a81 on PR #244: the last digits count only without a possible head before them; dates with blanks, card letters, spelled periods
-- **v2.0.17 · 12.10.2026:** Independent review of PR #244: only the last digits of a turn are the number, the stand-in goes by the hint of a refusal, spelled rows and blanks in a name; two open points
-- **v2.0.16 · 12.10.2026:** Codex review of 13ed34f on PR #244: a number whose end is unclear is none, the stand-in asks again in every flow, separators and spelled rows of a name; open point: a transfer that finds nobody
-- **v2.0.15 · 12.10.2026:** Codex review of the merge head of PR #244: a dash between blanks is read both ways; open point: a number taken from speech is not read back
-- **v2.0.14 · 12.10.2026:** Own review of PR #244: eval case reservierung_0031 for a number without its area code; the scripted stand-in asks again instead of ending the turn with a KeyError
-- **v2.0.13 · 12.10.2026:** Own review of PR #244 (Codex out of quota): a number is E.164 or nothing, a period ends it, the slot holds E.164, the phone hint names the key
-- **v2.0.12 · 12.10.2026:** Review of PR #244: a date or a number without an area code is no phone number, a name holds nothing but said words, a tool call books under the number in the slots
-- **v2.0.11 · 12.10.2026:** T-2.4 part 4: a name or phone number the guest did not say is dropped from the slots and refused in create_reservation, draft_order and create_callback
+- **v2.0.21 · 12.10.2026:** Verification of 8835fa3 and Codex on 31a3a81 (PR #244): an hour is no head of a number, digits in pairs are; three open points
+- **v2.0.20 · 12.10.2026:** Codex review of ce93c95 and verification of 31a3a81 on PR #244: the last digits count only without a possible head before them; dates with blanks, card letters, spelled periods
+- **v2.0.19 · 12.10.2026:** Independent review of PR #244: only the last digits of a turn are the number, the stand-in goes by the hint of a refusal, spelled rows and blanks in a name; two open points
+- **v2.0.18 · 12.10.2026:** Codex review of 13ed34f on PR #244: a number whose end is unclear is none, the stand-in asks again in every flow, separators and spelled rows of a name; open point: a transfer that finds nobody
+- **v2.0.17 · 12.10.2026:** Codex review of the merge head of PR #244: a dash between blanks is read both ways; open point: a number taken from speech is not read back
+- **v2.0.16 · 12.10.2026:** Own review of PR #244: eval case reservierung_0031 for a number without its area code; the scripted stand-in asks again instead of ending the turn with a KeyError
+- **v2.0.15 · 12.10.2026:** Own review of PR #244 (Codex out of quota): a number is E.164 or nothing, a period ends it, the slot holds E.164, the phone hint names the key
+- **v2.0.14 · 12.10.2026:** Review of PR #244: a date or a number without an area code is no phone number, a name holds nothing but said words, a tool call books under the number in the slots
+- **v2.0.13 · 12.10.2026:** T-2.4 part 4: a name or phone number the guest did not say is dropped from the slots and refused in create_reservation, draft_order and create_callback
+- **v2.0.12 · 12.10.2026:** Sync hook: Codex round two on PR #247 fixed (squash merge that main changed since, main checked out elsewhere, line break in a path)
+- **v2.0.11 · 12.10.2026:** Pulling is Claude's job: sync hook returns the main folder to main after a finished branch and moves main where no folder has it; /task, /bug and /done fetch before branching and before a merge
 - **v2.0.10 · 12.10.2026:** Backup and restore create the gpg home themselves; two runs on a fresh machine no longer race gpg's own unlocked creation (flaky CI test)
 - **v2.0.9 · 12.10.2026:** Open points from Maxi's listening test: spoken total (25,70 Euro), speech kit on the real menu
 - **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services
