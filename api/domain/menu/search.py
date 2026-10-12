@@ -58,7 +58,7 @@ from api.domain.menu.wishes import (
     wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
-from api.schemas.menu import MenuHit, SearchResult, Wish
+from api.schemas.menu import MatchType, MenuHit, SearchResult, Wish
 
 SAY_NOT_FOUND = (
     "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?"
@@ -155,7 +155,7 @@ def _hits(session: Session, items: list[MenuItem], now: datetime) -> list[MenuHi
 
 
 def _single(
-    session: Session, match_type: str, item: MenuItem, now: datetime
+    session: Session, match_type: MatchType, item: MenuItem, now: datetime
 ) -> SearchResult:
     say = _sold_out_say(session, item, now) if _sold_out(item, now) else None
     return SearchResult(
@@ -190,7 +190,7 @@ CLEAR_MATCHES = ("exact_number", "alias", "fuzzy_single")
 
 
 def say_understood(
-    understood: list[tuple[str, MenuHit, Wish | None]], said: str
+    understood: list[tuple[MatchType, MenuHit, Wish | None]], said: str
 ) -> str | None:
     """Repeats at once what was clearly understood - the way a person on the
     phone does (Maxi, PR #127).

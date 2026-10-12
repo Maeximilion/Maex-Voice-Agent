@@ -29,9 +29,12 @@ class CreateReservationRequest(ToolRequest):
     note: str | None = Field(default=None, max_length=500)
 
 
+ReservationStatus = Literal["draft", "confirmed", "cancelled"]
+
+
 class ReservationDraft(BaseModel):
     reservation_id: uuid.UUID
-    status: Literal["draft", "confirmed", "cancelled"]
+    status: ReservationStatus
     reserved_for: datetime
     party_size: int
     guest_name: str

@@ -269,7 +269,9 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
         state.intent = wish
 
 
-_LINES = TypeAdapter(Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)])
+_LINES: TypeAdapter[list[OrderItemIn]] = TypeAdapter(
+    Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)]
+)
 
 
 def cart_lines(raw: Any) -> list[dict[str, Any]]:

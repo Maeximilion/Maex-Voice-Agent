@@ -10,8 +10,13 @@ import importlib.util
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
+
+if TYPE_CHECKING:
+    # For the annotations only; the tests use the module loaded below.
+    from scripts.project_report import Item
 
 _MODULPFAD = Path(__file__).resolve().parents[2] / "scripts" / "project_report.py"
 _spec = importlib.util.spec_from_file_location("project_report", _MODULPFAD)
@@ -38,7 +43,7 @@ def eintrag(
     iteration: str | None = "Iteration 1",
     tage_alt: int = 0,
     node_id: str | None = None,
-) -> project_report.Item:
+) -> Item:
     """Ein Board-Eintrag mit sinnvollen Vorgaben; jeder Test aendert nur, was er prueft."""
     felder: dict[str, str] = {}
     if status:
@@ -368,7 +373,7 @@ def test_gleiche_nummer_aus_zwei_repos_ist_keine_dopplung() -> None:
 # Codex-Review PR #129, dritte Runde: archivierte und wieder geoeffnete Eintraege
 
 
-def archiviert(number: int, *, state: str, status: str = "Done") -> project_report.Item:
+def archiviert(number: int, *, state: str, status: str = "Done") -> Item:
     item = eintrag(number, state=state, status=status, tage_alt=30)
     item.is_archived = True
     return item
@@ -399,7 +404,7 @@ def test_fix_fasst_archivierte_nicht_an() -> None:
 # Codex-Review PR #129, vierte Runde: ohne Merge geschlossene Pull Requests
 
 
-def pull_request(number: int, *, state: str, status: str) -> project_report.Item:
+def pull_request(number: int, *, state: str, status: str) -> Item:
     item = eintrag(number, state=state, status=status)
     item.kind = "PullRequest"
     return item
@@ -607,7 +612,7 @@ def test_findings_json_traegt_label_und_url() -> None:
 # Codex-Review PR #134: das Entscheidungs-Issue darf sich nicht selbst melden
 
 
-def pflege_issue(**kwargs) -> project_report.Item:
+def pflege_issue(**kwargs) -> Item:
     item = eintrag(200, **kwargs)
     item.labels = frozenset({"projektpflege"})
     return item

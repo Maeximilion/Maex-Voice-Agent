@@ -10,6 +10,7 @@ Reservierung um 00:30 gehört zum Abend davor, so wie Küche und Kasse rechnen.
 
 import uuid
 from datetime import datetime
+from typing import Final
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,7 +19,7 @@ from api.core.time import business_day, business_day_bounds_utc
 from api.models import Reservation
 from api.schemas.gui import TodayReservation
 
-CONFIRMED = "confirmed"
+CONFIRMED: Final = "confirmed"
 
 
 def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:

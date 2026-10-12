@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime, timedelta
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
@@ -14,7 +15,11 @@ from api.domain.customers.phone import normalize_phone
 from api.domain.reservations.slots import check_slot
 from api.domain.reservations.spoken import spoken_date, spoken_party_size, spoken_time
 from api.models import AuditLog, Call, Reservation, Tenant
-from api.schemas.reservations import CreateReservationRequest, ReservationDraft
+from api.schemas.reservations import (
+    CreateReservationRequest,
+    ReservationDraft,
+    ReservationStatus,
+)
 
 ACTOR_AGENT = "agent"
 ACTION_DRAFT_CREATED = "reservation.draft_created"
@@ -128,7 +133,9 @@ def _replay(
 def _draft(r: Reservation, zone: ZoneInfo) -> ReservationDraft:
     return ReservationDraft(
         reservation_id=r.id,
-        status=r.status,
+        # The column is text; ck_reservations_status keeps it to these values,
+        # and ReservationDraft checks it again.
+        status=cast(ReservationStatus, r.status),
         reserved_for=r.reserved_for,
         party_size=r.party_size,
         guest_name=r.guest_name,

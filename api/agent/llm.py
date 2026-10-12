@@ -337,12 +337,15 @@ class ChatCompletionsLLM:
         reported = payload.get("usage") if isinstance(payload, dict) else None
         if not isinstance(reported, dict):
             return
-        tokens = (reported.get("prompt_tokens"), reported.get("completion_tokens"))
-        if not all(type(n) is int and n >= 0 for n in tokens):
+        prompt = reported.get("prompt_tokens")
+        completion = reported.get("completion_tokens")
+        if type(prompt) is not int or type(completion) is not int:
+            return
+        if prompt < 0 or completion < 0:
             return
         self.usage = replace(
             self.usage,
-            prompt_tokens=self.usage.prompt_tokens + tokens[0],
-            completion_tokens=self.usage.completion_tokens + tokens[1],
+            prompt_tokens=self.usage.prompt_tokens + prompt,
+            completion_tokens=self.usage.completion_tokens + completion,
             unmetered=self.usage.unmetered - 1,
         )

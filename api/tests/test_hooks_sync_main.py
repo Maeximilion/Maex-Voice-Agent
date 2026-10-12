@@ -96,6 +96,7 @@ def repos(tmp_path, request):
     shutil.copyfile(HOOK, hook)
 
     def run_hook() -> str:
+        assert BASH is not None  # checked at the top of this fixture
         done = subprocess.run(
             [BASH, hook.as_posix()],
             cwd=feature,

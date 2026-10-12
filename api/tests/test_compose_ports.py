@@ -21,6 +21,7 @@ against it when the test was written.
 """
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -43,7 +44,7 @@ LOOPBACK = {"127.0.0.1", "::1"}
 class _Tagged:
     """A value behind `!reset` or `!override`, which `yaml.safe_load` rejects."""
 
-    def __init__(self, tag: str, value: object) -> None:
+    def __init__(self, tag: str, value: Any) -> None:
         self.tag = tag
         self.value = value
 
@@ -58,6 +59,7 @@ def _construct_tagged(loader: yaml.SafeLoader, node: yaml.Node) -> _Tagged:
     elif isinstance(node, yaml.MappingNode):
         value = loader.construct_mapping(node, deep=True)
     else:
+        assert isinstance(node, yaml.ScalarNode)  # the only other kind of node
         value = loader.construct_scalar(node)
     return _Tagged(node.tag, value)
 
@@ -148,7 +150,8 @@ def _published(entry: object) -> int | None:
     else:
         parts = str(entry).split("/")[0].rsplit(":", 2)  # [address,] published, target
         published = parts[-2] if len(parts) > 1 else None
-    return int(published) if str(published or "").isdigit() else None
+    digits = str(published or "")
+    return int(digits) if digits.isdigit() else None
 
 
 def _production() -> list[dict]:

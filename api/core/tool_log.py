@@ -51,7 +51,11 @@ async def tool_call_log_middleware(
     # Antwort erst beim Durchlaufen von body_iterator preisgibt. Einmal gelesen,
     # muss sie durch eine gleichwertige Antwort ersetzt werden, sonst bekommt der
     # Client einen leeren Body.
-    body = b"".join([chunk async for chunk in response.body_iterator])
+    # Starlette annotates call_next as returning a plain Response; what it hands
+    # in is its private _StreamingResponse, which has the iterator.
+    body = b"".join(
+        [chunk async for chunk in response.body_iterator]  # type: ignore[attr-defined]
+    )
     response = Response(
         content=body,
         status_code=response.status_code,
