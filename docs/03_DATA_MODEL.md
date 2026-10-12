@@ -73,8 +73,8 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | tenant_id | UUID FK | |
 | weekday | SMALLINT | |
 | slot_start / slot_end | TIME | z. B. 18:00–20:00 |
-| max_guests | INT | Gäste gesamt im Fenster |
-| slot_minutes | INT | Raster, Default 30 |
+| max_guests | INT | Gäste gesamt im Fenster, `>= 0` (0 closes the window for reservations; migration 006) |
+| slot_minutes | INT | Raster, Default 30, `> 0` (migration 006: a grid of zero minutes never ends) |
 
 ### `reservations`
 | Feld | Typ | Bemerkung |
@@ -85,7 +85,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | status | TEXT | `draft` / `confirmed` / `cancelled` |
 | guest_name | TEXT | |
 | phone | TEXT | E.164 |
-| party_size | INT | |
+| party_size | INT | `> 0` (migration 006) |
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
