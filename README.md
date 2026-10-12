@@ -76,7 +76,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r api/requirements.txt
 export DATABASE_URL=postgresql+psycopg://maex:maex@localhost:5432/maex_agent
 pytest -q
-ruff check api scripts evals printbridge sim db && ruff format --check api scripts evals printbridge sim db
+ruff check api scripts evals printbridge sim db && ruff format --check api scripts evals printbridge sim db && mypy
 ```
 
 ## Configuration
@@ -112,7 +112,7 @@ Layers and dependency rules: `docs/11_MODULE.md`.
 
 ```bash
 make test        # pytest
-make lint        # ruff check
+make lint        # ruff check, mypy
 make fmt         # ruff format
 make backup      # encrypted dump of the database of DATABASE_URL into backups/, needs BACKUP_PASSPHRASE_FILE (docs/13 §4)
 make eval        # 28 CI cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run

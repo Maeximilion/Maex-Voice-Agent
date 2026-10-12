@@ -43,7 +43,7 @@ Types used: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope in bracket
 - Title in Conventional Commits format, since squash-merge makes it the commit message on `main`.
 - Description per template in `.github/PULL_REQUEST_TEMPLATE.md`: what changed, why, how tested, which issue closes.
 - `main` always stays runnable. Never push directly to `main`.
-- Before merge: `ruff check`, `ruff format --check`, and test suite run in CI. For dialog changes, also evals (`docs/08_EVALS.md`).
+- Before merge: `ruff check`, `ruff format --check`, `mypy`, and test suite run in CI. For dialog changes, also evals (`docs/08_EVALS.md`).
 - Which lint rules apply is in `pyproject.toml` under `[tool.ruff.lint]`, not the default set of the ruff version. A new rule is intentionally added, an unsuitable one intentionally excluded; a version update alone doesn't change the rule set.
 
 ## Labels

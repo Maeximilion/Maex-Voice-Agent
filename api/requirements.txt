@@ -11,5 +11,8 @@ pytest==9.*
 pytest-asyncio==1.4.*
 pytest-xdist==3.*
 ruff==0.16.*
+mypy==2.*
 # nur fuer test_compose_mounts.py; kommt ohnehin mit uvicorn[standard]
 pyyaml==6.*
+# stubs for mypy, which reads the tests that load the Compose files
+types-PyYAML==6.*

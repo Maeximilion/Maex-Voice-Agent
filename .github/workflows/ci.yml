@@ -62,6 +62,8 @@ jobs:
       - run: pip install -r api/requirements.txt
       - run: ruff check api scripts evals printbridge sim db
       - run: ruff format --check api scripts evals printbridge sim db
+      # Types, non-strict. Paths and settings: pyproject.toml, [tool.mypy].
+      - run: mypy
       # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
       # Latenztests nicht: unter parallelen Workern messen sie die Last, nicht den Code.
       - run: pytest -q -n auto -m "not latency"
