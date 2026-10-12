@@ -254,6 +254,11 @@ def render(run_dir: Path) -> None:
     for name in ("tones", "rec", "probe"):
         shutil.rmtree(run_dir / name, ignore_errors=True)
         (run_dir / name).mkdir(parents=True)
+    # Results of an earlier run: a run that breaks must not leave them behind
+    # looking like its own.
+    shutil.rmtree(run_dir / "calls", ignore_errors=True)
+    for name in ("report.json", "pbx.log"):
+        (run_dir / name).unlink(missing_ok=True)
     for exten, freq in CALLER_TONES.items():
         with wave.open(str(run_dir / "tones" / f"caller-{exten}.wav"), "wb") as out:
             out.setnchannels(1)

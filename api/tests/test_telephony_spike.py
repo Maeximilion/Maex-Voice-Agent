@@ -297,6 +297,21 @@ def test_only_a_new_an_empty_or_an_own_folder_is_a_run_directory(tmp_path):
     assert not spike.usable_run_dir(tmp_path)
 
 
+def test_render_removes_the_results_of_an_earlier_run(tmp_path):
+    run = tmp_path / "run"
+    spike.render(run)
+    (run / "report.json").write_text("[]")
+    (run / "pbx.log").write_text("old")
+    (run / "calls" / "601").mkdir(parents=True)
+
+    spike.render(run)
+
+    assert not (run / "report.json").exists()
+    assert not (run / "pbx.log").exists()
+    assert not (run / "calls").exists()
+    assert (run / "pbx" / "pjsip.conf").exists()
+
+
 def test_render_marks_its_run_directory(tmp_path):
     spike.render(tmp_path / "run")
 
