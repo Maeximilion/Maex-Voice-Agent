@@ -43,9 +43,16 @@ def printable(text: str) -> str:
 
     "Phở Bò" wird "Pho Bo" statt "Ph? B?": die Kueche soll den Namen lesen
     koennen. Umlaute bleiben, die kennt PC858.
+
+    Control characters become a space. Name and note are what a caller said and
+    a model wrote down; ESC, GS and DLE encode in PC858 like any letter and
+    would reach the printer as commands (open the drawer, cut, reset).
     """
     out = []
     for char in text:
+        if unicodedata.category(char) == "Cc":
+            out.append(" ")
+            continue
         try:
             char.encode(ENCODING)
             out.append(char)
