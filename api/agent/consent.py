@@ -12,6 +12,12 @@ assent word, and every other word carries no order ("bitte", "danke", "so").
 hold a yes word and are the start of a change. One closed rule instead of a
 growing list of what must not follow a yes (as for card numbers, docs/04).
 
+A question is no yes either: "Stimmt das so?" asks whether the read-back is
+right, it does not say so (#251). Speech recognition often drops the question
+mark, so the word order counts as well: the verb before "das" or "es" ("Ist
+das richtig", "Passt das") is how a German yes-no question begins, while the
+statement puts them the other way round ("Das ist richtig", "Das passt").
+
 Strict on purpose: a yes that is missed costs the guest one more question, a
 yes that is wrongly heard books a table or an order nobody agreed to.
 ponytail: the word lists are hand-made. An unusual yes ("von mir aus") is
@@ -77,13 +83,19 @@ _FILLER = frozenset(
 # (review PR #142).
 _HARMLESS = ("kein problem", "nicht schlecht")
 _WORD = re.compile(r"[a-zäöüß]+")
+# Verb first, subject second: a question, with or without its mark. Only the
+# verbs that are assent or filler words themselves, the others are no yes anyway.
+# Not when the subject already stood before the verb: "Das ist es" is a statement.
+_ASKS = re.compile(r"(?<!das )(?<!es )\b(ist|stimmt|passt)\s+(das|es)\b")
 
 
 def is_yes(text: str) -> bool:
     """An assent word, and nothing else but filler. A digit is never part of a
-    yes: "Ja, 2" changes a quantity."""
+    yes: "Ja, 2" changes a quantity. A question is none: it asks."""
     lowered = text.lower()
     if any(char.isdigit() for char in lowered):
+        return False
+    if "?" in lowered or _ASKS.search(lowered):
         return False
     for phrase in _HARMLESS:
         lowered = lowered.replace(phrase, " ")

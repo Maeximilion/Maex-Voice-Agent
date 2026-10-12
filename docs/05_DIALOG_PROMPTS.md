@@ -179,6 +179,11 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**Read back means spoken, and a question is no yes (#251, 12.10.2026).** Both are held by the core, not by the prompt:
+
+- A draft counts as read back once a sentence that ended a turn held the words of its `readback`, in order and without a gap (`guards.note_said`). Case and punctuation do not count; the closing question ("Passt das so?") may be the model's own. A read-back that leaves the name out or says another number is not the draft. Until then `confirm` is refused, and the state the model gets carries the sentence as `readback`, because a model keeps nothing between turns; once heard it is not sent again. A new draft has to be read out again. Heard stays heard: a side question the model answers after the read-back does not take it back.
+- `is_yes` (`agent/consent.py`) refuses a sentence with a question mark and the word order of a question without one: "Ist das richtig", "Stimmt das so", "Passt das". Speech recognition often drops the mark. "Das stimmt so" and "Passt." stay a yes.
+
 **What a real model gets (T-2.4)** — the own core does not use the function calling of a
 platform. The system message is `prompts/system_vN.md`, then the tool reference (the
 sections of `prompts/tools_vN.md`, one per tool, without the file's notes for the voice

@@ -24,11 +24,34 @@ def new_state(**fields):
     return ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), **fields)
 
 
+READBACK = (
+    "Ein Tisch für vier Personen morgen um sieben Uhr, auf den Namen Müller. "
+    "Passt das so?"
+)
+
+
 def read_back(entity="reservation"):
     """A state in which a draft was read to the guest in an earlier turn."""
     draft_id = uuid.uuid4()
-    state = new_state(stage="readback_pending", **{f"{entity}_id": draft_id})
+    state = new_state(
+        stage="readback_pending",
+        readback=READBACK,
+        readback_heard=True,
+        **{f"{entity}_id": draft_id},
+    )
     return state, str(draft_id)
+
+
+def drafted():
+    """A state right after the draft tool answered: nothing was said yet."""
+    state = new_state()
+    draft_id = str(uuid.uuid4())
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(ok=True, data={"reservation_id": draft_id, "readback": READBACK}),
+    )
+    return state, draft_id
 
 
 def confirm(entity_id, entity="reservation"):
@@ -187,10 +210,135 @@ def test_confirm_without_any_draft_is_refused():
         ("Nein, ja doch nicht", False),
         ("Im Januar", False),
         ("", False),
+        # A question asks whether it is right, it does not say so (#251).
+        ("Ist das richtig?", False),
+        ("Stimmt das so?", False),
+        ("Passt das?", False),
+        ("Ja?", False),
+        ("Ja, passt das so?", False),
+        # Speech recognition drops the question mark: verb before "das" or "es"
+        # is the word order of a question.
+        ("Ist das richtig", False),
+        ("Ist das okay", False),
+        ("Stimmt das so", False),
+        ("Passt das", False),
+        ("Ist es so richtig", False),
+        ("Ja ist das richtig", False),
+        # The same words as a statement stay a yes.
+        ("Das ist richtig.", True),
+        ("Das stimmt so.", True),
+        ("Das passt.", True),
+        ("Ja, das passt so.", True),
+        ("Passt.", True),
+        ("Stimmt.", True),
+        ("Ja, es ist alles richtig.", True),
+        ("Genau, das ist es.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):
     assert is_yes(text) is yes
+
+
+# --- Rule 3: a yes confirms only what the guest heard (#251) ---------------------
+
+
+def test_confirm_of_a_draft_that_was_never_read_out_is_refused():
+    """The model drafts, then asks something else. The guest's "Ja" answers
+    that question, not a table and a time they never heard."""
+    state, draft_id = drafted()
+    note_said(state, "Darf es sonst noch etwas sein?")
+
+    start = begin_turn(state)
+
+    assert start.readback_id is None
+    assert refusal(state, start, "Ja", confirm(draft_id))
+
+
+def test_confirm_after_the_sentence_was_spoken_is_let_through():
+    state, draft_id = drafted()
+    note_said(state, READBACK)
+
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
+
+
+BODY = READBACK.removesuffix(" Passt das so?")
+
+
+@pytest.mark.parametrize(
+    ("said", "heard"),
+    [
+        (READBACK, True),
+        (f"Ich wiederhole: {READBACK}", True),
+        (READBACK.upper(), True),
+        (READBACK.replace(",", "").replace(".", " "), True),
+        # The closing question may be the model's own; the content may not.
+        (f"{BODY} Ist das so richtig?", True),
+        # The name left out, a number changed, half of it: not the draft.
+        ("Ein Tisch für vier Personen morgen um sieben Uhr. Passt das so?", False),
+        (READBACK.replace("vier", "zwei"), False),
+        (READBACK.replace("Müller", "Möller"), False),
+        ("Ein Tisch für vier Personen. Passt das so?", False),
+        ("Passt das so?", False),
+        ("", False),
+    ],
+)
+def test_the_guest_heard_the_draft_when_its_words_were_spoken(said, heard):
+    state, _ = drafted()
+
+    note_said(state, said)
+
+    assert state.readback_heard is heard
+
+
+def test_a_read_back_that_is_one_question_has_to_be_spoken_whole():
+    """Nothing to cut when the sentence has no part before its question."""
+    state, _ = drafted()
+    state.readback = "Zweimal die 47 zur Abholung, richtig?"
+
+    note_said(state, "Richtig?")
+    assert not state.readback_heard
+
+    note_said(state, "Zweimal die 47 zur Abholung, richtig?")
+    assert state.readback_heard
+
+
+def test_a_new_draft_has_to_be_read_out_again():
+    state, _ = read_back()
+    assert state.readback_heard
+
+    apply_tool_result(
+        state,
+        "create_reservation",
+        ToolResult(
+            ok=True,
+            data={"reservation_id": str(uuid.uuid4()), "readback": "Ein neuer Satz."},
+        ),
+    )
+
+    assert state.readback == "Ein neuer Satz."
+    assert not state.readback_heard
+
+
+def test_a_dropped_draft_takes_its_sentence_with_it():
+    """A new slot check after the read-back drops the draft (state.py); the old
+    sentence must not count as heard for whatever comes next."""
+    state, _ = read_back()
+
+    apply_tool_result(state, "check_slot", ToolResult(ok=True, data={}))
+
+    assert state.readback is None
+    assert not state.readback_heard
+
+
+def test_the_model_gets_the_sentence_until_the_guest_heard_it():
+    """After a refused `confirm` the model has to read the draft out, and it
+    keeps nothing between turns. Once heard, the sentence is not sent again."""
+    state, _ = drafted()
+    assert state.to_prompt_json()["readback"] == READBACK
+
+    note_said(state, READBACK)
+
+    assert "readback" not in state.to_prompt_json()
 
 
 # --- Rule 2: an order only takes ids from a clear match or the guest's choice ---

@@ -40,6 +40,11 @@ class ConversationState(BaseModel):
     open_questions: list[str] = Field(default_factory=list)
     reservation_id: uuid.UUID | None = None
     order_id: uuid.UUID | None = None
+    # The sentence of the draft that waits for its yes, as the draft tool
+    # returned it, and whether the guest heard it (`guards.note_said`). A yes
+    # can only confirm what was read out (CLAUDE.md §2 rule 3, #251).
+    readback: str | None = None
+    readback_heard: bool = False
     transferred: bool = False
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
@@ -89,6 +94,11 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
+        if self.readback and not self.readback_heard:
+            # The draft was not read out yet. A `confirm` is refused until it
+            # was, and a model that keeps nothing between turns needs the
+            # sentence to do it. Gone again once the guest heard it.
+            data["readback"] = self.readback
         if self.cart or self.seen_items:
             # From the first menu search on, also while it is empty: the model
             # has to write the dish it just found into it, and the client sends
@@ -274,11 +284,13 @@ def apply_tool_result(
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
         state.order_id = None
         state.stage = "readback_pending"
+        _to_read_out(state, result)
     elif name == "draft_order":
         state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
+        _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
         # readback starts from these lines.
@@ -297,6 +309,13 @@ def apply_tool_result(
         state.transferred = True
         state.stage = "transferred"
         state.transfer_to = result.data.get("transfer_to")
+
+
+def _to_read_out(state: ConversationState, result: ToolResult) -> None:
+    """A new draft is a new sentence, and nobody heard it yet: a read-back of
+    the draft before it does not count for this one."""
+    state.readback = result.data.get("readback")
+    state.readback_heard = False
 
 
 def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
@@ -375,5 +394,7 @@ def _drop_readback(state: ConversationState, name: str) -> None:
     Alternativen, nicht mehr um die Abholung (Codex PR #127, P2)."""
     state.order_id = None
     state.reservation_id = None
+    state.readback = None
+    state.readback_heard = False
     state.intent = "pickup" if name in _PICKUP_TOOLS else "reservation"
     state.stage = "collecting"
