@@ -80,7 +80,13 @@ def check_slot(
         for d in (yesterday, today)
         for w in capacity_windows(session, tenant_id, d, zone)
     ]
-    booked = booked_guests(session, tenant_id, windows)
+    booked = booked_guests(
+        session,
+        tenant_id,
+        windows,
+        now=now,
+        draft_lifetime=timedelta(seconds=config.max_call_seconds),
+    )
     lead = timedelta(minutes=config.reservation_lead_minutes)
     last = timedelta(minutes=config.reservation_last_start_minutes)
 

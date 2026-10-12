@@ -97,9 +97,11 @@ services:
     image: n8nio/n8n:2.41.7
     restart: unless-stopped
     environment:
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
-      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      # No N8N_BASIC_AUTH_* here: n8n dropped that login with version 1 and
+      # ignores the variables. The editor is protected by its own owner account
+      # and, in production, by the access in deploy/Caddyfile. The two values in
+      # .env are the credential of the webhook node (n8n/README.md), which the
+      # dispatcher sends; n8n itself never reads them from the environment.
       GENERIC_TIMEZONE: Europe/Berlin
       # n8n lauscht standardmäßig auf "::" und stirbt auf Docker-Hosts ohne IPv6
       N8N_LISTEN_ADDRESS: 0.0.0.0

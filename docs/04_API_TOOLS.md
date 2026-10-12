@@ -20,6 +20,8 @@
 { "ok": false, "error": { "code": "not_found", "message": "…" }, "say": "…" }
 ```
 
+The envelope also carries what the framework answers itself (#252): an unknown path is `not_found` with status 404, a wrong method `invalid_input` with 405. A `reserved_for` that no calendar holds (the first and last days of the year range, where adding a time zone or a day overflows) is `invalid_input` like any other malformed field, in the tools and in the conversation core.
+
 - `say` ist ein **Vorschlag**, kein Zwang. Es hält die Formulierung heikler Fälle (ausverkauft, außerhalb der Zone, Allergene) im Code statt im Modell.
 - **Fehlercodes:** `invalid_input` · `not_found` · `ambiguous` · `closed` · `out_of_zone` · `below_minimum` · `conflict` · `service_unavailable`
 - **Nie** ein Stacktrace, nie ein HTTP 500 ohne JSON-Körper. Der Agent muss jede Antwort vorlesen können.
@@ -429,6 +431,8 @@ Der einzige Übergang von `draft` nach `confirmed`.
 **Wirkung:** Status setzen, `audit_log` schreiben, Ereignis an n8n legen, GUI aktualisieren. Im Modus `overflow` wird `approved` erst durch das Team gesetzt; die Küche startet dann später.
 
 **Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `pickup_code` bleibt bei Reservierungen `null`.
+
+**Reservations, seats checked again (#250):** a draft holds its seats only while its call can confirm it: the call has not ended and the draft is younger than `service_config.max_call_seconds`. An older draft no longer counts in `check_slot`, so its seats may be given to someone else. `confirm` therefore checks the window again, under the same day lock as `create_reservation` and without the draft's own seats, and answers `conflict` with `say` "Dieser Tisch ist in der Zwischenzeit leider vergeben worden. Zu welcher anderen Uhrzeit passt es Ihnen?" when the party no longer fits. Seats only: opening hours and lead times were checked when the draft was made. Within a live call the check always passes, because the draft still holds what it asks for. In the conversation core a draft that `confirm` refuses with `conflict` leaves the state (`agent/state.py`): it can never be confirmed as it is, and a "Ja" to the next question must not try again. The intent stays; `invalid_input` and `not_found` keep the draft, and so does the core's own refusal for a missing yes.
 
 **Bestellungen** (`domain/ordering/confirm.py`, seit 23.09.2026):
 

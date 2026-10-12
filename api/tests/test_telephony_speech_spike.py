@@ -6,12 +6,29 @@ judged rows. Both are built here.
 
 import csv
 import json
+import os
+import types
 from pathlib import Path
 
 import pytest
 
 from api.telephony import speech_spike as kit
 from evals.number_eval import load
+
+
+@pytest.fixture(autouse=True)
+def unprivileged(monkeypatch):
+    """`main` refuses to run as root, and `make test` runs the suite in the API
+    container, which is root: without this the tests that play a whole run
+    stopped at that guard (audit 12.10.2026). Every test here runs as an
+    ordinary user; the one for the guard sets root itself.
+
+    Only the kit's own view of `os` is changed: pytest reads the real uid when
+    it makes its temporary folders, and refuses one that is not its own."""
+    seen = types.ModuleType("os")
+    seen.__dict__.update(vars(os))
+    seen.getuid = lambda: 1000
+    monkeypatch.setattr(kit, "os", seen)
 
 
 def judged_rows(ear: str, verdicts: str, *, seconds: float = 0.2, voice: str = "a"):
@@ -353,15 +370,40 @@ def test_only_the_download_step_gets_a_network(tmp_path):
     )
 
 
-def test_root_and_a_folder_with_somebodys_files_are_refused(
-    tmp_path, monkeypatch, capsys
-):
+def test_a_folder_with_somebodys_files_is_refused(tmp_path, capsys):
     (tmp_path / "notes.txt").write_text("mine")
     assert kit.main(["--run-dir", str(tmp_path)]) == 2
     assert (tmp_path / "notes.txt").read_text() == "mine"
+    assert "not a run directory" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("dry_run", [[], ["--dry-run"]])
+def test_root_is_refused_before_docker_or_the_run_directory_is_touched(
+    tmp_path, monkeypatch, capsys, dry_run
+):
+    """The containers take the caller's uid. As root nothing may happen at
+    all: no question to Docker, no old result cleared, no folder made."""
     monkeypatch.setattr(kit.os, "getuid", lambda: 0)
-    assert kit.main(["--run-dir", str(tmp_path / "new")]) == 2
+
+    def never(*args, **kwargs):
+        raise AssertionError("root must be refused before this is reached")
+
+    for name in ("docker", "docker_problem", "gpu_in_docker", "usable_run_dir"):
+        monkeypatch.setattr(kit, name, never)
+    old = tmp_path / "old"
+    old.mkdir()
+    (old / kit.RUN_MARKER).touch()
+    (old / "report.json").write_text("28 of 28")
+
+    assert kit.main([*dry_run, "--run-dir", str(old)]) == 2
+    assert kit.main([*dry_run, "--run-dir", str(tmp_path / "new")]) == 2
+
     assert "unprivileged" in capsys.readouterr().err
+    assert sorted(f.name for f in old.iterdir()) == sorted(
+        [kit.RUN_MARKER, "report.json"]
+    )
+    assert (old / "report.json").read_text() == "28 of 28"
+    assert not (tmp_path / "new").exists()
 
 
 def test_clearing_results_keeps_the_model_files(tmp_path):
