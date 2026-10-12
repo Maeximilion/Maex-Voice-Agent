@@ -179,6 +179,25 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
+**A correction at the read-back (Maxi, 12.10.2026).** The read-back is where every card
+number is confirmed before anything is booked, so a wrong one has to be correctable there:
+"Falsch, ich meinte die Nummer 25c". One card number named clearly replaces the one dish
+it can stand for, the one with the same digits ("25c" for a 25d that was read back, "S12"
+for the 12) or the only dish of the order. Quantity and note for the kitchen stay, a
+quantity said with the correction counts ("nein, zweimal die 24", "nein, zwei Nummer 24"),
+the rest of the order stays, a mandatory choice of the new dish is asked, and the new order is
+read back in full before a yes. The draft that was read back
+first stays a draft. Behind the no the sentence has to be the card number alone: anything
+else (two numbers, a number that is not on the menu, two dishes the number could stand for,
+a time such as "um 13 Uhr", one more dish with "und die 13" or "und noch die 13", a dish
+taken away with "nicht", a name, a bare no) starts the order again, as before: never a guess.
+A corrected dish that is out today, or a number the menu does not have, is said with the
+sentence of the search before the order starts again, and a lookup that fails without an
+answer hands the call to the team (rule 5). The scripted stand-in does this since 12.10.2026
+(`sim/scripted_order.py` `_correction`, eval `abholung_0079`); a real model is told the same
+by the system prompt ("Ändert der Gast etwas, lege den Vorgang neu an"), and the core drops
+the old draft whichever of them drives the call.
+
 **Read back means spoken, and a question is no yes (#251, 12.10.2026).** Both are held by the core, not by the prompt:
 
 - A draft counts as read back when the last thing the guest heard was its `readback` and the question for the yes, and nothing else (`guards.note_said`, `consent.read_out`). Three parts, on the words alone, case and punctuation do not count: the words of the draft in order and without a gap (a read-back that leaves the name out or says another number is not the draft); behind them the closing question, the draft's own ("Passt das so?") or one of a few fixed forms ("Ist das so richtig?", "Stimmt das?"; not "Ist es sicher?", not "Ist es richtig sicher?", not "Möchten Sie noch einen Hochstuhl?", and not nothing at all); in front of them nothing, polite words ("Gerne, ...") and at most one whole lead-in phrase ("Ich wiederhole: ...", "Zur Kontrolle: ..."), never a single word of one ("Noch ein Tisch ..." is another table) and never a sentence of its own ("Das ist falsch: ..."). Only the last thing said counts: after a side question the model answered, the draft has to be read out again, on its own. Until it is heard `confirm` is refused, and while the draft waits the state the model gets carries the sentence as `readback`, because a model keeps nothing between turns; once heard, and once booked, it is not sent again. A new draft has to be read out again.
