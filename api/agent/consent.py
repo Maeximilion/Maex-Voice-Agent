@@ -104,6 +104,25 @@ _ASKS = re.compile(
 )
 # A word as it is spoken, digits included: what a read-back is compared by.
 _SPOKEN = re.compile(r"\w+")
+# Where one sentence ends and the next begins, as far as the text shows it.
+_SENTENCE_END = re.compile(r"[.!;]")
+_BREAK = frozenset(".!?:;")
+
+
+def _asks(lowered: str) -> bool:
+    """The word order of a question, sentence by sentence and on the words
+    alone: punctuation inside a sentence is not spoken, and speech recognition
+    sets a comma where it likes ("Stimmt, das so"). The end of a sentence does
+    count: in "Stimmt. Das passt." the second is a statement of its own."""
+    return any(
+        _ASKS.search(" ".join(_WORD.findall(sentence)))
+        for sentence in _SENTENCE_END.split(lowered)
+    )
+
+
+def _polite(words: list[str]) -> bool:
+    """Nothing but assent and filler words: they add nothing to what is said."""
+    return all(word in _YES or word in _FILLER for word in words)
 
 
 def is_yes(text: str) -> bool:
@@ -112,7 +131,7 @@ def is_yes(text: str) -> bool:
     lowered = text.lower()
     if any(char.isdigit() for char in lowered):
         return False
-    if "?" in lowered or _ASKS.search(lowered):
+    if "?" in lowered or _asks(lowered):
         return False
     for phrase in _HARMLESS:
         lowered = lowered.replace(phrase, " ")
@@ -136,17 +155,33 @@ def read_out(say: str, readback: str) -> bool:
 
     The words of the draft, in order and without a gap: a read-back that leaves
     the name out or says another number is not this draft. Case and punctuation
-    do not count, they are not spoken. What comes before is free ("Ich
-    wiederhole: ..."). What comes after may only be the closing question, in
-    the draft's words or the model's own, as long as it is made of assent and
-    filler words. "... Möchten Sie noch einen Hochstuhl?" is not: the guest's
-    yes would answer the high chair.
+    do not count, they are not spoken.
+
+    What comes after may only be the closing question, in the draft's words or
+    the model's own, as long as it is made of assent and filler words. "...
+    Möchten Sie noch einen Hochstuhl?" is not: the guest's yes would answer
+    the high chair.
+
+    What comes before must not run into the draft: "Einmal statt zweimal
+    Nummer 23 ..." holds every word of "Zweimal Nummer 23 ..." and says another
+    order. So the draft begins the sentence, or follows polite words ("Gerne,
+    ..."), or follows a sentence that has ended ("Wir haben bis 22 Uhr
+    geöffnet. ...", "Ich wiederhole: ...").
     """
     draft = _SPOKEN.findall(_without_closing_question(readback).lower())
-    said = _SPOKEN.findall(say.lower())
+    lowered = say.lower()
+    tokens = list(_SPOKEN.finditer(lowered))
+    said = [token.group() for token in tokens]
     size = len(draft)
-    return size > 0 and any(
-        said[at : at + size] == draft
-        and all(word in _YES or word in _FILLER for word in said[at + size :])
-        for at in range(len(said) - size + 1)
-    )
+    if not size:
+        return False
+    for at in range(len(said) - size + 1):
+        if said[at : at + size] != draft or not _polite(said[at + size :]):
+            continue
+        if (
+            at == 0
+            or _polite(said[:at])
+            or _BREAK & set(lowered[tokens[at - 1].end() : tokens[at].start()])
+        ):
+            return True
+    return False

@@ -245,6 +245,14 @@ def test_confirm_without_any_draft_is_refused():
         ("Ja, passt alles.", True),
         ("Passt alles", True),
         ("Stimmt alles so", True),
+        # Punctuation is not spoken: a comma between verb and subject changes
+        # nothing about the question (Codex, PR #258). The end of a sentence
+        # does: what follows is a statement of its own.
+        ("Stimmt, das so", False),
+        ("Ist, das richtig", False),
+        ("Ja, stimmt, das so", False),
+        ("Stimmt. Das passt.", True),
+        ("Ja. Das stimmt so.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):
@@ -281,6 +289,14 @@ BODY = READBACK.removesuffix(" Passt das so?")
     [
         (READBACK, True),
         (f"Ich wiederhole: {READBACK}", True),
+        # In front of the read-back: polite words, or a sentence that has ended.
+        (f"Gerne, {READBACK}", True),
+        (f"Wir haben bis 22 Uhr geöffnet. {READBACK}", True),
+        # Words that run into the read-back change what it says (Codex, PR
+        # #258): "Einmal statt zweimal ..." is another order.
+        (f"Leider nicht {READBACK}", False),
+        (f"Statt {READBACK}", False),
+        (f"Nicht wie besprochen {READBACK}", False),
         (READBACK.upper(), True),
         (READBACK.replace(",", "").replace(".", " "), True),
         # The closing question may be the model's own; the content may not.
