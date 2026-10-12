@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from api.agent.llm import LLMTurn, ToolCall
+from api.agent.llm import LLMError, LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     NO_PREFIXES,
@@ -125,6 +125,12 @@ class PickupScript:
         self._group_for: list[tuple[CartItem, dict[str, Any], dict[str, Any], str]] = []
         # The open follow-up question while an answer is being searched again.
         self._reopen: tuple[list[dict[str, Any]], str] | None = None
+        # A correction at the read-back that is being looked up: the cart line
+        # it replaces and the quantity, if the guest said one.
+        self._replace: tuple[int, int | None] | None = None
+        # A corrected order waits for the mandatory choice of its new dish:
+        # with the answer it is complete again and goes back to the read-back.
+        self._complete = False
 
     # -- Customer turn ------------------------------------------------------
 
@@ -216,7 +222,7 @@ class PickupScript:
         self.readback_for = data["order_id"]
         return LLMTurn(say=data["readback"])
 
-    def on_readback(self, yes: bool) -> LLMTurn:
+    def on_readback(self, yes: bool, text: str = "") -> LLMTurn:
         order_id = self.readback_for
         if yes and order_id:
             return LLMTurn(
@@ -224,12 +230,99 @@ class PickupScript:
                     "confirm", {"entity": "order", "entity_id": order_id}
                 )
             )
-        # A correction to the cart that was read back is not guessed but taken
-        # anew: the old draft stays a draft and is never confirmed.
+        # After a no the draft that was read back stays a draft and is never
+        # confirmed (rule 3), whatever follows.
         self.readback_for = None
+        fix = self._correction(text)
+        if fix is None:
+            # A correction that is not one clear number is not guessed but taken
+            # anew.
+            return self._restart()
+        # "Falsch, ich meinte die Nummer 25c": that one dish is looked up and
+        # replaced, the rest of the order stays, and the new order is read back
+        # before any yes (Maxi, 12.10.2026).
+        at, card, quantity = fix
+        self._replace = (at, quantity)
+        return _search(f"Nummer {card}", {})
+
+    def _numbers(self) -> MenuNumbers:
+        """The card numbers of the active menu, read while a sentence of the
+        guest is parsed, outside any tool call. If they cannot be read, that is
+        an outage like a model that does not answer: the loop hands the call
+        to the team on `LLMError` (rule 5, Codex PR #271), where any other
+        exception would end the call."""
+        try:
+            return self._menu()
+        except Exception as exc:
+            raise LLMError("the card numbers of the menu could not be read") from exc
+
+    def _restart(self) -> LLMTurn:
         self.cart = []
         self.phase = "dishes"
         return LLMTurn(say=SAY_RESTART)
+
+    def _correction(self, text: str) -> tuple[int, str, int | None] | None:
+        """The cart line a no at the read-back replaces, the card number named
+        instead, and the quantity if one was said. Only where it is no guess:
+        behind the no the sentence is one card number and nothing else (rule A,
+        `sole_item_number`), so "um 13 Uhr" or "in 24 Minuten" name no dish; no
+        word adds a dish or takes one away ("und noch die 13", "und die 13",
+        "die 24 nicht");
+        and there is exactly one line the number can stand for - the one with
+        the same digits ("25c" for a 25d that was read back, "S12" for the 12),
+        else the only line of the order. A number that went through a heard
+        letter ("ist zwölf") names nothing."""
+        said = _CORRECTION_LEAD.sub("", text)
+        words = _words(said)
+        # "und die 13" continues the order; inside a number ("drei und
+        # zwanzig") the word adds nothing (Codex PR #271).
+        if _CORRECTION_STOP & set(words) or words[:1] == ["und"]:
+            return None
+        ref, unclear = sole_item_number(said, self._numbers().card)
+        if unclear or ref is None or not ref.valid or len(ref.cards) != 1 or ref.heard:
+            return None
+        named = canonical_card(ref.text)
+        if any(canonical_card(item.number) == named for item in self.cart):
+            return None
+        lines = [
+            i
+            for i, item in enumerate(self.cart)
+            if _digits(item.number) == _digits(named)
+        ]
+        if len(lines) != 1:
+            lines = [0] if len(self.cart) == 1 else []
+        return (lines[0], ref.text, _correction_quantity(said)) if lines else None
+
+    def _replaced(
+        self,
+        replace: tuple[int, int | None],
+        data: dict[str, Any],
+        slots: dict[str, Any],
+        say: str | None = None,
+    ) -> LLMTurn:
+        """The search for a correction came back: the one dish takes the place
+        of the line, with its quantity and its note for the kitchen. Options
+        belong to the old dish and go; a mandatory choice of the new one is
+        asked, and its answer leads back to the read-back (`_next`). Anything
+        but one clear dish starts the order again; a dish that is out today
+        with the sentence the search wrote for it."""
+        at, quantity = replace
+        hits = data.get("results") or []
+        if data.get("match_type") not in CLEAR_MATCHES or len(hits) != 1:
+            return self._restart()
+        if hits[0].get("sold_out"):
+            turn = self._restart()
+            return LLMTurn(say=_join(say, turn.say))
+        old = self.cart[at]
+        self._add(hits[0], "", quantity or old.quantity)
+        new = self.cart.pop()
+        new.note = new.note or old.note
+        self.cart[at] = new
+        # The order was complete before the correction: once the new dish has
+        # its mandatory choice, it is drafted again instead of "Darf es noch
+        # etwas sein?" (Codex PR #271).
+        self._complete = True
+        return self._next(slots, {})
 
     # -- Tool result -------------------------------------------------------
 
@@ -242,6 +335,9 @@ class PickupScript:
     ) -> LLMTurn:
         """`say` repeats what was clearly understood (from the code, Maxi PR #127);
         the script speaks it like a model that follows the rule in the prompt."""
+        if self._replace is not None:
+            replace, self._replace = self._replace, None
+            return self._replaced(replace, data, slots, say)
         reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
@@ -312,7 +408,22 @@ class PickupScript:
         """The answer to a follow-up question found nothing: the question still
         stands. The general message ("nicht gefunden, Nummer?") would put a
         second question next to it; a precise one ("Nummer 99 habe ich nicht")
-        goes along. None if no follow-up question was open."""
+        goes along. None if no follow-up question was open.
+
+        A correction at the read-back that names a number the menu does not
+        have starts the order again; a lookup that failed without a sentence
+        for the guest is answered with None as well."""
+        if self._replace is not None:
+            self._replace = None
+            # Without a sentence for the guest the search did not answer at all:
+            # that is an outage, and the caller hands the call to the team
+            # (rule 5, Codex PR #271). The order stays as it was read back.
+            if not say:
+                return None
+            # "Die Nummer 99 habe ich nicht auf der Karte": the guest hears why
+            # the correction was not taken, as with a dish that is out.
+            turn = self._restart()
+            return LLMTurn(say=_join(_statement(say), turn.say))
         if self._reopen is None:
             return None
         self._suggestions, self._suggestion_query = self._reopen
@@ -436,7 +547,7 @@ class PickupScript:
         # question: 1 or S1 by the letters of the menu, whatever was offered. A
         # number that went through a heard letter picks nothing; the name or a
         # yes does (Codex PR #257).
-        on_menu, _ = sole_item_number(text, self._menu().card)
+        on_menu, _ = sole_item_number(text, self._numbers().card)
         if ref is not None and not (on_menu is not None and on_menu.heard):
             cards = {canonical_card(c) for c in ref.cards}
             by_number = [
@@ -464,7 +575,7 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
-        if wish.kind != "allergy" and _orders_something(text, self._menu()):
+        if wish.kind != "allergy" and _orders_something(text, self._numbers()):
             # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
             # stays open instead of noting "Keine Eine Cola" (review PR #139).
             return LLMTurn(
@@ -583,6 +694,9 @@ class PickupScript:
         if self.phase == "choose":
             # This is always the follow-up question with the suggestions (_take).
             return LLMTurn(say=_join(lead) or SAY_WHAT, state_patch=state_patch)
+        if self._complete and not any(i.pending for i in self.cart):
+            self._complete = False
+            self.phase = "customer"
         if any(i.pending for i in self.cart):
             self.phase = "option"
             item, group = self._open_option()
@@ -690,6 +804,53 @@ def _is_sold_out(found: dict[str, Any]) -> bool:
         and bool(hits)
         and bool(hits[0].get("sold_out"))
     )
+
+
+# How a correction at the read-back opens ("Nein, ...", "Falsch, ..."); what
+# follows has to be the card number alone.
+_CORRECTION_LEAD = re.compile(r"^\W*(?:(?:nein|nee|falsch)\W+)+", re.IGNORECASE)
+# One more dish, or one less, is no replacement of the dish that was read back.
+_CORRECTION_STOP = frozenset(
+    {
+        "noch",
+        "auch",
+        "dazu",
+        "zusaetzlich",
+        "ausserdem",
+        "nicht",
+        "ohne",
+        "kein",
+        "keine",
+    }
+)
+
+
+def _statement(say: str) -> str:
+    """What a search says without the question it ends on ("Können Sie das noch
+    einmal sagen?"): the restart asks its own, and two questions in a row leave
+    the guest with nothing to answer."""
+    sentences = re.split(r"(?<=[.!?])\s+", say.strip())
+    kept = [s for s in sentences if not s.endswith("?")]
+    return " ".join(kept) or say
+
+
+def _correction_quantity(said: str) -> int | None:
+    """The quantity said with a correction: marked ("zweimal", "2 x"), or bare
+    directly before the marker ("zwei Nummer 24", Codex PR #271). Not
+    `_stated_quantity`: that takes the "drei" of "die drei und zwanzig" for a
+    quantity, which is the number itself."""
+    marked = find_quantity(said)
+    if marked:
+        return marked
+    words = _words(said)
+    at = next((i for i, w in enumerate(words) if w in ("nummer", "nr")), 0)
+    return parse_cardinal(words[at - 1]) if at else None
+
+
+def _digits(card: str) -> str:
+    """The number of a card number without its letters: "25c" and "25d", "s12"
+    and "12" are one family for a correction at the read-back."""
+    return re.sub(r"\D", "", canonical_card(card))
 
 
 def _search(text: str, patch: dict[str, Any]) -> LLMTurn:
