@@ -76,7 +76,7 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r api/requirements.txt
 export DATABASE_URL=postgresql+psycopg://maex:maex@localhost:5432/maex_agent
 pytest -q
-ruff check api scripts evals printbridge && ruff format --check api scripts evals printbridge
+ruff check api scripts evals printbridge sim db && ruff format --check api scripts evals printbridge sim db
 ```
 
 ## Configuration
