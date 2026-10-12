@@ -14,7 +14,7 @@ RUN if [ -f /app/ca-bundle.crt ]; then \
         && update-ca-certificates \
         && export PIP_CERT=/etc/ssl/certs/ca-certificates.crt; \
     fi \
-    && pip install --no-cache-dir -r /app/requirements.txt
+    && pip install --no-cache-dir --require-hashes -r /app/requirements.txt
 
 COPY . /app/api
 
