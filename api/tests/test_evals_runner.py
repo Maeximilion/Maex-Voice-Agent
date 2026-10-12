@@ -18,7 +18,14 @@ from api.models import AuditLog, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
-from evals.judge import CaseError, Observed, judge, observe, offered_alternatives
+from evals.judge import (
+    CaseError,
+    Observed,
+    judge,
+    last_readback,
+    observe,
+    offered_alternatives,
+)
 from evals.recorder import RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
 from sim.session import SimCall
@@ -302,6 +309,16 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"phone": "0721 5551234"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": " "},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": ["Macht 25 Euro 70,"]},
         },
     ],
 )
@@ -1214,6 +1231,51 @@ def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
         json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
     )
     assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]
+
+
+# --- The read-back sentence (expected.readback) --------------------------------
+
+
+def test_last_readback_is_the_one_of_the_last_draft():
+    results = [
+        ("draft_order", {"readback": "Einmal Nummer 13. Macht 11 Euro 90."}),
+        ("search_menu", {"items": []}),
+        ("draft_order", {"readback": "Zweimal Nummer 13. Macht 23 Euro 80."}),
+        ("confirm", {"status": "confirmed"}),
+    ]
+    assert last_readback(results) == "Zweimal Nummer 13. Macht 23 Euro 80."
+
+
+def test_without_a_draft_there_is_no_readback():
+    assert last_readback([]) is None
+    assert last_readback([("search_menu", {"items": []})]) is None
+
+
+def test_readback_piece_is_checked_against_what_the_code_read_out(
+    migrated_db_url, tmp_path
+):
+    """A piece that was read out is green, another one is red, and a call that
+    never got to a draft is red instead of unchecked."""
+    order = [
+        "Hallo, ich moechte etwas zum Abholen bestellen.",
+        "Einmal die 13.",
+        "Nein, das wars.",
+        "Auf den Namen Schmidt.",
+        "Ja, genau.",
+    ]
+    caller = {"caller_id": "+497215551234"}
+    cases = write_cases(
+        tmp_path / "c",
+        fall("said", order, {"readback": "Einmal Nummer 13 Pho Bo."}, **caller),
+        fall("other", order, {"readback": "Einmal Nummer 14"}, **caller),
+        fall("none", ["Hallo."], {"readback": "Einmal Nummer 13"}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {
+        "said": True,
+        "other": False,
+        "none": False,
+    }, report.to_markdown()
 
 
 # --- Angebotene Alternativen (expected.alternatives) ---------------------------

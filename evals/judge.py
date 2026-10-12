@@ -65,6 +65,11 @@ EXPECTED_KEYS = frozenset(
         # Phone number of the confirmed transaction in E.164: with a suppressed
         # caller ID the spoken number counts, not any other valid one (Codex PR #162).
         "phone",
+        # A piece of the last read-back, word for word. The code writes that
+        # sentence and the agent reads it out as it is, so it is a result and no
+        # model's wording, and it names the amount the guest says yes to
+        # (eval abholung_0076).
+        "readback",
     }
 )
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
@@ -140,6 +145,9 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         or not all(isinstance(v, str) and v.strip() for v in address.values())
     ):
         raise CaseError(f"{source}: address nennt nur Felder aus {ADDRESS_KEYS}")
+    spoken = case["expected"].get("readback")
+    if spoken is not None and not (isinstance(spoken, str) and spoken.strip()):
+        raise CaseError(f"{source}: readback is a piece of the read-back sentence")
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -230,6 +238,13 @@ def offered_alternatives(
         to_local(datetime.fromisoformat(a), tz_name).strftime(LOCAL_MINUTE)
         for a in refused[-1].get("alternatives", [])
     ]
+
+
+def last_readback(ok_results: list[tuple[str, dict[str, Any]]]) -> str | None:
+    """The read-back of the last draft that succeeded, an order or a reservation.
+    None when the call never got to one: such a case is red, not unchecked."""
+    spoken = [data["readback"] for _, data in ok_results if data.get("readback")]
+    return spoken[-1] if spoken else None
 
 
 @dataclass
