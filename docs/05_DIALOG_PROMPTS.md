@@ -316,8 +316,14 @@ of the voice layer (T-10.5); the check is extended there. A run too short or too
 long to be a phone number is none either: kept by its digits, "um 0 Uhr" would be a number
 a model could put in the place of the caller ID (own review of PR #244). A period that
 ends a sentence ends the number ("0171 2345678. 19 Uhr passt" names one number, not a
-longer one). A dash between blanks is read both ways, as the end of the number ("0171
-2345678 - 19 Uhr passt") and as a part of it ("0721 - 5551234"). Which of two phone
+longer one). A run with a comma or a spaced dash between its digits is no number, as a whole or in
+parts: "0171 2345678 - 19 Uhr passt" and "0721 - 5551234" look alike, taken whole the first
+is a number nobody said, taken apart "0171 234 - 5678" is one with digits missing (Codex
+PR #244, P1); the guest is asked again. Before a word, a comma or a dash simply ends the
+number. Digits that follow a number after a blank only are read as one number with it.
+In a name a separator counts only between two of its words, one at a time ("---Müller---"
+is refused), and a spelled name is a row of single letters that follow each other: another
+word or a digit ends the row, and the letter of a card number ("23a") is none of it. Which of two phone
 numbers a guest said is the one to call stays with the model, as with the words of a name;
 the core has no rule for the context a number stands in. A number taken from speech is
 not read back today (Open Points in `docs/01_STATUS.md`). A number that is taken stands in `slots` in E.164, whatever spelling the

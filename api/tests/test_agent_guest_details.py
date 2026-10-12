@@ -97,6 +97,13 @@ def test_name_the_guest_spelled_is_taken(sentence, name):
         "Müller!!!",
         "Müller (Stammgast)",
         "Müller_",
+        # Separators where no two words meet (Codex PR #244, P2).
+        "---Müller---",
+        "-Müller",
+        "Müller-",
+        "Müller,,",
+        "'Müller'",
+        "Müller--Müller",
         # No name at all.
         "",
         "   ",
@@ -115,6 +122,26 @@ def test_what_stands_between_the_words_of_a_name_is_part_of_it(name):
     words = said("Auf Doktor Anna Müller, Dr. Müller, oder O'Brien")
 
     assert name_said(name, words) is True
+
+
+def test_letter_that_is_no_part_of_the_spelling_is_not_joined_to_it():
+    """Codex PR #244, P2: the a of the card number 23a made "ameier" of the
+    name, so "Meier" was refused and "Ameier" taken."""
+    for sentence in (
+        "Ich nehme die 23a. Mein Name ist M E I E R.",
+        "Einmal die 23 a bitte, auf M E I E R",
+        "S 12 und auf den Namen M, E, I, E, R",
+    ):
+        assert name_said("Meier", said(sentence)) is True
+        assert name_said("Ameier", said(sentence)) is False
+        assert name_said("Smeier", said(sentence)) is False
+
+
+def test_two_names_spelled_in_one_sentence_are_two():
+    words = said("Vorname A N N A und Nachname M E I E R")
+
+    assert name_said("Anna Meier", words) is True
+    assert name_said("Annameier", words) is False
 
 
 def test_spelled_name_counts_only_within_one_sentence():
@@ -233,23 +260,44 @@ def test_period_that_ends_a_sentence_ends_the_number(sentence):
 
 
 @pytest.mark.parametrize(
-    ("sentence", "said_numbers"),
+    "sentence",
     [
-        # The dash ends the number ...
-        ("Meine Nummer ist 0171 2345678 - 19 Uhr passt", {"+491712345678"}),
-        ("0171 2345678 - 0172 3456789", {"+491712345678", "+491723456789"}),
-        # ... or stands inside it.
-        ("Unter 0721 - 5551234 bitte", {"+497215551234"}),
-        ("0171 - 234 - 5678", {"+491712345678"}),
+        # The dash or the comma may end the number ...
+        "Meine Nummer ist 0171 2345678 - 19 Uhr passt",
+        "0171 2345678 - 0172 3456789",
+        "0171 2345678, 4 Personen",
+        "Für 4, 0171 2345678",
+        # ... or stand inside it. The digits do not say which.
+        "Unter 0721 - 5551234 bitte",
+        "0171 - 234 - 5678",
+        "0171 234 - 5678",
+        "0171 234 -5678",
+        "0721 555, 1234",
     ],
 )
-def test_dash_between_blanks_is_read_both_ways(sentence, said_numbers):
-    """Codex PR #244, P2: joined with the 19 behind the dash, the number the
-    guest said was another one."""
-    assert said_numbers <= numbers(sentence)
-    assert number_known("+491712345678", None, numbers(sentence)) is (
-        "+491712345678" in said_numbers
-    )
+def test_run_whose_end_is_unclear_is_no_number(sentence):
+    """Codex PR #244, P1: taken whole, the first sentence is +49171234567819,
+    a number nobody said. Taken apart, "0171 234 - 5678" is +49171234, one
+    with digits missing. Neither is known, nor is the number that may have
+    been meant: the guest is asked again."""
+    said_numbers = numbers(sentence)
+
+    assert said_numbers == set()
+    for written in ("+49171234567819", "+49171234", "+49721555", "+491712345678"):
+        assert number_known(written, None, said_numbers) is False
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Meine Nummer ist 0171 2345678, bitte.",
+        "0171 2345678 - danke",
+        "Unter 0171/234-5678 erreichbar",
+        "Tel.: (0171) 234 56 78, und wir sind zu viert",
+    ],
+)
+def test_comma_or_dash_before_a_word_ends_the_number(sentence):
+    assert numbers(sentence) == {"+491712345678"}
 
 
 @pytest.mark.parametrize("written", ["0", "07", "0171", "0171 2", "0" * 30])

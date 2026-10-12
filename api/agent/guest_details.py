@@ -31,11 +31,13 @@ The sentences behind each rule are the cases of
 
 ponytail: words are not understanding. Not heard: a number said in words
 ("null eins sieben ..."), a number without its area code or with a country
-code and no plus, digit groups a guest separates with a comma or
-names in two sentences, letter names when spelling ("Doppel-L", "Ypsilon"),
+code and no plus, a number with a comma or a spaced dash between its
+digits or named in two sentences, letter names when spelling ("Doppel-L", "Ypsilon"),
 a name written with another accent than it was said with, and a spelling the
 agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). Each
-ends in a question for the guest, never in a booking. The ear of the voice layer
+ends in a question for the guest, never in a booking. Digits that follow a
+number after a blank only ("0171 2345678 19 Uhr") are read as one number; a
+model that writes all of them is not stopped. The ear of the voice layer
 decides how numbers and letters arrive as text (T-10.5); read them here once
 it shows that.
 ponytail: a name is known from guest sentences only. Once a known caller's
@@ -51,61 +53,110 @@ from api.domain.menu.numberwords import fold
 
 # Letters only: digits and punctuation belong to no name.
 _WORD = re.compile(r"[^\W\d_]+")
-# What may stand between the words of a name, next to spaces.
-_IN_A_NAME = "-'.,"
-# One number as it is said or typed: digits with the separators
-# `normalize_phone` drops between them. A comma or a word ends it.
-_DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().]*")
+# What may stand between two words of a name, and nowhere else in it.
+_IN_A_NAME = frozenset({" ", "-", "'", ", ", ". "})
+# Digits with everything that can stand between digits. A word ends the run.
+_DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().,]*")
 # A period before a blank ends a sentence, and the number with it.
 _SENTENCE_END = re.compile(r"\.\s+")
+# With digits on both sides, a comma or a dash next to a blank leaves open
+# where a number ends: "0171 2345678 - 19 Uhr" and "0721 - 5551234", "0171
+# 2345678, 4 Personen" and "0721 555, 1234" look alike.
+_UNCLEAR_END = re.compile(r",|\s-|-\s")
+# What may stand around a number without being part of it.
+_AROUND_A_NUMBER = " \t\r\n\f\v-/().,"
 # A date or a time begins with one or two digits and a separator. No phone
 # number does: an area code has three digits or more, the zero included.
 _DATE_LIKE = re.compile(r"\d{1,2}[./-]")
 
 
 def words_said(sentence: str) -> set[str]:
-    """The words of a guest sentence, folded, and what its single letters
-    spell when read in a row: "M wie Martha, A wie Anton" spells "ma", the
-    words of a spelling alphabet are no single letters."""
-    words = _WORD.findall(sentence.lower())
-    spelled = "".join(fold(word) for word in words if len(word) == 1)
-    # Without a single letter `spelled` is empty, which is no part of any name.
-    return {fold(word) for word in words} | {spelled}
+    """The words of a guest sentence, folded, and what the guest spelled in
+    it."""
+    lowered = sentence.lower()
+    return {fold(word) for word in _WORD.findall(lowered)} | _spelled(lowered)
+
+
+def _spelled(sentence: str) -> set[str]:
+    """What single letters spell that follow each other: "M E I E R", "M, A,
+    I, E, R" or "M wie Martha, A wie Anton", where the word behind "wie" is
+    passed over. Any other word and any digit ends a row, and a letter that
+    stands at a digit is none of a name: in "die 23a. Mein Name ist M E I E R"
+    the guest spelled "meier", not "ameier" (Codex PR #244, P2). One letter
+    alone spells nothing."""
+    spelled: set[str] = set()
+    row: list[str] = []
+    after_wie = False
+    end = 0
+    for match in _WORD.finditer(sentence):
+        word, start, stop = match.group(), match.start(), match.end()
+        digit_between = any(char.isdigit() for char in sentence[end:start])
+        end = stop
+        if after_wie and not digit_between:
+            after_wie = False
+            continue
+        after_wie = False
+        at_a_digit = (
+            sentence[start - 1 : start].isdigit() or sentence[stop : stop + 1].isdigit()
+        )
+        if digit_between:
+            row = _close(row, spelled)
+        if word == "wie" and row:
+            after_wie = True
+        elif len(word) == 1 and not at_a_digit:
+            row.append(fold(word))
+        else:
+            row = _close(row, spelled)
+    _close(row, spelled)
+    return spelled
+
+
+def _close(row: list[str], spelled: set[str]) -> list[str]:
+    if len(row) > 1:
+        spelled.add("".join(row))
+    return []
 
 
 def name_said(name: object, words: set[str]) -> bool:
     """Every word of the name is one the guest said, and the name is nothing
-    but those words: a digit or a bracket a model adds was not said either,
-    and the tool would store it (Codex PR #244, P2). A name without a letter
-    is none."""
+    but those words with one separator between two of them: a digit, a
+    bracket or a row of dashes a model adds was not said either, and the tool
+    would store it (Codex PR #244, P2 twice). "Dr." may end with its period.
+    A name without a letter is none."""
     if not isinstance(name, str):
         return False
-    parts = [fold(word) for word in _WORD.findall(name.lower())]
-    between = _WORD.sub("", name)
+    written = " ".join(name.split())
+    parts = [fold(word) for word in _WORD.findall(written.lower())]
+    if not parts or not all(part in words for part in parts):
+        return False
+    before, *between, after = _WORD.split(written)
     return (
-        bool(parts)
-        and all(part in words for part in parts)
-        and all(char.isspace() or char in _IN_A_NAME for char in between)
+        before == ""
+        and after in ("", ".")
+        and all(gap in _IN_A_NAME for gap in between)
     )
 
 
 def numbers_said(sentence: str) -> set[str]:
-    """The phone numbers of a guest sentence in E.164, each run of digits as
-    one. A period that ends a sentence ends the run: in "0171 2345678. 19 Uhr
-    passt" the number is not twelve digits long, and in "am 16.09. 0171
-    2345678" it does not begin with the date.
+    """The phone numbers of a guest sentence in E.164: each run of digits
+    whose end is clear. A period that ends a sentence ends the run: in "0171
+    2345678. 19 Uhr passt" the number is not twelve digits long, and in "am
+    16.09. 0171 2345678" it does not begin with the date.
 
-    A dash between blanks is read both ways, it may end the number ("0171
-    2345678 - 19 Uhr passt") or stand inside it ("0721 - 5551234"): the run as
-    a whole and its parts each count when they are a number (Codex PR #244,
-    P2)."""
-    pieces = [
-        piece
+    A run with a comma or a spaced dash between its digits is no number, as a
+    whole or in parts: taken whole, "0171 2345678 - 19 Uhr" is a number
+    nobody said; taken apart, "0171 234 - 5678" is one with digits missing
+    (Codex PR #244, P1). The guest is asked again and says it plainly."""
+    pieces = (
+        piece.strip(_AROUND_A_NUMBER)
         for run in _DIGIT_RUN.findall(sentence)
         for piece in _SENTENCE_END.split(run)
-    ]
-    parts = (part for piece in pieces for part in piece.split(" - "))
-    return {number for text in (*pieces, *parts) if (number := e164(text))}
+    )
+    return {
+        number
+        for piece in pieces
+        if not _UNCLEAR_END.search(piece) and (number := e164(piece))
+    }
 
 
 def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:

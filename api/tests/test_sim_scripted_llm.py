@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from sim.scripted_llm import GREETING, QUESTIONS, SAY_ASK_AGAIN, ScriptedLLM
+from sim.scripted_order import SAY_NAME, SAY_PHONE
 
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Dienstag, Abendfenster
@@ -299,3 +300,35 @@ def test_detail_the_core_did_not_take_is_asked_for_again(llm):
     assert turn.tool_call is None
     assert turn.say == QUESTIONS["phone"]
     assert turn.understanding_failure == "phone"
+
+
+@pytest.mark.parametrize(
+    ("tool", "taken", "question", "field"),
+    [
+        ("draft_order", {"guest_name": "Mueller"}, SAY_PHONE, "phone"),
+        ("draft_order", {"phone": "+497215551234"}, SAY_NAME, "guest_name"),
+        ("create_callback", {}, QUESTIONS["phone"], "phone"),
+    ],
+)
+def test_refused_order_or_callback_asks_for_what_the_core_did_not_take(
+    llm, tool, taken, question, field
+):
+    """Codex PR #244, P1: handed over instead, the call ended outside the
+    opening hours with "Ich gebe an das Team weiter" and neither a transfer
+    nor a callback."""
+    refused = tool_result(tool, ok=False, error_code="invalid_input", hint="Abgelehnt")
+
+    turn = llm.next_turn("", {**START, "slots": taken}, refused)
+
+    assert turn.tool_call is None
+    assert turn.say == question
+    assert turn.understanding_failure == field
+
+
+def test_refused_order_with_every_detail_in_the_state_still_goes_to_the_team(llm):
+    taken = {"guest_name": "Mueller", "phone": "+497215551234"}
+    refused = tool_result("draft_order", ok=False, error_code="conflict")
+
+    turn = llm.next_turn("", {**START, "slots": taken}, refused)
+
+    assert turn.tool_call.name == "transfer_to_team"

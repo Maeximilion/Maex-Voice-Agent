@@ -25,7 +25,13 @@ from zoneinfo import ZoneInfo
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from sim.scripted_order import CLEAR_MATCHES, MenuNumbers, PickupScript
+from sim.scripted_order import (
+    CLEAR_MATCHES,
+    SAY_NAME,
+    SAY_PHONE,
+    MenuNumbers,
+    PickupScript,
+)
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -294,6 +300,16 @@ class ScriptedLLM:
                     return reopened
                 # Was vor einer nachgeholten Suche verstanden wurde, geht mit.
                 say = _join(self._pickup.take_carry(), say)
+            if not say:
+                # The core refused an order or a callback because it had not
+                # taken a detail this script read from the sentence, a number
+                # without its area code for one (agent/guest_details.py). The
+                # state shows what is missing: ask for it again. Handing over
+                # instead ended outside the opening hours with a promise and
+                # neither a transfer nor a callback (Codex PR #244, P1).
+                question = _ask_again(name, slots)
+                if question is not None:
+                    return question
             return self._after_failure(name, say)
         if name == "create_callback":
             self._out_of_scope_request = None
@@ -472,6 +488,22 @@ class ScriptedLLM:
 def _missing(slots: dict[str, Any]) -> str | None:
     """The first detail of a reservation that is still open."""
     return next((field for field in SLOT_ORDER if not slots.get(field)), None)
+
+
+# The guest details a tool books under, with the question for each.
+_DETAILS = {
+    "draft_order": {"guest_name": SAY_NAME, "phone": SAY_PHONE},
+    "create_callback": {"phone": QUESTIONS["phone"]},
+}
+
+
+def _ask_again(name: str | None, slots: dict[str, Any]) -> LLMTurn | None:
+    """The question for the first detail of a refused order or callback that
+    the state does not hold, or None when it holds them all."""
+    for field, question in _DETAILS.get(name or "", {}).items():
+        if not slots.get(field):
+            return LLMTurn(say=question, understanding_failure=field)
+    return None
 
 
 def _draft(slots: dict[str, Any]) -> dict[str, Any]:
