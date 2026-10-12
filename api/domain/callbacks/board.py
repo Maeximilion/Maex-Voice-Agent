@@ -14,12 +14,18 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.time import utcnow
-from api.models import AuditLog, Callback
+from api.models import AuditLog, Call, Callback
 
 ACTOR_TABLET = "gui:tablet"
 ACTION_DONE = "callback.done"
 OPEN = "open"
 DONE = "done"
+
+# Where the number to call back comes from. The guest may name any number
+# (#252): only the one the call came from is backed by the line itself.
+NUMBER_FROM_CALL = "caller_id"
+NUMBER_OTHER = "other"
+NUMBER_WITHHELD = "withheld"
 
 
 @dataclass(frozen=True)
@@ -29,6 +35,17 @@ class OpenCallback:
     phone: str
     reason: str
     summary: str
+    caller_id: str | None
+
+    @property
+    def number_origin(self) -> str:
+        """Both sides are E.164 where they could be normalized (create.py,
+        calls/start.py). A caller ID that could not be is stored raw and never
+        equals the callback number, so it counts as another number. An empty
+        one (possible over /v1/calls/start) is no number at all."""
+        if not (self.caller_id or "").strip():
+            return NUMBER_WITHHELD
+        return NUMBER_FROM_CALL if self.phone == self.caller_id else NUMBER_OTHER
 
 
 def _open_filters(tenant_id: uuid.UUID) -> tuple:
@@ -48,7 +65,9 @@ def list_open(session: Session, tenant_id: uuid.UUID) -> list[OpenCallback]:
             Callback.phone,
             Callback.reason,
             Callback.summary,
+            Call.caller_id,
         )
+        .join(Call, Call.id == Callback.call_id)
         .where(*_open_filters(tenant_id))
         .order_by(complaint_first, Callback.created_at, Callback.id)
     ).all()
