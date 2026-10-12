@@ -148,7 +148,7 @@ Sofort und ohne Diskussion:
 - Catering, Feier, Sonderwunsch außerhalb der Karte
 - Allergie ohne gepflegten DB-Wert
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
-- Anrufdauer über `max_call_seconds`
+- Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
 
 ---
 
