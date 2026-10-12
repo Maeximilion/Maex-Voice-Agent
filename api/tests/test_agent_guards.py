@@ -253,6 +253,16 @@ def test_confirm_without_any_draft_is_refused():
         ("Ja, stimmt, das so", False),
         ("Stimmt. Das passt.", True),
         ("Ja. Das stimmt so.", True),
+        # No verb at all: "Alles richtig" asks as often as it answers, and the
+        # text has no voice (Codex, PR #258). A yes only with a word that
+        # cannot ask next to it.
+        ("Alles richtig", False),
+        ("Alles korrekt so", False),
+        ("Alles okay", False),
+        ("Alles so richtig, danke", False),
+        ("Ja, alles richtig", True),
+        ("Genau, alles korrekt so.", True),
+        ("Alles richtig. Passt.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):

@@ -104,6 +104,13 @@ _ASKS = re.compile(
 )
 # A word as it is spoken, digits included: what a read-back is compared by.
 _SPOKEN = re.compile(r"\w+")
+# "Alles richtig", "Alles korrekt so", "Alles okay": a question or an answer.
+_ELLIPTIC = re.compile(r"\balles (?:so )?(?:richtig|korrekt|okay|ok)\b")
+# Assent words that are no adjective a question could end on.
+_PLAIN_YES = frozenset(
+    {"ja", "jawohl", "jo", "genau", "passt", "stimmt", "einverstanden"}
+    | {"bestaetigt", "bestätigt"}
+)
 # Where one sentence ends and the next begins, as far as the text shows it.
 _SENTENCE_END = re.compile(r"[.!;]")
 _BREAK = frozenset(".!?:;")
@@ -114,9 +121,17 @@ def _asks(lowered: str) -> bool:
     alone: punctuation inside a sentence is not spoken, and speech recognition
     sets a comma where it likes ("Stimmt, das so"). The end of a sentence does
     count: in "Stimmt. Das passt." the second is a statement of its own."""
-    return any(
-        _ASKS.search(" ".join(_WORD.findall(sentence)))
-        for sentence in _SENTENCE_END.split(lowered)
+    sentences = [
+        " ".join(_WORD.findall(sentence)) for sentence in _SENTENCE_END.split(lowered)
+    ]
+    if any(_ASKS.search(sentence) for sentence in sentences):
+        return True
+    # "Alles richtig" has no verb to go by: it is the short form of the question
+    # "Ist alles richtig?" as much as of the answer, and text has no voice that
+    # rises or falls. It counts as a yes only next to a word that cannot ask.
+    words = {word for sentence in sentences for word in sentence.split()}
+    return not words & _PLAIN_YES and any(
+        _ELLIPTIC.search(sentence) for sentence in sentences
     )
 
 
