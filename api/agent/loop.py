@@ -29,6 +29,7 @@ from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
+    note_guest_details,
     note_intent,
 )
 from api.config import settings
@@ -114,6 +115,9 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        # First of all: a name or number the model writes in this turn may
+        # come from this very sentence (agent/guest_details.py, rule 2).
+        note_guest_details(state, user_text)
         reason = escalation.check(user_text)
         if reason != "complaint":
             # Before the model and before a handoff: the request of this very

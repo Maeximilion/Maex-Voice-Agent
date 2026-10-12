@@ -22,10 +22,11 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from sim.scripted_order import CLEAR_MATCHES, MenuNumbers, PickupScript
+from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -45,6 +46,12 @@ GREETING = (
 SAY_CONFIRMED = "Ist notiert. Vielen Dank für den Anruf und bis dann."
 SAY_ASK_AGAIN = "Was soll ich ändern?"
 SAY_HANDOVER = "Ich gebe an das Team weiter."
+# After a number the core did not take. Why it did not is not known here, the
+# most likely reason is named.
+SAY_PHONE_AGAIN = (
+    "Die Rufnummer brauche ich bitte mit Vorwahl. "
+    "Unter welcher Nummer sind Sie erreichbar?"
+)
 
 # Anliegen, die dieses Skript nicht selbst kann: Lieferung (Version 2 noch nicht),
 # Allergene und das Vorlesen der Karte (dafuer ist ein echtes Modell noetig).
@@ -294,6 +301,15 @@ class ScriptedLLM:
                     return reopened
                 # Was vor einer nachgeholten Suche verstanden wurde, geht mit.
                 say = _join(self._pickup.take_carry(), say)
+            # The core refused the call for the guest's name or number, a
+            # number without its area code for one (agent/guards.py): ask for
+            # it again. Handing over instead ended outside the opening hours
+            # with a promise and neither a transfer nor a callback (Codex
+            # PR #244, P1). The hint says so, the state does not: with a
+            # caller ID it always holds a number (review after it, P1).
+            again = self._asked_again(result.get("hint"))
+            if again is not None:
+                return again
             return self._after_failure(name, say)
         if name == "create_callback":
             self._out_of_scope_request = None
@@ -320,6 +336,15 @@ class ScriptedLLM:
                 return self._pickup.on_confirmed(data)
         if name == "check_slot":
             if data.get("available"):
+                # The state is what the core took. A detail this script read
+                # from the sentence may be missing there: the core keeps no
+                # name or number the guest did not say as such, a number
+                # without its area code for one (agent/guest_details.py).
+                missing = _missing(slots)
+                if missing:
+                    return LLMTurn(
+                        say=QUESTIONS[missing], understanding_failure=missing
+                    )
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
             # Alternativen stehen im vorgeschriebenen Satz aus dem Code (docs/05 §5).
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
@@ -350,6 +375,14 @@ class ScriptedLLM:
             return replace(turn, say=_join(prefix, turn.say))
         return turn
 
+    def _asked_again(self, hint: object) -> LLMTurn | None:
+        if hint == HINT_GUEST_PHONE:
+            return LLMTurn(say=SAY_PHONE_AGAIN, understanding_failure="phone")
+        if hint == HINT_GUEST_NAME:
+            question = SAY_NAME if self._pickup is not None else QUESTIONS["guest_name"]
+            return LLMTurn(say=question, understanding_failure="guest_name")
+        return None
+
     def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:
         """Ein Fehlschlag mit vorgeschriebenem Satz geht an den Kunden zurück, der
         dann etwas anderes vorschlagen kann. Ohne Satz bleibt nur die echte Übergabe
@@ -373,7 +406,7 @@ class ScriptedLLM:
         extra: str | None = None,
         understood: bool = True,
     ) -> LLMTurn:
-        missing = next((f for f in SLOT_ORDER if not slots.get(f)), None)
+        missing = _missing(slots)
         if missing:
             say = " ".join(p for p in (prefix, extra, QUESTIONS[missing]) if p)
             return LLMTurn(
@@ -458,6 +491,11 @@ class ScriptedLLM:
             return datetime.fromisoformat(reserved_for).astimezone(self._zone).date()
         except ValueError:
             return None
+
+
+def _missing(slots: dict[str, Any]) -> str | None:
+    """The first detail of a reservation that is still open."""
+    return next((field for field in SLOT_ORDER if not slots.get(field)), None)
 
 
 def _draft(slots: dict[str, Any]) -> dict[str, Any]:
