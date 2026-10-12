@@ -13,7 +13,9 @@
                 spoken, every one of its card numbers is spoken once ("Nummer
                 S12"), and what is heard is judged against its numbers. A real
                 menu stays out of the repository; its names end up in the run
-                directory only (plan, results, the list of wrong numbers)
+                directory only (plan, results, the list of wrong numbers), so
+                with --menu that directory is the default or outside the
+                repository
     --judge-only
                 judge the recorded run in --run-dir again and print its report:
                 the same plan and transcripts, the number rule as it is now.
@@ -159,6 +161,17 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--limit needs a number above zero")
     if recorded and (args.limit is not None or args.menu):
         parser.error("--judge-only takes the plan of the run: no --limit, no --menu")
+    own_run = (SPEECH_DIR / "run").resolve()
+    if args.menu and run_dir != own_run and run_dir.is_relative_to(REPO_ROOT):
+        # Plan, transcripts and report name the dishes of that menu. Inside the
+        # repository git ignores only the kit's own run folder (Codex PR #268).
+        print(
+            f"speech_spike: with --menu the run directory holds the menu's dish "
+            f"names, and {run_dir} is a folder git could track. Leave --run-dir "
+            "out or name a folder outside the repository",
+            file=sys.stderr,
+        )
+        return 2
     if os.getuid() == 0:
         print(
             "speech_spike: run it as an unprivileged user. The containers take the "
@@ -253,7 +266,8 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
         dishes = [
             {key: row[key].strip() for key in ("number", "name", "category")}
             for row in csv.DictReader(f, delimiter=";")
-            if row.get("active", "ja") != "nein"
+            # As the import reads the flag (`importer._bool`): " NEIN " is no.
+            if (row.get("active") or "").strip().lower() != "nein"
         ]
     if not dishes:
         raise ValueError("no active dish")

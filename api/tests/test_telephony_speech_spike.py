@@ -557,3 +557,44 @@ def test_judge_only_takes_the_plan_of_the_run_and_no_other(tmp_path, capsys, ext
         kit.main(["--run-dir", str(tmp_path), "--judge-only", *extra])
     assert stop.value.code == 2
     assert "--judge-only" in capsys.readouterr().err
+
+
+# --- Codex review of PR #268 ------------------------------------------------------
+
+
+def test_an_inactive_dish_is_left_out_however_the_flag_is_written(tmp_path):
+    """The import reads " NEIN " as inactive (`importer._bool`); so does the kit,
+    or an inactive dish would be spoken and its number counted as on the card."""
+    menu = own_menu(
+        tmp_path,
+        "number;name;category;active\n"
+        "7;Suppe;Suppen;JA\n"
+        "8;Alt eins;Suppen;NEIN\n"
+        "9;Alt zwei;Suppen; nein \n"
+        "10;Salat;Vorspeisen;\n",
+    )
+    plan = kit.build_plan(None, menu)
+    assert [m["number"] for m in plan["menu"]] == ["7", "10"]
+    assert plan["key_terms"] == ["Suppe", "Salat"]
+
+
+def test_a_real_menu_is_not_written_into_a_folder_git_could_track(
+    tmp_path, monkeypatch, capsys
+):
+    """With --menu the run directory holds the menu's dish names. Inside the
+    repository only the kit's own run folder is ignored by git."""
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    menu = own_menu(tmp_path)
+    inside = kit.SPEECH_DIR / "run-of-a-test"
+    assert kit.main(["--menu", str(menu), "--run-dir", str(inside), "--dry-run"]) == 2
+    assert "outside the repository" in capsys.readouterr().err
+    assert not inside.exists()
+    # Outside the repository, and in the kit's own run folder, it runs.
+    assert (
+        kit.main(["--menu", str(menu), "--run-dir", str(tmp_path / "r"), "--dry-run"])
+        == 0
+    )
+    monkeypatch.setattr(kit, "usable_run_dir", lambda *a: True)
+    assert kit.main(["--menu", str(menu), "--dry-run"]) == 0
+    # Without a menu the eval sentences may go anywhere, as before.
+    assert kit.main(["--run-dir", str(inside), "--dry-run"]) == 0

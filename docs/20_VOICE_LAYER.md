@@ -320,9 +320,10 @@ top of `api/telephony/speech_spike.py`.
 **On another menu than the eval menu (12.10.2026).** The evals and CI stay on the invented eval menu. To hear what the ears make of a real one, convert the register copies into the folder `imports/`, which git ignores, and hand the kit the file:
 
 ```bash
-# Ubuntu terminal, repository folder. <kasse> is the folder with the register copies;
-# it is mounted read-only. Exit 1 with the allergen errors is expected.
-docker run --rm --network none -v "$PWD:/app" -v "<kasse>:/kasse:ro" -w /app \
+# Ubuntu terminal, repository folder. KASSE is the folder with the register copies; set it
+# to yours. It is mounted read-only. Exit 1 with the allergen errors is expected.
+KASSE="$HOME/kasse"
+docker run --rm --network none -v "$PWD:/app" -v "$KASSE:/kasse:ro" -w /app \
   --user "$(id -u):$(id -g)" -e HOME=/tmp -e DATABASE_URL=postgresql+psycopg://x:x@x/x \
   -e AGENT_API_TOKEN=x -e ENV=test maex-voice-agent-api:latest \
   python -m scripts.kasse_to_csv /kasse --out imports
@@ -330,7 +331,7 @@ python3 -m scripts.speech_spike --menu imports/menu_items.csv   # about 45 minut
 python3 -m scripts.speech_spike --judge-only                    # after a change to the number rule
 ```
 
-With `--menu` the kit speaks the dish names of that file, every one of its card numbers once ("Nummer S12") and the sentences of the number eval, hands the names to the ear as key terms, and the judge reads from the plan which letters a number can carry and what is on the card. The expectations of the number eval were written for the eval menu, so with another menu a number sentence is right when the transcript resolves like the sentence that was said. `--judge-only` speaks and hears nothing: it judges the recorded run in the run folder again with the number rule as it is now. **A real menu stays out of the repository:** its names are in `imports/` and in the run folder only (plan, results, the list of wrong numbers), both ignored by git, and the log below carries counts, no names.
+With `--menu` the kit speaks the dish names of that file, every one of its card numbers once ("Nummer S12") and the sentences of the number eval, hands the names to the ear as key terms, and the judge reads from the plan which letters a number can carry and what is on the card. The expectations of the number eval were written for the eval menu, so with another menu a number sentence is right when the transcript resolves like the sentence that was said. `--judge-only` speaks and hears nothing: it judges the recorded run in the run folder again with the number rule as it is now. **A real menu stays out of the repository:** its names are in `imports/` and in the run folder only (plan, results, the list of wrong numbers), both ignored by git, and the log below carries counts, no names. With `--menu` the kit refuses a `--run-dir` inside the repository other than its own.
 
 What the numbers are and are not:
 
