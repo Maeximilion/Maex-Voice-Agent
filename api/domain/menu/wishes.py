@@ -416,16 +416,16 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
         )
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
-        removal, addition = _split_addition(text)
-        if addition is None:
+        left_out, added = _split_addition(text)
+        if added is None:
             return Wish(text=text, kind="note")
-        if not _REMOVE & set(_words(removal)):
+        if not _REMOVE & set(_words(left_out)):
             # "ohne statt Reis": the word in front of "statt" is the removal
             # word itself, so nothing left out is named and the addition would
             # be the same text again (endless recursion). Not understood, and
             # never a free note.
             return Wish(text=text, kind="unknown")
-        return classify_wish(addition, groups).model_copy(update={"note": removal})
+        return classify_wish(added, groups).model_copy(update={"note": left_out})
     addition, removal = _split_removal(text)
     if removal is not None:
         # "mit Nudeln ohne Zwiebeln": die Option und der Hinweis, wie umgekehrt

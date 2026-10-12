@@ -31,6 +31,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -381,6 +382,8 @@ def parse(files: Mapping[str, str | None]) -> Plan:
         if problems:
             plan.errors.append(f"{where}: {'; '.join(problems)}")
             continue
+        # Both would have been a problem above and skipped the row.
+        assert price is not None and active is not None
         plan.items[number] = ItemRow(
             number=number,
             name=row["name"],
@@ -431,6 +434,8 @@ def _parse_options(plan: Plan, text: str | None, known: Mapping[str, str]) -> No
         if problems:
             plan.errors.append(f"{where}: {'; '.join(problems)}")
             continue
+        # All three would have been a problem above and skipped the row.
+        assert delta is not None and is_default is not None and required is not None
         seen.add(key)
         plan.options.setdefault(number, []).append(
             OptionRow(
@@ -592,8 +597,8 @@ def apply(
     # If both spellings already exist, a person decides which one applies -
     # silently hiding one would mean never finding the other again.
     by_key: dict[str, list[MenuItem]] = {}
-    for row in rows:
-        by_key.setdefault(canonical_card(row.number), []).append(row)
+    for stored in rows:
+        by_key.setdefault(canonical_card(stored.number), []).append(stored)
     clashes = [
         sorted(r.number for r in group) for group in by_key.values() if len(group) > 1
     ]
@@ -643,10 +648,10 @@ def apply(
                 f"{len(active_missing)} von {active_total} aktiven Gerichten würden "
                 "deaktiviert, mehr als die Hälfte der Karte. Export prüfen."
             )
-        for item in missing:
-            if item.active:
-                item.active = False
-                report.items_deactivated.append(item.number)
+        for gone in missing:
+            if gone.active:
+                gone.active = False
+                report.items_deactivated.append(gone.number)
         report.items_deactivated.sort()
 
     items: dict[str, MenuItem] = {}
@@ -754,9 +759,9 @@ def _sync_options(
         )
     }
     desired = {(o.group_name, o.option_name): o for o in wanted}
-    for key, option in current.items():
+    for key, stale in current.items():
         if key not in desired:
-            session.delete(option)
+            session.delete(stale)
             report.options_removed += 1
     for key, row in desired.items():
         option = current.get(key)
@@ -819,7 +824,9 @@ def _sync_allergens(
         if code not in desired:
             session.delete(allergen)
         else:
-            allergen.confirmed_by = row.confirmed_by
+            # A kept code means the file names codes, and codes without a
+            # checker never get past _parse_allergens; the column is NOT NULL.
+            allergen.confirmed_by = cast(str, row.confirmed_by)
             allergen.confirmed_at = now
     for code in sorted(desired - set(current)):
         session.add(

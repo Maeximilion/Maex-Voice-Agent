@@ -134,7 +134,8 @@ def _next_pickup_code(session: Session, order: Order, tz_name: str) -> str:
         {"key": f"pickup_code:{order.tenant_id}:{day.isoformat()}"},
     )
     start, end = business_day_bounds_utc(day, tz_name)
-    issued = session.scalar(
+    # scalar_one: a count without GROUP BY is always exactly one row.
+    issued = session.execute(
         select(func.count())
         .select_from(Order)
         .where(
@@ -143,7 +144,7 @@ def _next_pickup_code(session: Session, order: Order, tz_name: str) -> str:
             Order.created_at >= start,
             Order.created_at < end,
         )
-    )
+    ).scalar_one()
     return f"{PICKUP_PREFIX}{issued + 1}"
 
 

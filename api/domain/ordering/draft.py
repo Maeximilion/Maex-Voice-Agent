@@ -11,6 +11,7 @@ nimmt das Tool nur Abholungen an.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -30,7 +31,7 @@ from api.domain.ordering.validation import (
 )
 from api.domain.status.service import PICKUP
 from api.models import AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
-from api.schemas.orders import DraftOrderRequest, OrderDraft
+from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
 
 ACTOR_AGENT = "agent"
 # Die zugesagte Zeit liegt nach Schluss der Abholung. Der Agent sagt es dem
@@ -222,7 +223,9 @@ def _warnings(session: Session, order: Order, zone: ZoneInfo) -> list[str]:
 def _response(order: Order, spoken: str, warnings: list[str]) -> OrderDraft:
     return OrderDraft(
         order_id=order.id,
-        status=order.status,
+        # The column is text; ck_orders_status keeps it to these values, and
+        # OrderDraft checks it again.
+        status=cast(OrderStatus, order.status),
         items_total_cents=order.items_total_cents,
         delivery_fee_cents=order.delivery_fee_cents,
         total_cents=order.total_cents,

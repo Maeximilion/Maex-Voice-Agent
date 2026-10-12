@@ -22,7 +22,7 @@ def session(migrated_db_url):
     engine.dispose()
 
 
-def _counts(session: Session, tenant_id) -> dict[str, int]:
+def _counts(session: Session, tenant_id) -> dict[str, int | None]:
     return {
         "tenants": session.scalar(select(func.count()).select_from(Tenant)),
         "opening_hours": session.scalar(

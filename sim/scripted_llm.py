@@ -180,7 +180,7 @@ class ScriptedLLM:
             and "?" not in text
             and _opening_dish(text) is not None
         )
-        stems = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
+        stems: tuple[str, ...] = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
         if wants_pickup:
             stems = OUT_OF_SCOPE_IN_ORDER + tuple(
                 s for s in OUT_OF_SCOPE if not (own_allergy and s == ALLERGY_STEM)

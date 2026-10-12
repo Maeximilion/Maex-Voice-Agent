@@ -535,6 +535,7 @@ TARGET_PROBE = (
 
 def _lib(snippet: str, *args: str, **env: str) -> subprocess.CompletedProcess:
     clean = {k: v for k, v in os.environ.items() if not k.startswith(("PG", "BACKUP_"))}
+    assert BASH is not None  # without bash `_tools` has skipped or failed the module
     return subprocess.run(
         [BASH, "-c", f"source scripts/lib_pg.sh; {snippet}", "probe", *args],
         cwd=REPO_ROOT,

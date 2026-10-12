@@ -21,6 +21,7 @@ import os
 import time
 import uuid
 from collections import Counter
+from collections.abc import MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -221,7 +222,7 @@ class ProbeCall:
         self._log.flush()
 
 
-async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
+async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
     if scope["type"] == "http":  # the health check of the Compose service
         await send({"type": "http.response.start", "status": 200, "headers": []})
         await send({"type": "http.response.body", "body": b"ok"})
