@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.11
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.13
 
 ---
 
@@ -440,7 +440,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.0.11 · 12.10.2026:** Bug fixed: the read-back speaks the total as two plain numbers (25 Euro 70, 50 Cent), eval abholung_0076; evals can expect a piece of the read-back
+- **v2.0.13 · 12.10.2026:** Bug fixed: the read-back speaks the total as two plain numbers (25 Euro 70, 50 Cent), eval abholung_0076; evals can expect a piece of the read-back
+- **v2.0.12 · 12.10.2026:** Sync hook: Codex round two on PR #247 fixed (squash merge that main changed since, main checked out elsewhere, line break in a path)
+- **v2.0.11 · 12.10.2026:** Pulling is Claude's job: sync hook returns the main folder to main after a finished branch and moves main where no folder has it; /task, /bug and /done fetch before branching and before a merge
 - **v2.0.10 · 12.10.2026:** Backup and restore create the gpg home themselves; two runs on a fresh machine no longer race gpg's own unlocked creation (flaky CI test)
 - **v2.0.9 · 12.10.2026:** Open points from Maxi's listening test: spoken total (25,70 Euro), speech kit on the real menu
 - **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services

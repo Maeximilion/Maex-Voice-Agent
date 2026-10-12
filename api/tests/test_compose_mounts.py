@@ -53,6 +53,8 @@ UNPRUEFBAR_OBEN = ("include",)
 # Read only on a full checkout, never inside the container: the sync hook test needs
 # git, which the api image does not have, and skips there. Mounting `.claude/hooks`
 # for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
+# `/done` names the hook too: Claude runs it on the host after a merge, never in the
+# container.
 CHECKOUT_ONLY = frozenset({".claude/hooks/sync_main.sh"})
 
 
@@ -207,7 +209,9 @@ def _refs_aus_tests() -> set[str]:
 def test_slash_befehle_verweisen_nur_auf_gemountete_pfade():
     mounts = _api_mounts()
     fehlend = sorted(
-        ref for ref in _refs_aus_befehlen() if not _is_mounted(ref, mounts)
+        ref
+        for ref in _refs_aus_befehlen()
+        if ref not in CHECKOUT_ONLY and not _is_mounted(ref, mounts)
     )
     assert not fehlend, (
         f"von .claude/commands verwiesen, aber im api-Container nicht gemountet: {fehlend}"
