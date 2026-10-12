@@ -54,8 +54,9 @@ PLANS = {
     "610": Plan(440, 15),  # long enough to be stopped by a key
     "611": Plan(440, 1, hangup_when_spoken=True),
 }
-# What the softphone plays on these extensions, so each call is told apart.
-CALLER_TONES = {"601": 1000, "602": 1200, "603": 1400}
+# What the softphone plays on these extensions, so each call is told apart. On
+# 610 its start is the mark that puts the recording and this log on one clock.
+CALLER_TONES = {"601": 1000, "602": 1200, "603": 1400, "610": 1000}
 # The key that stops the playback, as a caller speaking over a sentence would.
 STOP_KEY = "5"
 

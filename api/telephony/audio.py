@@ -57,11 +57,13 @@ def tone_seconds(pcm: bytes, freq_hz: int, rate: int) -> float:
     return len(_sounding(pcm, freq_hz, rate)) * (rate // 50) / rate
 
 
-def tone_end(pcm: bytes, freq_hz: int, rate: int) -> float | None:
-    """The second in `pcm` at which `freq_hz` sounds for the last time, None when
-    it never does. Where a tone stops, which its length alone does not tell."""
+def tone_span(pcm: bytes, freq_hz: int, rate: int) -> tuple[float, float] | None:
+    """The seconds in `pcm` at which `freq_hz` first sounds and last stops, None
+    when it never sounds. Where a tone is, which its length alone does not tell."""
     sounding = _sounding(pcm, freq_hz, rate)
-    return (sounding[-1] + rate // 50) / rate if sounding else None
+    if not sounding:
+        return None
+    return sounding[0] / rate, (sounding[-1] + rate // 50) / rate
 
 
 def _sounding(pcm: bytes, freq_hz: int, rate: int) -> list[int]:

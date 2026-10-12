@@ -19,6 +19,8 @@ def call(
     exten: str,
     *,
     heard: bytes | None = None,
+    sent: bytes = b"",
+    first_audio_t: float | None = 0.05,
     digits: str | None = None,
     tones_in: dict[str, float] | None = None,
     mono: float = 100.0,
@@ -62,6 +64,7 @@ def call(
             "dir": "probe",
             "closed": True,
             "heard_hz": CALLER_TONES.get(exten),
+            "first_audio_t": first_audio_t,
             "tones_in": tones_in,
             "audio_in_seconds": 2.997,
             "frame_bytes": {"640": 149, "552": 1},
@@ -72,7 +75,7 @@ def call(
     ]
     if heard is None:
         heard = tone(plan.tone_hz, plan.seconds, LINE)
-    return {"log": log, "heard": heard, "seconds": seconds}
+    return {"log": log, "heard": heard, "sent": sent, "seconds": seconds}
 
 
 def failed(checks: list[spike.Check]) -> list[str]:
@@ -173,50 +176,82 @@ def test_steady_frames(frame_bytes, interval, gap, steady):
     assert spike.steady_frames(summary) is steady
 
 
-def stopped(flush_at: float, heard_seconds: float, status: bool = True) -> dict:
+# In these calls the caller's tone starts with the recording and reaches the probe
+# 0.05 s after the socket opened: the recording's clock is the probe's minus 0.05.
+MARK_AT_PROBE = 0.05
+STOP_FAILS = ["610: a key stops the playback"]
+
+
+def stopped(
+    flush_at: float,
+    heard_seconds: float,
+    *,
+    recorder_early: float = 0.0,
+    tone_late: float = 0.0,
+    mark: bool = True,
+) -> dict:
+    """A call to 610: we flush at `flush_at` on the probe's clock, the caller heard
+    our tone for `heard_seconds`. `recorder_early` puts silence in front of both
+    recordings, `tone_late` only in front of what the caller heard."""
     events = [
         (flush_at, "in", {"event": "DTMF_END", "digit": "5"}),
         (flush_at, "out", {"command": "FLUSH_MEDIA"}),
+        (flush_at, "in", {"event": "STATUS", "queue_length": 0}),
     ]
-    if status:
-        events.append((flush_at, "in", {"event": "STATUS", "queue_length": 0}))
+    lead = bytes(int(recorder_early * LINE) * 2)
+    heard = lead + bytes(int(tone_late * LINE) * 2) + tone(440, heard_seconds, LINE)
+    sent = lead + tone(CALLER_TONES["610"], 3, LINE) if mark else lead
     return {
         "610": call(
             "610",
             digits="5",
             events=events,
-            heard=tone(440, heard_seconds, LINE) + bytes(LINE * 4),
+            heard=heard + bytes(LINE * 4),
+            sent=sent + bytes(LINE * 4),
+            first_audio_t=MARK_AT_PROBE if mark else None,
         )
     }
 
 
 def test_a_flush_that_ends_the_tone_passes():
-    assert failed(spike.judge_stop(stopped(flush_at=2.17, heard_seconds=2.18))) == []
+    assert failed(spike.judge_stop(stopped(flush_at=3.25, heard_seconds=3.21))) == []
+
+
+def test_a_recorder_that_started_before_the_audio_changes_nothing():
+    calls = stopped(flush_at=3.25, heard_seconds=3.21, recorder_early=0.5)
+
+    assert failed(spike.judge_stop(calls)) == []
 
 
 def test_a_tone_that_ended_before_the_flush_was_not_stopped_by_it():
-    assert failed(spike.judge_stop(stopped(flush_at=2.17, heard_seconds=1.7))) == [
-        "610: a key stops the playback"
-    ]
+    calls = stopped(flush_at=3.25, heard_seconds=2.7)
+
+    assert failed(spike.judge_stop(calls)) == STOP_FAILS
 
 
 def test_a_tone_that_started_late_and_ran_past_the_flush_fails():
-    calls = stopped(flush_at=2.17, heard_seconds=2.18)
-    calls["610"]["heard"] = bytes(LINE * 2) + calls["610"]["heard"]
+    calls = stopped(flush_at=3.25, heard_seconds=3.21, tone_late=1.0)
 
-    assert failed(spike.judge_stop(calls)) == ["610: a key stops the playback"]
+    assert failed(spike.judge_stop(calls)) == STOP_FAILS
 
 
 def test_a_tone_that_plays_on_after_the_flush_fails():
-    assert failed(spike.judge_stop(stopped(flush_at=2.17, heard_seconds=4.0))) == [
-        "610: a key stops the playback"
-    ]
+    assert (
+        failed(spike.judge_stop(stopped(flush_at=3.25, heard_seconds=5.0)))
+        == STOP_FAILS
+    )
+
+
+def test_without_the_callers_tone_there_is_no_clock_to_judge_the_stop_by():
+    calls = stopped(flush_at=3.25, heard_seconds=3.21, mark=False)
+
+    assert failed(spike.judge_stop(calls)) == STOP_FAILS
 
 
 def test_without_a_flush_nothing_was_stopped():
     calls = {"610": call("610", digits="", events=[])}
 
-    assert failed(spike.judge_stop(calls)) == ["610: a key stops the playback"]
+    assert failed(spike.judge_stop(calls)) == STOP_FAILS
 
 
 def hung_up(heard_seconds: float, seconds: float = 1.4) -> dict:
@@ -245,6 +280,68 @@ def test_a_call_the_caller_had_to_end_fails():
     assert failed(spike.judge_hangup(hung_up(1.0, seconds=20.5))) == [
         "611: we hang up after everything was spoken"
     ]
+
+
+class FakeStack:
+    """Stands in for the containers: a call is over the moment it is placed."""
+
+    def __init__(self, run_dir, clock, steps: int) -> None:
+        self.run_dir = run_dir
+        self.clock = clock
+        self.steps = steps  # how many calls the wall clock is set during
+        self.placed = 0
+        for folder in ("rec", "probe"):
+            (run_dir / folder).mkdir(parents=True)
+
+    def softphone(self, cli_command: str) -> str:
+        if not cli_command.startswith("channel originate"):
+            return "0 active channels\n"
+        self.placed += 1
+        if self.placed <= self.steps:
+            self.clock.offset += 3.3
+        closing = {"t": 5.0, "dir": "probe", "closed": True}
+        (self.run_dir / "probe" / "601-abc.jsonl").write_text(
+            json.dumps(closing) + "\n"
+        )
+        return ""
+
+
+class Clock:
+    """The time module as the kit sees it, with a wall clock that can be set."""
+
+    def __init__(self) -> None:
+        self.offset = 0.0
+        self.now = 1000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def time(self) -> float:
+        return self.now + self.offset
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@pytest.mark.parametrize(
+    ("steps", "placed"),
+    [
+        (0, 1),  # a steady clock: one call
+        (1, 2),  # set during the first call: placed again
+        (9, 1 + spike.CLOCK_STEP_RETRIES),  # set every time: it gives up and judges
+    ],
+)
+def test_a_call_during_which_the_wall_clock_was_set_is_placed_again(
+    tmp_path, monkeypatch, steps, placed
+):
+    clock = Clock()
+    monkeypatch.setattr(spike, "time", clock)
+    stack = FakeStack(tmp_path, clock, steps)
+
+    calls = spike.place(stack, ("601",))
+
+    assert stack.placed == placed
+    assert calls["601"]["log"][-1]["closed"]
 
 
 def test_a_recording_that_is_missing_or_half_written_reads_as_empty(tmp_path):

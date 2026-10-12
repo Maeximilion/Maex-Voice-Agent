@@ -42,7 +42,7 @@ import wave
 from pathlib import Path
 from typing import Any
 
-from api.telephony.audio import dominant, tone, tone_end, tone_seconds
+from api.telephony.audio import dominant, tone, tone_seconds, tone_span
 from api.telephony.probe import CALLER_TONES, PLANS, STOP_KEY
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -56,6 +56,11 @@ LINE_RATE = 8000
 # How long the softphone plays its tone.
 CALLER_TONE_SECONDS = 3
 CALL_TIMEOUT_SECONDS = 45
+# The PBX times its waits by the wall clock. When that clock is set during a
+# call (WSL does it after the machine slept, in steps of seconds), the softphone
+# hangs up early or late and the call says nothing about the media channel.
+CLOCK_STEP_SECONDS = 0.5
+CLOCK_STEP_RETRIES = 3
 # Tolerances of the judgement, all in seconds.
 PACING_TOLERANCE = 0.3
 STOP_LIMIT = 0.5
@@ -273,13 +278,16 @@ def render(run_dir: Path) -> None:
             out.writeframes(tone(freq, CALLER_TONE_SECONDS, LINE_RATE))
 
 
-def place(stack: Stack, extens: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+def place(
+    stack: Stack, extens: tuple[str, ...], retries: int = CLOCK_STEP_RETRIES
+) -> dict[str, dict[str, Any]]:
     """Place one call per extension at once, wait for all to end, collect per
-    extension: the probe's log, what the caller heard, how long the call took."""
+    extension: the probe's log, what the caller heard and sent, how long the call
+    took. A call during which the wall clock was set is placed again."""
     for folder in ("rec", "probe"):
         for old in (stack.run_dir / folder).iterdir():
             old.unlink()
-    started = time.monotonic()
+    started, wall = time.monotonic(), time.time()
     for exten in extens:
         stack.softphone(
             f"channel originate Local/{exten}@dialout extension {exten}@script"
@@ -300,13 +308,25 @@ def place(stack: Stack, extens: tuple[str, ...]) -> dict[str, dict[str, Any]]:
                 f"{CALL_TIMEOUT_SECONDS} s; see pbx.log in the run directory"
             )
     seconds = time.monotonic() - started
+    stepped = (time.time() - wall) - seconds
+    if abs(stepped) > CLOCK_STEP_SECONDS and retries:
+        print(
+            f"   the wall clock was set by {stepped:+.1f} s during the call; the PBX "
+            "times its waits by it, so the call is placed again"
+        )
+        return place(stack, extens, retries - 1)
     # Saved so a later scenario does not delete what this one produced.
     keep = stack.run_dir / "calls" / "-".join(extens)
-    heard = {e: finished_wav(stack.run_dir / "rec" / f"{e}-heard.wav") for e in extens}
+    rec = stack.run_dir / "rec"
+    heard = {e: finished_wav(rec / f"{e}-heard.wav") for e in extens}
+    sent = {e: finished_wav(rec / f"{e}-sent.wav") for e in extens}
     shutil.rmtree(keep, ignore_errors=True)
     shutil.copytree(stack.run_dir / "probe", keep)
     shutil.copytree(stack.run_dir / "rec", keep / "rec")
-    return {e: {"log": logs[e], "heard": heard[e], "seconds": seconds} for e in extens}
+    return {
+        e: {"log": logs[e], "heard": heard[e], "sent": sent[e], "seconds": seconds}
+        for e in extens
+    }
 
 
 def read_log(folder: Path, exten: str) -> list[dict[str, Any]]:
@@ -474,20 +494,25 @@ def judge_stop(calls: dict[str, dict[str, Any]]) -> list[Check]:
     flush = events(log, "out", "command", "FLUSH_MEDIA")
     status = events(log, "in", "event", "STATUS")
     heard = tone_seconds(call["heard"], plan.tone_hz, LINE_RATE)
-    end = tone_end(call["heard"], plan.tone_hz, LINE_RATE)
-    if not flush or end is None:
+    ours = tone_span(call["heard"], plan.tone_hz, LINE_RATE)
+    # The caller's own tone is on both clocks: where it starts in the softphone's
+    # recording, and when its first frame reached the probe.
+    mark = tone_span(call["sent"], CALLER_TONES["610"], LINE_RATE)
+    mark_at_probe = log[-1]["first_audio_t"]
+    if not flush or ours is None or mark is None or mark_at_probe is None:
         return [
             (
                 "610: a key stops the playback",
                 False,
-                f"flush sent: {bool(flush)}, tone heard: {heard:.2f} s",
+                f"flush sent: {bool(flush)}, tone heard: {heard:.2f} s, "
+                f"the caller's tone as a mark: {mark is not None and mark_at_probe is not None}",
             )
         ]
-    # How long after the flush the caller still heard the tone: where it ends in
-    # the recording against when we flushed, both counted from the start of the
-    # call. Much later, the flush stopped nothing in time; clearly earlier, the
-    # tone ended by itself.
-    overrun = end - (flush[0]["t"] - sent_at(log))
+    # How long after the flush the caller still heard our tone, with the flush put
+    # on the recording's clock through that mark. Much later, the flush stopped
+    # nothing in time; clearly earlier, the tone ended by itself.
+    flush_in_recording = mark[0] + (flush[0]["t"] - mark_at_probe)
+    overrun = ours[1] - flush_in_recording
     return [
         (
             "610: a key stops the playback",
