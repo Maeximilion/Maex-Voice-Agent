@@ -283,7 +283,11 @@ class PickupScript:
         return (lines[0], ref.text, _correction_quantity(said)) if lines else None
 
     def _replaced(
-        self, data: dict[str, Any], slots: dict[str, Any], say: str | None = None
+        self,
+        replace: tuple[int, int | None],
+        data: dict[str, Any],
+        slots: dict[str, Any],
+        say: str | None = None,
     ) -> LLMTurn:
         """The search for a correction came back: the one dish takes the place
         of the line, with its quantity and its note for the kitchen. Options
@@ -291,7 +295,7 @@ class PickupScript:
         asked, and its answer leads back to the read-back (`_next`). Anything
         but one clear dish starts the order again; a dish that is out today
         with the sentence the search wrote for it."""
-        (at, quantity), self._replace = self._replace, None
+        at, quantity = replace
         hits = data.get("results") or []
         if data.get("match_type") not in CLEAR_MATCHES or len(hits) != 1:
             return self._restart()
@@ -321,7 +325,8 @@ class PickupScript:
         """`say` repeats what was clearly understood (from the code, Maxi PR #127);
         the script speaks it like a model that follows the rule in the prompt."""
         if self._replace is not None:
-            return self._replaced(data, slots, say)
+            replace, self._replace = self._replace, None
+            return self._replaced(replace, data, slots, say)
         reopen, self._reopen = self._reopen, None
         if data.get("match_type") == "positions":
             unclear: str | None = None
