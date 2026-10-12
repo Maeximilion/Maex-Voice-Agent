@@ -198,12 +198,21 @@ def _may_be_a_head(group: str) -> bool:
     begin like one, or are too many for a count, a time or a dish. Then the
     last digits may be only its tail: "0171 20, 034567", "0043, 0664 1234567"
     and "0171 20 äh 034567" end with a valid German number nobody said
-    (review of 31a3a81). A date is no head."""
+    (review of 31a3a81). A date with its separators is no head, and neither
+    is an hour: "am 05.10. um 09:30 Uhr, 0171 2345678". Digits in pairs with
+    blanks are one, they may be a number said that way ("02 11 55, 01 23
+    45"; review of 8835fa3).
+    ponytail: a head is told by how it begins. Two to five digits that begin
+    with 1 to 9 are none ("49 171, 0345678"), nor is a head in an earlier
+    turn; both leave a tail that begins with 0 standing as a number."""
     text = group.lstrip("( ")
-    if _DATE_LIKE.match(text) or _is_date(text):
+    if _DATE_LIKE.match(text):
         return False
     digits = sum(char.isdigit() for char in text)
-    return digits >= _HEAD_DIGITS or (digits > 1 and text.startswith(("0", "+")))
+    if digits >= _HEAD_DIGITS or text.startswith("+"):
+        return True
+    # An area code has three digits or more, the zero included.
+    return digits > 2 and text.startswith("0")
 
 
 def _is_date(text: str) -> bool:

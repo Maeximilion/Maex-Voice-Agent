@@ -322,10 +322,11 @@ behind them ("0171 234 äh 5678", "0171 234. 5678", "0721 555 und dann 1234" beg
 valid number that has digits missing) or it ended and they are something else ("0171
 2345678 - 19 Uhr passt" read as one is a number nobody said). The digits do not say which,
 so the guest is asked again and says the number alone. The same holds when other digits
-of the turn may be the head of the number, because they begin with a zero or a plus or are
-six or more: "0171 20, 034567" and "0043, 0664 1234567" end with a valid German number
-nobody said, and of two numbers in one turn the core picks neither. A count, a date or a
-dish before the number does no harm ("für 4 am 16.09., meine Nummer ist 0171 2345678").
+of the turn may be the head of the number, because they begin with a plus, with a zero and
+have three digits or more, or are six or more: "0171 20, 034567" and "0043, 0664 1234567" end with a valid German number
+nobody said, and of two numbers in one turn the core picks neither. A head it does not
+tell as one leaves the tail standing ("49 171, 0345678", or a head in the turn before;
+Open Points). A count, a date, an hour or a dish before the number does no harm ("für 4 am 16.09., meine Nummer ist 0171 2345678").
 The trunk zero in brackets belongs to its number ("+43 (0)664 1234567"). Inside a number may stand blanks,
 a slash or a hyphen without blanks, brackets around the area code and a period between
 digits; a comma, a period before a blank, and a dash or slash next to a blank end it. A
@@ -341,8 +342,11 @@ the agent proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). How n
 letters arrive as text is decided by the ear of the voice layer (T-10.5); the check is
 extended there.
 
-*Not stopped:* blanks alone do not tell where a number ends, so "0171 2345678 19 Uhr" is
-read as one number of thirteen digits; a model that writes exactly those digits passes.
+*Not stopped:* digits that follow a number without a clear separator are read as part of
+it, since a blank, an unspaced hyphen or slash and a closing bracket stand inside real
+numbers too: "0171 2345678 19 Uhr" and "0171 2345678-19 Uhr" are one number of thirteen
+digits, and a model that writes exactly those digits passes. A word of the name that a
+model repeats ("Müller Müller") passes as well, the words of a call are not counted.
 Which of two phone numbers a guest said is the one to call stays with the model, as with
 the words of a name: the core has no rule for the context a number stands in, and a
 number taken from speech is not read back today (Open Points in `docs/01_STATUS.md`). A

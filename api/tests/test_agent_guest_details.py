@@ -319,6 +319,11 @@ def test_number_without_an_area_code_is_no_phone_number(written):
         "Für 4, 0171 2345678",
         "Tisch für 4 am 16.09. um 19 Uhr, meine Nummer ist 0171 2345678",
         "Die 23 bitte, auf Müller, 0171 2345678",
+        # An hour with a leading zero is no head of a number (review of 8835fa3).
+        "Morgen um 09:30 Uhr, erreichbar unter 0171 2345678",
+        "Um 08 Uhr, meine Nummer ist 0171 2345678",
+        "Am 05.10. um 08:00 Uhr auf Müller, 0171 2345678",
+        "Um 00:30 Uhr, 0171 2345678",
         # The trunk zero in brackets belongs to the number it stands in.
         "+49 (0) 171 2345678",
         "0049 (0)171 2345678",
@@ -362,6 +367,10 @@ def test_last_digits_of_a_turn_are_the_number(sentence):
         "0043, 0664 1234567",
         "0033, 06 12 34 56 78",
         "49 171 20 äh 034567",
+        "+43, 0664 1234567",
+        # Said in pairs, the first half looks like a date (review of 8835fa3).
+        "Meine Nummer ist 02 11 55, 01 23 45",
+        "03 01 23, 04 56 78",
         # Two numbers: which of them is meant is not for the core to pick.
         "Die alte war 0172 3456789, die neue ist 0171 2345678",
         "0172 3456789 - 0171 2345678",
@@ -385,6 +394,8 @@ def test_digits_followed_by_more_digits_are_no_number(sentence):
         "+4934567",
         "+496641234567",
         "+49612345678",
+        "+4912345",
+        "+4945678",
     ):
         assert number_known(written, None, said_numbers) is False
 
