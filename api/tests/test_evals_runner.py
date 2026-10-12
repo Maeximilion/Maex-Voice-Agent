@@ -514,6 +514,34 @@ def test_the_same_cart_next_to_the_read_back_changes_nothing():
     assert rec.recording.confirms == 1
 
 
+def test_a_draft_that_comes_with_its_cart_is_still_a_draft():
+    """`cart` and `draft_order` in one answer, as the format asks for when the
+    order changes. The cart is new, so it reads as a correction, but the draft
+    next to it is the new draft: the yes after its read-back is consent, not a
+    violation (Codex, PR #258)."""
+    order = [{"menu_item_id": ITEM, "quantity": 2}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(
+                    tool_call=ToolCall("draft_order", {"items": order}), cart=order
+                ),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Zweimal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == []
+    assert rec.recording.confirms == 1
+
+
 def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
     rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
 

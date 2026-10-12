@@ -111,13 +111,17 @@ class RecordingLLM:
     ) -> LLMTurn:
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input)
+        if turn.cart is not None:
+            # First, as in the core (`agent/loop.py`): the `cart` is taken
+            # before the answer next to it is carried out. A changed order
+            # drops the draft that waited; a `draft_order` in the same answer
+            # is the new draft and must not be dropped with it.
+            self._observe_cart(turn.cart)
         if turn.tool_call is not None:
             self._observe_call(turn.tool_call.name, turn.tool_call.args)
         elif turn.say is not None:
             rec = self.recording
             rec.read_out = bool(rec.readback) and read_out(turn.say, rec.readback)
-        if turn.cart is not None:
-            self._observe_cart(turn.cart)
         return turn
 
     def _observe_cart(self, cart: Any) -> None:
