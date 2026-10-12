@@ -152,6 +152,12 @@ _LETTER_NAMES = {
 }  # fmt: skip
 # At most this many tokens form a prefix ("Es Em" -> sm, "S M" -> sm).
 _MAX_PREFIX_TOKENS = 3
+# A word the speech recognition writes when the guest says a letter in front of
+# a number: "S zwölf" arrived as "ist zwölf" from every engine measured (T-10.3,
+# docs/20 §11). Not a letter name: the word is as likely just the word ("die
+# Nummer ist 23"), so it adds a candidate and never replaces the plain number,
+# and the search asks before it takes either (`ItemNumber.heard`).
+_HEARD_LETTERS = {"ist": "s"}
 
 
 @dataclass(frozen=True)
@@ -212,16 +218,30 @@ class CardFormat:
         """`words` as a dict, built once per card format."""
         return dict(self.words)
 
-    def prefixes_of(self, run: list[str], spelled: bool = True) -> tuple[str, ...]:
+    def prefixes_of(
+        self, run: list[str], spelled: bool = True, heard: bool | None = None
+    ) -> tuple[str, ...]:
         """The prefixes these tokens can mean directly in front of a number.
 
         `spelled=False`: letter names ("es", "em") do not count. They are also
         German words - "Dann nehme ich es zwei" is not S2 (review PR #155).
+
+        `heard`: whether a word the ear writes for a letter counts
+        (`_HEARD_LETTERS`); without it, like `spelled`. It only adds a candidate
+        and its result starts with "", the number without a prefix, so it needs
+        no clean sentence start: "Ich nehme ist zwölf" is 12 or S12 as well
+        (Codex PR #257). Glued to the digits it is no heard word.
         """
         if not self.prefixes or not run or any(t in PUNCTUATION for t in run):
             return ()
         if len(run) == 1 and run[0] in self._word_map:
             return self._word_map[run[0]]
+        if heard is None:
+            heard = spelled
+        if heard and len(run) == 1 and _HEARD_LETTERS.get(run[0]) in self.prefixes:
+            # "ist zwölf" is 12 or S12: both are looked up, and the search asks
+            # instead of taking the 12 (rule 2).
+            return ("", _HEARD_LETTERS[run[0]])
         spellings = {
             "".join(parts)
             for parts in product(
@@ -428,8 +448,9 @@ def _with_prefix(
         start = span.start - n
         if start < floor:
             continue
-        spelled = _clean_lead(tokens, start) and span.start - 1 not in prefixed
-        found = card.prefixes_of(tokens[start : span.start], spelled)
+        apart = span.start - 1 not in prefixed
+        spelled = apart and _clean_lead(tokens, start)
+        found = card.prefixes_of(tokens[start : span.start], spelled, heard=apart)
         if found:
             return _Span(start, span.end, span.value, n, found)
     return span
@@ -525,6 +546,12 @@ class ItemNumber:
     # SM12. `text` then names all of them ("s12 oder sm12"). Which one exists
     # is decided by the search against the menu (T-4.12).
     choices: tuple[str, ...] = ()
+    # Of `choices`, the card numbers that rest on a word the ear may have
+    # written for a letter ("ist zwölf" as s12, `_HEARD_LETTERS`). The word may
+    # as well be the word, and the guest may have said the letter: with
+    # anything in here the search takes neither candidate without a question,
+    # whichever of them the menu has (Codex PR #257).
+    heard: tuple[str, ...] = ()
 
     @property
     def cards(self) -> tuple[str, ...]:
@@ -631,7 +658,8 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
     # What is said is what is looked up: "s12 oder sm12" (review PR #155).
-    return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards)
+    heard = cards[1:] if span.prefixes[0] == "" else ()
+    return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards, heard)
 
 
 def _plain_ref(
@@ -1279,10 +1307,13 @@ def sole_item_number(
     # and the guest is saying they do not know the number - then the name
     # search decides.
     # A number with a prefix is never a quantity ("S12 Lachs"): directly next
-    # to a name the sentence asks back, as with a marker (review PR #155).
+    # to a name the sentence asks back, as with a marker (review PR #155). A
+    # prefix that was only heard (`_HEARD_LETTERS`) leaves the plain number
+    # possible, so next to a name it is what it was without it: "das ist 5g
+    # Zucker" stays a sentence for the name search.
     nummer_gemeint = (
         has_marker
-        or any(s.prefixes and not _apart(s) for s in numbers)
+        or any(s.prefixes and "" not in s.prefixes and not _apart(s) for s in numbers)
         or any(
             span.start > i
             for i, tok in enumerate(tokens)

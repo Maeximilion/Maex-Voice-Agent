@@ -1690,3 +1690,33 @@ def test_allergy_on_an_ambiguous_dish_goes_to_the_team(session, tenant):
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
     assert orders(session) == []
+
+
+# --- A number heard through "ist" in the stand-in (Codex PR #257) ----------------
+
+
+def test_a_repeated_heard_number_does_not_take_the_offered_dish(session, sushi):
+    """ "Ist eins" again after "Meinen Sie Nummer S1 ...?" is the same open
+    question and no yes: the stand-in asks again and adds nothing."""
+    _, turns = _bestellung(session, sushi, "Ist eins.", "Ist eins.", "Pho Bo.")
+    assert "Meinen Sie Nummer s1" in " ".join(turns[1].say)
+    assert "Meinen Sie Nummer s1" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert [n for n, _, _ in positions(session, order)] == ["13"]
+
+
+def test_a_yes_or_the_name_takes_the_offered_heard_number(session, sushi):
+    for answer in ("Ja, genau.", "Lachs Nigiri."):
+        _bestellung(session, sushi, "Ist eins.", answer)
+    assert [
+        [n.lower() for n, _, _ in positions(session, order)]
+        for order in orders(session)
+    ] == [["s1"], ["s1"]]
+
+
+def test_a_repeated_heard_number_picks_neither_of_two_offered_dishes(session, sushi):
+    """12 or S12 was asked; "ist zwölf" again decides nothing, "die 12" does."""
+    _, turns = _bestellung(session, sushi, "Ist zwölf.", "Ist zwölf.", "Die 12.")
+    assert "Meinen Sie" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert [n for n, _, _ in positions(session, order)] == ["12"]
