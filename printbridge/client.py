@@ -13,6 +13,19 @@ from urllib.parse import urlsplit
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """The standard opener follows a redirect with every header it was given,
+    so the token would travel to whatever address the answer names, plain HTTP
+    included. The server never redirects these two calls; one that does is an
+    error like any other."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None
+
+
+_OPEN = urllib.request.build_opener(_NoRedirect).open
+
+
 class ServerError(Exception):
     """Server nicht erreichbar oder Antwort mit ok=false."""
 
@@ -24,7 +37,7 @@ class Server:
         token: str,
         tenant_id: str,
         timeout: float = 10.0,
-        opener: Callable[..., Any] = urllib.request.urlopen,
+        opener: Callable[..., Any] = _OPEN,
     ):
         parts = urlsplit(base_url)
         # Das Token reist in jeder Anfrage mit: nie ueber unverschluesseltes HTTP ins Netz.
