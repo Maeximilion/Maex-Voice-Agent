@@ -90,9 +90,10 @@ def load(path: Path = CASES) -> list[Case]:
     return cases
 
 
-def resolve(say: str) -> str:
-    """Das Ergebnis von `sole_item_number` in der Sprache der Erwartungswerte."""
-    ref, unclear = sole_item_number(say, CARD)
+def resolve(say: str, card: CardFormat = CARD) -> str:
+    """Das Ergebnis von `sole_item_number` in der Sprache der Erwartungswerte.
+    `card`: the card format of another menu than the eval menu (`evals/heard.py`)."""
+    ref, unclear = sole_item_number(say, card)
     if unclear:
         return "?"
     if ref is None:

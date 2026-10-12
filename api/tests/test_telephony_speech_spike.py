@@ -374,3 +374,94 @@ def test_clearing_results_keeps_the_model_files(tmp_path):
     kit.clear_results(tmp_path)
     assert sorted(p.name for p in tmp_path.iterdir()) == ["models"]
     assert (tmp_path / "models" / "ear.bin").exists()
+
+
+# --- Another menu than the eval menu (--menu) ------------------------------------
+
+OWN_MENU = (
+    "number;name;category;price_eur;description;active\n"
+    "7;Glasnudelsalat (klein);Vorspeisen;5,50;;ja\n"
+    "S7;Aal Nigiri;Sushi;4,90;;ja\n"
+    "35b;Reisnudeln mit Rind;Hauptgerichte;12,90;;ja\n"
+    "99;Altes Gericht;Hauptgerichte;9,00;;nein\n"
+)
+
+
+def own_menu(tmp_path: Path, text: str = OWN_MENU) -> Path:
+    path = tmp_path / "menu_items.csv"
+    # The register export may start with a byte order mark.
+    path.write_text(text, encoding="utf-8-sig")
+    return path
+
+
+def test_with_a_menu_file_its_names_and_card_numbers_are_spoken(tmp_path):
+    plan = kit.build_plan(None, own_menu(tmp_path))
+    numbers = [s for s in plan["sentences"] if s["id"].startswith("n")]
+    cards = [s for s in plan["sentences"] if s["id"].startswith("c")]
+    dishes = [s for s in plan["sentences"] if s["kind"] == "dish"]
+
+    assert [s["say"] for s in cards] == ["Nummer 7", "Nummer S7", "Nummer 35b"]
+    assert [s["expect"] for s in dishes] == [
+        "Glasnudelsalat",
+        "Aal Nigiri",
+        "Reisnudeln mit Rind",
+    ]
+    assert plan["key_terms"] == [s["expect"] for s in dishes]
+    # The sentences of the number eval are spoken too, but their expectations
+    # were written for the eval menu: the judge resolves them on this one.
+    assert [s["say"] for s in numbers] == [c.say for c in load()]
+    assert {s["expect"] for s in numbers + cards} == {None}
+    assert {s["kind"] for s in cards} == {"number"}
+    assert plan["menu"] == [
+        {"number": "7", "category": "Vorspeisen"},
+        {"number": "S7", "category": "Sushi"},
+        {"number": "35b", "category": "Hauptgerichte"},
+    ]
+    assert plan["all_sentences"] == len(plan["sentences"])
+    assert len({s["id"] for s in plan["sentences"]}) == len(plan["sentences"])
+
+
+def test_without_a_menu_file_the_plan_names_no_menu_and_no_card_sentences():
+    plan = kit.build_plan(None)
+    assert "menu" not in plan
+    assert not any(s["id"].startswith("c") for s in plan["sentences"])
+    assert None not in {s["expect"] for s in plan["sentences"]}
+
+
+def test_a_limit_shortens_the_card_numbers_as_well(tmp_path):
+    plan = kit.build_plan(2, own_menu(tmp_path))
+    assert [s["id"][0] for s in plan["sentences"]] == ["n", "n", "c", "c", "d", "d"]
+    assert plan["all_sentences"] > 6
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "",  # empty
+        "number;name\n7;Suppe\n",  # no category
+        "number;name;category;active\n7;Suppe;Suppen;nein\n",  # no active dish
+    ],
+)
+def test_a_file_that_is_no_menu_is_refused_before_anything_runs(
+    tmp_path, monkeypatch, capsys, text
+):
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    run_dir = tmp_path / "run"
+    code = kit.main(
+        ["--run-dir", str(run_dir), "--menu", str(own_menu(tmp_path, text))]
+    )
+    assert code == 2
+    assert "no menu in the import format" in capsys.readouterr().err
+    assert not run_dir.exists()
+    assert kit.main(["--run-dir", str(run_dir), "--menu", str(tmp_path / "gone")]) == 2
+
+
+def test_the_report_names_the_menu_it_was_judged_against(capsys, tmp_path):
+    report = run({"e": {"load_seconds": 1}}, judged_rows("e", "rw"))
+    kit.print_report(report, tmp_path)
+    assert "a dish of the eval menu" in capsys.readouterr().out
+    report["own_menu_dishes"] = 173
+    kit.print_report(report, tmp_path)
+    out = capsys.readouterr().out
+    assert "a dish of the menu given with --menu, 173 dishes" in out
+    assert "eval menu" not in out

@@ -127,3 +127,79 @@ def test_judge_keeps_the_row_and_adds_the_verdict():
     assert number["verdict"] == "wrong" and number["got"] == "24"
     assert number["say"] == "Nummer 23" and number["seconds"] == 0.1
     assert dish["verdict"] == "right" and dish["kind"] == "dish"
+
+
+# --- Another menu than the eval menu (the kit's --menu) --------------------------
+
+OWN = [
+    {"number": "7", "category": "Vorspeisen"},
+    {"number": "S7", "category": "Sushi"},
+    {"number": "8", "category": "Vorspeisen"},
+    {"number": "35b", "category": "Hauptgerichte"},
+]
+
+
+def own_plan(*says: str) -> dict:
+    return {
+        "menu": OWN,
+        "sentences": [
+            {"id": f"c{i}", "kind": "number", "say": say, "expect": None}
+            for i, say in enumerate(says)
+        ],
+    }
+
+
+def heard_rows(*texts: str, sentence: str = "c0") -> dict:
+    return {
+        "heard": [
+            {"id": sentence, "voice": "v", "ear": "e", "text": text, "seconds": 0.1}
+            for text in texts
+        ]
+    }
+
+
+def test_with_a_menu_in_the_plan_the_expectation_is_what_was_said_on_that_menu():
+    judged = judge(own_plan("Nummer S7"), heard_rows("Nummer S 7", "Nummer es sieben."))
+    assert [(r["expect"], r["got"], r["verdict"]) for r in judged] == [
+        ("s7", "s7", "right"),
+        ("s7", "s7", "right"),
+    ]
+
+
+def test_on_card_is_counted_against_the_menu_of_the_plan_not_the_eval_menu():
+    """The eval menu has no 7 and no 8, this one has: a 7 heard as 8 is another
+    dish read back, and the 35b heard as 35 names no dish of this menu."""
+    judged = judge(own_plan("Nummer 7"), heard_rows("Nummer 8", "Nummer 9"))
+    assert [(r["verdict"], r["on_card"]) for r in judged] == [
+        ("wrong", True),
+        ("wrong", False),
+    ]
+    judged = judge(own_plan("Nummer 35b"), heard_rows("Nummer 35", "Nummer 35 B"))
+    assert [(r["verdict"], r["on_card"]) for r in judged] == [
+        ("wrong", False),
+        ("right", False),
+    ]
+
+
+def test_the_heard_letter_follows_the_prefixes_of_the_menu_in_the_plan():
+    """This menu has 7 and S7: "ist sieben" is a question. On a menu without a
+    prefix the same transcript is the plain 7."""
+    judged = judge(own_plan("Nummer S7"), heard_rows("Nummer ist sieben"))
+    assert [(r["got"], r["verdict"]) for r in judged] == [("7|s7?", "asked")]
+    plain = {**own_plan("Nummer 7"), "menu": [OWN[0]]}
+    judged = judge(plain, heard_rows("Nummer ist sieben"))
+    assert [(r["got"], r["verdict"]) for r in judged] == [("7", "right")]
+
+
+def test_a_dish_sentence_keeps_its_expectation_with_a_menu_in_the_plan():
+    plan = own_plan()
+    plan["sentences"] = [
+        {
+            "id": "d0",
+            "kind": "dish",
+            "say": "Ich hätte gern Aal Nigiri.",
+            "expect": "Aal Nigiri",
+        }
+    ]
+    judged = judge(plan, heard_rows("ich hätte gern aal nigiri", "Aale", sentence="d0"))
+    assert [r["verdict"] for r in judged] == ["right", "asked"]

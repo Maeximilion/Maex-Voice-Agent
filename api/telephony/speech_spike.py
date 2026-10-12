@@ -1,12 +1,19 @@
 """Kit of the spike T-10.3: pick the open ear and mouth of the test phase.
 
     python3 -m scripts.speech_spike [--dry-run] [--limit N] [--run-dir DIR]
+                                    [--menu FILE]
 
     --dry-run   check the environment and print every step, change nothing
     --limit     only the first N number sentences and the first N dish names:
                 a trial of the kit, not a measurement
     --run-dir   where models, samples and results go
                 (default deploy/speech/run, ignored by git)
+    --menu      a `menu_items.csv` in the import format (docs/14) from outside
+                the repository instead of the eval menu: its dish names are
+                spoken, every one of its card numbers is spoken once ("Nummer
+                S12"), and what is heard is judged against its numbers. A real
+                menu stays out of the repository; its names end up in the run
+                directory only (plan, results, the list of wrong numbers)
 
 Builds the image of `deploy/speech/` (the open speech engines next to the
 project's packages) and runs three containers from it, one after another: one
@@ -138,6 +145,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--run-dir", type=Path, default=SPEECH_DIR / "run")
+    parser.add_argument("--menu", type=Path)
     args = parser.parse_args(argv)
     run_dir = args.run_dir.resolve()
 
@@ -163,7 +171,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"speech_spike: {problem}", file=sys.stderr)
         return 2
 
-    plan = build_plan(args.limit)
+    try:
+        plan = build_plan(args.limit, args.menu)
+    except (OSError, KeyError, ValueError) as exc:
+        print(
+            f"speech_spike: --menu {args.menu} is no menu in the import format "
+            f"(columns number, name and category, separated by ';'): {exc!r}",
+            file=sys.stderr,
+        )
+        return 2
     dry = args.dry_run
     try:
         step("Write the plan into", run_dir)
@@ -204,24 +220,49 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["go"] else 1
 
 
-def build_plan(limit: int | None) -> dict[str, Any]:
-    """Sentences and key terms from the eval files, never from this module."""
+def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
+    """Sentences and key terms from the eval files, never from this module.
+
+    `menu`: another menu than the eval menu (`--menu`). Its dish names and card
+    numbers are spoken, and the plan carries its numbers for the judge. The
+    expectations of the number eval were written for the eval menu, so with
+    another one they are left to the judge (`evals/heard.py`).
+    """
     numbers = [
         json.loads(line)
         for raw in NUMBERS.read_text(encoding="utf-8").splitlines()
         if (line := raw.strip()) and not line.startswith("#")
     ]
-    with MENU.open(encoding="utf-8", newline="") as f:
-        # "Gyoza (6 Stück)": nobody says the bracket on the phone.
-        names = [
-            row["name"].split(" (")[0]
+    with (menu or MENU).open(encoding="utf-8-sig", newline="") as f:
+        dishes = [
+            {key: row[key].strip() for key in ("number", "name", "category")}
             for row in csv.DictReader(f, delimiter=";")
             if row.get("active", "ja") != "nein"
         ]
+    if not dishes:
+        raise ValueError("no active dish")
+    # "Gyoza (6 Stück)": nobody says the bracket on the phone.
+    names = [dish["name"].split(" (")[0] for dish in dishes]
     sentences = [
-        {"id": f"n{i}", "kind": "number", "say": row["say"], "expect": row["expect"]}
+        {
+            "id": f"n{i}",
+            "kind": "number",
+            "say": row["say"],
+            "expect": None if menu else row["expect"],
+        }
         for i, row in enumerate(numbers)
     ][:limit]
+    cards = [
+        {
+            "id": f"c{i}",
+            "kind": "number",
+            "say": f"Nummer {d['number']}",
+            "expect": None,
+        }
+        for i, d in enumerate(dishes)
+        if menu
+    ]
+    sentences += cards[:limit]
     sentences += [
         {
             "id": f"d{i}",
@@ -231,15 +272,18 @@ def build_plan(limit: int | None) -> dict[str, Any]:
         }
         for i, name in enumerate(names)
     ][:limit]
-    return {
+    plan = {
         "sentences": sentences,
-        "all_sentences": len(numbers) + len(names),
+        "all_sentences": len(numbers) + len(cards) + len(names),
         "key_terms": names,
         "voices": list(VOICES),
         "ears": list(EARS),
         "agent": list(AGENT_SENTENCES),
         "silences_ms": list(SILENCES_MS),
     }
+    if menu:
+        plan["menu"] = [{k: d[k] for k in ("number", "category")} for d in dishes]
+    return plan
 
 
 def gpu_in_docker() -> bool:
@@ -345,6 +389,8 @@ def summarize(
     report: dict[str, Any] = {
         "sentences": len(plan["sentences"]),
         "all_sentences": plan["all_sentences"],
+        # 0: the eval menu. Else the dishes of the menu given with --menu.
+        "own_menu_dishes": len(plan.get("menu", [])),
         "ears": ears,
         "mouths": mouths,
         "turn_end": turn_end,
@@ -423,9 +469,12 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
     def pct(share: float) -> str:
         return f"{100 * share:5.1f} %"
 
+    own = report.get("own_menu_dishes")
+    which = "the menu given with --menu" if own else "the eval menu"
+    menu = f"{which}, {own} dishes" if own else which
     step(
         "Ears: card numbers by the number rule (wrong: a number the guest did not "
-        "say, taken without a question; on card: of these, a dish of the eval menu), "
+        f"say, taken without a question; on card: of these, a dish of {menu}), "
         "dish names letter by letter"
     )
     print(
@@ -489,7 +538,7 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
         "that ends a turn and for the text model, which this kit does not measure"
     )
     for w in report["wrong"]:
-        where = "another dish" if w["on_card"] else "not on the eval menu"
+        where = "another dish" if w["on_card"] else f"not on {which}"
         print(
             f"silent wrong: said {w['say']!r} ({w['voice']}), heard {w['text']!r}, "
             f"taken as {w['got']} instead of {w['expect']} ({where})"

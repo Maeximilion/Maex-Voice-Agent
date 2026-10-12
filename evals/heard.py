@@ -18,10 +18,15 @@ A number sentence is resolved by the code that resolves it on the phone
             the name search. Costs a turn, never a wrong dish
 
 `wrong` is counted by the form of the number, whatever the menu holds: "23d"
-is a card number the rule takes. `on_card` then says whether the eval menu has
+is a card number the rule takes. `on_card` then says whether the menu has
 that dish. If it has, the guest gets another dish read back; if not, the
 search answers that the number does not exist. A fuller menu has more
 numbers, so the form is the cautious count.
+
+The menu is the eval menu, unless the plan carries one (`"menu"`, the kit's
+`--menu`): then its numbers decide what is on the card and which letters a
+number can carry, and a number sentence without an expectation is expected to
+resolve like the sentence that was said.
 
 A dish name is `right` when its letters arrive in the transcript, whatever
 the ear did with spaces, hyphens and capitals; else `asked`. The name search
@@ -33,10 +38,28 @@ from __future__ import annotations
 import csv
 import json
 import sys
+from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
-from api.domain.menu.numberwords import canonical_card
-from evals.number_eval import MENU_ITEMS, resolve
+from api.domain.menu.numberwords import CardFormat, canonical_card
+from evals.number_eval import CARD, MENU_ITEMS, resolve
+
+
+@dataclass(frozen=True)
+class Menu:
+    """What a run is judged against: which letters a card number can carry and
+    which numbers are dishes."""
+
+    card: CardFormat
+    dishes: frozenset[str]
+
+    @classmethod
+    def from_rows(cls, rows: Iterable[tuple[str, str]]) -> Menu:
+        """From (number, category) of the active dishes."""
+        rows = list(rows)
+        numbers = frozenset(canonical_card(number) for number, _ in rows)
+        return cls(CardFormat.from_items(rows), numbers)
 
 
 def eval_dishes(path: Path = MENU_ITEMS) -> frozenset[str]:
@@ -48,36 +71,39 @@ def eval_dishes(path: Path = MENU_ITEMS) -> frozenset[str]:
 
 
 DISHES = eval_dishes()
+EVAL = Menu(CARD, DISHES)
 
 
-def dishes(result: str) -> frozenset[str]:
-    """The dishes of the eval menu a result of the number rule names."""
+def dishes(result: str, menu: Menu = EVAL) -> frozenset[str]:
+    """The dishes of the menu a result of the number rule names."""
     if result in ("?", "name") or result.startswith("!"):
         return frozenset()
     cards = (card.rstrip("?") for card in result.split("|"))
-    return frozenset(canonical_card(card) for card in cards) & DISHES
+    return frozenset(canonical_card(card) for card in cards) & menu.dishes
 
 
-def dish(result: str) -> str | None:
-    """The one dish of the eval menu a result leads to without a question. With
+def dish(result: str, menu: Menu = EVAL) -> str | None:
+    """The one dish of the menu a result leads to without a question. With
     several the search asks which one, with none it says the number does not
     exist, and a number marked "?" (heard through a letter word) is offered,
     not taken."""
-    found = dishes(result)
-    offered = dishes("|".join(c for c in result.split("|") if c.endswith("?")))
+    found = dishes(result, menu)
+    offered = dishes("|".join(c for c in result.split("|") if c.endswith("?")), menu)
     return next(iter(found)) if len(found) == 1 and not offered else None
 
 
-def number_verdict(expect: str, heard: str) -> tuple[str, str]:
+def number_verdict(expect: str, heard: str, menu: Menu = EVAL) -> tuple[str, str]:
     """Verdict and what the number rule made of the transcript."""
-    got = resolve(heard)
+    got = resolve(heard, menu.card)
+    one = dish(got, menu)
     # "Sushi zwoelf" said and "S12" heard are two results and one dish.
-    if got == expect or (dish(got) is not None and dish(got) == dish(expect)):
+    if got == expect or (one is not None and one == dish(expect, menu)):
         return "right", got
     taken = got not in ("?", "name") and not got.startswith("!")
     # "Sushi eins" where the menu has S1 and SM1: the search asks which one.
     # "Ist eins" where it has only S1: the search asks whether S1 is meant.
-    asks = len(dishes(got)) > 1 or (len(dishes(got)) == 1 and dish(got) is None)
+    found = dishes(got, menu)
+    asks = len(found) > 1 or (len(found) == 1 and one is None)
     return ("wrong" if taken and not asks else "asked"), got
 
 
@@ -91,22 +117,29 @@ def _letters(text: str) -> str:
 
 def judge(plan: dict, heard: dict) -> list[dict]:
     sentences = {row["id"]: row for row in plan["sentences"]}
+    rows = plan.get("menu")
+    menu = Menu.from_rows((r["number"], r["category"]) for r in rows) if rows else EVAL
     judged = []
     for row in heard["heard"]:
         said = sentences[row["id"]]
+        expect = said["expect"]
         if said["kind"] == "number":
-            verdict, got = number_verdict(said["expect"], row["text"])
+            if expect is None:
+                # Another menu than the one the expectations were written for:
+                # right is what the sentence that was said resolves to on it.
+                expect = resolve(said["say"], menu.card)
+            verdict, got = number_verdict(expect, row["text"], menu)
         else:
-            verdict, got = dish_verdict(said["expect"], row["text"]), ""
+            verdict, got = dish_verdict(expect, row["text"]), ""
         judged.append(
             {
                 **row,
                 "kind": said["kind"],
                 "say": said["say"],
-                "expect": said["expect"],
+                "expect": expect,
                 "got": got,
                 "verdict": verdict,
-                "on_card": verdict == "wrong" and dish(got) is not None,
+                "on_card": verdict == "wrong" and dish(got, menu) is not None,
             }
         )
     return judged
