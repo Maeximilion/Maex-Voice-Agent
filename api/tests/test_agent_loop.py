@@ -14,10 +14,15 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from api.agent.guards import HINT_CONFIRM, HINT_ITEM
+from api.agent.guards import (
+    HINT_CONFIRM,
+    HINT_GUEST_NAME,
+    HINT_GUEST_PHONE,
+    HINT_ITEM,
+)
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, SAY_NOBODY_REACHABLE, ConversationLoop
-from api.agent.state import ConversationState
+from api.agent.state import ConversationState, initial_state
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 
@@ -57,9 +62,14 @@ def call_id(session, tenant_id):
     return call.id
 
 
+CALLER = "+4972215551234"
+
+
 @pytest.fixture
 def state(tenant_id, call_id):
-    return ConversationState(call_id=call_id, tenant_id=tenant_id)
+    """The core knows the number the guest calls from; `slots` stays empty, so
+    each test decides what the model was given."""
+    return ConversationState(call_id=call_id, tenant_id=tenant_id, caller_phone=CALLER)
 
 
 def clock_from(values):
@@ -658,7 +668,7 @@ def test_order_with_an_id_no_search_delivered_is_not_drafted(session, state):
     )
     loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
 
-    loop.run_turn(state, "Einmal die Ente bitte")
+    loop.run_turn(state, "Einmal die Ente bitte, auf Müller")
 
     assert state.order_id is None
     refused = json.loads(llm.calls[1][2])
@@ -886,3 +896,203 @@ def test_model_sees_the_date_in_the_timezone_of_the_tenant(session):
     loop.run_turn(state, "Einen Tisch morgen um sieben")
 
     assert llm.calls[0][1]["now"] == "Montag, 2026-09-14T18:30-04:00"
+
+
+# --- A name or number nobody said books nothing (agent/guest_details.py) --------
+
+
+@pytest.fixture
+def called_state(tenant_id, call_id):
+    """A call with a caller ID, as the phone line and the text phone start it."""
+    return initial_state(call_id, tenant_id, caller_id=CALLER)
+
+
+def reserving(guest_name, phone):
+    return ToolCall(
+        "create_reservation",
+        {
+            "guest_name": guest_name,
+            "phone": phone,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+        },
+    )
+
+
+def test_reservation_under_an_invented_name_is_not_drafted(session, called_state):
+    """Seen on a real model (07.10.2026): a placeholder name to get the draft
+    through. The tool is never reached and the model is told why."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=reserving("Max Mustermann", CALLER),
+                state_patch={"guest_name": "Max Mustermann"},
+            ),
+            LLMTurn(say="Auf welchen Namen darf ich reservieren?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(called_state, "Einen Tisch für vier morgen um sieben")
+
+    assert session.scalars(select(Reservation)).all() == []
+    assert called_state.reservation_id is None
+    assert "guest_name" not in called_state.slots
+    assert result.say == ["Auf welchen Namen darf ich reservieren?"]
+    refused = json.loads(llm.calls[1][2])
+    assert refused["tool"] == "create_reservation"
+    assert refused["ok"] is False
+    assert refused["hint"] == HINT_GUEST_NAME
+    logged = session.scalars(select(Call.tool_calls)).one()[-1]
+    assert logged == {
+        "name": "create_reservation",
+        "duration_ms": 0.0,
+        "ok": False,
+        "error_code": "invalid_input",
+    }
+
+
+def test_mangled_caller_id_books_nothing_and_the_number_in_the_state_does(
+    session, called_state
+):
+    """Seen on a real model: the caller ID written again with digits missing.
+    The number is not read back, so the booking would reach a stranger."""
+
+    class DropsADigit:
+        """First the number with a digit missing, then the one from the state."""
+
+        calls = 0
+
+        def next_turn(self, system_prompt, state_json, input_text):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMTurn(
+                    tool_call=reserving("Müller", "+497221555123"),
+                    state_patch={"guest_name": "Müller", "phone": "+497221555123"},
+                )
+            if self.calls == 2:
+                self.hint = json.loads(input_text)["hint"]
+                return LLMTurn(
+                    tool_call=reserving("Müller", state_json["slots"]["phone"])
+                )
+            return LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?")
+
+    llm = DropsADigit()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(called_state, READBACK_TURN)
+
+    assert llm.hint == HINT_GUEST_PHONE
+    assert called_state.slots["phone"] == CALLER
+    assert session.scalars(select(Reservation)).one().phone == CALLER
+
+
+def test_number_the_guest_says_in_this_very_turn_books(session, state):
+    """Another number than the caller ID: the guest's sentence is heard before
+    the model is asked, so the number in it is known when the model writes it."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=reserving("Müller", "+491712345678"),
+                state_patch={"guest_name": "Müller", "phone": "0171 2345678"},
+            ),
+            LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, READBACK_TURN + ", meine Nummer ist 0171 2345678")
+
+    assert state.slots == {"guest_name": "Müller", "phone": "+491712345678"}
+    assert session.scalars(select(Reservation)).one().phone == "+491712345678"
+
+
+def test_reservation_goes_under_the_number_the_guest_chose(session, called_state):
+    """Codex PR #244, P2 twice: the guest names another number than the one
+    they call from, the model leaves it out of `slots` and books under the
+    caller ID. The number is not read back, so nobody would notice. The core
+    wrote the number the guest gave into the state itself."""
+
+    class BooksUnderTheCallerId:
+        """First under the caller ID, then under the number of the state."""
+
+        calls = 0
+
+        def next_turn(self, system_prompt, state_json, input_text):
+            self.calls += 1
+            if self.calls == 1:
+                return LLMTurn(
+                    tool_call=reserving("Müller", CALLER),
+                    state_patch={"guest_name": "Müller"},
+                )
+            if self.calls == 2:
+                self.hint = json.loads(input_text)["hint"]
+                return LLMTurn(
+                    tool_call=reserving("Müller", state_json["slots"]["phone"])
+                )
+            return LLMTurn(say="Ein Tisch für vier morgen um sieben. Passt das so?")
+
+    llm = BooksUnderTheCallerId()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(called_state, READBACK_TURN + ", bitte unter 0171 2345678")
+
+    assert llm.hint == HINT_GUEST_PHONE
+    assert session.scalars(select(Reservation)).one().phone == "+491712345678"
+
+
+def test_callback_to_a_number_nobody_said_is_not_created(session, state):
+    """The team would call a stranger back."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    "create_callback",
+                    {
+                        "phone": "+4915112345678",
+                        "reason": "out_of_scope",
+                        "summary": "Frage zur Lieferung.",
+                    },
+                )
+            ),
+            LLMTurn(say="Unter welcher Nummer erreichen wir Sie?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Liefern Sie auch nach Hause?")
+
+    assert session.scalars(select(Callback)).all() == []
+    assert json.loads(llm.calls[1][2])["hint"] == HINT_GUEST_PHONE
+
+
+def test_invented_name_is_no_success_on_the_ladder(session, state):
+    """A name the core did not take was not understood: the ladder keeps its
+    count for the field."""
+    llm = FakeLLM(
+        [
+            LLMTurn(say="Wie bitte?", understanding_failure="guest_name"),
+            LLMTurn(say="Wie bitte?", understanding_failure="guest_name"),
+            LLMTurn(say="Danke.", state_patch={"guest_name": "Gast"}),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    for sentence in ("äh", "wie bitte", "irgendwas"):
+        loop.run_turn(state, sentence)
+
+    assert loop._ladder.level_for("guest_name") == 2
+
+
+def test_model_that_insists_on_an_invented_name_ends_with_the_team(
+    session, called_state
+):
+    """A refused call costs a tool hop: the hop limit and the handoff (rule
+    5), never a booking."""
+    llm = FakeLLM([LLMTurn(tool_call=reserving("Gast", CALLER))] * MAX_TOOL_HOPS)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(called_state, "Einen Tisch für vier morgen um sieben")
+
+    assert result.ended is True
+    assert session.scalars(select(Reservation)).all() == []

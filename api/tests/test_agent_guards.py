@@ -605,7 +605,7 @@ def test_item_ids_never_go_into_the_prompt_state():
     ],
 )
 def test_other_calls_pass_the_guards(call):
-    state = new_state()
+    state = new_state(caller_phone="+4972215551234")
 
     assert refusal(state, begin_turn(state), "Hallo", call) is None
 
@@ -614,7 +614,8 @@ def test_other_calls_pass_the_guards(call):
 
 
 def test_state_patch_keeps_what_a_guest_names():
-    state = new_state()
+    """Name and number only as the guest said them: test_agent_guest_details.py."""
+    state = new_state(caller_phone="+4972215551234", said_words={"mueller": 1})
     patch = {
         "party_size": 4,
         "reserved_for": "2026-09-16T19:00:00+02:00",
