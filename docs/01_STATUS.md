@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.7
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.8
 
 ---
 
@@ -178,7 +178,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D1 | ~~Voice platform~~ **decided 07.10.2026 (Maxi): none, the voice layer is built in-house** (E1 flipped, E15, E16; `docs/20_VOICE_LAYER.md`). A hosted platform is the last resort (docs/20 §13) | Maxi | done; build in Block 1c |
 | D2 | ~~Handoff path to register~~ **decided 26.09.2026 (Maxi): receipt and kitchen ticket come only from the register** (<POS System>, TSE). An order is fed into the register, the register books it and sends receipt and kitchen ticket to its own printers. The print bridge stays as an **independent path** and prints on the **main receipt printer at the register** (80 mm), never in the kitchen: until a register interface exists it prints **every** confirmed order as an input slip headed "NICHT IN KASSE – bitte eingeben", the team types it in; with an interface (variant C) only when the register does not accept in time (rule 5). Planning assumption: <POS Provider> does not cooperate, orders are transferred by hand. Asking <POS Provider> stays open (interface, test mode, whether the unused register at Maxi's home may serve as a test system). docs/02 §2a, T-4.6 | Maxi | done; bridge changes open in T-4.6 |
 | D3 | ~~Hosting provider in the EU~~ **decided 07.10.2026 (Maxi), in two stages:** test phase on the workbench (Maxi's PC, Ubuntu in WSL) with invented data and own test calls only; operation on a netcup VPS 1000 in Nuremberg (4 vCPU / 8 GB, about 17 EUR a month on a 12-month term) with Scaleway Object Storage as the encrypted off-site backup target (about 1 EUR a month; closes the open part of T-9.3 once ordered). Ordered when the first of these is due: the team uses tablet or print bridge against the real system, the measurement calls for G1, the first real customer call. Prices are research of 07.10.2026. E9 holds: real customer calls and customer data run on the EU server only | Maxi | done; order at the trigger |
-| D4 | Voice: natural or audibly synthetic | Maxi | Stage 1, dialog test |
+| D4 | Voice: natural or audibly synthetic. **12.10.2026:** Maxi heard the test-phase voice (Piper `thorsten`) and finds it not clean, also before the telephone line; it stays for building and testing only. His idea, kept for later: his own voice, synthesized. Not built: it needs either about an hour of recordings and a training run, or a cloning model (licence and graphics memory to check), and a caller who hears the owner's voice may take the AI for him, so the disclosure stays. Decide with real samples side by side when the EU text-to-speech services are measured (T-10.3, second half) | Maxi | Stage 1, dialog test |
 | D5 | Delivery zones: postal code list or polygons | Maxi | before T-6.x (Stage 3) |
 | D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
 | D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. Removal wishes ("ohne Karotten") are a note without price. Allergy wording before go-live with the legal check (docs/09). Built with T-4.10 on 24.09.2026 | Maxi | done |
@@ -434,6 +434,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services
 - **v2.0.7 · 12.10.2026:** T-10.3 local engines measured: Parakeet v3 on the CPU and Piper thorsten, a recommendation and no clean go; /task and /bug load code-autopilot, /task prints the title where the app has no rename tool
 - **v2.0.6 · 11.10.2026:** T-10.1 step 1 done: call audio over the media channel on the workbench, 28 of 28 points; containers run as root noted for T-9.2
 - **v2.0.5 · 08.10.2026:** T-2.4 part 4: the guest's wish (pickup or table) is kept across turns, heard by the core before the model
