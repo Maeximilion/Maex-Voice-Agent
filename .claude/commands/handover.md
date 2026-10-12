@@ -8,4 +8,4 @@ Gate: next gate status
 Open: next concrete step first
 Lessons: what the next session must know
 
-Also add the block at the top of the "Done" section in `docs/01_STATUS.md` (short form, one line) and check that "What's next" is correct. Then run `python scripts/status_bump.py patch "Handover: one line summary of the session"` if no bump has happened in this session since the last one.
+Also add the block at the top of the "Done" section in `docs/01_STATUS.md` (short form, one line) and check that "What's next" is correct. Then run `python scripts/status_bump.py patch "Handover: ..."` if no bump has happened in this session since the last one. Replace the `...` with the real one-line summary of this session, written out before the command runs; the text goes into the changelog verbatim, so never run it with a generic sentence.
