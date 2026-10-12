@@ -62,7 +62,7 @@ maex-voice-agent/
 ├── deploy/                Prod Compose, Caddyfile
 ├── .claude/commands/      /start /task /done /bug /eval /gate /project /handover
 ├── .claude/skills/        Repo-specific rules Claude Code loads on demand
-├── .claude/settings.json  Project hooks: SessionStart syncs a clean main
+├── .claude/settings.json  Project hooks: SessionStart syncs main, also where no folder has it checked out
 ├── .claude/hooks/         Hook scripts (sync_main.sh)
 ├── .github/workflows/     CI: ruff + pytest
 ├── docs/                  Planning, specs, status  →  Section 5
@@ -163,7 +163,7 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 **Findings for another open PR** (Maxi, 2026-10-06): a finding that belongs to an open PR of another session goes there as one comment: the finding, the evidence, the proposed change and where it is tracked. Never as an edit on that PR's branch from a different session.
 
-**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A new commit after the review needs a new review before the merge.
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A new commit after the review needs a new review before the merge. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head.
 
 ### Reviews
 Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every commit that moves the head, a merge from `main` included. The rest is advisory (Maxi, 2026-10-06):
