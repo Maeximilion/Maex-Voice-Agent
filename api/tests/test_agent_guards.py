@@ -272,6 +272,16 @@ def test_confirm_without_any_draft_is_refused():
         ("Ja, alles richtig", True),
         ("Genau, alles korrekt so.", True),
         ("Alles richtig. Passt.", True),
+        # No subject: "Ist so richtig" is "Ist das so richtig?" as much as
+        # "Das ist so richtig" (Codex, PR #258). The same rule.
+        ("Ist so richtig", False),
+        ("Ist richtig", False),
+        ("Ist okay so", False),
+        ("Danke, ist okay", False),
+        ("Ja, ist okay.", True),
+        ("Ja, ist so richtig.", True),
+        # Verbs that are an assent themselves need no subject.
+        ("Passt so.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):

@@ -573,6 +573,36 @@ def test_a_malformed_cart_does_not_take_the_accepted_order_back():
     assert rec.recording.confirms == 1
 
 
+def test_a_booked_draft_is_no_draft_a_second_yes_could_confirm():
+    """After the booking the model says the sentence once more in its closing
+    answer, the guest says "Ja", and the model returns `confirm` again. The
+    core refuses: nothing waits. The recorder took the repeated sentence for a
+    new read-back and the attempt was missing from the report (Codex, PR
+    #258)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": DRAFTED})),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Auf Wiederhören."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
 def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
     rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
 
