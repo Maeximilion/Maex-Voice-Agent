@@ -56,8 +56,6 @@ from api.domain.menu.numberwords import CARD_SUFFIXES, fold
 
 # Letters only: digits and punctuation belong to no name.
 _WORD = re.compile(r"[^\W\d_]+")
-# What may stand between two words of a name, and nowhere else in it.
-_IN_A_NAME = frozenset({" ", "-", "'", ", ", ". "})
 # Digits with everything that can stand between digits. A word ends the run.
 _DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().,]*")
 # Where one number ends inside such a run and other digits begin: a comma, a
@@ -72,6 +70,10 @@ _BETWEEN_LETTERS = " \t,-."
 _HEAD_DIGITS = 6
 # A single letter right behind one of these belongs to the word before it.
 _APOSTROPHES = ("'", "\N{RIGHT SINGLE QUOTATION MARK}")
+# What may stand between two words of a name, and nowhere else in it. The
+# apostrophe in either form: a guest named O'Brien is refused on every try
+# when the text arrives with the typographic one (Codex PR #244, P2).
+_IN_A_NAME = frozenset({" ", "-", ", ", ". ", *_APOSTROPHES})
 # A date or a time begins with one or two digits and a separator. No phone
 # number does: an area code has three digits or more, the zero included.
 _DATE_LIKE = re.compile(r"\d{1,2}[./-]")

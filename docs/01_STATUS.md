@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.21
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.22
 
 ---
 
@@ -447,6 +447,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.22 · 12.10.2026:** Codex review of 0adcc03 on PR #244: a name with a typographic apostrophe is taken
 - **v2.0.21 · 12.10.2026:** Verification of 8835fa3 and Codex on 31a3a81 (PR #244): an hour is no head of a number, digits in pairs are; three open points
 - **v2.0.20 · 12.10.2026:** Codex review of ce93c95 and verification of 31a3a81 on PR #244: the last digits count only without a possible head before them; dates with blanks, card letters, spelled periods
 - **v2.0.19 · 12.10.2026:** Independent review of PR #244: only the last digits of a turn are the number, the stand-in goes by the hint of a refusal, spelled rows and blanks in a name; two open points

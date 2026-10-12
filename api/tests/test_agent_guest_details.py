@@ -129,6 +129,23 @@ def test_what_stands_between_the_words_of_a_name_is_part_of_it(name):
     assert name_said(name, words) is True
 
 
+def test_name_with_a_typographic_apostrophe_is_taken():
+    """Codex PR #244, P2: refused on every try, the guest could not get out of
+    it by saying the name again."""
+    typographic = "O\N{RIGHT SINGLE QUOTATION MARK}Brien"
+    words = said(f"Auf {typographic} bitte")
+
+    assert name_said(typographic, words) is True
+    assert name_said("O'Brien", words) is True
+    assert (
+        name_said(
+            "O\N{RIGHT SINGLE QUOTATION MARK}\N{RIGHT SINGLE QUOTATION MARK}Brien",
+            words,
+        )
+        is False
+    )
+
+
 def test_letter_that_is_no_part_of_the_spelling_is_not_joined_to_it():
     """Codex PR #244, P2: the a of the card number 23a made "ameier" of the
     name, so "Meier" was refused and "Ameier" taken."""
