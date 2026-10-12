@@ -308,6 +308,37 @@ _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_N
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 
 
+def unheard_readback(state: ConversationState) -> str | None:
+    """The sentence of the draft that waits, while it is not what the guest
+    heard last: right after the draft, or once another sentence ended a turn."""
+    if state.stage == "readback_pending" and not state.readback_heard:
+        return state.readback
+    return None
+
+
+def reread_on_yes(
+    state: ConversationState, start: TurnStart, user_text: str, call: ToolCall | None
+) -> str | None:
+    """The draft's sentence, when `call` is a `confirm` on a yes for a draft
+    that is not what the guest heard last; None for every other call.
+
+    Such a `confirm` is refused (`refusal`). The yes may have meant another
+    question, so the question for it has to be put, and that is not left to
+    the model: the stand-in handed the call to the team, and a model that
+    answers "gebucht" or asks in its own words keeps the guest in refused
+    yeses. The loop ends the turn with this sentence and asks the model
+    nothing more, so nothing a further answer could carry gets in the way
+    (finding on PR #258).
+
+    Only on a yes: after "Nein, ich möchte etwas ändern" the model has to ask
+    what, not put the old question again."""
+    if call is None or call.name != "confirm" or not is_yes(user_text):
+        return None
+    if _may_confirm(state, start, user_text, call):
+        return None
+    return unheard_readback(state)
+
+
 def _readback_id(state: ConversationState) -> str | None:
     if state.stage != "readback_pending":
         return None

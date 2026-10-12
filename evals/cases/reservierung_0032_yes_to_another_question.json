@@ -1,0 +1,36 @@
+{
+  "id": "reservierung_0032",
+  "name": "A yes to another question than the readback books nothing",
+  "tags": [
+    "reservierung",
+    "vorlesen",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer zwei Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Hm, ich muss erst noch fragen."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": false
+  }
+}

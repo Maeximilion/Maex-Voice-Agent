@@ -98,6 +98,16 @@ class RecordingLLM:
         # drops the draft (`state.replace_cart`, `guards.take_cart`).
         self._cart: list[dict[str, Any]] = []
         self._cart_before: list[dict[str, Any]] = []
+        # What this recording held before a `cart` that stood next to a
+        # `confirm`: order, draft and whether it was read out (`_late_yes`).
+        self._before_cart: tuple[list[dict[str, Any]], int | None, bool] | None = None
+        # The guest's sentence, while a `confirm` is open that came on a yes
+        # for a draft nobody heard last. The core answers that one with the
+        # draft's sentence and carries nothing out, so no result follows
+        # (`agent/loop.py`, `guards.reread_on_yes`).
+        self._late_yes: str | None = None
+        # That `confirm` came with a `cart`, which the core left aside.
+        self._cart_left_aside = False
 
     @property
     def usage(self) -> Usage | None:
@@ -111,7 +121,11 @@ class RecordingLLM:
     ) -> LLMTurn:
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input)
+        self._before_cart = None
         if turn.cart is not None:
+            if turn.tool_call is not None and turn.tool_call.name == "confirm":
+                rec = self.recording
+                self._before_cart = (self._cart, rec.drafted_at, rec.read_out)
             # First, as in the core (`agent/loop.py`): the `cart` is taken
             # before the answer next to it is carried out. A changed order
             # drops the draft that waited; a `draft_order` in the same answer
@@ -147,10 +161,18 @@ class RecordingLLM:
 
     def _observe_input(self, user_input: str) -> None:
         result = _tool_result(user_input)
+        late_yes, self._late_yes = self._late_yes, None
         if result is None:
+            if late_yes is not None:
+                # The guest speaks again and that `confirm` got no result: the
+                # core read the draft out itself, and the guest has heard it.
+                self._open_call = None
+                self.recording.read_out = self.recording.readback is not None
             self.recording.customer_lines.append(user_input)
             return
         call, self._open_call = self._open_call, None
+        if late_yes is not None and call is not None and call[0] == "confirm":
+            self._late_yes_got_a_result(late_yes, call[1], bool(result.get("ok")))
         if result.get("tool") == CART and not result.get("ok"):
             # The core refused the `cart`: the answer next to it was neither
             # spoken nor carried out, the order stays what it was, and a draft
@@ -192,6 +214,22 @@ class RecordingLLM:
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 
+    def _late_yes_got_a_result(
+        self, said: str, args: dict[str, Any], went_through: bool
+    ) -> None:
+        """The core did not answer that `confirm` with the draft's sentence
+        after all. Gone through, it is what the hard metric is for: a booking
+        on a yes to a draft nobody heard. Refused the usual way, the core saw
+        no draft to read out, so a `cart` next to the call was taken."""
+        rec = self.recording
+        if went_through:
+            rec.refused_attempts.remove(("confirm", said))
+            rec.confirms += 1
+            rec.last_confirm = dict(args)
+            rec.unconfirmed.append(said)
+        elif self._cart_left_aside:
+            self._drop_draft()
+
     def _retract(self, name: str) -> None:
         """Takes back what `_observe_call` noted for a call that did not go
         through. Hard is what happened, not what a model tried: a `confirm`
@@ -209,6 +247,33 @@ class RecordingLLM:
             # correction takes the readback away in the core (`agent/state.py`
             # `_supersedes`), and the recorder has to agree (Codex PR #239).
             rec.drafted_at = None
+
+    def _is_a_late_yes(self, said: str) -> bool:
+        """Is this `confirm` a yes for a draft that waits and was not read out
+        last? Then the core carries nothing out: it reads the draft out
+        itself and ends the turn without asking the model again. The
+        `confirm` is a refused attempt, and what stood next to it is as if it
+        had not been sent. Whether the guest heard the draft is known with
+        the next sentence (`_observe_input`); a result that comes back
+        instead says the core saw it differently.
+
+        Judged by the recording before a `cart` of the same answer: the core
+        looks at the `confirm` first and leaves that `cart` aside."""
+        rec = self.recording
+        order, drafted_at, was_read_out = self._before_cart or (
+            self._cart,
+            rec.drafted_at,
+            rec.read_out,
+        )
+        # Also for a draft made in this very turn: the core reads that one out
+        # on a bare yes just the same (Codex PR #273).
+        if drafted_at is None or was_read_out or not is_yes(said):
+            return False
+        self._cart_left_aside = self._before_cart is not None
+        self._cart, rec.drafted_at, rec.read_out = order, drafted_at, was_read_out
+        self._late_yes = said
+        rec.refused_attempts.append(("confirm", said))
+        return True
 
     def _observe_call(self, name: str, args: dict[str, Any]) -> None:
         rec = self.recording
@@ -232,6 +297,8 @@ class RecordingLLM:
                 if item_id not in rec.searched_ids:
                     rec.guessed.append((item_id, last))
         elif name == "confirm":
+            if self._is_a_late_yes(last):
+                return
             rec.confirms += 1
             rec.last_confirm = dict(args)
             # Das Ja zaehlt nur, wenn es nach dem Entwurf kam, also auf das
