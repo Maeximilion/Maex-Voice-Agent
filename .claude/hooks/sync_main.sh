@@ -28,13 +28,15 @@ worktrees() {
 # merge the commits never land. Then either merging the branch into origin/main changes
 # nothing (needs git 2.38), or, where main has moved on over the same lines since,
 # GitHub lists a merged pull request with exactly this head commit (needs gh).
+# Answers 0 yes, 1 no, 2 when GitHub had to be asked and gave no answer.
 in_main() {
   git -C "$primary" merge-base --is-ancestor "$1" origin/main 2>/dev/null && return 0
   merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null | head -n 1)"
   [ -n "$merged" ] && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ] && return 0
   tip="$(git -C "$primary" rev-parse "$1" 2>/dev/null)"
-  (cd "$primary" && timeout 10 gh pr list --state merged --head "$1" --json headRefOid \
-    --jq '.[].headRefOid' 2>/dev/null) | grep -qx "$tip"
+  heads="$(cd "$primary" && timeout 10 gh pr list --state merged --head "$1" \
+    --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 2
+  printf '%s\n' "$heads" | grep -qx "$tip"
 }
 
 # The main folder left on a finished branch goes back to main, or its files stay at the
@@ -45,16 +47,21 @@ worktrees
 branch="$(git -C "$primary" branch --show-current 2>/dev/null)"
 if [ -n "$branch" ] && [ "$branch" != main ] \
   && [ -z "$(git -C "$primary" status --porcelain 2>/dev/null)" ] \
-  && [ "$(git -C "$primary" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ] \
-  && in_main "$branch"; then
-  if [ -n "$main_dir" ]; then
-    # Git checks a branch out in one folder only; which of the two gives way is not the hook's call.
-    warn "the main folder is on the finished branch $branch and main is checked out in $main_dir, not switched"
-  else
-    git -C "$primary" switch --quiet main 2>/dev/null \
-      || warn "the main folder is on the finished branch $branch and could not be switched to main"
-    worktrees
-  fi
+  && [ "$(git -C "$primary" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ]; then
+  in_main "$branch"
+  case $? in
+    0)
+      if [ -n "$main_dir" ]; then
+        # Git checks a branch out in one folder only; which of the two gives way is not the hook's call.
+        warn "the main folder is on the finished branch $branch and main is checked out in $main_dir, not switched"
+      else
+        git -C "$primary" switch --quiet main 2>/dev/null \
+          || warn "the main folder is on the finished branch $branch and could not be switched to main"
+        worktrees
+      fi ;;
+    # Not the same as "not merged": without the answer the folder may sit on an obsolete branch.
+    2) warn "the main folder is on $branch, whose remote branch is gone, and GitHub could not be asked whether it was merged (gh missing, signed out or too slow), left on it" ;;
+  esac
 fi
 
 # main is checked out in at most one worktree, often not the one this session runs in.

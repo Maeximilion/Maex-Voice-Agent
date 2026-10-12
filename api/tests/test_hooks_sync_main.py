@@ -36,12 +36,15 @@ def repos(tmp_path, request):
     empty_config.write_text("", encoding="utf-8")
     # A stand-in for gh: the head commits GitHub would list as merged are the lines of
     # a file, and there is none unless a test writes it. The real gh must never be
-    # asked about a throwaway repository.
+    # asked about a throwaway repository. A file next to it named `.fails` makes the
+    # stand-in exit like a gh that is signed out.
     merged_heads = tmp_path / "merged_heads"
     fake_gh = tmp_path / "bin" / "gh"
     fake_gh.parent.mkdir()
     fake_gh.write_text(
-        '#!/bin/sh\ncat "$FAKE_GH_MERGED" 2>/dev/null\n', encoding="utf-8"
+        '#!/bin/sh\n[ -e "$FAKE_GH_MERGED.fails" ] && exit 4\n'
+        'cat "$FAKE_GH_MERGED" 2>/dev/null\nexit 0\n',
+        encoding="utf-8",
     )
     fake_gh.chmod(0o755)
     env = {
@@ -303,3 +306,32 @@ def test_a_main_folder_with_a_line_break_in_its_path_is_still_found(repos):
     assert repos.run_hook() == ""
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
     assert repos.commits_behind() == 0
+
+
+def test_a_gh_that_cannot_answer_is_reported_not_taken_as_not_merged(repos):
+    # Codex PR #247: signed out, missing or too slow is no answer, and "left alone"
+    # without a word would look like a main folder that is in order.
+    repos.finish_branch("squashed", squash=True)
+    repos.change_on_origin("squashed.txt")
+    Path(f"{repos.merged_heads}.fails").touch()
+
+    output = repos.run_hook()
+
+    assert "GitHub could not be asked" in output and "squashed" in output
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+
+
+def test_gh_is_not_asked_where_git_knows_the_answer(repos):
+    # A merge commit and a plain squash merge need no GitHub: a broken gh changes nothing.
+    Path(f"{repos.merged_heads}.fails").touch()
+    repos.finish_branch("finished")
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+
+
+def test_a_branch_github_says_was_not_merged_stays_without_a_warning(repos):
+    repos.finish_branch("dropped", merge=False)
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "dropped"
