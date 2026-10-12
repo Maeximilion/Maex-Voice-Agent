@@ -695,3 +695,50 @@ def test_only_the_key_terms_that_fit_the_prompt_are_handed_to_the_ear():
     assert kit.terms_that_fit(words, terms, limit=100) == terms
     assert kit.terms_that_fit(words, terms, limit=1) == []
     assert kit.terms_that_fit(words, [], limit=4) == []
+
+
+# --- Codex review of PR #268, third round ------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "rows",
+    [
+        "7;Suppe;Suppen;ja\n07;Salat;Vorspeisen;ja\n",
+        "S7;Aal;Sushi;ja\ns07;Lachs;Sushi;ja\n",
+    ],
+)
+def test_a_menu_with_the_same_card_number_twice_is_refused(
+    tmp_path, monkeypatch, capsys, rows
+):
+    """The import refuses "7" next to "07" (`canonical_card`); the kit would
+    speak and count that position twice."""
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    menu = own_menu(tmp_path, "number;name;category;active\n" + rows)
+    assert kit.main(["--menu", str(menu), "--run-dir", str(tmp_path / "r")]) == 2
+    assert "twice" in capsys.readouterr().err
+    # An inactive twin does not count: the import reads only what is active.
+    ok = own_menu(
+        tmp_path, "number;name;category;active\n7;Suppe;Suppen;ja\n07;Alt;Suppen;nein\n"
+    )
+    assert [m["number"] for m in kit.build_plan(None, ok)["menu"]] == ["7"]
+
+
+def test_the_kit_compares_card_numbers_as_the_search_does():
+    """The host has no database driver, so the kit carries its own copy of
+    `canonical_card`. It must not drift."""
+    from api.domain.menu.numberwords import canonical_card
+
+    for card in [
+        "7",
+        "07",
+        "007",
+        " S7 ",
+        "s07",
+        "SM01",
+        "25G",
+        "0",
+        "00",
+        "35b",
+        "100",
+    ]:
+        assert kit.canonical(card) == canonical_card(card), card

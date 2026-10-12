@@ -53,6 +53,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -276,6 +277,13 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
         ]
     if not dishes:
         raise ValueError("no active dish")
+    seen: dict[str, str] = {}
+    for dish in dishes:
+        # The import refuses "7" next to "07"; spoken and counted twice, that
+        # position would weigh double in every share (Codex PR #268).
+        twin = seen.setdefault(canonical(dish["number"]), dish["number"])
+        if twin is not dish["number"]:
+            raise ValueError(f"card number {dish['number']} twice (also {twin})")
     # "Gyoza (6 Stück)": nobody says the bracket on the phone.
     names = [dish["name"].split(" (")[0] for dish in dishes]
     sentences = [
@@ -335,6 +343,16 @@ def terms_that_fit(tokens: Any, terms: list[str], limit: int) -> list[str]:
             break
         kept.append(term)
     return kept
+
+
+_LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
+
+
+def canonical(card: str) -> str:
+    """A card number as the search compares it: `numberwords.canonical_card`,
+    which the host cannot import (its package needs the database driver). A
+    test holds the two together."""
+    return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower()) or "0"
 
 
 def gpu_in_docker() -> bool:
