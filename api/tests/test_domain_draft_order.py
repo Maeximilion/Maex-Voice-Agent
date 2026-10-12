@@ -1,5 +1,6 @@
 """domain/ordering: draft_order rechnet, prüft und liest vor (T-4.5, docs/04 §draft_order)."""
 
+import re
 import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -156,7 +157,7 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.readback == (
         "Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
-        "Macht 28,80 Euro, abholbereit in etwa 20 Minuten, auf den Namen Müller. "
+        "Macht 28 Euro 80, abholbereit in etwa 20 Minuten, auf den Namen Müller. "
         "Passt das so?"
     )
 
@@ -536,7 +537,48 @@ def test_spoken_times(n, wort):
 
 
 @pytest.mark.parametrize(
-    ("cents", "text"), [(1730, "17,30 Euro"), (700, "7 Euro"), (5, "0,05 Euro")]
+    ("cents", "text"),
+    [
+        (2570, "25 Euro 70"),
+        (1730, "17 Euro 30"),
+        (1010, "10 Euro 10"),
+        (700, "7 Euro"),
+        (50, "50 Cent"),
+        (5, "5 Cent"),
+        (2505, "25 Euro 5 Cent"),
+        (0, "0 Euro"),
+        # A lone 1 is a word: the test-phase voice reads "1 Euro" as "eins Euro".
+        (100, "ein Euro"),
+        (150, "ein Euro 50"),
+        (1, "ein Cent"),
+        (2501, "25 Euro ein Cent"),
+        (2100, "21 Euro"),
+        (1011, "10 Euro 11"),
+    ],
 )
 def test_spoken_euro(cents, text):
+    """Eval abholung_0076: a voice reads "25,70 Euro" as "fünfundzwanzig Komma
+    sieben null Euro". Euros and cents are two plain numbers instead."""
     assert spoken_euro(cents) == text
+
+
+def test_spoken_euro_has_no_decimal_comma_and_names_the_same_amount():
+    """Every amount up to 300 Euro has one of the four spoken forms, and the
+    numbers in it add up to the cents that went in."""
+    form = re.compile(r"(?:(\d+|ein) Euro)?(?: ?(\d+|ein)( Cent)?)?")
+
+    def number(word: str | None) -> int:
+        return 1 if word == "ein" else int(word or 0)
+
+    for cents in range(30_000):
+        text = spoken_euro(cents)
+        match = form.fullmatch(text)
+        assert match, text
+        euros, rest, unit = match.groups()
+        assert number(euros) * 100 + number(rest) == cents, text
+        # "05" would be read "null fünf", a lone "1" is read "eins".
+        assert not (rest or "").startswith("0"), text
+        assert "1" not in (euros, rest), text
+        # Cents alone and single cents carry their unit: "5" is not "50".
+        named = rest is not None and (euros is None or number(rest) < 10)
+        assert bool(unit) == named, text
