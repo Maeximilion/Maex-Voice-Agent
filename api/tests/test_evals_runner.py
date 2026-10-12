@@ -18,10 +18,17 @@ from api.models import AuditLog, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
-from evals.judge import CaseError, Observed, judge, observe, offered_alternatives
+from evals.judge import (
+    CaseError,
+    Observed,
+    heard_readback,
+    judge,
+    observe,
+    offered_alternatives,
+)
 from evals.recorder import RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
-from sim.session import SimCall
+from sim.session import SimCall, Turn
 
 CASES = Path(runner.__file__).parent / "cases"
 
@@ -302,6 +309,21 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"phone": "0721 5551234"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": " "},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": ["Macht 25 Euro 70,"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": None},
         },
     ],
 )
@@ -1214,6 +1236,68 @@ def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
         json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
     )
     assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]
+
+
+# --- The read-back sentence (expected.readback) --------------------------------
+
+
+def _turn(say: str, *tools: tuple[str, bool]) -> Turn:
+    return Turn(
+        customer="...",
+        say=[say],
+        tools=[{"name": name, "ok": ok} for name, ok in tools],
+    )
+
+
+def test_heard_readback_is_what_was_said_in_the_turn_of_the_last_draft():
+    turns = [
+        _turn("Einmal Nummer 13. Macht 11 Euro 90.", ("draft_order", True)),
+        _turn("Zweimal Nummer 13. Macht 23 Euro 80.", ("draft_order", True)),
+        _turn("Ist bestellt.", ("confirm", True)),
+    ]
+    assert heard_readback(turns) == "Zweimal Nummer 13. Macht 23 Euro 80."
+
+
+def test_heard_readback_is_the_agents_sentence_not_the_tools():
+    """Codex PR #248: the tool returned the right sentence, the model said its
+    own. The caller heard the model."""
+    turns = [_turn("Das macht dann 25,70 Euro.", ("draft_order", True))]
+    assert "Macht 25 Euro 70," not in heard_readback(turns)
+
+
+def test_without_a_draft_that_succeeded_nothing_was_read_back():
+    assert heard_readback([]) is None
+    assert heard_readback([_turn("Nummer 13 Pho Bo.", ("search_menu", True))]) is None
+    assert heard_readback([_turn("Wie ist Ihr Name?", ("draft_order", False))]) is None
+    # A reservation is read back the same way.
+    assert heard_readback([_turn("Ein Tisch.", ("create_reservation", True))])
+
+
+def test_readback_piece_is_checked_against_what_the_caller_heard(
+    migrated_db_url, tmp_path
+):
+    """A piece that was read out is green, another one is red, and a call that
+    never got to a draft is red instead of unchecked."""
+    order = [
+        "Hallo, ich moechte etwas zum Abholen bestellen.",
+        "Einmal die 13.",
+        "Nein, das wars.",
+        "Auf den Namen Schmidt.",
+        "Ja, genau.",
+    ]
+    caller = {"caller_id": "+497215551234"}
+    cases = write_cases(
+        tmp_path / "c",
+        fall("said", order, {"readback": "Einmal Nummer 13 Pho Bo."}, **caller),
+        fall("other", order, {"readback": "Einmal Nummer 14"}, **caller),
+        fall("none", ["Hallo."], {"readback": "Einmal Nummer 13"}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {
+        "said": True,
+        "other": False,
+        "none": False,
+    }, report.to_markdown()
 
 
 # --- Angebotene Alternativen (expected.alternatives) ---------------------------
