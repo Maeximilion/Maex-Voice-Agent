@@ -24,6 +24,16 @@ def test_dominant_names_the_frequency_that_is_there():
     assert dominant(pcm, [1000, 1200, 1400], 8000) == 1200
 
 
+def test_dominant_finds_a_short_tone_inside_a_long_call():
+    pcm = bytes(RATE * 10 * 2) + tone(1200, 3.0, RATE) + bytes(RATE * 17 * 2)
+
+    assert dominant(pcm, [1000, 1200, 1400], RATE) == 1200
+
+
+def test_dominant_is_none_without_candidates():
+    assert dominant(tone(440, 0.5, RATE), [], RATE) is None
+
+
 def test_dominant_is_none_for_silence_and_for_no_audio():
     assert dominant(bytes(RATE * 2), [440, 554], RATE) is None
     assert dominant(b"", [440, 554], RATE) is None

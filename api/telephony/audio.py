@@ -15,6 +15,8 @@ from collections.abc import Iterable
 AMPLITUDE = 0.3
 # A tone counts as present from this estimated amplitude on.
 FLOOR = 0.1
+# A tone counts as heard when it sounds at least this long, whatever surrounds it.
+MIN_TONE_SECONDS = 0.1
 FULL_SCALE = 32768
 
 
@@ -36,10 +38,13 @@ def level(pcm: bytes, freq_hz: int, rate: int) -> float:
 
 
 def dominant(pcm: bytes, candidates: Iterable[int], rate: int) -> int | None:
-    """The candidate frequency that is in `pcm`, None when none of them is."""
-    samples = _samples(pcm)
-    best = max(candidates, key=lambda freq: _level(samples, freq, rate))
-    return best if _level(samples, best, rate) >= FLOOR / 2 else None
+    """The candidate frequency that sounds longest in `pcm`, None when none of
+    them sounds. How much other audio surrounds the tone does not matter."""
+    seconds = {freq: tone_seconds(pcm, freq, rate) for freq in candidates}
+    best = max(seconds, key=lambda freq: seconds[freq], default=None)
+    if best is None or seconds[best] < MIN_TONE_SECONDS:
+        return None
+    return best
 
 
 def tone_seconds(pcm: bytes, freq_hz: int, rate: int) -> float:

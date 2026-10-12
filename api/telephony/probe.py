@@ -3,7 +3,7 @@
 Stands where the service `voice` will stand: the PBX connects here once per call.
 The probe plays a test tone per dialed extension, listens for the tone the caller
 plays, reacts to keys and writes every control frame into one log file per call.
-`scripts/voice_spike.py` places the calls and judges the logs; the recorded frames
+`api/telephony/spike.py` places the calls and judges the logs; the recorded frames
 are also the test material for the media adapter (T-1.11).
 
     uvicorn api.telephony.probe:app --host 0.0.0.0 --port 8765
@@ -13,6 +13,7 @@ here without the API's packages. No database, no settings, nothing of a real cal
 The log directory is `PROBE_OUT` (default `/out`).
 """
 
+import asyncio
 import json
 import os
 import time
@@ -33,7 +34,7 @@ from api.telephony.adapters.asterisk import (
     parse_event,
     sample_rate,
 )
-from api.telephony.audio import dominant, tone
+from api.telephony.audio import dominant, tone, tone_seconds
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,8 @@ class ProbeCall:
         self._log = (out_dir / f"{label}-{uuid.uuid4().hex[:8]}.jsonl").open(
             "w", encoding="utf-8"
         )
-        self._write("probe", exten=exten, caller=caller, wall=time.time())
+        # `mono` is this process's monotonic clock: comparable between calls.
+        self._write("probe", exten=exten, caller=caller, mono=self._started)
 
     def on_text(self, text: str) -> list[str | bytes]:
         self._write("in", text=text)
@@ -116,6 +118,8 @@ class ProbeCall:
         return []
 
     def close(self) -> None:
+        """Analyse what was heard and end the log. Slow: not for the event loop."""
+        heard = bytes(self._heard)
         frames = sum(self._frame_bytes.values())
         interval = None
         if (
@@ -129,7 +133,12 @@ class ProbeCall:
         self._write(
             "probe",
             closed=True,
-            heard_hz=dominant(bytes(self._heard), CALLER_TONES.values(), self._rate),
+            heard_hz=dominant(heard, CALLER_TONES.values(), self._rate),
+            # Every caller tone, so the tone of another call shows as cross-talk.
+            tones_in={
+                str(hz): tone_seconds(heard, hz, self._rate)
+                for hz in CALLER_TONES.values()
+            },
             audio_in_seconds=round(self._bytes_in / (self._rate * 2), 3),
             first_audio_t=self._first_audio,
             frame_bytes={str(size): count for size, count in self._frame_bytes.items()},
@@ -145,7 +154,9 @@ class ProbeCall:
         try:
             self._rate = sample_rate(str(data.get("format")))
             frame = int(data["optimal_frame_size"])
-        except (ProtocolError, KeyError, ValueError) as exc:
+            if frame <= 0:
+                raise ValueError("optimal_frame_size is not positive")
+        except (ProtocolError, KeyError, TypeError, ValueError) as exc:
             self._write("probe", error=f"unusable MEDIA_START: {exc}")
             return []
         if self.plan is None:
@@ -213,4 +224,5 @@ async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
                 key = "text" if isinstance(frame, str) else "bytes"
                 await send({"type": "websocket.send", key: frame})
     finally:
-        call.close()
+        # In a thread: the analysis would stall the frames of every other call.
+        await asyncio.to_thread(call.close)

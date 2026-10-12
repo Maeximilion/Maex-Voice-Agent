@@ -1,10 +1,9 @@
 # Spike T-10.1, step 1 (docs/20 §10): a test PBX, a scripted softphone and the
 # probe, alone on their own network. Started and judged by scripts/voice_spike.py,
-# which renders the configs into SPIKE_RUN first. No host port is published.
+# which renders the configs into SPIKE_RUN first and names the project after that
+# folder, so two worktrees do not share containers. No host port is published.
 # Not part of the product stack: the Compose services of the voice layer come
 # with T-1.11.
-name: voice-spike
-
 x-asterisk: &asterisk
   # Asterisk 22.10.1 with chan_websocket. Pinned by digest, a third-party build.
   image: andrius/asterisk:22.10.1_alpine-3.24-6bb254a@sha256:e598f443c1db2fcb5a7c5d5a2a2c2269d00ac92e24f97521ba3801fb8df84f39

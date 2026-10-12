@@ -117,6 +117,8 @@ def test_what_the_caller_plays_is_named_in_the_summary(out):
     assert summary["audio_in_seconds"] == pytest.approx(1.0, abs=0.02)
     assert summary["frame_bytes"] == {str(FRAME): 50}
     assert 0 <= summary["frame_gap_max_ms"] < 1000
+    assert summary["tones_in"]["1000"] == pytest.approx(1.0, abs=0.03)
+    assert summary["tones_in"]["1200"] == 0.0
 
 
 def test_an_extension_without_a_plan_gets_silence_and_a_log_line(out):
@@ -128,6 +130,17 @@ def test_an_extension_without_a_plan_gets_silence_and_a_log_line(out):
     assert not [r for r in log if r["dir"] == "out"]
     assert log[-1]["heard_hz"] is None
     assert log[-1]["frame_gap_max_ms"] is None
+
+
+@pytest.mark.parametrize("size", [0, -640, None, "x"])
+def test_an_unusable_frame_size_is_logged_and_the_call_goes_on(out, size):
+    start = json.dumps({**json.loads(MEDIA_START), "optimal_frame_size": size})
+    with connect("601") as ws:
+        ws.send_text(start)
+        ws.send_text(MEDIA_START)
+        read_tone(ws)
+
+    assert [r for r in log_of(out) if r["dir"] == "probe" and "error" in r]
 
 
 def test_a_frame_outside_the_format_is_logged_and_the_call_goes_on(out):

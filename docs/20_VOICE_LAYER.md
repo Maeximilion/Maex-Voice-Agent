@@ -224,12 +224,14 @@ the test shows.
 | Maxi has to have ready | Docker Desktop running with the WSL integration. No account, no `.env` entry, no sudo |
 | What the result looks like | one line `pass` or `FAIL` per point, "28 of 28 points passed", exit code 0; `deploy/asterisk/run/report.json` holds the same list, `pbx.log` next to it the output of both telephone containers |
 
-What it starts (`deploy/asterisk/docker-compose.spike.yml`, project `voice-spike`, own network, no
-host port published): a test PBX (Asterisk 22.10.1, image pinned by digest), a scripted softphone (a
+What it starts (`deploy/asterisk/docker-compose.spike.yml`, one Compose project per run folder, so
+two worktrees do not share containers; own network, no host port published): a test PBX (Asterisk 22.10.1, image pinned by digest), a scripted softphone (a
 second Asterisk that dials in over SIP with G.711 A-law, plays a tone, presses keys and records what
 it hears) and the probe (`api/telephony/probe.py`), which stands where the service `voice` will
 stand. The softphone's password is made new on every run and exists only in `deploy/asterisk/run/`,
-which git ignores. Only invented numbers and test tones.
+which git ignores. Only invented numbers and test tones. The kit refuses to run as root, because the
+containers take the caller's uid, and a run first stops what an earlier run with `--keep` left
+behind. The kit itself is `api/telephony/spike.py`; `scripts/voice_spike.py` is its entry.
 
 What step 1 does not answer: a call from a softphone on Windows through WSL's address translation
 was not tried. Step 2 answers the direction that matters, because there Asterisk registers outwards
@@ -266,7 +268,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 
 | Date | Package | What was measured | Result |
 |---|---|---|---|
-| 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run several times, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 19.96 ms on average, the longest gap between two frames 20 to 28 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, a key after 2 s, the caller heard 2.18 s, the tone ended 7 to 13 ms after `FLUSH_MEDIA`, queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
+| 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run several times, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 19.96 ms on average, the longest gap between two frames 20 to 29 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, a key after 2 s, the caller heard 2.18 s, the tone ended with `FLUSH_MEDIA` as closely as the method resolves, which is one or two frames (the recording is counted in 20 ms windows; the 7 to 13 ms the kit prints are below that), queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit, and none of another call's tone in either direction. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
 
 ---
 
