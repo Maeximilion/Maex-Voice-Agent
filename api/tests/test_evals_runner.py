@@ -1723,171 +1723,66 @@ def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
     )
 
 
-# --- The recorder hears what the guest hears (Codex PR #273) ---------------------
+# --- A `confirm` without a result, and the guest speaks again -------------------
+# The core refused a yes for a draft nobody heard last and read the draft out
+# itself, without asking the model again (`agent/loop.py`,
+# `guards.reread_on_yes`).
 
 
-def _refused_yes(say: str | None) -> str:
-    """The core's refusal of a `confirm`. On a yes for a draft nobody heard
-    last it carries the draft's sentence, which the core then speaks itself
-    where the model says something else (`guards.reread`)."""
-    result = {"tool": "confirm", "ok": False, "error_code": "conflict", "hint": "x"}
-    if say is not None:
-        result["say"] = say
-    return json.dumps(result)
-
-
-def _booked_after_a_refused_yes(refusal: str) -> RecordingLLM:
-    """A model that talks past the draft, gets its `confirm` on "Ja" refused,
-    answers "Ist gebucht." and returns `confirm` again on the next "Ja"."""
-    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+def _reread_then_booked(first_confirm: LLMTurn, said_first: str = "Ja") -> RecordingLLM:
+    """A model that talks past the draft and returns `confirm` on the guest's
+    sentence. No result comes back for it: the guest speaks again, says "Ja",
+    and that `confirm` goes through."""
     rec = RecordingLLM(
         FakeLLM(
             [
                 LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
                 LLMTurn(say="Darf es sonst noch etwas sein?"),
-                confirm,
-                LLMTurn(say="Ist gebucht."),
-                confirm,
+                first_confirm,
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
                 LLMTurn(say="Danke."),
             ]
         )
     )
     rec.next_turn("", {}, "Einmal die 13.")
     rec.next_turn("", {}, _draft_result())
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, refusal)
+    rec.next_turn("", {}, said_first)
     rec.next_turn("", {}, "Ja")
     rec.next_turn("", {}, _result("confirm", True))
     return rec
 
 
-def test_a_draft_the_core_read_out_in_place_of_the_model_was_read_out():
-    """The refusal carried the draft's sentence, so the guest heard it instead
-    of "Ist gebucht.": the yes after it is a yes to the draft."""
-    rec = _booked_after_a_refused_yes(_refused_yes(READBACK))
+def test_a_yes_the_core_answered_with_the_draft_is_no_violation():
+    """The first `confirm` was not carried out and the guest heard the draft:
+    the yes after it is a yes to the draft."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+
+    rec = _reread_then_booked(confirm)
 
     assert rec.recording.unconfirmed == []
     assert rec.recording.refused_attempts == [("confirm", "Ja")]
+    assert rec.recording.confirms == 1
 
 
-def test_a_refusal_without_the_sentence_leaves_the_draft_unread():
-    """A refusal that carries no sentence changes nothing about what the guest
-    heard: the model's "Ist gebucht." is no read-back."""
-    rec = _booked_after_a_refused_yes(_refused_yes(None))
-
-    assert rec.recording.unconfirmed == ["Ja"]
-
-
-def _held_back(tool: str) -> str:
-    """What a tool call gets while the core reads the draft out again."""
-    return json.dumps(
-        {"tool": tool, "ok": False, "error_code": "conflict", "say": READBACK}
-    )
-
-
-def test_a_call_held_back_for_the_reread_leaves_the_draft_in_the_recording():
-    """The core keeps the draft when it holds a search back after a refused
-    yes, and the recorder has to agree: the yes after the reread is a yes to
-    that draft (Codex PR #273)."""
-    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
-    rec = RecordingLLM(
-        FakeLLM(
-            [
-                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="Darf es sonst noch etwas sein?"),
-                confirm,
-                LLMTurn(tool_call=ToolCall("search_menu", {"query": "die 13"})),
-                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="Einen Moment."),
-                confirm,
-                LLMTurn(say="Danke."),
-            ]
-        )
-    )
-    rec.next_turn("", {}, "Einmal die 13.")
-    rec.next_turn("", {}, _draft_result())
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _refused_yes(READBACK))
-    rec.next_turn("", {}, _held_back("search_menu"))
-    rec.next_turn("", {}, _held_back("draft_order"))
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _result("confirm", True))
-
-    assert rec.recording.unconfirmed == []
-
-
-def test_a_cart_is_not_taken_by_the_recorder_while_the_draft_is_read_out_again():
-    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+def test_a_cart_next_to_that_confirm_is_taken_back_in_the_recording():
+    """The core left the `cart` aside. The recorder saw it first and dropped
+    the draft for it; with the guest's next sentence the draft is back."""
     other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
-    rec = RecordingLLM(
-        FakeLLM(
-            [
-                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="Darf es sonst noch etwas sein?"),
-                confirm,
-                LLMTurn(say="Ich habe die Bestellung geändert.", cart=other_order),
-                confirm,
-                LLMTurn(say="Danke."),
-            ]
-        )
+    confirm = LLMTurn(
+        tool_call=ToolCall("confirm", {"entity_id": "x"}), cart=other_order
     )
-    rec.next_turn("", {}, "Einmal die 13.")
-    rec.next_turn("", {}, _draft_result())
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _refused_yes(READBACK))
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _result("confirm", True))
+
+    rec = _reread_then_booked(confirm)
 
     assert rec.recording.unconfirmed == []
 
 
-def test_a_cart_next_to_the_refused_confirm_is_taken_back_in_the_recording():
-    """The core leaves a `cart` aside that stands next to a `confirm` it
-    refuses with the draft's sentence. The recorder sees the `cart` first and
-    learns of the refusal with the result: the draft is back then."""
-    other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
-    confirm = ToolCall("confirm", {"entity_id": "x"})
-    rec = RecordingLLM(
-        FakeLLM(
-            [
-                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="Darf es sonst noch etwas sein?"),
-                LLMTurn(tool_call=confirm, cart=other_order),
-                LLMTurn(say="Ist gebucht."),
-                LLMTurn(tool_call=confirm),
-                LLMTurn(say="Danke."),
-            ]
-        )
-    )
-    rec.next_turn("", {}, "Einmal die 13.")
-    rec.next_turn("", {}, _draft_result())
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _refused_yes(READBACK))
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _result("confirm", True))
-
-    assert rec.recording.unconfirmed == []
-
-
-def test_a_held_back_confirm_whose_result_never_comes_is_no_violation():
-    """A model that answers the refusal with `confirm` again, as the last hop
-    of the turn: the core holds it back and the call goes to the team. Nothing
-    was carried out, so nothing is counted."""
+def test_a_confirm_without_a_result_on_another_sentence_keeps_its_entry():
+    """Only a yes for a draft that was not read out is answered with the
+    draft. Any other `confirm` whose result never came stays what the
+    recorder took it for, the careful side."""
     confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
-    rec = RecordingLLM(
-        FakeLLM(
-            [
-                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="Darf es sonst noch etwas sein?"),
-                confirm,
-                confirm,
-            ]
-        )
-    )
-    rec.next_turn("", {}, "Einmal die 13.")
-    rec.next_turn("", {}, _draft_result())
-    rec.next_turn("", {}, "Ja")
-    rec.next_turn("", {}, _refused_yes(READBACK))
 
-    assert rec.recording.unconfirmed == []
-    assert rec.recording.confirms == 0
+    rec = _reread_then_booked(confirm, said_first="Nein, lieber später.")
+
+    assert rec.recording.unconfirmed == ["Nein, lieber später.", "Ja"]

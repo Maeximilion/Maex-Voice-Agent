@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.33
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.34
 
 ---
 
@@ -370,7 +370,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
-| 12.10.2026 | **After a refused yes the core reads the draft out itself** (on top of #251, eval `reservierung_0032`, companion `reservierung_0033`): a `confirm` refused on a yes for a draft the guest has not heard last carries the draft's sentence as `say`, and the turn ends with it whatever the model says (`guards.refusal`, `guards.reread`, `agent/loop.py`). Before, the stand-in handed such a call to the team. On a no the model answers itself. Tests in `api/tests/test_agent_reread.py` for reservations and orders on database, audit log and outbox, and six for the eval recorder; the tests of each review round were red before its fixes. Stand-in only, no real model |
+| 12.10.2026 | **After a refused yes the core reads the draft out itself** (on top of #251, eval `reservierung_0032`, companion `reservierung_0033`): a `confirm` on a yes for a draft the guest has not heard last is refused and the turn ends with the draft's sentence, without another model call and without taking a `cart`, a patch or a ladder report that stood next to it (`guards.reread_on_yes`, `agent/loop.py`). Before, the stand-in handed such a call to the team. On a no the model answers itself. A first version asked the model once more and replaced its sentence; three review rounds each found one more side effect of that extra answer, so it was cut. Tests in `api/tests/test_agent_reread.py` for reservations and orders on database, audit log and outbox, and three for the eval recorder in `api/tests/test_evals_runner.py`. Stand-in only, no real model |
 | 12.10.2026 | **Correction at the read-back** (eval `abholung_0079`): a card number named after a no replaces the dish with the same digits or the only dish, keeps quantity, note and the rest of the order, and the order is read back again; anything less clear starts again |
 | 12.10.2026 | **Tests: the speech kit's tests pass as root too** (audit finding, P2): four tests of `api/tests/test_telephony_speech_spike.py` failed under `make test`, because the API container is root and `speech_spike.main` refuses root before the mocked run starts. The module's tests now give the kit an ordinary uid (its own view of `os` only, pytest keeps the real one for its temporary folders), and a separate test pins that root is refused before Docker is asked or the run directory is touched. No change outside the test file. Run as uid 0 and as uid 1000 |
 | 12.10.2026 | **Bug: S12 heard as "ist zwölf"** (eval `abholung_0077`): "ist" directly before a number keeps the S number as a candidate where the menu has the prefix, the search asks by name, never takes such a number without a question. 14 lines in the number eval (195), re-judged on the transcripts of T-10.3: picked ear 12 to 8 silent wrong numbers of 724 |
@@ -458,6 +458,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.34 · 12.10.2026:** Own review of PR #273: the core ends the turn of a refused yes with the draft's sentence and no longer asks the model again
 - **v2.0.33 · 12.10.2026:** Codex review of c0c5005 on PR #273: what stands next to the refused confirm is left aside too, the ladder included, and the recorder counts no held-back call
 - **v2.0.32 · 12.10.2026:** Codex review of 1b8d12b on PR #273: while the draft is read out again, no tool result, cart or patch can drop it
 - **v2.0.31 · 12.10.2026:** Codex review of d9fe3e1 on PR #273: no other tool is carried out before the draft is read out, and the eval recorder follows what the guest hears

@@ -1,10 +1,10 @@
 """Rule 3 in the loop: after a refused yes the core reads the draft out itself.
 
-A yes for a draft that is not what the guest heard last is refused
-(`guards.py`, #251). What comes next is not left to the model: the refusal
-carries the draft's sentence, and the turn ends with it whatever the model
-says. The yes to that one books. Every test runs for a table and for an
-order, on the database, the audit log and the outbox.
+A `confirm` on a yes for a draft that is not what the guest heard last is
+refused (`guards.py`, #251). What comes next is not left to the model: the
+core ends the turn with the draft's sentence and asks the model nothing more.
+The yes to that one books. Every loop test runs for a table and for an order,
+on the database, the audit log and the outbox.
 """
 
 import json
@@ -17,17 +17,10 @@ from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult
-from api.agent.guards import (
-    HINT_CONFIRM,
-    HINT_REREAD,
-    begin_turn,
-    note_said,
-    refusal,
-    reread,
-)
+from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, reread_on_yes
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import MAX_TOOL_HOPS, ConversationLoop
+from api.agent.loop import ConversationLoop
 from api.agent.state import ConversationState, apply_tool_result
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
@@ -126,9 +119,10 @@ def flow(request, session, tenant_id) -> Flow:
 class Model:
     """Plays its tool calls, then speaks: `say`, or without one the sentence of
     the tool result it just got (`say` of a refusal, `readback` of a draft),
-    the way the prompt asks for it. A step may be a whole answer."""
+    the way the prompt asks for it. A step may be a whole answer, or a
+    function of the state the model is shown."""
 
-    def __init__(self, *steps: ToolCall | LLMTurn, say: str | None = None):
+    def __init__(self, *steps: Any, say: str | None = None):
         self._steps = list(steps)
         self._say = say
         self.inputs: list[str] = []
@@ -137,6 +131,8 @@ class Model:
         self.inputs.append(input_text)
         if self._steps:
             step = self._steps.pop(0)
+            if callable(step):
+                step = step(state_json)
             return step if isinstance(step, LLMTurn) else LLMTurn(tool_call=step)
         if self._say is not None:
             return LLMTurn(say=self._say)
@@ -176,22 +172,41 @@ def booked(session, flow: Flow) -> tuple[int, int]:
     return audit, outbox
 
 
+def refused_yes(session, state, flow: Flow) -> tuple[str, uuid.UUID]:
+    """A draft that was read out, then another answer: the next yes cannot
+    mean the draft any more. Returns the draft's sentence and its id."""
+    readback = read_to_the_guest(session, state, flow)
+    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
+    draft_id = flow.draft_id(state)
+    assert draft_id is not None
+    return readback, draft_id
+
+
+def other_cart(flow: Flow) -> list[dict[str, Any]]:
+    """An order that differs from what was drafted: taken as a change in the
+    order flow, refused for its unknown dish in a call about a table. Either
+    way it would drop the draft that waits."""
+    if flow.entity == "order":
+        dish = flow.calls[-1].args["items"][0]["menu_item_id"]
+        return [{"menu_item_id": dish, "quantity": 5}]
+    return [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+
+
 def test_yes_after_another_answer_gets_the_draft_read_out_not_a_booking(
     session, state, flow
 ):
     """The read-back is no longer the last thing the guest heard: the yes may
-    mean the answer in between. The model is told so and gets the sentence to
-    say; what it says instead is not spoken. The yes after that books, once."""
-    readback = read_to_the_guest(session, state, flow)
-    draft_id = flow.draft_id(state)
-    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
+    mean the answer in between. The core reads the draft out and does not ask
+    the model again, so there is no sentence like "Ist gebucht." to replace.
+    The yes after that books, once."""
+    readback, draft_id = refused_yes(session, state, flow)
     model = Model(flow.confirm(draft_id), say="Ist gebucht.")
 
     said = turn(session, state, "Ja", model)
 
     assert said == [readback]
-    told = json.loads(model.inputs[1])
-    assert (told["ok"], told["hint"], told["say"]) == (False, HINT_CONFIRM, readback)
+    assert len(model.inputs) == 1
+    assert state.readback_heard
     assert status(session, flow, draft_id) == "draft"
     assert booked(session, flow) == (0, 0)
     logged = session.scalars(select(Call.tool_calls)).one()[-1]
@@ -224,25 +239,87 @@ def test_yes_after_a_draft_nobody_read_out_gets_it_read_out(session, state, flow
     assert booked(session, flow) == (1, 1)
 
 
-def test_a_model_that_says_the_sentence_it_was_given_is_spoken_as_it_is(
-    session, state, flow
-):
-    readback = read_to_the_guest(session, state, flow)
+def test_yes_in_the_turn_of_the_draft_gets_the_draft_read_out(session, state, flow):
+    """Draft and `confirm` in one turn on a bare yes: the draft did not exist
+    when the guest spoke. The turn ends with its sentence."""
+    turn(session, state, GUEST, Model(say="Soll ich das so aufnehmen?"))
+
+    def confirm_what_waits(state_json: dict[str, Any]) -> ToolCall:
+        return flow.confirm(state_json[f"{flow.entity}_id"])
+
+    model = Model(*flow.calls, confirm_what_waits, say="Ist gebucht.")
+
+    said = turn(session, state, "Ja", model)
+
     draft_id = flow.draft_id(state)
-    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
-
-    said = turn(session, state, "Ja", Model(flow.confirm(draft_id)))
-
+    readback = json.loads(model.inputs[len(flow.calls)])["data"]["readback"]
     assert said == [readback]
-    assert state.readback_heard
+    assert status(session, flow, draft_id) == "draft"
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)
+
+
+def test_what_stands_next_to_the_refused_confirm_is_not_taken(session, state, flow):
+    """The answer that carries the `confirm` also carries a changed order, a
+    patch and a report to the understanding ladder. A changed or refused
+    `cart` drops the draft that waits, a phone number in a patch does too,
+    and the ladder is one failure away from ending the call. None of it is
+    taken: the guest said yes and nothing else (Codex PR #273)."""
+    readback, draft_id = refused_yes(session, state, flow)
+    answer = LLMTurn(
+        tool_call=flow.confirm(draft_id),
+        cart=other_cart(flow),
+        state_patch={"phone": CALLER},
+        understanding_failure="phone",
+    )
+    loop = ConversationLoop(session, Model(answer), "system", now=NOW, clock=lambda: 0)
+    probe, needed = UnderstandingLadder(), 0
+    while not probe.should_end_call("phone"):
+        probe.record_failure("phone")
+        needed += 1
+    for _ in range(needed - 1):
+        loop._ladder.record_failure("phone")
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.say == [readback]
+    assert result.ended is False and not state.transferred
+    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
+
+    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
+
+    assert status(session, flow, draft_id) == "confirmed"
+    assert booked(session, flow) == (1, 1)
+
+
+def test_the_time_limit_comes_before_the_reread(session, state, flow):
+    """An answer that arrives after the call's time limit is not answered
+    with the draft's sentence either: the call goes to the team."""
+    _, draft_id = refused_yes(session, state, flow)
+    ticks = iter([0, 0, 100])
+    loop = ConversationLoop(
+        session,
+        Model(flow.confirm(draft_id)),
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=lambda: next(ticks, 100),
+    )
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.ended is True and state.transferred
+    assert status(session, flow, draft_id) == "draft"
+    assert booked(session, flow) == (0, 0)
 
 
 def test_no_after_another_answer_is_left_to_the_model(session, state, flow):
     """The draft is put again only on a yes. A guest who wants a change is
     asked what, not the old question once more."""
-    read_to_the_guest(session, state, flow)
-    draft_id = flow.draft_id(state)
-    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
+    _, draft_id = refused_yes(session, state, flow)
     model = Model(flow.confirm(draft_id), say="Was soll ich ändern?")
 
     said = turn(session, state, "Nein, ich möchte etwas ändern", model)
@@ -264,7 +341,6 @@ def test_no_to_the_read_back_goes_back_to_the_model(session, state, flow):
     said = turn(session, state, "Nein, das stimmt nicht", model)
 
     assert said == ["Was soll ich ändern?"]
-    assert "say" not in json.loads(model.inputs[1])
     assert status(session, flow, draft_id) == "draft"
 
 
@@ -295,240 +371,37 @@ def drafted(heard: bool) -> tuple[ConversationState, ToolCall]:
         # No yes: the model answers itself.
         (False, "Nein, lieber später", None),
         (False, "Ja, und noch eine Cola", None),
-        # Heard and answered with something else than a yes: nothing to repeat.
+        (False, "Passt das so?", None),
+        # Heard and a yes: the `confirm` goes through, nothing to read out.
+        (True, "Ja", None),
         (True, "Nein, das stimmt nicht", None),
     ],
 )
-def test_only_a_refused_yes_for_an_unheard_draft_carries_its_sentence(
-    heard, said, sentence
-):
+def test_only_a_yes_for_an_unheard_draft_gets_the_draft_read_out(heard, said, sentence):
     state, confirm = drafted(heard)
 
-    refused = refusal(state, begin_turn(state), said, confirm)
-
-    assert refused is not None and refused.hint == HINT_CONFIRM
-    assert refused.say == sentence
+    assert reread_on_yes(state, begin_turn(state), said, confirm) == sentence
 
 
-def test_a_refused_yes_without_any_draft_carries_no_sentence():
+def test_a_yes_for_another_id_than_the_heard_draft_reads_nothing_out():
+    """The draft was heard; the model names another id. That `confirm` is
+    refused, and there is nothing the guest has not heard."""
+    state, _ = drafted(heard=True)
+    other = ToolCall("confirm", {"entity": "reservation", "entity_id": "x"})
+
+    assert reread_on_yes(state, begin_turn(state), "Ja", other) is None
+
+
+def test_only_a_confirm_gets_the_draft_read_out():
+    state, _ = drafted(heard=False)
+    start = begin_turn(state)
+
+    assert reread_on_yes(state, start, "Ja", None) is None
+    assert reread_on_yes(state, start, "Ja", ToolCall("transfer_to_team", {})) is None
+
+
+def test_a_yes_without_any_draft_reads_nothing_out():
     state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
     confirm = ToolCall("confirm", {"entity": "order", "entity_id": str(uuid.uuid4())})
 
-    assert refusal(state, begin_turn(state), "Ja", confirm).say is None
-
-
-@pytest.mark.parametrize(
-    ("say", "spoken"),
-    [
-        ("Ist gebucht.", READBACK),
-        ("Ein Tisch für vier um sieben. Passt das so?", READBACK),
-        (READBACK, READBACK),
-        (f"Gerne. {READBACK}", f"Gerne. {READBACK}"),
-    ],
-)
-def test_reread_keeps_a_sentence_that_reads_the_draft_out_and_replaces_any_other(
-    say, spoken
-):
-    state, _ = drafted(heard=False)
-
-    assert reread(state, say) == spoken
-
-
-def test_reread_leaves_the_sentence_alone_when_no_draft_waits_unheard():
-    heard, _ = drafted(heard=True)
-    nothing = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
-
-    assert reread(heard, "Ja, Hunde sind willkommen.") == "Ja, Hunde sind willkommen."
-    assert reread(nothing, "Guten Tag.") == "Guten Tag."
-
-
-# --- nothing else is carried out before the draft is read out (Codex PR #273) ---
-
-TRANSFER = ToolCall("transfer_to_team", {"reason": "not_understood"})
-
-
-def refused_yes(session, state, flow: Flow) -> tuple[str, uuid.UUID]:
-    """A draft that was read out, then another answer: the next yes is refused."""
-    readback = read_to_the_guest(session, state, flow)
-    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
-    draft_id = flow.draft_id(state)
-    assert draft_id is not None
-    return readback, draft_id
-
-
-def test_a_transfer_after_the_refused_yes_is_not_carried_out(session, state, flow):
-    """The model answers the refusal with a transfer, as the stand-in did. The
-    guest said yes and nothing else: the call stays, the draft is read out."""
-    readback, draft_id = refused_yes(session, state, flow)
-    model = Model(flow.confirm(draft_id), TRANSFER, say="Ich verbinde Sie.")
-
-    said = turn(session, state, "Ja", model)
-
-    assert said == [readback]
-    told = json.loads(model.inputs[2])
-    assert (told["tool"], told["ok"]) == ("transfer_to_team", False)
-    assert (told["hint"], told["say"]) == (HINT_REREAD, readback)
-    assert state.stage == "readback_pending" and not state.transferred
-    assert status(session, flow, draft_id) == "draft"
-
-    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
-
-    assert status(session, flow, draft_id) == "confirmed"
-    assert booked(session, flow) == (1, 1)
-
-
-def test_a_second_confirm_after_the_refused_yes_books_nothing(session, state, flow):
-    readback, draft_id = refused_yes(session, state, flow)
-    again = flow.confirm(draft_id)
-
-    said = turn(session, state, "Ja", Model(again, again, say="Ist gebucht."))
-
-    assert said == [readback]
-    assert status(session, flow, draft_id) == "draft"
-    assert booked(session, flow) == (0, 0)
-
-
-def test_a_model_that_returns_only_tools_ends_with_the_team(session, state, flow):
-    """The last resort stays what it is for any stuck turn (rule 5): the hop
-    limit, then the team. Nothing is booked on the way."""
-    _, draft_id = refused_yes(session, state, flow)
-    model = Model(flow.confirm(draft_id), *[TRANSFER] * MAX_TOOL_HOPS)
-    loop = ConversationLoop(session, model, "system", now=NOW, clock=lambda: 0)
-
-    result = loop.run_turn(state, "Ja")
-
-    assert result.ended is True and state.transferred
-    assert status(session, flow, draft_id) == "draft"
-    assert booked(session, flow) == (0, 0)
-
-
-HELD_BACK = {
-    "search": ToolCall("search_menu", {"query": "die 23"}),
-    "slot": ToolCall(
-        "check_slot", {"party_size": 2, "reserved_for": "2026-09-15T20:00:00+02:00"}
-    ),
-}
-
-
-@pytest.mark.parametrize("tried", ["search", "slot", "draft"])
-def test_a_tool_held_back_for_the_reread_does_not_drop_the_draft(
-    session, state, flow, tried
-):
-    """A search, a slot check or a new draft is how a correction begins, and
-    a failed one drops the draft that waits (`state.apply_tool_result`). Held
-    back after a bare yes it is none: the draft stays, is read out, and the
-    yes to it books (Codex PR #273)."""
-    readback, draft_id = refused_yes(session, state, flow)
-    call = flow.calls[-1] if tried == "draft" else HELD_BACK[tried]
-    model = Model(flow.confirm(draft_id), call, say="Einen Moment.")
-
-    said = turn(session, state, "Ja", model)
-
-    assert said == [readback]
-    assert json.loads(model.inputs[2])["hint"] == HINT_REREAD
-    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
-    assert session.scalar(select(func.count()).select_from(flow.model)) == 1
-
-    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
-
-    assert status(session, flow, draft_id) == "confirmed"
-    assert booked(session, flow) == (1, 1)
-
-
-@pytest.mark.parametrize(
-    "beside",
-    [
-        {"cart": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]},
-        {"state_patch": {"phone": CALLER}},
-    ],
-    ids=["cart", "patch"],
-)
-def test_what_stands_next_to_the_answer_is_not_taken_before_the_reread(
-    session, state, flow, beside
-):
-    """A changed or refused `cart` drops the draft that waits, and so does a
-    phone number in a patch. After a bare yes the model's answer carries one:
-    it is left aside, the draft stays and is read out (Codex PR #273)."""
-    readback, draft_id = refused_yes(session, state, flow)
-    answer = LLMTurn(say="Ich habe etwas geändert.", **beside)
-
-    said = turn(session, state, "Ja", Model(flow.confirm(draft_id), answer))
-
-    assert said == [readback]
-    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
-
-    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
-
-    assert status(session, flow, draft_id) == "confirmed"
-    assert booked(session, flow) == (1, 1)
-
-
-def other_cart(flow: Flow) -> list[dict[str, Any]]:
-    """An order that differs from what was drafted: taken as a change in the
-    order flow, refused for its unknown dish in a call about a table. Either
-    way it drops the draft that waits."""
-    if flow.entity == "order":
-        dish = flow.calls[-1].args["items"][0]["menu_item_id"]
-        return [{"menu_item_id": dish, "quantity": 5}]
-    return [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
-
-
-def test_what_stands_next_to_the_refused_confirm_itself_is_not_taken(
-    session, state, flow
-):
-    """The answer that carries the `confirm` also carries a changed order and
-    a patch. Taken first, they would drop the draft, the refusal would carry
-    no sentence and "Ist gebucht." would be spoken (Codex PR #273)."""
-    readback, draft_id = refused_yes(session, state, flow)
-    answer = LLMTurn(
-        tool_call=flow.confirm(draft_id),
-        cart=other_cart(flow),
-        state_patch={"phone": CALLER},
-    )
-    model = Model(answer, say="Ist gebucht.")
-
-    said = turn(session, state, "Ja", model)
-
-    assert said == [readback]
-    told = json.loads(model.inputs[1])
-    assert (told["tool"], told["hint"], told["say"]) == (
-        "confirm",
-        HINT_CONFIRM,
-        readback,
-    )
-    assert flow.draft_id(state) == draft_id and state.stage == "readback_pending"
-
-    turn(session, state, "Ja", Model(flow.confirm(draft_id), say="Danke."))
-
-    assert status(session, flow, draft_id) == "confirmed"
-    assert booked(session, flow) == (1, 1)
-
-
-def test_the_understanding_ladder_does_not_end_the_call_before_the_reread(
-    session, state, flow
-):
-    """One more reported failure would end the call with the team. In the
-    turn of the reread the model's report is left aside like everything else
-    next to its sentence (Codex PR #273)."""
-    readback, draft_id = refused_yes(session, state, flow)
-    loop = ConversationLoop(
-        session,
-        Model(
-            flow.confirm(draft_id),
-            LLMTurn(say="Wie war Ihre Nummer?", understanding_failure="phone"),
-        ),
-        "system",
-        now=NOW,
-        clock=lambda: 0,
-    )
-    probe, needed = UnderstandingLadder(), 0
-    while not probe.should_end_call("phone"):
-        probe.record_failure("phone")
-        needed += 1
-    for _ in range(needed - 1):
-        loop._ladder.record_failure("phone")
-
-    result = loop.run_turn(state, "Ja")
-
-    assert result.say == [readback]
-    assert result.ended is False and not state.transferred
+    assert reread_on_yes(state, begin_turn(state), "Ja", confirm) is None

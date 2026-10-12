@@ -29,7 +29,7 @@ that insists ends in the handoff to the team, not in a booking.
 """
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic import ValidationError
@@ -57,11 +57,6 @@ HINT_CONFIRM = (
     "Abgelehnt: kein ausdrückliches Ja des Gastes auf den zuletzt vorgelesenen "
     "Entwurf. Erst den readback wörtlich vorlesen (steht im Zustand, solange er "
     "nicht vorgelesen ist), dann auf ein klares Ja warten."
-)
-HINT_REREAD = (
-    "Abgelehnt: in diesem Zug wird kein Tool mehr ausgeführt. Der Gast hat Ja "
-    "gesagt, ohne den Entwurf zuletzt gehört zu haben. Lies den Satz aus `say` "
-    "wörtlich vor und warte auf das Ja."
 )
 HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
@@ -246,16 +241,7 @@ def refusal(
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
     which the core has taken by now."""
     if call.name == "confirm":
-        if _may_confirm(state, start, user_text, call):
-            return None
-        # A yes for a draft that is not what the guest heard last may have
-        # meant another question. The model gets the draft's sentence as the
-        # one to say, and the loop says it where the model does not
-        # (`reread`). Not on any other sentence: after "Nein, ich möchte etwas
-        # ändern" the model has to ask what, not put the old question again.
-        if is_yes(user_text):
-            return replace(_CONFIRM, say=unheard_readback(state))
-        return _CONFIRM
+        return None if _may_confirm(state, start, user_text, call) else _CONFIRM
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
@@ -330,45 +316,27 @@ def unheard_readback(state: ConversationState) -> str | None:
     return None
 
 
-def puts_the_draft_again(
+def reread_on_yes(
     state: ConversationState, start: TurnStart, user_text: str, call: ToolCall | None
-) -> bool:
-    """Is this the `confirm` that will be refused with the draft's sentence?
-    The loop asks before it takes anything that stands next to the call: a
-    `cart` in the same answer would drop the draft first, and the refusal
-    would then carry no sentence (Codex PR #273)."""
-    if call is None or call.name != "confirm":
-        return False
-    refused = refusal(state, start, user_text, call)
-    return refused is not None and bool(refused.say)
+) -> str | None:
+    """The draft's sentence, when `call` is a `confirm` on a yes for a draft
+    that is not what the guest heard last; None for every other call.
 
+    Such a `confirm` is refused (`refusal`). The yes may have meant another
+    question, so the question for it has to be put, and that is not left to
+    the model: the stand-in handed the call to the team, and a model that
+    answers "gebucht" or asks in its own words keeps the guest in refused
+    yeses. The loop ends the turn with this sentence and asks the model
+    nothing more, so nothing a further answer could carry gets in the way
+    (finding on PR #258).
 
-def reread_first(state: ConversationState) -> ToolResult:
-    """What any further tool call of a turn gets once a yes was refused for
-    an unheard draft. The guest said yes and nothing else: no transfer, no
-    second `confirm` and no search is carried out on that sentence, or the
-    turn would end with the team, or with nothing, instead of the question
-    the guest has to hear (Codex PR #273). It costs a tool hop like any
-    refused call, and it leaves the draft alone: the loop does not pass it
-    through `state.apply_tool_result`, where a failed search or draft counts
-    as a correction and drops what waits."""
-    return ToolResult(
-        ok=False, error_code="conflict", hint=HINT_REREAD, say=unheard_readback(state)
-    )
-
-
-def reread(state: ConversationState, say: str) -> str:
-    """The sentence that ends a turn in which a yes was refused for a draft
-    the guest had not heard last: the model's when it reads the draft out
-    (`consent.read_out`), else the draft's own sentence. The way back to the
-    question is then not left to the model: one that answers "gebucht", asks
-    in its own words or hands the call over would keep the guest in refused
-    yeses, or with the team, for a yes that came one turn late (finding on
-    PR #258)."""
-    readback = unheard_readback(state)
-    if readback is not None and not read_out(say, readback):
-        return readback
-    return say
+    Only on a yes: after "Nein, ich möchte etwas ändern" the model has to ask
+    what, not put the old question again."""
+    if call is None or call.name != "confirm" or not is_yes(user_text):
+        return None
+    if _may_confirm(state, start, user_text, call):
+        return None
+    return unheard_readback(state)
 
 
 def _readback_id(state: ConversationState) -> str | None:
