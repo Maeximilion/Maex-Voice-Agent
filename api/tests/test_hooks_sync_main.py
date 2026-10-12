@@ -94,7 +94,25 @@ def repos(tmp_path):
     def commits_behind() -> int:
         return int(git(main_checkout, "rev-list", "--count", "main..origin/main"))
 
+    def finish_branch(name: str, *, squash: bool = False) -> None:
+        """A branch of the main folder, pushed, landed on origin's main and
+        deleted there, as GitHub leaves it after a merge."""
+        git(main_checkout, "switch", "-q", "-c", name)
+        (main_checkout / f"{name}.txt").write_text("work\n", encoding="utf-8")
+        git(main_checkout, "add", f"{name}.txt")
+        git(main_checkout, "commit", "-q", "-m", name)
+        git(main_checkout, "push", "-q", "-u", "origin", name)
+        git(upstream, "fetch", "-q", "origin")
+        how = ["--squash"] if squash else ["--no-ff", "-m", f"merge {name}"]
+        git(upstream, "merge", "-q", *how, f"origin/{name}")
+        if squash:
+            git(upstream, "commit", "-q", "-m", f"{name} squashed")
+        git(upstream, "push", "-q", "origin", "main")
+        git(upstream, "push", "-q", "origin", "--delete", name)
+
     return SimpleNamespace(
+        git=git,
+        finish_branch=finish_branch,
         main_checkout=main_checkout,
         land_on_origin=land_on_origin,
         run_hook=run_hook,
@@ -131,3 +149,61 @@ def test_dirty_main_that_is_up_to_date_stays_silent(repos):
 
     assert repos.run_hook() == ""
     assert tracked.read_text(encoding="utf-8") == "local edit\n"
+
+
+def test_the_main_folder_on_a_finished_branch_goes_back_to_main(repos):
+    repos.finish_branch("finished")
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+    assert repos.commits_behind() == 0
+    assert (repos.main_checkout / "finished.txt").exists()
+
+
+def test_a_finished_branch_with_uncommitted_work_is_left_alone(repos):
+    repos.finish_branch("finished")
+    (repos.main_checkout / "notes.txt").write_text("mine\n", encoding="utf-8")
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "finished"
+    assert (repos.main_checkout / "notes.txt").read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_branch_whose_commits_are_not_in_main_is_left_alone(repos):
+    # A squash merge: the remote branch is gone, the commits themselves never landed.
+    repos.finish_branch("squashed", squash=True)
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+
+
+def test_a_branch_that_still_exists_on_the_remote_is_left_alone(repos):
+    repos.git(repos.main_checkout, "switch", "-q", "-c", "ongoing")
+    repos.git(repos.main_checkout, "push", "-q", "-u", "origin", "ongoing")
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "ongoing"
+
+
+def test_main_checked_out_nowhere_is_still_moved_to_origin(repos):
+    repos.git(repos.main_checkout, "switch", "-q", "-c", "ongoing")
+    repos.land_on_origin("second")
+
+    assert repos.run_hook() == ""
+    assert repos.commits_behind() == 0
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "ongoing"
+
+
+def test_a_local_main_that_diverged_is_reported_and_left_alone(repos):
+    (repos.main_checkout / "local.txt").write_text("local\n", encoding="utf-8")
+    repos.git(repos.main_checkout, "add", "local.txt")
+    repos.git(repos.main_checkout, "commit", "-q", "-m", "local only")
+    local = repos.git(repos.main_checkout, "rev-parse", "main")
+    repos.git(repos.main_checkout, "switch", "-q", "-c", "ongoing")
+    repos.land_on_origin("second")
+
+    assert "was not updated" in repos.run_hook()
+    assert repos.git(repos.main_checkout, "rev-parse", "main") == local

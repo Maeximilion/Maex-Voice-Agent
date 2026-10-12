@@ -9,7 +9,7 @@
 
 | Part | Where it lives | In the repository |
 |---|---|---|
-| Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json` | yes, versioned and tested |
+| Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, every commit in `origin/main`; since 12.10.2026). `/done` runs it again after a merge | yes, versioned and tested |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
 | Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |

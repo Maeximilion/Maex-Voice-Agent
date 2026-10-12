@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.9
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.10
 
 ---
 
@@ -436,6 +436,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.10 · 12.10.2026:** Pulling is Claude's job: sync hook returns the main folder to main after a finished branch and moves main where no folder has it; /task, /bug and /done fetch before branching and before a merge
 - **v2.0.9 · 12.10.2026:** Open points from Maxi's listening test: spoken total (25,70 Euro), speech kit on the real menu
 - **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services
 - **v2.0.7 · 12.10.2026:** T-10.3 local engines measured: Parakeet v3 on the CPU and Piper thorsten, a recommendation and no clean go; /task and /bug load code-autopilot, /task prints the title where the app has no rename tool

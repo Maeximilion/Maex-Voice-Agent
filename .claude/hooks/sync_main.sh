@@ -11,11 +11,30 @@ if ! git -C "$root" fetch --prune --quiet 2>/dev/null; then
   warn "git fetch failed"
   exit 0
 fi
+# The main folder left on a finished branch goes back to main, or its files stay at the
+# old state while every ref is current (12.10.2026: a kit merged that day was "not
+# there"). Finished means: nothing uncommitted, the remote branch is gone, and every
+# commit is in origin/main. Only that folder; session worktrees are tidied by /start.
+primary="$(git -C "$root" worktree list --porcelain 2>/dev/null | awk '/^worktree /{print substr($0,10); exit}')"
+branch="$(git -C "$primary" branch --show-current 2>/dev/null)"
+if [ -n "$branch" ] && [ "$branch" != main ] \
+  && [ -z "$(git -C "$primary" status --porcelain 2>/dev/null)" ] \
+  && [ "$(git -C "$primary" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ] \
+  && git -C "$primary" merge-base --is-ancestor "$branch" origin/main 2>/dev/null; then
+  # Refused when main is checked out in another worktree: then that one is synced below.
+  git -C "$primary" switch --quiet main 2>/dev/null || true
+fi
+
 # main is checked out in at most one worktree, often not the one this session runs in.
 main_dir="$(git -C "$root" worktree list --porcelain 2>/dev/null | awk '
   /^worktree /{w=substr($0,10)}
   /^branch refs\/heads\/main$/{print w; exit}')"
-[ -n "$main_dir" ] || exit 0
+if [ -z "$main_dir" ]; then
+  # Checked out nowhere: move the branch itself, so the next task starts from today's main.
+  git -C "$root" fetch --quiet origin main:main 2>/dev/null \
+    || warn "local main has commits origin/main lacks and was not updated"
+  exit 0
+fi
 if [ -z "$(git -C "$main_dir" status --porcelain 2>/dev/null)" ]; then
   git -C "$main_dir" pull --ff-only --quiet 2>/dev/null || warn "git pull --ff-only failed"
 else
