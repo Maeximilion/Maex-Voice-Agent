@@ -92,13 +92,16 @@ def scripted(session, tenant):
     )
 
 
-def handler_for(session, tenant, port, *, llm_factory=None, session_factory=None):
+def handler_for(
+    session, tenant, port, *, llm_factory=None, session_factory=None, now=NOW, **more
+):
     return CallHandler(
         port,
         tenant_id=tenant.id,
         session_factory=session_factory or (lambda: session),
         llm_factory=llm_factory or scripted(session, tenant),
-        now=NOW,
+        now=now,
+        **more,
     )
 
 
@@ -540,3 +543,159 @@ def test_model_on_the_phone_line_gets_the_tool_reference(session, tenant):
     assert prompts
     assert "## check_slot" in prompts[0]
     assert "## confirm" in prompts[0]
+
+
+# -- the call time limit ---------------------------------------------------------
+# The limit is the tenant's (`service_config.max_call_seconds`), read with the
+# routing at the start of the call. The setting of the same name is only what
+# the seed writes into a new tenant (audit 12.10.2026: the phone line ran every
+# call on the setting).
+
+REPLY = "Was darf es sein?"
+
+
+class Talks:
+    def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+        return LLMTurn(say=REPLY)
+
+
+class Clock:
+    """The seconds a call has run, set by the test: no test sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
+def set_limit(session, tenant_id, seconds: int) -> None:
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .values(max_call_seconds=seconds)
+    )
+    session.commit()
+
+
+def speak_after(handler, port, clock, seconds: float, sid: str = "s-1") -> None:
+    """A call in which the guest says something `seconds` after it began."""
+    port.open(sid, caller_id="+497215551234")
+    handler.on_call_started(sid)
+    clock.now += seconds
+    handler.on_user_turn(sid, "Hallo")
+
+
+def limited_call(
+    session, tenant, seconds: float, *, llm=Talks, now=NOW, sid: str = "s-1"
+):
+    port, clock = FakeTelephony(), Clock()
+    handler = handler_for(
+        session, tenant, port, llm_factory=lambda s: llm(), clock=clock, now=now
+    )
+    speak_after(handler, port, clock, seconds, sid=sid)
+    return port
+
+
+def test_call_past_the_tenants_limit_goes_to_the_team(session, tenant):
+    set_limit(session, tenant.id, 30)
+    assert settings.max_call_seconds > 31  # the setting would let it go on
+
+    port = limited_call(session, tenant, 31, llm=NoLLM)
+
+    assert port.transfers("s-1") == [TEAM_PHONE]
+    assert not port.hangups("s-1")
+    assert the_call(session, "s-1").outcome == "transferred"
+
+
+def test_call_within_the_tenants_limit_goes_on(session, tenant):
+    set_limit(session, tenant.id, 30)
+
+    port = limited_call(session, tenant, 29)
+
+    assert port.says("s-1")[-1] == REPLY
+    assert not port.transfers("s-1")
+
+
+def test_a_tenant_may_allow_longer_calls_than_the_setting(session, tenant):
+    set_limit(session, tenant.id, settings.max_call_seconds + 300)
+
+    port = limited_call(session, tenant, settings.max_call_seconds + 60)
+
+    assert port.says("s-1")[-1] == REPLY
+    assert not port.transfers("s-1")
+
+
+def test_two_tenants_keep_their_own_limits(session, tenant):
+    seed(session, tenant_name="Zweitbetrieb", timezone="Europe/Berlin")
+    other = resolve_tenant(session, "Zweitbetrieb")
+    other = SimpleNamespace(id=other.id, timezone=other.timezone, name=other.name)
+    set_mode(session, other.id, "primary")
+    set_limit(session, tenant.id, 30)
+    set_limit(session, other.id, 600)
+
+    short = limited_call(session, tenant, 100, llm=NoLLM)
+    long = limited_call(session, other, 100, sid="s-2")
+
+    # Handed over at the limit, not by the outage path of a model that failed.
+    assert the_call(session, "s-1").outcome == "transferred"
+    assert short.transfers("s-1") == [TEAM_PHONE]
+    assert long.says("s-2")[-1] == REPLY
+    assert not long.transfers("s-2")
+
+
+def test_a_changed_limit_takes_effect_on_the_next_call(session, tenant):
+    """Read once with the routing, like the mode: the call that is running
+    keeps the limit it began with."""
+    set_limit(session, tenant.id, 600)
+    port, clock = FakeTelephony(), Clock()
+    handler = handler_for(
+        session, tenant, port, llm_factory=lambda s: Talks(), clock=clock
+    )
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    set_limit(session, tenant.id, 30)
+
+    clock.now += 100
+    handler.on_user_turn("s-1", "Hallo")
+
+    assert port.says("s-1")[-1] == REPLY
+    assert not port.transfers("s-1")
+    handler.on_call_ended("s-1")
+
+    speak_after(handler, port, clock, 31, sid="s-2")
+
+    assert port.transfers("s-2") == [TEAM_PHONE]
+    assert REPLY not in port.says("s-2")
+
+
+def test_past_the_limit_with_nobody_there_a_callback_is_noted(session, tenant):
+    """Between the services nobody takes the transfer: the guest gets a
+    callback under the number they called from, and the line is closed."""
+    set_limit(session, tenant.id, 30)
+
+    port = limited_call(session, tenant, 31, llm=NoLLM, now=CLOSED)
+
+    assert not port.transfers("s-1")
+    assert port.actions[-1].kind == "hangup"
+    callback = session.scalars(select(Callback)).one()
+    assert callback.phone == "+497215551234"
+
+
+def test_an_answer_that_comes_after_the_tenants_limit_is_not_spoken(session, tenant):
+    """The limit is read again once the model has answered (Codex PR #208)."""
+    set_limit(session, tenant.id, 30)
+    port, clock = FakeTelephony(), Clock()
+
+    class Slow:
+        def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+            clock.now += 60
+            return LLMTurn(say=REPLY)
+
+    handler = handler_for(
+        session, tenant, port, llm_factory=lambda s: Slow(), clock=clock
+    )
+    speak_after(handler, port, clock, 10)
+
+    assert REPLY not in port.says("s-1")
+    assert port.transfers("s-1") == [TEAM_PHONE]
