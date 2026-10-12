@@ -34,7 +34,7 @@ The message texts are German because the team reads them. The time is shown in `
    docker compose exec n8n n8n import:workflow --input=/workflows/team_events.json
    ```
 
-2. Open the node **Event from dispatcher** and create a "Basic Auth" credential with the values of `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD` from `.env`. Without it the webhook answers 500 to every request.
+2. Open the node **Event from dispatcher** and create a "Basic Auth" credential with the values of `N8N_BASIC_AUTH_USER` and `N8N_BASIC_AUTH_PASSWORD` from `.env`. Without it the webhook answers 500 to every request. These two values protect the webhook only. The editor is protected by the owner account n8n asks for on its first start, so create it right away, and in production also by `N8N_EDITOR_AUTH_USER` and `N8N_EDITOR_AUTH_HASH` in front of it (`docs/13_DEPLOYMENT.md` §3).
 3. Open the node **Send push to team** and create a "Header Auth" credential: name `Authorization`, value `Bearer <token>`, the token of the user `n8n` from `NTFY_AUTH_TOKENS` in `.env` (next section). Without it the push server answers 403 and every event fails.
 4. Publish the workflow. `N8N_WEBHOOK_URL` must point at the production URL `/webhook/maex`, not at `/webhook-test/`.
 

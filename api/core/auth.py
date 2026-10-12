@@ -8,8 +8,20 @@ from api.config import settings
 from api.core.errors import Unauthorized
 
 
+def token_matches(authorization: str) -> bool:
+    """True for the `Authorization` header of the agent token.
+
+    An empty token opens nothing: the expected header would be "Bearer " with
+    nothing behind it. Compared in constant time, like the kitchen token below.
+    """
+    token = settings.agent_api_token
+    return bool(token) and hmac.compare_digest(
+        authorization.encode(), f"Bearer {token}".encode()
+    )
+
+
 def require_token(authorization: str = Header(default="")) -> None:
-    if authorization != f"Bearer {settings.agent_api_token}":
+    if not token_matches(authorization):
         raise Unauthorized("unauthorized")
 
 

@@ -109,3 +109,13 @@ def test_latenz_p95_morgens_ohne_freien_service_unter_300_ms(client):
     )
     print(f"\ncheck_slot morgens p95 = {p95:.1f} ms")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
+
+
+def test_a_date_no_calendar_holds_is_invalid_input(client):
+    """Over HTTP the same date ended in the handler for unknown errors: the
+    outage sentence and a stack trace in the log (#252)."""
+    http, tenant_id = client
+
+    r = _call(http, tenant_id, reserved_for="9999-12-31T23:59:00-12:00")
+
+    assert r.json()["error"]["code"] == "invalid_input"

@@ -5,10 +5,11 @@ Jede Antwort folgt der Hülle aus docs/04 §1. Der Agent liest unsere Antworten 
 deshalb darf nie ein Stacktrace nach außen gelangen.
 """
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException
 
 from api.config import settings
 from api.core import envelope
@@ -26,7 +27,16 @@ from api.tools.router import router as tools_router
 configure_logging(settings.log_level)
 logger = get_logger("api")
 
-app = FastAPI(title="Maex Voice-Agent API", version="0.1.0")
+# The interactive description and the schema list every path. They help while
+# developing and tell everyone else what to aim at, so they exist in dev only.
+_DESCRIBED = settings.env == "dev"
+app = FastAPI(
+    title="Maex Voice-Agent API",
+    version="0.1.0",
+    docs_url="/docs" if _DESCRIBED else None,
+    redoc_url="/redoc" if _DESCRIBED else None,
+    openapi_url="/openapi.json" if _DESCRIBED else None,
+)
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.include_router(tools_router)
@@ -80,7 +90,14 @@ def validation_error_handler(
 
 @app.exception_handler(HTTPException)
 def http_exception_handler(_request: Request, exc: HTTPException) -> JSONResponse:
-    return envelope.fail("invalid_input", str(exc.detail), status=exc.status_code)
+    """Starlette's class, the parent of FastAPI's: registered for the child
+    only, the errors the framework raises itself (unknown path, wrong method, a
+    body its parser gives up on) answered `{"detail": ...}` past the envelope."""
+    code = "not_found" if exc.status_code == 404 else "invalid_input"
+    response = envelope.fail(code, str(exc.detail), status=exc.status_code)
+    # What the framework says besides the body, `Allow` on a 405 for one.
+    response.headers.update(exc.headers or {})
+    return response
 
 
 @app.exception_handler(Exception)
