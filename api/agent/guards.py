@@ -33,7 +33,12 @@ from pydantic import ValidationError
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult, validation_hint
-from api.agent.guest_details import e164, name_said, number_known
+from api.agent.guest_details import (
+    e164,
+    name_said,
+    names_a_phone_number,
+    number_known,
+)
 from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
@@ -86,10 +91,9 @@ HINT_GUEST_NAME = (
 )
 HINT_GUEST_PHONE = (
     "Abgelehnt: unter dieser Rufnummer wird nichts angelegt. Es gilt `phone` aus "
-    "`slots`, Ziffer für Ziffer. Eine andere Nummer gilt nur, wenn der Gast sie in "
-    "diesem Anruf mit Vorwahl gesagt hat; trag sie dann zuerst als `phone` in "
-    "`slots` ein. Steht kein `phone` in `slots`, frag den Gast nach der "
-    "Rufnummer mit Vorwahl."
+    "`slots`, Ziffer für Ziffer: die Nummer, von der der Gast anruft, oder die, "
+    "die er als seine Rufnummer genannt hat. Steht kein `phone` in `slots`, frag "
+    "den Gast, unter welcher Rufnummer mit Vorwahl er erreichbar ist."
 )
 
 
@@ -114,7 +118,12 @@ def note_said(state: ConversationState, say: str) -> None:
 
     A candidate that was not named yet stays offered: the offer may come a
     turn later, as when an open allergy question goes first and the two
-    questions are never asked at once (Codex PR #139)."""
+    questions are never asked at once (Codex PR #139).
+
+    And whether the sentence asked for the guest's number: then the digits of
+    the answer are a number to call without a word that says so
+    (`state.note_guest_details`)."""
+    state.asked_for_phone = names_a_phone_number(say)
     heard = say.lower()
     named = {
         item_id
@@ -246,13 +255,14 @@ def _guest_details(call: ToolCall) -> tuple[Any, Any]:
 
 
 def _phone_counts(state: ConversationState, phone: Any) -> bool:
-    """The number a call books under is the one the state holds, which
-    `apply_state_patch` took from the caller ID or from the guest. Any number
-    known in the call is not enough: a guest who names another number than
-    the one they call from is reached under that one (docs/05 §3), and a
-    model that writes it into `slots` and books under the caller ID all the
-    same would go unnoticed, the number is not read back (Codex PR #244, P2).
-    Without a number in the state it must be one the guest said."""
+    """The number a call books under is the one the state holds: the caller
+    ID, or the number the guest gave, which the core wrote there itself
+    (`state.note_guest_details`). Any number known in the call is not enough:
+    a guest who names another number than the one they call from is reached
+    under that one (docs/05 §3), and a model that books under the caller ID
+    all the same would go unnoticed, the number is not read back (Codex
+    PR #244, P2 twice). Without a number in the state it must be one the
+    guest said."""
     current = state.slots.get("phone")
     if current is not None:
         written = e164(phone)

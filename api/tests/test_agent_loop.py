@@ -967,9 +967,10 @@ def test_number_the_guest_says_in_this_very_turn_books(session, state):
 
 
 def test_reservation_goes_under_the_number_the_guest_chose(session, called_state):
-    """Codex PR #244, P2: the guest names another number than the one they
-    call from, the model writes it into `slots` and books under the caller ID
-    all the same. The number is not read back, so nobody would notice."""
+    """Codex PR #244, P2 twice: the guest names another number than the one
+    they call from, the model leaves it out of `slots` and books under the
+    caller ID. The number is not read back, so nobody would notice. The core
+    wrote the number the guest gave into the state itself."""
 
     class BooksUnderTheCallerId:
         """First under the caller ID, then under the number of the state."""
@@ -981,7 +982,7 @@ def test_reservation_goes_under_the_number_the_guest_chose(session, called_state
             if self.calls == 1:
                 return LLMTurn(
                     tool_call=reserving("Müller", CALLER),
-                    state_patch={"guest_name": "Müller", "phone": "0171 2345678"},
+                    state_patch={"guest_name": "Müller"},
                 )
             if self.calls == 2:
                 self.hint = json.loads(input_text)["hint"]

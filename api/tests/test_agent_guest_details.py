@@ -11,8 +11,20 @@ import uuid
 
 import pytest
 
-from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE, begin_turn, refusal
-from api.agent.guest_details import name_said, number_known, numbers_said, words_said
+from api.agent.guards import (
+    HINT_GUEST_NAME,
+    HINT_GUEST_PHONE,
+    begin_turn,
+    note_said,
+    refusal,
+)
+from api.agent.guest_details import (
+    name_said,
+    names_a_phone_number,
+    number_known,
+    numbers_said,
+    words_said,
+)
 from api.agent.llm import ToolCall
 from api.agent.state import apply_state_patch, initial_state, note_guest_details
 
@@ -28,7 +40,12 @@ def heard(*sentences, caller=None):
 
 
 def said(*sentences):
-    return set().union(*(words_said(sentence) for sentence in sentences))
+    """The words of a call as the state keeps them (`note_guest_details`)."""
+    words = {}
+    for sentence in sentences:
+        for word, count in words_said(sentence).items():
+            words[word] = max(words.get(word, 0), count)
+    return words
 
 
 def numbers(*sentences):
@@ -109,6 +126,13 @@ def test_name_the_guest_spelled_is_taken(sentence, name):
         "Müller\nMüller",
         "Müller\tMüller",
         "Müller  Müller",
+        # Said once, written twice (Codex PR #244, P2).
+        "Müller Müller",
+        "Müller, Müller",
+        "Müller-Müller",
+        # A period that ends nothing but the name (Codex PR #244, P2).
+        "Müller.",
+        "Auf Müller.",
         # No name at all.
         "",
         "   ",
@@ -189,6 +213,24 @@ def test_two_names_spelled_in_one_sentence_are_two():
 
     assert name_said("Anna Meier", words) is True
     assert name_said("Annameier", words) is False
+
+
+def test_word_counts_as_often_as_one_sentence_held_it():
+    """Codex PR #244, P2. A word the guest said in two turns is still said
+    once: repeating a name is no name with a repetition."""
+    assert name_said("Li Li", said("Auf Li Li bitte")) is True
+    assert name_said("Li Li", said("Auf Li", "Li, wie gesagt")) is False
+    assert name_said("Li Li Li", said("Auf Li Li bitte")) is False
+
+
+def test_letter_with_a_mark_of_its_own_is_the_same_letter():
+    """Codex PR #244, P2: an "ü" that arrives as u plus a combining mark cut
+    the name in two, and the guest could repeat it without end."""
+    decomposed = "Mu\N{COMBINING DIAERESIS}ller"
+
+    assert name_said("Müller", said(f"Auf {decomposed} bitte")) is True
+    assert name_said(decomposed, said("Auf Müller bitte")) is True
+    assert name_said(decomposed, said(f"Auf {decomposed} bitte")) is True
 
 
 def test_spelled_name_counts_only_within_one_sentence():
@@ -336,6 +378,11 @@ def test_number_without_an_area_code_is_no_phone_number(written):
         "Für 4, 0171 2345678",
         "Tisch für 4 am 16.09. um 19 Uhr, meine Nummer ist 0171 2345678",
         "Die 23 bitte, auf Müller, 0171 2345678",
+        # A date with blanks and a full year is no head either (Codex PR #244, P2).
+        "Am 01 10 2026, meine Nummer ist 0171 2345678",
+        # A hyphen or a slash inside the number, with enough digits behind it.
+        "0171-2345678",
+        "0171/234-5678",
         # An hour with a leading zero is no head of a number (review of 8835fa3).
         "Morgen um 09:30 Uhr, erreichbar unter 0171 2345678",
         "Um 08 Uhr, meine Nummer ist 0171 2345678",
@@ -388,6 +435,12 @@ def test_last_digits_of_a_turn_are_the_number(sentence):
         # Said in pairs, the first half looks like a date (review of 8835fa3).
         "Meine Nummer ist 02 11 55, 01 23 45",
         "03 01 23, 04 56 78",
+        # One or two digits behind a hyphen, a slash or a bracket, after a
+        # complete number: an extension or an hour (Codex PR #244, P1).
+        "Meine Nummer ist 0171 2345678-19 Uhr passt",
+        "0171 2345678/19 Uhr",
+        "(Tel. 0171 2345678) 19 Uhr",
+        "0721 5551234-0",
         # Two numbers: which of them is meant is not for the core to pick.
         "Die alte war 0172 3456789, die neue ist 0171 2345678",
         "0172 3456789 - 0171 2345678",
@@ -448,7 +501,8 @@ def test_patterns_on_guest_text_stay_linear():
     ):
         words_said(text)
         numbers_said(text)
-        name_said(text, set())
+        names_a_phone_number(text)
+        name_said(text, {})
 
     assert time.perf_counter() - started < 2
 
@@ -471,12 +525,15 @@ def test_suppressed_caller_id_is_no_number():
 def test_what_the_guest_said_never_goes_into_the_prompt():
     """It is memory of the core. The model gets the compact state, never the
     words of earlier turns (docs/05 §5)."""
-    state = heard("Auf Zacharias, meine Nummer ist 0171 2345678")
+    state = heard("Auf Zacharias, zu meiner alten Bestellung 0171 2345678")
 
     prompt = str(state.to_prompt_json()).lower()
 
     assert "zacharias" not in prompt
     assert "2345678" not in prompt
+    assert not {"said_words", "said_numbers", "caller_phone", "asked_for_phone"} & set(
+        state.to_prompt_json()
+    )
 
 
 def test_patch_with_what_the_guest_said_is_taken():
@@ -627,12 +684,127 @@ def test_call_under_the_caller_id_after_the_guest_named_another_is_refused(call)
     assert refused(state, call).hint == HINT_GUEST_PHONE
 
 
-def test_number_the_guest_named_counts_once_it_stands_in_the_state():
-    """The other way round: the number in the call, the old one in `slots`.
-    Which of the two the guest wants is not for the core to pick."""
+def test_number_the_guest_gave_stands_in_the_state_without_the_model():
+    """Codex PR #244, P2: the guest names another number, the model leaves
+    `phone` out of its answer and books under the caller ID. The core wrote
+    the number down itself, so that call is refused."""
     state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
 
-    assert refused(state, order(name="Müller", phone=OTHER)).hint == HINT_GUEST_PHONE
+    assert state.slots["phone"] == "+491712345678"
+    assert refused(state, order(name="Müller", phone=OTHER)) is None
+    assert refused(state, order(name="Müller", phone=CALLER)).hint == HINT_GUEST_PHONE
+    assert refused(state, callback(CALLER)).hint == HINT_GUEST_PHONE
+
+
+@pytest.mark.parametrize(
+    ("draft", "intent"),
+    [("reservation_id", "reservation"), ("order_id", "pickup")],
+)
+def test_number_changed_after_the_readback_drops_the_draft(draft, intent):
+    """The draft was made under the caller ID and read out without it. A yes
+    in a later turn must not book it under the number the guest replaced."""
+    state = heard("Auf Müller bitte", caller=CALLER)
+    state.stage, state.intent = "readback_pending", intent
+    setattr(state, draft, uuid.uuid4())
+
+    note_guest_details(state, "Ach, meine Nummer ist jetzt 0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
+    assert (state.stage, state.intent) == ("collecting", intent)
+    assert state.reservation_id is None and state.order_id is None
+    assert begin_turn(state).readback_id is None
+
+
+def test_same_number_after_the_readback_keeps_the_draft():
+    state = heard("Auf Müller bitte", caller=CALLER)
+    state.stage, state.reservation_id = "readback_pending", uuid.uuid4()
+
+    note_guest_details(state, "Meine Nummer ist die 07221 5551234, richtig?")
+    apply_state_patch(state, {"phone": CALLER})
+
+    assert state.stage == "readback_pending"
+
+
+def test_model_that_changes_the_number_after_the_readback_drops_the_draft():
+    state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
+    state.stage, state.reservation_id = "readback_pending", uuid.uuid4()
+
+    apply_state_patch(state, {"phone": CALLER})
+
+    assert state.slots["phone"] == CALLER
+    assert state.stage == "collecting" and state.reservation_id is None
+
+
+def test_model_may_go_back_to_the_number_the_guest_calls_from():
+    """ "Nehmen Sie doch die Nummer, von der ich anrufe" names no digits: that
+    reading is the model's, and the caller ID is a number the core knows."""
+    state = heard(NAMES_ANOTHER_NUMBER, caller=CALLER)
+
+    assert apply_state_patch(state, {"phone": CALLER}) == {"phone": CALLER}
+    assert refused(state, order(name="Müller", phone=CALLER)) is None
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Meine Nummer ist 0171 2345678",
+        "Sie erreichen mich unter 0171 2345678",
+        "Bitte unter 0171 2345678",
+        "Handy 0171 2345678",
+        "Tel. 0171 2345678",
+        "Bitte um Rückruf: 0171 2345678",
+        "Können Sie mich zurückrufen? 0171 2345678",
+        "Telefonisch am besten 0171 2345678",
+    ],
+)
+def test_number_the_guest_names_as_one_to_call_is_taken(sentence):
+    state = heard(sentence, caller=CALLER)
+
+    assert names_a_phone_number(sentence) is True
+    assert state.said_numbers == {"+491712345678"}
+    assert state.slots["phone"] == "+491712345678"
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Codex PR #244, P1: a reference that looks like a phone number.
+        "Zu meiner alten Bestellung 0171 2345678 habe ich eine Frage",
+        "Die Bestellnummer war 0171 2345678",
+        "Kundennummer 0171 2345678",
+        "Ich rufe an wegen meiner Bestellung 0171 2345678",
+        "Auf Müller, 0171 2345678",
+        "0171 2345678",
+    ],
+)
+def test_digits_nobody_called_a_phone_number_are_none(sentence):
+    state = heard(sentence, caller=CALLER)
+
+    assert names_a_phone_number(sentence) is False
+    assert state.said_numbers == set()
+    assert state.slots["phone"] == CALLER
+    assert apply_state_patch(state, {"phone": "0171 2345678"}) == {}
+    assert refused(state, callback("+491712345678")).hint == HINT_GUEST_PHONE
+
+
+def test_answer_to_the_question_for_the_number_needs_no_word_for_it():
+    """The agent asked, the guest answers with the digits alone."""
+    state = heard("Auf Müller, 0171 2345678")
+    assert state.said_numbers == set()
+
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+    note_guest_details(state, "0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
+
+
+def test_question_for_something_else_makes_no_digits_a_number():
+    state = heard("Guten Tag")
+
+    note_said(state, "Auf welchen Namen darf ich reservieren?")
+    note_guest_details(state, "Müller, 0171 2345678")
+
+    assert "phone" not in state.slots
 
 
 def test_without_a_number_in_the_state_one_the_guest_said_passes():
