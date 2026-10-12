@@ -786,6 +786,9 @@ def test_an_active_row_without_number_name_or_category_is_refused(tmp_path, row)
         ("Curry (vegan)", "Curry (vegan)"),
         ("Suppe (Bandnudeln)", "Suppe (Bandnudeln)"),
         ("Pho Bo", "Pho Bo"),
+        # A name that is nothing but the pieces stays as it is: an empty name
+        # would be "heard" in every transcript (Codex PR #268).
+        ("(6 Stück)", "(6 Stück)"),
     ],
 )
 def test_only_the_number_of_pieces_is_left_off_a_dish_name(tmp_path, name, spoken):
@@ -808,6 +811,7 @@ IMPORTABLE = "number;name;category;price_eur;description;active\n"
         "23h;Suppe;Suppen;5,00;;ja",  # an ending no card has
         "x12;Suppe;Suppen;5,00;;ja",  # a prefix that means a quantity on the phone
         "7;Suppe;Suppen;;;ja",  # no price
+        "7;Suppe;Suppen;5,00;;maybe",  # a flag that is neither ja nor nein
     ],
 )
 def test_a_menu_the_import_refuses_has_errors(tmp_path, row):

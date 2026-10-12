@@ -369,8 +369,10 @@ _PIECES = re.compile(
 def spoken_name(name: str) -> str:
     """A dish name as a guest says it: without the number of pieces at its end
     ("Gyoza (6 Stück)"). Any other bracket says something about the dish
-    ("Nudeln (glutenfrei)") and stays (Codex PR #268)."""
-    return _PIECES.sub("", name)
+    ("Nudeln (glutenfrei)") and stays, and so does a name that is nothing but
+    the pieces: an empty name would be found in every transcript (Codex PR
+    #268)."""
+    return _PIECES.sub("", name) or name
 
 
 _LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
