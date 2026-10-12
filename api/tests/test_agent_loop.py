@@ -1157,6 +1157,18 @@ def test_a_name_nobody_said_does_not_reach_the_card(session, state):
     assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
 
 
+def test_a_time_in_seconds_reads_as_the_restaurants_clock_on_the_card(session, state):
+    """The tool takes a time as seconds since 1970 too. The card shows what
+    the tool read, in the restaurant's zone, not the raw number (Codex PR
+    #280)."""
+    state.slots["phone"] = CALLER
+    seconds = int(datetime(2026, 9, 19, 19, 0, tzinfo=BERLIN).timestamp())
+
+    _ask_for_nine(session, state, reserved_for=seconds)
+
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
 def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
     """A model that skips `check_slot`: `create_reservation` drafts nothing and
     the core hands the wish over all the same. The time in the summary is the

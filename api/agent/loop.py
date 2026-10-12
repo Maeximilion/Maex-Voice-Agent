@@ -14,7 +14,6 @@ import json
 import logging
 import time
 from collections.abc import Callable
-from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, get_args
@@ -41,6 +40,7 @@ from api.core.time import to_local, utcnow
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Tenant
 from api.schemas.callbacks import CallbackReason
+from api.schemas.reservations import CheckSlotRequest
 
 logger = get_logger("api.agent.loop")
 
@@ -360,20 +360,24 @@ class ConversationLoop:
         return handed
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
-        """The wish as the team reads it on the card, from the arguments the
-        tool took: the time as the restaurant's clock shows it, whatever zone
-        the model wrote it in. A name only when the guest said it in this
-        call: `check_slot` takes no name, so one a model wrote next to its
-        arguments has passed no guard (Codex PR #280)."""
-        when = str(args.get("reserved_for"))
-        with suppress(ValueError):
-            local = self._local_now(state).tzinfo
-            when = (
-                f"{datetime.fromisoformat(when).astimezone(local):%d.%m.%Y %H:%M} Uhr"
-            )
+        """The wish as the team reads it on the card. Party size and time are
+        read the way the tool read them (`CheckSlotRequest`), not from the raw
+        arguments: a time a model wrote as seconds since 1970 or in another
+        zone is shown as the restaurant's clock shows it. A name only when the
+        guest said it in this call: `check_slot` takes no name, so one a model
+        wrote next to its arguments has passed no guard (Codex PR #280)."""
+        wish = CheckSlotRequest.model_validate(
+            {
+                "call_id": state.call_id,
+                "tenant_id": state.tenant_id,
+                "reserved_for": args.get("reserved_for"),
+                "party_size": args.get("party_size"),
+            }
+        )
+        when = wish.reserved_for.astimezone(self._local_now(state).tzinfo)
         names = (args.get("guest_name"), state.slots.get("guest_name"))
         name = next((n for n in names if name_said(n, state.said_words)), None)
-        parts = [f"{args.get('party_size')} Personen", when]
+        parts = [f"{wish.party_size} Personen", f"{when:%d.%m.%Y %H:%M} Uhr"]
         if name:
             parts.append(f"Name {name}")
         return f"{SUMMARY_TEAM_TABLE} {', '.join(parts)}."
