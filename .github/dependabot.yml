@@ -25,7 +25,9 @@ updates:
       include: scope
 
   - package-ecosystem: docker
-    directory: /api
+    directories:
+      - /api
+      - /deploy/speech
     schedule:
       interval: monthly
     commit-message:
@@ -34,9 +36,10 @@ updates:
     ignore:
       # Die Python-Version des Containers wandert nicht allein: sie steht auch in der
       # CI, in pyproject.toml (target-version), im README und in der Doku. Ein PR, der
-      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen
-      # und wird von der CI nicht geprueft, weil sie das Image nicht baut. Der Sprung
-      # kommt als eigenes Arbeitspaket, wenn es einen Grund gibt.
+      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen.
+      # The CI job docker-smoke builds the image, but the tests run on the Python of
+      # setup-python, not inside it. Der Sprung kommt als eigenes Arbeitspaket, wenn
+      # es einen Grund gibt.
       # Bei Python-Tags ist 3.12 auf 3.14 ein Minor-Schritt, deshalb steht der hier mit.
       - dependency-name: python
         update-types:
@@ -44,10 +47,12 @@ updates:
           - version-update:semver-minor
 
   # Postgres, n8n, ntfy and caddy images live in the compose files, not in a Dockerfile.
+  # /deploy/asterisk is the test PBX of the voice spike, a third-party image.
   - package-ecosystem: docker-compose
     directories:
       - /
       - /deploy
+      - /deploy/asterisk
     schedule:
       interval: monthly
     commit-message:

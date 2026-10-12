@@ -6,6 +6,12 @@ on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
+# Opening a pull request and editing its text right away fires two events; only the
+# newest run counts.
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 permissions:
   pull-requests: read
 
@@ -13,7 +19,7 @@ jobs:
   title:
     runs-on: ubuntu-latest
     steps:
-      - uses: amannn/action-semantic-pull-request@v6
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

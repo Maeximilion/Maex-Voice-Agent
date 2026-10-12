@@ -1,5 +1,6 @@
 """Druckbruecke: Bonlayout, Druckerwege, Protokoll, Durchlauf bis zur Karte (T-4.6)."""
 
+import http.server
 import json
 import socket
 import threading
@@ -512,3 +513,114 @@ def test_windows_auftrag_wird_bei_schreibfehler_geloescht():
         WindowsPrinter("Kueche", api=api, sleep=lambda _s: None).send(b"BON")
     assert "delete 7" in api.calls
     assert api.calls[-1] == "close"
+
+
+# --- Text from a call is text, never a printer command --------------------------
+
+# ESC p: open the cash drawer. GS V: cut. DLE EOT: status request. ESC @: reset.
+COMMANDS = (b"\x1bp\x00\x19\xfa", b"\x1dV\x00", b"\x10\x04\x01", b"\x1b@")
+
+
+def _ticket_with(field: str, text: str) -> dict:
+    """The two fields a slip takes from the call: the name and a dish's note."""
+    if field == "customer_name":
+        return {**TICKET, "customer_name": text}
+    return {**TICKET, "items": [{**TICKET["items"][0], "note": text}]}
+
+
+@pytest.mark.parametrize("field", ["customer_name", "note"])
+@pytest.mark.parametrize("command", COMMANDS)
+def test_control_bytes_in_guest_text_never_reach_the_printer(field, command):
+    """Name and note are what a caller said and a model wrote down. The slip
+    goes to the receipt printer the till shares; a command in it would open
+    the drawer or cut mid-ticket."""
+    clean = render(_ticket_with(field, "Max Mustermann"))
+    hostile = render(_ticket_with(field, f"Max{command.decode('latin-1')}Mustermann"))
+
+    # Exactly the command bytes the layout sets itself, not one more.
+    for byte in (0x1B, 0x1D, 0x10, 0x00):
+        assert hostile.count(bytes([byte])) == clean.count(bytes([byte]))
+    assert b"Max" in hostile and b"Mustermann" in hostile
+
+
+def test_a_line_break_in_a_note_does_not_glue_words():
+    slip = render(_ticket_with("note", "ohne Zwiebeln\nextra scharf"))
+    assert b"ohne Zwiebeln extra scharf" in slip
+
+
+def test_printable_keeps_umlauts_and_drops_controls():
+    from printbridge.escpos import printable
+
+    assert printable("Müller\x1b\x7f\x9b") == "Müller   "
+    assert printable("Phở") == "Pho"
+
+
+# --- The token goes to the configured server and nowhere else -------------------
+
+
+class _Recorder(http.server.BaseHTTPRequestHandler):
+    seen: list[str]
+    location: str | None = None
+
+    def do_POST(self):
+        self.seen.append(self.headers.get("Authorization", ""))
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        if self.location:
+            self.send_response(302)
+            self.send_header("Location", self.location)
+            self.end_headers()
+            return
+        body = json.dumps({"ok": True, "data": {"tickets": []}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        # A followed redirect arrives as a GET with the headers of the POST.
+        self.seen.append(self.headers.get("Authorization", ""))
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def log_message(self, *args):  # keep the test output quiet
+        pass
+
+
+def _serve(location: str | None):
+    handler = type("Handler", (_Recorder,), {"seen": [], "location": location})
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, handler.seen
+
+
+def test_a_redirect_does_not_carry_the_token_elsewhere():
+    """The default opener of the standard library follows a 302 with every
+    header, the token included, to whatever host the answer names."""
+    elsewhere, seen_elsewhere = _serve(None)
+    target = f"http://127.0.0.1:{elsewhere.server_port}/v1/kitchen/claim"
+    origin, seen_origin = _serve(target)
+    try:
+        bridge = Server(
+            f"http://127.0.0.1:{origin.server_port}", "bridge-token", str(uuid.uuid4())
+        )
+        with pytest.raises(ServerError):
+            bridge.claim()
+    finally:
+        origin.shutdown()
+        elsewhere.shutdown()
+
+    assert seen_origin == ["Bearer bridge-token"]
+    assert seen_elsewhere == []
+
+
+def test_the_default_opener_still_reaches_the_server():
+    server, seen = _serve(None)
+    try:
+        bridge = Server(
+            f"http://127.0.0.1:{server.server_port}", "bridge-token", str(uuid.uuid4())
+        )
+        assert bridge.claim() == []
+    finally:
+        server.shutdown()
+    assert seen == ["Bearer bridge-token"]
