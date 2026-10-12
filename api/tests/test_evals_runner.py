@@ -19,7 +19,7 @@ from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
 from evals.judge import CaseError, Observed, judge, observe, offered_alternatives
-from evals.recorder import RecordingLLM, is_yes
+from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
 from sim.session import SimCall
 
@@ -345,15 +345,20 @@ def test_position_ohne_suchtreffer_gilt_als_geraten():
     assert [g[0] for g in rec.recording.guessed] == [invented]
 
 
+READBACK = "Zur Abholung: einmal die 13, auf den Namen Müller. Passt das so?"
+
+
 def _draft_result() -> str:
-    return json.dumps({"tool": "draft_order", "ok": True, "data": {}})
+    return json.dumps(
+        {"tool": "draft_order", "ok": True, "data": {"readback": READBACK}}
+    )
 
 
 def test_confirm_nach_nein_gilt_als_unbestaetigt():
     draft = LLMTurn(tool_call=ToolCall("draft_order", {"items": []}))
     confirm_turn = LLMTurn(tool_call=ToolCall("confirm", {}))
     rec = RecordingLLM(
-        FakeLLM([draft, LLMTurn(say="vorlesen"), confirm_turn, confirm_turn])
+        FakeLLM([draft, LLMTurn(say=READBACK), confirm_turn, confirm_turn])
     )
     rec.next_turn("", {}, "Einmal die 13.")
     rec.next_turn("", {}, _draft_result())
@@ -370,8 +375,65 @@ def _result(tool: str, ok: bool) -> str:
     """A tool result as the loop hands it to the model. A refusal by the core
     (`agent/guards.py`) and a rejection by the tool look the same here."""
     if ok:
-        return json.dumps({"tool": tool, "ok": True, "data": {}})
+        data = {"readback": READBACK} if tool in DRAFT_TOOLS else {}
+        return json.dumps({"tool": tool, "ok": True, "data": data})
     return json.dumps({"tool": tool, "ok": False, "error_code": "conflict"})
+
+
+def _talked_past_the_draft(confirm_result: str, said: str) -> RecordingLLM:
+    """A model that drafts, says `said` instead of the read-back, and returns
+    `confirm` on the guest's "Ja"."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say=said),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, confirm_result)
+    return rec
+
+
+NOT_THE_READ_BACK = [
+    "Darf es sonst noch etwas sein?",
+    "Zur Abholung: einmal die 13. Passt das so?",
+    f"{READBACK} Möchten Sie noch Stäbchen dazu?",
+]
+
+
+@pytest.mark.parametrize("said", NOT_THE_READ_BACK)
+def test_confirm_of_a_draft_nobody_heard_that_went_through_is_a_violation(said):
+    """The recorder measures with the core's rule (#251): a yes after a draft
+    that was never read out is no consent. A core without the guard, or a
+    booking around it, shows up as hard."""
+    rec = _talked_past_the_draft(_result("confirm", ok=True), said).recording
+
+    assert rec.unconfirmed == ["Ja"]
+    assert rec.refused_attempts == []
+
+
+@pytest.mark.parametrize("said", NOT_THE_READ_BACK)
+def test_confirm_of_a_draft_nobody_heard_that_the_core_refused_is_an_attempt(said):
+    """Refused, so nothing was booked; the number shows how often a model leans
+    on the guard (Codex, PR #258)."""
+    rec = _talked_past_the_draft(_result("confirm", ok=False), said).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == [("confirm", "Ja")]
+
+
+def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
+    rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == []
+    assert rec.confirms == 1
 
 
 def _confirm_after_a_no(result: str) -> RecordingLLM:
@@ -380,7 +442,7 @@ def _confirm_after_a_no(result: str) -> RecordingLLM:
         FakeLLM(
             [
                 LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="vorlesen"),
+                LLMTurn(say=READBACK),
                 confirm_turn,
                 LLMTurn(say="Was soll ich ändern?"),
             ]
@@ -469,7 +531,7 @@ def test_rejected_correction_leaves_no_draft_a_yes_could_confirm():
         FakeLLM(
             [
                 draft,
-                LLMTurn(say="vorlesen"),
+                LLMTurn(say=READBACK),
                 draft,
                 LLMTurn(say="Das ging nicht. Sonst noch etwas?"),
                 LLMTurn(tool_call=ToolCall("confirm", {})),
@@ -498,7 +560,7 @@ def test_new_search_after_the_readback_leaves_no_draft_a_yes_could_confirm(tool)
         FakeLLM(
             [
                 LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
-                LLMTurn(say="vorlesen"),
+                LLMTurn(say=READBACK),
                 LLMTurn(tool_call=ToolCall(tool, {})),
                 LLMTurn(say="Meinen Sie die 13?"),
                 LLMTurn(tool_call=ToolCall("confirm", {})),

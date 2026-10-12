@@ -8,9 +8,10 @@ tool result with a `hint`. It costs one of the turn's tool hops, so a model
 that insists ends in the handoff to the team, not in a booking.
 
 - Rule 3: `confirm` only when the guest's current sentence is an explicit yes
-  to the draft that was read back before this turn. Read back means spoken:
-  the sentence that ended a turn held the words of the draft's `readback`
-  (`note_said`). A draft the model built and then talked past is none (#251).
+  to the draft that was read back before this turn. Read back means that the
+  last sentence the guest heard was the draft's `readback` (`note_said`,
+  `consent.read_out`). A draft the model built and then talked past is none,
+  and neither is one that was read out before another question (#251).
 - Rule 2: `draft_order` only with dishes from a clear match of `search_menu`,
   or from candidates of an unclear match that the guest heard by name. The
   same holds for the order a model keeps across turns (`cart`, `take_cart`):
@@ -27,7 +28,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from api.agent.consent import is_yes
+from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.llm import ToolCall
 from api.agent.state import (
@@ -91,38 +92,16 @@ def begin_turn(state: ConversationState) -> TurnStart:
     return TurnStart(readback_id=_readback_id(state) if state.readback_heard else None)
 
 
-_WORDS = re.compile(r"\w+")
-
-
-def _without_closing_question(readback: str) -> str:
-    """The read-back without the question that closes it ("Passt das so?"). A
-    model may ask that in its own words; what the draft holds has to be spoken
-    as it stands. Cut with string functions and not a pattern: the sentence
-    holds the guest's name and note."""
-    text = readback.rstrip()
-    cut = max(text.rfind(". "), text.rfind("! "))
-    return text[:cut] if text.endswith("?") and cut != -1 else text
-
-
-def _read_out(say: str, readback: str) -> bool:
-    """Did the sentence hold the draft? Its words, in order and without a gap:
-    a read-back that leaves the name out or says another number is not this
-    draft. Case and punctuation do not count, they are not spoken."""
-    draft = _WORDS.findall(_without_closing_question(readback).lower())
-    said = _WORDS.findall(say.lower())
-    return bool(draft) and any(
-        said[at : at + len(draft)] == draft for at in range(len(said) - len(draft) + 1)
-    )
-
-
 def note_said(state: ConversationState, say: str) -> None:
     """Call with the sentence that ends a turn. It decides two things the
     guest's next sentence is measured against: whether the draft that waits
     for its yes was read out (rule 3), and which offered dishes were named
     (rule 2).
 
-    Heard stays heard: a side question the model answers after the read-back
-    does not take it back. A new draft does (`state.py`).
+    Only the last sentence counts. A side question the model answers after
+    the read-back takes it back: the guest's next "Ja" would follow that
+    answer. The model then reads the draft out again, and finds the sentence in
+    its state for that (`ConversationState.to_prompt_json`).
 
     A candidate of an unclear
     search may enter an order only once the guest heard it: by its full name
@@ -132,8 +111,7 @@ def note_said(state: ConversationState, say: str) -> None:
     A candidate that was not named yet stays offered: the offer may come a
     turn later, as when an open allergy question goes first and the two
     questions are never asked at once (Codex PR #139)."""
-    if state.readback and _read_out(say, state.readback):
-        state.readback_heard = True
+    state.readback_heard = bool(state.readback) and read_out(say, state.readback)
     heard = say.lower()
     named = {
         item_id

@@ -8,7 +8,8 @@ ablesen, weil `calls.tool_calls` nur Name, Dauer und Erfolg festhält:
   hätte sie dann erfunden oder aus einem anderen Anruf mitgebracht
   (CLAUDE.md §2 Regel 2).
 - **Unbestätigter Vorgang:** ein `confirm`, vor dem der letzte Kundensatz kein
-  Ja war (CLAUDE.md §2 Regel 3).
+  Ja war (CLAUDE.md §2 Regel 3), or whose draft was not what the model said
+  last before that yes (#251).
 
 Both count only for a call that went through. One the core refused or the tool
 rejected booked nothing; it is taken back and noted as a refused attempt
@@ -27,7 +28,7 @@ from typing import Any
 
 # The yes detector lives in the core since the core refuses a `confirm` without
 # a yes itself (agent/guards.py); the recorder measures with the same rule.
-from api.agent.consent import is_yes
+from api.agent.consent import is_yes, read_out
 from api.agent.llm import LLMClient, LLMTurn, Usage
 
 SEARCH_TOOLS = frozenset({"search_menu", "get_item_details"})
@@ -63,6 +64,11 @@ class Recording:
     tool_calls: list[str] = field(default_factory=list)
     # Anzahl der Kundensaetze beim letzten Entwurf: das Ja muss danach kommen.
     drafted_at: int | None = None
+    # The sentence of the last draft, and whether it was what the model said
+    # last: a yes answers what the guest heard (`consent.read_out`, the rule
+    # of the core, `agent/guards.py`).
+    readback: str | None = None
+    read_out: bool = False
     # (tool, guest sentence before it) for every call that would have been a
     # hard violation and did not go through: the core refused it
     # (`agent/guards.py`) or the tool rejected it. Nothing was booked, so it
@@ -96,6 +102,9 @@ class RecordingLLM:
         turn = self._inner.next_turn(system_prompt, state, user_input)
         if turn.tool_call is not None:
             self._observe_call(turn.tool_call.name, turn.tool_call.args)
+        elif turn.say is not None:
+            rec = self.recording
+            rec.read_out = bool(rec.readback) and read_out(turn.say, rec.readback)
         return turn
 
     def _observe_input(self, user_input: str) -> None:
@@ -118,6 +127,10 @@ class RecordingLLM:
             self.recording.error_results.append(
                 (str(result.get("tool")), str(result["error_code"]))
             )
+        if result.get("tool") in DRAFT_TOOLS and result.get("ok"):
+            # A new draft is a new sentence, and nobody heard it yet.
+            self.recording.readback = (result.get("data") or {}).get("readback")
+            self.recording.read_out = False
         if result.get("tool") in SEARCH_TOOLS and result.get("ok"):
             self.recording.searched_ids |= set(_menu_item_ids(result.get("data")))
 
@@ -170,7 +183,7 @@ class RecordingLLM:
             after_draft = (
                 rec.drafted_at is not None and len(rec.customer_lines) > rec.drafted_at
             )
-            if not (after_draft and is_yes(last)):
+            if not (after_draft and rec.read_out and is_yes(last)):
                 rec.unconfirmed.append(last)
 
 

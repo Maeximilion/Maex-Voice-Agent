@@ -224,6 +224,11 @@ def test_confirm_without_any_draft_is_refused():
         ("Passt das", False),
         ("Ist es so richtig", False),
         ("Ja ist das richtig", False),
+        # "alles" is a subject too, and a filler word like "das" and "es".
+        ("Ist alles richtig", False),
+        ("Ist alles in Ordnung", False),
+        ("Stimmt alles so", False),
+        ("Passt alles", False),
         # The same words as a statement stay a yes.
         ("Das ist richtig.", True),
         ("Das stimmt so.", True),
@@ -233,6 +238,8 @@ def test_confirm_without_any_draft_is_refused():
         ("Stimmt.", True),
         ("Ja, es ist alles richtig.", True),
         ("Genau, das ist es.", True),
+        ("Ja, das stimmt alles.", True),
+        ("Ja, es passt alles.", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):
@@ -273,6 +280,12 @@ BODY = READBACK.removesuffix(" Passt das so?")
         (READBACK.replace(",", "").replace(".", " "), True),
         # The closing question may be the model's own; the content may not.
         (f"{BODY} Ist das so richtig?", True),
+        (f"{BODY} Stimmt das?", True),
+        (BODY, True),
+        # Another question after the read-back: the yes would answer that one.
+        (f"{READBACK} Möchten Sie noch einen Hochstuhl?", False),
+        (f"{BODY} Möchten Sie noch einen Hochstuhl?", False),
+        (f"{READBACK} Und zu trinken?", False),
         # The name left out, a number changed, half of it: not the draft.
         ("Ein Tisch für vier Personen morgen um sieben Uhr. Passt das so?", False),
         (READBACK.replace("vier", "zwei"), False),
@@ -300,6 +313,24 @@ def test_a_read_back_that_is_one_question_has_to_be_spoken_whole():
 
     note_said(state, "Zweimal die 47 zur Abholung, richtig?")
     assert state.readback_heard
+
+
+def test_only_the_last_sentence_counts_as_the_read_back():
+    """Read out, then a side question answered: the guest's next "Ja" follows
+    the answer, not the draft. The model has to read it out again, and gets the
+    sentence for it."""
+    state, draft_id = drafted()
+    note_said(state, READBACK)
+    assert state.readback_heard
+
+    note_said(state, "Wir haben bis 22 Uhr geöffnet.")
+
+    assert not state.readback_heard
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+    assert state.to_prompt_json()["readback"] == READBACK
+
+    note_said(state, f"Gern. {READBACK}")
+    assert refusal(state, begin_turn(state), "Ja", confirm(draft_id)) is None
 
 
 def test_a_new_draft_has_to_be_read_out_again():

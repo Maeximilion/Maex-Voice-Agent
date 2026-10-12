@@ -95,9 +95,9 @@ class ConversationState(BaseModel):
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
         if self.readback and not self.readback_heard:
-            # The draft was not read out yet. A `confirm` is refused until it
-            # was, and a model that keeps nothing between turns needs the
-            # sentence to do it. Gone again once the guest heard it.
+            # The draft is not what the guest heard last. A `confirm` is
+            # refused until it is, and a model that keeps nothing between
+            # turns needs the sentence to read it out. Gone again once heard.
             data["readback"] = self.readback
         if self.cart or self.seen_items:
             # From the first menu search on, also while it is empty: the model
