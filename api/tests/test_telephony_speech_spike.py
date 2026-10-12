@@ -919,7 +919,7 @@ def test_the_menu_is_checked_in_the_image_before_anything_is_spoken(
         (False, True),
     ]
     check = seen[1]
-    assert f"{menu.resolve()}:{kit.MENU_MOUNT}:ro" in check and "none" in check
+    assert "none" in check and not any(str(menu) in part for part in check)
     assert not (run_dir / "report.json").exists()
     # Without --menu nothing is checked: the eval menu is the repository's.
     seen.clear()
@@ -965,3 +965,44 @@ def test_an_empty_row_is_skipped_as_the_import_skips_it(tmp_path):
         "number;name;category;active\n7;Suppe;Suppen;ja\n;;;\n ; ; ; \n8;Salat;Vorspeisen;ja\n",
     )
     assert [m["number"] for m in kit.build_plan(None, menu)["menu"]] == ["7", "8"]
+
+
+# --- Codex review of PR #268, tenth round -------------------------------------------
+
+
+def test_the_menu_that_is_checked_is_the_menu_that_is_measured(tmp_path, monkeypatch):
+    """The file is read once. The plan is built from those bytes and a copy of
+    them goes into the run folder, where the check in the image reads it: a
+    file that changes while the image builds cannot be checked in one state
+    and measured in another."""
+    run_dir = tmp_path / "r"
+    menu = own_menu(tmp_path)
+    first = menu.read_text(encoding="utf-8-sig")
+    checked: list[str] = []
+
+    def docker(command, dry_run, cwd=None):
+        if "build" in command:
+            # Somebody saves another menu while the image builds.
+            menu.write_text(
+                "number;name;category;active\n99;Neu;Neu;ja\n", encoding="utf-8"
+            )
+        if "check" in command:
+            checked.append((run_dir / kit.MENU_COPY).read_text(encoding="utf-8"))
+            raise kit.SpikeError("stop here")
+
+    monkeypatch.setattr(kit, "docker", docker)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    assert kit.main(["--menu", str(menu), "--run-dir", str(run_dir)]) == 1
+    assert checked == [first]
+    plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+    assert [m["number"] for m in plan["menu"]] == ["7", "S7", "35b"]
+    # The copy is a result of the run: the next run clears it.
+    kit.clear_results(run_dir)
+    assert not (run_dir / kit.MENU_COPY).exists()
+
+
+def test_menu_errors_reads_the_copy_in_the_run_folder(tmp_path):
+    (tmp_path / kit.MENU_COPY).write_text(
+        IMPORTABLE + "1000;Suppe;Suppen;5,00;;ja\n", encoding="utf-8"
+    )
+    assert kit.menu_errors(tmp_path / kit.MENU_COPY)

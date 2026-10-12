@@ -29,7 +29,7 @@ from typing import Any
 import numpy as np
 
 from api.telephony.speech_spike import (
-    MENU_MOUNT,
+    MENU_COPY,
     key_terms_for,
     menu_errors,
     terms_that_fit,
@@ -211,6 +211,8 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
     for spec in plan["ears"]:
         print("ear:", spec["id"], flush=True)
         rows: list[dict[str, Any]] = []
+        hear: Ear | None = None
+        fit: Fit | None = None
         try:
             before = gpu_mib() if spec.get("device") == "cuda" else None
             started = time.monotonic()
@@ -245,13 +247,14 @@ def measure(run: Path, plan: dict[str, Any]) -> dict[str, Any]:
                         "audio_seconds": round(len(audio) / EAR_RATE, 2),
                     }
                 )
-            # Both hold the model: with the cut still alive, the next ear
-            # would load next to this one (Codex PR #268).
-            del hear, fit
         except Exception as exc:  # noqa: BLE001 - whatever an engine raises
             # An engine that does not start or breaks is a result of the spike.
             ears[spec["id"]] = {"error": f"{type(exc).__name__}: {exc}"[:300]}
             continue
+        finally:
+            # Both hold the model. Dropped whether the ear ran through or broke
+            # on the way, or the next ear would load next to it (Codex PR #268).
+            hear = fit = None
         ears[spec["id"]] = info
         heard += rows
 
@@ -287,8 +290,8 @@ def main(argv: list[str]) -> int:
         print(__doc__, file=sys.stderr)
         return 2
     if argv[0] == "check":
-        # The menu given with --menu, by the rules of the import.
-        errors = menu_errors(Path(MENU_MOUNT))
+        # The copy of the menu given with --menu, by the rules of the import.
+        errors = menu_errors(Path(argv[1]) / MENU_COPY)
         for error in errors:
             print("menu:", error, file=sys.stderr)
         return 1 if errors else 0

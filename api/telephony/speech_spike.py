@@ -51,6 +51,7 @@ call or Docker not usable.
 
 import argparse
 import csv
+import io
 import json
 import os
 import re
@@ -69,9 +70,10 @@ NUMBERS = REPO_ROOT / "evals" / "cases" / "nummern.jsonl"
 MENU = REPO_ROOT / "evals" / "menu" / "menu_items.csv"
 IMAGE = "maex-speech-spike"
 RUN_MOUNT = "/work"
-# Where a menu given with --menu is mounted for its check in the image.
-MENU_MOUNT = "/menu/menu_items.csv"
-RESULTS = ("plan.json", "heard.json", "judged.json", "report.json")
+# The copy of a menu given with --menu in the run directory: the bytes the plan
+# was built from, and what the check in the image reads.
+MENU_COPY = "menu_items.csv"
+RESULTS = ("plan.json", "heard.json", "judged.json", "report.json", MENU_COPY)
 # Its own marker: the run directory of the T-10.1 kit is not one of this kit's.
 RUN_MARKER = ".speech-spike-run"
 
@@ -209,7 +211,10 @@ def main(argv: list[str] | None = None) -> int:
             plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
             (run_dir / "heard.json").stat()
         else:
-            plan = build_plan(args.limit, args.menu)
+            # Read once: the plan and the copy that is checked in the image
+            # come from the same bytes (Codex PR #268).
+            menu_text = args.menu.read_text(encoding="utf-8-sig") if args.menu else None
+            plan = build_plan(args.limit, args.menu, menu_text)
     except (OSError, KeyError, ValueError) as exc:
         problem = (
             f"--judge-only needs plan.json and heard.json of a run in {run_dir}"
@@ -236,6 +241,8 @@ def main(argv: list[str] | None = None) -> int:
                 (run_dir / "plan.json").write_text(
                     json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
                 )
+                if menu_text is not None:
+                    (run_dir / MENU_COPY).write_text(menu_text, encoding="utf-8")
         step("Build the image with the speech engines")
         build = ["docker", "build", "-t", IMAGE]
         docker([*build, "-f", "Dockerfile", "../../api"], dry, cwd=SPEECH_DIR)
@@ -243,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
             # By the import's own rules, in the image that has them: what cannot
             # be imported is not measured (Codex PR #268).
             step("Check the menu with the rules of the import (no network)")
-            docker(in_image(run_dir, bench, "check", menu=args.menu.resolve()), dry)
+            docker(in_image(run_dir, bench, "check"), dry)
         if not recorded:
             gpu = not dry and gpu_in_docker()
             step("Download the model files (network; only what is missing)")
@@ -271,7 +278,9 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["go"] else 1
 
 
-def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
+def build_plan(
+    limit: int | None, menu: Path | None = None, text: str | None = None
+) -> dict[str, Any]:
     """Sentences and key terms from the eval files, never from this module.
 
     `menu`: another menu than the eval menu (`--menu`). Its dish names and card
@@ -286,7 +295,10 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
     ]
     dishes: list[dict[str, str]] = []
     seen: dict[str, str] = {}
-    with (menu or MENU).open(encoding="utf-8-sig", newline="") as f:
+    if text is None:
+        # `text`: what `main` read of `menu`, so the file is read only once.
+        text = (menu or MENU).read_text(encoding="utf-8-sig")
+    with io.StringIO(text, newline="") as f:
         # Line 1 is the header. What the import refuses is refused here too, or
         # the run would measure a menu that cannot be imported (Codex PR #268).
         for at, raw in enumerate(csv.DictReader(f, delimiter=";"), start=2):
@@ -447,10 +459,8 @@ def in_image(
     *args: str,
     network: bool = False,
     gpu: bool = False,
-    menu: Path | None = None,
 ) -> list[str]:
-    """The command that runs a module of this repository in the speech image.
-    `menu`: a menu file from outside, mounted read-only for its check."""
+    """The command that runs a module of this repository in the speech image."""
     command = ["docker", "run", "--rm"]
     command += ["--gpus", "all"] if gpu else []
     command += [] if network else ["--network", "none", "-e", "HF_HUB_OFFLINE=1"]
@@ -459,7 +469,6 @@ def in_image(
     for folder in ("api", "evals"):
         command += ["-v", f"{REPO_ROOT / folder}:/app/{folder}:ro"]
     command += ["-v", f"{run_dir}:{RUN_MOUNT}"]
-    command += ["-v", f"{menu}:{MENU_MOUNT}:ro"] if menu else []
     return [*command, IMAGE, "python", "-m", module, *args, RUN_MOUNT]
 
 
