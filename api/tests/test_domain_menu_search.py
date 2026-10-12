@@ -938,7 +938,13 @@ def test_category_word_with_two_hits_asks_back(session, sushi):
 
 @pytest.mark.parametrize(
     "said",
-    ["Ist zwölf.", "Zweimal ist zwölf.", "Die ist zwölf, bitte.", "Nummer ist 12"],
+    [
+        "Ist zwölf.",
+        "Zweimal ist zwölf.",
+        "Die ist zwölf, bitte.",
+        "Nummer ist 12",
+        "Ich nehme ist zwölf",
+    ],
 )
 def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
     """Eval abholung_0077: the ear writes "S zwölf" as "ist zwölf". The menu has
@@ -965,16 +971,28 @@ def test_ist_number_with_only_the_s_dish_on_the_menu_asks_whether_it_is_meant(
 
 
 @pytest.mark.parametrize(
-    ("said", "number"),
-    [("Ist dreizehn.", "13"), ("die Nummer ist 23", "23"), ("S sieben", "s07")],
+    ("said", "offer"),
+    [
+        ("Ist dreizehn.", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("Ich nehme ist dreizehn", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("die Nummer ist 23", "Meinen Sie Nummer 23, Frühlingsrollen"),
+    ],
 )
-def test_ist_number_with_only_the_plain_dish_on_the_menu_takes_it(
-    session, sushi, said, number
+def test_ist_number_with_only_the_plain_dish_on_the_menu_offers_it(
+    session, sushi, said, offer
 ):
-    """The word read as the word it is: as before the heard letter existed."""
+    """Codex PR #257: the guest may have said "S dreizehn", which this menu does
+    not have. The 13 that it has is offered, never taken in its place."""
     result = suche(session, sushi, said)
 
-    assert result.match_type == "exact_number" and nummern(result) == [number]
+    assert result.match_type == "ambiguous" and len(result.results) == 1
+    assert result.say.startswith(offer)
+
+
+def test_a_prefix_that_was_said_is_taken_without_a_question(session, sushi):
+    result = suche(session, sushi, "S sieben")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["s07"]
 
 
 def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, sushi):

@@ -185,9 +185,11 @@
 {"say": "Die ist zwölf, bitte.", "expect": "12|s12?", "why": "die S zwölf bitte as the ear writes it"}
 {"say": "Nummer ist 12", "expect": "12|s12?", "why": "Nummer S12 as the ear writes it: after the marker ist is no plain filler where the menu has the prefix S"}
 {"say": "zwei ist zwölf", "expect": "12|s12?", "why": "zwei S zwölf as heard: the number word in front stays the quantity"}
-{"say": "Ist eins.", "expect": "1|s1?", "why": "S1 as heard; this menu has S1 and no 1: the search asks whether S1 is meant, it never takes a number that rests on the heard letter alone (Codex PR #257)"}
+{"say": "Ist eins.", "expect": "1|s1?", "why": "S1 as heard; this menu has S1 and no 1: the search asks whether S1 is meant; a number that went through the heard letter is never taken without a question (Codex PR #257)"}
 {"say": "die dreiundzwanzig ist zwölf", "expect": "?", "why": "die 23 S12 as heard: two numbers stay a question"}
 {"say": "Nummer ist zwölf oder dreizehn", "expect": "?", "why": "Nummer S12 oder 13 as heard: an alternative stays a question"}
 {"say": "Das ist die 12.", "expect": "12", "why": "limit: ist counts only directly before the number; with an article in between the sentence names the plain 12"}
 {"say": "Ich hätte gerne zwölf", "expect": "12", "why": "limit: where the ear drops the letter completely nothing tells S12 from 12; asking on every bare number would cost a question on most plain orders, the read-back names the dish (12.10.2026)"}
 {"say": "Dann ist es zwölf", "expect": "name", "why": "ist as a verb in a sentence that is no order by number: unchanged"}
+{"say": "Ich nehme ist zwölf", "expect": "12|s12?", "why": "Ich nehme S zwölf as the ear writes it: after a verb ist is still no German next to a bare number, so the heard letter needs no clean sentence start (Codex PR #257)"}
+{"say": "Dann nehme ich ist zwölf bitte", "expect": "12|s12?", "why": "the same in the middle of a sentence of fillers"}
