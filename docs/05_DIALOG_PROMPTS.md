@@ -179,8 +179,6 @@ bestätigen (`agent/state.py`, Codex PR #127). Eine Frage zu einem Gericht
 (`get_item_details`, etwa nach Allergenen) ändert nichts: der Entwurf bleibt
 bestätigbar, eine andere Option geht nur über `draft_order`.
 
-The draft also leaves the state when `confirm` itself answers `conflict` (#250): the seats of an old reservation draft went to someone else, or the draft was cancelled. It can never be confirmed as it is, and a "Ja" to the next question must not try again. The intent stays. Another failure of `confirm` (`invalid_input`, `not_found`) keeps the draft.
-
 **What a real model gets (T-2.4)** — the own core does not use the function calling of a
 platform. The system message is `prompts/system_vN.md`, then the tool reference (the
 sections of `prompts/tools_vN.md`, one per tool, without the file's notes for the voice
