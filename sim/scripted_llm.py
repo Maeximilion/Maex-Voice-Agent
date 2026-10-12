@@ -320,6 +320,15 @@ class ScriptedLLM:
                 return self._pickup.on_confirmed(data)
         if name == "check_slot":
             if data.get("available"):
+                # The state is what the core took. A detail this script read
+                # from the sentence may be missing there: the core keeps no
+                # name or number the guest did not say as such, a number
+                # without its area code for one (agent/guest_details.py).
+                missing = _missing(slots)
+                if missing:
+                    return LLMTurn(
+                        say=QUESTIONS[missing], understanding_failure=missing
+                    )
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
             # Alternativen stehen im vorgeschriebenen Satz aus dem Code (docs/05 §5).
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
@@ -373,7 +382,7 @@ class ScriptedLLM:
         extra: str | None = None,
         understood: bool = True,
     ) -> LLMTurn:
-        missing = next((f for f in SLOT_ORDER if not slots.get(f)), None)
+        missing = _missing(slots)
         if missing:
             say = " ".join(p for p in (prefix, extra, QUESTIONS[missing]) if p)
             return LLMTurn(
@@ -458,6 +467,11 @@ class ScriptedLLM:
             return datetime.fromisoformat(reserved_for).astimezone(self._zone).date()
         except ValueError:
             return None
+
+
+def _missing(slots: dict[str, Any]) -> str | None:
+    """The first detail of a reservation that is still open."""
+    return next((field for field in SLOT_ORDER if not slots.get(field)), None)
 
 
 def _draft(slots: dict[str, Any]) -> dict[str, Any]:

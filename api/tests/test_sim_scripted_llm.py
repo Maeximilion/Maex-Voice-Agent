@@ -277,3 +277,25 @@ def test_no_second_greeting_when_the_phone_already_greeted(llm):
     assert turn.say is not None
     assert GREETING not in turn.say
     assert QUESTIONS["reserved_for"] in turn.say
+
+
+def test_detail_the_core_did_not_take_is_asked_for_again(llm):
+    """The core drops a phone number without its area code
+    (agent/guest_details.py), so the state of the next hop lacks what this
+    script read from the sentence. It asks again; before, building the draft
+    from the state ended the turn with a KeyError."""
+    taken = {
+        "party_size": 2,
+        "reserved_for": "2026-09-16T19:00:00+02:00",
+        "guest_name": "Mueller",
+    }
+
+    turn = llm.next_turn(
+        "",
+        {**START, "slots": taken},
+        tool_result("check_slot", data={"available": True}),
+    )
+
+    assert turn.tool_call is None
+    assert turn.say == QUESTIONS["phone"]
+    assert turn.understanding_failure == "phone"

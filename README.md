@@ -115,7 +115,7 @@ make test        # pytest
 make lint        # ruff check
 make fmt         # ruff format
 make backup      # encrypted dump of the database of DATABASE_URL into backups/, needs BACKUP_PASSPHRASE_FILE (docs/13 §4)
-make eval        # 21 CI cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
+make eval        # 28 CI cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
 
 python -m sim.cli                                   # conversation in the terminal
