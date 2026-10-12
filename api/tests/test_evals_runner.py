@@ -542,6 +542,37 @@ def test_a_draft_that_comes_with_its_cart_is_still_a_draft():
     assert rec.recording.confirms == 1
 
 
+def test_a_malformed_cart_does_not_take_the_accepted_order_back():
+    """An order the core took, then a `cart` it cannot read and refuses: the
+    order stays the one it took. The recorder went back to the order before
+    that, so the same order next to a later read-back looked like a correction
+    and a valid yes like a violation (Codex, PR #258)."""
+    order = [{"menu_item_id": ITEM, "quantity": 1}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(say="Kommt in die Bestellung.", cart=order),
+                LLMTurn(say="Gern.", cart="kaputt"),
+                LLMTurn(say="Entschuldigung."),
+                LLMTurn(tool_call=ToolCall("create_reservation", {})),
+                LLMTurn(say=READBACK, cart=order),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, "Und sonst?")
+    rec.next_turn("", {}, json.dumps({"tool": "cart", "ok": False}))
+    rec.next_turn("", {}, "Und einen Tisch für vier.")
+    rec.next_turn("", {}, _result("create_reservation", ok=True))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1
+
+
 def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
     rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
 

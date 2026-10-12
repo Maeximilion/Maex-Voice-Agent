@@ -129,13 +129,16 @@ class RecordingLLM:
         dispatches (`guards.take_cart`): a changed order after a read-back is a
         correction and drops the draft, and so does a `cart` it refuses. A
         refusal comes back as the next input and is handled there."""
+        # What a refusal of this very `cart` goes back to: the order as it
+        # stands now, also when this one changes nothing or cannot be read.
+        self._cart_before = self._cart
         try:
             lines = cart_lines(cart)
         except ValidationError:
             return
         if same_order(lines, self._cart):
             return
-        self._cart_before, self._cart = self._cart, lines
+        self._cart = lines
         self._drop_draft()
 
     def _drop_draft(self) -> None:
