@@ -94,20 +94,22 @@ def repos(tmp_path):
     def commits_behind() -> int:
         return int(git(main_checkout, "rev-list", "--count", "main..origin/main"))
 
-    def finish_branch(name: str, *, squash: bool = False) -> None:
+    def finish_branch(name: str, *, squash: bool = False, merge: bool = True) -> None:
         """A branch of the main folder, pushed, landed on origin's main and
-        deleted there, as GitHub leaves it after a merge."""
+        deleted there, as GitHub leaves it after a merge. Without `merge` the
+        remote branch is deleted and its work never landed."""
         git(main_checkout, "switch", "-q", "-c", name)
         (main_checkout / f"{name}.txt").write_text("work\n", encoding="utf-8")
         git(main_checkout, "add", f"{name}.txt")
         git(main_checkout, "commit", "-q", "-m", name)
         git(main_checkout, "push", "-q", "-u", "origin", name)
         git(upstream, "fetch", "-q", "origin")
-        how = ["--squash"] if squash else ["--no-ff", "-m", f"merge {name}"]
-        git(upstream, "merge", "-q", *how, f"origin/{name}")
-        if squash:
-            git(upstream, "commit", "-q", "-m", f"{name} squashed")
-        git(upstream, "push", "-q", "origin", "main")
+        if merge:
+            how = ["--squash"] if squash else ["--no-ff", "-m", f"merge {name}"]
+            git(upstream, "merge", "-q", *how, f"origin/{name}")
+            if squash:
+                git(upstream, "commit", "-q", "-m", f"{name} squashed")
+            git(upstream, "push", "-q", "origin", "main")
         git(upstream, "push", "-q", "origin", "--delete", name)
 
     return SimpleNamespace(
@@ -170,13 +172,36 @@ def test_a_finished_branch_with_uncommitted_work_is_left_alone(repos):
     assert (repos.main_checkout / "notes.txt").read_text(encoding="utf-8") == "mine\n"
 
 
-def test_a_branch_whose_commits_are_not_in_main_is_left_alone(repos):
-    # A squash merge: the remote branch is gone, the commits themselves never landed.
+def test_a_squash_merged_branch_counts_as_finished(repos):
+    # Codex PR #247: the commits never land, their changes do.
     repos.finish_branch("squashed", squash=True)
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+    assert repos.commits_behind() == 0
+    assert (repos.main_checkout / "squashed.txt").exists()
+
+
+def test_a_squash_merged_branch_with_a_later_commit_is_left_alone(repos):
+    repos.finish_branch("squashed", squash=True)
+    (repos.main_checkout / "later.txt").write_text(
+        "after the merge\n", encoding="utf-8"
+    )
+    repos.git(repos.main_checkout, "add", "later.txt")
+    repos.git(repos.main_checkout, "commit", "-q", "-m", "work after the merge")
 
     repos.run_hook()
 
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+
+
+def test_a_branch_deleted_on_the_remote_without_a_merge_is_left_alone(repos):
+    repos.finish_branch("dropped", merge=False)
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "dropped"
+    assert (repos.main_checkout / "dropped.txt").exists()
 
 
 def test_a_branch_that_still_exists_on_the_remote_is_left_alone(repos):
