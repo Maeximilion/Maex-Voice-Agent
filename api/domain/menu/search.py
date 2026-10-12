@@ -635,9 +635,14 @@ def search_menu(
                 f"Nummer {ref.text} nicht auf der Karte",
                 say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
-        if len(items) > 1:
+        only_heard = canonical_card(items[0].number) in {
+            canonical_card(card) for card in ref.heard
+        }
+        if len(items) > 1 or only_heard:
             # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
-            # ask back instead of choosing.
+            # ask back instead of choosing. Also for the one dish that rests on
+            # a heard letter: "Das ist sieben" with S7 and no 7 on the menu may
+            # be plain German for a dish that does not exist (Codex PR #257).
             return _ambiguous(session, items[:limit], now)
         return _single(session, "exact_number", items[0], now)
 

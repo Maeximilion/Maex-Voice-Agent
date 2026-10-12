@@ -176,7 +176,8 @@ to voice at most 1.5 s on turns with one tool hop; silent wrong card numbers at 
   letter: "S12" is heard as "ist zwölf" and taken as dish 12, "23g" as "23 D" (9 to 11 % of 88).
   That is a gap in the number rule as much as in the ear (§12). **Closed for the prefix
   on 12.10.2026:** "ist" directly before a number now keeps the S number as a second
-  candidate, and the search asks where the menu has both (eval `abholung_0077`). The same
+  candidate, and the search asks where the menu has both (eval `abholung_0077`); where it
+  has only the S number, that one is offered and never taken without a yes. The same
   transcripts judged again: the picked ear takes 8 instead of 12 of 724 (1.1 %), all ears
   143 instead of 174 of 2,929; 31 utterances move from a wrong dish to a question back and
   none the other way. What is left is in §12.

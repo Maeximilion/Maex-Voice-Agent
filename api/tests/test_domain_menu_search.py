@@ -952,15 +952,26 @@ def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
     assert "Nummer s12, Thunfisch Maki" in result.say
 
 
+@pytest.mark.parametrize("said", ["Ist sieben.", "Das ist sieben.", "Nummer ist 7"])
+def test_ist_number_with_only_the_s_dish_on_the_menu_asks_whether_it_is_meant(
+    session, sushi, said
+):
+    """Codex PR #257: the menu has S7 and no 7. "Das ist sieben" may be plain
+    German for a dish that does not exist, so S7 is offered, never taken."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["s07"]
+    assert result.say == "Meinen Sie Nummer s07, Gurken Maki?"
+
+
 @pytest.mark.parametrize(
     ("said", "number"),
-    [
-        ("Ist sieben.", "s07"),  # only the S7 is on the menu
-        ("Ist dreizehn.", "13"),  # only the 13 is on the menu, as before
-        ("die Nummer ist 23", "23"),
-    ],
+    [("Ist dreizehn.", "13"), ("die Nummer ist 23", "23"), ("S sieben", "s07")],
 )
-def test_ist_number_with_one_dish_on_the_menu_takes_it(session, sushi, said, number):
+def test_ist_number_with_only_the_plain_dish_on_the_menu_takes_it(
+    session, sushi, said, number
+):
+    """The word read as the word it is: as before the heard letter existed."""
     result = suche(session, sushi, said)
 
     assert result.match_type == "exact_number" and nummern(result) == [number]

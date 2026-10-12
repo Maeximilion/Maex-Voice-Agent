@@ -8,7 +8,7 @@
 {"say": "Nummer 23a", "expect": "23a", "why": "Kartenbuchstabe angehaengt"}
 {"say": "die 23 a", "expect": "23a", "why": "Kartenbuchstabe abgesetzt gesprochen"}
 {"say": "Nr. 5", "expect": "5", "why": "Kurzform des Markers"}
-{"say": "die Nummer ist 23", "expect": "23|s23", "why": "ist directly before the number may be the letter S as the ear writes it (T-10.3): 23 and S23 are both looked up, this menu has only the 23"}
+{"say": "die Nummer ist 23", "expect": "23|s23?", "why": "ist directly before the number may be the letter S as the ear writes it (T-10.3): 23 and S23 are both looked up, this menu has only the 23"}
 {"say": "Nummer die 23", "expect": "23", "why": "Artikel zwischen Marker und Zahl"}
 {"say": "Nummer bitte 23", "expect": "23", "why": "Hoeflichkeitsfloskel zwischen Marker und Zahl"}
 {"say": "Nummer äh 23", "expect": "23", "why": "Zoegerlaut zwischen Marker und Zahl"}
@@ -179,13 +179,13 @@
 {"say": "Nummer Z1000zz", "expect": "!z1000zz", "why": "dasselbe ueber dem Kartenbereich (Codex PR #155)"}
 {"say": "Nummer 1000zz", "expect": "!1000zz", "why": "ohne Praefix dasselbe (Codex PR #155)"}
 {"say": "Nummer S12zz", "expect": "!s12zz", "why": "bekanntes Praefix, falsche geklebte Endung: genannt, nicht vorhanden (Code-Review PR #155)"}
-{"say": "Ist zwölf.", "expect": "12|s12", "why": "S zwölf arrives as 'ist zwölf' from every ear measured (T-10.3, docs/20 §11): the plain number and the S number are both candidates, the menu has both, so the search asks"}
-{"say": "ist zwölf", "expect": "12|s12", "why": "the same without the full stop the ear adds"}
-{"say": "Zweimal ist zwölf.", "expect": "12|s12", "why": "zweimal S12 as the ear writes it, the most frequent silent wrong number of T-10.3"}
-{"say": "Die ist zwölf, bitte.", "expect": "12|s12", "why": "die S zwölf bitte as the ear writes it"}
-{"say": "Nummer ist 12", "expect": "12|s12", "why": "Nummer S12 as the ear writes it: after the marker ist is no plain filler where the menu has the prefix S"}
-{"say": "zwei ist zwölf", "expect": "12|s12", "why": "zwei S zwölf as heard: the number word in front stays the quantity"}
-{"say": "Ist eins.", "expect": "1|s1", "why": "S1 as heard; this menu has S1 and no 1, so the search takes S1 instead of saying the number does not exist"}
+{"say": "Ist zwölf.", "expect": "12|s12?", "why": "S zwölf arrives as 'ist zwölf' from every ear measured (T-10.3, docs/20 §11): the plain number and the S number are both candidates, the menu has both, so the search asks"}
+{"say": "ist zwölf", "expect": "12|s12?", "why": "the same without the full stop the ear adds"}
+{"say": "Zweimal ist zwölf.", "expect": "12|s12?", "why": "zweimal S12 as the ear writes it, the most frequent silent wrong number of T-10.3"}
+{"say": "Die ist zwölf, bitte.", "expect": "12|s12?", "why": "die S zwölf bitte as the ear writes it"}
+{"say": "Nummer ist 12", "expect": "12|s12?", "why": "Nummer S12 as the ear writes it: after the marker ist is no plain filler where the menu has the prefix S"}
+{"say": "zwei ist zwölf", "expect": "12|s12?", "why": "zwei S zwölf as heard: the number word in front stays the quantity"}
+{"say": "Ist eins.", "expect": "1|s1?", "why": "S1 as heard; this menu has S1 and no 1: the search asks whether S1 is meant, it never takes a number that rests on the heard letter alone (Codex PR #257)"}
 {"say": "die dreiundzwanzig ist zwölf", "expect": "?", "why": "die 23 S12 as heard: two numbers stay a question"}
 {"say": "Nummer ist zwölf oder dreizehn", "expect": "?", "why": "Nummer S12 oder 13 as heard: an alternative stays a question"}
 {"say": "Das ist die 12.", "expect": "12", "why": "limit: ist counts only directly before the number; with an article in between the sentence names the plain 12"}

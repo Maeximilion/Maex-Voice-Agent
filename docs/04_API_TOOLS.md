@@ -140,8 +140,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    „ist zwölf" (T-10.3), so „ist" directly before a number adds the S number as a
    second candidate next to the plain one („12 oder s12"). The search looks up
    both: with both on the menu it asks by name („Meinen Sie Nummer 12,
-   Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with one it takes that one,
-   with none it is `not_found`. Only where the menu has the prefix S, and only in a
+   Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with only the plain one it
+   takes it as before, with only the S number it offers it („Meinen Sie Nummer S7,
+   Gurken Maki?", `ambiguous` with one result) and never takes it without that
+   question: „das ist sieben" may be plain German for a dish that does not exist
+   (Codex PR #257). With none it is `not_found`. Only where the menu has the prefix S, and only in a
    pure number sentence: next to a name the sentence is what it was („das ist 5g
    Zucker"). Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,

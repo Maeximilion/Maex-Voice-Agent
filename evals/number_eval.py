@@ -20,6 +20,9 @@ Expected values in `cases/nummern.jsonl`:
     "name"    not a number sentence -> alias and trigram search decide
     "s12|sm12" several card numbers possible ("Sushi zwoelf"); the search
               looks up all of them, and the menu says which one exists
+    "12|s12?" the same, and the number with "?" rests on a word the ear may
+              have written for a letter ("ist zwoelf"): the search asks before
+              it takes that one, also when it is the only one on the menu
 
 Which prefixes a number can carry ("S12", "SM1") is not in the code; it
 follows from the numbers on the menu (T-4.12). This set uses the eval menu
@@ -94,7 +97,9 @@ def resolve(say: str) -> str:
         return "?"
     if ref is None:
         return "name"
-    return "|".join(ref.cards) if ref.valid else f"!{ref.text}"
+    if not ref.valid:
+        return f"!{ref.text}"
+    return "|".join(card + "?" * (card in ref.heard) for card in ref.cards)
 
 
 def disagreement(say: str) -> str | None:

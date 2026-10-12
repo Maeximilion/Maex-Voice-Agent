@@ -54,14 +54,18 @@ def dishes(result: str) -> frozenset[str]:
     """The dishes of the eval menu a result of the number rule names."""
     if result in ("?", "name") or result.startswith("!"):
         return frozenset()
-    return frozenset(canonical_card(card) for card in result.split("|")) & DISHES
+    cards = (card.rstrip("?") for card in result.split("|"))
+    return frozenset(canonical_card(card) for card in cards) & DISHES
 
 
 def dish(result: str) -> str | None:
-    """The one dish of the eval menu a result leads to; with several the search
-    asks which one, with none it says the number does not exist."""
+    """The one dish of the eval menu a result leads to without a question. With
+    several the search asks which one, with none it says the number does not
+    exist, and a number marked "?" (heard through a letter word) is offered,
+    not taken."""
     found = dishes(result)
-    return next(iter(found)) if len(found) == 1 else None
+    offered = dishes("|".join(c for c in result.split("|") if c.endswith("?")))
+    return next(iter(found)) if len(found) == 1 and not offered else None
 
 
 def number_verdict(expect: str, heard: str) -> tuple[str, str]:
@@ -72,7 +76,9 @@ def number_verdict(expect: str, heard: str) -> tuple[str, str]:
         return "right", got
     taken = got not in ("?", "name") and not got.startswith("!")
     # "Sushi eins" where the menu has S1 and SM1: the search asks which one.
-    return ("wrong" if taken and len(dishes(got)) < 2 else "asked"), got
+    # "Ist eins" where it has only S1: the search asks whether S1 is meant.
+    asks = len(dishes(got)) > 1 or (len(dishes(got)) == 1 and dish(got) is None)
+    return ("wrong" if taken and not asks else "asked"), got
 
 
 def dish_verdict(name: str, heard: str) -> str:

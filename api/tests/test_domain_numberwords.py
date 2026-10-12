@@ -988,6 +988,8 @@ def test_ist_before_a_number_keeps_the_s_number_as_a_candidate(text):
     assert not unclear and ref is not None and ref.valid
     assert ref.cards == ("12", "s12")
     assert ref.text == "12 oder s12"
+    # The S number rests on the heard word alone: never taken without a question.
+    assert ref.heard == ("s12",)
     # No plain number for the understanding ladder either.
     assert find_item_number(text, CARD) is None
 
@@ -1046,3 +1048,10 @@ def test_ist_number_next_to_a_name_is_left_to_the_name_search(text):
     """The heard letter adds a candidate to a pure number sentence and changes
     no other: next to a name the number is a quantity or a unit, as before."""
     assert sole_item_number(text, CARD) == sole_item_number(text) == (None, False)
+
+
+def test_a_prefix_that_was_said_is_not_a_heard_one():
+    """Codex PR #257: only a number that rests on "ist" needs the question."""
+    for text in ["S zwölf", "Es zwölf", "Sushi zwölf", "die 12"]:
+        ref, _ = sole_item_number(text, CARD)
+        assert ref is not None and ref.heard == ()

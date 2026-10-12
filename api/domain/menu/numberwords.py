@@ -536,6 +536,11 @@ class ItemNumber:
     # SM12. `text` then names all of them ("s12 oder sm12"). Which one exists
     # is decided by the search against the menu (T-4.12).
     choices: tuple[str, ...] = ()
+    # Of `choices`, the card numbers that rest on a word the ear may have
+    # written for a letter ("ist zwölf" as s12, `_HEARD_LETTERS`). The word may
+    # as well be the word, so the search never takes such a number without a
+    # question, also when it is the only one on the menu (Codex PR #257).
+    heard: tuple[str, ...] = ()
 
     @property
     def cards(self) -> tuple[str, ...]:
@@ -642,7 +647,8 @@ def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemN
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
     # What is said is what is looked up: "s12 oder sm12" (review PR #155).
-    return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards)
+    heard = cards[1:] if span.prefixes[0] == "" else ()
+    return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards, heard)
 
 
 def _plain_ref(
