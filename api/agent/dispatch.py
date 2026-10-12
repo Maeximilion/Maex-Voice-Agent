@@ -158,7 +158,7 @@ def _confirm(
     req = ConfirmRequest(
         call_id=call_id, tenant_id=tenant_id, idempotency_key=key, **rest
     )
-    return confirm(session, req)
+    return confirm(session, req, now=now)
 
 
 def _create_callback(

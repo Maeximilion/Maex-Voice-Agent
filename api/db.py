@@ -17,8 +17,15 @@ from api.config import settings
 # Zustand vor dem fremden Commit, und legt denselben Vorgang ein zweites Mal an.
 # Postgres hat diesen Wert als Default; hier steht er ausdruecklich, damit eine
 # andere Servereinstellung die Fachlogik nicht still aushebelt.
+#
+# hide_parameters: a failed statement is logged with its SQL, never with its
+# values. Those are guest names, phone numbers and notes, and a log line is
+# outside every deletion period of docs/03.
 engine = create_engine(
-    settings.database_url, pool_pre_ping=True, isolation_level="READ COMMITTED"
+    settings.database_url,
+    pool_pre_ping=True,
+    isolation_level="READ COMMITTED",
+    hide_parameters=True,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)

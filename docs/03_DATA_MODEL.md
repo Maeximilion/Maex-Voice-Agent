@@ -36,7 +36,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | pickup_wait_minutes | INT | aktuelle Wartezeit Abholung |
 | delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
 | team_phone | TEXT | Durchwahl für `transfer_to_team` |
-| max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call and ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here, and what the text phone runs on |
+| max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call and ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here, and what the text phone runs on. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
 | reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
 | reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
 
@@ -73,8 +73,8 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | tenant_id | UUID FK | |
 | weekday | SMALLINT | |
 | slot_start / slot_end | TIME | z. B. 18:00–20:00 |
-| max_guests | INT | Gäste gesamt im Fenster |
-| slot_minutes | INT | Raster, Default 30 |
+| max_guests | INT | Gäste gesamt im Fenster, `>= 0` (0 closes the window for reservations; migration 006) |
+| slot_minutes | INT | Raster, Default 30, `> 0` (migration 006: a grid of zero minutes never ends) |
 
 ### `reservations`
 | Feld | Typ | Bemerkung |
@@ -85,7 +85,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | status | TEXT | `draft` / `confirmed` / `cancelled` |
 | guest_name | TEXT | |
 | phone | TEXT | E.164 |
-| party_size | INT | |
+| party_size | INT | `> 0` (migration 006) |
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
