@@ -174,7 +174,15 @@ to voice at most 1.5 s on turns with one tool hop; silent wrong card numbers at 
   another dish read back, instead of "that number does not exist"): 1.1 and 0.8 %. Plain numbers
   ("die 23") were safe: 0 and 1 of 148. Almost all of it is one kind of sentence, a number with a
   letter: "S12" is heard as "ist zwölf" and taken as dish 12, "23g" as "23 D" (9 to 11 % of 88).
-  That is a gap in the number rule as much as in the ear (§12).
+  That is a gap in the number rule as much as in the ear (§12). **Closed for the prefix
+  on 12.10.2026:** "ist" directly before a number now keeps the S number as a second
+  candidate, and a number that went through it is never taken without a question: the
+  search asks which of the two where the menu has both (eval `abholung_0077`) and offers
+  the one it has otherwise. The same transcripts judged again: the picked ear takes 8
+  instead of 12 of 724 (1.1 %), all ears 142 instead of 174 of 2,929; 32 utterances move
+  from a wrong dish to a question back and none becomes wrong. The price: the plain sentence
+  "die Nummer ist 23" now gets a confirming question (15 utterances of the run that
+  were taken directly before). What is left is in §12.
 - **Voice to voice: ear and mouth are not what decides it.** Together they take 0.24 to 0.41 s. The
   silence that ends a turn (0.5 s) and the text model come on top; the local text model alone needs
   about 1.1 s per request (docs/18 §5) and a turn with a tool hop is two requests. So 1.5 s is out of
@@ -348,12 +356,16 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   to a speech service without storage falls under the rules for recordings (E11). In the test phase
   no audio leaves the workbench.
 - **Texts that still name the voice platform:** the headers of `prompts/tools_v1.md` and `prompts/tools_v2.md`, comments in `api/telephony/`, `docs/03`, `docs/04`, `docs/08` and `docs/10`. They change with the first build package; a change under `prompts/` needs an eval run.
-- **From T-10.3, numbers with a letter:** "S12" spoken is heard as "ist zwölf" or just "zwölf" by
-  every ear tried, and the number rule then takes dish 12 without a question; "23g" becomes "23 D".
-  The read-back names the dish, so the guest can still say no, but nothing in the code stops it.
-  Proposal, as a task of its own with a red case in `evals/cases/nummern.jsonl` first: where the
-  card has a letter prefix, a number that follows "ist" or stands alone where a prefixed one exists
-  asks back ("S12 oder 12?"). It decides which dish a sentence means, so it runs at effort `xhigh`.
+- **From T-10.3, numbers with a letter, what the number rule does not catch** (the prefix
+  heard as "ist" is fixed since 12.10.2026, §6): (1) the letter is dropped completely,
+  "Ich hätte gern Es zwölf" heard as "Ich hätte gerne zwölf" (8 of 16 utterances of that
+  one sentence over all ears, 1 of 4 on the picked ear). Nothing in the transcript tells it
+  from the plain 12; asking on every bare number that also exists with S would cost a
+  question on most plain orders of a menu that has both ranges, so it is not built, and
+  the read-back names the dish. (2) The ending g heard as a word: "23g" as
+  "dreiundzwanzig die", 2 of 32 utterances with a valid ending on the picked ear. Two
+  utterances of synthetic voices are too thin for a rule. Both wait for real voices
+  (T-10.7); Maxi decides whether either gets a rule before that.
 - **From T-10.3, what the synthetic callers cannot say:** the measurement ranks the engines, it
   does not predict real callers. The same sentences spoken by people over a real line are T-10.7;
   the thresholds of §6 are confirmed or changed with those numbers.

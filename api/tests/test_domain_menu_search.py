@@ -936,6 +936,71 @@ def test_category_word_with_two_hits_asks_back(session, sushi):
     assert "Nummer s1" in result.say and "Nummer sm1" in result.say
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ist zwölf.",
+        "Zweimal ist zwölf.",
+        "Die ist zwölf, bitte.",
+        "Nummer ist 12",
+        "Ich nehme ist zwölf",
+    ],
+)
+def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
+    """Eval abholung_0077: the ear writes "S zwölf" as "ist zwölf". The menu has
+    the 12 and the S12, so the guest is asked by name instead of getting the
+    soup (rule 2)."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["12", "s12"]
+    assert "Nummer 12, Wan-Tan-Suppe" in result.say
+    assert "Nummer s12, Thunfisch Maki" in result.say
+
+
+@pytest.mark.parametrize("said", ["Ist sieben.", "Das ist sieben.", "Nummer ist 7"])
+def test_ist_number_with_only_the_s_dish_on_the_menu_asks_whether_it_is_meant(
+    session, sushi, said
+):
+    """Codex PR #257: the menu has S7 and no 7. "Das ist sieben" may be plain
+    German for a dish that does not exist, so S7 is offered, never taken."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["s07"]
+    assert result.say == "Meinen Sie Nummer s07, Gurken Maki?"
+
+
+@pytest.mark.parametrize(
+    ("said", "offer"),
+    [
+        ("Ist dreizehn.", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("Ich nehme ist dreizehn", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("die Nummer ist 23", "Meinen Sie Nummer 23, Frühlingsrollen"),
+    ],
+)
+def test_ist_number_with_only_the_plain_dish_on_the_menu_offers_it(
+    session, sushi, said, offer
+):
+    """Codex PR #257: the guest may have said "S dreizehn", which this menu does
+    not have. The 13 that it has is offered, never taken in its place."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous" and len(result.results) == 1
+    assert result.say.startswith(offer)
+
+
+def test_a_prefix_that_was_said_is_taken_without_a_question(session, sushi):
+    result = suche(session, sushi, "S sieben")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["s07"]
+
+
+def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Ist neunundneunzig.")
+    assert "99 oder s99" in err.value.say
+
+
 @pytest.mark.parametrize("said", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
 def test_missing_prefixed_number_is_never_the_bare_number(session, sushi, said):
     """Rule 2: "S 13" is not Pho Bo (13), "Nummer 23g" is not the 23."""
@@ -968,6 +1033,22 @@ def test_prefixed_number_and_name_are_two_positions(session, sushi):
     with pytest.raises(Ambiguous) as err:
         suche(session, sushi, "S12 und Pho Bo")
     assert err.value.say == SAY_IN_TURN
+
+
+def test_heard_number_and_name_are_two_positions(session, sushi):
+    """Codex PR #257: "S zwölf und Pho Bo" arrives as "Ist zwölf und Pho Bo".
+    The number that needs a question is a position of its own, as the S12 that
+    was said clearly; kept whole, the sentence found Pho Bo alone and the first
+    dish dropped out without a word."""
+    assert position_parts(session, sushi, "Ist zwölf und Pho Bo", now=NOW) == [
+        "Ist zwölf",
+        "Pho Bo",
+    ]
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "Ist zwölf und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+    # Each part then gets its own answer: the question, and the dish.
+    assert suche(session, sushi, "Ist zwölf").match_type == "ambiguous"
 
 
 def test_category_word_without_hit_names_card_numbers(session, sushi):

@@ -711,6 +711,7 @@ def test_sole_item_number_kein_nummernsatz(text):
 # --- Card format from the menu: prefix S/SM, suffix a to g (T-4.12) ------------
 
 from api.domain.menu.numberwords import (  # noqa: E402
+    NO_PREFIXES,
     CardFormat,
     canonical_card,
     reserved_prefix,
@@ -962,3 +963,99 @@ def test_spoken_words_are_reserved_prefixes(prefix):
 
 def test_prefix_s_stays_allowed():
     assert not reserved_prefix("s") and not reserved_prefix("sm")
+
+
+# --- A letter the ear writes as a word: "S zwölf" heard as "ist zwölf" ----------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ist zwölf.",
+        "ist zwölf",
+        "Zweimal ist zwölf.",
+        "Die ist zwölf, bitte.",
+        "Nummer ist 12",
+        "zwei ist zwölf",
+        "Ich hätte gern ist zwölf",
+        # Codex PR #257: after a verb as well. The heard word only adds a
+        # candidate, so it does not need the clean start a letter name needs.
+        "Ich nehme ist zwölf",
+        "Dann nehme ich ist zwölf bitte",
+    ],
+)
+def test_ist_before_a_number_keeps_the_s_number_as_a_candidate(text):
+    """Eval abholung_0077, T-10.3: every ear measured writes "S zwölf" as "ist
+    zwölf", and the rule took dish 12 without a question. Both are looked up,
+    plain first, and the search asks where the menu has both (rule 2)."""
+    ref, unclear = sole_item_number(text, CARD)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == ("12", "s12")
+    assert ref.text == "12 oder s12"
+    # The S number rests on the heard word alone: never taken without a question.
+    assert ref.heard == ("s12",)
+    # No plain number for the understanding ladder either.
+    assert find_item_number(text, CARD) is None
+
+
+def test_ist_after_the_marker_marks_both_candidates():
+    ref, _ = sole_item_number("Nummer ist 12", CARD)
+    assert ref is not None and ref.marked and ref.cards == ("12", "s12")
+    assert [r.cards for r in find_marked_item_numbers("Nummer ist 12", CARD)] == [
+        ("12", "s12")
+    ]
+
+
+@pytest.mark.parametrize("text", ["Ist zwölf.", "Zweimal ist zwölf.", "Nummer ist 12"])
+def test_ist_is_a_plain_word_where_the_menu_has_no_s(text):
+    """Which letters a number can carry is the menu's (rule 1): without the
+    prefix S on it, "ist" is the filler word it always was."""
+    for card in (
+        NO_PREFIXES,
+        CardFormat.from_items([("m1", "Menü"), ("12", "Suppen")]),
+    ):
+        ref, unclear = sole_item_number(text, card)
+        assert not unclear and ref is not None and ref.cards == ("12",)
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Das ist die 12.", ("12",)),  # an article in between: the plain 12
+        ("IST12", None),  # glued to the digits it is no heard letter
+        ("Meine Bestellung ist 12", None),  # no order by number at all
+    ],
+)
+def test_ist_counts_only_directly_before_the_number_and_set_apart(text, cards):
+    ref, _ = sole_item_number(text, CARD)
+    if cards is None:
+        assert ref is None or not ref.valid or "s12" not in ref.cards
+    else:
+        assert ref is not None and ref.cards == cards
+
+
+@pytest.mark.parametrize(
+    "text", ["die dreiundzwanzig ist zwölf", "Nummer ist zwölf oder dreizehn"]
+)
+def test_ist_number_next_to_another_number_asks_back(text):
+    assert sole_item_number(text, CARD) == (None, True)
+
+
+def test_ist_before_a_number_above_the_card_range_names_no_dish():
+    """ "Nummer S 1000" heard as "Nummer ist eintausend": named, not existing."""
+    ref, unclear = sole_item_number("Nummer ist eintausend", CARD)
+    assert not unclear and ref is not None and not ref.valid
+
+
+@pytest.mark.parametrize("text", ["das ist 5g Zucker", "ist zwölf Lachs"])
+def test_ist_number_next_to_a_name_is_left_to_the_name_search(text):
+    """The heard letter adds a candidate to a pure number sentence and changes
+    no other: next to a name the number is a quantity or a unit, as before."""
+    assert sole_item_number(text, CARD) == sole_item_number(text) == (None, False)
+
+
+def test_a_prefix_that_was_said_is_not_a_heard_one():
+    """Codex PR #257: only a number that rests on "ist" needs the question."""
+    for text in ["S zwölf", "Es zwölf", "Sushi zwölf", "die 12"]:
+        ref, _ = sole_item_number(text, CARD)
+        assert ref is not None and ref.heard == ()
