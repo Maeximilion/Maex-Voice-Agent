@@ -13,6 +13,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 
 from api.agent.dispatch import ToolResult
+from api.agent.intent import heard
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
@@ -148,6 +149,38 @@ def apply_state_patch(
     named = {key: value for key, value in patch.items() if key in GUEST_SLOTS}
     state.slots.update(named)
     return named
+
+
+def note_intent(state: ConversationState, guest_text: str) -> None:
+    """Keeps what the guest called for (`agent/intent.py`) for the turns after
+    this one. It only fills an empty `intent`: a word in a later sentence
+    never replaces what the state holds (a side question about taking the dog
+    along, in a call about a table), and from the draft on `intent` follows
+    the tools as before. It is also what the call log says the call was about
+    (`agent/outcome.py`).
+
+    And never against what the state shows already: a guest who gave a party
+    size without the word for a table asks whether the leftovers can be taken
+    along, and a guest whose order stands in the state asks at which table to
+    wait.
+    ponytail: a guest who changes their mind before a draft, or wants a second
+    thing after a booking, keeps the first wish in the state until a tool of
+    the other flow drafts. The model reads the change in the sentence itself,
+    and from the first menu search on the state carries the order (`cart`)."""
+    if state.intent is not None or (wish := heard(guest_text)) is None:
+        return
+    # An order outranks table details, and those a search that may have been
+    # only a question about the menu.
+    if state.cart:
+        shown = "pickup"
+    elif state.slots.keys() & {"party_size", "reserved_for"}:
+        shown = "reservation"
+    elif state.seen_items:
+        shown = "pickup"
+    else:
+        shown = wish
+    if shown == wish:
+        state.intent = wish
 
 
 _LINES = TypeAdapter(Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)])

@@ -25,7 +25,12 @@ from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+    note_intent,
+)
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
@@ -110,6 +115,13 @@ class ConversationLoop:
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
         reason = escalation.check(user_text)
+        if reason != "complaint":
+            # Before the model and before a handoff: the request of this very
+            # turn carries it already, and a call that goes to the team right
+            # here is logged with what it was about. Not on a complaint: one
+            # about an order is no request for a pickup, and the reason of
+            # the transfer says what that call was.
+            note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
