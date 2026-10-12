@@ -14,7 +14,7 @@ The board is a derivation, not handiwork. Full convention: `docs/16_GITHUB_PROJE
 The board follows from events. Work links to it through three things only:
 
 - closing keyword in the pull request description: `Closes #12`
-- branch name carrying the issue number: `task/T-4.3-search-menu`, `fix/12-kurzbeschreibung`
+- branch name carrying the issue number: `task/T-4.3-search-menu`, `fix/12-short-description`
 - labels set once, when the issue is created
 
 ## One project
@@ -34,13 +34,13 @@ Status lives in the project's Status field and nowhere else - never additionally
 
 `Done` comes from the merge. Never set it by hand, never before the merge.
 
-Exception in the label set: `status: blocked` mirrors the "blockiert" state that `docs/07_WORKPACKAGES.md` tracks, because that file is the source of truth. `status: in-progress` and `status: needs-review` are abolished.
+Exception in the label set: `status: blocked` mirrors the blocked state that `docs/07_WORKPACKAGES.md` tracks, because that file is the source of truth. `status: in-progress` and `status: needs-review` are abolished.
 
 ## Labels and assignee at creation
 
 Issues: exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
 
-Pull requests: always `gh pr create --assignee @me --label <type>`, the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The daily run fills in what is still missing, but a pull request should be complete from the start.
+Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The daily run fills in what is still missing, but a pull request should be complete from the start.
 
 ## Maintenance runs daily, never per commit
 
