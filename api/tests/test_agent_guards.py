@@ -224,11 +224,10 @@ def test_confirm_without_any_draft_is_refused():
         ("Passt das", False),
         ("Ist es so richtig", False),
         ("Ja ist das richtig", False),
-        # "alles" is a subject too, and a filler word like "das" and "es".
+        # "alles" after "ist" asks as well.
         ("Ist alles richtig", False),
         ("Ist alles in Ordnung", False),
-        ("Stimmt alles so", False),
-        ("Passt alles", False),
+        ("Ja ist alles korrekt", False),
         # The same words as a statement stay a yes.
         ("Das ist richtig.", True),
         ("Das stimmt so.", True),
@@ -240,6 +239,12 @@ def test_confirm_without_any_draft_is_refused():
         ("Genau, das ist es.", True),
         ("Ja, das stimmt alles.", True),
         ("Ja, es passt alles.", True),
+        ("Ja, es ist alles richtig so.", True),
+        # "Passt alles" and "Stimmt alles" are a yes with the "es" left out,
+        # the first one word for word from the eval targets (abholung_0064).
+        ("Ja, passt alles.", True),
+        ("Passt alles", True),
+        ("Stimmt alles so", True),
     ],
 )
 def test_yes_is_a_sentence_that_is_nothing_but_the_assent(text, yes):

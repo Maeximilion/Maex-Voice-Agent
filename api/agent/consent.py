@@ -16,7 +16,7 @@ growing list of what must not follow a yes (as for card numbers, docs/04).
 A question is no yes either: "Stimmt das so?" asks whether the read-back is
 right, it does not say so (#251). Speech recognition often drops the question
 mark, so the word order counts as well: the verb before its subject ("Ist das
-richtig", "Passt das", "Stimmt alles") is how a German yes-no question begins,
+richtig", "Passt das", "Ist alles richtig") is how a German yes-no question begins,
 while the statement puts them the other way round ("Das ist richtig", "Das
 passt").
 
@@ -93,8 +93,15 @@ _WORD = re.compile(r"[a-zäöüß]+")
 # Verb first, subject second: a question, with or without its mark. Only the
 # verbs and subjects that are assent or filler words themselves, any other word
 # makes the sentence no yes anyway. Not when a subject already stood before the
-# verb: "Das ist es" and "Es stimmt alles" are statements.
-_ASKS = re.compile(r"(?<!das )(?<!es )\b(ist|stimmt|passt)\s+(das|es|alles)\b")
+# verb: "Das ist es" and "Es ist alles richtig" are statements.
+#
+# "alles" counts as the subject of a question after "ist" only ("Ist alles
+# richtig"). "Passt alles" and "Stimmt alles" are how guests say yes, with the
+# "es" in front left out: "Ja, passt alles." closes a real order in the eval
+# targets (abholung_0064).
+_ASKS = re.compile(
+    r"(?<!das )(?<!es )\b(?:(?:ist|stimmt|passt)\s+(?:das|es)|ist\s+alles)\b"
+)
 # A word as it is spoken, digits included: what a read-back is compared by.
 _SPOKEN = re.compile(r"\w+")
 
