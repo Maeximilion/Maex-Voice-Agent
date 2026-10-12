@@ -1146,6 +1146,17 @@ def test_a_team_table_without_a_name_is_handed_over_all_the_same(session, state)
     assert session.scalars(select(Callback)).one().summary == f"{WISH}."
 
 
+def test_a_name_nobody_said_does_not_reach_the_card(session, state):
+    """`check_slot` takes no name and ignores one a model writes next to its
+    arguments. The card names the guest only as the guest did: "Müller" from
+    the sentence, never the model's "Mustermann" (Codex PR #280)."""
+    state.slots.update(phone=CALLER, guest_name="Müller")
+
+    _ask_for_nine(session, state, guest_name="Mustermann")
+
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
+
+
 def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
     """A model that skips `check_slot`: `create_reservation` drafts nothing and
     the core hands the wish over all the same. The time in the summary is the

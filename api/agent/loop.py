@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
 from api.agent.dispatch import ToolResult, dispatch, log_refused
+from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
 from api.agent.state import (
@@ -361,14 +362,17 @@ class ConversationLoop:
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
         """The wish as the team reads it on the card, from the arguments the
         tool took: the time as the restaurant's clock shows it, whatever zone
-        the model wrote it in. The name is one the guest said (`guards.py`)."""
+        the model wrote it in. A name only when the guest said it in this
+        call: `check_slot` takes no name, so one a model wrote next to its
+        arguments has passed no guard (Codex PR #280)."""
         when = str(args.get("reserved_for"))
         with suppress(ValueError):
             local = self._local_now(state).tzinfo
             when = (
                 f"{datetime.fromisoformat(when).astimezone(local):%d.%m.%Y %H:%M} Uhr"
             )
-        name = args.get("guest_name") or state.slots.get("guest_name")
+        names = (args.get("guest_name"), state.slots.get("guest_name"))
+        name = next((n for n in names if name_said(n, state.said_words)), None)
         parts = [f"{args.get('party_size')} Personen", when]
         if name:
             parts.append(f"Name {name}")
