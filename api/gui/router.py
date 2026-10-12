@@ -25,6 +25,7 @@ from api.core.logging import get_logger
 from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
+from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
@@ -102,15 +103,26 @@ CALLBACK_LABELS = {
 }
 
 
+# A number the call did not come from, in the team's words; none for the
+# caller's own number (#252).
+CALLBACK_NUMBER_NOTES = {
+    NUMBER_OTHER: "Andere Nummer als der Anruf",
+    NUMBER_WITHHELD: "Anruf ohne Rufnummer",
+}
+
+
 def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
     rows = []
     for cb in list_open(session, tenant.id):
         tone, label = CALLBACK_LABELS.get(cb.reason, ("accent", "Rückruf"))
+        origin = cb.number_origin
         rows.append(
             {
                 "id": str(cb.callback_id),
                 "time": _clock(cb.created_at, tenant.timezone),
                 "phone": cb.phone,
+                "number_note": CALLBACK_NUMBER_NOTES.get(origin),
+                "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
                 "reason": cb.reason,
                 "summary": cb.summary,
                 "tone": tone,

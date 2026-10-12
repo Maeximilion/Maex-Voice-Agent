@@ -90,6 +90,7 @@ header.aus .top > .mode ~ .mode{opacity:.6}
 .cb .when{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
 .cb .time{font-size:24px;font-weight:600;line-height:1.1}
 .cb .phone{font-weight:500;letter-spacing:.02em}
+.cb .cb-note{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:6px}
 .cb .summary{margin:6px 0 0;color:var(--text)}
 /* Beschwerde: breiter roter Rand links statt duennem Rahmen - aus zwei Metern
    sichtbar, und das Wort "Beschwerde" steht trotzdem daneben. */
