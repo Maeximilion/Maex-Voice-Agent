@@ -61,6 +61,8 @@ SAY_NOBODY_REACHABLE = (
 )
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
+# With the team already: handed over, or noted as a callback.
+ENDED_OR_NOTED = ENDED_STAGES | {"callback"}
 # Name under which a refused order of the model (`LLMTurn.cart`) goes back to
 # it and into `calls.tool_calls`. No tool: nothing is dispatched under it.
 CART = "cart"
@@ -81,6 +83,8 @@ _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden.
 # The two tools that answer for a table, and the card the team reads when the
 # answer is `team_callback` (#252).
 _TABLE_TOOLS = frozenset({"check_slot", "create_reservation"})
+# A result of one of these means the guest is ordering by now.
+_ORDER_TOOLS = frozenset({"search_menu", "get_item_details", "draft_order"})
 SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
@@ -304,6 +308,16 @@ class ConversationLoop:
                     handed = self._table_to_team(state, lead)
                     if handed is not None:
                         return handed
+            elif state.stage in ENDED_OR_NOTED or (
+                result.ok and turn.tool_call.name in _ORDER_TOOLS
+            ):
+                # A wish that waits for a number is not handed over behind
+                # this: the call is with the team already, or the guest has
+                # moved on to an order ("vergessen Sie den Tisch, ich nehme
+                # die 23 zum Abholen"), which a callback for the table would
+                # cut off (Codex PR #280). Only a result of the code counts,
+                # not that a model called the tool.
+                state.team_table = None
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)

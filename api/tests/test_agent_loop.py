@@ -25,6 +25,8 @@ from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import MAX_TOOL_HOPS, SAY_NOBODY_REACHABLE, ConversationLoop
 from api.agent.state import ConversationState, initial_state
 from api.models import Call, Callback, Reservation
+from api.tests.test_domain_draft_order import _call as call_with_menu
+from api.tests.test_domain_draft_order import _tenant as tenant_with_menu
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -1217,6 +1219,52 @@ def test_a_correction_next_to_the_number_is_taken_first(session, state):
     assert result.say == ["Für fünf Personen ist das frei. Auf welchen Namen?"]
     assert state.team_table is None
     assert session.scalars(select(Callback)).all() == []
+
+
+def test_an_order_takes_the_waiting_wish_for_the_team_back(session):
+    """ "Vergessen Sie den Tisch, ich nehme die 23 zum Abholen, meine Nummer
+    ist ...": the guest is ordering. A callback for the table would cut the
+    order off and end the call (Codex PR #280)."""
+    tenant = tenant_with_menu(session, "Mit Karte")
+    state = ConversationState(call_id=call_with_menu(session, tenant), tenant_id=tenant)
+    _, loop = _waiting_for_a_number(
+        session,
+        state,
+        [
+            LLMTurn(tool_call=ToolCall(name="search_menu", args={"query": "die 23"})),
+            LLMTurn(say="Die 23, gern. Auf welchen Namen?"),
+        ],
+    )
+
+    result = loop.run_turn(
+        state,
+        "Vergessen Sie den Tisch, ich nehme die 23 zum Abholen, "
+        "meine Nummer ist 0721 5551234.",
+    )
+
+    assert result.ended is False
+    assert result.say == ["Die 23, gern. Auf welchen Namen?"]
+    assert state.team_table is None
+    assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_search_that_finds_nothing_leaves_the_waiting_wish(session, state):
+    """Only a result of the code counts as an order. A model that searches the
+    menu for the phone number has found nothing, and the wish goes to the
+    team with the number."""
+    _, loop = _waiting_for_a_number(
+        session,
+        state,
+        [
+            LLMTurn(tool_call=ToolCall(name="search_menu", args={"query": "0721"})),
+            LLMTurn(say="Das habe ich nicht gefunden."),
+        ],
+    )
+
+    done = loop.run_turn(state, "Meine Nummer ist 0721 5551234.")
+
+    assert done.ended is True and state.stage == "callback"
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
 
 
 def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
