@@ -253,6 +253,15 @@ def test_confirm_without_any_draft_is_refused():
         ("Ja, stimmt, das so", False),
         ("Stimmt. Das passt.", True),
         ("Ja. Das stimmt so.", True),
+        # With another word in the first place the verb comes second: a
+        # statement, whatever follows the verb (Codex, PR #258).
+        ("Natürlich ist das richtig.", True),
+        ("Ja, natürlich passt das so.", True),
+        ("Genau so ist das richtig.", True),
+        ("Sicher stimmt das.", True),
+        # An assent or a thanks in front stands outside the clause.
+        ("Genau, ist das richtig", False),
+        ("Danke, passt das so", False),
         # No verb at all: "Alles richtig" asks as often as it answers, and the
         # text has no voice (Codex, PR #258). A yes only with a word that
         # cannot ask next to it.
@@ -301,7 +310,14 @@ BODY = READBACK.removesuffix(" Passt das so?")
         (f"Ich wiederhole: {READBACK}", True),
         # In front of the read-back: polite words, or a sentence that has ended.
         (f"Gerne, {READBACK}", True),
-        (f"Also noch einmal zur Kontrolle: {READBACK}", True),
+        (f"Gerne, zur Kontrolle: {READBACK}", True),
+        (f"Also {READBACK}", True),
+        # A lead-in is a whole phrase. One word of it in front of the draft
+        # changes what is said: "Noch ein Tisch ..." is another table (Codex,
+        # PR #258).
+        (f"Noch {READBACK}", False),
+        (f"Also noch {READBACK}", False),
+        (f"Ich wiederhole noch {READBACK}", False),
         # A sentence of its own in front may say anything about the draft, and
         # punctuation is no proof that it does not (Codex, PR #258).
         (f"Wir haben bis 22 Uhr geöffnet. {READBACK}", False),

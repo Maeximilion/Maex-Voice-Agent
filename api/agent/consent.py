@@ -33,6 +33,7 @@ free text through.
 """
 
 import re
+from itertools import pairwise
 
 _YES = frozenset(
     {
@@ -92,15 +93,26 @@ _HARMLESS = ("kein problem", "nicht schlecht")
 _WORD = re.compile(r"[a-zäöüß]+")
 # Verb first, subject second: a question, with or without its mark. Only the
 # verbs and subjects that are assent or filler words themselves, any other word
-# makes the sentence no yes anyway. Not when a subject already stood before the
-# verb: "Das ist es" and "Es ist alles richtig" are statements.
+# makes the sentence no yes anyway.
 #
 # "alles" counts as the subject of a question after "ist" only ("Ist alles
 # richtig"). "Passt alles" and "Stimmt alles" are how guests say yes, with the
 # "es" in front left out: "Ja, passt alles." closes a real order in the eval
 # targets (abholung_0064).
-_ASKS = re.compile(
-    r"(?<!das )(?<!es )\b(?:(?:ist|stimmt|passt)\s+(?:das|es)|ist\s+alles)\b"
+_VERB_SUBJECT = frozenset(
+    {
+        (verb, subject)
+        for verb in ("ist", "stimmt", "passt")
+        for subject in ("das", "es")
+    }
+    | {("ist", "alles")}
+)
+# Words that stand outside the clause that follows them: an assent or a thanks
+# said first ("Ja, ist das richtig"). Any other word in front of the verb fills
+# the first place of a statement: "Das ist es", "Es ist alles richtig",
+# "Natürlich ist das richtig", "Genau so ist das richtig".
+_OUTSIDE_THE_CLAUSE = frozenset(
+    {"danke", "dankeschön", "dankeschoen", "vielen", "dank", "bitte"}
 )
 # A word as it is spoken, digits included: what a read-back is compared by.
 _SPOKEN = re.compile(r"\w+")
@@ -113,12 +125,17 @@ _PLAIN_YES = frozenset(
 )
 # Where one sentence ends and the next begins, as far as the text shows it.
 _SENTENCE_END = re.compile(r"[.!;]")
-# Words a model may put in front of a read-back that say nothing about it:
-# "Ich wiederhole", "Also noch einmal", "Zur Kontrolle". Hand-made and closed
-# like the lists above; no word in it can deny or change what follows.
-_LEAD_IN = frozenset(
-    {"ich", "wiederhole", "also", "noch", "nochmal", "einmal", "zur", "kontrolle"}
-    | {"sicherheit", "zusammengefasst", "zusammenfassung"}
+# What a model may put in front of a read-back without saying anything about
+# it. Whole phrases, hand-made and closed like the lists above: single words
+# of them are no lead-in, "Noch ein Tisch ..." is another table.
+_LEAD_INS = frozenset(
+    {
+        ("ich", "wiederhole"),
+        ("zur", "kontrolle"),
+        ("zur", "sicherheit"),
+        ("zusammengefasst",),
+        ("also",),
+    }
 )
 
 
@@ -130,7 +147,7 @@ def _asks(lowered: str) -> bool:
     sentences = [
         " ".join(_WORD.findall(sentence)) for sentence in _SENTENCE_END.split(lowered)
     ]
-    if any(_ASKS.search(sentence) for sentence in sentences):
+    if any(_verb_first(sentence.split()) for sentence in sentences):
         return True
     # "Alles richtig" has no verb to go by: it is the short form of the question
     # "Ist alles richtig?" as much as of the answer, and text has no voice that
@@ -139,6 +156,26 @@ def _asks(lowered: str) -> bool:
     return not words & _PLAIN_YES and any(
         _ELLIPTIC.search(sentence) for sentence in sentences
     )
+
+
+def _verb_first(words: list[str]) -> bool:
+    """Does the verb open its clause, with the subject right behind it? Only
+    then it is the order of a question. With anything else in the first place
+    the verb comes second, as in every German statement."""
+    return any(
+        pair in _VERB_SUBJECT
+        and all(word in _YES or word in _OUTSIDE_THE_CLAUSE for word in words[:at])
+        for at, pair in enumerate(pairwise(words))
+    )
+
+
+def _neutral_start(words: list[str]) -> bool:
+    """What may stand in front of a read-back: nothing, polite words, and after
+    them at most one whole lead-in phrase."""
+    at = 0
+    while at < len(words) and _polite([words[at]]):
+        at += 1
+    return at == len(words) or tuple(words[at:]) in _LEAD_INS
 
 
 def _polite(words: list[str]) -> bool:
@@ -193,7 +230,7 @@ def read_out(say: str, readback: str) -> bool:
       about the high chair. A read-back that is a question as a whole needs
       no second one.
     - In front of them nothing, or words that say nothing about the draft:
-      polite ones ("Gerne, ...") and the lead-ins of `_LEAD_IN` ("Ich
+      polite ones ("Gerne, ...") and one whole phrase of `_LEAD_INS` ("Ich
       wiederhole: ..."). Any other word may change what follows ("Einmal
       statt zweimal ...", "Das ist falsch: ..."), and punctuation is no proof
       that it does not.
@@ -211,6 +248,6 @@ def read_out(say: str, readback: str) -> bool:
         after = said[at + size :]
         if not (_asks_to_confirm(after) or (asks_itself and not after)):
             continue
-        if all(word in _LEAD_IN or _polite([word]) for word in said[:at]):
+        if _neutral_start(said[:at]):
             return True
     return False
