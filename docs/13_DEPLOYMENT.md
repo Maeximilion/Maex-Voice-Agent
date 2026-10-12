@@ -181,6 +181,7 @@ A job renamed in `ci.yml` has to be renamed there too, otherwise the old name ne
 | | dev | prod |
 |---|---|---|
 | `ENV` | `dev` | `prod` |
+| `AGENT_API_TOKEN` | the placeholder of `.env.example` is enough | a long random value (`openssl rand -hex 32`). With a missing, blank or placeholder token the settings do not load: the API stops at start with an error that names the variable, and so does every other process that runs with that `ENV` (dispatcher, scripts). That holds for every `ENV` other than `dev` and `test`, so a typo in `ENV` does not open the API (`api/config.py`, audit 12.10.2026) |
 | Sim-Konsole in der GUI | an | aus |
 | `--reload` | an | aus |
 | Test-Mandant | ja | ja, für Rauchtests nach Deploy |

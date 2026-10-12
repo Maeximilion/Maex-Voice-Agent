@@ -1,7 +1,23 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# The value `.env.example` ships, readable by everybody: no secret.
+PLACEHOLDER_TOKEN = "change_me_long_random"
+# Where the placeholder may open the agent API: a workbench and CI. Any other
+# `ENV` counts as production, a typo ("production", "Prod") included, so a
+# server never runs on the placeholder because of one.
+WORKBENCH_ENVS = frozenset({"dev", "test"})
+
+
+def token_usable(token: str, env: str) -> bool:
+    """May this agent token open anything? A blank one never, the placeholder
+    only on a workbench. One rule for the settings, which refuse to load with
+    another one outside a workbench, and for `core/auth.py`, which does not
+    rely on that."""
+    token = token.strip()
+    return bool(token) and (token != PLACEHOLDER_TOKEN or env in WORKBENCH_ENVS)
 
 
 class Settings(BaseSettings):
@@ -11,7 +27,24 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: str = "postgresql+psycopg://maex:change_me@db:5432/maex_agent"
-    agent_api_token: str = "change_me_long_random"
+    # Checked also when it is not set: the default is the placeholder.
+    agent_api_token: str = Field(default=PLACEHOLDER_TOKEN, validate_default=True)
+
+    @field_validator("agent_api_token")
+    @classmethod
+    def _no_open_door_outside_a_workbench(cls, token: str, info: ValidationInfo) -> str:
+        """A server with a token anybody can know does not start. On the field
+        and not on the model: the error then shows this value only, never the
+        other settings, which hold passwords."""
+        env = info.data.get("env", "")
+        if env not in WORKBENCH_ENVS and not token_usable(token, env):
+            raise ValueError(
+                "AGENT_API_TOKEN is missing, blank or still the placeholder of "
+                f".env.example, and ENV is '{env}': set a long random value "
+                "(`openssl rand -hex 32`). Only ENV=dev and ENV=test run on "
+                "the placeholder"
+            )
+        return token
 
     tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"

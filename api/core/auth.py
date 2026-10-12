@@ -4,12 +4,20 @@ import hmac
 
 from fastapi import Header
 
-from api.config import settings
+from api.config import settings, token_usable
 from api.core.errors import Unauthorized
 
 
 def require_token(authorization: str = Header(default="")) -> None:
-    if authorization != f"Bearer {settings.agent_api_token}":
+    """A token that is blank, or outside a workbench still the placeholder of
+    `.env.example`, opens nothing: `Bearer ` would match an empty one, and the
+    placeholder is public. The settings refuse to load with such a token on a
+    server (`api/config.py`); the check is repeated here so the door does not
+    depend on how the settings were built (audit 12.10.2026)."""
+    token = settings.agent_api_token
+    if not token_usable(token, settings.env) or not hmac.compare_digest(
+        authorization.encode(), f"Bearer {token}".encode()
+    ):
         raise Unauthorized("unauthorized")
 
 
