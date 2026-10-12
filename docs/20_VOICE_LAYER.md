@@ -357,6 +357,9 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **From T-10.3, what the synthetic callers cannot say:** the measurement ranks the engines, it
   does not predict real callers. The same sentences spoken by people over a real line are T-10.7;
   the thresholds of §6 are confirmed or changed with those numbers.
+- **From T-10.3, the model files are not pinned:** the packages in the image are, the weights the
+  kit downloads are whatever the model repositories hold that day. A later run can measure other
+  weights than the two runs in §11; pin them when a number has to be reproduced exactly.
 - **From T-10.3, licences:** the Piper package (`piper-tts` 1.8) is GPL-3.0-or-later, the voice
   `thorsten` is from a CC0 data set; Parakeet v3 is CC-BY-4.0, its ONNX runtime wrapper MIT; Whisper
   and its wrapper are MIT. All run as separate programs on our own machine in the test phase. What

@@ -43,6 +43,14 @@ def test_dish_verdict(name, heard, verdict):
     assert dish_verdict(name, heard) == verdict
 
 
+def test_a_result_that_names_two_dishes_of_the_menu_is_a_question_not_a_wrong_dish():
+    # The eval menu has S1 and SM1: the search asks which one.
+    assert number_verdict("23", "Sushi eins") == ("asked", "s1|sm1")
+    assert dish("s1|sm1") is None
+    # Neither S2 nor SM2 exists: taken by its form, the cautious count.
+    assert number_verdict("23", "Sushi zwei") == ("wrong", "s2|sm2")
+
+
 def test_one_dish_reached_by_two_results_is_right():
     # "Sushi zwoelf" can be S12 or SM12, and the eval menu has only S12.
     assert number_verdict("s12|sm12", "S12") == ("right", "s12")

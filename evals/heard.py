@@ -50,12 +50,18 @@ def eval_dishes(path: Path = MENU_ITEMS) -> frozenset[str]:
 DISHES = eval_dishes()
 
 
-def dish(result: str) -> str | None:
-    """The one dish of the eval menu a result of the number rule leads to."""
+def dishes(result: str) -> frozenset[str]:
+    """The dishes of the eval menu a result of the number rule names."""
     if result in ("?", "name") or result.startswith("!"):
-        return None
-    found = {canonical_card(card) for card in result.split("|")} & DISHES
-    return found.pop() if len(found) == 1 else None
+        return frozenset()
+    return frozenset(canonical_card(card) for card in result.split("|")) & DISHES
+
+
+def dish(result: str) -> str | None:
+    """The one dish of the eval menu a result leads to; with several the search
+    asks which one, with none it says the number does not exist."""
+    found = dishes(result)
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def number_verdict(expect: str, heard: str) -> tuple[str, str]:
@@ -65,7 +71,8 @@ def number_verdict(expect: str, heard: str) -> tuple[str, str]:
     if got == expect or (dish(got) is not None and dish(got) == dish(expect)):
         return "right", got
     taken = got not in ("?", "name") and not got.startswith("!")
-    return ("wrong" if taken else "asked"), got
+    # "Sushi eins" where the menu has S1 and SM1: the search asks which one.
+    return ("wrong" if taken and len(dishes(got)) < 2 else "asked"), got
 
 
 def dish_verdict(name: str, heard: str) -> str:

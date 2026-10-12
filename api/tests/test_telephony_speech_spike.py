@@ -5,6 +5,8 @@ judged rows. Both are built here.
 """
 
 import csv
+import json
+from pathlib import Path
 
 import pytest
 
@@ -238,6 +240,97 @@ def test_turn_end_shares_per_silence():
             "no_speech_share": 0.25,
         }
     ]
+
+
+def fake_containers(monkeypatch, verdicts: str):
+    """`main` with the containers replaced: the bench writes what an ear heard,
+    the judge is the real one."""
+    from evals import heard as judge_module
+
+    def docker(command, dry_run, cwd=None):
+        run_dir = next(
+            (Path(arg.split(":")[0]) for arg in command if arg.endswith(":/work")), None
+        )
+        if "measure" in command:
+            plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+            said = [s for s in plan["sentences"] if s["kind"] == "number"]
+            texts = {"r": "Nummer 23", "w": "Nummer 24"}
+            result = {
+                "ears": {"parakeet-v3-cpu": {"load_seconds": 1.0}},
+                "heard": [
+                    {
+                        "id": sentence["id"],
+                        "voice": plan["voices"][0],
+                        "ear": "parakeet-v3-cpu",
+                        "text": texts[letter],
+                        "seconds": 0.2,
+                    }
+                    for sentence, letter in zip(said, verdicts, strict=True)
+                ],
+                "mouths": [
+                    {
+                        "voice": v,
+                        "first_audio_seconds": 0.1,
+                        "seconds": 0.5,
+                        "audio_seconds": 5.0,
+                    }
+                    for v in plan["voices"]
+                ],
+                "turn_end": [],
+            }
+            (run_dir / "heard.json").write_text(json.dumps(result), encoding="utf-8")
+        if "evals.heard" in command:
+            assert judge_module.main([str(run_dir)]) == 0
+
+    monkeypatch.setattr(kit, "docker", docker)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    monkeypatch.setattr(kit, "gpu_in_docker", lambda: False)
+
+
+def test_a_run_writes_its_report_and_exits_with_the_pick(tmp_path, monkeypatch, capsys):
+    # The first sentence of the number eval is "Nummer 23".
+    fake_containers(monkeypatch, "r")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 0
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["go"] is True and report["ear"] == "parakeet-v3-cpu"
+    assert (tmp_path / kit.RUN_MARKER).exists()
+    out = capsys.readouterr().out
+    assert "ear   parakeet-v3-cpu" in out and "TRIAL: 2 of" in out
+
+
+def test_a_run_without_an_ear_within_the_limit_exits_1_with_its_report(
+    tmp_path, monkeypatch, capsys
+):
+    fake_containers(monkeypatch, "w")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 1
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["go"] is False and report["ear"] == "parakeet-v3-cpu"
+    assert "another dish" in capsys.readouterr().out
+
+
+def test_a_step_that_breaks_ends_the_run_and_leaves_no_old_report(
+    tmp_path, monkeypatch, capsys
+):
+    (tmp_path / kit.RUN_MARKER).touch()
+    (tmp_path / "report.json").write_text("old")
+
+    def broken(command, dry_run, cwd=None):
+        raise kit.SpikeError("`docker build` failed")
+
+    monkeypatch.setattr(kit, "docker", broken)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    assert kit.main(["--run-dir", str(tmp_path)]) == 1
+    assert not (tmp_path / "report.json").exists()
+    assert "docker build" in capsys.readouterr().err
+
+
+def test_the_run_directory_of_the_other_kit_is_refused(tmp_path, capsys):
+    from api.telephony import spike
+
+    (tmp_path / spike.RUN_MARKER).touch()
+    (tmp_path / "report.json").write_text("28 of 28")
+    assert kit.main(["--run-dir", str(tmp_path)]) == 2
+    assert (tmp_path / "report.json").read_text() == "28 of 28"
 
 
 def test_a_dry_run_prints_every_step_and_writes_nothing(tmp_path, monkeypatch, capsys):

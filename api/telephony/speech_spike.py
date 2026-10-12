@@ -23,8 +23,8 @@ closest, and writes
 human ear.
 
 Needs Docker and Python 3.12, nothing else on the host; no sudo and not root.
-A graphics card is used when `nvidia-smi` is on the PATH; without one the ears
-that need it are listed as failed and the others are measured. Invented
+A graphics card is used when Docker hands one to a container; without one the
+ears that need it are listed as failed and the others are measured. Invented
 sentences only.
 
 Which engines are tried is the table below, not a setting: this is a spike.
@@ -47,13 +47,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from api.telephony.spike import (
-    RUN_MARKER,
-    SpikeError,
-    docker_problem,
-    step,
-    usable_run_dir,
-)
+from api.telephony.spike import SpikeError, docker_problem, step, usable_run_dir
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SPEECH_DIR = REPO_ROOT / "deploy" / "speech"
@@ -62,6 +56,8 @@ MENU = REPO_ROOT / "evals" / "menu" / "menu_items.csv"
 IMAGE = "maex-speech-spike"
 RUN_MOUNT = "/work"
 RESULTS = ("plan.json", "heard.json", "judged.json", "report.json")
+# Its own marker: the run directory of the T-10.1 kit is not one of this kit's.
+RUN_MARKER = ".speech-spike-run"
 
 # The candidates. A second line for the same model is the same ear with the
 # key terms of the menu handed to it. An ear with `sample` hears only about
@@ -154,7 +150,7 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if not usable_run_dir(run_dir):
+    if not usable_run_dir(run_dir, RUN_MARKER):
         print(
             f"speech_spike: {run_dir} is not a run directory of this kit (it holds "
             f"files and no {RUN_MARKER}). The kit clears its results there: name an "
@@ -168,7 +164,6 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     plan = build_plan(args.limit)
-    gpu = shutil.which("nvidia-smi") is not None
     dry = args.dry_run
     try:
         step("Write the plan into", run_dir)
@@ -180,8 +175,9 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
             )
         step("Build the image with the speech engines")
-        build = ["docker", "build", "-q", "-t", IMAGE]
+        build = ["docker", "build", "-t", IMAGE]
         docker([*build, "-f", "Dockerfile", "../../api"], dry, cwd=SPEECH_DIR)
+        gpu = not dry and gpu_in_docker()
         step("Download the model files (network; only what is missing)")
         bench = "api.telephony.speech_bench"
         docker(in_image(run_dir, bench, "fetch", network=True), dry)
@@ -244,6 +240,14 @@ def build_plan(limit: int | None) -> dict[str, Any]:
         "agent": list(AGENT_SENTENCES),
         "silences_ms": list(SILENCES_MS),
     }
+
+
+def gpu_in_docker() -> bool:
+    """Whether a container of the image gets the graphics card. Asked of Docker,
+    not of the host: a driver on the host is no GPU in a container, and
+    `--gpus` on a Docker without one fails the whole step."""
+    probe = ["docker", "run", "--rm", "--gpus", "all", IMAGE, "nvidia-smi"]
+    return subprocess.run(probe, capture_output=True, check=False).returncode == 0
 
 
 def clear_results(run_dir: Path) -> None:

@@ -237,14 +237,14 @@ class Stack:
         return self.compose("exec", "-T", "softphone", "asterisk", "-rx", cli_command)
 
 
-def usable_run_dir(run_dir: Path) -> bool:
+def usable_run_dir(run_dir: Path, marker: str = RUN_MARKER) -> bool:
     """A folder the kit may clear: one it made before, an empty one, or none yet.
     Anything else (the home directory, the config folder) is somebody's data."""
     if not run_dir.exists():
         return True
     if not run_dir.is_dir():
         return False
-    return (run_dir / RUN_MARKER).exists() or not any(run_dir.iterdir())
+    return (run_dir / marker).exists() or not any(run_dir.iterdir())
 
 
 def clear_results(run_dir: Path) -> None:
