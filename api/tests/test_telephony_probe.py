@@ -5,6 +5,7 @@ what the probe sends back and what it writes into its log.
 """
 
 import json
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -55,8 +56,15 @@ def read_tone(ws) -> bytes:
 
 
 def log_of(out) -> list[dict]:
+    """The call's log once the probe finished it. The probe writes the closing
+    record in a thread after the socket is gone, so the test waits for it."""
     (path,) = out.glob("*.jsonl")
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    for _ in range(200):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if lines and '"closed": true' in lines[-1]:
+            return [json.loads(line) for line in lines]
+        time.sleep(0.05)
+    raise AssertionError("the probe never finished its log")
 
 
 def test_a_call_gets_its_tone_in_whole_frames_and_a_drain_request(out):

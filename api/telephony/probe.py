@@ -14,6 +14,7 @@ The log directory is `PROBE_OUT` (default `/out`).
 """
 
 import asyncio
+import functools
 import json
 import os
 import time
@@ -60,6 +61,19 @@ STOP_KEY = "5"
 
 # Enough for every plan; a longer call is still counted, only not analysed further.
 _KEEP_SECONDS = 60
+# What the media channel is dialed with; other rates are made when they turn up.
+_DIALED_RATE = 16000
+
+
+@functools.cache
+def _plan_audio(tone_hz: int, seconds: float, rate: int) -> bytes:
+    return tone(tone_hz, seconds, rate)
+
+
+def _make_tones() -> None:
+    """Every plan's tone, once per process. Later calls take them from the cache."""
+    for plan in PLANS.values():
+        _plan_audio(plan.tone_hz, plan.seconds, _DIALED_RATE)
 
 
 class ProbeCall:
@@ -163,7 +177,7 @@ class ProbeCall:
             return []
         # Whole frames only: Asterisk drops what does not fill one, and one message
         # above the limit ends the call.
-        audio = tone(self.plan.tone_hz, self.plan.seconds, self._rate)
+        audio = _plan_audio(self.plan.tone_hz, self.plan.seconds, self._rate)
         chunk = MAX_MESSAGE_BYTES // frame * frame
         messages: list[str | bytes] = [
             audio[start : start + chunk] for start in range(0, len(audio), chunk)
@@ -198,6 +212,9 @@ async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
     if scope["path"] != "/media":
         await send({"type": "websocket.close", "code": 1008})
         return
+    # Before the call exists, in a thread: making a tone on the event loop would
+    # hold up the frames of the calls that are live. Only the first call waits.
+    await asyncio.to_thread(_make_tones)
     offered = scope.get("subprotocols") or []
     await send(
         {
@@ -217,8 +234,7 @@ async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
             if message["type"] != "websocket.receive":
                 break
             if message.get("text") is not None:
-                # In a thread: making a tone would hold up other calls' frames.
-                frames = await asyncio.to_thread(call.on_text, message["text"])
+                frames = call.on_text(message["text"])
             else:
                 frames = call.on_audio(message.get("bytes") or b"")
             for frame in frames:
@@ -226,4 +242,8 @@ async def app(scope: dict[str, Any], receive: Any, send: Any) -> None:
                 await send({"type": "websocket.send", key: frame})
     finally:
         # In a thread: the analysis would stall the frames of every other call.
-        await asyncio.to_thread(call.close)
+        # Shielded: when this task is cancelled (the server shuts down, a test
+        # client leaves), a plain wait would cancel the job while it is still
+        # queued, and the log would never get its closing record.
+        closing = asyncio.get_running_loop().run_in_executor(None, call.close)
+        await asyncio.shield(closing)
