@@ -59,6 +59,14 @@ class ServiceConfig(Timestamps, Base):
             "reservation_max_party_size_same_day >= 0",
             name="ck_service_config_reservation_max_party_size_same_day",
         ),
+        CheckConstraint(
+            "order_approval_above_cents >= 0",
+            name="ck_service_config_order_approval_above_cents",
+        ),
+        CheckConstraint(
+            "turn_deadline_seconds >= 1",
+            name="ck_service_config_turn_deadline_seconds",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -99,6 +107,16 @@ class ServiceConfig(Timestamps, Base):
     )
     reservation_max_party_size_same_day: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="5"
+    )
+    # The two other limits of #252, in the same migration and read by nothing
+    # yet: an order above this amount waits for the team's approval before a
+    # slip prints, and a guest waits this long in silence for the model before
+    # the call goes to the team. Each gets its pull request.
+    order_approval_above_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="15000"
+    )
+    turn_deadline_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="10"
     )
 
 
