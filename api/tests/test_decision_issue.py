@@ -33,7 +33,7 @@ def test_erster_befund_legt_issue_mit_erwaehnung_an() -> None:
     ergebnis = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
     assert ergebnis.action == "create"
     assert ergebnis.body.startswith(WER)
-    assert "[#82 bump python](https://github.com/o/r/pull/82)" in ergebnis.body
+    assert "[#82 `bump python`](https://github.com/o/r/pull/82)" in ergebnis.body
 
 
 def test_gleicher_befund_am_naechsten_tag_erwaehnt_nicht_erneut() -> None:
@@ -221,3 +221,29 @@ def test_label_stimmt_mit_der_ausnahme_in_der_projektpflege_ueberein() -> None:
     sys.modules["project_report_label"] = modul
     spec.loader.exec_module(modul)
     assert modul.MAINTENANCE_LABEL == decision_issue.LABEL
+
+
+@pytest.mark.parametrize(
+    ("title", "rendered"),
+    [
+        # A mention in the name of the action.
+        ("#7 @someone look here", "#7 `@someone look here`"),
+        # A link of the author's own, closing ours early.
+        ("#7 x](https://evil.example) [y", "#7 `x](https://evil.example) [y`"),
+        # A backtick would end the code span.
+        ("#7 a` @someone `b", "#7 `a' @someone 'b`"),
+        # A draft has no number in front.
+        ("(Entwurf) @someone", "`(Entwurf) @someone`"),
+    ],
+)
+def test_a_title_cannot_mention_or_link_in_the_issue(title: str, rendered: str) -> None:
+    """Anyone can open an issue in a public repository; its title lands in an issue
+    the action writes and in a comment that mentions the owner."""
+    entry = {"label": title, "url": "https://github.com/o/r/issues/7"}
+    result = decision_issue.plan(None, {OHNE_MERGE: [entry]}, WER)
+    assert f"[{rendered}](https://github.com/o/r/issues/7)" in result.body
+
+    later = decision_issue.plan(result.body, {OHNE_MERGE: [entry, PR_90]}, WER)
+    reopened = decision_issue.plan(result.body, {OHNE_MERGE: [entry]}, WER, "closed")
+    assert "@someone" not in later.comment.replace(WER, "")
+    assert rendered in reopened.comment

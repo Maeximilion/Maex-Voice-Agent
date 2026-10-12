@@ -37,6 +37,23 @@ INTRO = "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheide
 KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->")
 
 
+# "#12 " in front of a title; the number stays outside the code span so GitHub
+# still links it.
+NUMBERED = re.compile(r"(#\d+ )(.*)", re.DOTALL)
+
+
+def inert(label: str) -> str:
+    """The title as a code span.
+
+    A title is text from anyone who can open an issue in a public repository.
+    Written as it is, it could mention any user in the name of the action or
+    place its own link in the issue; inside a code span GitHub renders neither.
+    """
+    match = NUMBERED.fullmatch(label)
+    number, title = match.groups() if match else ("", label)
+    return f"{number}`{title.replace('`', "'")}`"
+
+
 class IssueError(RuntimeError):
     """Das Issue liess sich nicht lesen oder schreiben."""
 
@@ -66,7 +83,7 @@ def finding_keys(findings: dict[str, list[dict]]) -> dict[str, str]:
                 f"{heading}|{entry.get('id') or entry.get('url') or entry['label']}"
             )
             key = hashlib.sha1(identity.encode()).hexdigest()[:12]
-            keys[key] = f"{heading}: {entry['label']}"
+            keys[key] = f"{heading}: {inert(entry['label'])}"
     return keys
 
 
@@ -81,11 +98,8 @@ def render_body(findings: dict[str, list[dict]], intro: str) -> str:
         lines.append(f"### {heading} ({len(entries)})")
         lines.append("")
         for entry in entries:
-            link = (
-                f"[{entry['label']}]({entry['url']})"
-                if entry.get("url")
-                else entry["label"]
-            )
+            label = inert(entry["label"])
+            link = f"[{label}]({entry['url']})" if entry.get("url") else label
             lines.append(f"- [ ] {link}")
         lines.append("")
     lines.append(
