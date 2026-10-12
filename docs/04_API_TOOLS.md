@@ -20,6 +20,8 @@
 { "ok": false, "error": { "code": "not_found", "message": "…" }, "say": "…" }
 ```
 
+The envelope also carries what the framework answers itself (#252): an unknown path is `not_found` with status 404, a wrong method `invalid_input` with 405. A `reserved_for` that no calendar holds (the first and last days of the year range, where adding a time zone or a day overflows) is `invalid_input` like any other malformed field, in the tools and in the conversation core.
+
 - `say` ist ein **Vorschlag**, kein Zwang. Es hält die Formulierung heikler Fälle (ausverkauft, außerhalb der Zone, Allergene) im Code statt im Modell.
 - **Fehlercodes:** `invalid_input` · `not_found` · `ambiguous` · `closed` · `out_of_zone` · `below_minimum` · `conflict` · `service_unavailable`
 - **Nie** ein Stacktrace, nie ein HTTP 500 ohne JSON-Körper. Der Agent muss jede Antwort vorlesen können.
@@ -135,7 +137,19 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    einer Zahl ohne Präfix. Nur ein Zahlwort davor ist die Menge („zwei S
    zwölf"). Buchstabiert („Es zwölf") zählt nur am Satzanfang, auch nach Wunsch
    oder Gruß („Ich hätte gern Es zwölf", „Hallo, Es zwölf"), nie nach einem Verb
-   („nehme ich es zwei" ist kein S2). Eine genannte, nicht vorhandene Nummer
+   („nehme ich es zwei" ist kein S2). A word the speech recognition writes for a
+   letter adds a candidate: every engine measured writes „S zwölf" as „ist zwölf"
+   (T-10.3), so „ist" directly before a number, set apart from it, keeps the S
+   number next to the plain one („12 oder s12"), after any lead („Ich nehme ist
+   zwölf"). Such a number is never taken without a question, whichever of the two
+   the menu has (Codex PR #257): with both the search asks by name („Meinen Sie
+   Nummer 12, Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with one it offers
+   that one („Meinen Sie Nummer S7, Gurken Maki?", `ambiguous` with one result),
+   because the dish that exists may not be the one that was said. With none it is
+   `not_found`. Next to another dish („Ist zwölf und Pho Bo") it is a position of
+   its own, like the S12 said clearly. Only where the menu has the prefix S, and only in a
+   pure number sentence: next to a name the sentence is what it was („das ist 5g
+   Zucker"). Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
    Marker oder gesprochenes Wort sind (`x`, `st`, `nr`, `no`, `hm`, `ja`, `es`,
    `so`, `um`, `zu`, `da`, `du`, `er`, `ob`), lehnt der Import mit eigener
@@ -417,6 +431,8 @@ Der einzige Übergang von `draft` nach `confirmed`.
 **Wirkung:** Status setzen, `audit_log` schreiben, Ereignis an n8n legen, GUI aktualisieren. Im Modus `overflow` wird `approved` erst durch das Team gesetzt; die Küche startet dann später.
 
 **Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `pickup_code` bleibt bei Reservierungen `null`.
+
+**Reservations, seats checked again (#250):** a draft holds its seats only while its call can confirm it: the call has not ended and the draft is younger than `service_config.max_call_seconds`. An older draft no longer counts in `check_slot`, so its seats may be given to someone else. `confirm` therefore checks the window again, under the same day lock as `create_reservation` and without the draft's own seats, and answers `conflict` with `say` "Dieser Tisch ist in der Zwischenzeit leider vergeben worden. Zu welcher anderen Uhrzeit passt es Ihnen?" when the party no longer fits. Seats only: opening hours and lead times were checked when the draft was made. Within a live call the check always passes, because the draft still holds what it asks for. In the conversation core a draft that `confirm` refuses with `conflict` leaves the state (`agent/state.py`): it can never be confirmed as it is, and a "Ja" to the next question must not try again. The intent stays; `invalid_input` and `not_found` keep the draft, and so does the core's own refusal for a missing yes.
 
 **Bestellungen** (`domain/ordering/confirm.py`, seit 23.09.2026):
 
