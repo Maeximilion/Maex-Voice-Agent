@@ -422,7 +422,7 @@ def test_clearing_results_keeps_the_model_files(tmp_path):
 
 OWN_MENU = (
     "number;name;category;price_eur;description;active\n"
-    "7;Glasnudelsalat (klein);Vorspeisen;5,50;;ja\n"
+    "7;Glasnudelsalat (4 Stück);Vorspeisen;5,50;;ja\n"
     "S7;Aal Nigiri;Sushi;4,90;;ja\n"
     "35b;Reisnudeln mit Rind;Hauptgerichte;12,90;;ja\n"
     "99;Altes Gericht;Hauptgerichte;9,00;;nein\n"
@@ -742,3 +742,55 @@ def test_the_kit_compares_card_numbers_as_the_search_does():
         "100",
     ]:
         assert kit.canonical(card) == canonical_card(card), card
+
+
+# --- Codex review of PR #268, fourth round ------------------------------------------
+
+
+def test_the_same_card_number_in_two_rows_is_refused_whatever_the_objects(tmp_path):
+    """Compared by value: two rows that both say "7" may be one string object."""
+    menu = own_menu(
+        tmp_path,
+        "number;name;category;active\n7;Suppe;Suppen;ja\n7;Salat;Vorspeisen;ja\n",
+    )
+    with pytest.raises(ValueError, match="twice"):
+        kit.build_plan(None, menu)
+
+
+@pytest.mark.parametrize(
+    "row", ["7;;Suppen;ja", ";Suppe;Suppen;ja", "7;Suppe; ;ja", "7;  ;Suppen;ja"]
+)
+def test_an_active_row_without_number_name_or_category_is_refused(tmp_path, row):
+    """As in the import. A dish without a name would be "heard" in every
+    transcript, the empty name is part of any text."""
+    menu = own_menu(
+        tmp_path, "number;name;category;active\n8;Salat;Vorspeisen;ja\n" + row + "\n"
+    )
+    with pytest.raises(ValueError, match="row 3"):
+        kit.build_plan(None, menu)
+    # An inactive row may be incomplete: it is not spoken.
+    ok = own_menu(
+        tmp_path, "number;name;category;active\n8;Salat;Vorspeisen;ja\n7;;Suppen;nein\n"
+    )
+    assert len(kit.build_plan(None, ok)["menu"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("name", "spoken"),
+    [
+        ("Gyoza (6 Stück)", "Gyoza"),
+        ("Lachs Nigiri (2 Stk.)", "Lachs Nigiri"),
+        ("Wan-Tan (6 St)", "Wan-Tan"),
+        # What says something about the dish is part of its name.
+        ("Nudeln (glutenfrei)", "Nudeln (glutenfrei)"),
+        ("Curry (vegan)", "Curry (vegan)"),
+        ("Suppe (Bandnudeln)", "Suppe (Bandnudeln)"),
+        ("Pho Bo", "Pho Bo"),
+    ],
+)
+def test_only_the_number_of_pieces_is_left_off_a_dish_name(tmp_path, name, spoken):
+    menu = own_menu(tmp_path, f"number;name;category;active\n7;{name};Suppen;ja\n")
+    plan = kit.build_plan(None, menu)
+    [dish] = [s for s in plan["sentences"] if s["kind"] == "dish"]
+    assert dish["expect"] == spoken and dish["say"] == f"Ich hätte gern {spoken}."
+    assert plan["key_terms"] == [spoken]

@@ -268,24 +268,30 @@ def build_plan(limit: int | None, menu: Path | None = None) -> dict[str, Any]:
         for raw in NUMBERS.read_text(encoding="utf-8").splitlines()
         if (line := raw.strip()) and not line.startswith("#")
     ]
+    dishes: list[dict[str, str]] = []
+    seen: dict[str, str] = {}
     with (menu or MENU).open(encoding="utf-8-sig", newline="") as f:
-        dishes = [
-            {key: row[key].strip() for key in ("number", "name", "category")}
-            for row in csv.DictReader(f, delimiter=";")
+        # Line 1 is the header. What the import refuses is refused here too, or
+        # the run would measure a menu that cannot be imported (Codex PR #268).
+        for at, row in enumerate(csv.DictReader(f, delimiter=";"), start=2):
             # As the import reads the flag (`importer._bool`): " NEIN " is no.
-            if (row.get("active") or "").strip().lower() != "nein"
-        ]
+            if (row.get("active") or "").strip().lower() == "nein":
+                continue
+            dish = {key: row[key].strip() for key in ("number", "name", "category")}
+            if not all(dish.values()):
+                # A dish without a name would be "heard" in every transcript.
+                raise ValueError(f"row {at}: number, name and category are required")
+            card = canonical(dish["number"])
+            if card in seen:
+                # "7" next to "07": spoken and counted twice, that position
+                # would weigh double in every share.
+                twin = seen[card]
+                raise ValueError(f"card number {dish['number']} twice (also {twin})")
+            seen[card] = dish["number"]
+            dishes.append(dish)
     if not dishes:
         raise ValueError("no active dish")
-    seen: dict[str, str] = {}
-    for dish in dishes:
-        # The import refuses "7" next to "07"; spoken and counted twice, that
-        # position would weigh double in every share (Codex PR #268).
-        twin = seen.setdefault(canonical(dish["number"]), dish["number"])
-        if twin is not dish["number"]:
-            raise ValueError(f"card number {dish['number']} twice (also {twin})")
-    # "Gyoza (6 Stück)": nobody says the bracket on the phone.
-    names = [dish["name"].split(" (")[0] for dish in dishes]
+    names = [spoken_name(dish["name"]) for dish in dishes]
     sentences = [
         {
             "id": f"n{i}",
@@ -343,6 +349,18 @@ def terms_that_fit(tokens: Any, terms: list[str], limit: int) -> list[str]:
             break
         kept.append(term)
     return kept
+
+
+_PIECES = re.compile(
+    r"\s*\(\s*\d+\s*(?:stück|stueck|stk\.?|st\.?)\s*\)\s*$", re.IGNORECASE
+)
+
+
+def spoken_name(name: str) -> str:
+    """A dish name as a guest says it: without the number of pieces at its end
+    ("Gyoza (6 Stück)"). Any other bracket says something about the dish
+    ("Nudeln (glutenfrei)") and stays (Codex PR #268)."""
+    return _PIECES.sub("", name)
 
 
 _LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
