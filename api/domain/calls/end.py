@@ -7,6 +7,7 @@ Anruf (Plattform-Retry) liest nur das bereits geschriebene Ergebnis, statt es zu
 """
 
 from datetime import datetime
+from typing import cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,7 +15,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.models import Call
-from api.schemas.calls import CallEnded, EndCallRequest
+from api.schemas.calls import CallEnded, EndCallRequest, Outcome
 
 
 def end_call(
@@ -35,7 +36,9 @@ def end_call(
         return CallEnded(
             call_id=call.id,
             duration_seconds=call.duration_seconds or 0,
-            outcome=call.outcome,
+            # Only this function sets ended_at, together with the outcome of
+            # the request, so an ended call has one. CallEnded still checks it.
+            outcome=cast(Outcome, call.outcome),
         )
 
     call.ended_at = now

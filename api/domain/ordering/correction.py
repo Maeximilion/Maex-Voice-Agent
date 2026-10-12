@@ -337,7 +337,8 @@ def _reasons(order: Order) -> dict[str, str]:
 
 def _already_saved(session: Session, order: Order, edit_id: str) -> bool:
     return (
-        session.scalar(
+        # scalar_one: a count without GROUP BY is always exactly one row.
+        session.execute(
             select(func.count(AuditLog.id)).where(
                 AuditLog.tenant_id == order.tenant_id,
                 AuditLog.entity == "order",
@@ -345,7 +346,7 @@ def _already_saved(session: Session, order: Order, edit_id: str) -> bool:
                 AuditLog.action == ACTION_CORRECTED,
                 AuditLog.payload["edit_id"].astext == edit_id,
             )
-        )
+        ).scalar_one()
         > 0
     )
 

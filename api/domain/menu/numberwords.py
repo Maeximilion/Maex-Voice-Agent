@@ -781,7 +781,7 @@ def _oversized_after_prefix(
 
 
 def _glued_card(
-    tokens: list[str], j: int, glued: set[int], card: CardFormat
+    tokens: list[str], j: int, glued: set[int] | frozenset[int], card: CardFormat
 ) -> tuple[int, int, _Span | None, ItemNumber | None]:
     """After "Nummer", a card number written in one piece: prefix, digits and
     suffix without a gap ("S12", "S12a", "Z12h", "ZZ1000zz", "JA12").

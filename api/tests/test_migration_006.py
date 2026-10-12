@@ -26,7 +26,9 @@ CAPACITY = (
 def _checks(url: str, table: str) -> set[str]:
     engine = create_engine(url)
     try:
-        return {c["name"] for c in inspect(engine).get_check_constraints(table)}
+        constraints = inspect(engine).get_check_constraints(table)
+        # A constraint without a name is none of the ones looked for here.
+        return {name for c in constraints if (name := c["name"]) is not None}
     finally:
         engine.dispose()
 

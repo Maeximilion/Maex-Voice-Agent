@@ -7,11 +7,12 @@ import threading
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import Engine, create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -31,7 +32,7 @@ from printbridge.transport import (
     from_spec,
 )
 
-TICKET = {
+TICKET: dict[str, Any] = {
     "order_id": "11111111-1111-1111-1111-111111111111",
     "type": "pickup",
     "pickup_code": "A17",
@@ -322,7 +323,7 @@ class Setup:
     server: Server
     opener: object
     tenant_id: str
-    engine: object
+    engine: Engine
     order_id: uuid.UUID
 
     def handover(self) -> str | None:
@@ -588,10 +589,11 @@ class _Recorder(http.server.BaseHTTPRequestHandler):
 
 
 def _serve(location: str | None):
-    handler = type("Handler", (_Recorder,), {"seen": [], "location": location})
+    seen: list[str] = []
+    handler = type("Handler", (_Recorder,), {"seen": seen, "location": location})
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    return server, handler.seen
+    return server, seen
 
 
 def test_a_redirect_does_not_carry_the_token_elsewhere():
