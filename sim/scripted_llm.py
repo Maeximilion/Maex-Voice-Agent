@@ -166,7 +166,7 @@ class ScriptedLLM:
 
         if self._pickup is not None and self._pickup.readback_for:
             yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
-            return self._pickup.on_readback(yes)
+            return self._pickup.on_readback(yes, text)
         if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
 
