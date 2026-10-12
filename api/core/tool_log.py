@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from http import HTTPStatus
 
 from fastapi import Request, Response
 from sqlalchemy import text
@@ -49,9 +50,15 @@ async def tool_call_log_middleware(
     ids = await _ids_from_body(request) if authorized else None
     started = time.perf_counter()
     response = await call_next(request)
-    # No endpoint in the scope means no route matched (404, 405): the name in the
-    # entry would be whatever text the path carried.
-    if ids is None or "endpoint" not in request.scope:
+    # Only a tool that ran is logged. No endpoint in the scope: no route matched
+    # (404), and the name in the entry would be whatever text the path carried.
+    # 405: the path matched and the method did not, so the scope has an endpoint
+    # although nothing was called (Codex, PR #253).
+    if (
+        ids is None
+        or "endpoint" not in request.scope
+        or response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
+    ):
         return response
     call_id, tenant_id = ids
 

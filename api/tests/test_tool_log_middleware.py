@@ -210,6 +210,24 @@ def test_a_tool_that_does_not_exist_is_not_logged(client):
         assert s.get(Call, uuid.UUID(call_id)).tool_calls == []
 
 
+def test_a_call_with_the_wrong_method_is_not_logged(client):
+    """GET on a tool path: the path matches a route, so the scope carries an
+    endpoint, and the answer is 405 without the tool ever running. The log must
+    not show a call that did not happen (Codex, PR #253)."""
+    http, tenant_id, call_id, engine = client
+
+    r = http.request(
+        "GET",
+        "/v1/tools/get_service_status",
+        json={"call_id": call_id, "tenant_id": tenant_id},
+        headers=AUTH,
+    )
+
+    assert r.status_code == 405
+    with Session(engine) as s:
+        assert s.get(Call, uuid.UUID(call_id)).tool_calls == []
+
+
 def test_a_nested_body_is_an_unreadable_body(client):
     """With the token: a body too deep for the parser gets the answer of the
     endpoint, not an unhandled error from the log."""
