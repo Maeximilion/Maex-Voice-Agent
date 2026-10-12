@@ -324,3 +324,31 @@ def test_schluessel_gleich_bei_anderer_schreibweise(session, tenant_id, call_id)
         now=NOW,
     )
     assert second.data["reservation_id"] == first.data["reservation_id"]
+
+
+OFF_THE_CALENDAR = [
+    "0001-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:00-12:00",
+    # In range itself, but the window of the next day is not.
+    "9999-12-31T12:00:00+00:00",
+]
+
+
+@pytest.mark.parametrize("tool", ["check_slot", "create_reservation"])
+@pytest.mark.parametrize("when", OFF_THE_CALENDAR)
+def test_a_date_no_calendar_holds_is_invalid_input(
+    session, tenant_id, call_id, tool, when
+):
+    """A model that returns the year 9999 (invented, or the guest said so) must
+    get a failed call it can act on. The date arithmetic of the slot check
+    overflowed on it, the error was none the core knows, and the call ended as
+    an outage with the team (#252)."""
+    args = {"reserved_for": when, "party_size": 2}
+    if tool == "create_reservation":
+        args |= {"guest_name": "Müller", "phone": "+4972215551234"}
+
+    result = dispatch(session, call_id, tenant_id, tool, args, now=NOW)
+
+    assert result.ok is False
+    assert result.error_code == "invalid_input"
+    assert "reserved_for" in result.hint
