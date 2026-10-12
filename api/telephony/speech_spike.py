@@ -1,12 +1,25 @@
 """Kit of the spike T-10.3: pick the open ear and mouth of the test phase.
 
     python3 -m scripts.speech_spike [--dry-run] [--limit N] [--run-dir DIR]
+                                    [--menu FILE] [--judge-only]
 
     --dry-run   check the environment and print every step, change nothing
     --limit     only the first N number sentences and the first N dish names:
                 a trial of the kit, not a measurement
     --run-dir   where models, samples and results go
                 (default deploy/speech/run, ignored by git)
+    --menu      a `menu_items.csv` in the import format (docs/14) from outside
+                the repository instead of the eval menu: its dish names are
+                spoken, every one of its card numbers is spoken once ("Nummer
+                S12"), and what is heard is judged against its numbers. A real
+                menu stays out of the repository; its names end up in the run
+                directory only (plan, results, the list of wrong numbers), so
+                with --menu that directory is the default or outside the
+                repository
+    --judge-only
+                judge the recorded run in --run-dir again and print its report:
+                the same plan and transcripts, the number rule as it is now.
+                Speaks and hears nothing; for a change to the number rule
 
 Builds the image of `deploy/speech/` (the open speech engines next to the
 project's packages) and runs three containers from it, one after another: one
@@ -38,8 +51,10 @@ call or Docker not usable.
 
 import argparse
 import csv
+import io
 import json
 import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -55,7 +70,10 @@ NUMBERS = REPO_ROOT / "evals" / "cases" / "nummern.jsonl"
 MENU = REPO_ROOT / "evals" / "menu" / "menu_items.csv"
 IMAGE = "maex-speech-spike"
 RUN_MOUNT = "/work"
-RESULTS = ("plan.json", "heard.json", "judged.json", "report.json")
+# The copy of a menu given with --menu in the run directory: the bytes the plan
+# was built from, and what the check in the image reads.
+MENU_COPY = "menu_items.csv"
+RESULTS = ("plan.json", "heard.json", "judged.json", "report.json", MENU_COPY)
 # Its own marker: the run directory of the T-10.1 kit is not one of this kit's.
 RUN_MARKER = ".speech-spike-run"
 
@@ -126,6 +144,12 @@ AGENT_SENTENCES = (
 )
 SILENCES_MS = (300, 500, 700)
 
+# How many dish names an ear gets as key terms with one utterance. Never the
+# menu: the full menu goes into no model context (hard rule 6), and an ear's
+# prompt is one. It would not fit either: the pilot's 173 names are about six
+# times what the prompt takes (docs/20 §11).
+KEY_TERMS = 10
+
 # Thresholds of docs/20 §6.
 WRONG_LIMIT = 0.02
 VOICE_TO_VOICE_SECONDS = 1.5
@@ -138,11 +162,30 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--run-dir", type=Path, default=SPEECH_DIR / "run")
+    parser.add_argument("--menu", type=Path)
+    parser.add_argument("--judge-only", action="store_true")
     args = parser.parse_args(argv)
     run_dir = args.run_dir.resolve()
+    recorded = args.judge_only
 
     if args.limit is not None and args.limit < 1:
         parser.error("--limit needs a number above zero")
+    if recorded and (args.limit is not None or args.menu):
+        parser.error("--judge-only takes the plan of the run: no --limit, no --menu")
+    # The kit's own run folder, where git ignores it: not resolved, so a link
+    # from there to another folder of the repository does not pass for it
+    # (Codex PR #268).
+    own_run = SPEECH_DIR / "run"
+    if args.menu and run_dir != own_run and run_dir.is_relative_to(REPO_ROOT):
+        # Plan, transcripts and report name the dishes of that menu. Inside the
+        # repository git ignores only the kit's own run folder (Codex PR #268).
+        print(
+            f"speech_spike: with --menu the run directory holds the menu's dish "
+            f"names, and {run_dir} is a folder git could track. Leave --run-dir "
+            "out or name a folder outside the repository",
+            file=sys.stderr,
+        )
+        return 2
     if os.getuid() == 0:
         print(
             "speech_spike: run it as an unprivileged user. The containers take the "
@@ -163,29 +206,60 @@ def main(argv: list[str] | None = None) -> int:
         print(f"speech_spike: {problem}", file=sys.stderr)
         return 2
 
-    plan = build_plan(args.limit)
-    dry = args.dry_run
     try:
-        step("Write the plan into", run_dir)
-        if not dry:
-            run_dir.mkdir(parents=True, exist_ok=True)
-            (run_dir / RUN_MARKER).touch()
-            clear_results(run_dir)
-            (run_dir / "plan.json").write_text(
-                json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
-            )
+        if recorded:
+            plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+            (run_dir / "heard.json").stat()
+        else:
+            # Read once: the plan and the copy that is checked in the image
+            # come from the same bytes (Codex PR #268).
+            menu_text = args.menu.read_text(encoding="utf-8-sig") if args.menu else None
+            plan = build_plan(args.limit, args.menu, menu_text)
+    except (OSError, KeyError, ValueError) as exc:
+        problem = (
+            f"--judge-only needs plan.json and heard.json of a run in {run_dir}"
+            if recorded
+            else f"--menu {args.menu} is no menu in the import format (columns "
+            "number, name and category, separated by ';')"
+        )
+        print(f"speech_spike: {problem}: {exc!r}", file=sys.stderr)
+        return 2
+    dry = args.dry_run
+    bench = "api.telephony.speech_bench"
+    try:
+        if recorded and not dry:
+            # The verdict of the run before must not outlive a judge that
+            # breaks: exit 1 is also what a no-go returns (Codex PR #268).
+            for name in ("judged.json", "report.json"):
+                (run_dir / name).unlink(missing_ok=True)
+        if not recorded:
+            step("Write the plan into", run_dir)
+            if not dry:
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / RUN_MARKER).touch()
+                clear_results(run_dir)
+                (run_dir / "plan.json").write_text(
+                    json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
+                )
+                if menu_text is not None:
+                    (run_dir / MENU_COPY).write_text(menu_text, encoding="utf-8")
         step("Build the image with the speech engines")
         build = ["docker", "build", "-t", IMAGE]
         docker([*build, "-f", "Dockerfile", "../../api"], dry, cwd=SPEECH_DIR)
-        gpu = not dry and gpu_in_docker()
-        step("Download the model files (network; only what is missing)")
-        bench = "api.telephony.speech_bench"
-        docker(in_image(run_dir, bench, "fetch", network=True), dry)
-        step(
-            f"Speak and hear: {len(plan['sentences'])} sentences, "
-            f"{len(VOICES)} voices, {len(EARS)} ears (no network)"
-        )
-        docker(in_image(run_dir, bench, "measure", gpu=gpu), dry)
+        if args.menu:
+            # By the import's own rules, in the image that has them: what cannot
+            # be imported is not measured (Codex PR #268).
+            step("Check the menu with the rules of the import (no network)")
+            docker(in_image(run_dir, bench, "check"), dry)
+        if not recorded:
+            gpu = not dry and gpu_in_docker()
+            step("Download the model files (network; only what is missing)")
+            docker(in_image(run_dir, bench, "fetch", network=True), dry)
+            step(
+                f"Speak and hear: {len(plan['sentences'])} sentences, "
+                f"{len(VOICES)} voices, {len(EARS)} ears (no network)"
+            )
+            docker(in_image(run_dir, bench, "measure", gpu=gpu), dry)
         step("Judge what was heard (no network)")
         docker(in_image(run_dir, "evals.heard"), dry)
     except SpikeError as exc:
@@ -204,24 +278,74 @@ def main(argv: list[str] | None = None) -> int:
     return 0 if report["go"] else 1
 
 
-def build_plan(limit: int | None) -> dict[str, Any]:
-    """Sentences and key terms from the eval files, never from this module."""
+def build_plan(
+    limit: int | None, menu: Path | None = None, text: str | None = None
+) -> dict[str, Any]:
+    """Sentences and key terms from the eval files, never from this module.
+
+    `menu`: another menu than the eval menu (`--menu`). Its dish names and card
+    numbers are spoken, and the plan carries its numbers for the judge. The
+    expectations of the number eval were written for the eval menu, so with
+    another one they are left to the judge (`evals/heard.py`).
+    """
     numbers = [
         json.loads(line)
         for raw in NUMBERS.read_text(encoding="utf-8").splitlines()
         if (line := raw.strip()) and not line.startswith("#")
     ]
-    with MENU.open(encoding="utf-8", newline="") as f:
-        # "Gyoza (6 Stück)": nobody says the bracket on the phone.
-        names = [
-            row["name"].split(" (")[0]
-            for row in csv.DictReader(f, delimiter=";")
-            if row.get("active", "ja") != "nein"
-        ]
+    dishes: list[dict[str, str]] = []
+    seen: dict[str, str] = {}
+    if text is None:
+        # `text`: what `main` read of `menu`, so the file is read only once.
+        text = (menu or MENU).read_text(encoding="utf-8-sig")
+    with io.StringIO(text, newline="") as f:
+        # Line 1 is the header. What the import refuses is refused here too, or
+        # the run would measure a menu that cannot be imported (Codex PR #268).
+        for at, raw in enumerate(csv.DictReader(f, delimiter=";"), start=2):
+            # As the import reads a row (`importer._rows`): a row that ends
+            # early has no value for its last columns, and a row of nothing but
+            # separators is no dish.
+            row = {k: (v or "").strip() for k, v in raw.items() if k is not None}
+            if not any(row.values()):
+                continue
+            # As the import reads the flag (`importer._bool`): " NEIN " is no.
+            if row.get("active", "").lower() == "nein":
+                continue
+            dish = {k: row[k] for k in ("number", "name", "category")}
+            if not all(dish.values()):
+                # A dish without a name would be "heard" in every transcript.
+                raise ValueError(f"row {at}: number, name and category are required")
+            card = canonical(dish["number"])
+            if card in seen:
+                # "7" next to "07": spoken and counted twice, that position
+                # would weigh double in every share.
+                twin = seen[card]
+                raise ValueError(f"card number {dish['number']} twice (also {twin})")
+            seen[card] = dish["number"]
+            dishes.append(dish)
+    if not dishes:
+        raise ValueError("no active dish")
+    names = [spoken_name(dish["name"]) for dish in dishes]
     sentences = [
-        {"id": f"n{i}", "kind": "number", "say": row["say"], "expect": row["expect"]}
+        {
+            "id": f"n{i}",
+            "kind": "number",
+            "say": row["say"],
+            "expect": None if menu else row["expect"],
+        }
         for i, row in enumerate(numbers)
     ][:limit]
+    cards = [
+        {
+            "id": f"c{i}",
+            "kind": "number",
+            "say": f"Nummer {d['number']}",
+            "expect": None,
+        }
+        for i, d in enumerate(dishes)
+        if menu
+    ]
+    sentences += cards[:limit]
     sentences += [
         {
             "id": f"d{i}",
@@ -231,15 +355,69 @@ def build_plan(limit: int | None) -> dict[str, Any]:
         }
         for i, name in enumerate(names)
     ][:limit]
-    return {
+    plan = {
         "sentences": sentences,
-        "all_sentences": len(numbers) + len(names),
+        "all_sentences": len(numbers) + len(cards) + len(names),
         "key_terms": names,
         "voices": list(VOICES),
         "ears": list(EARS),
         "agent": list(AGENT_SENTENCES),
         "silences_ms": list(SILENCES_MS),
     }
+    # The menu the run is judged against travels with it: a recorded run is
+    # judged again (--judge-only) with the numbers it was recorded with, also
+    # when the eval menu has changed since (Codex PR #268).
+    plan["menu"] = [{k: d[k] for k in ("number", "category")} for d in dishes]
+    plan["own_menu"] = menu is not None
+    return plan
+
+
+def key_terms_for(names: list[str], index: int) -> list[str]:
+    """The key terms for one utterance: a window of the menu's names that
+    starts at `index` and wraps around. For the sentence of dish `index` that
+    is its own name first, so every dish is heard with its term; a number
+    sentence gets the window at its own index. At most KEY_TERMS and always
+    fewer than the menu has: a menu of one dish gets no key term at all, its one
+    name would be the whole menu (Codex PR #268)."""
+    size = min(KEY_TERMS, len(names) - 1)
+    return [names[(index + k) % len(names)] for k in range(size)]
+
+
+def terms_that_fit(tokens: Any, terms: list[str], limit: int) -> list[str]:
+    """The leading key terms whose list stays under an ear's limit of tokens;
+    `tokens` counts them for a text. The engine cuts a prompt that is too long
+    without a word, in the middle of a term; cut at a whole term, the run knows
+    which dishes were heard with theirs (`speech_bench.load_ear`)."""
+    kept: list[str] = []
+    for term in terms:
+        if tokens(", ".join([*kept, term])) >= limit:
+            break
+        kept.append(term)
+    return kept
+
+
+_PIECES = re.compile(
+    r"\s*\(\s*\d+\s*(?:stück|stueck|stk\.?|st\.?)\s*\)\s*$", re.IGNORECASE
+)
+
+
+def spoken_name(name: str) -> str:
+    """A dish name as a guest says it: without the number of pieces at its end
+    ("Gyoza (6 Stück)"). Any other bracket says something about the dish
+    ("Nudeln (glutenfrei)") and stays, and so does a name that is nothing but
+    the pieces: an empty name would be found in every transcript (Codex PR
+    #268)."""
+    return _PIECES.sub("", name) or name
+
+
+_LEADING_ZEROS = re.compile(r"^([a-z]*)0*(\d)")
+
+
+def canonical(card: str) -> str:
+    """A card number as the search compares it: `numberwords.canonical_card`,
+    which the host cannot import (its package needs the database driver). A
+    test holds the two together."""
+    return _LEADING_ZEROS.sub(r"\1\2", card.strip().lower()) or "0"
 
 
 def gpu_in_docker() -> bool:
@@ -266,8 +444,21 @@ def docker(command: list[str], dry_run: bool, cwd: Path | None = None) -> None:
         raise SpikeError(f"`{' '.join(command)}` failed")
 
 
+def menu_errors(menu: Path) -> list[str]:
+    """What the import says against a menu file (`importer.parse`): a card number
+    it cannot take, a missing price, a number twice. Runs where the project's
+    packages are, so in the image and in the tests, not on the bare host."""
+    from api.domain.menu.importer import MENU_FILE, parse
+
+    return parse({MENU_FILE: menu.read_text(encoding="utf-8")}).errors
+
+
 def in_image(
-    run_dir: Path, module: str, *args: str, network: bool = False, gpu: bool = False
+    run_dir: Path,
+    module: str,
+    *args: str,
+    network: bool = False,
+    gpu: bool = False,
 ) -> list[str]:
     """The command that runs a module of this repository in the speech image."""
     command = ["docker", "run", "--rm"]
@@ -285,7 +476,12 @@ def summarize(
     plan: dict[str, Any], heard: dict[str, Any], judged: list[dict[str, Any]]
 ) -> dict[str, Any]:
     ears = [
-        _ear(spec["id"], heard["ears"].get(spec["id"], {"error": "not run"}), judged)
+        _ear(
+            spec["id"],
+            heard["ears"].get(spec["id"], {"error": "not run"}),
+            judged,
+            len(plan.get("key_terms", [])),
+        )
         for spec in plan["ears"]
     ]
     sampled = {spec["id"] for spec in plan["ears"] if "sample" in spec}
@@ -345,6 +541,8 @@ def summarize(
     report: dict[str, Any] = {
         "sentences": len(plan["sentences"]),
         "all_sentences": plan["all_sentences"],
+        # 0: the eval menu. Else the dishes of the menu given with --menu.
+        "own_menu_dishes": len(plan["menu"]) if plan.get("own_menu") else 0,
         "ears": ears,
         "mouths": mouths,
         "turn_end": turn_end,
@@ -369,15 +567,31 @@ def summarize(
 
 
 def _ear(
-    ear_id: str, info: dict[str, Any], judged: list[dict[str, Any]]
+    ear_id: str, info: dict[str, Any], judged: list[dict[str, Any]], given: int = 0
 ) -> dict[str, Any]:
     rows = [r for r in judged if r["ear"] == ear_id]
     numbers = [r for r in rows if r["kind"] == "number"]
     if "error" in info or not numbers:
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     seconds = sorted(r["seconds"] for r in rows)
+    terms: dict[str, Any] = {}
+    got = [r["key_terms"] for r in rows if r.get("key_terms") is not None]
+    if got:
+        # Per utterance, what the ear really got after its prompt was cut. A
+        # window starts with the dish's own name and is cut from its end, so a
+        # dish sentence had its term whenever it had any (Codex PR #268).
+        dishes = [r for r in rows if r["kind"] == "dish"]
+        terms = {
+            "key_terms_min": min(got),
+            "key_terms_max": max(got),
+            "key_terms_given": given,
+            "dishes_with_own_term_share": _part(
+                dishes, lambda r: (r.get("key_terms") or 0) > 0
+            ),
+        }
     return {
         "id": ear_id,
+        **terms,
         "utterances": len(rows),
         "right_share": _share(numbers, "right"),
         "asked_share": _share(numbers, "asked"),
@@ -423,9 +637,12 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
     def pct(share: float) -> str:
         return f"{100 * share:5.1f} %"
 
+    own = report.get("own_menu_dishes")
+    which = "the menu given with --menu" if own else "the eval menu"
+    menu = f"{which}, {own} dishes" if own else which
     step(
         "Ears: card numbers by the number rule (wrong: a number the guest did not "
-        "say, taken without a question; on card: of these, a dish of the eval menu), "
+        f"say, taken without a question; on card: of these, a dish of {menu}), "
         "dish names letter by letter"
     )
     print(
@@ -444,6 +661,16 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
             f"{e['median_seconds']:>10.2f}{e['p95_seconds']:>8.2f}"
             f"{e['load_seconds']:>8}{e['gpu_mib'] if e['gpu_mib'] is not None else '-':>9}"
         )
+    for e in report["ears"]:
+        if e.get("key_terms_max") is not None:
+            low, high = e["key_terms_min"], e["key_terms_max"]
+            print(
+                f"{e['id']}: an utterance was heard with "
+                f"{high if low == high else f'{low} to {high}'} of "
+                f"{e['key_terms_given']} dish names as key terms; "
+                f"{pct(e['dishes_with_own_term_share']).strip()} of the dish sentences "
+                "with their own name among them"
+            )
     step("Mouths: speed, and card numbers the best ear understood from the voice")
     print(f"{'voice':<26}{'first audio s':>14}{'x real time':>13}{'understood':>12}")
     for m in report["mouths"]:
@@ -489,7 +716,7 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
         "that ends a turn and for the text model, which this kit does not measure"
     )
     for w in report["wrong"]:
-        where = "another dish" if w["on_card"] else "not on the eval menu"
+        where = "another dish" if w["on_card"] else f"not on {which}"
         print(
             f"silent wrong: said {w['say']!r} ({w['voice']}), heard {w['text']!r}, "
             f"taken as {w['got']} instead of {w['expect']} ({where})"
