@@ -121,7 +121,7 @@ class RecordingLLM:
             self._observe_call(turn.tool_call.name, turn.tool_call.args)
         elif turn.say is not None:
             rec = self.recording
-            rec.read_out = bool(rec.readback) and read_out(turn.say, rec.readback)
+            rec.read_out = rec.readback is not None and read_out(turn.say, rec.readback)
         return turn
 
     def _observe_cart(self, cart: Any) -> None:

@@ -138,7 +138,7 @@ def note_said(state: ConversationState, say: str) -> None:
     And whether the sentence asked for the guest's number: then the digits of
     the answer are a number to call without a word that says so
     (`state.note_guest_details`)."""
-    state.readback_heard = bool(state.readback) and read_out(say, state.readback)
+    state.readback_heard = state.readback is not None and read_out(say, state.readback)
     state.asked_for_phone = names_a_phone_number(say)
     heard = say.lower()
     named = {
