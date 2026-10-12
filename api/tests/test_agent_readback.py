@@ -257,6 +257,23 @@ def test_yes_after_another_answer_gets_the_readback_not_a_booking(session, state
     assert booked(session, flow) == (1, 1)
 
 
+def test_no_after_another_answer_is_left_to_the_model(session, state, flow):
+    """Codex PR #266: the readback is put again only on a yes. A guest who
+    wants a change is asked what, not the old question once more."""
+    read_out(session, state, flow)
+    draft_id = flow.draft_id(state)
+    turn(session, state, "Darf der Hund mit?", Model(say=OTHER_ANSWER))
+    model = Model(flow.confirm(draft_id), say="Was soll ich ändern?")
+
+    said = turn(session, state, "Nein, ich möchte etwas ändern", model)
+
+    assert said == ["Was soll ich ändern?"]
+    told = json.loads(model.inputs[1])
+    assert told["hint"] == HINT_CONFIRM and "say" not in told
+    assert status(session, flow, draft_id) == "draft"
+    assert booked(session, flow) == (0, 0)
+
+
 def test_another_answer_that_ends_with_the_readback_keeps_the_question_open(
     session, state, flow
 ):

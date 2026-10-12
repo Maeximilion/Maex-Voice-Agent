@@ -146,7 +146,13 @@ def test_confirm_of_a_draft_nobody_read_out_is_refused(entity):
     note_said(state, "Möchten Sie am Fenster sitzen?")
     start = begin_turn(state)
 
-    assert refusal(state, start, "Ja", confirm(draft_id, entity)) is not None
+    refused = refusal(state, start, "Ja", confirm(draft_id, entity))
+
+    assert refused is not None and refused.ok is False
+    # On a yes the model gets the readback as the sentence to say, on any
+    # other sentence it answers itself (Codex PR #266).
+    assert refused.say == READBACK
+    assert refusal(state, start, "Nein, lieber später", confirm(draft_id)).say is None
     assert unheard_readback(state) == READBACK
 
 

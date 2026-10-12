@@ -236,10 +236,15 @@ def refusal(
     if call.name == "confirm":
         if _may_confirm(state, start, user_text, call):
             return None
-        # With a draft the guest has not heard as the last thing, the model
-        # gets the readback as the sentence to say: the yes may have meant
-        # another question. The loop says it where the model does not.
-        return replace(_CONFIRM, say=unheard_readback(state))
+        # A yes for a draft the guest has not heard as the last thing may
+        # have meant another question: the model gets the readback as the
+        # sentence to say, and the loop says it where the model does not.
+        # Not on any other sentence: after "Nein, ich möchte etwas ändern"
+        # the model has to ask what, not put the old question again (Codex
+        # PR #266).
+        if is_yes(user_text):
+            return replace(_CONFIRM, say=unheard_readback(state))
+        return _CONFIRM
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
@@ -316,12 +321,12 @@ def unheard_readback(state: ConversationState) -> str | None:
 
 
 def read_out(state: ConversationState, say: str) -> str:
-    """The sentence that ends a turn in which a draft was made or a `confirm`
-    did not go through: the model's when it ends with the readback that is
-    still unheard, or when none is; else the readback alone. A model that
-    asks something else after the draft, says the booking in its own words,
-    or answers "gebucht" to a yes that was refused, would leave the next yes
-    without the question it answers; and what the guest agrees to is the
+    """The sentence that ends a turn in which a draft was made or a yes was
+    refused for a draft nobody heard last: the model's when it ends with the
+    readback that is still unheard, or when none is; else the readback alone.
+    A model that asks something else after the draft, says the booking in its
+    own words, or answers "gebucht" to a yes that was refused, would leave the
+    next yes without the question it answers; and what the guest agrees to is the
     sentence from the database, total included (CLAUDE.md §2 rules 1 and 3)."""
     readback = unheard_readback(state)
     if readback and not _ends_with_readback(state, say):
