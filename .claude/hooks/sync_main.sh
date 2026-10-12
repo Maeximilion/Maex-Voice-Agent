@@ -31,8 +31,10 @@ worktrees() {
 # Answers 0 yes, 1 no, 2 when GitHub had to be asked and gave no answer.
 in_main() {
   git -C "$primary" merge-base --is-ancestor "$1" origin/main 2>/dev/null && return 0
-  merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null | head -n 1)"
-  [ -n "$merged" ] && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ] && return 0
+  # Only a merge without conflicts counts: for a conflict git still prints a tree, and
+  # for a file the branch deleted and main changed that tree is main's own.
+  merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null)" \
+    && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ] && return 0
   tip="$(git -C "$primary" rev-parse "$1" 2>/dev/null)"
   # --base main: a pull request merged into another branch has not reached main.
   heads="$(cd "$primary" && timeout 10 gh pr list --state merged --base main --head "$1" \

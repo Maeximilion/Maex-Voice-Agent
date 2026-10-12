@@ -340,3 +340,19 @@ def test_a_branch_github_says_was_not_merged_stays_without_a_warning(repos):
 
     assert repos.run_hook() == ""
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "dropped"
+
+
+def test_a_conflicting_branch_is_not_taken_for_merged(repos):
+    # Codex PR #247: the branch deletes a file that main has changed since. Merging it
+    # conflicts, and git's provisional tree for that conflict is main's own.
+    upstream = repos.tmp_path / "upstream"
+    repos.git(repos.main_checkout, "switch", "-q", "-c", "deleter")
+    repos.git(repos.main_checkout, "rm", "-q", "tracked.txt")
+    repos.git(repos.main_checkout, "commit", "-q", "-m", "tracked.txt removed")
+    repos.git(repos.main_checkout, "push", "-q", "-u", "origin", "deleter")
+    repos.git(upstream, "push", "-q", "origin", "--delete", "deleter")
+    repos.land_on_origin("second")
+
+    assert repos.run_hook() == ""
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "deleter"
+    assert not (repos.main_checkout / "tracked.txt").exists()
