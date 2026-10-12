@@ -347,6 +347,14 @@ BODY = READBACK.removesuffix(" Passt das so?")
         (BODY, False),
         # A question of filler words alone asks something else.
         (f"{BODY}. Ist es sicher?", False),
+        # An assent word in another role: "richtig" means "really" here, and
+        # the question is about safety (Codex, PR #258). Only fixed forms ask
+        # for the yes.
+        (f"{BODY}. Ist es richtig sicher?", False),
+        (f"{BODY}. Passt das wirklich so?", False),
+        (f"{BODY}. Stimmt das so und passt es?", False),
+        (f"{BODY}. Passt es so?", True),
+        (f"{BODY}. Ist das korrekt?", True),
         (f"{BODY}. Ist das in Ordnung so?", False),
         # Another question after the read-back: the yes would answer that one.
         (f"{READBACK} Möchten Sie noch einen Hochstuhl?", False),
