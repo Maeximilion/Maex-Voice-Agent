@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.28
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.29
 
 ---
 
@@ -160,6 +160,14 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 10. **Local test model on the workbench, set up 06.10.2026** (docs/18 §5 "GPU numbers"): both models pass the test sentence. `mistral-small` runs 17 % on the CPU next to the Windows desktop's GPU share, warm 5.3 s; `qwen3:14b` runs fully on the GPU, warm 1.1 s, cold 14 s. The workbench `.env` uses `qwen3:14b`. WSL memory (31 of 64 GiB visible) only matters for models larger than `qwen3:14b`; how to raise it: docs/18 §5. `mistral-small` invented an absolute date for "Samstag" (the test prompt has no current date); watch for it in the first eval run. Next T-2.4 part 3 (`--model`, `reasoning_effort: "none"`) and part 4 (first eval run on the local model)
 11. **Own voice layer: T-10.1 step 1 done 11.10.2026, T-10.3 measured for the local engines 12.10.2026 (summary above). Next: step 2 at the pilot's router, which needs Maxi (a new IP telephone at the router, a VPN to it, one of the three numbers that customers do not call). From T-10.3, with Maxi: listen to the samples and confirm the thresholds; accounts for the EU speech services only when their measurement is due. T-10.4 (call session) waits for T-10.1.** The three spikes (D1 decided 07.10.2026, `docs/20_VOICE_LAYER.md`): T-10.1 (Asterisk with call audio over WebSocket, first on the workbench with a softphone, then as an IP telephone at the pilot's router over a VPN), T-10.2 (hard rule 5 on the wire; G0 waits for both) and T-10.3 (ear and mouth). They run in a session started in Ubuntu (WSL) on Maxi's PC. Port, handler and fake adapter of T-1.13 stay; T-1.11 is now the media adapter of our own layer. Open from T-1.13, Maxi's call: when the team is not reachable (outside opening hours) and the number is withheld, `agent/loop.py` says "Ich gebe an das Team weiter" or "Ich verbinde Sie sofort mit dem Team" and then the line ends, because no transfer and no callback is possible. Proposal: ask for a callback number in that case instead of ending
 12. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
+13. **Follow-ups of the security audit (#252), decided by Maxi on 12.10.2026, not built.** One pull request each, all `xhigh` (a migration, bookings, the fate of a call); the values go into `service_config`, never into code (rule 1):
+    - **Reservations by phone:** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person; a call by the agent itself is an idea of Maxi's, not decided and not possible before the voice layer can place calls.
+    - **Orders:** above 150 euros the order waits for the team's "Passt" on the tablet before a slip prints, whatever the mode.
+    - **Silence while the model answers:** 15 seconds until the handover if the agent can say "Bitte warten Sie einen Moment" in between, 10 seconds if it cannot. Saying a sentence while a turn runs needs the voice layer (T-1.11); until then 10.
+    - **Postgres:** a role without superuser for the application, the superuser for backup, restore and migrations.
+    - **Callback numbers:** the tablet marks a number that differs from the caller ID.
+    - **Operations view without an access check of its own:** accepted for stage 1, the proxy is the check (docs/13 §3).
+    - Left in #252 for later: `USER` in the Dockerfile, the installer checksum, the allergy pattern in `wishes.py`; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers.
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -367,6 +375,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 12.10.2026 | **Handover, security audit and its follow-ups (#249 to #252):** the audit's findings are on `main` in seven pull requests: production exposure (#253), the print bridge (#254), the CI review (#255), draft reservations hold seats only while their call can confirm them (#256, closes #250), a question is no yes and a yes confirms only a draft that was read out with its question (#258, closes #251), impossible dates and the envelope (#262), migration 006 with the bounds on capacity and party size (#263), mypy in CI (#264, closes #249), a hashed lock file and Caddy pinned (#265). #252 stays open; Maxi decided its open points on 12.10.2026, they are item 13 under "What's Next" and a comment on the issue. Not applied yet, by Maxi: the ruleset on `main` (`.github/rulesets/main.json`, docs/13 §6). Not seen working yet: Dependabot on the lock file layout |
 | 12.10.2026 | **Tests: the speech kit's tests pass as root too** (audit finding, P2): four tests of `api/tests/test_telephony_speech_spike.py` failed under `make test`, because the API container is root and `speech_spike.main` refuses root before the mocked run starts. The module's tests now give the kit an ordinary uid (its own view of `os` only, pytest keeps the real one for its temporary folders), and a separate test pins that root is refused before Docker is asked or the run directory is touched. No change outside the test file. Run as uid 0 and as uid 1000 |
 | 12.10.2026 | **Bug: S12 heard as "ist zwölf"** (eval `abholung_0077`): "ist" directly before a number keeps the S number as a candidate where the menu has the prefix, the search asks by name, never takes such a number without a question. 14 lines in the number eval (195), re-judged on the transcripts of T-10.3: picked ear 12 to 8 silent wrong numbers of 724 |
 | 12.10.2026 | **Bug: the spoken total** (eval `abholung_0076`): `spoken_euro` writes "25 Euro 70", "7 Euro", "50 Cent", "17 Euro 5 Cent" and "ein Euro 50" instead of "25,70 Euro"; the read-back and the surcharge sentence of `search_menu` follow. `expected.readback` in the eval judge. Checked against the phonemes of the test-phase voice for 0 to 300 Euro |
@@ -453,6 +462,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.29 · 12.10.2026:** Handover: the security audit is on main in seven pull requests; Maxi's decisions on the open points of #252 are item 13 under What's Next
 - **v2.0.28 · 12.10.2026:** Public-repo inventory: the last real place name in a test input is replaced by an invented one; operation name, team phone, host names and printer address already come from .env only
 - **v2.0.27 · 12.10.2026:** Audit finding fixed: the speech kit's tests set their own user and pass as root, the root guard has its own test
 - **v2.0.26 · 12.10.2026:** Bug fixed: S12 heard as 'ist zwölf' asks which dish instead of taking the 12 (eval abholung_0077); letter dropped completely and ending g heard as 'die' left for Maxi
