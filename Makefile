@@ -19,10 +19,10 @@ test:
 	docker compose exec api pytest -q
 
 lint:
-	docker compose exec api ruff check api scripts evals printbridge
+	docker compose exec api ruff check api scripts evals printbridge sim db
 
 fmt:
-	docker compose exec api ruff format api scripts evals printbridge
+	docker compose exec api ruff format api scripts evals printbridge sim db
 
 eval:     ## Eval-Suite, optional TAGS=menu,noise
 	docker compose exec api python -m evals.runner $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)

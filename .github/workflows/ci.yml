@@ -21,6 +21,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A green run takes about three minutes; without a limit a hanging test holds
+    # the runner for GitHub's default of six hours.
+    timeout-minutes: 15
     services:
       db:
         image: postgres:16-alpine
@@ -37,7 +40,7 @@ jobs:
       AGENT_API_TOKEN: ci-token
       ENV: test
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Status-Sync prüfen
@@ -52,13 +55,13 @@ jobs:
             echo "::error::docs/07_WORKPACKAGES.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
             exit 1
           fi
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
       - run: pip install -r api/requirements.txt
-      - run: ruff check api scripts evals printbridge
-      - run: ruff format --check api scripts evals printbridge
+      - run: ruff check api scripts evals printbridge sim db
+      - run: ruff format --check api scripts evals printbridge sim db
       # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
       # Latenztests nicht: unter parallelen Workern messen sie die Last, nicht den Code.
       - run: pytest -q -n auto -m "not latency"
@@ -70,7 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: API-Image ohne lokales Zertifikat bauen
         run: |
           test ! -e api/ca-bundle.crt
