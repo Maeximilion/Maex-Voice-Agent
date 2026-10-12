@@ -55,6 +55,23 @@ def spoken_times(n: int) -> str:
 
 
 def spoken_euro(cents: int) -> str:
-    """1730 → "17,30 Euro", 700 → "7 Euro"."""
+    """1730 → "17 Euro 30", 700 → "7 Euro", 50 → "50 Cent".
+
+    Two plain numbers and no decimal comma: a voice that does not know prices
+    reads "17,30 Euro" as "siebzehn Komma drei null Euro" (eval abholung_0076).
+    Single cents behind euros carry their unit, "17 Euro 5 Cent": a bare "5"
+    is easily taken for "50" on the phone.
+    """
     euros, rest = divmod(cents, 100)
-    return f"{euros} Euro" if rest == 0 else f"{euros},{rest:02d} Euro"
+    if rest == 0:
+        return f"{_count(euros)} Euro"
+    if euros == 0:
+        return f"{_count(rest)} Cent"
+    if rest >= 10:
+        return f"{_count(euros)} Euro {rest}"
+    return f"{_count(euros)} Euro {_count(rest)} Cent"
+
+
+def _count(n: int) -> str:
+    """A lone 1 as a word: the test-phase voice reads "1 Euro" as "eins Euro"."""
+    return "ein" if n == 1 else str(n)
