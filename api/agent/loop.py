@@ -14,6 +14,7 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, get_args
@@ -77,6 +78,10 @@ _HANDOFF_SUMMARIES = {
     "not_understood": "Anliegen konnte automatisch nicht geklärt werden.",
 }
 _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
+# The two tools that answer for a table, and the card the team reads when the
+# answer is `team_callback` (#252).
+_TABLE_TOOLS = frozenset({"check_slot", "create_reservation"})
+SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
@@ -128,6 +133,12 @@ class ConversationLoop:
             note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
+        if state.team_table:
+            # A table for the team has waited for a number to call back, and
+            # this sentence may have brought it.
+            handed = self._table_to_team(state)
+            if handed is not None:
+                return handed
 
         start = guards.begin_turn(state)
         pending_input = user_text
@@ -264,6 +275,24 @@ class ConversationLoop:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             called.append(turn.tool_call.name)
+            if (
+                refused is None
+                and turn.tool_call.name in _TABLE_TOOLS
+                and (result.ok or result.error_code == "conflict")
+            ):
+                # The code has answered for a table. `team_callback`: free, but
+                # the team decides (#252). The core creates the callback
+                # itself, with the sentence of the tool in front: a model that
+                # speaks the sentence first ends its turn with it, and a guest
+                # who hangs up then would be lost (Codex PR #280). Any other
+                # answer means the guest is on another wish by now.
+                team = result.data.get("team_callback")
+                state.team_table = (
+                    self._table_wish(state, turn.tool_call.args) if team else None
+                )
+                handed = self._table_to_team(state, result.say) if team else None
+                if handed is not None:
+                    return handed
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
@@ -316,6 +345,47 @@ class ConversationLoop:
     def _dispatch(self, state: ConversationState, name: str, args: dict) -> ToolResult:
         return dispatch(
             self._session, state.call_id, state.tenant_id, name, args, now=self._now
+        )
+
+    def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
+        """The wish as the team reads it on the card, from the arguments the
+        tool took: the time as the restaurant's clock shows it, whatever zone
+        the model wrote it in. The name is one the guest said (`guards.py`)."""
+        when = str(args.get("reserved_for"))
+        with suppress(ValueError):
+            local = self._local_now(state).tzinfo
+            when = (
+                f"{datetime.fromisoformat(when).astimezone(local):%d.%m.%Y %H:%M} Uhr"
+            )
+        name = args.get("guest_name") or state.slots.get("guest_name")
+        parts = [f"{args.get('party_size')} Personen", when]
+        if name:
+            parts.append(f"Name {name}")
+        return f"{SUMMARY_TEAM_TABLE} {', '.join(parts)}."
+
+    def _table_to_team(
+        self, state: ConversationState, lead: str | None = None
+    ) -> TurnResult | None:
+        """The wish in `state.team_table` becomes a callback and the call ends
+        with it. None while no number to call back is known: then the model
+        asks for one, and the turn that brings it comes through here again
+        before any model is asked. `lead` is the sentence of the tool, spoken
+        in front of the one that promises the callback. A callback that fails
+        goes the way of every failure (`_handoff`)."""
+        phone = state.slots.get("phone")
+        if not phone:
+            return None
+        callback = self._dispatch(
+            state,
+            "create_callback",
+            {"phone": phone, "reason": "out_of_scope", "summary": state.team_table},
+        )
+        apply_tool_result(state, "create_callback", callback)
+        if not callback.ok:
+            return self._handoff(state, SAY_STUCK, detail=state.team_table)
+        state.team_table = None
+        return TurnResult(
+            state=state, say=[s for s in (lead, callback.say) if s], ended=True
         )
 
     def _handoff(

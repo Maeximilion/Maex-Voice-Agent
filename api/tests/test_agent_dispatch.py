@@ -408,3 +408,25 @@ def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
     )
     assert not result.ok and result.error_code == "conflict"
     assert result.say and "nicht selbst zusagen" in result.say
+    # The same signal as on `check_slot`: the core hands the wish to the team.
+    assert result.data == {"team_callback": True}
+    assert result.hint == HINT_TEAM_CALLBACK
+
+
+def test_a_full_evening_is_a_conflict_without_the_signal(session, tenant_id, call_id):
+    monday = berlin(DIENSTAG + timedelta(days=6), 18, 30)
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 2,
+            "reserved_for": monday.isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.data == {} and result.hint is None

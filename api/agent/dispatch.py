@@ -19,7 +19,7 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
-from api.core.errors import AppError, InvalidInput
+from api.core.errors import AppError, InvalidInput, TeamDecides
 from api.core.ids import idempotency_key
 from api.core.logging import get_logger, log
 from api.core.tool_log import append_tool_call
@@ -46,13 +46,15 @@ from api.schemas.transfer import TransferToTeamRequest
 
 logger = get_logger("api.agent.dispatch")
 
-# What follows a `check_slot` that hands the table to the team (#252). Sent
-# with that result only: the system prompt of every other call stays as short
-# as it is (CLAUDE.md §2 rule 6).
+# For a table the team decides on (#252, `team_callback`). The callback is
+# created by the core, not by the model (`loop.py`); a model reads this only
+# while no number to call back is known. Sent with that result alone: the
+# system prompt of every other call stays as short as it is (CLAUDE.md §2
+# rule 6).
 HINT_TEAM_CALLBACK = (
-    "Der Tisch wird nicht gebucht, kein create_reservation. Sprich das say. "
-    "Kläre Name und Rufnummer, dann create_callback (reason: out_of_scope, "
-    "summary: Reservierungswunsch mit Personenzahl, Tag, Uhrzeit und Name)."
+    "Der Tisch wird nicht gebucht, kein create_reservation. Sprich das say und "
+    "frag nach der Rufnummer für den Rückruf des Teams. Den Rückruf legt das "
+    "System selbst an, sobald der Gast die Nummer genannt hat."
 )
 
 Adapter = Callable[
@@ -412,7 +414,17 @@ def dispatch(
         # rollback keeps an uncommitted remainder of a failed domain call from
         # being carried into the next tool call.
         session.rollback()
-        outcome = ToolResult(ok=False, say=exc.say, error_code=exc.code, hint=hint)
+        # `create_reservation` for a table the team decides on: the same
+        # signal as on `check_slot`, so a model that skipped the check ends
+        # with the team too.
+        team = isinstance(exc, TeamDecides)
+        outcome = ToolResult(
+            ok=False,
+            data={"team_callback": True} if team else {},
+            say=exc.say,
+            error_code=exc.code,
+            hint=HINT_TEAM_CALLBACK if team else hint,
+        )
 
     duration_ms = round((time.perf_counter() - started) * 1000, 1)
     _log_call(session, call_id, tenant_id, name, duration_ms, outcome)

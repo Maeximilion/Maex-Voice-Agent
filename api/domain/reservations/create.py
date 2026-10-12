@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Conflict, InvalidInput, NotFound, TeamDecides
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.reservations.capacity import lock_capacity_days
@@ -53,6 +53,8 @@ def create_reservation(
 
     lock_capacity_days(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
     slot = check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
+    if slot.team_callback:
+        raise TeamDecides("party above what the agent books itself", say=slot.say)
     if not slot.available:
         raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
 

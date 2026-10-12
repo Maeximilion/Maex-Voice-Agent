@@ -91,6 +91,11 @@ class ConversationState(BaseModel):
     # The sentence that ended the last turn asked for the guest's number
     # (`guards.note_said`): the answer needs no word for what its digits are.
     asked_for_phone: bool = False
+    # Memory of the core, never sent to the model: the wish for a table the
+    # agent does not book itself (`team_callback`, #252), as the summary of
+    # the callback, while no number to call back is known. The core creates
+    # the callback as soon as one is (`loop.py`).
+    team_table: str | None = None
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.
     greeted: bool = False

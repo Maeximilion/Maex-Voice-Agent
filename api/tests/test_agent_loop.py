@@ -1103,40 +1103,163 @@ def test_model_that_insists_on_an_invented_name_ends_with_the_team(
     assert session.scalars(select(Reservation)).all() == []
 
 
-def test_a_table_for_the_team_reaches_the_model_with_its_next_steps(session, state):
-    """Above the party limit `check_slot` books nothing (#252). What follows is
-    in no system prompt: it travels with that result, and with it a model
-    turns the wish into a callback instead of a draft."""
-    state.slots["phone"] = CALLER
-    wish = {"reserved_for": "2026-09-19T19:00:00+02:00", "party_size": 9}
-    summary = "Reservierungswunsch: 9 Personen, Samstag 19 Uhr, Name Müller."
-    llm = FakeLLM(
-        [
-            LLMTurn(tool_call=ToolCall(name="check_slot", args=wish)),
-            LLMTurn(
-                tool_call=ToolCall(
-                    name="create_callback",
-                    args={
-                        "phone": CALLER,
-                        "reason": "out_of_scope",
-                        "summary": summary,
-                    },
-                )
-            ),
-            LLMTurn(say="Das Team ruft Sie zurück."),
-        ]
+# -- A table the team decides on (`team_callback`, #252) ---------------------------
+# Seed: the agent books up to 8 guests itself. Above that the core creates the
+# callback, not the model: a model that speaks the tool's sentence first ends
+# its turn with it, and a guest who hangs up then would be lost (Codex PR #280).
+TEAM_SAY = "Für neun Personen kann ich den Tisch nicht selbst zusagen"
+NINE_ON_SATURDAY = {"reserved_for": "2026-09-19T19:00:00+02:00", "party_size": 9}
+WISH = "Reservierungswunsch, vom Team zu bestätigen: 9 Personen, 19.09.2026 19:00 Uhr"
+
+
+def _team_loop(session, turns, now=NOW):
+    llm = FakeLLM(turns)
+    return llm, ConversationLoop(session, llm, "system", now=now, clock=clock_from([0]))
+
+
+def test_a_table_for_the_team_becomes_a_callback_without_the_model(session, state):
+    state.slots.update(phone=CALLER, guest_name="Müller")
+    llm, loop = _team_loop(
+        session, [LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY))]
     )
-    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
     result = loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
 
+    # The model was asked once: for the check, not for what follows it.
+    assert len(llm.calls) == 1
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert result.say[1].startswith("Ich habe Ihre Nummer notiert.")
+    callback = session.scalars(select(Callback)).one()
+    assert (callback.reason, callback.phone) == ("out_of_scope", CALLER)
+    assert callback.summary == f"{WISH}, Name Müller."
+    assert session.scalars(select(Reservation)).all() == []
+    assert state.team_table is None
+
+
+def test_a_table_for_the_team_waits_for_a_number_to_call_back(session, state):
+    """Caller ID withheld: nobody to call back yet. The model gets the tool's
+    result with its hint and asks; the sentence that brings the number ends
+    with the callback before any model is asked."""
+    state.caller_phone = None
+    llm, loop = _team_loop(
+        session,
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY)),
+            LLMTurn(
+                say=f"{TEAM_SAY}. Unter welcher Telefonnummer sind Sie erreichbar?"
+            ),
+        ],
+    )
+
+    asked = loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+
     after_check = json.loads(llm.calls[1][2])
-    assert after_check["ok"] is True
     assert after_check["data"]["team_callback"] is True
     assert after_check["hint"] == HINT_TEAM_CALLBACK
-    assert after_check["say"].startswith("Für neun Personen kann ich den Tisch nicht")
-    assert result.say == ["Das Team ruft Sie zurück."]
-    assert state.stage == "callback"
+    assert asked.ended is False and state.team_table == f"{WISH}."
+    assert session.scalars(select(Callback)).all() == []
+
+    done = loop.run_turn(state, "Meine Nummer ist 0721 5551234.")
+
+    assert len(llm.calls) == 2  # no third model call
+    assert done.ended is True and state.stage == "callback"
+    assert len(done.say) == 1
+    assert done.say[0].startswith("Ich habe Ihre Nummer notiert.")
     callback = session.scalars(select(Callback)).one()
-    assert (callback.reason, callback.summary) == ("out_of_scope", summary)
+    assert (callback.phone, callback.summary) == ("+497215551234", f"{WISH}.")
+
+
+def test_a_draft_for_a_team_table_ends_with_the_callback_too(session, state):
+    """A model that skips `check_slot`: `create_reservation` drafts nothing and
+    the core hands the wish over all the same. The time in the summary is the
+    restaurant's, whatever zone the model wrote."""
+    state.slots["phone"] = CALLER
+    _, loop = _team_loop(
+        session,
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="create_reservation",
+                    args={
+                        "guest_name": "Müller",
+                        "phone": CALLER,
+                        "party_size": 9,
+                        "reserved_for": "2026-09-19T17:00:00Z",
+                    },
+                )
+            )
+        ],
+    )
+
+    result = loop.run_turn(
+        state, "Neun Personen am Samstag um 19 Uhr, auf den Namen Müller."
+    )
+
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
     assert session.scalars(select(Reservation)).all() == []
+
+
+def test_a_smaller_party_takes_the_wish_for_the_team_back(session, state):
+    """No number yet, then the guest comes down to eight: the agent books that
+    itself, and a number named later must not send the old wish to the team."""
+    state.caller_phone = None
+    eight = {**NINE_ON_SATURDAY, "party_size": 8}
+    _, loop = _team_loop(
+        session,
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY)),
+            LLMTurn(say="Unter welcher Telefonnummer sind Sie erreichbar?"),
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=eight)),
+            LLMTurn(say="Für acht Personen ist am Samstag um sieben Uhr frei."),
+            LLMTurn(say="Auf welchen Namen darf ich den Tisch notieren?"),
+        ],
+    )
+    loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+    assert state.team_table is not None
+
+    loop.run_turn(state, "Dann kommen wir nur zu acht.")
+    assert state.team_table is None
+
+    later = loop.run_turn(state, "Meine Nummer ist 0721 5551234.")
+    assert later.ended is False
+    assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_refused_call_does_not_take_the_wish_for_the_team_back(session, state):
+    """Only an answer of the code for a table replaces the wish. A draft the
+    core refuses for a name nobody said answers for nothing."""
+    state.caller_phone = None
+    invented = {**NINE_ON_SATURDAY, "guest_name": "Mustermann", "phone": "0721 5551234"}
+    _, loop = _team_loop(
+        session,
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY)),
+            LLMTurn(say="Unter welcher Telefonnummer sind Sie erreichbar?"),
+            LLMTurn(tool_call=ToolCall(name="create_reservation", args=invented)),
+            LLMTurn(say="Wie ist Ihr Name?"),
+        ],
+    )
+    loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+
+    loop.run_turn(state, "Moment bitte.")
+
+    assert state.team_table == f"{WISH}."
+
+
+def test_a_callback_that_fails_still_ends_with_the_team(session, state):
+    """The number in the state is none a callback takes: the call goes the way
+    of every failure, here to the team that is on the line in the evening."""
+    state.slots["phone"] = "12"
+    _, loop = _team_loop(
+        session,
+        [LLMTurn(tool_call=ToolCall(name="check_slot", args=NINE_ON_SATURDAY))],
+        now=OPEN_NOW,
+    )
+
+    result = loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+
+    assert result.ended is True and state.stage == "transferred"
+    assert session.scalars(select(Callback)).all() == []

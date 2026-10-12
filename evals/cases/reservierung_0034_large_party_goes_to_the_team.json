@@ -24,10 +24,6 @@
   "expected": {
     "intent": "reservation",
     "confirmed": false,
-    "escalated": true,
-    "tools": [
-      "check_slot",
-      "create_callback"
-    ]
+    "escalated": true
   }
 }

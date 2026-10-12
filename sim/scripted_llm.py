@@ -70,8 +70,6 @@ PICKUP = ("abhol", "mitnehmen")
 ORDER_WORD = ("bestell",)
 RESERVATION_WORDS = ("tisch", "reserv", "platz", "personen")
 SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb dessen, was die KI selbst kann."
-# A table the agent does not book itself (`check_slot`: `team_callback`).
-SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
 NO = ("nein", "nicht", "falsch", "doch nicht", "anders")
@@ -148,9 +146,6 @@ class ScriptedLLM:
         # The sentence that announced the pickup together with the guest's own
         # allergy, until the search shows whether the allergy reached a dish.
         self._opening_allergy: str | None = None
-        # The sentence of `check_slot` for a table the team decides on, spoken
-        # in front of the sentence of the callback that follows it.
-        self._callback_prefix: str | None = None
 
     def next_turn(
         self, system_prompt: str, state_json: dict[str, Any], input_text: str
@@ -285,11 +280,6 @@ class ScriptedLLM:
         data = result.get("data") or {}
         say = result.get("say")
         slots = state.get("slots", {})
-        prefix = None
-        if name == "create_callback":
-            # Taken on any result: a callback that failed must not leave its
-            # sentence in front of a later one.
-            prefix, self._callback_prefix = self._callback_prefix, None
 
         if name == "search_menu" and self._opening_allergy:
             request, self._opening_allergy = self._opening_allergy, None
@@ -323,7 +313,7 @@ class ScriptedLLM:
             return self._after_failure(name, say)
         if name == "create_callback":
             self._out_of_scope_request = None
-            return LLMTurn(say=_join(prefix, say) or SAY_HANDOVER)
+            return LLMTurn(say=say or SAY_HANDOVER)
         if name == "get_service_status":
             if self._out_of_scope_request:
                 return self._out_of_scope(slots, {})
@@ -345,8 +335,11 @@ class ScriptedLLM:
             if name == "confirm" and "pickup_code" in data:
                 return self._pickup.on_confirmed(data)
         if name == "check_slot":
-            team = data.get("team_callback")
-            if data.get("available") or team:
+            # `team_callback` (#252): free, but the team decides. The core
+            # creates the callback itself and this script hears of it only
+            # while the core has no number to call back: then the tool's
+            # sentence comes first, and the question for what is missing.
+            if data.get("available") or data.get("team_callback"):
                 # The state is what the core took. A detail this script read
                 # from the sentence may be missing there: the core keeps no
                 # name or number the guest did not say as such, a number
@@ -354,21 +347,8 @@ class ScriptedLLM:
                 missing = _missing(slots)
                 if missing:
                     return LLMTurn(
-                        say=QUESTIONS[missing], understanding_failure=missing
-                    )
-                if team:
-                    # Free, but not booked by the agent: the wish goes to the
-                    # team, which calls back (#252).
-                    self._callback_prefix = say
-                    return LLMTurn(
-                        tool_call=ToolCall(
-                            "create_callback",
-                            {
-                                "phone": slots["phone"],
-                                "reason": "out_of_scope",
-                                "summary": self._table_wish(slots),
-                            },
-                        )
+                        say=_join(say, QUESTIONS[missing]),
+                        understanding_failure=missing,
                     )
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
             # Alternativen stehen im vorgeschriebenen Satz aus dem Code (docs/05 §5).
@@ -450,13 +430,6 @@ class ScriptedLLM:
                 },
             ),
             state_patch=patch or None,
-        )
-
-    def _table_wish(self, slots: dict[str, Any]) -> str:
-        when = datetime.fromisoformat(slots["reserved_for"]).astimezone(self._zone)
-        return (
-            f"{SUMMARY_TEAM_TABLE} {slots['party_size']} Personen, "
-            f"{when:%d.%m.%Y %H:%M} Uhr, Name {slots['guest_name']}."
         )
 
     def _greeting_once(self) -> str | None:

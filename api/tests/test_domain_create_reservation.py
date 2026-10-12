@@ -11,7 +11,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Conflict, InvalidInput, NotFound, TeamDecides
 from api.domain.calls import end_call
 from api.domain.confirm import confirm
 from api.domain.reservations import capacity as reservations_capacity
@@ -527,6 +527,8 @@ def test_beyond_the_limits_of_the_restaurant_nothing_is_drafted(
     with pytest.raises(Conflict) as exc:
         create_reservation(session, wish, now=NOW)
     assert heard in exc.value.say
+    # A table for the team is told apart from a wish nobody can book.
+    assert isinstance(exc.value, TeamDecides) is ("Personen" in heard)
     assert session.scalar(select(func.count()).select_from(Reservation)) == 0
 
 
