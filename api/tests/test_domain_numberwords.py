@@ -978,6 +978,10 @@ def test_prefix_s_stays_allowed():
         "Nummer ist 12",
         "zwei ist zwölf",
         "Ich hätte gern ist zwölf",
+        # Codex PR #257: after a verb as well. The heard word only adds a
+        # candidate, so it does not need the clean start a letter name needs.
+        "Ich nehme ist zwölf",
+        "Dann nehme ich ist zwölf bitte",
     ],
 )
 def test_ist_before_a_number_keeps_the_s_number_as_a_candidate(text):
@@ -1022,7 +1026,7 @@ def test_ist_is_a_plain_word_where_the_menu_has_no_s(text):
         ("Meine Bestellung ist 12", None),  # no order by number at all
     ],
 )
-def test_ist_counts_only_directly_before_the_number_after_a_clean_start(text, cards):
+def test_ist_counts_only_directly_before_the_number_and_set_apart(text, cards):
     ref, _ = sole_item_number(text, CARD)
     if cards is None:
         assert ref is None or not ref.valid or "s12" not in ref.cards

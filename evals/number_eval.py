@@ -22,7 +22,7 @@ Expected values in `cases/nummern.jsonl`:
               looks up all of them, and the menu says which one exists
     "12|s12?" the same, and the number with "?" rests on a word the ear may
               have written for a letter ("ist zwoelf"): the search asks before
-              it takes that one, also when it is the only one on the menu
+              it takes either of the two, whichever the menu has
 
 Which prefixes a number can carry ("S12", "SM1") is not in the code; it
 follows from the numbers on the menu (T-4.12). This set uses the eval menu

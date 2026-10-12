@@ -136,15 +136,16 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    zwölf"). Buchstabiert („Es zwölf") zählt nur am Satzanfang, auch nach Wunsch
    oder Gruß („Ich hätte gern Es zwölf", „Hallo, Es zwölf"), nie nach einem Verb
    („nehme ich es zwei" ist kein S2). A word the speech recognition writes for a
-   letter counts under the same limits: every engine measured writes „S zwölf" as
-   „ist zwölf" (T-10.3), so „ist" directly before a number adds the S number as a
-   second candidate next to the plain one („12 oder s12"). The search looks up
-   both: with both on the menu it asks by name („Meinen Sie Nummer 12,
-   Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with only the plain one it
-   takes it as before, with only the S number it offers it („Meinen Sie Nummer S7,
-   Gurken Maki?", `ambiguous` with one result) and never takes it without that
-   question: „das ist sieben" may be plain German for a dish that does not exist
-   (Codex PR #257). With none it is `not_found`. Only where the menu has the prefix S, and only in a
+   letter adds a candidate: every engine measured writes „S zwölf" as „ist zwölf"
+   (T-10.3), so „ist" directly before a number, set apart from it, keeps the S
+   number next to the plain one („12 oder s12"), after any lead („Ich nehme ist
+   zwölf"). Such a number is never taken without a question, whichever of the two
+   the menu has (Codex PR #257): with both the search asks by name („Meinen Sie
+   Nummer 12, Wan-Tan-Suppe oder Nummer S12, Thunfisch Maki?"), with one it offers
+   that one („Meinen Sie Nummer S7, Gurken Maki?", `ambiguous` with one result),
+   because the dish that exists may not be the one that was said. With none it is
+   `not_found`. Next to another dish („Ist zwölf und Pho Bo") it is a position of
+   its own, like the S12 said clearly. Only where the menu has the prefix S, and only in a
    pure number sentence: next to a name the sentence is what it was („das ist 5g
    Zucker"). Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
@@ -391,7 +392,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
     "items_total_cents": 1480, "delivery_fee_cents": 250, "total_cents": 1730,
     "ready_at": "2026-09-15T18:50:00Z",
     "warnings": [],
-    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17,30 Euro, Lieferung in etwa 50 Minuten an die Rheinstraße 54. Passt das so?"
+    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30, Lieferung in etwa 50 Minuten an die Rheinstraße 54. Passt das so?"
   },
   "say": null
 }
@@ -414,7 +415,7 @@ Verstoß → `ok: false` mit passendem Code und `say`.
 - Dieselbe Option zweimal ergibt `invalid_input` mit `say` („Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"). Zwei Kartenzeilen oder Gruppen, die sich nur in der Schreibweise unterscheiden, ergeben `service_unavailable` mit Übergabe ans Team statt einer geratenen Zeile; der Import lehnt solche Zeilen ab. Ebenso eine Optionswahl, die den Preis unter null drückt: ein Kartenfehler, den der Gast nicht korrigieren kann.
 - Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
 - `ready_at` = jetzt + `service_config.pickup_wait_minutes`, auf die volle Minute **aufgerundet** (in UTC): angesagt wird nie weniger als die Wartezeit. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
-- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
+- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. The total is spoken as two plain numbers, never with a decimal comma: „17 Euro 30", a round amount „7 Euro", below one euro „50 Cent", single cents with their unit („17 Euro 5 Cent"), a lone one as a word („ein Euro 50"; a voice reads „1 Euro" as „eins Euro"). A voice that does not know prices reads „17,30 Euro" as „siebzehn Komma drei null Euro" (Maxi, 12.10.2026); the surcharge in the `say` of `search_menu` uses the same form („50 Cent Aufpreis"). Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
 
 ---
 

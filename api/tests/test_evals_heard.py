@@ -29,8 +29,11 @@ from evals.heard import dish, dish_verdict, judge, number_verdict
         # "S1" heard as "ist eins": the menu has only the S1, and the search asks
         # whether it is meant (Codex PR #257). A question, no dish taken.
         ("s1", "Ist eins.", "asked", "1|s1?"),
-        # "S13" heard as "ist dreizehn": the menu has only the 13, taken as said.
-        ("s13", "Ist dreizehn.", "wrong", "13|s13?"),
+        # "S13" heard as "ist dreizehn": the menu has only the 13, and the search
+        # offers it instead of taking it for the S13 that was said.
+        ("s13", "Ist dreizehn.", "asked", "13|s13?"),
+        # Neither on the menu: no such number, and by its form never taken.
+        ("s99", "Ist neunundneunzig.", "asked", "99|s99?"),
     ],
 )
 def test_number_verdict(expect, heard, verdict, got):

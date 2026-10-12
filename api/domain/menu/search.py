@@ -324,6 +324,7 @@ def _position_parts(
     if len(pieces) <= 1:
         return [query]
     # Read the menu once, not per piece and span (review PR #155).
+    piece_card = card if card is not None else card_format(session, tenant_id)
     search = partial(
         search_menu,
         session,
@@ -332,7 +333,7 @@ def _position_parts(
         high=high,
         low=low,
         split_check=False,
-        card=card if card is not None else card_format(session, tenant_id),
+        card=piece_card,
     )
     spans = _spans(query, pieces)
     # No span can be a dish if it is longer than the longest name or alias on
@@ -365,10 +366,17 @@ def _position_parts(
             except (Ambiguous, NotFound):
                 return [query]
             if found.match_type not in CLEAR_MATCHES or not found.results:
-                return [query]
-            said.setdefault(found.results[0].menu_item_id, set()).add(
-                normalize_query(piece)
-            )
+                # "Ist zwölf und Pho Bo": the number that went through a heard
+                # letter needs a question and is a position of its own, as the
+                # S12 said clearly would be. Kept whole, the sentence would find
+                # Pho Bo alone and drop the first dish (Codex PR #257).
+                ref, _ = sole_item_number(piece, piece_card)
+                if not (found.results and ref is not None and ref.heard):
+                    return [query]
+            else:
+                said.setdefault(found.results[0].menu_item_id, set()).add(
+                    normalize_query(piece)
+                )
             positions.append(piece)
             i += 1
     if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
@@ -635,14 +643,13 @@ def search_menu(
                 f"Nummer {ref.text} nicht auf der Karte",
                 say=SAY_NO_SUCH_NUMBER.format(number=ref.text),
             )
-        only_heard = canonical_card(items[0].number) in {
-            canonical_card(card) for card in ref.heard
-        }
-        if len(items) > 1 or only_heard:
+        if len(items) > 1 or ref.heard:
             # "7" and "07" on the same menu, "Sushi eins" with S1 and SM1:
-            # ask back instead of choosing. Also for the one dish that rests on
-            # a heard letter: "Das ist sieben" with S7 and no 7 on the menu may
-            # be plain German for a dish that does not exist (Codex PR #257).
+            # ask back instead of choosing. Also with one dish, when the number
+            # went through a heard letter ("ist sieben" is 7 or S7): the dish
+            # that is on the menu may not be the one that was said, so it is
+            # offered ("Meinen Sie Nummer S7, ...?") and never taken (Codex PR
+            # #257).
             return _ambiguous(session, items[:limit], now)
         return _single(session, "exact_number", items[0], now)
 

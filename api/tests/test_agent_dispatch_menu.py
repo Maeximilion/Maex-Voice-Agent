@@ -416,7 +416,7 @@ def test_option_der_karte_mit_aufpreis_wird_mit_wiederholt(session, tenant_id, c
         "search_menu",
         {"query": "Ente knusprig mit Erdnuss"},
     )
-    assert "Nummer 47 Ente knusprig mit Erdnuss, 0,50 Euro Aufpreis" in result.say
+    assert "Nummer 47 Ente knusprig mit Erdnuss, 50 Cent Aufpreis" in result.say
     assert result.data["wish"]["option"] == "Erdnuss"
     assert result.data["wish"]["price_delta_cents"] == 50
 

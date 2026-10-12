@@ -12,6 +12,7 @@ from api.agent.state import (
     apply_state_patch,
     apply_tool_result,
     initial_state,
+    note_guest_details,
     note_intent,
 )
 
@@ -64,6 +65,7 @@ def test_reservation_id_erscheint_im_prompt_json_sobald_bekannt():
 
 def test_apply_state_patch_schreibt_in_die_slots():
     state = make_state()
+    note_guest_details(state, "Auf Müller bitte")
     apply_state_patch(state, {"guest_name": "Müller"})
     apply_state_patch(state, {"party_size": 4})
 
