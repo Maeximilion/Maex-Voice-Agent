@@ -936,6 +936,42 @@ def test_category_word_with_two_hits_asks_back(session, sushi):
     assert "Nummer s1" in result.say and "Nummer sm1" in result.say
 
 
+@pytest.mark.parametrize(
+    "said",
+    ["Ist zwölf.", "Zweimal ist zwölf.", "Die ist zwölf, bitte.", "Nummer ist 12"],
+)
+def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
+    """Eval abholung_0077: the ear writes "S zwölf" as "ist zwölf". The menu has
+    the 12 and the S12, so the guest is asked by name instead of getting the
+    soup (rule 2)."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["12", "s12"]
+    assert "Nummer 12, Wan-Tan-Suppe" in result.say
+    assert "Nummer s12, Thunfisch Maki" in result.say
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("Ist sieben.", "s07"),  # only the S7 is on the menu
+        ("Ist dreizehn.", "13"),  # only the 13 is on the menu, as before
+        ("die Nummer ist 23", "23"),
+    ],
+)
+def test_ist_number_with_one_dish_on_the_menu_takes_it(session, sushi, said, number):
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "exact_number" and nummern(result) == [number]
+
+
+def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Ist neunundneunzig.")
+    assert "99 oder s99" in err.value.say
+
+
 @pytest.mark.parametrize("said", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
 def test_missing_prefixed_number_is_never_the_bare_number(session, sushi, said):
     """Rule 2: "S 13" is not Pho Bo (13), "Nummer 23g" is not the 23."""

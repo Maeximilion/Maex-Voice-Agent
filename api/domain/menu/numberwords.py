@@ -152,6 +152,11 @@ _LETTER_NAMES = {
 }  # fmt: skip
 # At most this many tokens form a prefix ("Es Em" -> sm, "S M" -> sm).
 _MAX_PREFIX_TOKENS = 3
+# A word the speech recognition writes when the guest says a letter in front of
+# a number: "S zwölf" arrived as "ist zwölf" from every engine measured (T-10.3,
+# docs/20 §11). Not a letter name: the word is as likely just the word ("die
+# Nummer ist 23"), so it adds a candidate and never replaces the plain number.
+_HEARD_LETTERS = {"ist": "s"}
 
 
 @dataclass(frozen=True)
@@ -217,11 +222,17 @@ class CardFormat:
 
         `spelled=False`: letter names ("es", "em") do not count. They are also
         German words - "Dann nehme ich es zwei" is not S2 (review PR #155).
+        The same holds for a word the ear writes for a letter (`_HEARD_LETTERS`);
+        its result starts with "", the number without a prefix.
         """
         if not self.prefixes or not run or any(t in PUNCTUATION for t in run):
             return ()
         if len(run) == 1 and run[0] in self._word_map:
             return self._word_map[run[0]]
+        if spelled and len(run) == 1 and _HEARD_LETTERS.get(run[0]) in self.prefixes:
+            # "ist zwölf" is 12 or S12: both are looked up, and where the menu
+            # has both the search asks instead of taking the 12 (rule 2).
+            return ("", _HEARD_LETTERS[run[0]])
         spellings = {
             "".join(parts)
             for parts in product(
@@ -1279,10 +1290,13 @@ def sole_item_number(
     # and the guest is saying they do not know the number - then the name
     # search decides.
     # A number with a prefix is never a quantity ("S12 Lachs"): directly next
-    # to a name the sentence asks back, as with a marker (review PR #155).
+    # to a name the sentence asks back, as with a marker (review PR #155). A
+    # prefix that was only heard (`_HEARD_LETTERS`) leaves the plain number
+    # possible, so next to a name it is what it was without it: "das ist 5g
+    # Zucker" stays a sentence for the name search.
     nummer_gemeint = (
         has_marker
-        or any(s.prefixes and not _apart(s) for s in numbers)
+        or any(s.prefixes and "" not in s.prefixes and not _apart(s) for s in numbers)
         or any(
             span.start > i
             for i, tok in enumerate(tokens)

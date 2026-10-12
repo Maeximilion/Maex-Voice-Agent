@@ -24,6 +24,10 @@ from evals.heard import dish, dish_verdict, judge, number_verdict
         ("23", "die 23 und die 24", "asked", "?"),
         # A number that does not exist is said out loud, not taken.
         ("23", "Nummer 23h", "asked", "!23h"),
+        # "S12" heard as "ist zwölf": two dishes of the menu, so a question back.
+        ("s12", "Zweimal ist zwölf.", "asked", "12|s12"),
+        # "S1" heard as "ist eins": the menu has only the S1, the right dish.
+        ("s1", "Ist eins.", "right", "1|s1"),
     ],
 )
 def test_number_verdict(expect, heard, verdict, got):
