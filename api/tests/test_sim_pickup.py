@@ -1916,5 +1916,36 @@ def test_a_correction_whose_lookup_fails_is_left_to_the_handoff():
 
     missing = corrected()
     turn = missing.on_search_failed("Die Nummer 24 habe ich nicht auf der Karte.")
-    assert turn is not None and "Dann noch einmal von vorn" in (turn.say or "")
+    # The guest hears why the correction was not taken, then the restart.
+    assert turn is not None and turn.say == (
+        "Die Nummer 24 habe ich nicht auf der Karte. "
+        "Dann noch einmal von vorn: was möchten Sie bestellen?"
+    )
     assert missing.cart == []
+
+
+def test_a_menu_that_cannot_be_read_is_an_outage_not_a_crash():
+    """Codex PR #271, P1: the script reads the card numbers while it parses the
+    guest's sentence, outside any tool call. A database that is gone there
+    must end like a model that does not answer: `LLMError`, which the loop
+    turns into the handoff to the team (rule 5)."""
+    from api.agent.llm import LLMError
+    from sim.scripted_order import CartItem, PickupScript
+
+    def gone():
+        raise RuntimeError("database is gone")
+
+    script = PickupScript(gone)
+    script.cart = [CartItem("id-23", "23", "Frühlingsrollen", 1)]
+    script.phase = "customer"
+    script.readback_for = "order-1"
+    with pytest.raises(LLMError):
+        script.on_readback(False, "Nein, ich meinte die 24.")
+    # The draft that was read back is not confirmable after the no, whatever
+    # happened to the correction (rule 3).
+    assert script.readback_for is None
+
+    asked = PickupScript(gone)
+    asked._suggestions = [{"number": "S1", "name": "Lachs Nigiri"}]
+    with pytest.raises(LLMError):
+        asked._pick_suggestion("die S1")

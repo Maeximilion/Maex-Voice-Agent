@@ -191,8 +191,9 @@ first stays a draft. Behind the no the sentence has to be the card number alone:
 else (two numbers, a number that is not on the menu, two dishes the number could stand for,
 a time such as "um 13 Uhr", one more dish with "und die 13" or "und noch die 13", a dish
 taken away with "nicht", a name, a bare no) starts the order again, as before: never a guess.
-A corrected dish that is out today is said with the sentence of the search before the order
-starts again, and a lookup that fails without an answer hands the call to the team (rule 5). The scripted stand-in does this since 12.10.2026
+A corrected dish that is out today, or a number the menu does not have, is said with the
+sentence of the search before the order starts again, and a lookup that fails without an
+answer hands the call to the team (rule 5). The scripted stand-in does this since 12.10.2026
 (`sim/scripted_order.py` `_correction`, eval `abholung_0079`); a real model is told the same
 by the system prompt ("Ändert der Gast etwas, lege den Vorgang neu an"), and the core drops
 the old draft whichever of them drives the call.

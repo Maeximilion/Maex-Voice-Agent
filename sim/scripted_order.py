@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-from api.agent.llm import LLMTurn, ToolCall
+from api.agent.llm import LLMError, LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     NO_PREFIXES,
@@ -245,6 +245,17 @@ class PickupScript:
         self._replace = (at, quantity)
         return _search(f"Nummer {card}", {})
 
+    def _numbers(self) -> MenuNumbers:
+        """The card numbers of the active menu, read while a sentence of the
+        guest is parsed, outside any tool call. If they cannot be read, that is
+        an outage like a model that does not answer: the loop hands the call
+        to the team on `LLMError` (rule 5, Codex PR #271), where any other
+        exception would end the call."""
+        try:
+            return self._menu()
+        except Exception as exc:
+            raise LLMError("the card numbers of the menu could not be read") from exc
+
     def _restart(self) -> LLMTurn:
         self.cart = []
         self.phase = "dishes"
@@ -267,7 +278,7 @@ class PickupScript:
         # zwanzig") the word adds nothing (Codex PR #271).
         if _CORRECTION_STOP & set(words) or words[:1] == ["und"]:
             return None
-        ref, unclear = sole_item_number(said, self._menu().card)
+        ref, unclear = sole_item_number(said, self._numbers().card)
         if unclear or ref is None or not ref.valid or len(ref.cards) != 1 or ref.heard:
             return None
         named = canonical_card(ref.text)
@@ -407,7 +418,12 @@ class PickupScript:
             # Without a sentence for the guest the search did not answer at all:
             # that is an outage, and the caller hands the call to the team
             # (rule 5, Codex PR #271). The order stays as it was read back.
-            return self._restart() if say else None
+            if not say:
+                return None
+            # "Die Nummer 99 habe ich nicht auf der Karte": the guest hears why
+            # the correction was not taken, as with a dish that is out.
+            turn = self._restart()
+            return LLMTurn(say=_join(_statement(say), turn.say))
         if self._reopen is None:
             return None
         self._suggestions, self._suggestion_query = self._reopen
@@ -531,7 +547,7 @@ class PickupScript:
         # question: 1 or S1 by the letters of the menu, whatever was offered. A
         # number that went through a heard letter picks nothing; the name or a
         # yes does (Codex PR #257).
-        on_menu, _ = sole_item_number(text, self._menu().card)
+        on_menu, _ = sole_item_number(text, self._numbers().card)
         if ref is not None and not (on_menu is not None and on_menu.heard):
             cards = {canonical_card(c) for c in ref.cards}
             by_number = [
@@ -559,7 +575,7 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
-        if wish.kind != "allergy" and _orders_something(text, self._menu()):
+        if wish.kind != "allergy" and _orders_something(text, self._numbers()):
             # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
             # stays open instead of noting "Keine Eine Cola" (review PR #139).
             return LLMTurn(
@@ -807,6 +823,15 @@ _CORRECTION_STOP = frozenset(
         "keine",
     }
 )
+
+
+def _statement(say: str) -> str:
+    """What a search says without the question it ends on ("Können Sie das noch
+    einmal sagen?"): the restart asks its own, and two questions in a row leave
+    the guest with nothing to answer."""
+    sentences = re.split(r"(?<=[.!?])\s+", say.strip())
+    kept = [s for s in sentences if not s.endswith("?")]
+    return " ".join(kept) or say
 
 
 def _correction_quantity(said: str) -> int | None:
