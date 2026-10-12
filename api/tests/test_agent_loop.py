@@ -14,6 +14,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent.dispatch import HINT_TEAM_CALLBACK
 from api.agent.guards import (
     HINT_CONFIRM,
     HINT_GUEST_NAME,
@@ -1099,4 +1100,43 @@ def test_model_that_insists_on_an_invented_name_ends_with_the_team(
     result = loop.run_turn(called_state, "Einen Tisch für vier morgen um sieben")
 
     assert result.ended is True
+    assert session.scalars(select(Reservation)).all() == []
+
+
+def test_a_table_for_the_team_reaches_the_model_with_its_next_steps(session, state):
+    """Above the party limit `check_slot` books nothing (#252). What follows is
+    in no system prompt: it travels with that result, and with it a model
+    turns the wish into a callback instead of a draft."""
+    state.slots["phone"] = CALLER
+    wish = {"reserved_for": "2026-09-19T19:00:00+02:00", "party_size": 9}
+    summary = "Reservierungswunsch: 9 Personen, Samstag 19 Uhr, Name Müller."
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args=wish)),
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="create_callback",
+                    args={
+                        "phone": CALLER,
+                        "reason": "out_of_scope",
+                        "summary": summary,
+                    },
+                )
+            ),
+            LLMTurn(say="Das Team ruft Sie zurück."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Einen Tisch für neun Personen am Samstag um 19 Uhr.")
+
+    after_check = json.loads(llm.calls[1][2])
+    assert after_check["ok"] is True
+    assert after_check["data"]["team_callback"] is True
+    assert after_check["hint"] == HINT_TEAM_CALLBACK
+    assert after_check["say"].startswith("Für neun Personen kann ich den Tisch nicht")
+    assert result.say == ["Das Team ruft Sie zurück."]
+    assert state.stage == "callback"
+    callback = session.scalars(select(Callback)).one()
+    assert (callback.reason, callback.summary) == ("out_of_scope", summary)
     assert session.scalars(select(Reservation)).all() == []
