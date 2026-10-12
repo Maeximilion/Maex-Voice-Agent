@@ -224,12 +224,14 @@ require_passphrase() {
     command -v gpg >/dev/null || die 2 "gpg is not on PATH"
     # gpg creates a missing home directory without a lock: of two runs that start
     # together on a fresh machine (the nightly cron and a backup by hand), one dies
-    # with "can't create directory ... File exists". mkdir -p has no loser. The tilde
-    # is the home gpg falls back to as well, also where HOME is not set. The mode
-    # comes from the umask: `mkdir -m 700` creates the directory in Git Bash and then
+    # with "can't create directory ... File exists". mkdir -p has no loser. gpgconf
+    # names the directory gpg will use: GNUPGHOME reads differently to gpg than to
+    # a shell (cron hands over "~/x" as written, and gpg expands it). The mode comes
+    # from the umask: `mkdir -m 700` creates the directory in Git Bash and then
     # fails with "cannot change permissions".
-    local gpg_home=~/.gnupg
-    gpg_home="${GNUPGHOME:-$gpg_home}"
+    local gpg_home
+    gpg_home="$(gpgconf --list-dirs homedir)" ||
+        die 2 "gpgconf, which comes with gpg, does not name the gpg home directory"
     (umask 077 && mkdir -p "$gpg_home") ||
         die 2 "cannot create the gpg home directory $gpg_home"
 }
