@@ -1,4 +1,5 @@
-"""call_routing: does the agent answer this call, and where is the team (docs/02 §4).
+"""call_routing: does the agent answer this call, where is the team, and how
+long may the call last (docs/02 §4).
 
 Read once at the start of every call. The mode comes fresh from the database, not
 from a row this session may have cached: the emergency stop in the tablet header
@@ -24,6 +25,8 @@ class CallRouting:
     ai_answers: bool
     team_phone: str
     tenant_name: str
+    # The longest a call with the agent may last before it goes to the team.
+    max_call_seconds: int
 
 
 def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
@@ -35,4 +38,5 @@ def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
         ai_answers=config.call_mode in AI_ANSWERS,
         team_phone=config.team_phone,
         tenant_name=tenant.name,
+        max_call_seconds=config.max_call_seconds,
     )

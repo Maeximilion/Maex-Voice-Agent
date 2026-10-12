@@ -19,6 +19,7 @@ Live calls are held in this process. A turn for a call this process does not kno
 
 import re
 import threading
+import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
@@ -92,6 +93,7 @@ class CallHandler:
         llm_factory: LLMFactory,
         now: datetime | None = None,
         fallback_team_phone: str | None = None,
+        clock: Callable[[], float] = time.monotonic,
     ):
         self._port = port
         self._tenant_id = tenant_id
@@ -100,6 +102,9 @@ class CallHandler:
         # A fixed instant keeps a played call reproducible; without it every event
         # runs on the real clock.
         self._now = now
+        # What a call's length is measured with (`max_call_seconds`); a test
+        # sets it instead of waiting.
+        self._clock = clock
         # The only number left when the database cannot be read.
         self._fallback_team_phone = fallback_team_phone or settings.team_phone
         self._lock = threading.Lock()
@@ -186,7 +191,11 @@ class CallHandler:
             # The same prompt as the text phone and the evals (sim/session.py):
             # a real model learns the tools from it.
             build_system_prompt(tools=True),
+            # The tenant's limit, not the setting of the same name: that one
+            # is only what the seed writes into a new tenant.
+            max_call_seconds=routing.max_call_seconds,
             now=self._now,
+            clock=self._clock,
         )
         live.state.greeted = True
         self._port.say(live.session_id, GREETING.format(name=routing.tenant_name))
