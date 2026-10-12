@@ -61,7 +61,9 @@ def test_an_ear_with_a_sample_hears_every_nth_utterance(tmp_path, monkeypatch):
     )
     monkeypatch.setitem(sys.modules, "piper", piper)
     monkeypatch.setattr(
-        speech_bench, "load_ear", lambda spec, models, terms: lambda a: "ja"
+        speech_bench,
+        "load_ear",
+        lambda spec, models: (lambda audio, terms: "ja", lambda terms: []),
     )
     plan = {
         "voices": ["a", "b"],
