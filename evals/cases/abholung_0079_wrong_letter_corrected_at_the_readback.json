@@ -1,0 +1,61 @@
+{
+  "id": "abholung_0079",
+  "name": "A wrong letter at the read-back: the guest names the right number, that dish is replaced and the order is read back again",
+  "tags": [
+    "abholung",
+    "menu",
+    "nummer",
+    "vorlesen",
+    "korrektur",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 35a."
+    },
+    {
+      "role": "customer",
+      "text": "Und noch die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Falsch, ich meinte die Nummer 35b."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "35b",
+        "quantity": 2
+      },
+      {
+        "number": "13",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller",
+    "readback": "Zweimal Nummer 35b Bun Cha. Einmal Nummer 13 Pho Bo."
+  }
+}
