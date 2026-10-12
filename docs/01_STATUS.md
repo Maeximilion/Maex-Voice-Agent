@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.8
+> Status: 12.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.0.9
 
 ---
 
@@ -285,6 +285,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| The total is written for a voice that reads prices, and our mouth does not (`api/domain/ordering/readback.py` `spoken_euro`; also the surcharge sentences in `domain/menu/search.py`) | Maxi, 12.10.2026, on a sample of the real read-back spoken by the test-phase voice: "Macht 25,70 Euro" comes out as "fünfundzwanzig Komma sieben null Euro". Nobody says that; it is "fünfundzwanzig Euro siebzig". The text was written when a hosted platform was to speak it. With our own mouth the sentence has to be speakable by any engine: "25 Euro 70", below one euro "50 Cent". It is the amount the guest says yes to, so a red test first and effort `xhigh` | own bug task before the first test call; Maxi merges |
+| The speech kit hears invented dishes, not the pilot's (`api/telephony/speech_spike.py` `build_plan`) | Maxi, 12.10.2026: why not test with the real menu, where the numbers mean other dishes. The evals and CI stay on the invented eval menu (reproducible, and no data of the pilot in the repository). For what an ear makes of the real dish names the kit can read a menu file from outside the repository (`--menu`, not built). The register copies exist on the workbench, the converted files and the import into a database do not (item 3 of What's next) | with T-10.5 (key terms from the menu) at the latest |
 | A card number with a letter loses its letter on the way through the ear (`api/domain/menu/numberwords.py` `sole_item_number`) | T-10.3, 12.10.2026: "S12" spoken is transcribed as "ist zwölf" or "zwölf" by every ear tried, and the number rule takes dish 12 without a question; "23g" becomes "23 D". 9 to 11 % of the utterances with such a number, against 0 to 1 % for plain numbers. The read-back names the dish, so the guest can say no, but no code stops it, and the register has 43 Sushi numbers with a prefix. Proposal: where the card has a prefix, a number after "ist" or a bare number that also exists with a prefix asks back ("S12 oder 12?"); red lines in `evals/cases/nummern.jsonl` first. Decides which dish a sentence means, effort `xhigh` | before the first test call that orders by number; own task, Maxi decides (his note of 04.10.2026 was no more effort for exotic number forms, this one is the plain Sushi numbers) |
 | Our containers run as root (`api/Dockerfile` has no `USER`; `api`, `dispatcher` and `push` run with uid 0, checked on the dev stack 11.10.2026) | Raised by a friend of Maxi's, 11.10.2026. Fine on the workbench: the bind mounts and `--reload` are simpler as root. On the server a hole in the API would hand an attacker root inside the container, with the mounted source and `.env` values. `db` (uid 70) and `n8n` (uid 1000) already drop root; `caddy` needs it only to bind 80 and 443. To do: a user in `api/Dockerfile`, `user:` for `push`, the production Compose file without source mounts, and on the server a deploy user instead of a root login. The voice layer's containers (T-1.11) start that way from the beginning | With T-9.2, before the server takes a real call |
 | A model can invent or mangle the guest's name and phone number (`api/agent/state.py` `apply_state_patch`, `draft_order` and `create_reservation` in `agent/dispatch.py`) | Seen in the pickup runs on a real model (07.10.2026): to get `draft_order` through it sent "Max Mustermann", "Gast" and a phone number nobody had said, and once it rewrote the number from the caller ID with digits missing. The name is read back, the phone number is not, so an order can end under a number that reaches a stranger. The guards hold rules 2 and 3 for dishes and the yes; nothing checks that a name or number was said by the guest or came from the caller ID. Proposal: a number is taken only when its digits stand in a guest sentence of the call or it is the caller ID; a name only when it stands in a guest sentence | T-2.4 part 4, before a real model takes a real call |
@@ -434,6 +436,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.0.9 · 12.10.2026:** Open points from Maxi's listening test: spoken total (25,70 Euro), speech kit on the real menu
 - **v2.0.8 · 12.10.2026:** D4: test-phase voice heard and found not clean, own synthesized voice kept as an idea for the operation services
 - **v2.0.7 · 12.10.2026:** T-10.3 local engines measured: Parakeet v3 on the CPU and Piper thorsten, a recommendation and no clean go; /task and /bug load code-autopilot, /task prints the title where the app has no rename tool
 - **v2.0.6 · 11.10.2026:** T-10.1 step 1 done: call audio over the media channel on the workbench, 28 of 28 points; containers run as root noted for T-9.2
