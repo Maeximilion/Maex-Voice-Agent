@@ -1,7 +1,7 @@
 """Kit of the spike T-10.3: pick the open ear and mouth of the test phase.
 
     python3 -m scripts.speech_spike [--dry-run] [--limit N] [--run-dir DIR]
-                                    [--menu FILE]
+                                    [--menu FILE] [--judge-only]
 
     --dry-run   check the environment and print every step, change nothing
     --limit     only the first N number sentences and the first N dish names:
@@ -14,6 +14,10 @@
                 S12"), and what is heard is judged against its numbers. A real
                 menu stays out of the repository; its names end up in the run
                 directory only (plan, results, the list of wrong numbers)
+    --judge-only
+                judge the recorded run in --run-dir again and print its report:
+                the same plan and transcripts, the number rule as it is now.
+                Speaks and hears nothing; for a change to the number rule
 
 Builds the image of `deploy/speech/` (the open speech engines next to the
 project's packages) and runs three containers from it, one after another: one
@@ -146,11 +150,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int)
     parser.add_argument("--run-dir", type=Path, default=SPEECH_DIR / "run")
     parser.add_argument("--menu", type=Path)
+    parser.add_argument("--judge-only", action="store_true")
     args = parser.parse_args(argv)
     run_dir = args.run_dir.resolve()
+    recorded = args.judge_only
 
     if args.limit is not None and args.limit < 1:
         parser.error("--limit needs a number above zero")
+    if recorded and (args.limit is not None or args.menu):
+        parser.error("--judge-only takes the plan of the run: no --limit, no --menu")
     if os.getuid() == 0:
         print(
             "speech_spike: run it as an unprivileged user. The containers take the "
@@ -172,36 +180,44 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
-        plan = build_plan(args.limit, args.menu)
+        if recorded:
+            plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+            (run_dir / "heard.json").stat()
+        else:
+            plan = build_plan(args.limit, args.menu)
     except (OSError, KeyError, ValueError) as exc:
-        print(
-            f"speech_spike: --menu {args.menu} is no menu in the import format "
-            f"(columns number, name and category, separated by ';'): {exc!r}",
-            file=sys.stderr,
+        problem = (
+            f"--judge-only needs plan.json and heard.json of a run in {run_dir}"
+            if recorded
+            else f"--menu {args.menu} is no menu in the import format (columns "
+            "number, name and category, separated by ';')"
         )
+        print(f"speech_spike: {problem}: {exc!r}", file=sys.stderr)
         return 2
     dry = args.dry_run
     try:
-        step("Write the plan into", run_dir)
-        if not dry:
-            run_dir.mkdir(parents=True, exist_ok=True)
-            (run_dir / RUN_MARKER).touch()
-            clear_results(run_dir)
-            (run_dir / "plan.json").write_text(
-                json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
-            )
+        if not recorded:
+            step("Write the plan into", run_dir)
+            if not dry:
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / RUN_MARKER).touch()
+                clear_results(run_dir)
+                (run_dir / "plan.json").write_text(
+                    json.dumps(plan, ensure_ascii=False, indent=1), encoding="utf-8"
+                )
         step("Build the image with the speech engines")
         build = ["docker", "build", "-t", IMAGE]
         docker([*build, "-f", "Dockerfile", "../../api"], dry, cwd=SPEECH_DIR)
-        gpu = not dry and gpu_in_docker()
-        step("Download the model files (network; only what is missing)")
-        bench = "api.telephony.speech_bench"
-        docker(in_image(run_dir, bench, "fetch", network=True), dry)
-        step(
-            f"Speak and hear: {len(plan['sentences'])} sentences, "
-            f"{len(VOICES)} voices, {len(EARS)} ears (no network)"
-        )
-        docker(in_image(run_dir, bench, "measure", gpu=gpu), dry)
+        if not recorded:
+            gpu = not dry and gpu_in_docker()
+            step("Download the model files (network; only what is missing)")
+            bench = "api.telephony.speech_bench"
+            docker(in_image(run_dir, bench, "fetch", network=True), dry)
+            step(
+                f"Speak and hear: {len(plan['sentences'])} sentences, "
+                f"{len(VOICES)} voices, {len(EARS)} ears (no network)"
+            )
+            docker(in_image(run_dir, bench, "measure", gpu=gpu), dry)
         step("Judge what was heard (no network)")
         docker(in_image(run_dir, "evals.heard"), dry)
     except SpikeError as exc:

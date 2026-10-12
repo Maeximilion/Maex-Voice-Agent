@@ -465,3 +465,53 @@ def test_the_report_names_the_menu_it_was_judged_against(capsys, tmp_path):
     out = capsys.readouterr().out
     assert "a dish of the menu given with --menu, 173 dishes" in out
     assert "eval menu" not in out
+
+
+# --- Judging a recorded run again (--judge-only) ----------------------------------
+
+
+def test_judge_only_judges_the_recorded_run_again_and_speaks_nothing(
+    tmp_path, monkeypatch, capsys
+):
+    """After a change to the number rule: the same transcripts, a new verdict.
+    Plan and transcripts stay as they were recorded."""
+    fake_containers(monkeypatch, "w")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 1
+    recorded = {
+        name: (tmp_path / name).read_bytes() for name in ("plan.json", "heard.json")
+    }
+    (tmp_path / "judged.json").unlink()
+    (tmp_path / "report.json").unlink()
+    capsys.readouterr()
+
+    seen = []
+    fake = kit.docker
+    monkeypatch.setattr(
+        kit,
+        "docker",
+        lambda command, dry, cwd=None: (seen.append(command), fake(command, dry, cwd)),
+    )
+    assert kit.main(["--run-dir", str(tmp_path), "--judge-only"]) == 1
+
+    assert not any("fetch" in c or "measure" in c for c in seen)
+    assert any("evals.heard" in c for c in seen)
+    assert {n: (tmp_path / n).read_bytes() for n in recorded} == recorded
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["go"] is False
+    out = capsys.readouterr().out
+    assert "no-go" in out and "Speak and hear" not in out
+
+
+def test_judge_only_needs_a_recorded_run(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    assert kit.main(["--run-dir", str(tmp_path / "new"), "--judge-only"]) == 2
+    assert "plan.json and heard.json" in capsys.readouterr().err
+    assert not (tmp_path / "new").exists()
+
+
+@pytest.mark.parametrize("extra", [["--limit", "2"], ["--menu", "menu_items.csv"]])
+def test_judge_only_takes_the_plan_of_the_run_and_no_other(tmp_path, capsys, extra):
+    with pytest.raises(SystemExit) as stop:
+        kit.main(["--run-dir", str(tmp_path), "--judge-only", *extra])
+    assert stop.value.code == 2
+    assert "--judge-only" in capsys.readouterr().err

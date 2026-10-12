@@ -317,6 +317,21 @@ and is the only one with network access; the second speaks, hears and times
 given are those dish names, read from the menu file. Which engines are tried is the table at the
 top of `api/telephony/speech_spike.py`.
 
+**On another menu than the eval menu (12.10.2026).** The evals and CI stay on the invented eval menu. To hear what the ears make of a real one, convert the register copies into the folder `imports/`, which git ignores, and hand the kit the file:
+
+```bash
+# Ubuntu terminal, repository folder. <kasse> is the folder with the register copies;
+# it is mounted read-only. Exit 1 with the allergen errors is expected.
+docker run --rm --network none -v "$PWD:/app" -v "<kasse>:/kasse:ro" -w /app \
+  --user "$(id -u):$(id -g)" -e HOME=/tmp -e DATABASE_URL=postgresql+psycopg://x:x@x/x \
+  -e AGENT_API_TOKEN=x -e ENV=test maex-voice-agent-api:latest \
+  python -m scripts.kasse_to_csv /kasse --out imports
+python3 -m scripts.speech_spike --menu imports/menu_items.csv   # about 45 minutes for 173 dishes
+python3 -m scripts.speech_spike --judge-only                    # after a change to the number rule
+```
+
+With `--menu` the kit speaks the dish names of that file, every one of its card numbers once ("Nummer S12") and the sentences of the number eval, hands the names to the ear as key terms, and the judge reads from the plan which letters a number can carry and what is on the card. The expectations of the number eval were written for the eval menu, so with another menu a number sentence is right when the transcript resolves like the sentence that was said. `--judge-only` speaks and hears nothing: it judges the recorded run in the run folder again with the number rule as it is now. **A real menu stays out of the repository:** its names are in `imports/` and in the run folder only (plan, results, the list of wrong numbers), both ignored by git, and the log below carries counts, no names.
+
 What the numbers are and are not:
 
 - **The callers are synthetic.** Every sentence is spoken by the mouth candidates, so a wrong
@@ -341,6 +356,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 |---|---|---|---|
 | 07.10. and 11.10.2026 | T-10.1 step 1 | `python3 -m scripts.voice_spike` on the workbench (Ubuntu in WSL, Docker Desktop): Asterisk 22.10.1 as test PBX, a scripted softphone over SIP with A-law, the probe at the other end of the media channel (`slin16`, JSON control frames). Tones instead of speech, detected by frequency in the softphone's recording and in the probe. The whole kit run several times, same result | **Go for step 1, 28 of 28 points.** Audio to the caller: 4.00 s heard of 4 s sent. Audio from the caller: its tone detected, one 640-byte frame every 20 ms on average (19.96 to 20.00 over the runs), the longest gap between two frames 20 to 29 ms. Caller number: arrives, one invented number per call. Key events: every digit arrives as `DTMF_END`. Pacing: 4 s sent at once, queue empty after 4.01 s. Stopping playback: 15 s queued, the caller plays a 3 s tone and then presses a key, the caller heard our tone for 3.2 s and it ended about 20 ms after `FLUSH_MEDIA` (three runs: +21 ms each). Both are put on one clock through the start of the caller's own tone, which is in the softphone's recording and in the probe's log; the recording is counted in 20 ms windows, so the figure is exact to one or two frames. Queue length 0. Hangup after speech: the full 1 s heard, call over after 1.3 s. Three calls at once: on the line together for 5.2 s, each with its own tones, number and digit, and none of another call's tone in either direction. Voice service unreachable: `Dial` fails after one try and the dialplan continues. Not measured: speech, delay from mouth to ear, a softphone outside the Docker network, step 2 at the pilot's router |
 | 12.10.2026 | T-10.3, local engines | `python3 -m scripts.speech_spike` on the workbench, twice. The 181 sentences of the number eval and the 31 dish names of the eval menu, spoken by four Piper voices, sent through a modelled telephone line (300 to 3,400 Hz, 8 kHz A-law), heard by five ears: 848 utterances per ear, 724 of them number sentences, judged by the rule that resolves numbers on the phone. No network while it measures. Right / asked back / silent wrong, run 1 and run 2: Parakeet v3 on the CPU 63.1 / 35.4 / **1.5 %** and 62.6 / 35.4 / **2.1 %**; Whisper large-v3-turbo on the graphics card 68.8 / 24.7 / 6.5 % and 68.2 / 25.1 / 6.6 %; the same with key terms 71.0 / 24.0 / 5.0 % and 69.8 / 25.7 / 4.6 %; Whisper small on the CPU 59.9 / 31.1 / 9.0 % and 61.3 / 31.8 / 6.9 %. Median per sentence: Parakeet 0.15 s, Whisper turbo on the card 0.11 s (2.3 GB of graphics memory) and on the CPU 3.9 s (a sample of 41, timing only), Whisper small 0.76 s. Dish names letter by letter: 37 % Whisper turbo, 81 % with key terms, 18 to 27 % Parakeet. Mouth, first audio: `thorsten-medium` 0.08 s, `thorsten-high` 0.27 s, the two `low` voices 0.07 s; the picked ear understood 65 to 68 % of the number sentences from `thorsten`, 58 to 61 % from the `low` voices. Silence detector at 300 / 500 / 700 ms: 96 to 98 / 98 to 99 / 98 to 99 % of the sentences in one piece | **Recommendation, no clean go.** Ear Parakeet v3 on the CPU, mouth Piper `thorsten`, a local silence detector at 500 ms. The limit of 2 % silent wrong numbers is met in one run and missed in the other; plain numbers are safe, numbers with a letter are not (§6, §12). Ear and mouth take 0.24 to 0.41 s of the 1.5 s. Not measured: real voices, a real line, the text model, the EU services for operation (they wait for accounts) |
+| 12.10.2026 | T-10.3, the pilot's real menu | `python3 -m scripts.speech_spike --menu imports/menu_items.csv` on the workbench, one run. The 173 dishes of the register export (43 plain numbers, 37 with S, 6 with SM, 87 with a trailing letter a to g): every card number spoken once ("Nummer S12"), every dish name, and the 193 sentences of the number eval; 2,156 utterances per ear, 1,464 of them number sentences, judged against the 173 numbers with the number rule of PR #257 (`--judge-only` after its last change). Right / asked back / silent wrong over all number sentences: Parakeet v3 on the CPU 60.7 / 36.5 / **2.9 %** (2.3 % another dish of the menu); Whisper large-v3-turbo on the graphics card 71.9 / 22.3 / 5.8 %, with key terms 72.1 / 22.1 / 5.7 %; Whisper small on the CPU 62.9 / 29.4 / 7.7 %. The 692 utterances of real card numbers on the picked ear: 57.2 / 38.9 / **3.9 %** (27, of them 24 another dish). By form: plain 70.9 / 29.1 / 0 % of 172; S 33.8 / 66.2 / 0 % of 148 (59 of the questions come from the "ist" rule); SM 33.3 / 66.7 / 0 % of 24; trailing letter 62.1 / 30.2 / **7.8 %** of 348. All 27 silent wrong numbers are numbers with a trailing letter: in 17 the letter is lost and the plain number taken (d written as "der" 7 times, e as "die" or "äh", a as "ja"), in 6 it becomes another letter (g heard as D 4 times), 4 have other digits. By letter, wrong: d 17 %, e 15 %, g 14 %, b 7 %, f 4 %, c 2 %, a 1 %. By voice: `karlsson-low` 11.6 % (20 of the 27), `thorsten-medium` 2.3 %, `kerstin-low` 1.2 %, `thorsten-high` 0.6 %. Per dish: the number of 87 of the 173 got through from at least three of the four voices (32 of 43 plain, 49 of 87 with a letter, 6 of 37 S, none of 6 SM), of 21 from none; 26 dishes had at least one silent wrong number. Dish names letter by letter: Parakeet 18 %, Whisper turbo 26 %, 44 % with the 173 names as key terms (81 % with the 31 of the eval menu). Median per sentence: Parakeet 0.21 s, Whisper turbo 0.12 s, Whisper small 0.84 s (the machine ran tests at the same time). Silence detector at 300 / 500 / 700 ms: 96.9 / 98.8 / 99.1 % in one piece | **No-go against the 2 % limit, and the picture changes:** on the real menu the open problem is not the prefix (S and SM: no silent wrong number, at the price of a question in two of three utterances) but the trailing letter, which half of the dishes carry. A plain number was never taken wrongly. One synthetic voice causes three quarters of the errors, so the size of it is a question for real voices (T-10.7); the rule for it is §12 |
 
 ---
 
@@ -360,12 +376,20 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   heard as "ist" is fixed since 12.10.2026, §6): (1) the letter is dropped completely,
   "Ich hätte gern Es zwölf" heard as "Ich hätte gerne zwölf" (8 of 16 utterances of that
   one sentence over all ears, 1 of 4 on the picked ear). Nothing in the transcript tells it
-  from the plain 12; asking on every bare number that also exists with S would cost a
-  question on most plain orders of a menu that has both ranges, so it is not built, and
-  the read-back names the dish. (2) The ending g heard as a word: "23g" as
-  "dreiundzwanzig die", 2 of 32 utterances with a valid ending on the picked ear. Two
-  utterances of synthetic voices are too thin for a rule. Both wait for real voices
-  (T-10.7); Maxi decides whether either gets a rule before that.
+  from the plain 12; on the real menu 30 of the 37 S numbers also exist as plain numbers,
+  so asking on every bare number would cost a question on most plain orders. Not built; the
+  read-back names the dish. (2) **The trailing letter heard as a word, the open problem on
+  the real menu** (run of 12.10.2026, §11): 87 of the 173 dishes carry a letter a to g, and
+  all 27 silent wrong numbers of the picked ear are among their 348 utterances (7.8 %, 24
+  of them another dish). In 17 the ear writes the letter as a word the number rule reads
+  as filler ("Nummer 26 der", "27 die", "30 ja", "27 äh") and the plain number is
+  taken, which the menu has too. Proposal, as a task of its own with red lines in
+  `evals/cases/nummern.jsonl` first: a loose word directly behind the number at the end of
+  the sentence, where the menu has that number with a letter, is no filler but a question
+  ("Meinen Sie Nummer 26, ... oder Nummer 26d, ...?"), the way "ist" in front of the
+  number is one since PR #257. Not catchable by a rule: g heard as D (4 of the 27), a valid
+  other number; that is left to the read-back. Before building: 20 of the 27 come from one
+  synthetic voice, so real voices (T-10.7) decide how large it is. Maxi decides.
 - **From T-10.3, what the synthetic callers cannot say:** the measurement ranks the engines, it
   does not predict real callers. The same sentences spoken by people over a real line are T-10.7;
   the thresholds of §6 are confirmed or changed with those numbers.
