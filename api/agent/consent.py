@@ -220,12 +220,29 @@ def _without_closing_question(readback: str) -> str:
     return text[:cut] if text.endswith("?") and cut != -1 else text
 
 
-def _asks_to_confirm(words: list[str]) -> bool:
-    """A closing question the guest's yes can answer: assent and filler words
-    only, and an assent word among them ("Passt das so?", "Ist das so
-    richtig?"). "Ist es sicher?" is made of filler words alone and asks
-    something else."""
-    return _polite(words) and any(word in _YES for word in words)
+# The questions that ask for the yes to what was just read out, word for word.
+# Closed on purpose: the same words in another order or with one more ask
+# something else ("Ist es richtig sicher?" asks about safety, and "richtig"
+# means "really" there). The question a read-back brings itself always counts.
+_CONFIRMATION_QUESTIONS = frozenset(
+    {
+        ("passt", "das", "so"),
+        ("passt", "das"),
+        ("passt", "es", "so"),
+        ("stimmt", "das", "so"),
+        ("stimmt", "das"),
+        ("ist", "das", "so", "richtig"),
+        ("ist", "das", "richtig"),
+        ("ist", "das", "so", "korrekt"),
+        ("ist", "das", "korrekt"),
+    }
+)
+
+
+def _asks_to_confirm(words: list[str], own: list[str]) -> bool:
+    """Is this the question the guest's yes answers: the read-back's own, or
+    one of `_CONFIRMATION_QUESTIONS`."""
+    return bool(words) and (words == own or tuple(words) in _CONFIRMATION_QUESTIONS)
 
 
 def read_out(say: str, readback: str) -> bool:
@@ -235,8 +252,8 @@ def read_out(say: str, readback: str) -> bool:
 
     - The words of the draft, in order and without a gap: a read-back that
       leaves the name out or says another number is not this draft.
-    - Behind them the question that asks for the yes, in the draft's words or
-      the model's own (`_asks_to_confirm`), and nothing else. Without it the
+    - Behind them the question that asks for the yes, the draft's own or one
+      of a few fixed forms (`_asks_to_confirm`), and nothing else. Without it the
       guest's "Ja" answers whatever was said last: "Das ist falsch: <draft>."
       asks nothing, and "<draft>. Möchten Sie noch einen Hochstuhl?" asks
       about the high chair. A read-back that is a question as a whole needs
@@ -249,6 +266,7 @@ def read_out(say: str, readback: str) -> bool:
     """
     body = _without_closing_question(readback)
     draft = _SPOKEN.findall(body.lower())
+    own_question = _SPOKEN.findall(readback.rstrip()[len(body) :].lower())
     said = _SPOKEN.findall(say.lower())
     size = len(draft)
     if not size:
@@ -258,7 +276,7 @@ def read_out(say: str, readback: str) -> bool:
         if said[at : at + size] != draft:
             continue
         after = said[at + size :]
-        if not (_asks_to_confirm(after) or (asks_itself and not after)):
+        if not (_asks_to_confirm(after, own_question) or (asks_itself and not after)):
             continue
         if _neutral_start(said[:at]):
             return True
