@@ -328,7 +328,6 @@ class Clock:
     [
         (0, 1),  # a steady clock: one call
         (1, 2),  # set during the first call: placed again
-        (9, 1 + spike.CLOCK_STEP_RETRIES),  # set every time: it gives up and judges
     ],
 )
 def test_a_call_during_which_the_wall_clock_was_set_is_placed_again(
@@ -342,6 +341,18 @@ def test_a_call_during_which_the_wall_clock_was_set_is_placed_again(
 
     assert stack.placed == placed
     assert calls["601"]["log"][-1]["closed"]
+
+
+def test_a_clock_that_is_set_during_every_attempt_breaks_the_run(tmp_path, monkeypatch):
+    clock = Clock()
+    monkeypatch.setattr(spike, "time", clock)
+    stack = FakeStack(tmp_path, clock, steps=99)
+
+    with pytest.raises(spike.SpikeError, match="wall clock"):
+        spike.place(stack, ("601",))
+
+    assert stack.placed == 1 + spike.CLOCK_STEP_RETRIES
+    assert not (tmp_path / "calls").exists()
 
 
 def test_a_recording_that_is_missing_or_half_written_reads_as_empty(tmp_path):

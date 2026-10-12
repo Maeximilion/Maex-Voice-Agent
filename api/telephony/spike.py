@@ -283,7 +283,8 @@ def place(
 ) -> dict[str, dict[str, Any]]:
     """Place one call per extension at once, wait for all to end, collect per
     extension: the probe's log, what the caller heard and sent, how long the call
-    took. A call during which the wall clock was set is placed again."""
+    took. A call during which the wall clock was set is placed again, and never
+    judged: when every attempt was hit, the run breaks."""
     for folder in ("rec", "probe"):
         for old in (stack.run_dir / folder).iterdir():
             old.unlink()
@@ -309,7 +310,15 @@ def place(
             )
     seconds = time.monotonic() - started
     stepped = (time.time() - wall) - seconds
-    if abs(stepped) > CLOCK_STEP_SECONDS and retries:
+    if abs(stepped) > CLOCK_STEP_SECONDS:
+        if not retries:
+            # Never judged: such a call says nothing about the media channel.
+            raise SpikeError(
+                f"the wall clock was set during every one of "
+                f"{CLOCK_STEP_RETRIES + 1} calls to {', '.join(extens)}, last by "
+                f"{stepped:+.1f} s. Steady the machine's clock (in WSL: restart "
+                "it with `wsl --shutdown`) and run again"
+            )
         print(
             f"   the wall clock was set by {stepped:+.1f} s during the call; the PBX "
             "times its waits by it, so the call is placed again"

@@ -259,7 +259,8 @@ What the media adapter (T-1.11) and the outage spike (T-10.2) can build on, all 
   12.10.2026 (a softphone that should wait 2 s hung up after 0.35 s by the probe's monotonic clock,
   while its own log stamps show 3 s). Measured on 12.10.: after the machine had slept, the wall
   clock in WSL and in the containers was set forward by about 3.3 s every 30 s. The kit compares
-  both clocks around every call and places a call again when the wall clock was set during it; the
+  both clocks around every call and places a call again when the wall clock was set during it (four
+  attempts, then the run breaks instead of judging such a call); the
   judgement itself uses the probe's monotonic clock and the samples in the recording. For operation
   it means the server's clock has to be adjusted gradually, not in steps.
 
