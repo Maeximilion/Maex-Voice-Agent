@@ -69,6 +69,8 @@ NUMBERS = REPO_ROOT / "evals" / "cases" / "nummern.jsonl"
 MENU = REPO_ROOT / "evals" / "menu" / "menu_items.csv"
 IMAGE = "maex-speech-spike"
 RUN_MOUNT = "/work"
+# Where a menu given with --menu is mounted for its check in the image.
+MENU_MOUNT = "/menu/menu_items.csv"
 RESULTS = ("plan.json", "heard.json", "judged.json", "report.json")
 # Its own marker: the run directory of the T-10.1 kit is not one of this kit's.
 RUN_MARKER = ".speech-spike-run"
@@ -162,7 +164,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--limit needs a number above zero")
     if recorded and (args.limit is not None or args.menu):
         parser.error("--judge-only takes the plan of the run: no --limit, no --menu")
-    own_run = (SPEECH_DIR / "run").resolve()
+    # The kit's own run folder, where git ignores it: not resolved, so a link
+    # from there to another folder of the repository does not pass for it
+    # (Codex PR #268).
+    own_run = SPEECH_DIR / "run"
     if args.menu and run_dir != own_run and run_dir.is_relative_to(REPO_ROOT):
         # Plan, transcripts and report name the dishes of that menu. Inside the
         # repository git ignores only the kit's own run folder (Codex PR #268).
@@ -209,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"speech_spike: {problem}: {exc!r}", file=sys.stderr)
         return 2
     dry = args.dry_run
+    bench = "api.telephony.speech_bench"
     try:
         if recorded and not dry:
             # The verdict of the run before must not outlive a judge that
@@ -227,10 +233,14 @@ def main(argv: list[str] | None = None) -> int:
         step("Build the image with the speech engines")
         build = ["docker", "build", "-t", IMAGE]
         docker([*build, "-f", "Dockerfile", "../../api"], dry, cwd=SPEECH_DIR)
+        if args.menu:
+            # By the import's own rules, in the image that has them: what cannot
+            # be imported is not measured (Codex PR #268).
+            step("Check the menu with the rules of the import (no network)")
+            docker(in_image(run_dir, bench, "check", menu=args.menu.resolve()), dry)
         if not recorded:
             gpu = not dry and gpu_in_docker()
             step("Download the model files (network; only what is missing)")
-            bench = "api.telephony.speech_bench"
             docker(in_image(run_dir, bench, "fetch", network=True), dry)
             step(
                 f"Speak and hear: {len(plan['sentences'])} sentences, "
@@ -397,10 +407,25 @@ def docker(command: list[str], dry_run: bool, cwd: Path | None = None) -> None:
         raise SpikeError(f"`{' '.join(command)}` failed")
 
 
+def menu_errors(menu: Path) -> list[str]:
+    """What the import says against a menu file (`importer.parse`): a card number
+    it cannot take, a missing price, a number twice. Runs where the project's
+    packages are, so in the image and in the tests, not on the bare host."""
+    from api.domain.menu.importer import MENU_FILE, parse
+
+    return parse({MENU_FILE: menu.read_text(encoding="utf-8")}).errors
+
+
 def in_image(
-    run_dir: Path, module: str, *args: str, network: bool = False, gpu: bool = False
+    run_dir: Path,
+    module: str,
+    *args: str,
+    network: bool = False,
+    gpu: bool = False,
+    menu: Path | None = None,
 ) -> list[str]:
-    """The command that runs a module of this repository in the speech image."""
+    """The command that runs a module of this repository in the speech image.
+    `menu`: a menu file from outside, mounted read-only for its check."""
     command = ["docker", "run", "--rm"]
     command += ["--gpus", "all"] if gpu else []
     command += [] if network else ["--network", "none", "-e", "HF_HUB_OFFLINE=1"]
@@ -409,6 +434,7 @@ def in_image(
     for folder in ("api", "evals"):
         command += ["-v", f"{REPO_ROOT / folder}:/app/{folder}:ro"]
     command += ["-v", f"{run_dir}:{RUN_MOUNT}"]
+    command += ["-v", f"{menu}:{MENU_MOUNT}:ro"] if menu else []
     return [*command, IMAGE, "python", "-m", module, *args, RUN_MOUNT]
 
 

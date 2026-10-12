@@ -794,3 +794,91 @@ def test_only_the_number_of_pieces_is_left_off_a_dish_name(tmp_path, name, spoke
     [dish] = [s for s in plan["sentences"] if s["kind"] == "dish"]
     assert dish["expect"] == spoken and dish["say"] == f"Ich hätte gern {spoken}."
     assert plan["key_terms"] == [spoken]
+
+
+# --- Codex review of PR #268, fifth round -------------------------------------------
+
+IMPORTABLE = "number;name;category;price_eur;description;active\n"
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        "1000;Suppe;Suppen;5,00;;ja",  # above the card range
+        "23h;Suppe;Suppen;5,00;;ja",  # an ending no card has
+        "x12;Suppe;Suppen;5,00;;ja",  # a prefix that means a quantity on the phone
+        "7;Suppe;Suppen;;;ja",  # no price
+    ],
+)
+def test_a_menu_the_import_refuses_has_errors(tmp_path, row):
+    """The rules are the import's own (`importer.parse`), not a copy of them:
+    a menu that cannot be imported is not measured."""
+    assert kit.menu_errors(own_menu(tmp_path, IMPORTABLE + row + "\n"))
+
+
+def test_a_menu_the_import_takes_has_no_errors(tmp_path):
+    rows = "7;Suppe;Suppen;5,00;;ja\nS12;Maki (6 Stück);Sushi;5,90;;ja\n25g;Soße;Extras;2,00;;nein\n"
+    assert kit.menu_errors(own_menu(tmp_path, IMPORTABLE + rows)) == []
+    assert kit.menu_errors(kit.MENU) == []
+
+
+def test_the_menu_is_checked_in_the_image_before_anything_is_spoken(
+    tmp_path, monkeypatch, capsys
+):
+    """After the build and before the models are fetched: a menu the import
+    refuses ends the run. Like every step that breaks, it leaves no report of
+    the run before."""
+    run_dir = tmp_path / "r"
+    run_dir.mkdir()
+    (run_dir / kit.RUN_MARKER).touch()
+    (run_dir / "report.json").write_text("{}", encoding="utf-8")
+    seen: list[list[str]] = []
+
+    def docker(command, dry_run, cwd=None):
+        seen.append(command)
+        if "check" in command:
+            raise kit.SpikeError("the menu has errors")
+
+    monkeypatch.setattr(kit, "docker", docker)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    monkeypatch.setattr(kit, "gpu_in_docker", lambda: False)
+    menu = own_menu(tmp_path)
+    assert kit.main(["--menu", str(menu), "--run-dir", str(run_dir)]) == 1
+    assert [("build" in c, "check" in c) for c in seen] == [
+        (True, False),
+        (False, True),
+    ]
+    check = seen[1]
+    assert f"{menu.resolve()}:{kit.MENU_MOUNT}:ro" in check and "none" in check
+    assert not (run_dir / "report.json").exists()
+    # Without --menu nothing is checked: the eval menu is the repository's.
+    seen.clear()
+    monkeypatch.setattr(
+        kit, "docker", lambda command, dry, cwd=None: seen.append(command)
+    )
+    kit.main(["--run-dir", str(tmp_path / "eval"), "--dry-run"])
+    assert not any("check" in c for c in seen)
+
+
+def test_the_kits_run_folder_counts_only_where_git_ignores_it(
+    tmp_path, monkeypatch, capsys
+):
+    """A run folder that is a link to another folder of the repository is that
+    folder: git ignores `deploy/speech/run`, not what it points at."""
+    repo = tmp_path / "repo"
+    speech = repo / "deploy" / "speech"
+    speech.mkdir(parents=True)
+    (repo / "scratch").mkdir()
+    (speech / "run").symlink_to(repo / "scratch", target_is_directory=True)
+    monkeypatch.setattr(kit, "REPO_ROOT", repo)
+    monkeypatch.setattr(kit, "SPEECH_DIR", speech)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    menu = own_menu(tmp_path)
+    assert kit.main(["--menu", str(menu), "--dry-run"]) == 2
+    assert "git could track" in capsys.readouterr().err
+    # The folder itself, and a link that leaves the repository, are fine.
+    (speech / "run").unlink()
+    assert kit.main(["--menu", str(menu), "--dry-run"]) == 0
+    (tmp_path / "outside").mkdir()
+    (speech / "run").symlink_to(tmp_path / "outside", target_is_directory=True)
+    assert kit.main(["--menu", str(menu), "--dry-run"]) == 0

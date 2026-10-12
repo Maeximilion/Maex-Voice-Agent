@@ -28,7 +28,7 @@ from typing import Any
 
 import numpy as np
 
-from api.telephony.speech_spike import terms_that_fit
+from api.telephony.speech_spike import MENU_MOUNT, menu_errors, terms_that_fit
 
 LINE_RATE = 8000
 EAR_RATE = 16000
@@ -265,9 +265,15 @@ def _write_wav(path: Path, audio: np.ndarray) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2 or argv[0] not in ("fetch", "measure"):
+    if len(argv) != 2 or argv[0] not in ("check", "fetch", "measure"):
         print(__doc__, file=sys.stderr)
         return 2
+    if argv[0] == "check":
+        # The menu given with --menu, by the rules of the import.
+        errors = menu_errors(Path(MENU_MOUNT))
+        for error in errors:
+            print("menu:", error, file=sys.stderr)
+        return 1 if errors else 0
     run = Path(argv[1])
     plan = json.loads((run / "plan.json").read_text(encoding="utf-8"))
     if argv[0] == "fetch":
