@@ -27,14 +27,15 @@ worktrees() {
 # A branch is in main when its commits are there, or its changes are: after a squash
 # merge the commits never land. Then either merging the branch into origin/main changes
 # nothing (needs git 2.38), or, where main has moved on over the same lines since,
-# GitHub lists a merged pull request with exactly this head commit (needs gh).
+# GitHub lists a pull request merged into main with exactly this head commit (needs gh).
 # Answers 0 yes, 1 no, 2 when GitHub had to be asked and gave no answer.
 in_main() {
   git -C "$primary" merge-base --is-ancestor "$1" origin/main 2>/dev/null && return 0
   merged="$(git -C "$primary" merge-tree --write-tree origin/main "$1" 2>/dev/null | head -n 1)"
   [ -n "$merged" ] && [ "$merged" = "$(git -C "$primary" rev-parse 'origin/main^{tree}' 2>/dev/null)" ] && return 0
   tip="$(git -C "$primary" rev-parse "$1" 2>/dev/null)"
-  heads="$(cd "$primary" && timeout 10 gh pr list --state merged --head "$1" \
+  # --base main: a pull request merged into another branch has not reached main.
+  heads="$(cd "$primary" && timeout 10 gh pr list --state merged --base main --head "$1" \
     --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 2
   printf '%s\n' "$heads" | grep -qx "$tip"
 }

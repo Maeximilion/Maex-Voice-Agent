@@ -37,12 +37,13 @@ def repos(tmp_path, request):
     # A stand-in for gh: the head commits GitHub would list as merged are the lines of
     # a file, and there is none unless a test writes it. The real gh must never be
     # asked about a throwaway repository. A file next to it named `.fails` makes the
-    # stand-in exit like a gh that is signed out.
+    # stand-in exit like a gh that is signed out; what it was asked lands in `.asked`.
     merged_heads = tmp_path / "merged_heads"
     fake_gh = tmp_path / "bin" / "gh"
     fake_gh.parent.mkdir()
     fake_gh.write_text(
-        '#!/bin/sh\n[ -e "$FAKE_GH_MERGED.fails" ] && exit 4\n'
+        '#!/bin/sh\necho "$*" > "$FAKE_GH_MERGED.asked"\n'
+        '[ -e "$FAKE_GH_MERGED.fails" ] && exit 4\n'
         'cat "$FAKE_GH_MERGED" 2>/dev/null\nexit 0\n',
         encoding="utf-8",
     )
@@ -277,6 +278,10 @@ def test_a_squash_merge_that_main_has_changed_since_needs_githubs_word(repos):
     repos.merged_heads.write_text(f"{'0' * 40}\n{tip}\n", encoding="utf-8")
     assert repos.run_hook() == ""
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "main"
+    # Only a pull request merged into main counts: one merged into another branch
+    # has the same head commit and has not reached main.
+    asked = Path(f"{repos.merged_heads}.asked").read_text(encoding="utf-8")
+    assert "--state merged --base main --head squashed" in asked
     changed = repos.main_checkout / "squashed.txt"
     assert changed.read_text(encoding="utf-8") == "changed later\n"
 
