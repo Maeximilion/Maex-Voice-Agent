@@ -153,16 +153,19 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    letter as a word („26d" as „sechsundzwanzig der", „30a" as „dreißig ja"; run
    on the real menu, docs/20 §11), and each of those words is filler in a number
    sentence. Where such a word (`ja` for a, `war` for b, `der` and `dann` for d,
-   `die` for e or g, `äh`, `eine` and `einen` for e, `ist` for f) ends the
-   sentence directly behind a number, plain or with a prefix („S sieben ja" is S7
-   or S7a, Codex PR #282), a closing „bitte" or the quantity aside („die 26 der
-   zweimal"; „die 26 eine Portion" is the quantity alone), and the menu
-   has that number with that letter, the lettered number is a second candidate
-   („26 oder 26d") and never taken without a question: the search asks by name
-   („Meinen Sie Nummer 26, ... oder Nummer 26d, ...?"), or offers the one dish the
-   menu has (eval `abholung_0080`). Without that card number on the menu nothing
-   changes: „Nummer 26 der" stays the 26, „die 26 bitte" and „Nummer 26 ja genau"
-   stay it on every menu. Eine genannte, nicht vorhandene Nummer
+   `die` for e or g, `äh`, `eine` and `einen` for e, `ist` for f) stands
+   directly behind a number, plain or with a prefix („S sieben ja" is S7 or S7a,
+   Codex PR #282), at most a comma or a hesitation in between („die 26, ähm,
+   der"), with nothing but filler or the quantity behind it („die 26 der noch",
+   „die 26 der zweimal", „Nummer 35 ja genau"; „die 26 eine Portion" is the
+   quantity alone), and the menu has that number with that letter, the lettered
+   number is a second candidate („26 oder 26d") and never taken without a
+   question: the search asks by name („Meinen Sie Nummer 26, ... oder Nummer 26d,
+   ...?"), or offers the one dish the menu has (eval `abholung_0080`). A full stop
+   behind the number ends the order: „Die 26. Ja, gerne." is the 26 and an
+   answer. Without that card number on the menu nothing changes: „Nummer 26 der"
+   stays the 26, and „die 26 bitte" stays it on every menu. Eine genannte, nicht
+   vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
    Marker oder gesprochenes Wort sind (`x`, `st`, `nr`, `no`, `hm`, `ja`, `es`,
    `so`, `um`, `zu`, `da`, `du`, `er`, `ob`), lehnt der Import mit eigener

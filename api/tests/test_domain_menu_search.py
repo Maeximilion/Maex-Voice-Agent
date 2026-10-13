@@ -1058,6 +1058,7 @@ def test_heard_number_and_name_are_two_positions(session, sushi):
         "Nummer fünfundzwanzig, die?",
         "Zweimal die 25 die",
         "Die 25 die bitte",
+        "Und die 25 die noch",
     ],
 )
 def test_25g_heard_as_25_die_asks_which_dish(session, sushi, said):
@@ -1111,7 +1112,9 @@ def test_heard_suffix_behind_a_prefixed_number_asks_which_dish(session, sushi, s
     assert "Nummer s07a, Avocado Maki" in result.say
 
 
-@pytest.mark.parametrize("said", ["Nummer 25 der", "Die 25 bitte", "Nummer 13 die"])
+@pytest.mark.parametrize(
+    "said", ["Nummer 25 der", "Die 25 bitte", "Nummer 13 die", "Die 25. Die, bitte."]
+)
 def test_word_behind_the_number_asks_nothing_without_that_dish(session, sushi, said):
     """No 25d and no 13g on the menu: the plain number, without a question."""
     assert suche(session, sushi, said).match_type == "exact_number"

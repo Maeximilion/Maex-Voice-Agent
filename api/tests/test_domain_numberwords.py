@@ -1097,6 +1097,18 @@ def test_card_format_knows_the_lettered_numbers_of_the_menu():
         ("Nummer 26 der zweimal", ("26", "26d")),
         ("Die 26 der, zwei Portionen bitte", ("26", "26d")),
         ("Nummer 26 der 2 x", ("26", "26d")),
+        # Codex PR #282: whatever filler follows, the word stays a candidate.
+        ("Und die 26 der noch", ("26", "26d")),
+        ("Die 26 der dann noch bitte", ("26", "26d")),
+        ("Nummer 26 ja genau", ("26", "26a")),
+        ("Die 26 der nehme ich", ("26", "26d")),
+        ("Nummer 26 der die", ("26", "26d")),
+        ("Die 26 der. Ja, gerne.", ("26", "26d")),
+        # A hesitation before the letter is skipped like a pause; "äh" itself
+        # may have been the e.
+        ("Die 26, ähm, der", ("26", "26d")),
+        ("Die 26 hm der bitte", ("26", "26d")),
+        ("Die 26 äh der", ("26", "26e", "26d")),
         # The menu has 31a and no 31: still both, the search offers what exists.
         ("Nummer einunddreißig ja", ("31", "31a")),
         ("Nummer 026 der", ("026", "026d")),
@@ -1142,7 +1154,11 @@ def test_the_word_is_filler_where_the_menu_has_no_such_lettered_number(text):
     ("text", "cards"),
     [
         ("Die 26 bitte", ("26",)),  # bitte is no word the ear writes for a letter
-        ("Nummer 26 ja genau", ("26",)),  # an answer, not a letter
+        # Codex PR #282: a full stop ends the order, what follows is an answer.
+        ("Die 26. Ja, gerne.", ("26",)),
+        ("Nummer 26! Der.", ("26",)),
+        ("Die 26? Ja.", ("26",)),
+        ("Die 26 noch der", ("26",)),  # only directly behind the number
         ("Ja, die 26", ("26",)),  # only behind the number
         ("Der 26", ("26",)),
         ("Dann die 26", ("26",)),
@@ -1174,6 +1190,7 @@ PREFIXED_LETTERED = CardFormat.from_items(
         ("S7 ja", ("s7", "s7a"), ("s7a",)),
         ("Es sieben ja", ("s7", "s7a"), ("s7a",)),
         ("Die S sieben ja bitte", ("s7", "s7a"), ("s7a",)),
+        ("Nummer S sieben ja genau", ("s7", "s7a"), ("s7a",)),
         # A category word: every prefix it can mean, then the lettered ones.
         ("Sushi sieben ja", ("s7", "sm7", "s7a"), ("s7a",)),
         # Heard in front and behind: all of it rests on heard words.
@@ -1196,7 +1213,7 @@ def test_a_word_behind_a_prefixed_number_keeps_its_lettered_number(text, cards, 
         ("Nummer S sieben der", ("s7",)),  # no S7d on this menu
         ("Nummer S zwölf ja", ("s12",)),  # 12a exists, S12a does not
         ("Nummer S7a", ("s7a",)),  # the letter itself was heard
-        ("Nummer S sieben ja genau", ("s7",)),
+        ("Nummer S sieben. Ja genau.", ("s7",)),
     ],
 )
 def test_a_prefixed_number_without_that_lettered_number_stays_as_it_was(text, cards):

@@ -205,5 +205,7 @@
 {"say": "Nummer 45 der", "expect": "45", "why": "limit: the menu decides; it has no 45d, so the word stays filler and nothing is asked"}
 {"say": "Nummer 23 ja", "expect": "23", "why": "limit: no 23a on the menu, a plain order stays without a question"}
 {"say": "Die 45 bitte", "expect": "45", "why": "limit: bitte is no word the ear writes for a letter"}
-{"say": "Nummer 35 ja genau", "expect": "35", "why": "limit: the word counts only where it ends the sentence; ja genau is an answer, not a letter"}
+{"say": "Nummer 35 ja genau", "expect": "35|35a?", "why": "a filler behind the word does not take the question away: 35a genau is as likely as 35, ja genau (Codex PR #282)"}
+{"say": "Und die 45 die noch", "expect": "45|45g?", "why": "und die 45g noch as heard: noch behind the word is filler like bitte (Codex PR #282)"}
+{"say": "Die 35. Ja, gerne.", "expect": "35", "why": "limit: a full stop ends the order; the yes behind it is an answer, not a letter (Codex PR #282)"}
 {"say": "Ja, die 35", "expect": "35", "why": "limit: only behind the number; in front it opens the sentence"}

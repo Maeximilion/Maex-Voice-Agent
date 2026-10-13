@@ -168,8 +168,10 @@ _HEARD_SUFFIXES = {
     "ja": "a", "war": "b", "der": "d", "dann": "d", "die": "eg", "aeh": "e",
     "eine": "e", "einen": "e", "ist": "f",
 }  # fmt: skip
-# What may still follow such a word, next to a quantity: "die 26 der bitte".
-_CLOSING = frozenset({"bitte", "gern", "gerne"})
+# Between the number and such a word the ear sets a pause ("siebenundzwanzig,
+# die?"). A full stop ends the order: what follows it is an answer ("Die 26. Ja,
+# gerne."), not a letter (Codex PR #282).
+_PAUSES = frozenset(",;:")
 
 
 @dataclass(frozen=True)
@@ -703,28 +705,43 @@ def _heard_suffixes(
     have been (`_HEARD_SUFFIXES`), else nothing. `number` is a card number
     without a letter behind it, with or without a prefix ("26", "s7").
 
-    Only where the word ends the sentence, a closing "bitte" or the quantity
-    aside ("die 26 der zweimal"): "Nummer 26 der" is no German, "Nummer 26 der
-    Ente" and "die 35, ja genau" are. Without such a card number on the menu
-    the word stays the filler it was, and a plain order costs no question.
+    The word stands directly behind the number, at most a pause or a
+    hesitation in between ("die 26, ähm, der"; "äh" may itself have been the
+    e), and only filler or the quantity follows it, as in every pure number
+    sentence: "die 26 der noch", "die 26 der zweimal", "Nummer 35 ja genau"
+    keep the candidate (Codex PR #282), "Nummer 26 der Ente" does not. Without
+    such a card number on the menu the word stays the filler it was, and a
+    plain order costs no question.
     """
-    rest = [t for t in tokens[end:] if t not in PUNCTUATION]
-    closes = all(
-        t in _CLOSING
-        or t in _QUANTITY_NOUNS
-        or _word_value(t) is not None
-        or _QUANTITY_SUFFIX.match(t) is not None
-        for t in rest[1:]
-    )
-    if not number[-1:].isdigit() or not rest or not closes:
+    at = end
+    letters = ""
+    while at < len(tokens) and (tokens[at] in _PAUSES or tokens[at] in _HESITATIONS):
+        letters += _HEARD_SUFFIXES.get(tokens[at], "")
+        at += 1
+    word = tokens[at] if at < len(tokens) else ""
+    rest = [t for t in tokens[at + 1 :] if t not in PUNCTUATION]
+    if not number[-1:].isdigit() or not all(_trails(t) for t in rest):
         return ()
-    if _word_value(rest[0]) is not None and rest[1:2] and rest[1] in _QUANTITY_NOUNS:
-        # "die 26 eine Portion": the word is the quantity, not an e.
-        return ()
+    if not (_word_value(word) is not None and rest[:1] and rest[0] in _QUANTITY_NOUNS):
+        # Else "die 26 eine Portion": the word is the quantity, not an e.
+        letters += _HEARD_SUFFIXES.get(word, "")
     return tuple(
         number + letter
-        for letter in _HEARD_SUFFIXES.get(rest[0], "")
+        for letter in dict.fromkeys(letters)
         if canonical_card(number + letter) in card.lettered
+    )
+
+
+def _trails(token: str) -> bool:
+    """May this word stand behind the number of a pure number sentence? Filler,
+    a hesitation or a piece of the quantity, as `sole_item_number` reads them."""
+    return (
+        token in _SENTENCE_FILLER
+        or token in _LEAD_FILLER
+        or token in _HESITATIONS
+        or token in _QUANTITY_NOUNS
+        or _word_value(token) is not None
+        or _QUANTITY_SUFFIX.match(token) is not None
     )
 
 
