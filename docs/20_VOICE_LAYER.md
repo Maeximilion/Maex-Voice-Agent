@@ -390,8 +390,8 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   12.10.2026, §11): 87 of the 173 dishes carry a letter a to g, and all 27 silent wrong
   numbers of the picked ear were among their 348 utterances (7.8 %). **The letter heard as
   a word is fixed since 13.10.2026** (eval `abholung_0080`, Maxi's programme of 12.10.2026:
-  silent wrong to zero, then 90 % right): "Nummer 26 der", "27 die", "30 ja", "27 äh" at the
-  end of the sentence ask "Meinen Sie Nummer 26, ... oder Nummer 26d, ...?" where the menu
+  silent wrong to zero, then 90 % right): "Nummer 26 der", "27 die", "30 ja", "27 äh", with
+  nothing but filler behind the word, ask "Meinen Sie Nummer 26, ... oder Nummer 26d, ...?" where the menu
   has the lettered number, the way "ist" in front of the number does since PR #257. The
   recording judged again: 14 instead of 27 (4.0 % of the 348, 2.0 % of all card numbers).
   **Left, and not catchable by a rule:** the letter gone with nothing behind the number (4:
