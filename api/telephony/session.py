@@ -74,9 +74,6 @@ PLAYED_GRACE_SECONDS = 5.0
 # one worker of the call, and with it the caller's hangup and the way to the
 # team (rule 5).
 SPEAK_SECONDS = 10.0
-# And how long the line may take for what it is asked to do. A telephone system
-# that stalls in a transfer would hold the worker the same way.
-LINE_SECONDS = 5.0
 # How long the ear may take from its last word that the caller is speaking to
 # the finished utterance. An ear that begins an utterance and never ends it
 # leaves the call waiting for nothing: a failure (rule 5).
@@ -105,7 +102,6 @@ class CallSession:
         caller_id: str | None = None,
         keypad_gap_seconds: float = KEYPAD_GAP_SECONDS,
         speak_seconds: float = SPEAK_SECONDS,
-        line_seconds: float = LINE_SECONDS,
         sample_rate: int = SAMPLE_RATE,
         clock: Callable[[], float] = time.monotonic,
     ):
@@ -120,7 +116,6 @@ class CallSession:
         self._silence_seconds = silence_seconds
         self._keypad_gap_seconds = keypad_gap_seconds
         self._speak_seconds = speak_seconds
-        self._line_seconds = line_seconds
         self._sample_rate = sample_rate
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
@@ -295,9 +290,10 @@ class CallSession:
             if (
                 self._may_interrupt()
                 # Speech that is older than the answer on the line stops
-                # nothing: it began while the core was still working.
+                # nothing: it began while the core was still working. By the
+                # time of the audio, not of the report: the ear may be late.
                 and self._playing_since is not None
-                and at >= self._playing_since
+                and heard.ended_at >= self._playing_since
                 and len(heard.text.split()) >= BARGE_IN_WORDS
             ):
                 self._stop_playback()
@@ -331,7 +327,9 @@ class CallSession:
     def _on_key(self, at: float, digit: str) -> None:
         if not self._listening() or at <= self._protected_until:
             return
-        if self._outstanding:
+        if self._playing_since is not None and at >= self._playing_since:
+            # A key that was pressed before the answer was on the line stops
+            # nothing, like speech.
             self._stop_playback()
         self._silence_due = None
         if digit == END_KEY:
@@ -382,7 +380,7 @@ class CallSession:
             self._voice_failed()
             return
         if not self._answered:
-            self._on_line(self._line.answer)
+            self._line.answer()
             self._answered = True
         self._mark += 1
         # Now, not when the sentence was asked for: the mouth took its time.
@@ -399,8 +397,7 @@ class CallSession:
         if not interruptible:
             self._protected_until = math.inf
         self._silence_due = None
-        mark = self._mark
-        self._on_line(lambda: self._line.play(audio, mark))
+        self._line.play(audio, self._mark)
 
     def _on_transfer(self, at: float, target: str) -> None:
         self._queue_ending(("transfer", target))
@@ -464,46 +461,38 @@ class CallSession:
     def _stop_playback(self) -> None:
         self._outstanding = []
         self._playing_since = self._playing_until = None
-        self._on_line(self._line.flush)
+        self._line.flush()
 
     def _synthesize(self, text: str) -> bytes:
         """The audio of one sentence, or an exception: the engine's own, a
-        timeout when it does not finish, or an error when it made nothing."""
-        audio = self._bounded(
-            lambda: b"".join(self._mouth.speak(text)), self._speak_seconds, "the mouth"
-        )
+        timeout when it does not finish, or an error when it made nothing.
+
+        The engine runs on a thread of its own, and one that hangs is left
+        behind there: audio that comes too late is thrown away and does no
+        harm. The line is not treated like this. A command to the telephone
+        system that is given up on could still be carried out later, a hangup
+        while the team is being rung; so the line must not block at all
+        (`speech.Line`)."""
+        done: queue.SimpleQueue[tuple[bytes, Exception | None]] = queue.SimpleQueue()
+
+        def work() -> None:
+            try:
+                done.put((b"".join(self._mouth.speak(text)), None))
+            except Exception as exc:  # noqa: BLE001 - raised again by the worker
+                done.put((b"", exc))
+
+        threading.Thread(target=work, daemon=True).start()
+        try:
+            audio, error = done.get(timeout=self._speak_seconds)
+        except queue.Empty:
+            raise TimeoutError("the mouth did not finish the sentence") from None
+        if error is not None:
+            raise error
         if not audio:
             # An empty stream without an error. Queued, the line would report
             # it as played, and a read-back nobody heard would count as heard.
             raise RuntimeError("the mouth made no audio for the sentence")
         return audio
-
-    def _on_line(self, ask: Callable[[], None]) -> None:
-        """Ask the line for something, with a deadline. A refusal or a line
-        that does not answer raises, and the session ends as failed."""
-        self._bounded(ask, self._line_seconds, "the line")
-
-    @staticmethod
-    def _bounded(work: Callable[[], Any], seconds: float, who: str) -> Any:
-        """Run `work` on a thread of its own and wait for it at most
-        `seconds`. What hangs is left behind there: the one worker of the
-        call must never wait in an engine or in the telephone system."""
-        done: queue.SimpleQueue[tuple[Any, Exception | None]] = queue.SimpleQueue()
-
-        def run() -> None:
-            try:
-                done.put((work(), None))
-            except Exception as exc:  # noqa: BLE001 - raised again by the worker
-                done.put((None, exc))
-
-        threading.Thread(target=run, daemon=True).start()
-        try:
-            result, error = done.get(timeout=seconds)
-        except queue.Empty:
-            raise TimeoutError(f"{who} did not finish in {seconds} s") from None
-        if error is not None:
-            raise error
-        return result
 
     def _turn(self, deliver: Callable[[], None]) -> None:
         """Hand something to the core, then carry out what it asked for, in
@@ -594,11 +583,11 @@ class CallSession:
         kind, target = self._ending
         if kind == "transfer":
             assert target is not None
-            self._on_line(lambda: self._line.transfer(target))
+            self._line.transfer(target)
             self.transfer_target = target
             self._end("transfer")
         else:
-            self._on_line(self._line.hangup)
+            self._line.hangup()
             self._end("hangup")
 
     def _end(self, outcome: Outcome) -> None:

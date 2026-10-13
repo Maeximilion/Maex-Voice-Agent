@@ -41,8 +41,11 @@ class Heard:
 
     text: str
     final: bool = True
-    # Final only: when the utterance ended, on the clock of the frames fed.
-    # The session measures it against the end of a read-back (hard rule 3).
+    # When the audio this report is about ended, on the clock of the frames
+    # fed (`Ear.feed`), not when the report is made: the ear may lag behind,
+    # and audio may have waited before it was fed. For a final the session
+    # measures it against the end of a read-back (hard rule 3); for a partial
+    # against the start of the answer the caller may be talking over.
     ended_at: float = 0.0
     # Final only: was there speech energy under the words? An engine can make
     # words out of line noise; without energy they are not the caller's.
@@ -78,9 +81,14 @@ class Mouth(Protocol):
 
 class Line(Protocol):
     """The caller's leg. Every method raises when the telephone system
-    refuses. The session gives each call a deadline and ends as failed when the
-    line does not answer in time, so the leg can be closed and the dialplan
-    rings the team."""
+    refuses.
+
+    No method may wait for the telephone system: it hands the command over and
+    returns. The session calls them from the one worker of the call, and it
+    cannot bound them itself: a command it gave up waiting for could still be
+    carried out later, a hangup while the dialplan is already ringing the
+    team. An adapter whose transport can stall bounds and cancels its own
+    commands and reports a leg it lost through `CallSession.closed`."""
 
     def answer(self) -> None:
         """Pick the call up. Before this the caller hears ringing."""

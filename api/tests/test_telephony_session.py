@@ -131,7 +131,7 @@ def call():
         session.drain()
 
     def partial(text: str) -> None:
-        ear.hear(Heard(text, final=False))
+        ear.hear(Heard(text, final=False, ended_at=clock.now))
         session.drain()
 
     def played(*, after: float = 0.0) -> None:
@@ -502,11 +502,45 @@ def test_speech_that_began_before_the_answer_does_not_stop_it(call):
     call.start()
     call.clock.now += 1.0
     call.ear.hear(Heard("Die 23", ended_at=call.clock.now))
-    call.ear.hear(Heard("und die dreizehn", final=False))
+    call.ear.hear(Heard("und die dreizehn", final=False, ended_at=call.clock.now))
     call.s.drain()
     assert call.line.played() == ["Nummer 23."] and "flush" not in call.line.kinds()
     call.partial("und die dreizehn bitte")  # still speaking, now over the answer
     assert call.line.kinds()[-1] == "flush"
+
+
+def test_a_partial_counts_by_the_time_of_its_audio_not_of_its_report(call):
+    """The audio waited in the queue while the core worked, so the ear reports
+    the guest's words late. They were spoken before the answer was on the
+    line: no barge-in, whenever the report arrives (Codex PR #286)."""
+    call.core.replies["Die 23"] = [("say", "Nummer 23.", True)]
+    call.start()
+    call.said("Die 23", after=1.0)
+    spoken = call.clock.now - 0.5  # before the answer was on the line
+    call.clock.now += 2.0
+    call.ear.hear(Heard("und die dreizehn", final=False, ended_at=spoken))
+    call.s.drain()
+    assert "flush" not in call.line.kinds()
+
+
+def test_a_key_pressed_before_the_answer_does_not_stop_it(call):
+    """As for speech: the key waited in the queue behind a slow turn."""
+
+    class Slow(FakeMouth):
+        def speak(self, text):
+            call.clock.now += 2.0
+            return super().speak(text)
+
+    call.s._mouth = Slow()
+    call.core.replies["Die 23"] = [("say", "Nummer 23.", True)]
+    call.start()
+    call.clock.now += 1.0
+    call.ear.hear(Heard("Die 23", ended_at=call.clock.now))
+    call.s.key("4")
+    call.s.drain()
+    assert call.line.played() == ["Nummer 23."] and "flush" not in call.line.kinds()
+    call.wait(GAP + 0.1)
+    assert call.core.calls[-1] == ("dtmf", "4")
 
 
 def test_nothing_is_interrupted_once_a_transfer_or_hangup_waits(call):
@@ -822,19 +856,6 @@ def test_a_crash_in_the_core_ends_the_session_without_a_hangup(call):
     assert call.core.calls[-1] == ("voice_failure",)
 
 
-def test_a_line_that_does_not_answer_does_not_hold_the_call(call):
-    """The telephone system stalls in the middle of a transfer. The one worker
-    of the call must not wait in there for ever: after a deadline the session
-    ends as failed, so the leg can be closed and the dialplan rings the team
-    (Codex PR #286, rule 5)."""
-    call.line.stalls = threading.Event()
-    call.s._line_seconds = 0.05
-    call.start(("transfer", "+497215550000"))
-    call.line.stalls.set()
-    assert call.s.outcome == "failed" and call.s.transfer_target is None
-    assert call.core.count("voice_failure") == 1
-
-
 def test_a_transfer_the_telephone_system_refuses_fails_the_session(call):
     call.line.refuses_transfer = True
     call.start(("transfer", "+497215550000"))
@@ -1138,16 +1159,23 @@ def test_the_worker_wakes_for_a_timer_without_an_event():
     assert core.count("silence") == 1
 
 
-def test_events_from_several_threads_are_queued_in_the_order_of_their_time():
+def test_an_event_cannot_overtake_one_that_has_its_time_already():
     """The time of an event and its place in the queue are taken together.
-    Otherwise a late event can overtake a timely one whose thread paused
-    between the clock and the queue, and a timer that runs on the time of the
-    events fires for something that was in time (Codex PR #286)."""
+    Here the first poster is held between the clock and the queue until a
+    second one has had every chance to get in front of it: without the lock it
+    does, and the queue is out of order (Codex PR #286)."""
     import time
 
+    first_has_its_time, second_tried = threading.Event(), threading.Event()
+    calls = 0
+
     def clock() -> float:
+        nonlocal calls
+        calls += 1
         now = time.monotonic()
-        time.sleep(0)  # let another thread in between the clock and the queue
+        if calls == 1:
+            first_has_its_time.set()
+            second_tried.wait(0.5)
         return now
 
     lines = Lines()
@@ -1161,16 +1189,17 @@ def test_events_from_several_threads_are_queued_in_the_order_of_their_time():
         clock=clock,
     )
 
-    def post() -> None:
-        for _ in range(2000):
-            session.audio(b"")
+    def second() -> None:
+        first_has_its_time.wait(5)
+        session.key("1")
+        second_tried.set()
 
-    threads = [threading.Thread(target=post) for _ in range(4)]
+    threads = [threading.Thread(target=session.audio, args=(b"",))]
+    threads.append(threading.Thread(target=second))
     for thread in threads:
         thread.start()
     for thread in threads:
-        thread.join()
-    times = []
-    while not session._inbox.empty():
-        times.append(session._inbox.get_nowait()[1])
-    assert len(times) == 8000 and times == sorted(times)
+        thread.join(5)
+    queued = [session._inbox.get_nowait() for _ in range(2)]
+    assert [kind for kind, _, _ in queued] == ["audio", "key"]
+    assert queued[0][1] <= queued[1][1]
