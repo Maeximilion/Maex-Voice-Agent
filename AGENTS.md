@@ -4,6 +4,18 @@ Instructions for automated agents that review or change this repository. The wor
 Claude Code are in `CLAUDE.md`; this file is what a reviewer needs. Where the two differ,
 `CLAUDE.md` wins.
 
+## Working in this repository
+
+For an agent that changes files here, whatever tool it runs in:
+
+- Never edit while `main` is checked out. Create a branch first, in a worktree of its own where the
+  tool has them, and bring the change to `main` through a pull request. That holds for one line in
+  a doc as well.
+- Never end a session with uncommitted changes or a stash. What is not finished is committed on its
+  branch and pushed.
+- Uncommitted files in a `main` folder block every later pull of that folder. If you find some that
+  are not yours, report them and leave them alone.
+
 ## Code Review Rules
 
 How to review:
