@@ -95,6 +95,18 @@ scratch_exists=1
 pg_restore_from "$file" --no-owner --no-privileges --exit-on-error --dbname "$scratch" ||
     die 1 "pg_restore failed; nothing changed"
 
+# The dump comes back without privileges. Where the application has a role of its
+# own (the user of DATABASE_URL, #252), it gets its rights here, before the swap: a
+# restored database the application cannot read would be the next outage.
+connected_as="$(pg_sql "$maintenance" "select current_user")" ||
+    die 1 "the server no longer answers; nothing changed"
+pg_resolve_app_role "$connected_as"
+if [ -n "$APP_ROLE" ]; then
+    app_grants_sql "$scratch" "$APP_ROLE" | pg_script "$scratch" ||
+        die 1 "cannot give the role $APP_ROLE its rights on the restored database (bash scripts/db_role.sh creates the role); nothing changed"
+    echo "rights of the application's role $APP_ROLE set"
+fi
+
 revision="$(pg_sql "$scratch" "select version_num from alembic_version" 2>/dev/null || true)"
 restored="$(pg_sql "$scratch" "select count(*) from information_schema.tables where table_schema = 'public'")"
 echo "restored: $restored of $tables tables, schema revision ${revision:-unknown}"
@@ -134,4 +146,4 @@ echo "$PGDATABASE now holds the restored state, schema revision ${revision:-unkn
 if [ "$exists" = 1 ]; then
     echo "previous state kept as $previous; once the restored state is checked: drop database \"$previous\""
 fi
-echo "if the code is newer than that revision: alembic -c db/alembic.ini upgrade head"
+echo "if the code is newer than that revision: bash scripts/migrate.sh"
