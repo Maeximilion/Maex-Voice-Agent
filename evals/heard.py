@@ -17,6 +17,9 @@ A number sentence is resolved by the code that resolves it on the phone
     asked   anything else: a question back, a number that does not exist or
             the name search. Costs a turn, never a wrong dish
 
+An order of several dishes in one sentence (kind `order`, the kit's `--orders`)
+gets one verdict for the whole order: `order_verdict`.
+
 `wrong` is counted by the form of the number, whatever the menu holds: "23d"
 is a card number the rule takes. `on_card` then says whether the menu has
 that dish. If it has, the guest gets another dish read back; if not, the
@@ -38,11 +41,14 @@ from __future__ import annotations
 import csv
 import json
 import sys
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from api.domain.menu.numberwords import CardFormat, canonical_card
+from api.domain.menu.numberwords import CardFormat, canonical_card, find_quantity
+from api.domain.menu.split import raw_pieces, split_positions
 from evals.number_eval import CARD, MENU_ITEMS, resolve
 
 
@@ -106,6 +112,80 @@ def number_verdict(expect: str, heard: str, menu: Menu = EVAL) -> tuple[str, str
     return ("wrong" if taken and not asks else "asked"), got
 
 
+def positions(heard: str, menu: Menu = EVAL) -> list[str]:
+    """The positions of a sentence, as the conversation finds them
+    (`search.position_parts`), for sentences of card numbers.
+
+    First by the sentence alone, then each part with the menu: "Einmal die 36a
+    und die S37" stays whole by the sentence, because "die S37" opens no
+    position without the menu, and every piece at the separators is a position
+    if each of them is one card number - one that leads to a dish, clearly or
+    through a heard letter, or one the menu does not have, which the search
+    then says. A piece that is no single card number keeps the sentence whole,
+    and the search asks. A piece that is a dish name is not looked up here:
+    this judge has no name search, so such a sentence stays whole, which is
+    the cautious verdict.
+    """
+    parts = split_positions(heard)
+    if len(parts) > 1:
+        return [position for part in parts for position in positions(part, menu)]
+    pieces = raw_pieces(heard)
+    if len(pieces) <= 1:
+        return parts
+    for piece in pieces:
+        got = resolve(piece, menu.card)
+        several = len(dishes(got, menu)) > 1 and "?" not in got
+        if got in ("?", "name") or several:
+            return parts
+    return pieces
+
+
+def order_verdict(expect: list[list], heard: str, menu: Menu = EVAL) -> dict[str, Any]:
+    """An order of several dishes said in one sentence, judged as a whole.
+
+    The transcript is split into positions the way the conversation splits a
+    sentence (`positions`), and each position goes through the number rule. A
+    position that leads to one dish without a question is taken, with its
+    quantity; every other one ends in a question or in "that number does not
+    exist".
+
+    - right: every dish with its quantity, and nothing else.
+    - wrong: a dish or a quantity is taken that was not said, or a dish is
+      missing and no position asks - the guest only hears it at the read-back.
+    - asked: the rest. The conversation goes on with a question.
+    """
+    want = Counter((canonical_card(number), quantity) for number, quantity in expect)
+    taken: Counter[tuple[str, int]] = Counter()
+    said = []
+    pieces = positions(heard, menu)
+    # Nothing heard is nothing taken: the agent asks what the guest said.
+    asks = not pieces
+    for piece in pieces:
+        got = resolve(piece, menu.card)
+        quantity = find_quantity(piece) or 1
+        one = dish(got, menu)
+        said.append(f"{quantity}x{got}")
+        if one is None:
+            asks = True
+        else:
+            taken[(one, quantity)] += 1
+    extra = taken - want
+    missing = want - taken
+    if extra or (missing and not asks):
+        verdict = "wrong"
+    else:
+        verdict = "asked" if missing or asks else "right"
+    return {
+        "verdict": verdict,
+        "expect": ", ".join(f"{quantity}x{number}" for number, quantity in expect),
+        "got": ", ".join(said),
+        # A dish of the menu the guest did not order, as for a single number.
+        "on_card": bool(extra),
+        "size": len(expect),
+        "positions_right": sum((taken & want).values()),
+    }
+
+
 def dish_verdict(name: str, heard: str) -> str:
     return "right" if _letters(name) in _letters(heard) else "asked"
 
@@ -122,6 +202,13 @@ def judge(plan: dict, heard: dict) -> list[dict]:
     for row in heard["heard"]:
         said = sentences[row["id"]]
         expect = said["expect"]
+        if said["kind"] == "order":
+            order = order_verdict(expect, row["text"], menu)
+            # The sentence as it was said, by the same rule: what no ear can
+            # do better than.
+            order["as_said"] = order_verdict(expect, said["say"], menu)["verdict"]
+            judged.append({**row, "kind": "order", "say": said["say"], **order})
+            continue
         if said["kind"] == "number":
             if expect is None:
                 # Another menu than the one the expectations were written for:

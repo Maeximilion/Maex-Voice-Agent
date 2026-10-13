@@ -101,3 +101,33 @@ def test_speak_joins_the_pieces_and_times_the_first():
     pcm, rate, first, total = speak(Voice(), "Guten Tag.")
     assert (pcm, rate) == (b"abcd", VOICE_RATE)
     assert 0 <= first <= total
+
+
+@pytest.mark.parametrize(
+    ("spec", "options"),
+    [({"language": "de"}, {"language": "de"}), ({}, {})],
+)
+def test_an_ear_is_told_the_language_only_if_its_model_takes_one(
+    tmp_path, monkeypatch, spec, options
+):
+    """Canary takes the language, Parakeet finds it itself and has no way to be
+    told (docs/20 §11)."""
+    import sys
+    import types
+
+    from api.telephony import speech_bench
+
+    calls: list[dict] = []
+
+    class Model:
+        def recognize(self, audio, **kwargs):
+            calls.append(kwargs)
+            return "ja"
+
+    fake = types.SimpleNamespace(load_model=lambda name, path: Model())
+    monkeypatch.setitem(sys.modules, "onnx_asr", fake)
+    hear, fit = speech_bench.load_ear(
+        {"engine": "parakeet", "model": "m", **spec}, tmp_path
+    )
+    assert hear(b"", ["Pho Bo"]) == "ja" and fit(["Pho Bo"]) == []
+    assert calls == [{"sample_rate": EAR_RATE, **options}]

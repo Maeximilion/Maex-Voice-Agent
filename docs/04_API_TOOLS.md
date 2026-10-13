@@ -210,6 +210,16 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    zuerst. Eine Spanne ist nie länger als der längste Name oder Alias der Karte
    (in Stücken an den Trennern): ohne Namen mit „und" gibt es keine
    Spannenprüfung, eine lange Aufzählung bleibt im Latenzbudget.
+   A part the sentence cut off gets the same check with the menu (eval
+   `abholung_0081`): of „die 25, zweimal die 12 und die S12" the sentence alone
+   cuts off „zweimal die 12 und die S12", because „die S12" (a prefix, no
+   quantity) and a name without a quantity („… und Pho Bo") open no position
+   without the menu; checked like a sentence of its own, the part gives its two
+   positions. A piece that is one card number is a position whether the menu has
+   it or not (eval `abholung_0082`): „zweimal die 99 und Pho Bo" is the 99,
+   answered with `not_found`, and Pho Bo once. Kept whole, the name search found
+   Pho Bo alone and took it twice. Any other piece that hits nothing still makes
+   the „und" part of a name.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

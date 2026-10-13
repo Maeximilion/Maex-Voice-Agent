@@ -1035,6 +1035,105 @@ def test_prefixed_number_and_name_are_two_positions(session, sushi):
     assert err.value.say == SAY_IN_TURN
 
 
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        # A Sushi number without a quantity, behind two other dishes.
+        (
+            "Die 25, zweimal die 12 und die S12",
+            ["Die 25", "zweimal die 12", "die S12"],
+        ),
+        (
+            "Einmal die 13, die S12 und zweimal die 25",
+            ["Einmal die 13", "die S12", "zweimal die 25"],
+        ),
+        ("Die S1, die S12 und einmal die 25g", ["Die S1", "die S12", "einmal die 25g"]),
+        # A name without a quantity, behind two other dishes.
+        (
+            "Einmal die 23, zweimal die 12 und Pho Bo",
+            ["Einmal die 23", "zweimal die 12", "Pho Bo"],
+        ),
+        # Four dishes, two of them without a quantity.
+        (
+            "Zweimal die 23, die S12, einmal die 25 und die SM1",
+            ["Zweimal die 23", "die S12", "einmal die 25", "die SM1"],
+        ),
+    ],
+)
+def test_a_dish_without_a_quantity_later_in_a_list_is_a_position_of_its_own(
+    session, sushi, said, parts
+):
+    """Eval abholung_0081: the sentence alone cuts "Die 25, zweimal die 12 und
+    die S12" in two, because "die S12" opens no position without the menu, and
+    the second part was a question about two numbers. Each part is now checked
+    with the menu like a sentence of its own."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+    for part in parts:
+        assert suche(session, sushi, part).match_type == "exact_number" or "Pho" in part
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        # A name with an "und" in it stays one dish.
+        (
+            "Einmal die 23, zweimal Ente süß und sauer",
+            ["Einmal die 23", "zweimal Ente süß und sauer"],
+        ),
+        # A hint for the dish before it is no dish.
+        (
+            "Die 25, zweimal die 12 und ohne Zwiebeln",
+            ["Die 25", "zweimal die 12 und ohne Zwiebeln"],
+        ),
+    ],
+)
+def test_a_part_that_is_no_clear_list_stays_whole(session, sushi, said, parts):
+    """The menu decides: a piece that is no dish of its own keeps its part
+    whole, as it keeps a sentence whole (rule 2)."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        ("Zweimal die 99 und Pho Bo", ["Zweimal die 99", "Pho Bo"]),
+        ("die 99 und Pho Bo", ["die 99", "Pho Bo"]),
+        ("S99 und Pho Bo", ["S99", "Pho Bo"]),
+        ("Die 25, zweimal die 99 und Pho Bo", ["Die 25", "zweimal die 99", "Pho Bo"]),
+        ("Die 25, zweimal die 12 und die S99", ["Die 25", "zweimal die 12", "die S99"]),
+    ],
+)
+def test_a_card_number_the_menu_does_not_have_is_a_position_of_its_own(
+    session, sushi, said, parts
+):
+    """Eval abholung_0082: "Zweimal die 99 und Pho Bo" stayed whole because the
+    99 hit nothing, the name search over the sentence found Pho Bo alone, and
+    the guest got Pho Bo twice without a word about the 99. A piece that is one
+    card number is a position whether the menu has it or not; its search then
+    says that the number does not exist (rule 2)."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, next(p for p in parts if "99" in p))
+    assert "99" in err.value.say
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # No card number, and no dish either: the "und" belongs to a name.
+        "Ente süß und sauer",
+        "Fisch und Chips",
+        # A number next to a word is no card number said alone.
+        "7 Kostbarkeiten und Reis",
+        "um 12 und Pho Bo",
+    ],
+)
+def test_a_piece_that_is_no_card_number_and_no_dish_keeps_the_sentence_whole(
+    session, sushi, said
+):
+    assert position_parts(session, sushi, said, now=NOW) == [said]
+
+
 def test_heard_number_and_name_are_two_positions(session, sushi):
     """Codex PR #257: "S zwölf und Pho Bo" arrives as "Ist zwölf und Pho Bo".
     The number that needs a question is a position of its own, as the S12 that
@@ -1194,3 +1293,39 @@ def test_weight_stays_in_the_name():
 
     assert normalize_query("Rumpsteak 250g") == "rumpsteak 250g"
     assert normalize_query("Rumpsteak 250 g") == "rumpsteak g"
+
+
+# --- The judge of spoken orders splits a sentence as the conversation does --------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Einmal die 25 und die S12.",
+        "Die S12 und die 25g",
+        "Die 25, zweimal die 12 und die S12.",
+        "Zweimal die 13, die 25g und einmal die S12.",
+        "Die 13, die 12 und die 25",
+        "Einmal die 13 und die 99.",
+        "Zweimal die 99 und die S12",
+        "Die 25, zweimal die 12, die S99 und die S1",
+        "Die 13 und Nummer 23h",
+        "Die 13 und ist zwölf",
+        "Die 13 und die 25 die",
+        "Zweimal die 13 die 25 einmal die S12",
+        "Die 13 und Sushi eins",
+        "Die 13.",
+    ],
+)
+def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(
+    session, sushi, said
+):
+    """`evals.heard.positions` has no database and no name search: for sentences
+    of card numbers it must cut where `position_parts` cuts, or the speech kit
+    would judge another conversation than the one guests get (T-10.3)."""
+    from api.domain.menu.items import active_numbers
+    from evals.heard import Menu, positions
+
+    menu = Menu.from_rows(active_numbers(session, sushi))
+    real = [p.strip(" .!?;:") for p in position_parts(session, sushi, said, now=NOW)]
+    assert positions(said, menu) == real
