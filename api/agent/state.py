@@ -40,6 +40,11 @@ Stage = Literal[
 ]
 
 
+# Longest `last_say` the model gets back, in characters: a read-back with
+# three dishes fits, a model that talks on is cut.
+LAST_SAY_MAX = 300
+
+
 class ConversationState(BaseModel):
     call_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -94,6 +99,17 @@ class ConversationState(BaseModel):
     # Set by the phone line (telephony/handler.py), which says the AI disclosure
     # before the first turn: the model must not greet a second time.
     greeted: bool = False
+    # The sentence that ended the last turn (`guards.note_said`), cut to
+    # `LAST_SAY_MAX`. A model keeps nothing between turns: without it a "Ja",
+    # a name or "nein, das wars" answers a question the model no longer knows
+    # it asked (first full eval run, 13.10.2026). One sentence, replaced with
+    # every turn, so the state stays compact and never grows into a transcript
+    # (docs/05 §5).
+    last_say: str | None = None
+    # Whether the restaurant was open when get_service_status was asked in
+    # this call; None until then. The model reads from it that the status is
+    # known: it asked again at the start of every turn, one request each.
+    service_open: bool | None = None
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
@@ -103,6 +119,10 @@ class ConversationState(BaseModel):
         data: dict[str, Any] = {"stage": self.stage, "open": self.open_questions}
         if self.greeted:
             data["greeted"] = True
+        if self.last_say:
+            data["last_say"] = self.last_say
+        if self.service_open is not None:
+            data["service"] = {"is_open": self.service_open}
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -396,6 +416,10 @@ def apply_tool_result(
             state.cart = cart_lines((args or {}).get("items"))
     elif name == "search_menu":
         _note_search(state, result.data)
+    elif name == "get_service_status":
+        is_open = result.data.get("is_open")
+        if isinstance(is_open, bool):
+            state.service_open = is_open
     elif name == "confirm":
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.

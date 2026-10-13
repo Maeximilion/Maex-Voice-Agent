@@ -5,9 +5,11 @@ import uuid
 import pytest
 
 from api.agent.dispatch import ToolResult
+from api.agent.guards import note_said
 from api.agent.intent import heard
 from api.agent.outcome import call_outcome
 from api.agent.state import (
+    LAST_SAY_MAX,
     ConversationState,
     apply_state_patch,
     apply_tool_result,
@@ -463,3 +465,72 @@ def test_call_that_ends_before_a_draft_is_logged_with_its_wish():
     note_intent(state, "Ich möchte etwas zum Abholen bestellen")
 
     assert call_outcome(state) == ("abandoned", "pickup")
+
+
+# --- What a model that keeps nothing gets back: its last sentence, the status ---
+
+
+def test_the_last_sentence_goes_back_to_the_model_with_the_next_turn():
+    """Seen on the first full eval run (13.10.2026): "Ja, passt" after a
+    question the model no longer knew it had asked was answered with an
+    invented confirmation, and a name was searched on the menu."""
+    state = make_state()
+    assert "last_say" not in state.to_prompt_json()
+
+    note_said(state, "Auf welchen Namen darf ich die Bestellung notieren?")
+
+    assert state.to_prompt_json()["last_say"] == (
+        "Auf welchen Namen darf ich die Bestellung notieren?"
+    )
+
+
+def test_only_one_sentence_is_kept_never_a_transcript():
+    state = make_state()
+    note_said(state, "Was darf es sein?")
+
+    note_said(state, "Darf es noch etwas sein?")
+
+    assert state.to_prompt_json()["last_say"] == "Darf es noch etwas sein?"
+    assert "Was darf es sein?" not in str(state.to_prompt_json())
+
+
+def test_a_model_that_talks_on_is_cut_in_the_state():
+    state = make_state()
+
+    note_said(state, "a" * (LAST_SAY_MAX + 50))
+
+    assert len(state.to_prompt_json()["last_say"]) == LAST_SAY_MAX
+
+
+@pytest.mark.parametrize("is_open", [True, False])
+def test_the_service_status_of_this_call_stays_in_the_state(is_open):
+    """Without it a real model asked get_service_status at the start of every
+    turn: it could not know that it had asked before."""
+    state = make_state()
+    assert "service" not in state.to_prompt_json()
+
+    apply_tool_result(
+        state,
+        "get_service_status",
+        ToolResult(ok=True, data={"is_open": is_open, "closes_at": None}),
+    )
+
+    assert state.to_prompt_json()["service"] == {"is_open": is_open}
+
+
+def test_a_failed_status_request_leaves_the_status_unknown():
+    state = make_state()
+
+    apply_tool_result(
+        state, "get_service_status", ToolResult(ok=False, error_code="not_found")
+    )
+
+    assert "service" not in state.to_prompt_json()
+
+
+def test_a_status_without_the_flag_is_not_taken_as_closed():
+    state = make_state()
+
+    apply_tool_result(state, "get_service_status", ToolResult(ok=True, data={}))
+
+    assert state.service_open is None
