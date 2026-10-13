@@ -1059,3 +1059,102 @@ def test_a_prefix_that_was_said_is_not_a_heard_one():
     for text in ["S zwölf", "Es zwölf", "Sushi zwölf", "die 12"]:
         ref, _ = sole_item_number(text, CARD)
         assert ref is not None and ref.heard == ()
+
+
+# --- A trailing letter the ear writes as a word: "26d" heard as "26 der" --------
+
+# Like the register: one number with its letters, one without any, and one
+# that only exists with a letter.
+LETTERED = CardFormat.from_items(
+    [(n, "Hauptspeisen") for n in ("26", "26a", "26b", "26D", "26e", "26f", "26g")]
+    + [("30", "Hauptspeisen"), ("31a", "Hauptspeisen")]
+)
+
+
+def test_card_format_knows_the_lettered_numbers_of_the_menu():
+    card = CardFormat.from_items([("26D", "X"), ("S07a", "Y"), ("12", "Z")])
+    assert card.lettered == {"26d", "s7a"}
+    assert NO_PREFIXES.lettered == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Nummer sechsundzwanzig der", ("26", "26d")),
+        ("Nummer 26 der", ("26", "26d")),
+        ("Sechs und zwanzig der.", ("26", "26d")),
+        ("Zweimal die 26 der", ("26", "26d")),
+        ("Die 26 der bitte", ("26", "26d")),
+        ("Ich hätte gern die 26 der, bitte.", ("26", "26d")),
+        ("Nummer sechsundzwanzig dann.", ("26", "26d")),
+        ("Nummer sechsundzwanzig, die?", ("26", "26e", "26g")),
+        ("Nummer sechsundzwanzig ja.", ("26", "26a")),
+        ("Nummer 26 war", ("26", "26b")),
+        ("Nummer sechsundzwanzig äh", ("26", "26e")),
+        ("Nr. 26, einen.", ("26", "26e")),
+        ("Nummer 26 ist.", ("26", "26f")),
+        # The menu has 31a and no 31: still both, the search offers what exists.
+        ("Nummer einunddreißig ja", ("31", "31a")),
+        ("Nummer 026 der", ("026", "026d")),
+    ],
+)
+def test_a_word_behind_the_number_keeps_the_lettered_number_as_a_candidate(text, cards):
+    """Eval abholung_0080, run on the pilot's menu (12.10.2026): the ear writes
+    the trailing letter as a word ("26d" as "sechsundzwanzig der"), the rule
+    read it as filler and took the plain number. Both are looked up, plain
+    first, and the search asks (rule 2)."""
+    ref, unclear = sole_item_number(text, LETTERED)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == cards
+    assert ref.text == " oder ".join(cards)
+    # The lettered numbers rest on the heard word alone: never taken unasked.
+    assert ref.heard == cards[1:]
+    # No plain number for the understanding ladder either.
+    assert find_item_number(text, LETTERED) is None
+
+
+def test_a_word_behind_a_marked_number_marks_all_candidates():
+    ref, _ = sole_item_number("Nummer 26 der", LETTERED)
+    assert ref is not None and ref.marked
+    assert [r.cards for r in find_marked_item_numbers("Nummer 26 der", LETTERED)] == [
+        ("26", "26d")
+    ]
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 30 der", "Nummer dreißig ja.", "Die 30 die bitte", "Nummer 26 der"]
+)
+def test_the_word_is_filler_where_the_menu_has_no_such_lettered_number(text):
+    """Which letters a number carries is the menu's (rule 1): the 30 has none,
+    and a menu without lettered numbers asks nothing."""
+    card = NO_PREFIXES if "26" in text else LETTERED
+    ref, unclear = sole_item_number(text, card)
+    assert not unclear and ref is not None
+    assert ref.cards == (ref.text,) and ref.heard == ()
+    assert find_item_number(text, card) == ref.value
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Die 26 bitte", ("26",)),  # bitte is no word the ear writes for a letter
+        ("Nummer 26 ja genau", ("26",)),  # an answer, not a letter
+        ("Ja, die 26", ("26",)),  # only behind the number
+        ("Der 26", ("26",)),
+        ("Dann die 26", ("26",)),
+        ("Nummer 26 d", ("26d",)),  # the letter itself was heard
+        ("26d", ("26d",)),
+        ("Nummer 26 d ja", ("26d",)),  # one letter is enough
+    ],
+)
+def test_the_word_counts_only_behind_a_plain_number_at_the_end(text, cards):
+    ref, unclear = sole_item_number(text, LETTERED)
+    assert not unclear and ref is not None
+    assert ref.cards == cards and ref.heard == ()
+
+
+@pytest.mark.parametrize(
+    "text", ["Nummer 26 der oder 30", "die 30 und die 26 der", "Nummer 26 der Ente"]
+)
+def test_a_heard_suffix_next_to_more_asks_back_as_before(text):
+    assert sole_item_number(text, LETTERED) == (None, True)

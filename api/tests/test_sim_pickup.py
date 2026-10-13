@@ -1722,6 +1722,24 @@ def test_a_repeated_heard_number_picks_neither_of_two_offered_dishes(session, su
     assert [n for n, _, _ in positions(session, order)] == ["12"]
 
 
+@pytest.mark.parametrize(
+    ("answer", "number"),
+    [("Die 25g.", "25g"), ("Die 25.", "25"), ("Soße Chop Suey.", "25g")],
+)
+def test_a_repeated_heard_suffix_picks_nothing_a_clear_answer_does(
+    session, sushi, answer, number
+):
+    """Eval abholung_0080: 25 or 25g was asked; "fünfundzwanzig die" again is
+    the same open question, the number said clearly or the name decides."""
+    _, turns = _bestellung(
+        session, sushi, "Fünfundzwanzig die.", "Fünfundzwanzig die.", answer
+    )
+    assert "Meinen Sie Nummer 25 Chop Suey oder Nummer 25g" in " ".join(turns[1].say)
+    assert "Meinen Sie" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert [n.lower() for n, _, _ in positions(session, order)] == [number]
+
+
 # --- A correction at the read-back (eval abholung_0079) ---------------------------
 
 

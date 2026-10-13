@@ -193,3 +193,15 @@
 {"say": "Dann ist es zwölf", "expect": "name", "why": "ist as a verb in a sentence that is no order by number: unchanged"}
 {"say": "Ich nehme ist zwölf", "expect": "12|s12?", "why": "Ich nehme S zwölf as the ear writes it: after a verb ist is still no German next to a bare number, so the heard letter needs no clean sentence start (Codex PR #257)"}
 {"say": "Dann nehme ich ist zwölf bitte", "expect": "12|s12?", "why": "the same in the middle of a sentence of fillers"}
+{"say": "Nummer fünfundvierzig die", "expect": "45|45g?", "why": "Nummer 45g as the ear writes it: the trailing letter arrives as a word the rule read as filler, and the plain 45 was taken (real menu run 12.10.2026, the most frequent silent wrong number)"}
+{"say": "Nummer fünfundvierzig, die?", "expect": "45|45g?", "why": "the same with the comma the ear sets before the word"}
+{"say": "Fünf und vierzig die", "expect": "45|45g?", "why": "without a marker and written apart"}
+{"say": "Zweimal die 45 die", "expect": "45|45g?", "why": "with a quantity: the quantity stays, the number is asked"}
+{"say": "Die 45 die bitte", "expect": "45|45g?", "why": "die 45g bitte as heard: a closing bitte behind the word changes nothing"}
+{"say": "Nummer fünfunddreißig ja.", "expect": "35|35a?", "why": "Nummer 35a as the ear writes it; this menu has 35a and no 35: the search offers 35a and takes nothing"}
+{"say": "Nummer 35 war", "expect": "35|35b?", "why": "Nummer 35b as the ear writes it"}
+{"say": "Nummer 45 der", "expect": "45", "why": "limit: the menu decides; it has no 45d, so the word stays filler and nothing is asked"}
+{"say": "Nummer 23 ja", "expect": "23", "why": "limit: no 23a on the menu, a plain order stays without a question"}
+{"say": "Die 45 bitte", "expect": "45", "why": "limit: bitte is no word the ear writes for a letter"}
+{"say": "Nummer 35 ja genau", "expect": "35", "why": "limit: the word counts only where it ends the sentence; ja genau is an answer, not a letter"}
+{"say": "Ja, die 35", "expect": "35", "why": "limit: only behind the number; in front it opens the sentence"}

@@ -158,6 +158,18 @@ _MAX_PREFIX_TOKENS = 3
 # Nummer ist 23"), so it adds a candidate and never replaces the plain number,
 # and the search asks before it takes either (`ItemNumber.heard`).
 _HEARD_LETTERS = {"ist": "s"}
+# The same behind the number: words the ear wrote for a trailing letter, with
+# the letters they stood for ("26d" arrived as "sechsundzwanzig der", "30a" as
+# "dreißig ja"; run on the pilot's menu, docs/20 §12). Each of them is a filler
+# word in a number sentence, so the rule dropped it and took the plain number.
+# They add candidates in the same way, and only for a card number the menu has
+# (`CardFormat.lettered`).
+_HEARD_SUFFIXES = {
+    "ja": "a", "war": "b", "der": "d", "dann": "d", "die": "eg", "aeh": "e",
+    "eine": "e", "einen": "e", "ist": "f",
+}  # fmt: skip
+# What may still follow such a word: "die 26 der bitte".
+_CLOSING = frozenset({"bitte", "gern", "gerne"})
 
 
 @dataclass(frozen=True)
@@ -167,14 +179,17 @@ class CardFormat:
     `prefixes`: letters in front of the number that occur on the menu ("s",
     "sm"). `words`: a category word the guest says instead of the prefix
     ("Sushi zwölf"), with every prefix it can mean - only for categories in
-    which every number carries a prefix. Comes from the database
-    (`items.card_format`), never from the code (CLAUDE.md §2 rule 1).
+    which every number carries a prefix. `lettered`: the card numbers that
+    carry a letter behind the number ("25g"), as `canonical_card` writes them.
+    Comes from the database (`items.card_format`), never from the code
+    (CLAUDE.md §2 rule 1).
     """
 
     prefixes: frozenset[str] = frozenset()
     # Pairs (word, prefixes) instead of a dict: the value stays hashable and
     # immutable, and NO_PREFIXES shares no mutable state.
     words: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    lettered: frozenset[str] = frozenset()
 
     @classmethod
     def from_items(cls, items: Iterable[tuple[str, str]]) -> "CardFormat":
@@ -186,6 +201,7 @@ class CardFormat:
         exists is decided by the search against the menu.
         """
         prefixes: set[str] = set()
+        lettered: set[str] = set()
         in_category: dict[str, set[str]] = {}
         categories_of: dict[str, set[str]] = {}
         for number, category in items:
@@ -193,6 +209,8 @@ class CardFormat:
             if parts is None:
                 continue
             prefix = parts.group(1)
+            if parts.group(3):
+                lettered.add(canonical_card(parts.group()))
             name = fold(category.strip())
             if prefix:
                 prefixes.add(prefix)
@@ -211,7 +229,9 @@ class CardFormat:
                 and all(categories_of[p] == {name} for p in carried)
             ):
                 words[name] = tuple(sorted(found))
-        return cls(frozenset(prefixes), tuple(sorted(words.items())))
+        return cls(
+            frozenset(prefixes), tuple(sorted(words.items())), frozenset(lettered)
+        )
 
     @cached_property
     def _word_map(self) -> dict[str, tuple[str, ...]]:
@@ -547,10 +567,11 @@ class ItemNumber:
     # is decided by the search against the menu (T-4.12).
     choices: tuple[str, ...] = ()
     # Of `choices`, the card numbers that rest on a word the ear may have
-    # written for a letter ("ist zwölf" as s12, `_HEARD_LETTERS`). The word may
-    # as well be the word, and the guest may have said the letter: with
-    # anything in here the search takes neither candidate without a question,
-    # whichever of them the menu has (Codex PR #257).
+    # written for a letter ("ist zwölf" as s12, `_HEARD_LETTERS`; "26 der" as
+    # 26d, `_HEARD_SUFFIXES`). The word may as well be the word, and the guest
+    # may have said the letter: with anything in here the search takes neither
+    # candidate without a question, whichever of them the menu has (Codex PR
+    # #257).
     heard: tuple[str, ...] = ()
 
     @property
@@ -650,16 +671,50 @@ def _long_suffix(token: str) -> bool:
     return len(token) == _MAX_CARD_LETTERS and _card_letters(token)
 
 
-def _ref(tokens: list[str], span: _Span, marked: bool, glued: set[int]) -> ItemNumber:
+def _ref(
+    tokens: list[str],
+    span: _Span,
+    marked: bool,
+    glued: set[int],
+    card: CardFormat = NO_PREFIXES,
+) -> ItemNumber:
     ref = _plain_ref(tokens, span, marked, glued)
     if not span.prefixes:
-        return ref
+        lettered = _heard_suffixes(tokens, span.end, ref.text, card)
+        if not lettered:
+            return ref
+        # "26 der" is 26 or 26d: both are looked up, and the search asks.
+        cards = (ref.text, *lettered)
+        return ItemNumber(
+            ref.value, " oder ".join(cards), marked, True, cards, lettered
+        )
     cards = tuple(prefix + ref.text for prefix in span.prefixes)
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
     # What is said is what is looked up: "s12 oder sm12" (review PR #155).
     heard = cards[1:] if span.prefixes[0] == "" else ()
     return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards, heard)
+
+
+def _heard_suffixes(
+    tokens: list[str], end: int, number: str, card: CardFormat
+) -> tuple[str, ...]:
+    """The lettered card numbers of the menu that a word behind the plain
+    `number` may have been (`_HEARD_SUFFIXES`), else nothing.
+
+    Only where the word ends the sentence, a closing "bitte" aside: "Nummer 26
+    der" is no German, "Nummer 26 der Ente" and "die 35, ja genau" are. Without
+    such a card number on the menu the word stays the filler it was, and a
+    plain order costs no question.
+    """
+    rest = [t for t in tokens[end:] if t not in PUNCTUATION]
+    if not number.isdigit() or not rest or not _CLOSING.issuperset(rest[1:]):
+        return ()
+    return tuple(
+        number + letter
+        for letter in _HEARD_SUFFIXES.get(rest[0], "")
+        if canonical_card(number + letter) in card.lettered
+    )
 
 
 def _plain_ref(
@@ -967,7 +1022,7 @@ def _marked(
     spans.sort(key=lambda s: s.start)
     found: list[ItemNumber] = list(invalid)
     for span in spans:
-        ref = _ref(tokens, span, marked=True, glued=glued)
+        ref = _ref(tokens, span, marked=True, glued=glued, card=card)
         # The same card number in two spellings ("07", "7") is one.
         if all(_same_cards(r) != _same_cards(ref) for r in found):
             found.append(ref)
@@ -1018,7 +1073,7 @@ def find_item_number_ref(
         # "JA12", "A12" without a marker: letters glued to the number, so this
         # is not the bare 12 (Codex PR #155).
         return None
-    ref = _ref(tokens, uebrig[0], marked=False, glued=glued)
+    ref = _ref(tokens, uebrig[0], marked=False, glued=glued, card=card)
     # "das ist 5g Zucker": g followed by a word is the unit, not a card suffix
     # - otherwise the ladder would report "Nummer 5g" (review PR #155).
     word_at = uebrig[0].end + 1
@@ -1330,7 +1385,7 @@ def sole_item_number(
     if len(numbers) + len(invalid) == 1 and not residue and not dangling:
         if invalid:
             return invalid[0], False
-        return _ref(tokens, numbers[0], marked=has_marker, glued=glued), False
+        return _ref(tokens, numbers[0], has_marker, glued, card), False
     if nummer_gemeint or dangling or not residue:
         return None, True
     return None, False

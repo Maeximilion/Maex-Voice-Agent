@@ -149,7 +149,18 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    `not_found`. Next to another dish („Ist zwölf und Pho Bo") it is a position of
    its own, like the S12 said clearly. Only where the menu has the prefix S, and only in a
    pure number sentence: next to a name the sentence is what it was („das ist 5g
-   Zucker"). Eine genannte, nicht vorhandene Nummer
+   Zucker"). The same behind the number: the speech recognition writes a trailing
+   letter as a word („26d" as „sechsundzwanzig der", „30a" as „dreißig ja"; run
+   on the real menu, docs/20 §11), and each of those words is filler in a number
+   sentence. Where such a word (`ja` for a, `war` for b, `der` and `dann` for d,
+   `die` for e or g, `äh`, `eine` and `einen` for e, `ist` for f) ends the
+   sentence directly behind a plain number, a closing „bitte" aside, and the menu
+   has that number with that letter, the lettered number is a second candidate
+   („26 oder 26d") and never taken without a question: the search asks by name
+   („Meinen Sie Nummer 26, ... oder Nummer 26d, ...?"), or offers the one dish the
+   menu has (eval `abholung_0080`). Without that card number on the menu nothing
+   changes: „Nummer 26 der" stays the 26, „die 26 bitte" and „Nummer 26 ja genau"
+   stay it on every menu. Eine genannte, nicht vorhandene Nummer
    als Wort wird abgesetzt vorgelesen („s tausend"). Präfixe, die schon Menge,
    Marker oder gesprochenes Wort sind (`x`, `st`, `nr`, `no`, `hm`, `ja`, `es`,
    `so`, `um`, `zu`, `da`, `du`, `er`, `ob`), lehnt der Import mit eigener
