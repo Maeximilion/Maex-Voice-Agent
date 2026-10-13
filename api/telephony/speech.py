@@ -33,7 +33,10 @@ class Heard:
     from them; without them a long order would be answered with "Sind Sie noch
     da?" in the middle of it. A final is one finished utterance: the engine's
     own end of utterance, or the silence detector of an adapter for an engine
-    that has none (docs/20 §6).
+    that has none (docs/20 §6). Every utterance that a partial announced ends
+    with a final, also when nothing was understood (an empty text) or it was
+    noise (`speech=False`): the session waits for it, and treats an ear that
+    stays silent after a partial as failed.
     """
 
     text: str

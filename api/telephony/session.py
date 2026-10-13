@@ -71,6 +71,10 @@ PLAYED_GRACE_SECONDS = 5.0
 # one worker of the call, and with it the caller's hangup and the way to the
 # team (rule 5).
 SPEAK_SECONDS = 10.0
+# How long the ear may take from its last word that the caller is speaking to
+# the finished utterance. An ear that begins an utterance and never ends it
+# leaves the call waiting for nothing: a failure (rule 5).
+UTTERANCE_SECONDS = 10.0
 # Raw 16 bit mono, as the line is dialled (`adapters/asterisk.py`).
 SAMPLE_RATE = 16000
 
@@ -130,6 +134,9 @@ class CallSession:
         self._digits = ""
         self._digits_due: float | None = None
         self._silence_due: float | None = None
+        # The ear said that the caller is speaking and owes the finished
+        # utterance by then.
+        self._utterance_due: float | None = None
         self._unheard = 0
         # The voice failed on this call, and the core knows.
         self._failed = False
@@ -210,7 +217,12 @@ class CallSession:
     def _until_next_timer(self) -> float | None:
         due = [
             d
-            for d in (self._digits_due, self._silence_due, self._played_due())
+            for d in (
+                self._digits_due,
+                self._silence_due,
+                self._utterance_due,
+                self._played_due(),
+            )
             if d is not None
         ]
         return max(0.0, min(due) - self._clock()) if due else None
@@ -252,12 +264,18 @@ class CallSession:
         if not self._listening():
             return
         if not heard.final:
-            self._caller_is_active(at)
+            # The caller is speaking: no silence, and the ear owes the end of
+            # this utterance. If that never comes, nothing else would.
+            self._silence_due = None
+            self._utterance_due = at + UTTERANCE_SECONDS
             if self._may_interrupt() and len(heard.text.split()) >= BARGE_IN_WORDS:
                 self._stop_playback()
             return
+        self._utterance_due = None
         if not heard.speech:
-            return  # words without speech energy: line noise, never an answer
+            # Words without speech energy: line noise, never an answer.
+            self._wait_for_the_caller(at)
+            return
         if not heard.text.strip():
             # Speech the ear made nothing of. Once is a cough; again and the
             # ear does not hear this caller (docs/20 §4).
@@ -265,11 +283,13 @@ class CallSession:
             if self._unheard >= UNHEARD_LIMIT:
                 self._voice_failed()
             else:
-                self._caller_is_active(at)
+                self._wait_for_the_caller(at)
             return
         self._unheard = 0
         if heard.ended_at <= self._protected_until:
-            return  # said into a sentence that may not be interrupted
+            # Said into a sentence that may not be interrupted.
+            self._wait_for_the_caller(at)
+            return
         if self._playing_since is not None and heard.ended_at >= self._playing_since:
             # Everything still playing may be interrupted, or the line above
             # had dropped the utterance. What was said before the answer began
@@ -284,7 +304,10 @@ class CallSession:
             self._stop_playback()
         self._silence_due = None
         if digit == END_KEY:
-            self._hand_over_digits()
+            if self._digits:
+                self._hand_over_digits()
+            else:
+                self._wait_for_the_caller(at)  # a hash alone hands nothing over
         else:
             self._digits += digit
             self._digits_due = at + self._keypad_gap_seconds
@@ -362,6 +385,13 @@ class CallSession:
                 # to nothing (rule 3).
                 self._voice_failed()
         if self.over:
+            return
+        if self._utterance_due is not None and now >= self._utterance_due:
+            logger.error(
+                "the ear began an utterance and did not finish it",
+                extra={"extra": {"session_id": self.session_id}},
+            )
+            self._voice_failed()
             return
         if self._digits_due is not None and now >= self._digits_due:
             self._hand_over_digits()
@@ -449,10 +479,6 @@ class CallSession:
         if self._listening() and not self._outstanding and not self._digits:
             self._silence_due = at + self._silence_seconds
 
-    def _caller_is_active(self, at: float) -> None:
-        if self._silence_due is not None:
-            self._silence_due = at + self._silence_seconds
-
     def _voice_failed(self) -> None:
         """Ear or mouth failed, or the line does not say what it played: once,
         the core is told, and it sends the call to the team. What was queued
@@ -460,7 +486,7 @@ class CallSession:
         if self._failed:
             return
         self._failed = True
-        self._silence_due = None
+        self._silence_due = self._utterance_due = None
         self._digits, self._digits_due = "", None
         if self._outstanding:
             try:
@@ -486,7 +512,7 @@ class CallSession:
         ):
             return
         self._ending = ending
-        self._silence_due = None
+        self._silence_due = self._utterance_due = None
         self._digits, self._digits_due = "", None
         if not self._outstanding:
             self._perform_ending()

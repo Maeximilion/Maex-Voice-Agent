@@ -14,6 +14,7 @@ import pytest
 
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
 from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
+from api.telephony.session import UTTERANCE_SECONDS as UTTERANCE
 from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Heard
 
@@ -103,6 +104,16 @@ def call():
         keypad_gap_seconds=GAP,
     )
     lines.add(session)
+    drain = session.drain
+
+    def drain_and_check() -> None:
+        """After every step of a test: a call that is still open waits for
+        something with a deadline. Without one it would sit on the line for
+        ever when that something never comes (Codex PR #286)."""
+        drain()
+        assert session.over or session._until_next_timer() is not None
+
+    session.drain = drain_and_check
     c = SimpleNamespace(
         clock=clock, line=line, ear=ear, mouth=mouth, lines=lines, core=core, s=session
     )
@@ -338,6 +349,72 @@ def test_two_words_stop_a_sentence_that_may_be_interrupted(call):
     assert call.line.kinds().count("flush") == 1
 
 
+def test_an_utterance_the_ear_never_finishes_is_a_failure(call):
+    """The caller talks over a sentence, playback is dropped, and then the ear
+    owes the finished utterance. If it never comes, nothing else would ever
+    happen on the call: a failure, and the team (Codex PR #286, rule 5)."""
+    call.core.on_failure = OUTAGE
+    call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.partial("die dreiundzwanzig")
+    assert call.line.kinds()[-1] == "flush"
+    call.wait(UTTERANCE - 0.5)
+    assert call.core.count("voice_failure") == 0 and call.core.count("silence") == 0
+    call.wait(1.0)
+    assert call.core.count("voice_failure") == 1
+    assert call.line.played()[-1] == "Technische Störung."
+
+
+def test_an_utterance_begun_on_a_quiet_line_and_never_finished_is_a_failure(call):
+    call.core.on_failure = OUTAGE
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.partial("ich hätte")
+    call.wait(UTTERANCE + 0.5)
+    assert call.core.count("voice_failure") == 1 and call.core.count("silence") == 0
+
+
+def test_an_utterance_may_take_as_long_as_the_caller_speaks(call):
+    call.start(GREETING)
+    call.played()
+    for _ in range(UTTERANCE_TICKS := 30):  # thirty seconds, reported once a second
+        call.clock.now += 1.0
+        call.partial("")
+    call.said("Eine lange Bestellung", after=0.5)
+    assert call.core.count("voice_failure") == 0
+    assert (
+        call.core.turns() == ["Eine lange Bestellung"] and UTTERANCE_TICKS > UTTERANCE
+    )
+
+
+def test_a_dropped_utterance_starts_the_silence_anew(call):
+    """Noise, or an utterance into a read-back that is reported late: nothing
+    is taken, and the silent line is counted from there."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.partial("")
+    call.said("Ja", after=1.0, speech=False)
+    call.wait(SILENCE - 0.5)
+    assert call.core.count("silence") == 0
+    call.wait(1.0)
+    assert call.core.count("silence") == 1 and call.core.count("voice_failure") == 0
+
+
+def test_a_hash_alone_that_stopped_a_sentence_leaves_the_call_waiting(call):
+    call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.key("#")
+    assert call.line.kinds()[-1] == "flush"
+    call.wait(SILENCE + 0.1)
+    assert call.core.count("silence") == 1
+
+
 def test_a_key_stops_a_sentence_that_may_be_interrupted(call):
     call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
     call.start(GREETING)
@@ -467,14 +544,16 @@ def test_a_re_prompt_starts_the_silence_anew(call):
 
 
 def test_a_caller_who_speaks_is_not_silent(call):
+    """From the first word of an utterance to its end no silence is counted."""
     call.start(GREETING)
     call.played()
     call.wait(SILENCE - 1)
     call.partial("ähm")
-    call.wait(SILENCE - 1)
+    call.wait(2.0)  # past the silence timeout, in the middle of the utterance
     assert call.core.count("silence") == 0
-    call.wait(1.5)
-    assert call.core.count("silence") == 1
+    call.said("Ähm, einen Tisch bitte", after=0.5)
+    assert call.core.turns() == ["Ähm, einen Tisch bitte"]
+    assert call.core.count("silence") == 0
 
 
 def test_speech_without_words_yet_is_no_silence(call):
