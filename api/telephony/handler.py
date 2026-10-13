@@ -15,6 +15,10 @@ fallback takes the call (docs/02 §5).
 
 Live calls are held in this process. A turn for a call this process does not know
 (after a restart) goes to the team instead of being answered without context.
+
+With the own voice layer (docs/20 §4) the handler also says which sentence the
+caller may talk over, answers a silent line with two questions from the code
+before it ends the call, and sends a call whose ear or mouth failed to the team.
 """
 
 import re
@@ -28,6 +32,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from api.agent.guards import note_said
 from api.agent.llm import LLMClient
 from api.agent.loop import ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome
@@ -51,6 +56,16 @@ SAY_OUTAGE = (
 # the agent's last sentence already parts ("bis dann" after a reservation, "bis
 # gleich" after a pickup), so it is never said twice.
 FAREWELL = "Vielen Dank für Ihren Anruf. Auf Wiederhören."
+# What the code asks into a silent line, in this order; after the last one the
+# next silence ends the call with the farewell (docs/20 §4). Drafts.
+STILL_THERE = (
+    "Sind Sie noch da?",
+    "Ich höre Sie leider nicht. Sind Sie noch dran?",
+)
+# In these stages nothing the agent says may be talked over: a read-back and
+# its question are played to the end (rule 3), and so is what is said before a
+# transfer.
+_NOT_INTERRUPTIBLE = frozenset({"readback_pending", "transferred"})
 _GOODBYE = re.compile(
     r"auf wiederh(ö|oe)ren|auf wiedersehen|tschüss|tschuess"
     r"|bis (dann|gleich|bald|später|spaeter|morgen)\b"
@@ -79,6 +94,8 @@ class _LiveCall:
     team_phone: str
     state: ConversationState
     loop: ConversationLoop | None = None
+    # Silences in a row that the code has answered with a question.
+    silences: int = 0
 
 
 class CallHandler:
@@ -169,6 +186,22 @@ class CallHandler:
         if keyed:
             self.on_user_turn(session_id, keyed)
 
+    def on_silence(self, session_id: str) -> None:
+        live = self._lookup(session_id)
+        if live is not None:
+            self._guarded(live, lambda: self._silent(live))
+
+    def on_voice_failure(self, session_id: str) -> None:
+        """Ear or mouth failed: the outage sentence, as far as it can still be
+        spoken, and the team (rule 5)."""
+        live = self._lookup(session_id)
+        if live is not None:
+            logger.error(
+                "the voice layer failed, handing the call to the team",
+                extra={"extra": {"session_id": session_id}},
+            )
+            self._fail(session_id, live)
+
     def on_call_ended(self, session_id: str) -> None:
         with self._lock:
             live = self._live.pop(session_id, None)
@@ -204,13 +237,30 @@ class CallHandler:
         if live.loop is None:
             raise RuntimeError("turn on a call the agent does not answer")
         bind_call_id(str(live.call_id))
+        live.silences = 0
         result = live.loop.run_turn(live.state, text)
+        ending = result.ended or live.state.stage in CLOSING_STAGES
+        interruptible = not ending and live.state.stage not in _NOT_INTERRUPTIBLE
         for line in result.say:
-            self._port.say(live.session_id, line)
+            self._port.say(live.session_id, line, interruptible=interruptible)
         if live.state.stage == "transferred":
             self._transfer(live, live.state.transfer_to or live.team_phone)
-        elif result.ended or live.state.stage in CLOSING_STAGES:
+        elif ending:
             self._hangup(live, last_said=result.say[-1] if result.say else "")
+
+    def _silent(self, live: _LiveCall) -> None:
+        """The caller says nothing: ask twice, then say goodbye and end the
+        call. A draft that waits for its yes stays a draft."""
+        if live.silences >= len(STILL_THERE):
+            self._hangup(live, last_said="")
+            return
+        question = STILL_THERE[live.silences]
+        live.silences += 1
+        # The last thing the guest heard is this question now, not the
+        # read-back: a "Ja" to it confirms nothing (rule 3), the core reads the
+        # draft out again first.
+        note_said(live.state, question)
+        self._port.say(live.session_id, question, interruptible=True)
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
         self._close(live.session_id)
