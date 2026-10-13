@@ -61,15 +61,18 @@ SQL
 
 # The proof from the application's side: its own user and password log in, and the
 # role holds what it needs and nothing above it. One row, read as the role:
-# an attribute above a plain login | may create in the schema | tables it cannot
-# read and write | tables it owns | tables.
+# an attribute above a plain login | roles it is a member of | may create in the
+# schema | tables it cannot read and write | tables it owns | tables.
 tables="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'"
 usable="has_table_privilege(c.oid, 'select') and has_table_privilege(c.oid, 'insert') and has_table_privilege(c.oid, 'update') and has_table_privilege(c.oid, 'delete')"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, has_schema_privilege('public', 'create'), (select count(*) $tables and not ($usable)), (select count(*) $tables and c.relowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_schema_privilege('public', 'create'), (select count(*) $tables and not ($usable)), (select count(*) $tables and c.relowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
 seen="$(PGUSER="$APP_ROLE" PGPASSWORD="$APP_ROLE_PASSWORD" pg_sql "$PGDATABASE" "$check")" ||
     die 1 "the role is set up, but $APP_ROLE cannot log in with the password of DATABASE_URL (pg_hba.conf of the server?)"
-IFS='|' read -r above creates locked owned count <<<"$seen"
+IFS='|' read -r above member creates locked owned count <<<"$seen"
 [ "$above" = f ] || die 1 "$APP_ROLE still holds an attribute above a plain login"
+# A member holds what the other role holds, the owner's rights included.
+[ "$member" = 0 ] ||
+    die 1 "$APP_ROLE is a member of $member other role(s) and holds their rights; as the owner: revoke each of them from \"$APP_ROLE\""
 [ "$creates" = f ] || die 1 "$APP_ROLE may create objects in the schema"
 [ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked of $count tables"
 # A table's owner can alter and drop it whatever is granted. That happens when a

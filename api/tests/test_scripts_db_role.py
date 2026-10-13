@@ -233,6 +233,18 @@ def test_a_role_that_owns_a_table_is_reported(db, role, tmp_path):
     assert f"{role} owns 1 of" in done.stderr and "reassign owned" in done.stderr
 
 
+def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
+    """A member holds what the other role holds: reading files of the server
+    here, everything if the other role is the owner."""
+    _sql(_admin_url("postgres"), f'create role "{role}"')
+    _sql(_admin_url("postgres"), f'grant pg_read_server_files to "{role}"')
+
+    done = _script("db_role.sh", app_url=_as(role, db), owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 1, done.stdout
+    assert f"{role} is a member of 1 other role" in done.stderr
+
+
 @pytest.mark.parametrize(
     ("application", "says"),
     [
@@ -424,7 +436,7 @@ def test_migrate_hands_the_owners_url_to_alembic_and_never_as_an_argument(tmp_pa
     call, url = _migrate(tmp_path, OWNER_DATABASE_URL=owner)
 
     assert call == (
-        "compose exec -T -e DATABASE_URL api alembic -c db/alembic.ini upgrade head"
+        "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini upgrade head"
     )
     assert url == owner
 
@@ -441,7 +453,8 @@ def test_migrate_reads_the_owner_from_the_env_file(tmp_path):
     call, url = _migrate(tmp_path, "current", BACKUP_ENV_FILE=env_file.as_posix())
 
     assert (
-        call == "compose exec -T -e DATABASE_URL api alembic -c db/alembic.ini current"
+        call
+        == "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini current"
     )
     assert url == owner
 
@@ -449,5 +462,5 @@ def test_migrate_reads_the_owner_from_the_env_file(tmp_path):
 def test_migrate_without_an_owner_leaves_the_containers_url_alone(tmp_path):
     call, url = _migrate(tmp_path, "downgrade", "-1")
 
-    assert call == "compose exec -T api alembic -c db/alembic.ini downgrade -1"
+    assert call == "compose run --rm -T api alembic -c db/alembic.ini downgrade -1"
     assert url == "unset"
