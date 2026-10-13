@@ -2,6 +2,7 @@
 
     python3 -m scripts.speech_spike [--dry-run] [--limit N] [--run-dir DIR]
                                     [--menu FILE] [--judge-only]
+                                    [--orders N [--order-sizes 2,3,4]]
 
     --dry-run   check the environment and print every step, change nothing
     --limit     only the first N number sentences and the first N dish names:
@@ -20,10 +21,18 @@
                 judge the recorded run in --run-dir again and print its report:
                 the same plan and transcripts, the number rule as it is now.
                 Speaks and hears nothing; for a change to the number rule
+    --orders    a run of its own, and a slow one: instead of the sentences
+                above, N spoken orders per size are heard, each a sentence of
+                several dishes from the menu by their numbers ("Zweimal die 13,
+                die 26d und einmal die S12."), and each is judged as one order
+                (`evals/heard.py`). The same orders on every run
+    --order-sizes
+                how many dishes an order of --orders has, separated by commas
+                (default 2,3,4; up to 12)
 
 Builds the image of `deploy/speech/` (the open speech engines next to the
 project's packages) and runs three containers from it, one after another: one
-downloads the model files (the only step with network access; about 5 GB on the
+downloads the model files (the only step with network access; about 9 GB on the
 first run, kept in the run directory), one speaks the sentences of the number
 eval and the dish names of the eval menu with every voice, sends them through
 the band of a telephone line and lets every ear transcribe them
@@ -54,11 +63,13 @@ import csv
 import io
 import json
 import os
+import random
 import re
 import shutil
 import statistics
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +137,22 @@ EARS: tuple[dict[str, Any], ...] = (
             "decoder_joint-model.onnx",
         ],
     },
+    {
+        # Parakeet's sibling in the same runtime, and the one of the two that
+        # takes the language: Parakeet finds it itself and wrote a quarter of
+        # the two-word sentences in another one (docs/20 §11, 13.10.2026).
+        "id": "canary-v2-cpu",
+        "engine": "parakeet",
+        "model": "nemo-canary-1b-v2",
+        "repo": "istupakov/canary-1b-v2-onnx",
+        "files": [
+            "config.json",
+            "vocab.txt",
+            "encoder-model.onnx*",
+            "decoder-model.onnx",
+        ],
+        "language": "de",
+    },
 )
 # Every voice is a candidate for the mouth and one of the callers the ears hear.
 VOICES = (
@@ -150,6 +177,13 @@ SILENCES_MS = (300, 500, 700)
 # times what the prompt takes (docs/20 §11).
 KEY_TERMS = 10
 
+# An order of --orders: how many dishes, and how a quantity is said.
+ORDER_SIZES = (2, 3, 4)
+MAX_ORDER_SIZE = 12
+_TIMES = {1: "einmal", 2: "zweimal", 3: "dreimal"}
+# The kinds of sentence that get a verdict of the number rule.
+JUDGED = ("number", "order")
+
 # Thresholds of docs/20 §6.
 WRONG_LIMIT = 0.02
 VOICE_TO_VOICE_SECONDS = 1.5
@@ -164,6 +198,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--run-dir", type=Path, default=SPEECH_DIR / "run")
     parser.add_argument("--menu", type=Path)
     parser.add_argument("--judge-only", action="store_true")
+    parser.add_argument("--orders", type=int)
+    parser.add_argument("--order-sizes", type=order_sizes)
     args = parser.parse_args(argv)
     run_dir = args.run_dir.resolve()
     recorded = args.judge_only
@@ -172,6 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--limit needs a number above zero")
     if recorded and (args.limit is not None or args.menu):
         parser.error("--judge-only takes the plan of the run: no --limit, no --menu")
+    if args.orders is not None and (args.orders < 1 or recorded or args.limit):
+        parser.error("--orders needs a number above zero, no --limit, no --judge-only")
+    if args.order_sizes and not args.orders:
+        parser.error("--order-sizes belongs to --orders")
     # The kit's own run folder, where git ignores it: not resolved, so a link
     # from there to another folder of the repository does not pass for it
     # (Codex PR #268).
@@ -214,7 +254,13 @@ def main(argv: list[str] | None = None) -> int:
             # Read once: the plan and the copy that is checked in the image
             # come from the same bytes (Codex PR #268).
             menu_text = args.menu.read_text(encoding="utf-8-sig") if args.menu else None
-            plan = build_plan(args.limit, args.menu, menu_text)
+            plan = build_plan(
+                args.limit,
+                args.menu,
+                menu_text,
+                orders=args.orders or 0,
+                sizes=args.order_sizes or ORDER_SIZES,
+            )
     except (OSError, KeyError, ValueError) as exc:
         problem = (
             f"--judge-only needs plan.json and heard.json of a run in {run_dir}"
@@ -279,7 +325,12 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def build_plan(
-    limit: int | None, menu: Path | None = None, text: str | None = None
+    limit: int | None,
+    menu: Path | None = None,
+    text: str | None = None,
+    *,
+    orders: int = 0,
+    sizes: Sequence[int] = ORDER_SIZES,
 ) -> dict[str, Any]:
     """Sentences and key terms from the eval files, never from this module.
 
@@ -287,6 +338,9 @@ def build_plan(
     numbers are spoken, and the plan carries its numbers for the judge. The
     expectations of the number eval were written for the eval menu, so with
     another one they are left to the judge (`evals/heard.py`).
+
+    `orders`: that many spoken orders per size of `sizes` instead of all other
+    sentences (`--orders`).
     """
     numbers = [
         json.loads(line)
@@ -355,9 +409,13 @@ def build_plan(
         }
         for i, name in enumerate(names)
     ][:limit]
+    if orders:
+        sentences = spoken_orders([d["number"] for d in dishes], orders, sizes)
     plan = {
         "sentences": sentences,
-        "all_sentences": len(numbers) + len(cards) + len(names),
+        "all_sentences": len(sentences)
+        if orders
+        else len(numbers) + len(cards) + len(names),
         "key_terms": names,
         "voices": list(VOICES),
         "ears": list(EARS),
@@ -370,6 +428,54 @@ def build_plan(
     plan["menu"] = [{k: d[k] for k in ("number", "category")} for d in dishes]
     plan["own_menu"] = menu is not None
     return plan
+
+
+def order_sizes(text: str) -> tuple[int, ...]:
+    """`--order-sizes 2,3,4` as numbers; an order has 2 to 12 dishes."""
+    sizes = tuple(int(part) for part in text.split(","))
+    if not sizes or not all(2 <= size <= MAX_ORDER_SIZE for size in sizes):
+        raise ValueError(f"an order has 2 to {MAX_ORDER_SIZE} dishes")
+    return sizes
+
+
+def spoken_orders(
+    numbers: list[str], per_size: int, sizes: Sequence[int]
+) -> list[dict[str, Any]]:
+    """`per_size` orders of each size, each said in one go: "Zweimal die 13,
+    die 26d und einmal die S12."
+
+    Drawn from the menu's card numbers with a fixed seed, so every run speaks
+    the same orders and two runs can be compared. No dish twice in an order.
+    Every position opens with its quantity or its number, which is where the
+    conversation splits a sentence (`domain/menu/split.py`); a quantity of one
+    is said in half of the positions and left out in the other half. `expect`
+    is the order as the judge counts it: card number and quantity per dish.
+    """
+    if max(sizes) > len(numbers):
+        raise ValueError(f"an order of {max(sizes)} dishes needs that many on the menu")
+    rng = random.Random(0)
+    rows: list[dict[str, Any]] = []
+    for size in sizes:
+        for _ in range(per_size):
+            parts: list[str] = []
+            expect: list[list[Any]] = []
+            for number in rng.sample(numbers, size):
+                quantity = rng.choice((1, 1, 1, 2, 3))
+                named = quantity > 1 or rng.random() < 0.5
+                parts.append(
+                    f"{_TIMES[quantity]} die {number}" if named else f"die {number}"
+                )
+                expect.append([canonical(number), quantity])
+            say = f"{', '.join(parts[:-1])} und {parts[-1]}."
+            rows.append(
+                {
+                    "id": f"o{len(rows)}",
+                    "kind": "order",
+                    "say": say[0].upper() + say[1:],
+                    "expect": expect,
+                }
+            )
+    return rows
 
 
 def key_terms_for(names: list[str], index: int) -> list[str]:
@@ -503,7 +609,7 @@ def summarize(
             if best
             and r["ear"] == best["id"]
             and r["voice"] == voice
-            and r["kind"] == "number"
+            and r["kind"] in JUDGED
         ]
         mouths.append(
             {
@@ -570,7 +676,8 @@ def _ear(
     ear_id: str, info: dict[str, Any], judged: list[dict[str, Any]], given: int = 0
 ) -> dict[str, Any]:
     rows = [r for r in judged if r["ear"] == ear_id]
-    numbers = [r for r in rows if r["kind"] == "number"]
+    numbers = [r for r in rows if r["kind"] in JUDGED]
+    orders = [r for r in numbers if r["kind"] == "order"]
     if "error" in info or not numbers:
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     seconds = sorted(r["seconds"] for r in rows)
@@ -589,6 +696,16 @@ def _ear(
                 dishes, lambda r: (r.get("key_terms") or 0) > 0
             ),
         }
+    if orders:
+        # Next to the verdict per order: of all dishes said, how many arrived.
+        terms["order_dishes"] = sum(r["size"] for r in orders)
+        terms["order_dishes_right_share"] = round(
+            sum(r["positions_right"] for r in orders) / terms["order_dishes"], 4
+        )
+        # The orders the rule gets right from the sentence as it was said.
+        terms["orders_right_as_said_share"] = _part(
+            orders, lambda r: r["as_said"] == "right"
+        )
     return {
         "id": ear_id,
         **terms,
@@ -607,13 +724,27 @@ def _ear(
                 "sentences": len(of_kind),
                 **{v: _share(of_kind, v) for v in ("right", "asked", "wrong")},
             }
-            for kind in NUMBER_KINDS
-            if (of_kind := [r for r in numbers if number_kind(r["expect"]) == kind])
+            for kind in [
+                *NUMBER_KINDS,
+                *(order_kind(n) for n in sorted({r["size"] for r in orders})),
+            ]
+            if (of_kind := [r for r in numbers if sentence_kind(r) == kind])
         },
     }
 
 
 NUMBER_KINDS = ("plain number", "number with a letter", "no card number")
+
+
+def order_kind(size: int) -> str:
+    return f"order of {size} dishes"
+
+
+def sentence_kind(row: dict[str, Any]) -> str:
+    """The line of the report a judged sentence counts in."""
+    if row["kind"] == "order":
+        return order_kind(row["size"])
+    return number_kind(row["expect"])
 
 
 def number_kind(expect: str) -> str:
@@ -670,6 +801,17 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
                 f"{e['key_terms_given']} dish names as key terms; "
                 f"{pct(e['dishes_with_own_term_share']).strip()} of the dish sentences "
                 "with their own name among them"
+            )
+    for e in report["ears"]:
+        if e.get("order_dishes"):
+            print(
+                f"{e['id']}: an order is right with every dish and quantity as "
+                "said, wrong when something is taken that was not said or a dish "
+                "is missing without a question; "
+                f"{pct(e['order_dishes_right_share']).strip()} of the "
+                f"{e['order_dishes']} dishes said arrived. Read as text, "
+                f"{pct(e['orders_right_as_said_share']).strip()} of the orders are "
+                "right: no ear can do better than the rule"
             )
     step("Mouths: speed, and card numbers the best ear understood from the voice")
     print(f"{'voice':<26}{'first audio s':>14}{'x real time':>13}{'understood':>12}")

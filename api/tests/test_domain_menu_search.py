@@ -1194,3 +1194,36 @@ def test_weight_stays_in_the_name():
 
     assert normalize_query("Rumpsteak 250g") == "rumpsteak 250g"
     assert normalize_query("Rumpsteak 250 g") == "rumpsteak g"
+
+
+# --- The judge of spoken orders splits a sentence as the conversation does --------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Einmal die 25 und die S12.",
+        "Die S12 und die 25g",
+        "Die 25, zweimal die 12 und die S12.",
+        "Zweimal die 13, die 25g und einmal die S12.",
+        "Die 13, die 12 und die 25",
+        "Einmal die 13 und die 99.",
+        "Die 13 und ist zwölf",
+        "Die 13 und die 25 die",
+        "Zweimal die 13 die 25 einmal die S12",
+        "Die 13 und Sushi eins",
+        "Die 13.",
+    ],
+)
+def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(
+    session, sushi, said
+):
+    """`evals.heard.positions` has no database and no name search: for sentences
+    of card numbers it must cut where `position_parts` cuts, or the speech kit
+    would judge another conversation than the one guests get (T-10.3)."""
+    from api.domain.menu.items import active_numbers
+    from evals.heard import Menu, positions
+
+    menu = Menu.from_rows(active_numbers(session, sushi))
+    real = [p.strip(" .!?;:") for p in position_parts(session, sushi, said, now=NOW)]
+    assert positions(said, menu) == real

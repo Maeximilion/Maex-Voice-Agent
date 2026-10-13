@@ -1006,3 +1006,208 @@ def test_menu_errors_reads_the_copy_in_the_run_folder(tmp_path):
         IMPORTABLE + "1000;Suppe;Suppen;5,00;;ja\n", encoding="utf-8"
     )
     assert kit.menu_errors(tmp_path / kit.MENU_COPY)
+
+
+# --- Spoken orders: a run of its own (--orders) -----------------------------------
+
+
+# Card numbers without a prefix, plain and with a letter: enough for an order of 12.
+PLAIN_MENU = "number;name;category;price_eur;description;active\n" + "".join(
+    f"{number};Gericht {number};Hauptgerichte;9,00;;ja\n"
+    for number in (*map(str, range(10, 24)), "26", "26a", "26d", "35b")
+)
+
+
+def said_verdicts(plan: dict) -> list[str]:
+    """Each order of the plan judged as the text the kit speaks."""
+    from evals.heard import Menu, order_verdict
+
+    menu = Menu.from_rows((r["number"], r["category"]) for r in plan["menu"])
+    return [
+        order_verdict(s["expect"], s["say"], menu)["verdict"] for s in plan["sentences"]
+    ]
+
+
+def test_spoken_orders_are_the_same_on_every_run():
+    plan = kit.build_plan(None, orders=5, sizes=(2, 3, 4, 12))
+    orders = plan["sentences"]
+    assert plan == kit.build_plan(None, orders=5, sizes=(2, 3, 4, 12))
+    assert [len(s["expect"]) for s in orders] == [2] * 5 + [3] * 5 + [4] * 5 + [12] * 5
+    assert {s["kind"] for s in orders} == {"order"}
+    assert plan["all_sentences"] == 20 == len({s["id"] for s in orders})
+    for s in orders:
+        numbers = [number for number, _ in s["expect"]]
+        assert len(set(numbers)) == len(numbers)
+
+
+def test_a_spoken_order_is_right_as_it_is_said(tmp_path):
+    """The sentence the kit speaks is one the conversation splits and resolves
+    to the order it stands for, or the run would measure the kit's sentences
+    instead of the ears."""
+    plan = kit.build_plan(
+        None, own_menu(tmp_path, PLAIN_MENU), orders=40, sizes=(2, 3, 4, 12)
+    )
+    assert set(said_verdicts(plan)) == {"right"}
+
+
+def test_a_spoken_order_of_the_eval_menu_is_never_wrong_as_it_is_said():
+    """With prefixed numbers on the menu some orders end in a question as text
+    already: "die S1" behind two other dishes opens no position for the
+    conversation (open point in docs/01_STATUS.md). The report shows that share
+    (`orders_right_as_said_share`); what the kit says is never a wrong order."""
+    verdicts = said_verdicts(kit.build_plan(None, orders=40, sizes=(2, 3, 4, 12)))
+    assert "wrong" not in verdicts and verdicts.count("right") > len(verdicts) / 2
+
+
+def test_spoken_orders_take_their_dishes_from_the_menu_given(tmp_path):
+    plan = kit.build_plan(None, own_menu(tmp_path), orders=3, sizes=(2,))
+    on_menu = {kit.canonical(r["number"]) for r in plan["menu"]}
+    assert all(
+        number in on_menu for s in plan["sentences"] for number, _ in s["expect"]
+    )
+    assert plan["own_menu"] is True
+
+
+def test_an_order_larger_than_the_menu_is_refused(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    args = ["--menu", str(own_menu(tmp_path)), "--orders", "1", "--order-sizes", "12"]
+    assert kit.main([*args, "--run-dir", str(tmp_path / "run")]) == 2
+    assert "an order of 12 dishes" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--orders", "0"],
+        ["--orders", "2", "--limit", "1"],
+        ["--orders", "2", "--judge-only"],
+        ["--order-sizes", "2,3"],
+        ["--orders", "2", "--order-sizes", "1,2"],
+        ["--orders", "2", "--order-sizes", "13"],
+        ["--orders", "2", "--order-sizes", "zwei"],
+    ],
+)
+def test_orders_are_a_run_of_their_own(tmp_path, capsys, args):
+    with pytest.raises(SystemExit) as exit_:
+        kit.main([*args, "--run-dir", str(tmp_path)])
+    assert exit_.value.code == 2
+    assert list(tmp_path.iterdir()) == []
+
+
+def order_rows(ear: str, *verdicts: tuple[str, int, int, str]):
+    """One order row per (verdict, size, dishes right, verdict as said)."""
+    return [
+        {
+            "id": f"o{i}",
+            "voice": "a",
+            "ear": ear,
+            "kind": "order",
+            "say": "Zweimal die 13 und die 26d.",
+            "text": "Zweimal die 13 und die 26.",
+            "expect": "2x13, 1x26d",
+            "got": "2x13, 1x26",
+            "verdict": verdict,
+            "on_card": verdict == "wrong",
+            "size": size,
+            "positions_right": right,
+            "as_said": as_said,
+            "seconds": 0.2,
+        }
+        for i, (verdict, size, right, as_said) in enumerate(verdicts)
+    ]
+
+
+def test_orders_are_counted_per_size_and_per_dish(capsys, tmp_path):
+    judged = order_rows(
+        "e",
+        ("right", 2, 2, "right"),
+        ("asked", 2, 1, "right"),
+        ("right", 12, 12, "right"),
+        ("wrong", 12, 9, "asked"),
+    )
+    report = run({"e": {"load_seconds": 1}}, judged)
+    ear = report["ears"][0]
+    assert (ear["right_share"], ear["asked_share"], ear["wrong_share"]) == (
+        0.5,
+        0.25,
+        0.25,
+    )
+    # By the number of dishes, not by the text: 2 comes before 12.
+    assert list(ear["by_kind"]) == ["order of 2 dishes", "order of 12 dishes"]
+    assert ear["by_kind"]["order of 12 dishes"] == {
+        "sentences": 2,
+        "right": 0.5,
+        "asked": 0.0,
+        "wrong": 0.5,
+    }
+    assert (ear["order_dishes"], ear["order_dishes_right_share"]) == (28, 0.8571)
+    assert ear["orders_right_as_said_share"] == 0.75
+    assert report["mouths"][0]["understood_share"] == 0.5
+    assert report["go"] is False and report["wrong"][0]["got"] == "2x13, 1x26"
+    kit.print_report(report, tmp_path)
+    out = capsys.readouterr().out
+    assert "order of 12 dishes        2 heard" in out
+    assert "85.7 % of the 28 dishes said arrived" in out
+    assert "Read as text, 75.0 % of the orders are right" in out
+    assert "taken as 2x13, 1x26 instead of 2x13, 1x26d" in out
+
+
+def test_a_run_of_orders_speaks_only_orders_and_judges_each_as_one(
+    tmp_path, monkeypatch, capsys
+):
+    """`main` with the containers replaced: the ear writes what was said, with
+    one order heard without its last dish. The judge is the real one."""
+    from evals import heard as judge_module
+
+    def docker(command, dry_run, cwd=None):
+        run_dir = next(
+            (Path(arg.split(":")[0]) for arg in command if arg.endswith(":/work")), None
+        )
+        if "measure" in command:
+            plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
+            assert {s["kind"] for s in plan["sentences"]} == {"order"}
+            texts = [s["say"] for s in plan["sentences"]]
+            texts[-1] = texts[-1].rsplit(" und ", 1)[0]
+            result = {
+                "ears": {"parakeet-v3-cpu": {"load_seconds": 1.0}},
+                "heard": [
+                    {
+                        "id": s["id"],
+                        "voice": plan["voices"][0],
+                        "ear": "parakeet-v3-cpu",
+                        "text": text,
+                        "seconds": 0.2,
+                    }
+                    for s, text in zip(plan["sentences"], texts, strict=True)
+                ],
+                "mouths": [
+                    {
+                        "voice": v,
+                        "first_audio_seconds": 0.1,
+                        "seconds": 0.5,
+                        "audio_seconds": 5.0,
+                    }
+                    for v in plan["voices"]
+                ],
+                "turn_end": [],
+            }
+            (run_dir / "heard.json").write_text(json.dumps(result), encoding="utf-8")
+        if "evals.heard" in command:
+            assert judge_module.main([str(run_dir)]) == 0
+
+    monkeypatch.setattr(kit, "docker", docker)
+    monkeypatch.setattr(kit, "docker_problem", lambda: None)
+    monkeypatch.setattr(kit, "gpu_in_docker", lambda: False)
+    (tmp_path / "in").mkdir()
+    menu = own_menu(tmp_path / "in", PLAIN_MENU)
+    run_dir = tmp_path / "run"
+    args = ["--orders", "2", "--order-sizes", "2,3", "--menu", str(menu)]
+    assert kit.main([*args, "--run-dir", str(run_dir)]) == 1
+    report = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+    ear = next(e for e in report["ears"] if e["id"] == "parakeet-v3-cpu")
+    assert ear["utterances"] == 4 and ear["wrong_share"] == 0.25
+    assert ear["by_kind"]["order of 3 dishes"]["wrong"] == 0.5
+    assert ear["orders_right_as_said_share"] == 1.0
+    out = capsys.readouterr().out
+    assert "Speak and hear: 4 sentences" in out and "TRIAL" not in out
+    assert "silent wrong: said" in out

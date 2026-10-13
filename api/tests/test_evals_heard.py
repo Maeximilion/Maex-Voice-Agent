@@ -5,7 +5,7 @@ The caller sentences are German because the number rule only reads German.
 
 import pytest
 
-from evals.heard import dish, dish_verdict, judge, number_verdict
+from evals.heard import Menu, dish, dish_verdict, judge, number_verdict, order_verdict
 
 
 @pytest.mark.parametrize(
@@ -206,3 +206,80 @@ def test_a_dish_sentence_keeps_its_expectation_with_a_menu_in_the_plan():
     ]
     judged = judge(plan, heard_rows("ich hätte gern aal nigiri", "Aale", sentence="d0"))
     assert [r["verdict"] for r in judged] == ["right", "asked"]
+
+
+# --- Spoken orders: several dishes in one sentence, judged per order ---------------
+
+ORDER_MENU = Menu.from_rows(
+    [
+        ("12", "Suppen"),
+        ("13", "Suppen"),
+        ("23", "Vorspeisen"),
+        ("26", "Hauptgerichte"),
+        ("26d", "Hauptgerichte"),
+        ("S12", "Sushi"),
+    ]
+)
+# "Zweimal die 13, die 26d und einmal die S12."
+SAID = [["13", 2], ["26d", 1], ["s12", 1]]
+
+
+@pytest.mark.parametrize(
+    ("heard", "verdict", "right"),
+    [
+        ("Zweimal die 13, die 26d und einmal die S12.", "right", 3),
+        (
+            "zweimal die dreizehn, die sechsundzwanzig D und einmal die S zwölf",
+            "right",
+            3,
+        ),
+        # Another dish of the menu is taken without a question.
+        ("Zweimal die 13, die 26 und einmal die S12.", "wrong", 2),
+        # The dish is right and the quantity is not.
+        ("Dreimal die 13, die 26d und einmal die S12.", "wrong", 2),
+        # A dish is gone and nothing asks for it.
+        ("Zweimal die 13 und einmal die S12.", "wrong", 2),
+        # A dish nobody said.
+        ("Zweimal die 13, die 26d, einmal die S12 und die 23.", "wrong", 3),
+        # The letter heard as a word, the prefix heard as "ist": that position asks.
+        ("Zweimal die 13, die 26 der und einmal die S12.", "asked", 2),
+        ("Zweimal die 13, die 26d und einmal ist zwölf.", "asked", 2),
+        # A number the menu does not have is said so, not taken.
+        ("Zweimal die 13, die 99 und einmal die S12.", "asked", 2),
+        # No separator left: one sentence with three numbers is a question.
+        ("Zweimal die 13 die 26d einmal die S12", "asked", 0),
+        ("", "asked", 0),
+        # A question in one position does not excuse a wrong dish in another.
+        ("Zweimal die 12, die 26 der und einmal die S12.", "wrong", 1),
+    ],
+)
+def test_order_verdict(heard, verdict, right):
+    """Right: every dish with its quantity and nothing else. Wrong: something
+    is taken that was not said, or a dish is missing and nothing asks. Asked:
+    the rest - the conversation goes on with a question."""
+    result = order_verdict(SAID, heard, ORDER_MENU)
+    assert (result["verdict"], result["positions_right"]) == (verdict, right)
+
+
+def test_judge_writes_an_order_row_with_what_was_said_and_taken():
+    plan = {
+        "menu": [{"number": n, "category": "X"} for n in ("13", "26", "26d")],
+        "sentences": [
+            {
+                "id": "o0",
+                "kind": "order",
+                "say": "Zweimal die 13 und die 26d.",
+                "expect": [["13", 2], ["26d", 1]],
+            }
+        ],
+    }
+    heard = heard_rows("Zweimal die 13 und die 26.", "Zweimal die 13 und die 26 der.")
+    for row in heard["heard"]:
+        row["id"] = "o0"
+    wrong, asked = judge(plan, heard)
+    assert wrong["verdict"] == "wrong" and wrong["on_card"] is True
+    assert (wrong["expect"], wrong["got"]) == ("2x13, 1x26d", "2x13, 1x26")
+    assert (wrong["size"], wrong["positions_right"]) == (2, 1)
+    assert asked["verdict"] == "asked" and asked["on_card"] is False
+    assert asked["got"] == "2x13, 1x26|26d?"
+    assert wrong["as_said"] == asked["as_said"] == "right"
