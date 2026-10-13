@@ -29,6 +29,8 @@
 
 **Verworfen:** React + Vite. Bleibt der Weg, falls spaeter komplexe Interaktionen dazukommen (Drag-and-Drop im Tourenplan, Kartenansicht fuer Zonen); fuer Listen und grosse Knoepfe auf einem Tablet kostet es einen zweiten Container ohne Gegenwert.
 
+**Future option, recorded at Maxi's request (12.10.2026):** Reassess TypeScript for the browser UI if concrete features require substantially more client-side state or interaction than Jinja2 and HTMX can maintain clearly, such as the route planner or zone map above. Evaluate it for the affected interface, with build and maintenance costs included. This is a review trigger, not an approved migration: D6 remains in force and the backend stays Python.
+
 **Endgeräte:** Tablet im Querformat (Betrieb), PC im Büro (Admin). Kein Handy-Layout in Stufe 1.
 
 ---

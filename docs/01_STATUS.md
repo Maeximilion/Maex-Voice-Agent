@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.30
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.31
 
 ---
 
@@ -251,6 +251,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 - **Spoken allergy sentence for wishes is a draft** (`domain/menu/search.py` `SAY_ALLERGY_NOTE`, T-4.10): "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob … frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist." No promise that a dish is free of anything; checked with the legal check (docs/09) before go-live. The kitchen note itself uses the fixed wording of E14. Assumption from 24.09.2026
 - Python 3.12, FastAPI, PostgreSQL 16, Alembic, pytest, ruff
 - GUI as FastAPI + Jinja2 + HTMX + SSE, one container, no Node build
+- **Future GUI option (12.10.2026, Maxi):** reassess TypeScript when concrete UI features need substantially more client-side state or interaction; criteria in `docs/06_GUI.md` section 2. D6 remains in force; no migration is approved and the backend stays Python.
 - One location (<Pilotbetrieb>), but multi-tenant schema: each location-related table carries `tenant_id`
 - German as the only language in stages 1–6
 - Payment at pickup or delivery, no phone payment
@@ -502,6 +503,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.31 · 14.10.2026:** Record TypeScript as a future GUI option; keep D6 and the Python backend (note of 12.10.2026, found uncommitted in the main folder)
 - **v2.1.30 · 13.10.2026:** Ruleset on main applied (four required checks); Dependabot seen working on the compiled lock file (#261)
 - **v2.1.29 · 13.10.2026:** #252: an order that waits for Passt longer than the restaurant's minutes turns red on the tablet (migration 008, order_approval_overdue_minutes)
 - **v2.1.28 · 13.10.2026:** Codex review of 5aa6442 on PR #287: a tool is not cut off by the turn deadline, noted as an open point (P2)
