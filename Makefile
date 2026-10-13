@@ -9,8 +9,8 @@ down:
 logs:
 	docker compose logs -f api
 
-migrate:  ## Schema auf den neuesten Stand
-	docker compose exec api alembic -c db/alembic.ini upgrade head
+migrate:  ## Schema auf den neuesten Stand, as the owner of the schema (docs/13 §3)
+	bash scripts/migrate.sh upgrade head
 
 seed:     ## Testdaten für den Pilotbetrieb
 	docker compose exec api python -m scripts.seed

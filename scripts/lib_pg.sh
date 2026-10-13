@@ -119,12 +119,25 @@ pg_target_from_url() {
     export PGHOST PGPORT PGDATABASE
 }
 
+# One part of a database URL, decoded, without touching the PG* variables of this
+# shell: url_part <url> <PGUSER|PGPASSWORD|PGDATABASE>.
+url_part() {
+    (
+        unset PGUSER PGPASSWORD
+        pg_target_from_url "$1"
+        printf '%s' "${!2:-}"
+    )
+}
+
 # The same variable the application and the import read decides what is dumped and
 # what is replaced (lesson from PR #169: a backup of some other stack is no backup).
+# Where the application has a role of its own (#252), DATABASE_URL names that role
+# and OWNER_DATABASE_URL the owner of the schema, who dumps, restores and migrates.
 pg_resolve_target() {
     env_default BACKUP_DATABASE_URL
+    env_default OWNER_DATABASE_URL
     env_default DATABASE_URL
-    local url="${BACKUP_DATABASE_URL:-${DATABASE_URL:-}}"
+    local url="${BACKUP_DATABASE_URL:-${OWNER_DATABASE_URL:-${DATABASE_URL:-}}}"
     [ -n "$url" ] || die 2 "DATABASE_URL is not set, in the environment or in .env"
     pg_target_from_url "$url"
     # Database names are quoted into SQL below; anything else would need escaping.
@@ -212,6 +225,45 @@ pg() { # pg <tool> [arguments]; stdin goes through to the tool
 pg_sql() { # pg_sql <database> <sql>; prints bare values
     pg psql --no-psqlrc --quiet --tuples-only --no-align --set ON_ERROR_STOP=1 \
         --dbname "$1" --command "$2" </dev/null | tr -d '\r'
+}
+
+pg_script() { # pg_script <database>; statements on stdin, all of them or none
+    pg psql --no-psqlrc --quiet --set ON_ERROR_STOP=1 --single-transaction \
+        --dbname "$1" --file - >/dev/null
+}
+
+# The application's own role is the user of DATABASE_URL (#252). Sets APP_ROLE and
+# APP_ROLE_PASSWORD; both stay empty where DATABASE_URL names the user this
+# connection runs as, the layout with a single database user.
+pg_resolve_app_role() { # pg_resolve_app_role <user of this connection>
+    APP_ROLE=""
+    APP_ROLE_PASSWORD=""
+    env_default DATABASE_URL
+    [ -n "${DATABASE_URL:-}" ] || return 0
+    local user
+    user="$(url_part "$DATABASE_URL" PGUSER)"
+    if [ -z "$user" ] || [ "$user" = "$1" ]; then return 0; fi
+    # The name is quoted into SQL below; anything else would need escaping.
+    [[ "$user" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] ||
+        die 2 "the user of DATABASE_URL may only hold lower-case letters, digits and underscores"
+    APP_ROLE="$user"
+    APP_ROLE_PASSWORD="$(url_part "$DATABASE_URL" PGPASSWORD)"
+}
+
+# What the application may do in a database: read and write rows, nothing else, also
+# in tables the owner creates later (migrations run as the owner). Stored in the
+# database, so a restored one needs the same statements again: a dump is restored
+# without privileges. Database and role are checked for their characters before.
+app_grants_sql() { # app_grants_sql <database> <role>
+    cat <<SQL
+revoke create on schema public from public;
+grant connect on database "$1" to "$2";
+grant usage on schema public to "$2";
+grant select, insert, update, delete on all tables in schema public to "$2";
+grant usage, select on all sequences in schema public to "$2";
+alter default privileges in schema public grant select, insert, update, delete on tables to "$2";
+alter default privileges in schema public grant usage, select on sequences to "$2";
+SQL
 }
 
 CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network, and on Linux a client container does not reach the loopback port of the dev stack (BACKUP_DOCKER_NETWORK for both)"

@@ -5,6 +5,9 @@ Jede Antwort folgt der Hülle aus docs/04 §1. Der Agent liest unsere Antworten 
 deshalb darf nie ein Stacktrace nach außen gelangen.
 """
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -17,7 +20,7 @@ from api.core.auth import require_token
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
 from api.core.tool_log import tool_call_log_middleware
-from api.db import get_db
+from api.db import engine, get_db, refuse_a_superuser_role
 from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
 from api.kitchen.router import router as kitchen_router
@@ -30,9 +33,19 @@ logger = get_logger("api")
 # The interactive description and the schema list every path. They help while
 # developing and tell everyone else what to aim at, so they exist in dev only.
 _DESCRIBED = settings.env == "dev"
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # Like the token check in api/config.py, but it needs the database.
+    refuse_a_superuser_role(settings.env, engine)
+    yield
+
+
 app = FastAPI(
     title="Maex Voice-Agent API",
     version="0.1.0",
+    lifespan=_lifespan,
     docs_url="/docs" if _DESCRIBED else None,
     redoc_url="/redoc" if _DESCRIBED else None,
     openapi_url="/openapi.json" if _DESCRIBED else None,
