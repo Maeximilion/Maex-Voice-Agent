@@ -124,6 +124,9 @@ header.aus .top > .mode ~ .mode{opacity:.6}
 .order.awaiting{border-left:6px solid var(--warn);padding-left:15px}
 /* Rote Karte: Uebergabe fehlgeschlagen (docs/06 §3). Rahmen rot, Text daneben. */
 .order.failed{border:3px solid var(--danger)}
+/* Waits for "Passt" too long: the waiting card's edge, in red. Not the full red
+   frame, which says the slip did not print. */
+.order.overdue{border-left:6px solid var(--danger);padding-left:15px}
 .order.neu{animation:blink 1s ease-in-out 3}
 @keyframes blink{50%{background:var(--accent-bg)}}
 @media (prefers-reduced-motion:reduce){.order.neu{animation:none;background:var(--accent-bg)}}
