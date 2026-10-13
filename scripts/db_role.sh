@@ -23,15 +23,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib_pg.sh"
 
 [ $# -eq 0 ] || die 2 "unknown argument: $1 (usage in the head of scripts/db_role.sh)"
 
+# BACKUP_DATABASE_URL may name the database under another address for backup and
+# restore. The role belongs to the address the application itself uses, so that
+# override does not count here: pg_resolve_target then takes OWNER_DATABASE_URL and
+# refuses one that names another host, port or database than DATABASE_URL.
+BACKUP_DATABASE_URL=""
 pg_resolve_target
 pg_resolve_client
 [ -n "${DATABASE_URL:-}" ] || die 2 "DATABASE_URL is not set: it names the application's role"
-# The role is set up, and its login checked, on the server of the owner's URL. A
-# DATABASE_URL that points somewhere else would pass here and fail in the API.
-for part in PGHOST PGPORT PGDATABASE; do
-    [ "$(url_part "$DATABASE_URL" "$part")" = "${!part}" ] ||
-        die 2 "DATABASE_URL and the owner's URL must name the same host, port and database; they differ in ${part#PG}"
-done
 owner="$(pg_sql "$PGDATABASE" "select current_user")" ||
     die 1 "cannot connect to $TARGET_LABEL: $CONNECT_HINT"
 pg_resolve_app_role "$owner"
@@ -70,15 +69,29 @@ SQL
 # PUBLIC, through another grantor) is still there and shows here. One row, read as
 # the role:
 # an attribute above a plain login | roles it is a member of | may create a schema
-# in the database | schemas it may create in | tables it cannot read and write |
-# tables it may truncate, reference or put a trigger on | objects it owns | tables.
+# in the database | schemas it may create in | tables and sequences it cannot use |
+# tables it may truncate, reference or put a trigger on, sequences it may set |
+# objects it owns | tables.
 tables="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')"
+sequences="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'S'"
 usable="has_table_privilege(c.oid, 'select') and has_table_privilege(c.oid, 'insert') and has_table_privilege(c.oid, 'update') and has_table_privilege(c.oid, 'delete')"
 beyond="has_table_privilege(c.oid, 'truncate') or has_table_privilege(c.oid, 'references') or has_table_privilege(c.oid, 'trigger')"
+# has_sequence_privilege raises on anything that is no sequence, and the planner may
+# ask it before it has filtered pg_class by kind: the case decides the order.
+counted="case when c.relkind = 'S' then has_sequence_privilege(c.oid, 'usage') and has_sequence_privilege(c.oid, 'select') end"
+settable="case when c.relkind = 'S' then has_sequence_privilege(c.oid, 'update') end"
 schemas="from pg_namespace n where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)), (select count(*) $tables and ($beyond)), (select count(*) from pg_class c where c.relowner = r.oid) + (select count(*) from pg_namespace n where n.nspowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
-seen="$(PGUSER="$APP_ROLE" PGPASSWORD="$APP_ROLE_PASSWORD" pg_sql "$PGDATABASE" "$check")" ||
-    die 1 "the role is set up, but $APP_ROLE cannot log in with the password of DATABASE_URL (pg_hba.conf of the server?)"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) from pg_class c where c.relowner = r.oid) + (select count(*) from pg_namespace n where n.nspowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+# Through DATABASE_URL itself, with every parameter the application will use
+# (sslmode and the like): a login that only works the owner's way proves nothing.
+seen="$(
+    unset PGSSLMODE PGSSLROOTCERT PGSSLCERT PGSSLKEY PGSSLCRL PGAPPNAME PGOPTIONS \
+        PGCHANNELBINDING PGGSSENCMODE PGTARGETSESSIONATTRS
+    pg_target_from_url "$DATABASE_URL"
+    pg_refuse_files_in_container
+    pg_sql "$PGDATABASE" "$check"
+)" ||
+    die 1 "the role is set up, but $APP_ROLE could not log in and be checked the way DATABASE_URL says, see the message above (its password, its connection parameters, pg_hba.conf of the server)"
 IFS='|' read -r above member new_schema creates locked beyond_rows owned count <<<"$seen"
 [ "$above" = f ] || die 1 "$APP_ROLE still holds an attribute above a plain login"
 # A member holds what the other role holds, the owner's rights included.
@@ -92,8 +105,8 @@ IFS='|' read -r above member new_schema creates locked beyond_rows owned count <
 [ "$new_schema" = f ] ||
     die 1 "$APP_ROLE may create a schema in $PGDATABASE, and tables of its own in it (granted to PUBLIC?)"
 [ "$creates" = 0 ] || die 1 "$APP_ROLE may create objects in $creates schema(s) of $PGDATABASE"
-[ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked of $count tables"
+[ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked table(s) or sequence(s)"
 [ "$beyond_rows" = 0 ] ||
-    die 1 "$APP_ROLE holds a right above reading and writing rows (truncate, references or trigger) on $beyond_rows of $count tables (granted to PUBLIC?)"
+    die 1 "$APP_ROLE holds a right above reading and writing rows on $beyond_rows table(s) or sequence(s): truncate, references or trigger on a table, update on a sequence (granted to PUBLIC?)"
 echo "done: $APP_ROLE logs in, is no superuser, reads and writes $count tables and cannot change the schema"
 echo "restart api and dispatcher if DATABASE_URL changed"

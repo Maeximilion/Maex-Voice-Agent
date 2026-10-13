@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.14
+> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.15
 
 ---
 
@@ -482,6 +482,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.15 · 13.10.2026:** Codex review of bb5e0fa on PR #281: the owner URL must name the database of DATABASE_URL (backup, restore, migrate, role), the role login is checked through DATABASE_URL itself, sequences are part of the check
 - **v2.1.14 · 13.10.2026:** Codex review of a599e95 on PR #281: db_role.sh revokes what an existing role held, its check sees rights through PUBLIC and a URL on another server, docs/13 commands run as written
 - **v2.1.13 · 13.10.2026:** Security review of the role branch: Alembic runs in a container of its own (the application could read the owner's URL from /proc), a role that is a member of another is reported
 - **v2.1.12 · 13.10.2026:** #252: the application gets its own Postgres role without superuser on the server (db_role.sh, migrate.sh, restore keeps its rights, start-up refusal)

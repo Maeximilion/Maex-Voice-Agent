@@ -77,6 +77,9 @@ def db(role, migrated_db_url):
     """A migrated database with one row to recognise, plus cleanup of what restore keeps."""
     _sql(migrated_db_url, "create table backup_probe (id int primary key, note text)")
     _sql(migrated_db_url, "insert into backup_probe values (1, 'before')")
+    # The schema counts nothing with a sequence today; the role's rights on one
+    # are checked all the same.
+    _sql(migrated_db_url, "create sequence backup_probe_numbers")
     name = make_url(migrated_db_url).database
     yield migrated_db_url
     for leftover in _databases_like(f"{name}_"):
@@ -133,7 +136,9 @@ def test_the_role_reads_and_writes_rows_and_nothing_else(db, role, tmp_path):
     assert usable == tables and tables > 10
     assert f"reads and writes {tables} tables" in done.stdout
     used, sequences = _sql(app, EVERY_SEQUENCE_USED)[0]
-    assert used == sequences
+    assert used == sequences and sequences >= 1
+    assert _sql(app, "select nextval('backup_probe_numbers')") == [(1,)]
+    assert _refused(app, "select setval('backup_probe_numbers', 500)")
     _sql(app, "insert into backup_probe values (2, 'by the role')")
     _sql(app, "update backup_probe set note = 'changed' where id = 2")
     _sql(app, "delete from backup_probe where id = 2")
@@ -278,6 +283,11 @@ def test_rights_the_role_was_granted_before_are_taken_away(db, role, tmp_path):
             "above reading and writing rows",
         ),
         ('grant create on database "{name}" to public', "may create a schema"),
+        # setval: the role could put a counter anywhere (Codex, PR #281).
+        (
+            "grant update on sequence backup_probe_numbers to public",
+            "above reading and writing rows",
+        ),
     ],
 )
 def test_a_right_that_reaches_the_role_through_everyone_is_reported(
@@ -291,6 +301,64 @@ def test_a_right_that_reaches_the_role_through_everyone_is_reported(
 
     assert done.returncode == 1, done.stdout
     assert says in done.stderr
+
+
+def test_the_login_is_checked_the_way_the_application_connects(db, role, tmp_path):
+    """The test server speaks no TLS. A DATABASE_URL that demands it logs in the
+    owner's way and not its own, so the API could not connect (Codex, PR #281)."""
+    app = make_url(_as(role, db)).set(query={"sslmode": "require"})
+
+    done = _script(
+        "db_role.sh",
+        app_url=app.render_as_string(hide_password=False),
+        owner_url=db,
+        tmp_path=tmp_path,
+    )
+
+    assert done.returncode == 1, done.stdout
+    assert "the way DATABASE_URL says" in done.stderr
+
+
+def test_the_backup_override_does_not_decide_where_the_role_is_made(db, role, tmp_path):
+    """BACKUP_DATABASE_URL may name the database under another address for
+    backup and restore; the role belongs to the application's address."""
+    elsewhere = make_url(db).set(host="another-name-for-the-server")
+
+    done = _script(
+        "db_role.sh",
+        app_url=_as(role, db),
+        owner_url=db,
+        tmp_path=tmp_path,
+        BACKUP_DATABASE_URL=elsewhere.render_as_string(hide_password=False),
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert _sql(_as(role, db), "select current_user") == [(role,)]
+
+
+@pytest.mark.parametrize("script", ["backup.sh", "restore.sh"])
+def test_an_owner_url_for_another_database_is_refused(db, role, tmp_path, script):
+    """A typo in OWNER_DATABASE_URL must not dump some other database night after
+    night, or let --replace swap one whose name matches (Codex, PR #281)."""
+    dump = tmp_path / "some.dump"
+    dump.write_bytes(b"")
+    arguments = {
+        "backup.sh": ["--no-encrypt"],
+        "restore.sh": [dump.as_posix(), "--replace", "postgres"],
+    }
+    other = make_url(db).set(database="postgres")
+
+    done = _script(
+        script,
+        *arguments[script],
+        app_url=_as(role, db),
+        owner_url=other.render_as_string(hide_password=False),
+        tmp_path=tmp_path,
+    )
+
+    assert done.returncode == 2, done.stdout + done.stderr
+    assert "differ in DATABASE" in done.stderr
+    assert not (tmp_path / "backups").exists()
 
 
 @pytest.mark.parametrize(
@@ -481,14 +549,21 @@ def _migrate(tmp_path, *args, **env):
         text=True,
         timeout=60,
     )
-    assert done.returncode == 0, done.stderr
-    return seen.read_text(encoding="utf-8").splitlines()
+    # None: the script ended before it called Compose.
+    called = seen.read_text(encoding="utf-8").splitlines() if seen.exists() else None
+    return done, called
+
+
+APP_URL = "postgresql+psycopg://app:app-secret@db:5432/maex_agent"
 
 
 def test_migrate_hands_the_owners_url_to_alembic_and_never_as_an_argument(tmp_path):
     owner = "postgresql+psycopg://owner:owner-secret@db:5432/maex_agent"
 
-    call, url = _migrate(tmp_path, OWNER_DATABASE_URL=owner)
+    done, called = _migrate(tmp_path, DATABASE_URL=APP_URL, OWNER_DATABASE_URL=owner)
+
+    assert done.returncode == 0, done.stderr
+    call, url = called
 
     assert call == (
         "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini upgrade head"
@@ -500,13 +575,13 @@ def test_migrate_reads_the_owner_from_the_env_file(tmp_path):
     owner = "postgresql+psycopg://owner:owner-secret@db:5432/maex_agent"
     env_file = tmp_path / "server.env"
     env_file.write_text(
-        f"DATABASE_URL=postgresql+psycopg://app:app-secret@db:5432/maex_agent\n"
-        f"OWNER_DATABASE_URL={owner}\n",
-        encoding="utf-8",
+        f"DATABASE_URL={APP_URL}\nOWNER_DATABASE_URL={owner}\n", encoding="utf-8"
     )
 
-    call, url = _migrate(tmp_path, "current", BACKUP_ENV_FILE=env_file.as_posix())
+    done, called = _migrate(tmp_path, "current", BACKUP_ENV_FILE=env_file.as_posix())
 
+    assert done.returncode == 0, done.stderr
+    call, url = called
     assert (
         call
         == "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini current"
@@ -514,8 +589,30 @@ def test_migrate_reads_the_owner_from_the_env_file(tmp_path):
     assert url == owner
 
 
+@pytest.mark.parametrize(
+    ("owner", "says"),
+    [
+        ("postgresql+psycopg://owner:owner-secret@db:5432/other", "differ in DATABASE"),
+        (
+            "postgresql+psycopg://owner:owner-secret@db2:5432/maex_agent",
+            "differ in HOST",
+        ),
+    ],
+)
+def test_migrate_refuses_an_owner_url_for_another_database(tmp_path, owner, says):
+    """The same typo that must not be dumped must not be migrated either."""
+    done, called = _migrate(tmp_path, DATABASE_URL=APP_URL, OWNER_DATABASE_URL=owner)
+
+    assert done.returncode == 2 and says in done.stderr
+    assert called is None
+    assert "owner-secret" not in done.stdout + done.stderr
+
+
 def test_migrate_without_an_owner_leaves_the_containers_url_alone(tmp_path):
-    call, url = _migrate(tmp_path, "downgrade", "-1")
+    done, called = _migrate(tmp_path, "downgrade", "-1")
+
+    assert done.returncode == 0, done.stderr
+    call, url = called
 
     assert call == "compose run --rm -T api alembic -c db/alembic.ini downgrade -1"
     assert url == "unset"

@@ -129,6 +129,22 @@ url_part() {
     )
 }
 
+# The owner's URL is a second user for the application's database, never a way to
+# another one. A typo in it would otherwise dump some other database every night,
+# let --replace swap one whose name happens to match, or migrate it. Needs
+# DATABASE_URL and OWNER_DATABASE_URL resolved (env_default); without an owner's
+# URL there is nothing to compare.
+owner_url_must_match_the_application() {
+    [ -n "${OWNER_DATABASE_URL:-}" ] || return 0
+    [ -n "${DATABASE_URL:-}" ] ||
+        die 2 "OWNER_DATABASE_URL is set without DATABASE_URL, which names the application's database"
+    local part
+    for part in PGHOST PGPORT PGDATABASE; do
+        [ "$(url_part "$DATABASE_URL" "$part")" = "$(url_part "$OWNER_DATABASE_URL" "$part")" ] ||
+            die 2 "DATABASE_URL and OWNER_DATABASE_URL must name the same host, port and database; they differ in ${part#PG}"
+    done
+}
+
 # The same variable the application and the import read decides what is dumped and
 # what is replaced (lesson from PR #169: a backup of some other stack is no backup).
 # Where the application has a role of its own (#252), DATABASE_URL names that role
@@ -139,6 +155,8 @@ pg_resolve_target() {
     env_default DATABASE_URL
     local url="${BACKUP_DATABASE_URL:-${OWNER_DATABASE_URL:-${DATABASE_URL:-}}}"
     [ -n "$url" ] || die 2 "DATABASE_URL is not set, in the environment or in .env"
+    # BACKUP_DATABASE_URL is the override that may differ on purpose.
+    [ -n "${BACKUP_DATABASE_URL:-}" ] || owner_url_must_match_the_application
     pg_target_from_url "$url"
     # Database names are quoted into SQL below; anything else would need escaping.
     [[ "$PGDATABASE" =~ ^[A-Za-z0-9_]+$ ]] ||

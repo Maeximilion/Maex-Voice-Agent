@@ -22,6 +22,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib_pg.sh"
 
 [ $# -gt 0 ] || set -- upgrade head
 env_default OWNER_DATABASE_URL
+env_default DATABASE_URL
+# A typo in the owner's URL must not migrate some other database.
+owner_url_must_match_the_application
 options=(--rm)
 # Without a terminal (cron, a pipe) Compose must not ask for one.
 [ -t 0 ] || options+=(-T)
