@@ -27,9 +27,13 @@ class Heard:
     """What the ear reports about the caller's speech.
 
     A partial (`final=False`) says the caller is speaking right now and what
-    was understood so far; an engine without partials sends none. A final is
-    one finished utterance: the engine's own end of utterance, or the silence
-    detector of an adapter for an engine that has none (docs/20 §6).
+    was understood so far. An adapter for an engine without partial transcripts
+    still sends partials, with an empty text, from its own speech detector: at
+    least once a second while the caller speaks. The session counts silence
+    from them; without them a long order would be answered with "Sind Sie noch
+    da?" in the middle of it. A final is one finished utterance: the engine's
+    own end of utterance, or the silence detector of an adapter for an engine
+    that has none (docs/20 §6).
     """
 
     text: str
@@ -50,7 +54,10 @@ class Ear(Protocol):
 
     def feed(self, frame: bytes, at: float) -> None:
         """Audio from the caller, in order; `at` is when the frame arrived.
-        Raises when the engine fails."""
+        Raises when the engine fails. Must not wait for the engine: it is
+        called fifty times a second by the one worker of the call. An adapter
+        whose engine blocks runs it on a thread of its own, bounds its calls
+        and reports through the sink."""
         ...
 
     def close(self) -> None:
@@ -61,7 +68,8 @@ class Ear(Protocol):
 class Mouth(Protocol):
     def speak(self, text: str) -> Iterable[bytes]:
         """The audio of one sentence, in pieces as the engine delivers them.
-        Raises when the engine fails."""
+        Raises when the engine fails. The session gives a sentence a deadline
+        and treats an engine that does not finish as failed."""
         ...
 
 

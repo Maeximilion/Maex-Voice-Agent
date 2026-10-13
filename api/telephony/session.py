@@ -54,10 +54,14 @@ UNHEARD_LIMIT = 2
 END_KEY = "#"
 KEYPAD_GAP_SECONDS = 3.0
 # How long the line may take to report the end of playback, beyond the length
-# of the audio itself. Then the session goes on without the report: a read-back
-# that stayed "playing" for ever would drop every answer, and a transfer behind
-# it would never happen (CLAUDE.md §2 rule 5).
+# of the audio itself. Without the report nobody knows what the caller heard:
+# it is a failure of the call and goes to the team, and a transfer or hangup
+# that waited for it happens all the same (CLAUDE.md §2 rules 3 and 5).
 PLAYED_GRACE_SECONDS = 5.0
+# How long the mouth may take for one sentence. A hung engine would hold the
+# one worker of the call, and with it the caller's hangup and the way to the
+# team (rule 5).
+SPEAK_SECONDS = 10.0
 # Raw 16 bit mono, as the line is dialled (`adapters/asterisk.py`).
 SAMPLE_RATE = 16000
 
@@ -78,6 +82,7 @@ class CallSession:
         silence_seconds: float,
         caller_id: str | None = None,
         keypad_gap_seconds: float = KEYPAD_GAP_SECONDS,
+        speak_seconds: float = SPEAK_SECONDS,
         sample_rate: int = SAMPLE_RATE,
         clock: Callable[[], float] = time.monotonic,
     ):
@@ -91,6 +96,7 @@ class CallSession:
         self._events = events
         self._silence_seconds = silence_seconds
         self._keypad_gap_seconds = keypad_gap_seconds
+        self._speak_seconds = speak_seconds
         self._sample_rate = sample_rate
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
@@ -268,7 +274,7 @@ class CallSession:
             logger.warning("a sentence behind a transfer or hangup is not spoken")
             return
         try:
-            audio = b"".join(self._mouth.speak(text))
+            audio = self._synthesize(text)
         except Exception:
             logger.exception("the mouth failed")
             # The outage sentence of a failure is best effort: the transfer
@@ -280,7 +286,9 @@ class CallSession:
             self._answered = True
         self._mark += 1
         if not self._outstanding:
-            self._playing_since = self._playing_until = at
+            # Now, not when the sentence was asked for: the mouth took its
+            # time, and what the caller said meanwhile was no barge-in.
+            self._playing_since = self._playing_until = self._clock()
         assert self._playing_until is not None
         self._playing_until += len(audio) / (2 * self._sample_rate)
         self._outstanding.append(interruptible)
@@ -300,6 +308,14 @@ class CallSession:
         said now, the silence counts from here."""
         self._wait_for_the_caller(at)
 
+    def _on_failure_told(self, at: float, _: None) -> None:
+        """The core was told of a failure, and what it asked for in answer is
+        handled. If that was neither a transfer nor a hangup, the session must
+        not stay on a line it no longer listens to: ended as failed, the
+        dialplan rings the team (docs/20 §5)."""
+        if self._ending is None:
+            self._end("failed")
+
     def _on_closed(self, at: float, _: None) -> None:
         self._end("closed")
 
@@ -307,10 +323,19 @@ class CallSession:
         played_due = self._played_due()
         if played_due is not None and now >= played_due:
             logger.error(
-                "the line did not report the end of playback, going on without it",
+                "the line did not report the end of playback",
                 extra={"extra": {"session_id": self.session_id}},
             )
-            self._played_to_the_end(now)
+            if self._ending is not None:
+                # The team, or the end of the call, does not wait for a report
+                # that will not come.
+                self._stop_playback()
+                self._perform_ending()
+            else:
+                # Whether the caller heard the sentence is not known. Never
+                # counted as heard: a read-back would be answered by a "Ja"
+                # to nothing (rule 3).
+                self._voice_failed()
         if self.over:
             return
         if self._digits_due is not None and now >= self._digits_due:
@@ -353,6 +378,27 @@ class CallSession:
         self._outstanding = []
         self._playing_since = self._playing_until = None
 
+    def _synthesize(self, text: str) -> bytes:
+        """The audio of one sentence, or an exception: the engine's own, or a
+        timeout when it does not finish. The engine runs on a thread of its
+        own that is left behind if it hangs."""
+        done: queue.SimpleQueue[tuple[bytes, Exception | None]] = queue.SimpleQueue()
+
+        def work() -> None:
+            try:
+                done.put((b"".join(self._mouth.speak(text)), None))
+            except Exception as exc:  # noqa: BLE001 - raised again by the worker
+                done.put((b"", exc))
+
+        threading.Thread(target=work, daemon=True).start()
+        try:
+            audio, error = done.get(timeout=self._speak_seconds)
+        except queue.Empty:
+            raise TimeoutError("the mouth did not finish the sentence") from None
+        if error is not None:
+            raise error
+        return audio
+
     def _turn(self, deliver: Callable[[], None]) -> None:
         """Hand something to the core. What it asks for is queued behind this
         event; `settled` comes after it."""
@@ -385,6 +431,7 @@ class CallSession:
         if self._outstanding:
             self._stop_playback()
         self._events.on_voice_failure(self.session_id)
+        self._post("failure_told")
 
     def _queue_ending(self, ending: tuple[str, str | None]) -> None:
         # The first one stands, except that a transfer replaces a hangup that
@@ -427,7 +474,7 @@ class CallSession:
         try:
             if outcome == "closed":
                 self._events.on_call_ended(self.session_id)
-            elif outcome == "failed":
+            elif outcome == "failed" and not self._failed:
                 self._events.on_voice_failure(self.session_id)
         except Exception:
             logger.exception("the core could not be told how the call ended")

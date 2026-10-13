@@ -443,6 +443,25 @@ def test_a_caller_who_speaks_is_not_silent(call):
     assert call.core.count("silence") == 1
 
 
+def test_speech_without_words_yet_is_no_silence(call):
+    """An ear without partial transcripts still says that the caller is
+    speaking: a long order must not be answered with "Sind Sie noch da?" in the
+    middle of it (Codex PR #286). Speech alone stops no sentence."""
+    call.core.replies["Was gibt es"] = [("say", "Wir haben viele Gerichte.", True)]
+    call.start(GREETING)
+    call.played()
+    for _ in range(20):  # twenty seconds of speech, reported once a second
+        call.clock.now += 1.0
+        call.partial("")
+    assert call.core.count("silence") == 0
+    call.said("Was gibt es", after=0.5)
+    call.partial("")
+    assert "flush" not in call.line.kinds()
+    call.played()
+    call.wait(SILENCE + 0.1)
+    assert call.core.count("silence") == 1
+
+
 def test_a_turn_without_an_answer_starts_the_silence_too(call):
     call.start(GREETING)
     call.played()
@@ -517,6 +536,19 @@ def test_speech_without_a_transcript_twice_is_a_failure_of_the_ear(call):
     assert call.core.count("voice_failure") == 1
 
 
+def test_a_failure_the_core_does_not_answer_ends_the_session_for_the_dialplan(call):
+    """After a failure nothing listens any more. If the core neither transfers
+    nor hangs up (it does not know the call), the session must not sit on the
+    line: it ends as failed, and the dialplan rings the team (rule 5)."""
+    call.start(GREETING)
+    call.played()
+    call.ear.broken = True
+    call.s.audio(b"\x00")
+    call.s.drain()
+    assert call.core.count("voice_failure") == 1
+    assert call.s.outcome == "failed" and "hangup" not in call.line.kinds()
+
+
 def test_nothing_is_heard_after_a_failure(call):
     call.core.on_failure = OUTAGE
     call.start(GREETING)
@@ -564,19 +596,32 @@ def test_a_transfer_the_telephone_system_refuses_fails_the_session(call):
 # --- A line that does not report the end of playback ------------------------------------
 
 
-def test_a_lost_end_of_playback_does_not_leave_the_caller_unheard(call):
-    """The line owes a mark for what it played. If it never comes, the session
-    goes on by the length of the audio plus a grace: a read-back that stayed
-    "playing" for ever would drop every answer."""
+def test_a_lost_end_of_playback_is_a_failure_and_never_a_read_back_heard(call):
+    """The line owes a mark for what it played. If none comes, nobody knows
+    whether the guest heard the read-back: the call goes to the team, and no
+    "Ja" is taken as its answer (Codex PR #286, hard rules 3 and 5)."""
+    call.core.on_failure = OUTAGE
     call.core.replies["Das wars"] = [("say", READBACK)]
     call.start(GREETING)
     call.played()
     call.said("Das wars", after=1.0)
-    call.said("Ja", after=GRACE - 1)  # may still be playing
-    assert call.core.turns() == ["Das wars"]
+    call.wait(GRACE - 1)  # may still be playing
+    assert call.core.count("voice_failure") == 0
     call.wait(1.5)  # the grace is over, no mark came
+    assert call.core.count("voice_failure") == 1
     call.said("Ja", after=0.5)
-    assert call.core.turns() == ["Das wars", "Ja"]
+    assert call.core.turns() == ["Das wars"]
+    # The outage sentence gets no mark either: the transfer does not wait for it.
+    call.wait(GRACE + 0.5)
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+    assert call.s.outcome == "transfer"
+
+
+def test_a_lost_end_of_playback_of_a_plain_sentence_is_a_failure_too(call):
+    call.core.on_failure = OUTAGE
+    call.start(("say", "Was darf es sein?", True))
+    call.wait(GRACE + 0.5)
+    assert call.core.count("voice_failure") == 1 and call.core.count("silence") == 0
 
 
 def test_a_lost_end_of_playback_does_not_hold_a_transfer_back(call):
@@ -600,11 +645,65 @@ def test_the_grace_counts_from_the_end_of_the_audio_not_from_its_start(call):
     call.start()
     call.said("Das wars", after=1.0)
     call.wait(10.0 + GRACE - 1)
-    call.said("Ja", after=0.0)
-    assert call.core.turns() == ["Das wars"]
+    assert call.core.count("voice_failure") == 0
     call.wait(1.5)
-    call.said("Ja", after=0.5)
-    assert call.core.turns() == ["Das wars", "Ja"]
+    assert call.core.count("voice_failure") == 1
+
+
+# --- A mouth that takes its time, or never finishes --------------------------------------
+
+
+def test_what_was_said_while_the_mouth_was_working_does_not_stop_the_answer(call):
+    """Playback begins when the audio is on the line, not when the sentence was
+    asked for: an utterance that ended in between is the next turn and no
+    barge-in (Codex PR #286)."""
+
+    class SlowMouth(FakeMouth):
+        def speak(self, text):
+            call.clock.now += 2.0  # synthesis takes two seconds
+            return super().speak(text)
+
+    call.s._mouth = SlowMouth()
+    call.core.replies["Die 23"] = [("say", "Nummer 23.", True)]
+    call.core.replies["Und die 13"] = [("say", "Nummer 13.", True)]
+    call.start()
+    asked = call.clock.now + 1.0
+    call.said("Die 23", after=1.0)
+    call.ear.hear(Heard("Und die 13", ended_at=asked + 1.0))  # while it was made
+    call.s.drain()
+    assert "flush" not in call.line.kinds()
+    assert call.line.played() == ["Nummer 23.", "Nummer 13."]
+
+
+def test_a_mouth_that_never_finishes_does_not_hold_the_call(call):
+    """A hung engine must not block the one worker of the call: after the
+    deadline it is a failure, and the transfer still happens (Codex PR #286)."""
+    hung = threading.Event()
+
+    class HungMouth(FakeMouth):
+        def speak(self, text):
+            hung.wait(5)
+            return super().speak(text)
+
+    call.s._mouth = HungMouth()
+    call.s._speak_seconds = 0.05
+    call.core.on_failure = [("transfer", "+497215550000")]
+    call.start(GREETING)
+    hung.set()
+    assert call.core.count("voice_failure") == 1
+    assert call.line.actions == [("transfer", "+497215550000")]
+
+
+def test_a_mouth_that_raises_late_is_a_failure(call):
+    class BrokenMidway(FakeMouth):
+        def speak(self, text):
+            yield b"half"
+            raise RuntimeError("the stream broke")
+
+    call.s._mouth = BrokenMidway()
+    call.core.on_failure = [("transfer", "+497215550000")]
+    call.start(GREETING)
+    assert call.core.count("voice_failure") == 1 and call.line.played() == []
 
 
 # --- The port over all sessions ---------------------------------------------------------
