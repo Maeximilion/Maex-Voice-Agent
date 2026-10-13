@@ -117,10 +117,15 @@ class RecordingLLM:
         return getattr(self._inner, "usage", None)
 
     def next_turn(
-        self, system_prompt: str, state: dict[str, Any], user_input: str
+        self,
+        system_prompt: str,
+        state: dict[str, Any],
+        user_input: str,
+        *,
+        timeout: float | None = None,
     ) -> LLMTurn:
         self._observe_input(user_input)
-        turn = self._inner.next_turn(system_prompt, state, user_input)
+        turn = self._inner.next_turn(system_prompt, state, user_input, timeout=timeout)
         self._before_cart = None
         if turn.cart is not None:
             if turn.tool_call is not None and turn.tool_call.name == "confirm":

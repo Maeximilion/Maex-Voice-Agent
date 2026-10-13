@@ -102,6 +102,7 @@ class ConversationLoop:
         system_prompt: str,
         *,
         max_call_seconds: int | None = None,
+        turn_deadline_seconds: float | None = None,
         now: datetime | None = None,
         clock: Callable[[], float] = time.monotonic,  # austauschbar für Tests
     ):
@@ -111,6 +112,12 @@ class ConversationLoop:
         self._max_call_seconds = (
             settings.max_call_seconds if max_call_seconds is None else max_call_seconds
         )
+        # How long a guest waits in silence for the answer to one sentence
+        # before the call goes to the team (#252). The phone line hands in the
+        # tenant's `service_config.turn_deadline_seconds`. None, as on the text
+        # phone and in the evals: nobody holds a receiver there, and a local
+        # test model may take longer to load than any guest would wait.
+        self._turn_deadline = turn_deadline_seconds
         self._now = now
         self._clock = clock
         self._started = clock()
@@ -119,6 +126,8 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        # The guest has stopped speaking: from here on they wait.
+        turn_started = None if self._turn_deadline is None else self._clock()
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
@@ -147,6 +156,12 @@ class ConversationLoop:
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+            # The model calls and tools of one guest turn share one deadline:
+            # each call alone may be quick and the guest still waits for all
+            # of them. Time up: the model is not asked again.
+            left = self._left_in_turn(turn_started)
+            if left is not None and left <= 0:
+                return self._too_slow(state, user_text)
 
             try:
                 turn = self._llm.next_turn(
@@ -160,6 +175,11 @@ class ConversationLoop:
                         called,
                     ),
                     pending_input,
+                    # Only what is left: a call that hangs is cut off there
+                    # instead of after the client's own, longer limit. Not
+                    # named at all without a deadline, so a client of the old
+                    # shape is called as before.
+                    **({} if left is None else {"timeout": left}),
                 )
             except LLMError as exc:
                 # A model that is down or answers outside the contract is an
@@ -193,6 +213,12 @@ class ConversationLoop:
             # team is not reachable (Codex PR #222, P1).
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+            # The same for the turn deadline: an answer that took too long is
+            # neither spoken nor carried out: the guest has waited long enough
+            # and goes to the team. What the model heard is kept, as above.
+            left = self._left_in_turn(turn_started)
+            if left is not None and left <= 0:
+                return self._too_slow(state, user_text)
 
             if reread is not None and turn.tool_call is not None:
                 # In `calls.tool_calls` like any refused call. The model is
@@ -278,6 +304,25 @@ class ConversationLoop:
             pending_input = _tool_result_as_input(turn.tool_call.name, result)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
+
+    def _left_in_turn(self, turn_started: float | None) -> float | None:
+        """Seconds the guest still waits for this turn; None without a deadline."""
+        if turn_started is None or self._turn_deadline is None:
+            return None
+        return self._turn_deadline - (self._clock() - turn_started)
+
+    def _too_slow(self, state: ConversationState, user_text: str) -> TurnResult:
+        """The guest has waited the restaurant's deadline in silence: an outage
+        for them, so the call goes to the team with the outage sentence
+        (CLAUDE.md §2 rule 5), like a model that failed outright."""
+        log(
+            logger,
+            logging.ERROR,
+            "no answer within the turn deadline, handing over to the team",
+            call_id=str(state.call_id),
+            deadline_seconds=self._turn_deadline,
+        )
+        return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
 
     def _prompt_state(
         self,

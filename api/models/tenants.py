@@ -108,10 +108,11 @@ class ServiceConfig(Timestamps, Base):
     reservation_max_party_size_same_day: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="5"
     )
-    # The two other limits of #252, in the same migration and read by nothing
-    # yet: an order above this amount waits for the team's approval before a
-    # slip prints, and a guest waits this long in silence for the model before
-    # the call goes to the team. Each gets its pull request.
+    # The two other limits of #252, in the same migration: an order above this
+    # amount waits for the team's approval before a slip prints (read by
+    # nothing yet, its pull request is open), and a guest waits this long in
+    # silence for the answer to one sentence before the call goes to the team
+    # (the phone line: domain/calls/routing.py, agent/loop.py).
     order_approval_above_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="15000"
     )

@@ -102,6 +102,8 @@ core runs in a worker thread, and the port methods only enqueue.
 | Keypad | Digits are collected until `#` or a gap of 3 s, then handed over as one answer. |
 | Draining | Queued speech is played in order. A transfer or hangup waits for the end of the last sentence. |
 | Ear or mouth fails | An engine error, or speech energy without a transcript, is a failure of the call: outage sentence and handover to the team (§5). |
+| The model is slow | Built in the core (#252, 13.10.2026): one guest turn has `service_config.turn_deadline_seconds` (10), then the outage sentence and the team. The clock starts when the core gets the sentence, so what the ear takes before that is not in it. Still to build here: a hold sentence ("Bitte warten Sie einen Moment") spoken while a turn runs; with it the restaurant's value goes to 15 (Maxi, 12.10.2026). |
+| Model client | One per call from the `llm_factory` the session is built with. The call handler closes it when the call ends, whichever way it ends. |
 | Call start | The first sentence answers the line. A transfer before any sentence (mode `paused` or `shadow`, limit reached, database down) leaves the call unanswered and rings the team. |
 
 `CallEvents` gains what a platform used to hide: silence and a failure of the voice layer itself.
