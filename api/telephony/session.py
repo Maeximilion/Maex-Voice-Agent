@@ -62,6 +62,9 @@ UNHEARD_LIMIT = 2
 # Ends an entry on the keypad.
 END_KEY = "#"
 KEYPAD_GAP_SECONDS = 3.0
+# An entry on the keypad is handed over at this length whatever the gaps: keys
+# without end would never begin a turn. No number on a telephone is longer.
+KEYPAD_MAX_DIGITS = 20
 # How long the line may take to report the end of playback, beyond the length
 # of the audio itself. Without the report nobody knows what the caller heard:
 # it is a failure of the call and goes to the team, and a transfer or hangup
@@ -116,6 +119,8 @@ class CallSession:
         self._sample_rate = sample_rate
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
+        # The time of an event and its place in the queue are taken together.
+        self._posting = threading.Lock()
         # What the core asked for in the turn that is running, and the thread
         # that runs it. None outside a turn.
         self._asked: list[tuple[str, Any]] | None = None
@@ -207,7 +212,10 @@ class CallSession:
             self._step(event)
 
     def _post(self, kind: str, payload: Any = None) -> None:
-        self._inbox.put((kind, self._clock(), payload))
+        # Under one lock: the timers run on the time of the events, so an
+        # event must never stand behind one that happened after it.
+        with self._posting:
+            self._inbox.put((kind, self._clock(), payload))
 
     def _ask(self, kind: str, payload: Any = None) -> None:
         """From the core. Inside a turn it is kept and carried out when the
@@ -319,7 +327,10 @@ class CallSession:
                 self._wait_for_the_caller(at)  # a hash alone hands nothing over
         else:
             self._digits += digit
-            self._digits_due = at + self._keypad_gap_seconds
+            if len(self._digits) >= KEYPAD_MAX_DIGITS:
+                self._hand_over_digits()
+            else:
+                self._digits_due = at + self._keypad_gap_seconds
 
     def _on_played(self, at: float, mark: int) -> None:
         if mark != self._mark or not self._outstanding:
@@ -339,6 +350,8 @@ class CallSession:
         if self._ending is not None:
             logger.warning("a sentence behind a transfer or hangup is not spoken")
             return
+        if not text.strip():
+            return  # nothing to say: not spoken, and it protects nothing
         try:
             audio = self._synthesize(text)
         except Exception:
@@ -450,6 +463,10 @@ class CallSession:
             raise TimeoutError("the mouth did not finish the sentence") from None
         if error is not None:
             raise error
+        if not audio:
+            # An empty stream without an error. Queued, the line would report
+            # it as played, and a read-back nobody heard would count as heard.
+            raise RuntimeError("the mouth made no audio for the sentence")
         return audio
 
     def _turn(self, deliver: Callable[[], None]) -> None:

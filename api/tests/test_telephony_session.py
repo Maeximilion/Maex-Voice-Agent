@@ -13,10 +13,10 @@ from types import SimpleNamespace
 import pytest
 
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
+from api.telephony.session import KEYPAD_MAX_DIGITS, CallSession, Lines
 from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
 from api.telephony.session import UTTERANCE_LIMIT_SECONDS as UTTERANCE_LIMIT
 from api.telephony.session import UTTERANCE_SECONDS as UTTERANCE
-from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Heard
 
 SILENCE = 6.0
@@ -539,6 +539,19 @@ def test_digits_that_waited_in_the_queue_stay_one_answer(call):
     assert [c for c in call.core.calls if c[0] == "dtmf"] == [("dtmf", "42")]
 
 
+def test_keys_without_end_are_handed_over_at_a_length(call):
+    """A key every two seconds never leaves the gap, so the entry would never
+    end and no turn would begin, the tenant's call limit included
+    (Codex PR #286). No number on a telephone is that long."""
+    call.start(GREETING)
+    call.played()
+    for n in range(KEYPAD_MAX_DIGITS + 3):
+        call.clock.now += GAP - 1.0
+        call.key(str(n % 10))
+    handed = [c[1] for c in call.core.calls if c[0] == "dtmf"]
+    assert [len(digits) for digits in handed] == [KEYPAD_MAX_DIGITS]
+
+
 def test_a_hash_alone_hands_nothing_over(call):
     call.start(GREETING)
     call.played()
@@ -942,6 +955,40 @@ def test_a_mouth_that_never_finishes_does_not_hold_the_call(call):
     assert call.line.actions == [("transfer", "+497215550000")]
 
 
+def test_a_mouth_that_makes_no_audio_has_not_spoken(call):
+    """An engine that returns an empty stream without an error. Queued as it
+    is, the line would report the read-back as played, and the "Ja" behind it
+    would answer a sentence nobody heard (Codex PR #286, hard rule 3)."""
+
+    class Mute(FakeMouth):
+        def speak(self, text):
+            return iter(())
+
+    call.core.on_failure = [("transfer", "+497215550000")]
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.s._mouth = Mute()
+    call.said("Das wars", after=1.0)
+    assert call.core.count("voice_failure") == 1
+    assert call.line.played() == ["Guten Tag."]
+    call.said("Ja", after=1.0)
+    assert call.core.turns() == ["Das wars"]
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
+def test_a_sentence_without_words_is_not_spoken_and_no_failure(call):
+    """The core hands over an empty line now and then. Nothing to say is no
+    broken mouth, and it protects nothing."""
+    call.core.replies["Hm"] = [("say", "  "), ("say", "Wie bitte?", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Hm", after=1.0)
+    assert call.core.count("voice_failure") == 0
+    assert call.line.played() == ["Guten Tag.", "Wie bitte?"]
+    assert call.mouth.spoken == ["Guten Tag.", "Wie bitte?"]
+
+
 def test_a_mouth_that_raises_late_is_a_failure(call):
     class BrokenMidway(FakeMouth):
         def speak(self, text):
@@ -1032,3 +1079,41 @@ def test_the_worker_wakes_for_a_timer_without_an_event():
     worker.join(timeout=5)
     assert not worker.is_alive() and session.outcome == "hangup"
     assert core.count("silence") == 1
+
+
+def test_events_from_several_threads_are_queued_in_the_order_of_their_time():
+    """The time of an event and its place in the queue are taken together.
+    Otherwise a late event can overtake a timely one whose thread paused
+    between the clock and the queue, and a timer that runs on the time of the
+    events fires for something that was in time (Codex PR #286)."""
+    import time
+
+    def clock() -> float:
+        now = time.monotonic()
+        time.sleep(0)  # let another thread in between the clock and the queue
+        return now
+
+    lines = Lines()
+    session = CallSession(
+        "s1",
+        line=FakeLine(),
+        ear=FakeEar(),
+        mouth=FakeMouth(),
+        events=Core(lines),
+        silence_seconds=SILENCE,
+        clock=clock,
+    )
+
+    def post() -> None:
+        for _ in range(2000):
+            session.audio(b"")
+
+    threads = [threading.Thread(target=post) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    times = []
+    while not session._inbox.empty():
+        times.append(session._inbox.get_nowait()[1])
+    assert len(times) == 8000 and times == sorted(times)

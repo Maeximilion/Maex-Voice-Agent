@@ -115,7 +115,8 @@ and what the line finished playing are queued with the time they happened and ha
 after another. The core runs in that worker. What it asks of the line (`Lines`, the
 `TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
 returns, before anything that queued up behind it; timers fire on the time of the events, never
-ahead of an event that waited in the queue. Three ports: `Ear`, `Mouth` and
+ahead of an event that waited in the queue, and an event's time and its place in the queue are
+taken under one lock. Three ports: `Ear`, `Mouth` and
 `Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
 `flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
 is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
@@ -127,10 +128,11 @@ is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`
 | Barge-in by a finished utterance | Two words of a partial stop the sentence, as the table says. A finished utterance of one word ("Nein") stops it too: the agent takes the answer instead of talking over it. |
 | Said while the core was working | An utterance that ended before the answer began to play is the next turn and does not stop that answer. If the answer is a read-back, the utterance is dropped like one spoken into it. |
 | Keys and the read-back | Keys pressed into a sentence that may not be interrupted are dropped, like an utterance. |
+| Keys without end | An entry is handed over at 20 digits whatever the gaps, so a key every two seconds cannot keep a call from ever reaching a turn. |
 | Silence | The session reports it once per silence (`on_silence`); the handler asks "Sind Sie noch da?", then "Ich höre Sie leider nicht. Sind Sie noch dran?", then says the farewell and hangs up. **A yes to one of these questions confirms nothing** (hard rule 3): the question is now the last thing the guest heard, so the core reads the draft out again first. A guest who stays silent books nothing. |
 | Speech without a transcript | Once is a cough; twice in a row is a failure of the ear and goes to the team. |
 | The line does not report the end of playback | After the length of the audio plus 5 s it is a failure of the call and goes to the team. Whether the caller heard the sentence is not known then, so a read-back never counts as heard (Codex PR #286). A transfer that waited for the report happens all the same. A hangup that waited does not: the session ends as failed, so the dialplan rings the team instead of taking a farewell nobody may have heard for a finished call. |
-| The mouth does not finish a sentence | Each sentence has a deadline of 10 s; an engine that hangs is a failure like one that raises, and does not hold the one worker of the call (Codex PR #286). The ear's `feed` must not wait for its engine at all: an adapter whose engine blocks runs it on a thread of its own. |
+| The mouth does not finish a sentence, or makes no audio | Each sentence has a deadline of 10 s; an engine that hangs is a failure like one that raises, and does not hold the one worker of the call (Codex PR #286). So is an engine that returns no audio without an error: queued as it is, the line would report a read-back as played that nobody heard. A sentence without words is not spoken at all and is no failure. The ear's `feed` must not wait for its engine at all: an adapter whose engine blocks runs it on a thread of its own. |
 | The caller speaks, and no word is known yet | The ear reports it as a partial, with an empty text where the engine has no partial transcripts, at least once a second. Silence is counted from that, so a long order is not answered with "Sind Sie noch da?" in the middle of it. Speech without words stops no sentence. |
 | When playback begins | When the audio is on the line, not when the sentence was asked for: what the caller said while the mouth was working is the next turn and no barge-in. |
 | A failure the core does not answer | If the core neither transfers nor hangs up after a failure, the session ends as failed instead of staying on a line it no longer listens to. |
