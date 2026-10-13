@@ -238,9 +238,22 @@ class CallHandler:
             raise RuntimeError("turn on a call the agent does not answer")
         bind_call_id(str(live.call_id))
         live.silences = 0
+        known = set(live.state.known_item_ids)
         result = live.loop.run_turn(live.state, text)
         ending = result.ended or live.state.stage in CLOSING_STAGES
-        interruptible = not ending and live.state.stage not in _NOT_INTERRUPTIBLE
+        # The core takes the sentence that ends a turn as heard
+        # (`guards.note_said`): digits behind a question for the guest's number
+        # are that number, and a dish that was named may enter the order. Such
+        # a sentence is played to the end, or the guest would be measured
+        # against words they talked over (Codex PR #286).
+        counted_as_heard = (
+            live.state.asked_for_phone or live.state.known_item_ids != known
+        )
+        interruptible = (
+            not ending
+            and not counted_as_heard
+            and live.state.stage not in _NOT_INTERRUPTIBLE
+        )
         for line in result.say:
             self._port.say(live.session_id, line, interruptible=interruptible)
         if live.state.stage == "transferred":

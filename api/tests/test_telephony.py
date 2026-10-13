@@ -726,6 +726,29 @@ def test_a_question_may_be_talked_over_the_disclosure_and_the_read_back_may_not(
     assert says[-1] not in open_to_talk  # the confirmation before the hangup
 
 
+def test_a_sentence_the_core_counts_as_heard_is_not_talked_over(session, tenant):
+    """Codex PR #286: the core takes the sentence that ends a turn as heard. If
+    it asked for the guest's number, the digits of the next sentence are that
+    number; if it named a dish, that dish may enter the order. A guest who
+    talked over such a sentence would be measured against words they never
+    heard, so these sentences are played to the end."""
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+        ]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+    says, open_to_talk = port.says(sid), port.interruptible(sid)
+    assert QUESTIONS["phone"] in says[-1]  # the number is withheld
+    assert says[-1] not in open_to_talk
+    assert QUESTIONS["guest_name"] in " ".join(open_to_talk)
+
+
 def test_what_is_said_before_a_transfer_is_not_talked_over(session, tenant):
     port = FakeTelephony()
     case = load_call(CASES / "eskalation_0001_beschwerde.json")

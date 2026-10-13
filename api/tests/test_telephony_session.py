@@ -14,6 +14,7 @@ import pytest
 
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
 from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
+from api.telephony.session import UTTERANCE_LIMIT_SECONDS as UTTERANCE_LIMIT
 from api.telephony.session import UTTERANCE_SECONDS as UTTERANCE
 from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Heard
@@ -390,6 +391,39 @@ def test_an_utterance_may_take_as_long_as_the_caller_speaks(call):
     )
 
 
+def test_no_silence_is_counted_while_the_ear_owes_an_utterance(call):
+    """The caller began to answer while the question was still playing. The
+    question ends, the ear is still working on the answer: that is no silent
+    line, however long the ear may take (Codex PR #286)."""
+    call.core.replies["Was gibt es"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.partial("ja das")
+    call.played(after=1.0)
+    call.wait(SILENCE + 0.5)
+    assert call.core.count("silence") == 0
+    call.said("Ja, das stimmt", after=0.5)
+    assert call.core.turns()[-1] == "Ja, das stimmt" and call.core.count("silence") == 0
+
+
+def test_an_utterance_has_an_end_however_long_the_ear_reports_speech(call):
+    """A detector stuck in "speech" reports it for ever. Without a limit the
+    call would stay open past everything, the tenant's call limit included,
+    which is checked when a turn begins (Codex PR #286)."""
+    call.core.on_failure = OUTAGE
+    call.start(GREETING)
+    call.played()
+    for _ in range(int(UTTERANCE_LIMIT) - 1):
+        call.clock.now += 1.0
+        call.partial("")
+    assert call.core.count("voice_failure") == 0
+    for _ in range(3):
+        call.clock.now += 1.0
+        call.partial("")
+    assert call.core.count("voice_failure") == 1
+
+
 def test_a_dropped_utterance_starts_the_silence_anew(call):
     """Noise, or an utterance into a read-back that is reported late: nothing
     is taken, and the silent line is counted from there."""
@@ -570,6 +604,7 @@ def test_speech_without_words_yet_is_no_silence(call):
     call.said("Was gibt es", after=0.5)
     call.partial("")
     assert "flush" not in call.line.kinds()
+    call.said("hm", after=0.5, speech=False)  # it was noise: the utterance ends
     call.played()
     call.wait(SILENCE + 0.1)
     assert call.core.count("silence") == 1
@@ -787,6 +822,20 @@ def test_a_lost_end_of_playback_of_a_plain_sentence_is_a_failure_too(call):
     call.start(("say", "Was darf es sein?", True))
     call.wait(GRACE + 0.5)
     assert call.core.count("voice_failure") == 1 and call.core.count("silence") == 0
+
+
+def test_a_farewell_nobody_may_have_heard_does_not_end_in_a_hangup(call):
+    """The call was ending, the farewell was queued, and the line never said
+    that it played. Hanging up would tell the dialplan that all is well; the
+    caller may have heard nothing. Ended as failed, the team is rung
+    (Codex PR #286, rule 5)."""
+    call.core.replies["Tschüss"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.said("Tschüss", after=1.0)
+    call.wait(GRACE + 0.5)
+    assert "hangup" not in call.line.kinds() and call.s.outcome == "failed"
+    assert call.core.count("voice_failure") == 1
 
 
 def test_a_lost_end_of_playback_does_not_hold_a_transfer_back(call):

@@ -75,6 +75,9 @@ SPEAK_SECONDS = 10.0
 # the finished utterance. An ear that begins an utterance and never ends it
 # leaves the call waiting for nothing: a failure (rule 5).
 UTTERANCE_SECONDS = 10.0
+# And how long one utterance may be at all, whatever the ear reports: a
+# detector stuck in "speech" would keep the call open for ever.
+UTTERANCE_LIMIT_SECONDS = 60.0
 # Raw 16 bit mono, as the line is dialled (`adapters/asterisk.py`).
 SAMPLE_RATE = 16000
 
@@ -135,8 +138,9 @@ class CallSession:
         self._digits_due: float | None = None
         self._silence_due: float | None = None
         # The ear said that the caller is speaking and owes the finished
-        # utterance by then.
+        # utterance by then; and when this utterance began.
         self._utterance_due: float | None = None
+        self._utterance_began: float | None = None
         self._unheard = 0
         # The voice failed on this call, and the core knows.
         self._failed = False
@@ -267,11 +271,16 @@ class CallSession:
             # The caller is speaking: no silence, and the ear owes the end of
             # this utterance. If that never comes, nothing else would.
             self._silence_due = None
-            self._utterance_due = at + UTTERANCE_SECONDS
+            if self._utterance_began is None:
+                self._utterance_began = at
+            self._utterance_due = min(
+                at + UTTERANCE_SECONDS,
+                self._utterance_began + UTTERANCE_LIMIT_SECONDS,
+            )
             if self._may_interrupt() and len(heard.text.split()) >= BARGE_IN_WORDS:
                 self._stop_playback()
             return
-        self._utterance_due = None
+        self._utterance_due = self._utterance_began = None
         if not heard.speech:
             # Words without speech energy: line noise, never an answer.
             self._wait_for_the_caller(at)
@@ -374,15 +383,15 @@ class CallSession:
                 "the line did not report the end of playback",
                 extra={"extra": {"session_id": self.session_id}},
             )
-            if self._ending is not None:
-                # The team, or the end of the call, does not wait for a report
-                # that will not come.
+            if self._ending is not None and self._ending[0] == "transfer":
+                # The team does not wait for a report that will not come.
                 self._stop_playback()
                 self._perform_ending()
             else:
                 # Whether the caller heard the sentence is not known. Never
                 # counted as heard: a read-back would be answered by a "Ja"
-                # to nothing (rule 3).
+                # to nothing (rule 3), and a hangup behind a farewell nobody
+                # may have heard would tell the dialplan that all is well.
                 self._voice_failed()
         if self.over:
             return
@@ -476,7 +485,13 @@ class CallSession:
             self._turn(lambda: self._events.on_dtmf(self.session_id, digits))
 
     def _wait_for_the_caller(self, at: float) -> None:
-        if self._listening() and not self._outstanding and not self._digits:
+        if (
+            self._listening()
+            and not self._outstanding
+            and not self._digits
+            # The ear still owes an utterance: the caller is not silent.
+            and self._utterance_due is None
+        ):
             self._silence_due = at + self._silence_seconds
 
     def _voice_failed(self) -> None:
@@ -486,8 +501,12 @@ class CallSession:
         if self._failed:
             return
         self._failed = True
-        self._silence_due = self._utterance_due = None
+        self._silence_due = self._utterance_due = self._utterance_began = None
         self._digits, self._digits_due = "", None
+        if self._ending is not None and self._ending[0] == "hangup":
+            # A hangup that waited for its farewell is not carried out on a
+            # failed call.
+            self._ending = None
         if self._outstanding:
             try:
                 self._stop_playback()
@@ -512,7 +531,7 @@ class CallSession:
         ):
             return
         self._ending = ending
-        self._silence_due = self._utterance_due = None
+        self._silence_due = self._utterance_due = self._utterance_began = None
         self._digits, self._digits_due = "", None
         if not self._outstanding:
             self._perform_ending()
