@@ -39,12 +39,20 @@ class FakeEar:
 
 
 class FakeMouth:
-    """Implements `speech.Mouth`: the sentence, encoded, in two pieces."""
+    """Implements `speech.Mouth`: the sentence, encoded, in two pieces.
+
+    That "audio" is a few bytes, so it plays in no time. A test that needs a
+    sentence with a length sets `seconds`, and `FakeLine` cuts the padding off
+    again."""
+
+    RATE = 16000
 
     def __init__(self) -> None:
         self.spoken: list[str] = []
         # Set to make the engine fail on the next sentence.
         self.broken = False
+        # How long a sentence plays, as silence behind its text.
+        self.seconds = 0.0
 
     def speak(self, text: str) -> Iterable[bytes]:
         if self.broken:
@@ -53,7 +61,7 @@ class FakeMouth:
         audio = text.encode("utf-8")
         half = len(audio) // 2
         yield audio[:half]
-        yield audio[half:]
+        yield audio[half:] + b"\x00" * int(self.seconds * self.RATE * 2)
 
 
 class FakeLine:
@@ -69,7 +77,7 @@ class FakeLine:
         self.actions.append(("answer",))
 
     def play(self, audio: bytes, mark: int) -> None:
-        self.actions.append(("play", audio.decode("utf-8")))
+        self.actions.append(("play", audio.rstrip(b"\x00").decode("utf-8")))
         self.mark = mark
 
     def flush(self) -> None:

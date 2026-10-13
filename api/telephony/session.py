@@ -53,6 +53,13 @@ UNHEARD_LIMIT = 2
 # Ends an entry on the keypad.
 END_KEY = "#"
 KEYPAD_GAP_SECONDS = 3.0
+# How long the line may take to report the end of playback, beyond the length
+# of the audio itself. Then the session goes on without the report: a read-back
+# that stayed "playing" for ever would drop every answer, and a transfer behind
+# it would never happen (CLAUDE.md §2 rule 5).
+PLAYED_GRACE_SECONDS = 5.0
+# Raw 16 bit mono, as the line is dialled (`adapters/asterisk.py`).
+SAMPLE_RATE = 16000
 
 Outcome = Literal["open", "hangup", "transfer", "closed", "failed"]
 
@@ -71,6 +78,7 @@ class CallSession:
         silence_seconds: float,
         caller_id: str | None = None,
         keypad_gap_seconds: float = KEYPAD_GAP_SECONDS,
+        sample_rate: int = SAMPLE_RATE,
         clock: Callable[[], float] = time.monotonic,
     ):
         self.session_id = session_id
@@ -83,6 +91,7 @@ class CallSession:
         self._events = events
         self._silence_seconds = silence_seconds
         self._keypad_gap_seconds = keypad_gap_seconds
+        self._sample_rate = sample_rate
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
 
@@ -92,6 +101,8 @@ class CallSession:
         # played: may it be interrupted?
         self._outstanding: list[bool] = []
         self._playing_since: float | None = None
+        # When what is queued ends, by the length of its audio.
+        self._playing_until: float | None = None
         # An utterance or a key that ended at or before this is no answer: it
         # fell into a sentence that may not be interrupted. Infinite while one
         # is still playing.
@@ -167,7 +178,11 @@ class CallSession:
         self._inbox.put((kind, self._clock(), payload))
 
     def _until_next_timer(self) -> float | None:
-        due = [d for d in (self._digits_due, self._silence_due) if d is not None]
+        due = [
+            d
+            for d in (self._digits_due, self._silence_due, self._played_due())
+            if d is not None
+        ]
         return max(0.0, min(due) - self._clock()) if due else None
 
     def _step(self, event: tuple[str, float, Any] | None) -> None:
@@ -245,15 +260,7 @@ class CallSession:
     def _on_played(self, at: float, mark: int) -> None:
         if mark != self._mark or not self._outstanding:
             return  # an older sentence, or one that was dropped by a flush
-        protected = not all(self._outstanding)
-        self._outstanding = []
-        self._playing_since = None
-        if protected:
-            self._protected_until = at
-        if self._ending is not None:
-            self._perform_ending()
-        else:
-            self._wait_for_the_caller(at)
+        self._played_to_the_end(at)
 
     def _on_say(self, at: float, payload: tuple[str, bool]) -> None:
         text, interruptible = payload
@@ -273,7 +280,9 @@ class CallSession:
             self._answered = True
         self._mark += 1
         if not self._outstanding:
-            self._playing_since = at
+            self._playing_since = self._playing_until = at
+        assert self._playing_until is not None
+        self._playing_until += len(audio) / (2 * self._sample_rate)
         self._outstanding.append(interruptible)
         if not interruptible:
             self._protected_until = math.inf
@@ -295,6 +304,15 @@ class CallSession:
         self._end("closed")
 
     def _timers(self, now: float) -> None:
+        played_due = self._played_due()
+        if played_due is not None and now >= played_due:
+            logger.error(
+                "the line did not report the end of playback, going on without it",
+                extra={"extra": {"session_id": self.session_id}},
+            )
+            self._played_to_the_end(now)
+        if self.over:
+            return
         if self._digits_due is not None and now >= self._digits_due:
             self._hand_over_digits()
         if self._silence_due is not None and now >= self._silence_due:
@@ -313,10 +331,27 @@ class CallSession:
         played to its end."""
         return bool(self._outstanding) and all(self._outstanding)
 
+    def _played_due(self) -> float | None:
+        """When the session stops waiting for the line's report."""
+        if self._playing_until is None:
+            return None
+        return self._playing_until + PLAYED_GRACE_SECONDS
+
+    def _played_to_the_end(self, at: float) -> None:
+        protected = not all(self._outstanding)
+        self._outstanding = []
+        self._playing_since = self._playing_until = None
+        if protected:
+            self._protected_until = at
+        if self._ending is not None:
+            self._perform_ending()
+        else:
+            self._wait_for_the_caller(at)
+
     def _stop_playback(self) -> None:
         self._line.flush()
         self._outstanding = []
-        self._playing_since = None
+        self._playing_since = self._playing_until = None
 
     def _turn(self, deliver: Callable[[], None]) -> None:
         """Hand something to the core. What it asks for is queued behind this
@@ -385,13 +420,17 @@ class CallSession:
             self._ear.close()
         except Exception:
             logger.exception("the ear could not be closed")
-        if outcome in ("closed", "failed"):
-            # The core closes its call log. After our own hangup or transfer it
-            # has done so already.
-            try:
+        # The core closes its call log: the caller hung up, or the session
+        # broke, which it logs as a failure. Its outage sentence and transfer
+        # reach nobody then; the dialplan rings the team. After our own hangup
+        # or transfer the core has closed the call already.
+        try:
+            if outcome == "closed":
                 self._events.on_call_ended(self.session_id)
-            except Exception:
-                logger.exception("the core could not be told that the call ended")
+            elif outcome == "failed":
+                self._events.on_voice_failure(self.session_id)
+        except Exception:
+            logger.exception("the core could not be told how the call ended")
 
 
 class Lines:

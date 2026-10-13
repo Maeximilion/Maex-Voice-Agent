@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
+from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
 from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Heard
 
@@ -406,7 +407,7 @@ def test_a_hash_alone_hands_nothing_over(call):
 
 def test_silence_is_counted_from_the_end_of_playback(call):
     call.start(GREETING)
-    call.wait(SILENCE + 5)  # still playing: no silence yet
+    call.wait(GRACE - 1)  # still playing: no silence yet
     assert call.core.count("silence") == 0
     call.played()
     call.wait(SILENCE - 0.5)
@@ -424,7 +425,7 @@ def test_a_re_prompt_starts_the_silence_anew(call):
     call.start(GREETING)
     call.played()
     call.wait(SILENCE + 0.1)
-    call.wait(SILENCE + 5)  # the re-prompt is still playing
+    call.wait(GRACE - 1)  # the re-prompt is still playing
     assert call.core.count("silence") == 1
     call.played()
     call.wait(SILENCE + 0.1)
@@ -550,13 +551,60 @@ def test_a_crash_in_the_core_ends_the_session_without_a_hangup(call):
     call.said("Hallo", after=1.0)
     assert call.s.outcome == "failed"
     assert "hangup" not in call.line.kinds() and "transfer" not in call.line.kinds()
-    assert call.core.calls[-1] == ("ended",)
+    # The core closes its call log as a failure, not as a caller who hung up.
+    assert call.core.calls[-1] == ("voice_failure",)
 
 
 def test_a_transfer_the_telephone_system_refuses_fails_the_session(call):
     call.line.refuses_transfer = True
     call.start(("transfer", "+497215550000"))
     assert call.s.outcome == "failed" and call.s.transfer_target is None
+
+
+# --- A line that does not report the end of playback ------------------------------------
+
+
+def test_a_lost_end_of_playback_does_not_leave_the_caller_unheard(call):
+    """The line owes a mark for what it played. If it never comes, the session
+    goes on by the length of the audio plus a grace: a read-back that stayed
+    "playing" for ever would drop every answer."""
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.said("Das wars", after=1.0)
+    call.said("Ja", after=GRACE - 1)  # may still be playing
+    assert call.core.turns() == ["Das wars"]
+    call.wait(1.5)  # the grace is over, no mark came
+    call.said("Ja", after=0.5)
+    assert call.core.turns() == ["Das wars", "Ja"]
+
+
+def test_a_lost_end_of_playback_does_not_hold_a_transfer_back(call):
+    call.core.replies["Hilfe"] = [
+        ("say", "Ich verbinde."),
+        ("transfer", "+497215550000"),
+    ]
+    call.start(GREETING)
+    call.played()
+    call.said("Hilfe", after=1.0)
+    call.wait(GRACE - 1)
+    assert call.s.outcome == "open"
+    call.wait(1.5)
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
+def test_the_grace_counts_from_the_end_of_the_audio_not_from_its_start(call):
+    """Ten seconds of audio are not given up on after five."""
+    call.mouth.seconds = 10.0
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start()
+    call.said("Das wars", after=1.0)
+    call.wait(10.0 + GRACE - 1)
+    call.said("Ja", after=0.0)
+    assert call.core.turns() == ["Das wars"]
+    call.wait(1.5)
+    call.said("Ja", after=0.5)
+    assert call.core.turns() == ["Das wars", "Ja"]
 
 
 # --- The port over all sessions ---------------------------------------------------------

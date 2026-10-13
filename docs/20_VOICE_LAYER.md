@@ -50,8 +50,8 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 | Voice process | service `voice`, same image as `api`, one worker | `api/telephony/app.py` |
 | WebSocket endpoint, dialplan callback | inside `voice` | `api/telephony/router.py` |
 | Media protocol of Asterisk | | `api/telephony/adapters/asterisk.py` |
-| Call session, provider neutral | | `api/telephony/session.py` |
-| Ports for ear and mouth | | `api/telephony/speech.py` |
+| Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
+| Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
 | Speech engines and their fakes | | `api/telephony/adapters/stt_<engine>.py`, `tts_<engine>.py`, `fake_speech.py` |
 
 **Reused unchanged:** `api/agent/`, `api/domain/`, `api/events/`, `api/gui/`, `sim/`, `evals/`,
@@ -106,6 +106,33 @@ core runs in a worker thread, and the port methods only enqueue.
 
 `CallEvents` gains what a platform used to hide: silence and a failure of the voice layer itself.
 `TelephonyPort.say` gains whether a sentence may be interrupted.
+
+**Built with T-10.4 (13.10.2026): `telephony/session.py`, `telephony/speech.py`, fakes in
+`adapters/fake_speech.py`.** One worker and one queue per call: audio, keys, what the ear heard,
+what the line finished playing and what the core asks for are queued with the time they happened
+and handled strictly one after another. The core runs in that worker, and what it asks of the line
+(`Lines`, the `TelephonyPort` over all sessions) only enqueues. Three ports: `Ear`, `Mouth` and
+`Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
+`flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
+is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
+`failed` it rings the team (§5). What the table left open, as built:
+
+| Topic | As built |
+|---|---|
+| Which sentences may be interrupted | The handler decides per turn: a question of the agent may, and so may the two questions into a silent line. Never the AI disclosure at the start, anything said while a draft waits for its yes, the confirmation, the farewell, the outage sentence or a sentence before a transfer. A flush drops everything queued, so nothing is interrupted while one sentence that may not be is still to be played. |
+| Barge-in by a finished utterance | Two words of a partial stop the sentence, as the table says. A finished utterance of one word ("Nein") stops it too: the agent takes the answer instead of talking over it. |
+| Said while the core was working | An utterance that ended before the answer began to play is the next turn and does not stop that answer. If the answer is a read-back, the utterance is dropped like one spoken into it. |
+| Keys and the read-back | Keys pressed into a sentence that may not be interrupted are dropped, like an utterance. |
+| Silence | The session reports it once per silence (`on_silence`); the handler asks "Sind Sie noch da?", then "Ich höre Sie leider nicht. Sind Sie noch dran?", then says the farewell and hangs up. **A yes to one of these questions confirms nothing** (hard rule 3): the question is now the last thing the guest heard, so the core reads the draft out again first. A guest who stays silent books nothing. |
+| Speech without a transcript | Once is a cough; twice in a row is a failure of the ear and goes to the team. |
+| The line does not report the end of playback | After the length of the audio plus 5 s the session goes on without the report. A read-back that stayed "playing" for ever would drop every answer and hold a transfer back. |
+| A transfer and a hangup both asked for | The first one stands, except that a transfer replaces a hangup that still waits for its sentence: a failure during the farewell goes to the team. |
+| The session itself breaks | Nothing is hung up; the core logs the call as a failure, and the dialplan rings the team. |
+
+Not in the session, by design: the end of an utterance. That is the ear's (`Heard(final=True)`),
+from an engine's own endpoint or from the silence detector of its adapter (T-10.5); the orders run
+of 13.10.2026 says that silence must not be shorter than 700 ms (§11). The silence timeout and the
+sample rate are arguments of the session; their settings come with the service `voice` (T-1.11).
 
 ---
 
