@@ -1152,6 +1152,19 @@ def test_orders_are_counted_per_size_and_per_dish(capsys, tmp_path):
     assert "taken as 2x13, 1x26 instead of 2x13, 1x26d" in out
 
 
+def test_a_run_of_orders_names_no_dish_sentences_with_their_key_term(capsys, tmp_path):
+    """The ear with key terms gets dish names in a run of orders too; the
+    report must not read as if dish sentences had been heard."""
+    judged = [
+        row | {"key_terms": 10} for row in order_rows("e", ("right", 2, 2, "right"))
+    ]
+    report = run({"e": {"load_seconds": 1}}, judged)
+    kit.print_report(report, tmp_path)
+    out = capsys.readouterr().out
+    assert "heard with 10 of 0 dish names as key terms\n" in out
+    assert "dish sentences with their own name" not in out
+
+
 def test_a_run_of_orders_speaks_only_orders_and_judges_each_as_one(
     tmp_path, monkeypatch, capsys
 ):

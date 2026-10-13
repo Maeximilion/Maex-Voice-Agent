@@ -692,6 +692,7 @@ def _ear(
             "key_terms_min": min(got),
             "key_terms_max": max(got),
             "key_terms_given": given,
+            "dish_sentences": len(dishes),
             "dishes_with_own_term_share": _part(
                 dishes, lambda r: (r.get("key_terms") or 0) > 0
             ),
@@ -798,9 +799,15 @@ def print_report(report: dict[str, Any], run_dir: Path) -> None:
             print(
                 f"{e['id']}: an utterance was heard with "
                 f"{high if low == high else f'{low} to {high}'} of "
-                f"{e['key_terms_given']} dish names as key terms; "
-                f"{pct(e['dishes_with_own_term_share']).strip()} of the dish sentences "
-                "with their own name among them"
+                f"{e['key_terms_given']} dish names as key terms"
+                + (
+                    # A run of orders has no dish sentence: the names it hands
+                    # over are no help for a card number.
+                    f"; {pct(e['dishes_with_own_term_share']).strip()} of the dish "
+                    "sentences with their own name among them"
+                    if e["dish_sentences"]
+                    else ""
+                )
             )
     for e in report["ears"]:
         if e.get("order_dishes"):
