@@ -24,6 +24,15 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
+    # .env also holds what belongs to the owner of the schema. Where the
+    # application has a database role of its own (docs/13 §3), a process that
+    # reads its environment must not find the superuser's password there.
+    # scripts/migrate.sh hands the owner's URL to Alembic in a container of its
+    # own: inside this one the application could read it from /proc.
+    environment: &without_the_owner
+      POSTGRES_PASSWORD: ""
+      OWNER_DATABASE_URL: ""
+      BACKUP_DATABASE_URL: ""
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +88,7 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
+    environment: *without_the_owner
     command: python -m api.jobs.cold_path
     depends_on:
       db:
