@@ -51,8 +51,11 @@ def refuse_a_superuser_role(env: str, db: Engine) -> None:
         return
     try:
         with db.connect() as conn:
+            # session_user, the role that logged in: a URL with
+            # `options=-c role=...` makes current_user a plain role while the
+            # session can still go back to the superuser it authenticated as.
             superuser = conn.scalar(
-                text("select rolsuper from pg_roles where rolname = current_user")
+                text("select rolsuper from pg_roles where rolname = session_user")
             )
     except SQLAlchemyError:
         logger.warning("the role of DATABASE_URL could not be checked at start")

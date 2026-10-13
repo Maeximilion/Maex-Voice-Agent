@@ -287,6 +287,38 @@ def test_settings_a_reused_role_carries_are_reset(db, role, tmp_path):
     assert _sql(app, "show statement_timeout") == [("0",)]
 
 
+def test_a_connection_limit_and_an_expiry_of_a_reused_role_are_lifted(
+    db, role, tmp_path
+):
+    """One connection is enough for the check and not for api and dispatcher
+    together (Codex, PR #281)."""
+    _sql(db, f"create role \"{role}\" connection limit 1 valid until '2020-01-01'")
+
+    done = _script("db_role.sh", app_url=_as(role, db), owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 0, done.stderr
+    limits = _sql(
+        db,
+        f"select rolconnlimit, rolvaliduntil::text from pg_roles where rolname = '{role}'",
+    )
+    assert limits == [(-1, "infinity")]
+
+
+def test_a_role_that_reaches_into_another_schema_is_reported(db, role, tmp_path):
+    """Rights in a schema besides the application's are not the application's:
+    the role would keep reading there (Codex, PR #281)."""
+    _sql(db, f'create role "{role}"')
+    _sql(db, "create schema private")
+    _sql(db, "create table private.customer_secrets (id int primary key)")
+    _sql(db, f'grant usage on schema private to "{role}"')
+    _sql(db, f'grant select on private.customer_secrets to "{role}"')
+
+    done = _script("db_role.sh", app_url=_as(role, db), owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 1, done.stdout
+    assert "or use one besides public: 1 schema(s)" in done.stderr
+
+
 def test_rights_the_role_was_granted_before_are_taken_away(db, role, tmp_path):
     """A role that existed with more ends like a new one (Codex, PR #281):
     granting the wanted rights on top would leave it able to empty a table or

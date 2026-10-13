@@ -72,6 +72,24 @@ def test_a_role_of_its_own_starts(plain_role):
     refuse_a_superuser_role("prod", plain_role)
 
 
+def test_a_superuser_that_only_puts_on_a_plain_role_is_refused(plain_role):
+    """`options=-c role=...` in the URL: the session starts as the plain role and
+    can go back to the superuser it logged in as (Codex, PR #281)."""
+    disguised = create_engine(
+        settings.database_url,
+        poolclass=NullPool,
+        connect_args={"options": f"-c role={plain_role.url.username}"},
+    )
+    try:
+        with disguised.connect() as conn:
+            assert conn.scalar(text("select current_user")) == plain_role.url.username
+
+        with pytest.raises(RuntimeError, match="superuser"):
+            refuse_a_superuser_role("prod", disguised)
+    finally:
+        disguised.dispose()
+
+
 def test_a_database_that_does_not_answer_does_not_stop_the_start(caplog):
     nowhere = make_url(settings.database_url).set(port=1)
     engine = create_engine(

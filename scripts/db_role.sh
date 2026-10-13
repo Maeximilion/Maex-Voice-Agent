@@ -58,6 +58,7 @@ do \$\$ begin
     end if;
 end \$\$;
 alter role "$APP_ROLE" login nosuperuser nocreatedb nocreaterole noreplication nobypassrls
+    connection limit -1 valid until 'infinity'
     password '$password_sql';
 -- A role that existed may carry settings of its own (alter role ... set). With
 -- default_transaction_read_only among them every write of the application fails.
@@ -73,9 +74,9 @@ SQL
 # PUBLIC, through another grantor) is still there and shows here. One row, read as
 # the role:
 # an attribute above a plain login | roles it is a member of | may create a schema
-# in the database | schemas it may create in | tables and sequences it cannot use |
-# tables it may truncate, reference or put a trigger on, sequences it may set |
-# objects it owns | tables.
+# in the database | schemas it may create in, or use besides public | tables and
+# sequences of public it cannot use | tables it may truncate, reference or put a
+# trigger on, sequences it may set | objects it owns | tables.
 tables="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')"
 sequences="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'S'"
 usable="has_table_privilege(c.oid, 'select') and has_table_privilege(c.oid, 'insert') and has_table_privilege(c.oid, 'update') and has_table_privilege(c.oid, 'delete')"
@@ -89,7 +90,7 @@ schemas="from pg_namespace n where n.nspname !~ '^pg_' and n.nspname <> 'informa
 # object a role owns in a database (a table, a function, a type, a schema) and,
 # under database 0, for what it owns on the server (a database, a tablespace).
 owned_objects="from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = r.oid and d.deptype = 'o' and d.dbid in (0, (select oid from pg_database where datname = current_database()))"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) $owned_objects), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and (has_schema_privilege(n.oid, 'create') or (n.nspname <> 'public' and has_schema_privilege(n.oid, 'usage')))), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) $owned_objects), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
 # Through DATABASE_URL itself, with every parameter the application will use
 # (sslmode and the like): a login that only works the owner's way proves nothing.
 seen="$(
@@ -112,7 +113,11 @@ IFS='|' read -r above member new_schema creates locked beyond_rows owned count <
     die 1 "$APP_ROLE owns $owned object(s) of $PGDATABASE or of the server (a table, a function, a schema, a database) and could alter or drop them; as the owner: reassign owned by \"$APP_ROLE\" to \"$owner\""
 [ "$new_schema" = f ] ||
     die 1 "$APP_ROLE may create a schema in $PGDATABASE, and tables of its own in it (granted to PUBLIC?)"
-[ "$creates" = 0 ] || die 1 "$APP_ROLE may create objects in $creates schema(s) of $PGDATABASE"
+# Only the schema of the application, and only to use it: whatever lives in another
+# schema is reached through that schema, so one count covers its tables, sequences
+# and functions alike.
+[ "$creates" = 0 ] ||
+    die 1 "$APP_ROLE may create in a schema of $PGDATABASE, or use one besides public: $creates schema(s) (granted to the role or to PUBLIC)"
 [ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked table(s) or sequence(s)"
 [ "$beyond_rows" = 0 ] ||
     die 1 "$APP_ROLE holds a right above reading and writing rows on $beyond_rows table(s) or sequence(s): truncate, references or trigger on a table, update on a sequence (granted to PUBLIC?)"
