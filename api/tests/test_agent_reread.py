@@ -127,7 +127,9 @@ class Model:
         self._say = say
         self.inputs: list[str] = []
 
-    def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout=None
+    ) -> LLMTurn:
         self.inputs.append(input_text)
         if self._steps:
             step = self._steps.pop(0)

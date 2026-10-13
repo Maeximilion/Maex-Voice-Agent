@@ -114,14 +114,18 @@ def the_call(session, session_id: str) -> Call:
 class BrokenLLM:
     """A model, or anything behind it, that fails in the middle of a call."""
 
-    def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout=None
+    ) -> LLMTurn:
         raise RuntimeError("model endpoint down")
 
 
 class NoLLM:
     """Fails the test if the agent is asked at all."""
 
-    def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout=None
+    ) -> LLMTurn:
         raise AssertionError("the agent must not answer this call")
 
 
@@ -530,7 +534,9 @@ def test_model_on_the_phone_line_gets_the_tool_reference(session, tenant):
     prompts = []
 
     class Listening:
-        def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+        def next_turn(
+            self, system_prompt, state_json, input_text, *, timeout=None
+        ) -> LLMTurn:
             prompts.append(system_prompt)
             return LLMTurn(say="Auf Wiederhören.")
 
@@ -555,7 +561,9 @@ REPLY = "Was darf es sein?"
 
 
 class Talks:
-    def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout=None
+    ) -> LLMTurn:
         return LLMTurn(say=REPLY)
 
 
@@ -688,7 +696,9 @@ def test_an_answer_that_comes_after_the_tenants_limit_is_not_spoken(session, ten
     port, clock = FakeTelephony(), Clock()
 
     class Slow:
-        def next_turn(self, system_prompt, state_json, input_text) -> LLMTurn:
+        def next_turn(
+            self, system_prompt, state_json, input_text, *, timeout=None
+        ) -> LLMTurn:
             clock.now += 60
             return LLMTurn(say=REPLY)
 

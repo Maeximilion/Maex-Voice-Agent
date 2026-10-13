@@ -117,7 +117,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 |---|---|
 | `prompt.py` | System-Prompt aus `prompts/system_vN.md` plus Menü-Index bauen |
 | `state.py` | kompakter Gesprächszustand (05 §5) statt wachsendem Verlauf |
-| `loop.py` | Kundenzug → Modell → Tool-Aufrufe → Antwort; Abbruch bei `max_call_seconds` |
+| `loop.py` | Kundenzug → Modell → Tool-Aufrufe → Antwort; Abbruch bei `max_call_seconds`, and on the phone line when one guest turn takes longer than `turn_deadline_seconds` |
 | `dispatch.py` | Tool-Name → `domain`-Funktion, mit Zeitmessung. `search_menu` zerlegt hier einen Satz mit mehreren Positionen (`split_positions`) und sucht je Teil; `draft_order` bekommt den Schlüssel aus den Angaben des Anrufs |
 | `ladder.py` | die Verständnis-Leiter als Zustandsmaschine: zählt Fehlversuche, steigt die Stufe |
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |

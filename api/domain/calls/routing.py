@@ -27,6 +27,9 @@ class CallRouting:
     tenant_name: str
     # The longest a call with the agent may last before it goes to the team.
     max_call_seconds: int
+    # The longest a guest waits in silence for the answer to one sentence
+    # before the call goes to the team (#252).
+    turn_deadline_seconds: int
 
 
 def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
@@ -39,4 +42,5 @@ def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
         team_phone=config.team_phone,
         tenant_name=tenant.name,
         max_call_seconds=config.max_call_seconds,
+        turn_deadline_seconds=config.turn_deadline_seconds,
     )

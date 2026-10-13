@@ -153,6 +153,7 @@ Sofort und ohne Diskussion:
 - Allergie ohne gepflegten DB-Wert
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
 - Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
+- The guest waits longer than `turn_deadline_seconds` for the answer to one sentence (#252; the tenant's value, read with the same routing; phone line only). The guest hears the outage sentence of §6, not a new one. Once the voice layer can say "Bitte warten Sie einen Moment" while a turn runs (T-1.11), the value goes from 10 to 15 in the database (Maxi, 12.10.2026); the code does not change for that
 
 ---
 

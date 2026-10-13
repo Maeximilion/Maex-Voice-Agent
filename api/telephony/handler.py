@@ -94,6 +94,8 @@ class _LiveCall:
     team_phone: str
     state: ConversationState
     loop: ConversationLoop | None = None
+    # The model client of this call, made by the factory and closed with the call.
+    llm: LLMClient | None = None
     # Silences in a row that the code has answered with a question.
     silences: int = 0
 
@@ -218,15 +220,18 @@ class CallHandler:
             # the agent says nothing at all.
             self._transfer(live, routing.team_phone)
             return
+        live.llm = self._llm_factory(live.session)
         live.loop = ConversationLoop(
             live.session,
-            self._llm_factory(live.session),
+            live.llm,
             # The same prompt as the text phone and the evals (sim/session.py):
             # a real model learns the tools from it.
             build_system_prompt(tools=True),
             # The tenant's limit, not the setting of the same name: that one
             # is only what the seed writes into a new tenant.
             max_call_seconds=routing.max_call_seconds,
+            # Only here a guest holds a receiver and waits (#252).
+            turn_deadline_seconds=routing.turn_deadline_seconds,
             now=self._now,
             clock=self._clock,
         )
@@ -346,6 +351,7 @@ class CallHandler:
             logger.exception("call log could not be closed")
         finally:
             _close_quietly(live.session)
+            _close_model(live.llm)
 
     # -- bookkeeping ---------------------------------------------------------------
 
@@ -390,3 +396,16 @@ def _close_quietly(session: Session | None) -> None:
         session.close()
     except Exception:
         logger.exception("database session could not be closed")
+
+
+def _close_model(llm: LLMClient | None) -> None:
+    """A client that talks to a model server holds connections (`ChatCompletionsLLM`);
+    one per call and never closed, they pile up over a day of calls (#252). A
+    client with nothing to close has no `close`."""
+    close = getattr(llm, "close", None)
+    if close is None:
+        return
+    try:
+        close()
+    except Exception:
+        logger.exception("model client could not be closed")

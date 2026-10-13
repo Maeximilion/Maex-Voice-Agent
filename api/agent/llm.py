@@ -61,7 +61,15 @@ class LLMTurn:
 
 class LLMClient(Protocol):
     def next_turn(
-        self, system_prompt: str, state_json: dict[str, Any], input_text: str
+        self,
+        system_prompt: str,
+        state_json: dict[str, Any],
+        input_text: str,
+        *,
+        # Seconds the caller still waits for this answer (`loop.py`, the turn
+        # deadline of #252). None: the client's own limit. A client that calls
+        # nothing outside its process has nothing to cut and ignores it.
+        timeout: float | None = None,
     ) -> LLMTurn: ...
 
 
@@ -75,7 +83,12 @@ class FakeLLM:
         self.calls: list[tuple[str, dict[str, Any], str]] = []
 
     def next_turn(
-        self, system_prompt: str, state_json: dict[str, Any], input_text: str
+        self,
+        system_prompt: str,
+        state_json: dict[str, Any],
+        input_text: str,
+        *,
+        timeout: float | None = None,
     ) -> LLMTurn:
         self.calls.append((system_prompt, state_json, input_text))
         if not self._turns:
@@ -248,6 +261,7 @@ class ChatCompletionsLLM:
         transport: httpx.BaseTransport | None = None,  # replaceable for tests
     ):
         self._model = model
+        self._timeout = timeout
         self.usage = Usage(model=model)
         self._http = httpx.Client(
             base_url=base_url,
@@ -276,8 +290,19 @@ class ChatCompletionsLLM:
         self._http.close()
 
     def next_turn(
-        self, system_prompt: str, state_json: dict[str, Any], input_text: str
+        self,
+        system_prompt: str,
+        state_json: dict[str, Any],
+        input_text: str,
+        *,
+        timeout: float | None = None,
     ) -> LLMTurn:
+        # What is left of the guest's wait cuts the request short, never
+        # stretches it: the client's own limit stays the upper one. The limit
+        # counts for each phase on the wire (connect, send, the wait for the
+        # answer), so a request can outlast it by the phases before the last;
+        # `loop.py` checks the clock again once the answer is in.
+        within = self._timeout if timeout is None else min(timeout, self._timeout)
         state = json.dumps(state_json, ensure_ascii=False, default=str)
         # The format follows the state: the rules for `cart` go out only once
         # the state carries an order. At the end of the message, so the long
@@ -309,7 +334,7 @@ class ChatCompletionsLLM:
             unmetered=self.usage.unmetered + 1,
         )
         try:
-            response = self._http.post("chat/completions", json=body)
+            response = self._http.post("chat/completions", json=body, timeout=within)
             response.raise_for_status()
             payload = response.json()
             # Before the answer is judged: one outside the contract cost the same.

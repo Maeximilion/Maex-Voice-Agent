@@ -111,7 +111,8 @@ class ServiceConfig(Timestamps, Base):
     # The two other limits of #252, in the same migration. An order above this
     # amount waits for the team's approval before a slip prints
     # (domain/ordering/confirm.py). A guest waits this long in silence for the
-    # model before the call goes to the team: read by nothing yet.
+    # answer to one sentence before the call goes to the team (the phone line:
+    # domain/calls/routing.py, agent/loop.py).
     order_approval_above_cents: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="15000"
     )
