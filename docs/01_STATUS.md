@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.29
+> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.30
 
 ---
 
@@ -189,6 +189,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
     - **Operations view without an access check of its own: recorded 12.10.2026** as accepted for stage 1, the proxy is the check (docs/13 §3).
     - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
     - Left in #252 for later: `USER` in the Dockerfile, the installer checksum, the allergy pattern in `wishes.py`; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers.
+    - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). Dependabot works on the compiled lock file: its pull request #261 changes `api/requirements.in` and the hashed `api/requirements.txt`, checks green; no run had to be triggered. Not found: what "confirm the repository origin in the app" referred to.
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -501,6 +502,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.30 · 13.10.2026:** Ruleset on main applied (four required checks); Dependabot seen working on the compiled lock file (#261)
 - **v2.1.29 · 13.10.2026:** #252: an order that waits for Passt longer than the restaurant's minutes turns red on the tablet (migration 008, order_approval_overdue_minutes)
 - **v2.1.28 · 13.10.2026:** Codex review of 5aa6442 on PR #287: a tool is not cut off by the turn deadline, noted as an open point (P2)
 - **v2.1.27 · 13.10.2026:** #252: one guest turn on the phone has the tenant's deadline (turn_deadline_seconds), then the outage sentence and the team; the call handler closes the model client
