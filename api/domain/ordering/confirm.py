@@ -130,7 +130,10 @@ def _waits_for(order: Order, config: ServiceConfig) -> str | None:
     """
     if config.call_mode != DIRECT_MODE:
         return "mode"
-    if order.total_cents > config.order_approval_above_cents:
+    limit = config.order_approval_above_cents
+    # Zero is the setting "the team sees every order", so it also holds the one
+    # that costs nothing (a dish priced at zero), which no amount is above.
+    if limit == 0 or order.total_cents > limit:
         return "amount"
     return None
 

@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from api.domain.ordering import draft_order
 from api.domain.ordering.board import approve_order
-from api.models import AuditLog, Order, ServiceConfig
+from api.models import AuditLog, MenuItem, Order, ServiceConfig
 from api.tests.test_domain_confirm_order import _confirm, _events, _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
 
@@ -116,6 +116,27 @@ def test_the_limit_of_the_migration_holds_an_order_above_150_euros(
 def test_a_limit_of_zero_holds_every_order(session, tenant_id, call_id):
     _limit(session, tenant_id, 0)
     order_id = _order(session, tenant_id, call_id, quantity=1)
+
+    assert _confirm(session, tenant_id, call_id, order_id).handover == (
+        "awaiting_approval"
+    )
+    assert _events(session) == []
+
+
+def test_a_limit_of_zero_also_holds_an_order_that_costs_nothing(
+    session, tenant_id, call_id
+):
+    """Zero means the team sees every order. A dish priced at zero makes an
+    order no amount is above (Codex, PR #283)."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(price_cents=0)
+    )
+    session.commit()
+    _limit(session, tenant_id, 0)
+    order_id = _order(session, tenant_id, call_id, quantity=1)
+    assert session.get(Order, order_id).total_cents == 0
 
     assert _confirm(session, tenant_id, call_id, order_id).handover == (
         "awaiting_approval"
