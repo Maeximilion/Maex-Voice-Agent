@@ -1,0 +1,47 @@
+{
+  "id": "abholung_0082",
+  "name": "A card number the menu does not have, next to a dish by name: the number is not swallowed and its quantity does not move to the other dish",
+  "tags": [
+    "abholung",
+    "menu",
+    "nummer",
+    "mehrere_positionen",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 99 und Pho Bo."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller"
+  }
+}
