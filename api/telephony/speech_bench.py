@@ -143,8 +143,13 @@ def load_ear(spec: dict[str, Any], models: Path) -> tuple[Ear, Fit]:
         import onnx_asr
 
         parakeet = onnx_asr.load_model(spec["model"], models / spec["model"])
+        # Only for a model that takes it (Canary): Parakeet finds the language
+        # itself and has no way to be told.
+        options = {"language": spec["language"]} if spec.get("language") else {}
         return (
-            lambda audio, terms: parakeet.recognize(audio, sample_rate=EAR_RATE),
+            lambda audio, terms: parakeet.recognize(
+                audio, sample_rate=EAR_RATE, **options
+            ),
             lambda terms: [],
         )
     raise ValueError(f"unknown ear engine {spec['engine']!r}")
