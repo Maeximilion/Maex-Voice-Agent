@@ -246,6 +246,8 @@ SAID = [["13", 2], ["26d", 1], ["s12", 1]]
         ("Zweimal die 13, die 26d und einmal ist zwölf.", "asked", 2),
         # A number the menu does not have is said so, not taken.
         ("Zweimal die 13, die 99 und einmal die S12.", "asked", 2),
+        # The Sushi number without a quantity, behind two other dishes.
+        ("Die 26d, zweimal die 13 und die S12", "right", 3),
         # No separator left: one sentence with three numbers is a question.
         ("Zweimal die 13 die 26d einmal die S12", "asked", 0),
         ("", "asked", 0),

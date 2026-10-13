@@ -116,22 +116,26 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
     """The positions of a sentence, as the conversation finds them
     (`search.position_parts`), for sentences of card numbers.
 
-    First by the sentence alone. "Einmal die 36a und die S37" stays whole
-    there, because "die S37" opens no position without the menu; then every
-    piece at the separators counts as a position if each of them leads to a
-    dish of the menu, clearly or through a heard letter. One piece that does
-    not, and the sentence stays whole and the search asks. A piece that is a
-    dish name is not looked up here: this judge has no name search, so such a
-    sentence stays whole, which is the cautious verdict.
+    First by the sentence alone, then each part with the menu: "Einmal die 36a
+    und die S37" stays whole by the sentence, because "die S37" opens no
+    position without the menu, and every piece at the separators is a position
+    if each of them is one card number - one that leads to a dish, clearly or
+    through a heard letter, or one the menu does not have, which the search
+    then says. A piece that is no single card number keeps the sentence whole,
+    and the search asks. A piece that is a dish name is not looked up here:
+    this judge has no name search, so such a sentence stays whole, which is
+    the cautious verdict.
     """
     parts = split_positions(heard)
+    if len(parts) > 1:
+        return [position for part in parts for position in positions(part, menu)]
     pieces = raw_pieces(heard)
-    if len(parts) > 1 or len(pieces) <= 1:
+    if len(pieces) <= 1:
         return parts
     for piece in pieces:
         got = resolve(piece, menu.card)
-        found = dishes(got, menu)
-        if not found or (len(found) > 1 and "?" not in got):
+        several = len(dishes(got, menu)) > 1 and "?" not in got
+        if got in ("?", "name") or several:
             return parts
     return pieces
 

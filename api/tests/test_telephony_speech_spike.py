@@ -1050,13 +1050,13 @@ def test_a_spoken_order_is_right_as_it_is_said(tmp_path):
     assert set(said_verdicts(plan)) == {"right"}
 
 
-def test_a_spoken_order_of_the_eval_menu_is_never_wrong_as_it_is_said():
-    """With prefixed numbers on the menu some orders end in a question as text
-    already: "die S1" behind two other dishes opens no position for the
-    conversation (open point in docs/01_STATUS.md). The report shows that share
-    (`orders_right_as_said_share`); what the kit says is never a wrong order."""
+def test_a_spoken_order_of_the_eval_menu_is_right_as_it_is_said():
+    """With prefixed numbers on the menu as well: "die S1" behind two other
+    dishes is a position of its own since eval abholung_0081. The report shows
+    the share that is right as text (`orders_right_as_said_share`), so a run
+    tells what the rule costs from what the ear costs."""
     verdicts = said_verdicts(kit.build_plan(None, orders=40, sizes=(2, 3, 4, 12)))
-    assert "wrong" not in verdicts and verdicts.count("right") > len(verdicts) / 2
+    assert set(verdicts) == {"right"}
 
 
 def test_spoken_orders_take_their_dishes_from_the_menu_given(tmp_path):
