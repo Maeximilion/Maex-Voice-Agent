@@ -42,7 +42,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | reservation_max_days_ahead | INT ≥ 0 | how many days ahead a table can be booked by phone, counted in calendar days of the restaurant, default 90 (#252, migration 007). 0: today only |
 | reservation_max_party_size | INT ≥ 0 | largest party the agent books itself, default 8 (#252, migration 007). Above it `check_slot` answers `team_callback` and the team calls back. 0: the team confirms every table |
 | reservation_max_party_size_same_day | INT ≥ 0 | the same limit for a table on the same day, default 5 (#252, migration 007). The smaller of the two counts on that day |
-| order_approval_above_cents | INT ≥ 0 | an order above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000 (#252, migration 007). **Read by nothing yet**, its behaviour has a pull request of its own to come |
+| order_approval_above_cents | INT ≥ 0 | an order whose total is above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000, 0 holds every order (#252, migration 007). Read by `confirm` since 13.10.2026 (`domain/ordering/confirm.py`, docs/04 §confirm) |
 | turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
 
 ### `opening_hours`
@@ -340,6 +340,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
 | 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
 | 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
-| 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` and `turn_deadline_seconds`: the two other limits of #252, in the same migration; the deadline is read by the phone line since 13.10.2026, the order limit has its own pull request (#283) |
+| 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

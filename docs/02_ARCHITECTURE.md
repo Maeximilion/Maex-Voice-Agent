@@ -116,6 +116,8 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 | `primary` | KI nimmt zuerst an, Team bleibt über die Durchwahl erreichbar. | 6 |
 | `paused` | KI ist aus, alle Anrufe gehen direkt ans Team. Der Not-Aus-Knopf der GUI. | jederzeit |
 
+Whatever the mode (#252, Maxi 12.10.2026): an order above `service_config.order_approval_above_cents` (150 euros unless the restaurant sets another amount) waits for the approval in the GUI before a slip prints, in `primary` as well. The guest's yes confirms it all the same (`domain/ordering/confirm.py`, docs/04 §confirm).
+
 A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the routing in front of the voice layer says.
 
 ---

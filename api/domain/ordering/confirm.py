@@ -10,6 +10,10 @@ Primaerbetrieb geht sie sofort an die Kueche (`order.confirmed` in die Outbox,
 Tablet (T-4.7); bis dahin entsteht kein Ereignis, und die Antwort sagt
 `awaiting_approval`. Die Entscheidung haengt an der Zeile, nicht am Modus
 von jetzt: ein spaeterer Moduswechsel aendert die Antwort auf einen Replay nicht.
+
+Since #252 the amount holds a ticket back as well: an order above
+`service_config.order_approval_above_cents` waits for "Passt" in every mode,
+the direct one included (`_waits_for`). The guest's yes still confirms it.
 """
 
 from sqlalchemy import func, select, text
@@ -80,7 +84,8 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
     if config is None or tenant is None:
         raise NotFound("Mandant ohne service_config", say=SAY_STOERUNG)
 
-    direct = config.call_mode == DIRECT_MODE
+    waits_for = _waits_for(order, config)
+    direct = waits_for is None
     order.status = "confirmed"
     order.pickup_code = _next_pickup_code(session, order, tenant.timezone)
     order.handover_state = "pending" if direct else None
@@ -97,6 +102,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
                 "idempotency_key": req.idempotency_key,
                 "pickup_code": order.pickup_code,
                 "call_mode": config.call_mode,
+                "waits_for": waits_for,
             },
         )
     )
@@ -109,6 +115,27 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
         )
     session.commit()
     return _answer(order)
+
+
+def _waits_for(order: Order, config: ServiceConfig) -> str | None:
+    """Why the kitchen ticket waits for "Passt" on the tablet, or None: it goes now.
+
+    Two reasons. The mode: outside the direct one no order of the agent reaches
+    the kitchen unseen (docs/02). And the amount, whatever the mode (#252, Maxi
+    12.10.2026): an order above the restaurant's limit is one the team looks at
+    before anyone cooks it. The limit is `service_config.order_approval_above_cents`,
+    never a number here (CLAUDE.md §2 rule 1); what counts is the total the
+    guest was read, items and delivery fee. Above the limit, not from it; a
+    limit of zero holds every order.
+    """
+    if config.call_mode != DIRECT_MODE:
+        return "mode"
+    limit = config.order_approval_above_cents
+    # Zero is the setting "the team sees every order", so it also holds the one
+    # that costs nothing (a dish priced at zero), which no amount is above.
+    if limit == 0 or order.total_cents > limit:
+        return "amount"
+    return None
 
 
 def _answer(order: Order) -> Confirmation:
