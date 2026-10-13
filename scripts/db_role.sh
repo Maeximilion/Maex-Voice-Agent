@@ -59,6 +59,10 @@ do \$\$ begin
 end \$\$;
 alter role "$APP_ROLE" login nosuperuser nocreatedb nocreaterole noreplication nobypassrls
     password '$password_sql';
+-- A role that existed may carry settings of its own (alter role ... set). With
+-- default_transaction_read_only among them every write of the application fails.
+alter role "$APP_ROLE" reset all;
+alter role "$APP_ROLE" in database "$PGDATABASE" reset all;
 SQL
     app_grants_sql "$PGDATABASE" "$APP_ROLE"
 } | pg_script "$PGDATABASE" || die 1 "the role could not be set up; nothing changed"
@@ -81,7 +85,11 @@ beyond="has_table_privilege(c.oid, 'truncate') or has_table_privilege(c.oid, 're
 counted="case when c.relkind = 'S' then has_sequence_privilege(c.oid, 'usage') and has_sequence_privilege(c.oid, 'select') end"
 settable="case when c.relkind = 'S' then has_sequence_privilege(c.oid, 'update') end"
 schemas="from pg_namespace n where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) from pg_class c where c.relowner = r.oid) + (select count(*) from pg_namespace n where n.nspowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+# Whatever the role owns, of every kind: pg_shdepend holds one owner entry for each
+# object a role owns in a database (a table, a function, a type, a schema) and,
+# under database 0, for what it owns on the server (a database, a tablespace).
+owned_objects="from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = r.oid and d.deptype = 'o' and d.dbid in (0, (select oid from pg_database where datname = current_database()))"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) $owned_objects), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
 # Through DATABASE_URL itself, with every parameter the application will use
 # (sslmode and the like): a login that only works the owner's way proves nothing.
 seen="$(
@@ -101,7 +109,7 @@ IFS='|' read -r above member new_schema creates locked beyond_rows owned count <
 # migration ran as the application's user: run them with scripts/migrate.sh. Asked
 # before the rights on tables: an owner holds all of them, and the cause is this.
 [ "$owned" = 0 ] ||
-    die 1 "$APP_ROLE owns $owned object(s) of $PGDATABASE (tables, indexes, sequences, schemas) and could alter or drop them; as the owner: reassign owned by \"$APP_ROLE\" to \"$owner\""
+    die 1 "$APP_ROLE owns $owned object(s) of $PGDATABASE or of the server (a table, a function, a schema, a database) and could alter or drop them; as the owner: reassign owned by \"$APP_ROLE\" to \"$owner\""
 [ "$new_schema" = f ] ||
     die 1 "$APP_ROLE may create a schema in $PGDATABASE, and tables of its own in it (granted to PUBLIC?)"
 [ "$creates" = 0 ] || die 1 "$APP_ROLE may create objects in $creates schema(s) of $PGDATABASE"

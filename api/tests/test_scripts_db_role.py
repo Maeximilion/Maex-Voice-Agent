@@ -251,6 +251,42 @@ def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
     assert f"{role} is a member of 1 other role" in done.stderr
 
 
+def test_a_role_that_owns_a_function_and_nothing_else_is_reported(db, role, tmp_path):
+    """Not only tables: the owner of a trigger function can rewrite it and break
+    every write that fires it (Codex, PR #281)."""
+    _sql(db, f'create role "{role}"')
+    _sql(
+        db,
+        "create function probe_stamp() returns trigger language plpgsql "
+        "as $$ begin return new; end $$",
+    )
+    _sql(db, f'alter function probe_stamp() owner to "{role}"')
+
+    done = _script("db_role.sh", app_url=_as(role, db), owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 1, done.stdout
+    assert f"{role} owns 1 object(s)" in done.stderr
+
+
+def test_settings_a_reused_role_carries_are_reset(db, role, tmp_path):
+    """`alter role ... set default_transaction_read_only = on` would pass every
+    check that only reads and fail every write of the application (Codex, PR #281)."""
+    name = make_url(db).database
+    _sql(db, f'create role "{role}"')
+    _sql(db, f'alter role "{role}" set default_transaction_read_only = on')
+    _sql(
+        db,
+        f'alter role "{role}" in database "{name}" set statement_timeout = 1',
+    )
+    app = _as(role, db)
+
+    done = _script("db_role.sh", app_url=app, owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 0, done.stderr
+    _sql(app, "insert into backup_probe values (3, 'written by the role')")
+    assert _sql(app, "show statement_timeout") == [("0",)]
+
+
 def test_rights_the_role_was_granted_before_are_taken_away(db, role, tmp_path):
     """A role that existed with more ends like a new one (Codex, PR #281):
     granting the wanted rights on top would leave it able to empty a table or
