@@ -487,6 +487,28 @@ def test_what_was_said_before_the_answer_began_does_not_stop_it(call):
     assert call.line.played()[-2:] == ["Nummer 23.", "Nummer 13."]
 
 
+def test_speech_that_began_before_the_answer_does_not_stop_it(call):
+    """The guest was already saying the next sentence while the core worked on
+    the first. That partial is older than the answer on the line: no barge-in,
+    as for the finished utterance (Codex PR #286)."""
+
+    class Slow(FakeMouth):
+        def speak(self, text):
+            call.clock.now += 2.0
+            return super().speak(text)
+
+    call.s._mouth = Slow()
+    call.core.replies["Die 23"] = [("say", "Nummer 23.", True)]
+    call.start()
+    call.clock.now += 1.0
+    call.ear.hear(Heard("Die 23", ended_at=call.clock.now))
+    call.ear.hear(Heard("und die dreizehn", final=False))
+    call.s.drain()
+    assert call.line.played() == ["Nummer 23."] and "flush" not in call.line.kinds()
+    call.partial("und die dreizehn bitte")  # still speaking, now over the answer
+    assert call.line.kinds()[-1] == "flush"
+
+
 def test_nothing_is_interrupted_once_a_transfer_or_hangup_waits(call):
     call.core.replies["Tschüss"] = [("say", "Auf Wiederhören.", True), ("hangup",)]
     call.start(GREETING)
@@ -800,6 +822,19 @@ def test_a_crash_in_the_core_ends_the_session_without_a_hangup(call):
     assert call.core.calls[-1] == ("voice_failure",)
 
 
+def test_a_line_that_does_not_answer_does_not_hold_the_call(call):
+    """The telephone system stalls in the middle of a transfer. The one worker
+    of the call must not wait in there for ever: after a deadline the session
+    ends as failed, so the leg can be closed and the dialplan rings the team
+    (Codex PR #286, rule 5)."""
+    call.line.stalls = threading.Event()
+    call.s._line_seconds = 0.05
+    call.start(("transfer", "+497215550000"))
+    call.line.stalls.set()
+    assert call.s.outcome == "failed" and call.s.transfer_target is None
+    assert call.core.count("voice_failure") == 1
+
+
 def test_a_transfer_the_telephone_system_refuses_fails_the_session(call):
     call.line.refuses_transfer = True
     call.start(("transfer", "+497215550000"))
@@ -987,6 +1022,28 @@ def test_a_sentence_without_words_is_not_spoken_and_no_failure(call):
     assert call.core.count("voice_failure") == 0
     assert call.line.played() == ["Guten Tag.", "Wie bitte?"]
     assert call.mouth.spoken == ["Guten Tag.", "Wie bitte?"]
+
+
+def test_a_mouth_that_failed_is_not_asked_for_the_outage_sentence(call):
+    """The engine hangs. Asking it again for the outage sentence would cost the
+    caller a second deadline of silence before the team is rung
+    (Codex PR #286)."""
+    hung = threading.Event()
+    asked: list[str] = []
+
+    class HungMouth(FakeMouth):
+        def speak(self, text):
+            asked.append(text)
+            hung.wait(5)
+            return super().speak(text)
+
+    call.s._mouth = HungMouth()
+    call.s._speak_seconds = 0.05
+    call.core.on_failure = OUTAGE
+    call.start(GREETING)
+    hung.set()
+    assert asked == ["Guten Tag."]
+    assert call.line.actions == [("transfer", "+497215550000")]
 
 
 def test_a_mouth_that_raises_late_is_a_failure(call):

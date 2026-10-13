@@ -77,7 +77,10 @@ class Mouth(Protocol):
 
 
 class Line(Protocol):
-    """The caller's leg. Every method raises when the telephone system refuses."""
+    """The caller's leg. Every method raises when the telephone system
+    refuses. The session gives each call a deadline and ends as failed when the
+    line does not answer in time, so the leg can be closed and the dialplan
+    rings the team."""
 
     def answer(self) -> None:
         """Pick the call up. Before this the caller hears ringing."""

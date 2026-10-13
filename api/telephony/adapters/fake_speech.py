@@ -6,6 +6,7 @@ fake line records what it was asked to do, so a test reads the call back as a
 list of actions.
 """
 
+import threading
 from collections.abc import Callable, Iterable
 
 from api.telephony.speech import Heard
@@ -73,6 +74,9 @@ class FakeLine:
         # Set to make the telephone system refuse a transfer, or a flush.
         self.refuses_transfer = False
         self.refuses_flush = False
+        # Set to an event to make the telephone system hang in a transfer
+        # until the event is set.
+        self.stalls: threading.Event | None = None
 
     def answer(self) -> None:
         self.actions.append(("answer",))
@@ -87,6 +91,8 @@ class FakeLine:
         self.actions.append(("flush",))
 
     def transfer(self, target: str) -> None:
+        if self.stalls is not None:
+            self.stalls.wait(5)
         if self.refuses_transfer:
             raise RuntimeError("the telephone system refused the transfer")
         self.actions.append(("transfer", target))
