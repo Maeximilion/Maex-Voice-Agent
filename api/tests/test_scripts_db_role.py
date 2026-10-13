@@ -251,6 +251,29 @@ def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
     assert f"{role} is a member of 1 other role" in done.stderr
 
 
+def test_a_url_that_switches_to_another_role_is_refused(db, role, tmp_path):
+    """`options=-c role=...`: the proof would be about the role switched to,
+    while the one that logged in keeps its memberships and can switch back
+    (Codex, PR #281)."""
+    other = f"{role}_other"
+    _sql(db, f'create role "{role}"')
+    _sql(db, f'create role "{other}"')
+    _sql(db, f'grant "{other}" to "{role}"')
+    try:
+        done = _script(
+            "db_role.sh",
+            # By hand: a rendered URL writes the blank as "+", which libpq keeps.
+            app_url=f"{_as(role, db)}?options=-c%20role%3D{other}",
+            owner_url=db,
+            tmp_path=tmp_path,
+        )
+    finally:
+        _sql(db, f'drop role "{other}"')
+
+    assert done.returncode == 1, done.stdout
+    assert "switches to another role" in done.stderr
+
+
 def test_a_role_that_owns_a_function_and_nothing_else_is_reported(db, role, tmp_path):
     """Not only tables: the owner of a trigger function can rewrite it and break
     every write that fires it (Codex, PR #281)."""

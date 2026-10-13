@@ -73,7 +73,8 @@ SQL
 # what the role itself was granted; a right that reaches it another way (through
 # PUBLIC, through another grantor) is still there and shows here. One row, read as
 # the role:
-# an attribute above a plain login | roles it is a member of | may create a schema
+# an attribute above a plain login | the role in effect is the one that logged in |
+# roles it is a member of | may create a schema
 # in the database | schemas it may create in, or use besides public | tables and
 # sequences of public it cannot use | tables it may truncate, reference or put a
 # trigger on, sequences it may set | objects it owns | tables.
@@ -90,7 +91,7 @@ schemas="from pg_namespace n where n.nspname !~ '^pg_' and n.nspname <> 'informa
 # object a role owns in a database (a table, a function, a type, a schema) and,
 # under database 0, for what it owns on the server (a database, a tablespace).
 owned_objects="from pg_shdepend d where d.refclassid = 'pg_authid'::regclass and d.refobjid = r.oid and d.deptype = 'o' and d.dbid in (0, (select oid from pg_database where datname = current_database()))"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and (has_schema_privilege(n.oid, 'create') or (n.nspname <> 'public' and has_schema_privilege(n.oid, 'usage')))), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) $owned_objects), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, session_user = current_user, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and (has_schema_privilege(n.oid, 'create') or (n.nspname <> 'public' and has_schema_privilege(n.oid, 'usage')))), (select count(*) $tables and not ($usable)) + (select count(*) $sequences and not ($counted)), (select count(*) $tables and ($beyond)) + (select count(*) $sequences and $settable), (select count(*) $owned_objects), (select count(*) $tables) from pg_roles r where r.rolname = session_user"
 # Through DATABASE_URL itself, with every parameter the application will use
 # (sslmode and the like): a login that only works the owner's way proves nothing.
 seen="$(
@@ -101,8 +102,13 @@ seen="$(
     pg_sql "$PGDATABASE" "$check"
 )" ||
     die 1 "the role is set up, but $APP_ROLE could not log in and be checked the way DATABASE_URL says, see the message above (its password, its connection parameters, pg_hba.conf of the server)"
-IFS='|' read -r above member new_schema creates locked beyond_rows owned count <<<"$seen"
+IFS='|' read -r above same_role member new_schema creates locked beyond_rows owned count <<<"$seen"
 [ "$above" = f ] || die 1 "$APP_ROLE still holds an attribute above a plain login"
+# Everything below is asked of the role in effect. With `options=-c role=...` in
+# the URL that is another role than the one that logged in, the proof would be
+# about the wrong one, and the session could switch back at any time.
+[ "$same_role" = t ] ||
+    die 1 "DATABASE_URL logs in as $APP_ROLE and then switches to another role (options=-c role=...): the application has to work as the role it logs in as"
 # A member holds what the other role holds, the owner's rights included.
 [ "$member" = 0 ] ||
     die 1 "$APP_ROLE is a member of $member other role(s) and holds their rights; as the owner: revoke each of them from \"$APP_ROLE\""

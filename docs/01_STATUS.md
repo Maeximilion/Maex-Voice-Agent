@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.17
+> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.18
 
 ---
 
@@ -482,6 +482,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.18 · 13.10.2026:** Codex review of 31c3abc on PR #281: the role check refuses a DATABASE_URL that switches roles after the login
 - **v2.1.17 · 13.10.2026:** Codex review of 920e5a8 on PR #281: the start-up check asks session_user, a role that uses another schema is refused, connection limit and expiry of a reused role are lifted, import steps name migrate.sh
 - **v2.1.16 · 13.10.2026:** Codex review of db5db8e on PR #281: the role check counts every object the role owns (pg_shdepend), settings of a reused role are reset
 - **v2.1.15 · 13.10.2026:** Codex review of bb5e0fa on PR #281: the owner URL must name the database of DATABASE_URL (backup, restore, migrate, role), the role login is checked through DATABASE_URL itself, sequences are part of the check
