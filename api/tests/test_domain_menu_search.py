@@ -1150,6 +1150,84 @@ def test_heard_number_and_name_are_two_positions(session, sushi):
     assert suche(session, sushi, "Ist zwölf").match_type == "ambiguous"
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Nummer fünfundzwanzig die.",
+        "Nummer fünfundzwanzig, die?",
+        "Zweimal die 25 die",
+        "Die 25 die bitte",
+        "Und die 25 die noch",
+    ],
+)
+def test_25g_heard_as_25_die_asks_which_dish(session, sushi, said):
+    """Eval abholung_0080: the ear writes the trailing letter as a word, "25g"
+    as "fünfundzwanzig die". The menu has the 25 and the 25g, so the guest is
+    asked by name instead of getting the 25 (rule 2)."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["25", "25g"]
+    assert "Nummer 25, Chop Suey" in result.say
+    assert "Nummer 25g, Soße Chop Suey" in result.say
+
+
+def test_heard_suffix_with_only_the_lettered_dish_on_the_menu_offers_it(session, sushi):
+    """The menu has 35a and no 35: "35 ja" may be the 35 that does not exist
+    and a yes, so 35a is offered, never taken."""
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE] + "35a;Bun Bo Nam Bo;Hauptgerichte;12,90;;ja\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE],
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, sushi, plan, now=NOW)
+    result = suche(session, sushi, "Nummer fünfunddreißig ja.")
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["35a"]
+    assert result.say == "Meinen Sie Nummer 35a, Bun Bo Nam Bo?"
+
+
+@pytest.mark.parametrize("said", ["Nummer S sieben ja", "S7 ja.", "Sushi sieben ja"])
+def test_heard_suffix_behind_a_prefixed_number_asks_which_dish(session, sushi, said):
+    """Codex PR #282: the menu has S7 and S7a. "S sieben ja" may be either, so
+    the guest is asked by name instead of getting the S7."""
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE]
+            + "S07;Gurken Maki;Sushi;3,90;;ja\n"
+            + "S07a;Avocado Maki;Sushi;4,20;;ja\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE],
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, sushi, plan, now=NOW)
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s07", "s07a"]
+    assert "Nummer s07, Gurken Maki" in result.say
+    assert "Nummer s07a, Avocado Maki" in result.say
+
+
+@pytest.mark.parametrize(
+    "said", ["Nummer 25 der", "Die 25 bitte", "Nummer 13 die", "Die 25. Die, bitte."]
+)
+def test_word_behind_the_number_asks_nothing_without_that_dish(session, sushi, said):
+    """No 25d and no 13g on the menu: the plain number, without a question."""
+    assert suche(session, sushi, said).match_type == "exact_number"
+
+
+def test_number_with_heard_suffix_and_name_are_two_positions(session, sushi):
+    """As with the heard prefix (Codex PR #257): the number that needs a
+    question is a position of its own and does not drop out next to a name."""
+    assert position_parts(session, sushi, "25 die und Pho Bo", now=NOW) == [
+        "25 die",
+        "Pho Bo",
+    ]
+
+
 def test_category_word_without_hit_names_card_numbers(session, sushi):
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Sushi 99")
