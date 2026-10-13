@@ -255,6 +255,48 @@ def test_zweites_gericht_ohne_menge_faellt_nicht_weg(session, tenant_id, call_id
     ]
 
 
+def test_third_dish_without_a_quantity_is_taken_with_the_others(
+    session, tenant_id, call_id
+):
+    """Eval abholung_0081: of "Einmal die 23, zweimal die 47 und Pho Bo" the
+    sentence alone cut off "zweimal die 47 und Pho Bo", and that part came back
+    as a question with neither dish taken. All three come back as positions."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Einmal die 23, zweimal die 47 und Pho Bo"},
+    )
+
+    assert result.ok and result.data["match_type"] == "positions"
+    assert [p["results"][0]["number"] for p in result.data["positions"]] == [
+        "23",
+        "47",
+        "13",
+    ]
+
+
+def test_a_missing_number_next_to_a_name_is_said_and_not_swallowed(
+    session, tenant_id, call_id
+):
+    """Eval abholung_0082: "Zweimal die 99 und Pho Bo" came back as Pho Bo
+    alone, with the quantity of the dish that does not exist."""
+    result = run(
+        session,
+        tenant_id,
+        call_id,
+        "search_menu",
+        {"query": "Zweimal die 99 und Pho Bo"},
+    )
+
+    assert result.ok and result.data["match_type"] == "positions"
+    missing, found = result.data["positions"]
+    assert (missing["ok"], missing["error_code"]) == (False, "not_found")
+    assert "99" in missing["say"]
+    assert found["results"][0]["number"] == "13" and found["query"] == "Pho Bo"
+
+
 def test_umgekehrte_reihenfolge(session, tenant_id, call_id):
     result = run(
         session, tenant_id, call_id, "search_menu", {"query": "Pho Bo und die 23"}
