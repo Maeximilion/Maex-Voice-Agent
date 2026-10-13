@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.27
+> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.28
 
 ---
 
@@ -323,6 +323,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| A tool is not cut off by the turn deadline (`agent/loop.py`) | Codex on PR #287, P2 (13.10.2026): the deadline is read before and after every model call, not while a tool runs. A tool that waits, for example `confirm` on a row lock, keeps the guest waiting past it; if it then commits, the next check still ends the turn with the outage sentence and the team, although the booking stands (the team sees it on the tablet). The same already happens when the model fails right after a `confirm`. Tools answer in milliseconds today (budget 300 ms, measured). A real bound is a lock or statement timeout on the database side for the call's session, and a tool that commits more than once would have to carry it across its transactions | With the voice layer (T-1.11), when the phone line gets its real session factory |
 | The scripted stand-in takes the first word of a split number as a quantity (`sim/scripted_order.py` `_stated_quantity`) | Found 12.10.2026 while fixing PR #271: the order "Die drei und zwanzig." books dish 23 three times, because "drei" is read as the quantity and "drei und zwanzig" as the number. An ear writes numbers that way. The read-back says "Dreimal Nummer 23", so the guest can say no; the stand-in is not operation code. Not fixed in PR #271 (its own bug, red test first) | own bug task before the audio evals (T-10.7) |
 | Our containers run as root (`api/Dockerfile` has no `USER`; `api`, `dispatcher` and `push` run with uid 0, checked on the dev stack 11.10.2026) | Raised by a friend of Maxi's, 11.10.2026. Fine on the workbench: the bind mounts and `--reload` are simpler as root. On the server a hole in the API would hand an attacker root inside the container, with the mounted source and `.env` values. `db` (uid 70) and `n8n` (uid 1000) already drop root; `caddy` needs it only to bind 80 and 443. To do: a user in `api/Dockerfile`, `user:` for `push`, the production Compose file without source mounts, and on the server a deploy user instead of a root login. The voice layer's containers (T-1.11) start that way from the beginning | With T-9.2, before the server takes a real call |
 | `.claude/hooks/sync_main.sh` (and its Codex copy) does not warn when a clean, checked-out `main` holds unpushed commits | Raised by the Codex review of PR #278 (13.10.2026), older than the PR: `git pull --ff-only` answers "already up to date" when local `main` is ahead, so a new task can start from unpublished commits. Not changed there because the Codex copy must stay identical to the tested original and that is a behaviour change of its own | A check of `origin/main..main` with its test, in the next change to the hook |
@@ -497,6 +498,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.28 · 13.10.2026:** Codex review of 5aa6442 on PR #287: a tool is not cut off by the turn deadline, noted as an open point (P2)
 - **v2.1.27 · 13.10.2026:** #252: one guest turn on the phone has the tenant's deadline (turn_deadline_seconds), then the outage sentence and the team; the call handler closes the model client
 - **v2.1.26 · 13.10.2026:** Codex review of 7bd55b8 on PR #283: a limit of zero also holds an order that costs nothing; stale sentence on the unread field corrected
 - **v2.1.25 · 13.10.2026:** #252: an order above the restaurant's limit waits for Passt on the tablet in every mode (confirm reads order_approval_above_cents)
