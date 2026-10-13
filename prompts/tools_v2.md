@@ -24,7 +24,7 @@
 **Schreibend:** braucht `idempotency_key`.
 
 ## search_menu
-**Wann:** für jedes Gericht, das der Gast nennt, bevor es in eine Bestellung kommt.
+**Wann:** sofort, wenn der Gast ein Gericht oder eine Nummer nennt, mit seinem ganzen Satz: bevor du etwas dazu sagst, nachfragst oder es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam).
 **Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (`text` ist der Küchenhinweis im festen Wortlaut, keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`. Fragt `say` nach einer Allergie („Wogegen …?"), wird die Antwort zur `note` im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14); bei mehreren Gerichten ohne Zutat eines nach dem anderen.
 **Mehrere Gerichte in einem Satz:** über HTTP `ok: false`, `error.code: "ambiguous"`, `say` lässt den Gast warten („der Reihe nach"), `message` nennt die Teile — dann je Teil neu fragen. Nur im eigenen Gesprächskern (`agent/dispatch.py`) zerlegt das Tool selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).

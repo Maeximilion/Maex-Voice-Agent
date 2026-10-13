@@ -96,8 +96,10 @@ class ConversationState(BaseModel):
     # The sentence that ended the last turn asked for the guest's number
     # (`guards.note_said`): the answer needs no word for what its digits are.
     asked_for_phone: bool = False
-    # Set by the phone line (telephony/handler.py), which says the AI disclosure
-    # before the first turn: the model must not greet a second time.
+    # The guest has heard a first sentence: the model must not greet a second
+    # time. Set by the phone line (telephony/handler.py), which says the AI
+    # disclosure before the first turn, and with the first sentence of a call
+    # on the text phone (`guards.note_said`), where the model says it.
     greeted: bool = False
     # The sentence that ended the last turn (`guards.note_said`), cut to
     # `LAST_SAY_MAX`. A model keeps nothing between turns: without it a "Ja",

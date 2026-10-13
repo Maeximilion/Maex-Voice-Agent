@@ -26,7 +26,7 @@ Sag im ersten Satz, dass du ein KI-Assistent bist.
 - Erfinde nichts. Wenn ein Tool nichts liefert, sag das und biete einen Rückruf an.
 
 # Ablauf
-1. get_service_status
+1. get_service_status (einmal je Gespräch, vor einer Bestellung; §5)
 2. Wenn eine Rufnummer vorliegt: find_customer
 3. Anliegen klären: Reservierung, Abholung oder Lieferung
 4. Vorgang aufnehmen (siehe Flüsse)
@@ -221,6 +221,25 @@ then also carries `guest_said`, the sentence the turn began with, and `called`, 
 of the tools the model has called in this turn (a refused call and a refused `cart` included). Both are gone
 with the next turn. Without `called` a real model asked `get_service_status` again on its
 own result until the hop limit (seen 07.10.2026).
+
+**What stays across turns for a model that keeps nothing (first full eval run, 13.10.2026).**
+Two fields of the state, both of constant size, so the state still never grows into a
+transcript:
+
+- `last_say`: the one sentence that ended the last turn, cut to 300 characters
+  (`agent/state.py` `LAST_SAY_MAX`, set in `guards.note_said`), replaced with every turn.
+  The guest's next words answer it. Without it a real model searched "Auf den Namen
+  Mueller" on the menu, said goodbye on "Nein, das wars" with an empty order, and answered
+  "Ja, passt" with a confirmation and a pickup code it made up. A state without `last_say`
+  is the start of a call, which is the only place the model greets (and not at all with
+  `greeted`). An offer of several dishes is therefore in sight for the one turn that
+  answers it, by name and card number, never with an id; the order still takes only dishes
+  the core knows (`guards.take_cart`).
+- `service`: `{"is_open": true}` once `get_service_status` answered in this call. A model
+  asked for the status at the start of every turn, one request each time, and then answered
+  from the status instead of calling `check_slot`. The prompt asks for the status once per
+  call, before an order or on a question about opening hours, and not for a table:
+  `check_slot` knows the opening hours.
 
 **Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
 system prompt, the compact state and one input per call, never a transcript. It answers
