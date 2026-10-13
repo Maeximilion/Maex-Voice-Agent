@@ -477,7 +477,7 @@ class DraftsATable:
         self._then_say = then_say
         self.calls: list[tuple[str, dict, str]] = []
 
-    def next_turn(self, system_prompt, state_json, input_text):
+    def next_turn(self, system_prompt, state_json, input_text, *, timeout=None):
         self.calls.append((system_prompt, state_json, input_text))
         if len(self.calls) == 1:
             return LLMTurn(

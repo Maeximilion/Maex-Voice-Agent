@@ -148,7 +148,12 @@ class ScriptedLLM:
         self._opening_allergy: str | None = None
 
     def next_turn(
-        self, system_prompt: str, state_json: dict[str, Any], input_text: str
+        self,
+        system_prompt: str,
+        state_json: dict[str, Any],
+        input_text: str,
+        *,
+        timeout: float | None = None,  # rules answer at once: nothing to cut off
     ) -> LLMTurn:
         if state_json.get("greeted"):
             # The phone line said the disclosure already (telephony/handler.py).
