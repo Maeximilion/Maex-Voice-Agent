@@ -316,10 +316,24 @@ def _position_parts(
     dish, even if "Fisch" and "Chips" are dishes on their own too - also in
     the middle of a list ("Fisch und Chips und Pho Bo", Codex PR #127, P1).
     The search goes from the left, longest piece first.
+
+    A part the sentence cut off gets the same check with the menu: in "die 25,
+    zweimal die 12 und die S12" the last dish opens no position by the sentence
+    alone and stayed in the part before it, which then was a question about two
+    numbers; with a name there ("zweimal die 24 und Pho Bo") the part answered
+    that it takes the dishes in turn, and took neither (eval abholung_0081).
     """
     parts = split_positions(query)
     if len(parts) > 1:
-        return parts
+        # Read the menu once for all parts.
+        card = card if card is not None else card_format(session, tenant_id)
+        return [
+            position
+            for part in parts
+            for position in _position_parts(
+                session, tenant_id, part, now, high, low, card
+            )
+        ]
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
@@ -363,8 +377,19 @@ def _position_parts(
             piece = pieces[i]
             try:
                 found = search(piece)
-            except (Ambiguous, NotFound):
+            except Ambiguous:
                 return [query]
+            except NotFound:
+                # "Zweimal die 99 und Pho Bo": a piece that is one card number
+                # is a position whether the menu has it or not, and its search
+                # says that it does not exist. Kept whole, the name search
+                # found Pho Bo alone and took it twice (eval abholung_0082).
+                # Any other piece that hits nothing is part of a name.
+                if sole_item_number(piece, piece_card)[0] is None:
+                    return [query]
+                positions.append(piece)
+                i += 1
+                continue
             if found.match_type not in CLEAR_MATCHES or not found.results:
                 # "Ist zwölf und Pho Bo": the number that went through a heard
                 # letter needs a question and is a position of its own, as the
