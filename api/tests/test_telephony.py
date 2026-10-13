@@ -924,6 +924,28 @@ def test_a_yes_spoken_into_the_read_back_books_nothing(session, tenant):
     assert _reservation_of(session, "voice-1").status == "confirmed"
 
 
+def test_a_yes_that_was_queued_before_the_read_back_books_nothing(session, tenant):
+    """Hard rule 3 on the wire (Codex PR #286): the guest gives the name and
+    says "Ja" at once, before the worker has handled the name. The core has
+    "said" the read-back by then, but the guest has not heard a word of it."""
+    from api.telephony.speech import Heard
+
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says(WISH)
+    wire.played()
+    wire.now += 1.0
+    wire.ear.hear(Heard("Auf den Namen Mueller.", ended_at=wire.now))
+    wire.ear.hear(Heard("Ja, passt so.", ended_at=wire.now + 0.5))
+    wire.call.drain()
+    assert wire.line.played()[-1].endswith("Passt das so?")
+    assert _reservation_of(session, "voice-1").status == "draft"
+
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+
+
 def test_line_noise_after_the_read_back_is_no_yes(session, tenant):
     wire = _Wire(session, tenant)
     read_back = wire.until_the_read_back()

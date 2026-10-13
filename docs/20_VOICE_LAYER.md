@@ -108,10 +108,12 @@ core runs in a worker thread, and the port methods only enqueue.
 `TelephonyPort.say` gains whether a sentence may be interrupted.
 
 **Built with T-10.4 (13.10.2026): `telephony/session.py`, `telephony/speech.py`, fakes in
-`adapters/fake_speech.py`.** One worker and one queue per call: audio, keys, what the ear heard,
-what the line finished playing and what the core asks for are queued with the time they happened
-and handled strictly one after another. The core runs in that worker, and what it asks of the line
-(`Lines`, the `TelephonyPort` over all sessions) only enqueues. Three ports: `Ear`, `Mouth` and
+`adapters/fake_speech.py`.** One worker and one queue per call: audio, keys, what the ear heard
+and what the line finished playing are queued with the time they happened and handled strictly one
+after another. The core runs in that worker. What it asks of the line (`Lines`, the
+`TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
+returns, before anything that queued up behind it; timers fire on the time of the events, never
+ahead of an event that waited in the queue. Three ports: `Ear`, `Mouth` and
 `Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
 `flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
 is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
@@ -130,6 +132,9 @@ is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`
 | The caller speaks, and no word is known yet | The ear reports it as a partial, with an empty text where the engine has no partial transcripts, at least once a second. Silence is counted from that, so a long order is not answered with "Sind Sie noch da?" in the middle of it. Speech without words stops no sentence. |
 | When playback begins | When the audio is on the line, not when the sentence was asked for: what the caller said while the mouth was working is the next turn and no barge-in. |
 | A failure the core does not answer | If the core neither transfers nor hangs up after a failure, the session ends as failed instead of staying on a line it no longer listens to. |
+| An answer that was already waiting | The guest says the order and "Ja" in one breath, and the worker is still on the first sentence. By then the core has "said" the read-back and counts it as heard, while the guest has not heard a word. So what the core asks for in a turn is carried out before the next queued event: the read-back protects itself first, and the waiting "Ja" is dropped like one spoken into it (Codex PR #286). |
+| The worker is late | A key, an answer or a report from the line that arrived in time counts as in time, however late it is looked at: timers run up to the time of the next queued event, not to the clock. Two keys a second apart stay one answer after a slow turn, and a report that waited is no lost report. |
+| A hangup on a call whose voice failed | Never carried out, whoever asked for it and when: if the farewell cannot be spoken, the hangup behind it would drop the caller. The core's transfer takes the call, or the dialplan. |
 | A transfer and a hangup both asked for | The first one stands, except that a transfer replaces a hangup that still waits for its sentence: a failure during the farewell goes to the team. |
 | The session itself breaks | Nothing is hung up; the core logs the call as a failure, and the dialplan rings the team. |
 

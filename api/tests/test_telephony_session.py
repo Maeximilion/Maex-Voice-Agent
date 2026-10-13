@@ -273,6 +273,25 @@ def test_a_yes_inside_the_read_back_is_no_answer(call):
     assert call.core.turns() == ["Das wars", "Ja"]
 
 
+def test_a_yes_that_waited_in_the_queue_is_no_answer_to_the_read_back(call):
+    """The guest says the order and at once "Ja", before the worker is through
+    with the first sentence. What the core asks for in a turn is carried out
+    before anything that is queued behind that turn, so the read-back protects
+    itself before the "Ja" is looked at (Codex PR #286, hard rule 3)."""
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.ear.hear(Heard("Das wars", ended_at=call.clock.now))
+    call.ear.hear(Heard("Ja", ended_at=call.clock.now + 0.4))
+    call.s.key("1")
+    call.s.drain()
+    assert call.core.turns() == ["Das wars"] and call.core.count("dtmf") == 0
+    call.played(after=4.0)
+    call.said("Ja", after=0.5)
+    assert call.core.turns() == ["Das wars", "Ja"]
+
+
 def test_keys_pressed_inside_the_read_back_are_dropped(call):
     call.core.replies["Das wars"] = [("say", READBACK)]
     call.start(GREETING)
@@ -394,6 +413,21 @@ def test_digits_are_handed_over_after_a_gap(call):
     assert call.core.calls[-1] == ("dtmf", "42")
 
 
+def test_digits_that_waited_in_the_queue_stay_one_answer(call):
+    """The worker was busy for longer than the gap. The keys were pressed a
+    second apart, and that is what counts, not when they are looked at
+    (Codex PR #286)."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.s.key("4")
+    call.clock.now += 1.0
+    call.s.key("2")
+    call.clock.now += 10.0  # the worker comes to them only now
+    call.s.drain()
+    assert [c for c in call.core.calls if c[0] == "dtmf"] == [("dtmf", "42")]
+
+
 def test_a_hash_alone_hands_nothing_over(call):
     call.start(GREETING)
     call.played()
@@ -462,6 +496,19 @@ def test_speech_without_words_yet_is_no_silence(call):
     assert call.core.count("silence") == 1
 
 
+def test_an_answer_that_waited_in_the_queue_is_no_silence(call):
+    """The guest answered three seconds after the question, the worker comes to
+    it ten seconds later: an answer, not a silent line."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 3.0
+    call.ear.hear(Heard("Einen Tisch bitte", ended_at=call.clock.now))
+    call.clock.now += 10.0
+    call.s.drain()
+    assert call.core.turns() == ["Einen Tisch bitte"]
+    assert call.core.count("silence") == 0
+
+
 def test_a_turn_without_an_answer_starts_the_silence_too(call):
     call.start(GREETING)
     call.played()
@@ -509,6 +556,45 @@ def test_a_mouth_that_fails_still_hands_the_call_to_the_team(call):
     assert call.core.count("voice_failure") == 1
     assert call.line.played() == ["Guten Tag."]
     assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
+def test_a_farewell_that_cannot_be_spoken_does_not_end_in_a_hangup(call):
+    """The mouth fails on the last sentence and the hangup is asked for right
+    behind it. A call whose voice failed is not hung up by us: the core's
+    transfer, or the dialplan, takes it to the team (Codex PR #286, rule 5)."""
+    call.core.replies["Tschüss"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.core.on_failure = [("transfer", "+497215550000")]
+    call.start(GREETING)
+    call.played()
+    call.mouth.broken = True
+    call.said("Tschüss", after=1.0)
+    assert "hangup" not in call.line.kinds()
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
+def test_a_failed_call_the_core_has_closed_already_goes_to_the_dialplan(call):
+    """The handler had finished the call when it asked for the hangup, so it
+    does not answer the failure. No hangup either way: ended as failed."""
+    call.core.replies["Tschüss"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.mouth.broken = True
+    call.said("Tschüss", after=1.0)
+    assert "hangup" not in call.line.kinds() and call.s.outcome == "failed"
+
+
+def test_the_core_is_told_of_a_failure_even_if_the_line_refuses_the_flush(call):
+    """Two things break at once: the ear, and the line when asked to drop what
+    is queued. The core must still close its call (Codex PR #286)."""
+    call.core.replies["Was gibt es"] = [("say", "Eine lange Liste.", True)]
+    call.start(GREETING)
+    call.played()
+    call.said("Was gibt es", after=1.0)
+    call.line.refuses_flush = True
+    call.ear.broken = True
+    call.s.audio(b"\x00")
+    call.s.drain()
+    assert call.core.count("voice_failure") == 1 and call.s.outcome == "failed"
 
 
 def test_a_failure_drops_what_is_still_queued(call):
@@ -650,7 +736,41 @@ def test_the_grace_counts_from_the_end_of_the_audio_not_from_its_start(call):
     assert call.core.count("voice_failure") == 1
 
 
+def test_a_report_that_waited_in_the_queue_is_no_lost_end_of_playback(call):
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.said("Das wars", after=1.0)
+    call.clock.now += 1.0
+    call.s.played(call.line.mark)  # reported in time
+    call.clock.now += GRACE * 4  # looked at late
+    call.s.drain()
+    assert call.core.count("voice_failure") == 0
+    call.said("Ja", after=0.5)
+    assert call.core.turns() == ["Das wars", "Ja"]
+
+
 # --- A mouth that takes its time, or never finishes --------------------------------------
+
+
+def test_a_second_sentence_that_took_long_to_make_is_no_lost_end_of_playback(call):
+    """Two sentences in one turn, the second took six seconds to synthesize:
+    its audio cannot be through before it was queued (Codex PR #286)."""
+
+    class SlowOnTheSecond(FakeMouth):
+        def speak(self, text):
+            if text == "Zwei.":
+                call.clock.now += 6.0
+            return super().speak(text)
+
+    call.s._mouth = SlowOnTheSecond()
+    call.core.replies["Hallo"] = [("say", "Eins.", True), ("say", "Zwei.", True)]
+    call.start()
+    call.said("Hallo", after=1.0)
+    assert call.core.count("voice_failure") == 0
+    call.played(after=1.0)
+    call.wait(SILENCE + 0.1)
+    assert call.core.count("voice_failure") == 0 and call.core.count("silence") == 1
 
 
 def test_what_was_said_while_the_mouth_was_working_does_not_stop_the_answer(call):

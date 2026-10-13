@@ -70,8 +70,9 @@ class FakeLine:
     def __init__(self) -> None:
         self.actions: list[tuple[str, ...]] = []
         self.mark = 0
-        # Set to make the telephone system refuse a transfer.
+        # Set to make the telephone system refuse a transfer, or a flush.
         self.refuses_transfer = False
+        self.refuses_flush = False
 
     def answer(self) -> None:
         self.actions.append(("answer",))
@@ -81,6 +82,8 @@ class FakeLine:
         self.mark = mark
 
     def flush(self) -> None:
+        if self.refuses_flush:
+            raise RuntimeError("the telephone system refused the flush")
         self.actions.append(("flush",))
 
     def transfer(self, target: str) -> None:

@@ -15,18 +15,27 @@ through the mouth, and keeps the rules that protect a booking on the wire:
 
 **One worker, one queue.** Everything that happens on a call is put into the
 session's queue with the time it happened: audio and keys from the line, what
-the ear heard, what the line finished playing, and what the core asks for. One
-worker (`run`) takes the events strictly one after another, so the state below
-is touched by one thread only. The core is synchronous and runs in that worker;
-while it thinks, the events of the call wait in the queue. What the core asks of
-the line through `Lines` (say, transfer, hangup) only enqueues, so it happens
-after the turn that asked for it and in the order it was asked.
+the ear heard and what the line finished playing. One worker (`run`) takes the
+events strictly one after another, so the state below is touched by one thread
+only. The core is synchronous and runs in that worker; while it thinks, the
+events of the call wait in the queue.
+
+**What the core asks for comes first.** Say, transfer and hangup (through
+`Lines`) are kept while a turn runs and carried out the moment it returns, in
+the order they were asked, before anything that queued up behind the turn. So a
+read-back protects itself before a "Ja" that was already waiting is looked at:
+the core has "said" the read-back by then, the guest has not heard a word of
+it.
+
+**Timers run on the time of the events.** A timer fires only when nothing
+older is waiting in the queue: a key, an answer or a report from the line that
+arrived in time is handled as in time, however late the worker gets to it.
 
 **What ends a session.** `outcome` says how: `hangup` (we ended the call),
 `transfer` (handed to `transfer_target`), `closed` (the caller hung up) or
 `failed`. Only `hangup` lets the dialplan end the call; after anything else it
 rings the team (docs/20 §5), so a crash here never leaves a caller on a dead
-line.
+line. A call whose voice failed is never hung up by us.
 
 The media adapter (`adapters/asterisk.py`, T-1.11) creates a session per call,
 runs its worker and feeds it; the ports for ear, mouth and line are in
@@ -100,6 +109,10 @@ class CallSession:
         self._sample_rate = sample_rate
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
+        # What the core asked for in the turn that is running, and the thread
+        # that runs it. None outside a turn.
+        self._asked: list[tuple[str, Any]] | None = None
+        self._turn_thread: int | None = None
 
         self._answered = False
         self._mark = 0
@@ -118,7 +131,9 @@ class CallSession:
         self._digits_due: float | None = None
         self._silence_due: float | None = None
         self._unheard = 0
+        # The voice failed on this call, and the core knows.
         self._failed = False
+        self._failure_told = False
 
     # -- what happens on the call: any thread, only enqueues ---------------------------
 
@@ -140,16 +155,16 @@ class CallSession:
         """The caller's leg is gone."""
         self._post("closed")
 
-    # -- what the core asks for (through `Lines`): only enqueues -----------------------
+    # -- what the core asks for (through `Lines`) --------------------------------------
 
     def say(self, text: str, interruptible: bool = False) -> None:
-        self._post("say", (text, interruptible))
+        self._ask("say", (text, interruptible))
 
     def transfer(self, target: str) -> None:
-        self._post("transfer", target)
+        self._ask("transfer", target)
 
     def hangup(self) -> None:
-        self._post("hangup")
+        self._ask("hangup")
 
     # -- the worker ---------------------------------------------------------------------
 
@@ -176,12 +191,21 @@ class CallSession:
             except queue.Empty:
                 self._step(None)
                 if self._inbox.empty():
-                    break  # no timer was due, or what it asked for is handled
+                    break  # no timer was due, or what it caused is handled
                 continue
             self._step(event)
 
     def _post(self, kind: str, payload: Any = None) -> None:
         self._inbox.put((kind, self._clock(), payload))
+
+    def _ask(self, kind: str, payload: Any = None) -> None:
+        """From the core. Inside a turn it is kept and carried out when the
+        turn returns, before anything that queued up behind the turn; outside
+        one it is an event like any other."""
+        if self._asked is not None and threading.get_ident() == self._turn_thread:
+            self._asked.append((kind, payload))
+        else:
+            self._post(kind, payload)
 
     def _until_next_timer(self) -> float | None:
         due = [
@@ -193,11 +217,13 @@ class CallSession:
 
     def _step(self, event: tuple[str, float, Any] | None) -> None:
         try:
-            if event is not None:
+            # Timers first, and only up to the time of this event: what was
+            # due before it happened before it, and nothing that is due later
+            # overtakes an event that waited in the queue.
+            self._timers(event[1] if event is not None else self._clock())
+            if event is not None and not self.over:
                 kind, at, payload = event
                 getattr(self, f"_on_{kind}")(at, payload)
-            if not self.over:
-                self._timers(self._clock())
         except Exception:
             # The core or the line raised. Nothing is hung up here: without an
             # explicit hangup the dialplan rings the team (docs/20 §5).
@@ -266,7 +292,15 @@ class CallSession:
     def _on_played(self, at: float, mark: int) -> None:
         if mark != self._mark or not self._outstanding:
             return  # an older sentence, or one that was dropped by a flush
-        self._played_to_the_end(at)
+        protected = not all(self._outstanding)
+        self._outstanding = []
+        self._playing_since = self._playing_until = None
+        if protected:
+            self._protected_until = at
+        if self._ending is not None:
+            self._perform_ending()
+        else:
+            self._wait_for_the_caller(at)
 
     def _on_say(self, at: float, payload: tuple[str, bool]) -> None:
         text, interruptible = payload
@@ -285,12 +319,16 @@ class CallSession:
             self._line.answer()
             self._answered = True
         self._mark += 1
+        # Now, not when the sentence was asked for: the mouth took its time.
+        # What the caller said meanwhile was no barge-in, and the audio cannot
+        # be through before it was queued, however long ago the sentence
+        # before it ended.
+        now = self._clock()
         if not self._outstanding:
-            # Now, not when the sentence was asked for: the mouth took its
-            # time, and what the caller said meanwhile was no barge-in.
-            self._playing_since = self._playing_until = self._clock()
-        assert self._playing_until is not None
-        self._playing_until += len(audio) / (2 * self._sample_rate)
+            self._playing_since = now
+        self._playing_until = max(self._playing_until or now, now) + len(audio) / (
+            2 * self._sample_rate
+        )
         self._outstanding.append(interruptible)
         if not interruptible:
             self._protected_until = math.inf
@@ -302,19 +340,6 @@ class CallSession:
 
     def _on_hangup(self, at: float, _: None) -> None:
         self._queue_ending(("hangup", None))
-
-    def _on_settled(self, at: float, _: None) -> None:
-        """A turn is over and what it asked for is queued: if nothing is being
-        said now, the silence counts from here."""
-        self._wait_for_the_caller(at)
-
-    def _on_failure_told(self, at: float, _: None) -> None:
-        """The core was told of a failure, and what it asked for in answer is
-        handled. If that was neither a transfer nor a hangup, the session must
-        not stay on a line it no longer listens to: ended as failed, the
-        dialplan rings the team (docs/20 §5)."""
-        if self._ending is None:
-            self._end("failed")
 
     def _on_closed(self, at: float, _: None) -> None:
         self._end("closed")
@@ -362,21 +387,10 @@ class CallSession:
             return None
         return self._playing_until + PLAYED_GRACE_SECONDS
 
-    def _played_to_the_end(self, at: float) -> None:
-        protected = not all(self._outstanding)
-        self._outstanding = []
-        self._playing_since = self._playing_until = None
-        if protected:
-            self._protected_until = at
-        if self._ending is not None:
-            self._perform_ending()
-        else:
-            self._wait_for_the_caller(at)
-
     def _stop_playback(self) -> None:
-        self._line.flush()
         self._outstanding = []
         self._playing_since = self._playing_until = None
+        self._line.flush()
 
     def _synthesize(self, text: str) -> bytes:
         """The audio of one sentence, or an exception: the engine's own, or a
@@ -400,11 +414,31 @@ class CallSession:
         return audio
 
     def _turn(self, deliver: Callable[[], None]) -> None:
-        """Hand something to the core. What it asks for is queued behind this
-        event; `settled` comes after it."""
+        """Hand something to the core, then carry out what it asked for, in
+        order and before the next event. A turn inside a turn (the core is told
+        of a failure while its sentences are being spoken) keeps its own list."""
         self._silence_due = None
-        deliver()
-        self._post("settled")
+        before = (self._asked, self._turn_thread)
+        asked: list[tuple[str, Any]] = []
+        self._asked, self._turn_thread = asked, threading.get_ident()
+        try:
+            deliver()
+        finally:
+            self._asked, self._turn_thread = before
+        for kind, payload in asked:
+            if self.over:
+                return
+            getattr(self, f"_on_{kind}")(self._clock(), payload)
+        if self.over:
+            return
+        if self._failed and self._ending is None:
+            # The voice failed and the core sends the call nowhere (it may
+            # have closed it already). The session listens to nothing any
+            # more, so it must not stay on the line: ended as failed, the
+            # dialplan rings the team (docs/20 §5).
+            self._end("failed")
+        else:
+            self._wait_for_the_caller(self._clock())
 
     def _hand_over_digits(self) -> None:
         digits, self._digits, self._digits_due = self._digits, "", None
@@ -420,20 +454,30 @@ class CallSession:
             self._silence_due = at + self._silence_seconds
 
     def _voice_failed(self) -> None:
-        """Ear or mouth failed: once, the core is told, and it sends the call
-        to the team. What was queued is dropped, the caller hears the outage
-        sentence next."""
+        """Ear or mouth failed, or the line does not say what it played: once,
+        the core is told, and it sends the call to the team. What was queued
+        is dropped, the caller hears the outage sentence next."""
         if self._failed:
             return
         self._failed = True
         self._silence_due = None
         self._digits, self._digits_due = "", None
         if self._outstanding:
-            self._stop_playback()
-        self._events.on_voice_failure(self.session_id)
-        self._post("failure_told")
+            try:
+                self._stop_playback()
+            except Exception:
+                # The line is broken as well. The core still has to close its
+                # call, and the dialplan rings the team.
+                logger.exception("what was queued could not be dropped")
+        self._failure_told = True
+        self._turn(lambda: self._events.on_voice_failure(self.session_id))
 
     def _queue_ending(self, ending: tuple[str, str | None]) -> None:
+        if self._failed and ending[0] == "hangup":
+            # A call whose voice failed is not hung up by us, whoever asked
+            # for it and when: the transfer, or the dialplan, takes it to the
+            # team (rule 5).
+            return
         # The first one stands, except that a transfer replaces a hangup that
         # still waits: a failure during the farewell goes to the team.
         if self._ending is not None and (self._ending[0], ending[0]) != (
@@ -474,7 +518,8 @@ class CallSession:
         try:
             if outcome == "closed":
                 self._events.on_call_ended(self.session_id)
-            elif outcome == "failed" and not self._failed:
+            elif outcome == "failed" and not self._failure_told:
+                self._failure_told = True
                 self._events.on_voice_failure(self.session_id)
         except Exception:
             logger.exception("the core could not be told how the call ended")
@@ -482,7 +527,7 @@ class CallSession:
 
 class Lines:
     """`port.TelephonyPort` over the live sessions: what the core asks of a
-    call goes to that call's session, which only enqueues it."""
+    call goes to that call's session."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
