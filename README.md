@@ -87,7 +87,8 @@ All settings come from `.env`. Template and description of all variables: `.env.
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres database connection |
+| `DATABASE_URL` | Postgres database connection of the application |
+| `OWNER_DATABASE_URL` | Only on the server: the owner of the schema, for migrations, backup and restore. `DATABASE_URL` then names a role without superuser that `bash scripts/db_role.sh` sets up; in `ENV=prod` the API does not start as a superuser (`docs/13_DEPLOYMENT.md` §3). Empty on the workbench |
 | `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). In `ENV=prod` the API does not start on the placeholder or on fewer than 32 characters (`openssl rand -hex 32`) |
 | `TEAM_PHONE` | Extension for forwarding to team |
 | `MAX_CALL_SECONDS` | Maximum call duration a new tenant is seeded with. A call is ended by the tenant's own value (`service_config.max_call_seconds`) |
