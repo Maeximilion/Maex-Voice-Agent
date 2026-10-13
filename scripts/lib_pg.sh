@@ -254,9 +254,20 @@ pg_resolve_app_role() { # pg_resolve_app_role <user of this connection>
 # in tables the owner creates later (migrations run as the owner). Stored in the
 # database, so a restored one needs the same statements again: a dump is restored
 # without privileges. Database and role are checked for their characters before.
+#
+# Everything the role was granted before is taken away first, so a role that
+# existed with more (TRUNCATE on a table, CREATE on the database or the schema)
+# ends with the same rights as a new one. What reaches it through PUBLIC or another
+# grantor is not revoked here; db_role.sh sees it in its check and fails.
 app_grants_sql() { # app_grants_sql <database> <role>
     cat <<SQL
 revoke create on schema public from public;
+revoke all on database "$1" from "$2";
+revoke all on schema public from "$2";
+revoke all on all tables in schema public from "$2";
+revoke all on all sequences in schema public from "$2";
+alter default privileges in schema public revoke all on tables from "$2";
+alter default privileges in schema public revoke all on sequences from "$2";
 grant connect on database "$1" to "$2";
 grant usage on schema public to "$2";
 grant select, insert, update, delete on all tables in schema public to "$2";

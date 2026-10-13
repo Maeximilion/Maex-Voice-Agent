@@ -25,14 +25,19 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib_pg.sh"
 
 pg_resolve_target
 pg_resolve_client
+[ -n "${DATABASE_URL:-}" ] || die 2 "DATABASE_URL is not set: it names the application's role"
+# The role is set up, and its login checked, on the server of the owner's URL. A
+# DATABASE_URL that points somewhere else would pass here and fail in the API.
+for part in PGHOST PGPORT PGDATABASE; do
+    [ "$(url_part "$DATABASE_URL" "$part")" = "${!part}" ] ||
+        die 2 "DATABASE_URL and the owner's URL must name the same host, port and database; they differ in ${part#PG}"
+done
 owner="$(pg_sql "$PGDATABASE" "select current_user")" ||
     die 1 "cannot connect to $TARGET_LABEL: $CONNECT_HINT"
 pg_resolve_app_role "$owner"
 [ -n "$APP_ROLE" ] ||
     die 2 "DATABASE_URL connects as $owner, the owner itself: give the application its own user and password in DATABASE_URL and name the owner in OWNER_DATABASE_URL (docs/13 §3)"
 [ -n "$APP_ROLE_PASSWORD" ] || die 2 "DATABASE_URL names no password for $APP_ROLE"
-[ "$(url_part "$DATABASE_URL" PGDATABASE)" = "$PGDATABASE" ] ||
-    die 2 "DATABASE_URL and the owner's URL name different databases"
 # A superuser of that name is somebody's administrator, not a role this script
 # made: it would lose its rights and get a new password here.
 [ "$(pg_sql "$PGDATABASE" "select rolsuper from pg_roles where rolname = '$APP_ROLE'")" != t ] ||
@@ -60,24 +65,35 @@ SQL
 } | pg_script "$PGDATABASE" || die 1 "the role could not be set up; nothing changed"
 
 # The proof from the application's side: its own user and password log in, and the
-# role holds what it needs and nothing above it. One row, read as the role:
-# an attribute above a plain login | roles it is a member of | may create in the
-# schema | tables it cannot read and write | tables it owns | tables.
-tables="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind = 'r'"
+# role holds what it needs and nothing above it. The statements above took away
+# what the role itself was granted; a right that reaches it another way (through
+# PUBLIC, through another grantor) is still there and shows here. One row, read as
+# the role:
+# an attribute above a plain login | roles it is a member of | may create a schema
+# in the database | schemas it may create in | tables it cannot read and write |
+# tables it may truncate, reference or put a trigger on | objects it owns | tables.
+tables="from pg_class c where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'p')"
 usable="has_table_privilege(c.oid, 'select') and has_table_privilege(c.oid, 'insert') and has_table_privilege(c.oid, 'update') and has_table_privilege(c.oid, 'delete')"
-check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_schema_privilege('public', 'create'), (select count(*) $tables and not ($usable)), (select count(*) $tables and c.relowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
+beyond="has_table_privilege(c.oid, 'truncate') or has_table_privilege(c.oid, 'references') or has_table_privilege(c.oid, 'trigger')"
+schemas="from pg_namespace n where n.nspname !~ '^pg_' and n.nspname <> 'information_schema'"
+check="select r.rolsuper or r.rolcreatedb or r.rolcreaterole or r.rolreplication or r.rolbypassrls, (select count(*) from pg_auth_members m where m.member = r.oid), has_database_privilege(current_database(), 'create'), (select count(*) $schemas and has_schema_privilege(n.oid, 'create')), (select count(*) $tables and not ($usable)), (select count(*) $tables and ($beyond)), (select count(*) from pg_class c where c.relowner = r.oid) + (select count(*) from pg_namespace n where n.nspowner = r.oid), (select count(*) $tables) from pg_roles r where r.rolname = current_user"
 seen="$(PGUSER="$APP_ROLE" PGPASSWORD="$APP_ROLE_PASSWORD" pg_sql "$PGDATABASE" "$check")" ||
     die 1 "the role is set up, but $APP_ROLE cannot log in with the password of DATABASE_URL (pg_hba.conf of the server?)"
-IFS='|' read -r above member creates locked owned count <<<"$seen"
+IFS='|' read -r above member new_schema creates locked beyond_rows owned count <<<"$seen"
 [ "$above" = f ] || die 1 "$APP_ROLE still holds an attribute above a plain login"
 # A member holds what the other role holds, the owner's rights included.
 [ "$member" = 0 ] ||
     die 1 "$APP_ROLE is a member of $member other role(s) and holds their rights; as the owner: revoke each of them from \"$APP_ROLE\""
-[ "$creates" = f ] || die 1 "$APP_ROLE may create objects in the schema"
-[ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked of $count tables"
-# A table's owner can alter and drop it whatever is granted. That happens when a
-# migration ran as the application's user: run them with scripts/migrate.sh.
+# An owner alters and drops what it owns whatever is granted. That happens when a
+# migration ran as the application's user: run them with scripts/migrate.sh. Asked
+# before the rights on tables: an owner holds all of them, and the cause is this.
 [ "$owned" = 0 ] ||
-    die 1 "$APP_ROLE owns $owned of $count tables and could drop them; as the owner: reassign owned by \"$APP_ROLE\" to \"$owner\""
+    die 1 "$APP_ROLE owns $owned object(s) of $PGDATABASE (tables, indexes, sequences, schemas) and could alter or drop them; as the owner: reassign owned by \"$APP_ROLE\" to \"$owner\""
+[ "$new_schema" = f ] ||
+    die 1 "$APP_ROLE may create a schema in $PGDATABASE, and tables of its own in it (granted to PUBLIC?)"
+[ "$creates" = 0 ] || die 1 "$APP_ROLE may create objects in $creates schema(s) of $PGDATABASE"
+[ "$locked" = 0 ] || die 1 "$APP_ROLE cannot read and write $locked of $count tables"
+[ "$beyond_rows" = 0 ] ||
+    die 1 "$APP_ROLE holds a right above reading and writing rows (truncate, references or trigger) on $beyond_rows of $count tables (granted to PUBLIC?)"
 echo "done: $APP_ROLE logs in, is no superuser, reads and writes $count tables and cannot change the schema"
 echo "restart api and dispatcher if DATABASE_URL changed"

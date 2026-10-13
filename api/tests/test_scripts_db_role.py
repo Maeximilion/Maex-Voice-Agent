@@ -34,6 +34,7 @@ ABOVE_THE_ROLE = (
     "alter table backup_probe add column more text",
     "truncate backup_probe",
     "create database made_by_the_role",
+    "create schema made_by_the_role",
     "create role made_by_the_role",
     "copy backup_probe to program 'true'",
 )
@@ -230,7 +231,7 @@ def test_a_role_that_owns_a_table_is_reported(db, role, tmp_path):
     done = _script("db_role.sh", app_url=app, owner_url=db, tmp_path=tmp_path)
 
     assert done.returncode == 1, done.stdout
-    assert f"{role} owns 1 of" in done.stderr and "reassign owned" in done.stderr
+    assert f"{role} owns " in done.stderr and "reassign owned" in done.stderr
 
 
 def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
@@ -245,6 +246,53 @@ def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
     assert f"{role} is a member of 1 other role" in done.stderr
 
 
+def test_rights_the_role_was_granted_before_are_taken_away(db, role, tmp_path):
+    """A role that existed with more ends like a new one (Codex, PR #281):
+    granting the wanted rights on top would leave it able to empty a table or
+    to make a schema of its own."""
+    name = make_url(db).database
+    _sql(db, f'create role "{role}"')
+    _sql(db, f'grant truncate, references, trigger on backup_probe to "{role}"')
+    _sql(db, f'grant create on database "{name}" to "{role}"')
+    _sql(db, f'grant create on schema public to "{role}"')
+    _sql(
+        db,
+        f'alter default privileges in schema public grant truncate on tables to "{role}"',
+    )
+    app = _as(role, db)
+
+    done = _script("db_role.sh", app_url=app, owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 0, done.stderr
+    _sql(db, "create table made_later (id int primary key)")
+    _sql(app, "insert into made_later values (1)")
+    for statement in (*ABOVE_THE_ROLE, "truncate made_later"):
+        assert _refused(app, statement), statement
+
+
+@pytest.mark.parametrize(
+    ("grant", "says"),
+    [
+        (
+            "grant truncate on backup_probe to public",
+            "above reading and writing rows",
+        ),
+        ('grant create on database "{name}" to public', "may create a schema"),
+    ],
+)
+def test_a_right_that_reaches_the_role_through_everyone_is_reported(
+    db, role, tmp_path, grant, says
+):
+    """The script takes away what the role itself was granted. What PUBLIC holds
+    it leaves alone, so the check at the end has to see it."""
+    _sql(db, grant.format(name=make_url(db).database))
+
+    done = _script("db_role.sh", app_url=_as(role, db), owner_url=db, tmp_path=tmp_path)
+
+    assert done.returncode == 1, done.stdout
+    assert says in done.stderr
+
+
 @pytest.mark.parametrize(
     ("application", "says"),
     [
@@ -257,8 +305,15 @@ def test_a_role_that_is_a_member_of_another_is_reported(db, role, tmp_path):
         ),
         (
             lambda owner, role: owner.set(username=role, database="another"),
-            "different databases",
+            "differ in DATABASE",
         ),
+        # The same database name on another server (Codex, PR #281): the role
+        # would be made and checked here while the API connects there.
+        (
+            lambda owner, role: owner.set(username=role, host="elsewhere"),
+            "differ in HOST",
+        ),
+        (lambda owner, role: owner.set(username=role, port=6543), "differ in PORT"),
     ],
 )
 def test_a_configuration_without_a_usable_role_is_refused(

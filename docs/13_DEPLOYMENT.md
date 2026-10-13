@@ -104,10 +104,27 @@ Annahme: Domainnamen sind Vorschläge. The real names are set as `AGENT_DOMAIN`,
 | `DATABASE_URL` | the application's role with its password, for example `maex_app` | `api`, `dispatcher`, seed, menu import |
 | `OWNER_DATABASE_URL` | the owner, `POSTGRES_USER` with `POSTGRES_PASSWORD`, same host and database | `scripts/db_role.sh`, `scripts/migrate.sh`, `scripts/backup.sh`, `scripts/restore.sh` |
 
-`bash scripts/db_role.sh` creates the role from these two lines, or brings an existing one to that state: it logs in with the password of `DATABASE_URL`, may read and write every table and use every sequence of the schema, and gets the same on every table the owner creates later. Then the script logs in as the role and checks what it holds; it exits 1 when the role holds an attribute above a plain login, is a member of another role, may create objects, cannot read a table or owns one. A role of that name that is a superuser is left as it is and the script exits 2: a typo in `DATABASE_URL` must not take an administrator's rights away. It runs on the host like the backup, through the client container on `BACKUP_DOCKER_NETWORK`, changes no data and is safe to run again. It is also how the password is changed: new password in `DATABASE_URL`, run the script, restart `api` and `dispatcher`.
+`bash scripts/db_role.sh` creates the role from these two lines, or brings an existing one to that state: it logs in with the password of `DATABASE_URL`, may read and write every table and use every sequence of the schema, and gets the same on every table the owner creates later. Then the script logs in as the role and checks what it holds; it exits 1 when the role holds an attribute above a plain login, is a member of another role, may create a schema or objects in one, cannot read a table, may truncate one, or owns anything in the database. What the role itself was granted before, on the database, the schema, tables and sequences, is revoked first, so an existing role with more ends like a new one; a right that reaches it through `PUBLIC` is not revoked and fails that check instead. A role of that name that is a superuser is left as it is and the script exits 2: a typo in `DATABASE_URL` must not take an administrator's rights away. It runs on the host like the backup, through the client container on `BACKUP_DOCKER_NETWORK`, changes no data and is safe to run again. It is also how the password is changed: new password in `DATABASE_URL`, run the script, restart `api` and `dispatcher`.
 
-- **New server:** start the database alone (`... up -d db`), run `bash scripts/db_role.sh`, start the rest, then `bash scripts/migrate.sh` and the seed.
-- **Existing volume, single user so far:** no data moves and nothing changes its owner. Backup first (`bash scripts/backup.sh --label before_roles`). In `.env`, copy the current `DATABASE_URL` into `OWNER_DATABASE_URL` and give `DATABASE_URL` the new user and a new password (`openssl rand -hex 24`). Run `bash scripts/db_role.sh`, then `... up -d` so `api` and `dispatcher` start with the new line. The way back is the old `DATABASE_URL`.
+- **New server:** the database alone, the role, the rest, the schema, and the seed where the tenant does not exist yet. `.env` holds both lines before the first command:
+
+  ```bash
+  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build db
+  bash scripts/db_role.sh
+  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+  COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.prod.yml bash scripts/migrate.sh
+  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml exec api python -m scripts.seed
+  ```
+
+- **Existing volume, single user so far:** no data moves and nothing changes its owner. Backup first, with `.env` as it is. Then, in `.env`, copy the current `DATABASE_URL` into `OWNER_DATABASE_URL` and give `DATABASE_URL` the new user and a new password (`openssl rand -hex 24` prints one). The script sets the role up, and the last command starts `api` and `dispatcher` again with the new line. The way back is the old `DATABASE_URL`.
+
+  ```bash
+  bash scripts/backup.sh --label before_roles
+  bash scripts/db_role.sh
+  docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+  ```
+
+  Both URLs must name the same host, port and database: the script refuses a `DATABASE_URL` that points at another server than the owner's.
 - **Migrations** run as the owner: `bash scripts/migrate.sh` (also `make migrate`; arguments go to Alembic, the default is `upgrade head`). It hands `OWNER_DATABASE_URL` to Alembic for that one run, in a container of its own made from the `api` service (Compose `run --rm`), so a migration needs the database up and not the API. The script cannot take `-f` flags; on the server it gets the same two files as every other command through Compose's own variable: `COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.prod.yml bash scripts/migrate.sh`. Without that the one-off container is built from the development layout (root, writable mounts). The application's role cannot change the schema, and a table created by it would be its own to drop.
 - **Backup and restore** connect as the owner too (§4). A dump is restored without privileges, so `restore.sh` gives the role its rights on the restored database before the swap; if the server does not know the role, the restore stops with nothing changed and names `db_role.sh`.
 
