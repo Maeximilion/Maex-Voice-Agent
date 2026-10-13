@@ -1093,6 +1093,10 @@ def test_card_format_knows_the_lettered_numbers_of_the_menu():
         ("Nummer sechsundzwanzig äh", ("26", "26e")),
         ("Nr. 26, einen.", ("26", "26e")),
         ("Nummer 26 ist.", ("26", "26f")),
+        # The quantity behind it, as in "die 26d zweimal".
+        ("Nummer 26 der zweimal", ("26", "26d")),
+        ("Die 26 der, zwei Portionen bitte", ("26", "26d")),
+        ("Nummer 26 der 2 x", ("26", "26d")),
         # The menu has 31a and no 31: still both, the search offers what exists.
         ("Nummer einunddreißig ja", ("31", "31a")),
         ("Nummer 026 der", ("026", "026d")),
@@ -1145,12 +1149,60 @@ def test_the_word_is_filler_where_the_menu_has_no_such_lettered_number(text):
         ("Nummer 26 d", ("26d",)),  # the letter itself was heard
         ("26d", ("26d",)),
         ("Nummer 26 d ja", ("26d",)),  # one letter is enough
+        ("Die 26 eine Portion", ("26",)),  # the quantity, not an e
+        ("Nummer 26 einmal", ("26",)),
     ],
 )
 def test_the_word_counts_only_behind_a_plain_number_at_the_end(text, cards):
     ref, unclear = sole_item_number(text, LETTERED)
     assert not unclear and ref is not None
     assert ref.cards == cards and ref.heard == ()
+
+
+# Codex PR #282: the import takes a prefix and a suffix on one number ("S7a").
+PREFIXED_LETTERED = CardFormat.from_items(
+    [(n, "Sushi") for n in ("s7", "s7a", "sm7", "s12")]
+    + [(n, "Suppen") for n in ("12", "12a")]
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "cards", "heard"),
+    [
+        ("Nummer S sieben ja", ("s7", "s7a"), ("s7a",)),
+        ("Nummer S7 ja.", ("s7", "s7a"), ("s7a",)),
+        ("S7 ja", ("s7", "s7a"), ("s7a",)),
+        ("Es sieben ja", ("s7", "s7a"), ("s7a",)),
+        ("Die S sieben ja bitte", ("s7", "s7a"), ("s7a",)),
+        # A category word: every prefix it can mean, then the lettered ones.
+        ("Sushi sieben ja", ("s7", "sm7", "s7a"), ("s7a",)),
+        # Heard in front and behind: all of it rests on heard words.
+        ("Ist zwölf ja", ("12", "s12", "12a"), ("s12", "12a")),
+    ],
+)
+def test_a_word_behind_a_prefixed_number_keeps_its_lettered_number(text, cards, heard):
+    """Codex PR #282: with S7 and S7a on the menu "Nummer S sieben ja" took the
+    S7. The lettered number is a candidate behind a prefix as behind a plain
+    number, and the search asks."""
+    ref, unclear = sole_item_number(text, PREFIXED_LETTERED)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == cards and ref.heard == heard
+    assert ref.text == " oder ".join(cards)
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Nummer S sieben der", ("s7",)),  # no S7d on this menu
+        ("Nummer S zwölf ja", ("s12",)),  # 12a exists, S12a does not
+        ("Nummer S7a", ("s7a",)),  # the letter itself was heard
+        ("Nummer S sieben ja genau", ("s7",)),
+    ],
+)
+def test_a_prefixed_number_without_that_lettered_number_stays_as_it_was(text, cards):
+    ref, unclear = sole_item_number(text, PREFIXED_LETTERED)
+    assert not unclear and ref is not None and ref.valid
+    assert ref.cards == cards and ref.heard == () and ref.choices == ()
 
 
 @pytest.mark.parametrize(

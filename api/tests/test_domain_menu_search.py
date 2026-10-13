@@ -1089,6 +1089,28 @@ def test_heard_suffix_with_only_the_lettered_dish_on_the_menu_offers_it(session,
     assert result.say == "Meinen Sie Nummer 35a, Bun Bo Nam Bo?"
 
 
+@pytest.mark.parametrize("said", ["Nummer S sieben ja", "S7 ja.", "Sushi sieben ja"])
+def test_heard_suffix_behind_a_prefixed_number_asks_which_dish(session, sushi, said):
+    """Codex PR #282: the menu has S7 and S7a. "S sieben ja" may be either, so
+    the guest is asked by name instead of getting the S7."""
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE]
+            + "S07;Gurken Maki;Sushi;3,90;;ja\n"
+            + "S07a;Avocado Maki;Sushi;4,20;;ja\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE],
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, sushi, plan, now=NOW)
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s07", "s07a"]
+    assert "Nummer s07, Gurken Maki" in result.say
+    assert "Nummer s07a, Avocado Maki" in result.say
+
+
 @pytest.mark.parametrize("said", ["Nummer 25 der", "Die 25 bitte", "Nummer 13 die"])
 def test_word_behind_the_number_asks_nothing_without_that_dish(session, sushi, said):
     """No 25d and no 13g on the menu: the plain number, without a question."""

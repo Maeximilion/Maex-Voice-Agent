@@ -168,7 +168,7 @@ _HEARD_SUFFIXES = {
     "ja": "a", "war": "b", "der": "d", "dann": "d", "die": "eg", "aeh": "e",
     "eine": "e", "einen": "e", "ist": "f",
 }  # fmt: skip
-# What may still follow such a word: "die 26 der bitte".
+# What may still follow such a word, next to a quantity: "die 26 der bitte".
 _CLOSING = frozenset({"bitte", "gern", "gerne"})
 
 
@@ -679,36 +679,47 @@ def _ref(
     card: CardFormat = NO_PREFIXES,
 ) -> ItemNumber:
     ref = _plain_ref(tokens, span, marked, glued)
-    if not span.prefixes:
-        lettered = _heard_suffixes(tokens, span.end, ref.text, card)
-        if not lettered:
-            return ref
-        # "26 der" is 26 or 26d: both are looked up, and the search asks.
-        cards = (ref.text, *lettered)
-        return ItemNumber(
-            ref.value, " oder ".join(cards), marked, True, cards, lettered
-        )
-    cards = tuple(prefix + ref.text for prefix in span.prefixes)
+    cards = tuple(prefix + ref.text for prefix in span.prefixes or ("",))
+    heard = cards[1:] if span.prefixes[:1] == ("",) else ()
+    # "26 der" is 26 or 26d, "S sieben ja" S7 or S7a: behind every candidate,
+    # with or without a prefix (Codex PR #282).
+    lettered = tuple(
+        found
+        for number in cards
+        for found in _heard_suffixes(tokens, span.end, number, card)
+    )
+    cards += lettered
+    heard += lettered
     if len(cards) == 1:
         return ItemNumber(ref.value, cards[0], marked, ref.valid)
     # What is said is what is looked up: "s12 oder sm12" (review PR #155).
-    heard = cards[1:] if span.prefixes[0] == "" else ()
     return ItemNumber(ref.value, " oder ".join(cards), marked, ref.valid, cards, heard)
 
 
 def _heard_suffixes(
     tokens: list[str], end: int, number: str, card: CardFormat
 ) -> tuple[str, ...]:
-    """The lettered card numbers of the menu that a word behind the plain
-    `number` may have been (`_HEARD_SUFFIXES`), else nothing.
+    """The lettered card numbers of the menu that a word behind `number` may
+    have been (`_HEARD_SUFFIXES`), else nothing. `number` is a card number
+    without a letter behind it, with or without a prefix ("26", "s7").
 
-    Only where the word ends the sentence, a closing "bitte" aside: "Nummer 26
-    der" is no German, "Nummer 26 der Ente" and "die 35, ja genau" are. Without
-    such a card number on the menu the word stays the filler it was, and a
-    plain order costs no question.
+    Only where the word ends the sentence, a closing "bitte" or the quantity
+    aside ("die 26 der zweimal"): "Nummer 26 der" is no German, "Nummer 26 der
+    Ente" and "die 35, ja genau" are. Without such a card number on the menu
+    the word stays the filler it was, and a plain order costs no question.
     """
     rest = [t for t in tokens[end:] if t not in PUNCTUATION]
-    if not number.isdigit() or not rest or not _CLOSING.issuperset(rest[1:]):
+    closes = all(
+        t in _CLOSING
+        or t in _QUANTITY_NOUNS
+        or _word_value(t) is not None
+        or _QUANTITY_SUFFIX.match(t) is not None
+        for t in rest[1:]
+    )
+    if not number[-1:].isdigit() or not rest or not closes:
+        return ()
+    if _word_value(rest[0]) is not None and rest[1:2] and rest[1] in _QUANTITY_NOUNS:
+        # "die 26 eine Portion": the word is the quantity, not an e.
         return ()
     return tuple(
         number + letter

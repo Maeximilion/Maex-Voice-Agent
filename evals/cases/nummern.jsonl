@@ -198,6 +198,8 @@
 {"say": "Fünf und vierzig die", "expect": "45|45g?", "why": "without a marker and written apart"}
 {"say": "Zweimal die 45 die", "expect": "45|45g?", "why": "with a quantity: the quantity stays, the number is asked"}
 {"say": "Die 45 die bitte", "expect": "45|45g?", "why": "die 45g bitte as heard: a closing bitte behind the word changes nothing"}
+{"say": "Die 45 die zweimal", "expect": "45|45g?", "why": "die 45g zweimal as heard: the quantity behind the word changes nothing either"}
+{"say": "Die 45 eine Portion", "expect": "45", "why": "limit: eine in front of Portion is the quantity, not a letter"}
 {"say": "Nummer fünfunddreißig ja.", "expect": "35|35a?", "why": "Nummer 35a as the ear writes it; this menu has 35a and no 35: the search offers 35a and takes nothing"}
 {"say": "Nummer 35 war", "expect": "35|35b?", "why": "Nummer 35b as the ear writes it"}
 {"say": "Nummer 45 der", "expect": "45", "why": "limit: the menu decides; it has no 45d, so the word stays filler and nothing is asked"}
