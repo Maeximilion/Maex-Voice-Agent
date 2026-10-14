@@ -2270,6 +2270,9 @@ def status_region(facts: Facts) -> str:
     stage = facts.stage
     if m := re.fullmatch(r"Stage (\S+) \((.+)\)", stage):
         stage = f"{m.group(1)}, {m.group(2)}"
+    if not facts.gates:
+        # A renamed heading or a moved table, never "every gate passed".
+        raise SystemExit("docs/01_STATUS.md: no gate rows under '## Gates in Detail'")
     gate = next((g for g in facts.gates if not g.passed), None)
     next_gate = f"{gate.key}: {gate.content}" if gate else "none, every gate passed"
     return "\n".join(
