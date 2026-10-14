@@ -168,12 +168,14 @@ class CallHandler:
             ).call_id
         except Exception:
             _close_quietly(session)
+            # Out of the start and the decision in one step: an end of the
+            # leg that comes after it finds the call closed, never a start
+            # that is still running (Codex on PR #298).
             with self._lock:
                 hung_up = session_id in self._ended_while_starting
-                if hung_up:
-                    self._ended_while_starting.discard(session_id)
-                    self._starting.discard(session_id)
-                    self._remember_closed(session_id)
+                self._ended_while_starting.discard(session_id)
+                self._starting.discard(session_id)
+                self._remember_closed(session_id)
             if hung_up:
                 # Nobody is on the line to hand to the team.
                 logger.exception(
