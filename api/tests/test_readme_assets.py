@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import itertools
+import threading
 import xml.dom.minidom
 from datetime import date, datetime
 from fnmatch import fnmatch
@@ -726,7 +727,7 @@ RUN_AT = datetime(2026, 10, 15, 21, 30, tzinfo=ra.BERLIN)
 
 def drill_row(value: str = "15") -> dict[str, str]:
     return {
-        "run_at": "2026-10-15T21:30:00+02:00",
+        "run_at": "2026-10-15T19:30:00+00:00",
         "date": "2026-10-15",
         "package": "T-1.11",
         "metric": "Outage drills end at the team phone",
@@ -1030,61 +1031,6 @@ def test_no_cover_and_no_reason_outlives_its_component() -> None:
     assert all(reason.strip() for reason in ra.NOT_DRAWN.values())
 
 
-# --- the maintenance bot reports the images (T-0.11) ------------------------------
-
-
-@pytest.fixture
-def assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    for path in ra.ASSETS.iterdir():
-        if path.is_file():
-            (tmp_path / path.name).write_bytes(path.read_bytes())
-    monkeypatch.setattr(ra, "ASSETS", tmp_path)
-    return tmp_path
-
-
-def test_nothing_open_still_names_the_heading(assets: Path) -> None:
-    assert ra.mark_uploaded() == 0
-    assert ra.image_findings() == {ra.IMAGES_HEADING: []}
-
-
-def test_a_stale_image_is_reported_by_name_and_digest(assets: Path) -> None:
-    ra.mark_uploaded()
-    (assets / "progress.svg").write_text("<svg/>", encoding="utf-8")
-    (entry,) = ra.image_findings()[ra.IMAGES_HEADING]
-    name, digest = entry["id"].split(":")
-    assert name == "progress.svg" and len(digest) == 64
-    assert "make readme-assets" in entry["label"]
-    # The same stale state gives the same key, so the issue mentions it once.
-    assert ra.image_findings()[ra.IMAGES_HEADING] == [entry]
-
-
-def test_a_new_social_preview_is_reported_until_it_is_marked_uploaded(
-    assets: Path,
-) -> None:
-    (assets / ra.UPLOADED).unlink(missing_ok=True)
-    (social,) = ra.image_findings()[ra.IMAGES_HEADING]
-    assert (
-        social["id"]
-        == f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}"
-    )
-    assert "mark-uploaded" in social["label"]
-    ra.mark_uploaded()
-    assert ra.image_findings()[ra.IMAGES_HEADING] == []
-    # A PNG drawn again is a new upload, and also a PNG CI cannot vouch for.
-    (assets / "social-preview.png").write_bytes(b"another png")
-    ids = [e["id"] for e in ra.image_findings()[ra.IMAGES_HEADING]]
-    assert f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}" in ids
-    assert any(
-        "render --png" in e["label"] for e in ra.image_findings()[ra.IMAGES_HEADING]
-    )
-
-
-def test_mark_uploaded_needs_the_png(assets: Path) -> None:
-    (assets / "social-preview.png").unlink()
-    assert ra.mark_uploaded() == 1
-    assert not (assets / ra.UPLOADED).exists()
-
-
 # --- Codex round 1 on fa42b15 ----------------------------------------------------
 
 
@@ -1141,25 +1087,113 @@ def test_a_tagged_run_on_main_names_no_command_and_add_refuses_main(
     assert not ra.EVAL_HISTORY.exists() and not ra.VOICE_HISTORY.exists()
 
 
-def test_a_row_a_kit_appends_while_pending_is_recorded_is_kept(
+def test_a_kit_on_main_waits_for_the_recorder_holding_the_lock(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex on f25cb90: writer and recorder share one lock, so no row is lost."""
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    folder = recording["reports"]
+    kit = threading.Thread(target=ra.record_measurements, args=([drill_row()], folder))
+    with ra.pending_lock(folder):
+        kit.start()
+        kit.join(0.3)
+        assert kit.is_alive() and not (folder / ra.VOICE_PENDING).exists()
+    kit.join(5)
+    assert not kit.is_alive()
+    _, rows = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert rows == [drill_row()]
+
+
+def test_pending_record_holds_the_lock_while_it_reads_and_removes(
     recording: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     folder = recording["reports"]
     ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    held: list[bool] = []
     real_record_voice = ra.record_voice
 
-    def kit_finishes_meanwhile(
-        row: dict[str, str], path: Path = ra.VOICE_HISTORY
-    ) -> str:
-        # A kit on main appends while the claimed rows are being recorded.
-        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
+    def while_recording(row: dict[str, str], path: Path = ra.VOICE_HISTORY) -> str:
+        def take_the_lock() -> None:
+            with ra.pending_lock(folder):
+                pass
+
+        probe = threading.Thread(target=take_the_lock, daemon=True)
+        probe.start()
+        probe.join(0.3)
+        held.append(probe.is_alive())
         return real_record_voice(row, path)
 
-    monkeypatch.setattr(ra, "record_voice", kit_finishes_meanwhile)
+    monkeypatch.setattr(ra, "record_voice", while_recording)
     ra.record_pending([folder])
-    assert [r.value for r in ra.read_voice_history(ra.VOICE_HISTORY)] == [15.0]
-    _, waiting = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
-    assert [r["value"] for r in waiting] == ["14"]
+    assert held == [True]
+    assert not (folder / ra.VOICE_PENDING).exists()
+
+
+def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
+    recording: dict,
+) -> None:
+    summer = datetime(2026, 10, 25, 0, 30, tzinfo=ra.UTC)  # 02:30 CEST
+    winter = datetime(2026, 10, 25, 1, 15, tzinfo=ra.UTC)  # 02:15 CET, later
+    ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": False}], winter))
+    ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": True}], summer))
+    runs = ra.read_voice_history(ra.VOICE_HISTORY)
+    assert [r.verdict for r in runs] == ["go", "no-go"]
+    assert {r.date for r in runs} == {date(2026, 10, 25)}
+
+
+# --- the maintenance bot reports the images (T-0.11) ------------------------------
+
+
+@pytest.fixture
+def assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    for path in ra.ASSETS.iterdir():
+        if path.is_file():
+            (tmp_path / path.name).write_bytes(path.read_bytes())
+    monkeypatch.setattr(ra, "ASSETS", tmp_path)
+    return tmp_path
+
+
+def test_nothing_open_still_names_the_heading(assets: Path) -> None:
+    assert ra.mark_uploaded() == 0
+    assert ra.image_findings() == {ra.IMAGES_HEADING: []}
+
+
+def test_a_stale_image_is_reported_by_name_and_digest(assets: Path) -> None:
+    ra.mark_uploaded()
+    (assets / "progress.svg").write_text("<svg/>", encoding="utf-8")
+    (entry,) = ra.image_findings()[ra.IMAGES_HEADING]
+    name, digest = entry["id"].split(":")
+    assert name == "progress.svg" and len(digest) == 64
+    assert "make readme-assets" in entry["label"]
+    # The same stale state gives the same key, so the issue mentions it once.
+    assert ra.image_findings()[ra.IMAGES_HEADING] == [entry]
+
+
+def test_a_new_social_preview_is_reported_until_it_is_marked_uploaded(
+    assets: Path,
+) -> None:
+    (assets / ra.UPLOADED).unlink(missing_ok=True)
+    (social,) = ra.image_findings()[ra.IMAGES_HEADING]
+    assert (
+        social["id"]
+        == f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}"
+    )
+    assert "mark-uploaded" in social["label"]
+    ra.mark_uploaded()
+    assert ra.image_findings()[ra.IMAGES_HEADING] == []
+    # A PNG drawn again is a new upload, and also a PNG CI cannot vouch for.
+    (assets / "social-preview.png").write_bytes(b"another png")
+    ids = [e["id"] for e in ra.image_findings()[ra.IMAGES_HEADING]]
+    assert f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}" in ids
+    assert any(
+        "render --png" in e["label"] for e in ra.image_findings()[ra.IMAGES_HEADING]
+    )
+
+
+def test_mark_uploaded_needs_the_png(assets: Path) -> None:
+    (assets / "social-preview.png").unlink()
+    assert ra.mark_uploaded() == 1
+    assert not (assets / ra.UPLOADED).exists()
 
 
 def test_mark_uploaded_refuses_main(
@@ -1169,25 +1203,3 @@ def test_mark_uploaded_refuses_main(
     (assets / ra.UPLOADED).unlink(missing_ok=True)
     assert ra.main(["mark-uploaded"]) == 1
     assert not (assets / ra.UPLOADED).exists()
-
-
-def test_a_claim_made_by_another_recorder_meanwhile_is_not_deleted(
-    recording: dict, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Codex on cae5196: recorder A must not delete what recorder B claimed later."""
-    folder = recording["reports"]
-    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
-    real_record_voice = ra.record_voice
-
-    def other_recorder_claims(
-        row: dict[str, str], path: Path = ra.VOICE_HISTORY
-    ) -> str:
-        ra.append_row(
-            folder / "voice_pending.csv.99999", ra.VOICE_FIELDS, drill_row("14")
-        )
-        return real_record_voice(row, path)
-
-    monkeypatch.setattr(ra, "record_voice", other_recorder_claims)
-    ra.record_pending([folder])
-    assert (folder / "voice_pending.csv.99999").exists()
-    assert not list(folder.glob(f"{ra.VOICE_PENDING}.{ra.os.getpid()}"))
