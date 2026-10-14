@@ -208,6 +208,7 @@ A task is complete when **all** of these are true:
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
 - One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own
 - `main` always stays runnable
+- **Nothing is edited on `main`, and nothing is left behind** (Maxi, 2026-10-14): every change, also one line in a doc, is made on a branch, in a worktree where the session has one, and reaches `main` through a PR. A session never ends with uncommitted changes or a stash: what is not finished is committed on its branch and pushed. Two uncommitted edits in the `main` folder of the Windows clone kept it from being pulled for two days (192 commits behind); the note in them existed on that PC only. Leftovers that are found (uncommitted files in a `main` folder, a stash, a `leftovers/*` branch) are reported, never stashed, reset or deleted without Maxi's word; `/start` lists them at every session start until they are gone
 - No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
 
 **Security**
