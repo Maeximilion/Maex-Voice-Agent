@@ -51,6 +51,12 @@ def card(order: BoardOrder, tz_name: str) -> dict:
     """
     if order.handover_state == "failed":
         tone, state = "danger", "Zettel nicht gedruckt"
+    elif order.overdue and order.waiting_since is not None:
+        # Nobody has tapped "Passt" within the restaurant's minutes (#252). The
+        # clock time of the guest's yes, not a count of minutes: the card is
+        # redrawn when something changes, and a count would stand still.
+        since = _clock(order.waiting_since, tz_name)
+        tone, state = "danger", f"Wartet seit {since} auf Freigabe"
     elif order.handover_state is None:
         tone, state = "warn", "Noch nicht an der Kasse"
     elif order.handover_state == "pending":
@@ -71,6 +77,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "state": state,
         "failed": order.handover_state == "failed",
         "awaiting": order.handover_state is None,
+        "overdue": order.overdue,
         # "Passt" nur, solange das Team noch nicht abgehakt hat und die Kueche
         # erreichbar war; eine rote Karte braucht "Nochmal senden".
         "can_approve": order.status == "confirmed" and order.handover_state != "failed",
