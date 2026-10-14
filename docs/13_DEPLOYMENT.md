@@ -6,7 +6,7 @@
 
 | Baustein | Läuft auf | Nie auf |
 |---|---|---|
-| Own voice layer (docs/20, planned): Asterisk, service `voice`, speech engines behind ports | In operation: EU server (§3), speech engines are EU speech services (D18). Test phase: the workbench, open speech models, invented data and own test calls only | Maxis PC in operation; a real customer call |
+| Own voice layer (docs/20; built, real speech engines open, T-1.11 part 2): Asterisk, service `voice`, speech engines behind ports | In operation: EU server (§3), speech engines are EU speech services (D18). Test phase: the workbench, open speech models, invented data and own test calls only | Maxis PC in operation; a real customer call |
 | Agent-API, Datenbank, GUI, n8n, Push-Server für das Team (D13) | EU-Server (Stufe 1 bis 6) | Maxis PC im Betrieb |
 | Sprachmodell des Agenten | In operation: at the model provider, processing in the EU. For development and tests: a local model on Maxi's PC is allowed, with invented test data only (text phone, evals). The model is swappable behind `agent/llm.py`, so a better one replaces it without touching the conversation core (T-2.4, T-5.3). Candidates, local setup and `scripts/setup_local_llm.sh`: `docs/18_MODEL_SELECTION.md` | Maxi's PC in operation; real call content in a local model |
 | Entwicklung und Simulator | Maxis PC, nur zum Bauen und Testen | – |
@@ -60,7 +60,7 @@ Maxis PC (nur Werkbank)
                            setup: bash scripts/setup_local_llm.sh (docs/18 §5)
                            use:   python -m sim.cli --model qwen3:14b
                                   make eval MODEL=qwen3:14b  (LLM_* in .env)
-  voice layer (planned)  → Asterisk + service voice for test calls with invented data, docs/20; no tunnel
+  voice layer (profile voice) → Asterisk + service voice for test calls with invented data, docs/20; no tunnel
 ```
 
 **Host ports:** `docker compose up` and `make up` read `docker-compose.override.yml` next to the base file. It publishes Postgres (5432), the API (8000), n8n (5678) and the push server (8090) on `127.0.0.1` only, so nothing on the workbench is reachable from the local network. The base file `docker-compose.yml` publishes no port at all. One consequence on a Linux workbench: `scripts/backup.sh` and `scripts/restore.sh` with the Postgres client from a container (no `pg_dump` on the host) no longer reach `localhost:5432`, because a container gets to the host through the bridge address and not through loopback. Set `BACKUP_DOCKER_NETWORK=<project>_default` there, as on the server. Docker Desktop forwards to the host's loopback and is not affected.
@@ -87,7 +87,7 @@ Postgres: nur im Docker-Netz, kein offener Port
 
 Annahme: Domainnamen sind Vorschläge. The real names are set as `AGENT_DOMAIN`, `N8N_DOMAIN` and `PUSH_DOMAIN` in the server's `.env`; the Caddyfile in the repo keeps the placeholders.
 
-**What the proxy passes on (12.10.2026):** only what something outside the server needs: the operations view, the print bridge and `/health` for the uptime check. `/v1/tools/*` and `/v1/calls/*` were public while an external voice platform called them; since 07.10.2026 the voice layer runs on this server and reaches `api:8000` inside the Docker network, so the proxy answers 404 for them, and for `/docs` and `/openapi.json`, which the API serves in `ENV=dev` only. The token is still required inside the network. Bodies over 256 kB are refused at the proxy. `api/tests/test_deploy_exposure.py` fails when a path is added to the public list or the n8n access is dropped.
+**What the proxy passes on (12.10.2026):** only what something outside the server needs: the operations view, the print bridge and `/health` for the uptime check. `/v1/tools/*` and `/v1/calls/*` were public while an external voice platform called them; since 07.10.2026 the voice layer runs on this server and calls neither: `voice` runs the core and the domain in its own process (`api/agent/dispatch.py`, no HTTP). So the proxy answers 404 for them, and for `/docs` and `/openapi.json`, which the API serves in `ENV=dev` only. The token is still required inside the network. Bodies over 256 kB are refused at the proxy. `api/tests/test_deploy_exposure.py` fails when a path is added to the public list or the n8n access is dropped.
 
 **Operations view, no access check of its own (accepted for stage 1, Maxi, 12.10.2026, #252):** the proxy's Basic-Auth is the only check in front of `/gui/`; the application itself asks for nothing. Whoever reaches `api:8000` inside the Docker network reaches the view. The realistic way in was the n8n editor, open to its first visitor until it got its own access (below, PR #253). The alternative, a secret header set by Caddy and one router-level dependency, was declined for stage 1: one more secret that can lock the tablet out. Look at it again when a second tenant or a service that takes outside input joins the network.
 
