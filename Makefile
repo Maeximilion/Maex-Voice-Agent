@@ -47,7 +47,7 @@ eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (d
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval
 
-eval-record: ## Record an eval report by hand (SUITE=targets, REPORT=<file>); make eval does it on its own
+eval-record: ## Record an eval report by hand and redraw (SUITE=targets, REPORT=<file>); make eval does it on its own
 	$(PYTHON) scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
 
 readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
