@@ -4,7 +4,7 @@
 
 ## 1. Überblick
 
-> Decided 07.10.2026: the voice layer is our own, not a hosted platform. It is planned, not built and not measured. Spec: `docs/20_VOICE_LAYER.md`.
+> Decided 07.10.2026: the voice layer is our own, not a hosted platform. Spec: `docs/20_VOICE_LAYER.md`. Built (14.10.2026): Asterisk and the service `voice` as Compose services behind the profile `voice` (`docker-compose.yml`, `deploy/asterisk/`, T-1.11 part 1), the call session (`api/telephony/session.py`, T-10.4) and the speech engine adapters (`api/telephony/adapters/stt_whisper.py`, `tts_piper.py`, T-10.5). Open: wiring the real engines into `voice` (T-1.11 part 2); until then `api/telephony/app.py` registers only the `fake` ear and mouth. Drilled on the workbench (docs/20 §5, §11), not yet measured on a real line.
 
 ```text
 Anrufer
@@ -14,23 +14,19 @@ Festnetz <Pilotbetrieb> (bestehender Anbieter)
   │  pilot's router (test phase) or SIP trunk (operation)
   │  Modus: Schatten · Überlauf · Primär
   ▼
-Own voice layer (Asterisk + service voice, own EU server; docs/20, planned)
+Own voice layer (Asterisk + service voice, own EU server; docs/20, built, real speech engines open)
   │  ear (speech-to-text) → our core → mouth (text-to-speech)
   │  Tastentöne · Unterbrechen · Weiterleitung
   │  (ear and mouth: speech engines as services behind ports)
   │
-  │  calls into the core and domain   ← heißer Pfad, Kunde wartet
+  │  core and domain in the voice process, no HTTP (agent/dispatch.py)   ← heißer Pfad, Kunde wartet
   ▼
-Agent-API (FastAPI) ────────► Agent-DB (PostgreSQL, EU)
-  │                                ▲
-  │  Ereignis nach `confirm`       │
-  │  ← kalter Pfad                 │
-  ▼                                │
-n8n ── Kasse, SMS, Logs, Alarme   │
-Druckbrücke im Lokal ── Küchenbon  │  (holt ab, T-4.6)
-                                   │
-GUI (FastAPI + HTMX) ──────────────┘
-  Betrieb-Tablet · Admin-PC
+Agent-DB (PostgreSQL, EU) ◄──────────── Agent-API (FastAPI), not on a call
+  │                                       ▲
+  │  Ereignis nach `confirm` (Outbox)     ├── Druckbrücke im Lokal holt den Küchenbon ab (T-4.6)
+  │  ← kalter Pfad                        └── GUI (FastAPI + HTMX): Betrieb-Tablet · Admin-PC
+  ▼
+Dispatcher (own process) ──► n8n ── Kasse, SMS, Logs, Alarme
 
 Team-Durchwahl ◄── transfer_to_team, Rückrufe
 Transkription ──  auf dem EU-Server, nachts, Stufe 4 (nichts läuft bei Maxi)
@@ -47,7 +43,7 @@ Der wichtigste Schnitt im System.
 | **Wann** | Kunde wartet am Telefon | nach dem „Ja" des Kunden |
 | **Was** | Menüsuche, Kundenerkennung, Zonen-Check, Slot-Check, Bestellprüfung | Bon oder Kasse, SMS, Logs, Statistik, Alarme |
 | **Zeitbudget** | < 300 ms je Tool, hart | Sekunden sind in Ordnung |
-| **Technik** | Agent-API direkt, synchron | Outbox-Tabelle → Dispatcher → n8n, asynchron; der Küchenbon wird von der Druckbrücke abgeholt (§2a) |
+| **Technik** | core and domain in the `voice` process, synchronous, no HTTP (`api/agent/dispatch.py`) | Outbox-Tabelle → Dispatcher → n8n, asynchron; der Küchenbon wird von der Druckbrücke abgeholt (§2a) |
 | **Bei Fehler** | sofort sauber antworten, nie hängen | Wiederholung mit Backoff, dann Alarm |
 
 **Regel:** n8n kommt nur dann in den heißen Pfad, wenn ein Messwert belegt, dass die Latenz hält. Erst messen, dann entscheiden.
@@ -126,11 +122,11 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 
 | Was fällt aus | Was passiert | Wer merkt es |
 |---|---|---|
-| Agent-API nicht erreichbar | the voice layer gets the error, says one sentence and transfers to the team (docs/20 §5, target, not yet measured) | Alarm an Maxi |
+| Agent-API nicht erreichbar | calls are not affected: `voice` runs the core and the domain in its own process and reads the database itself (`api/telephony/app.py`); the tablet and the print bridge lose the API | Alarm an Maxi |
 | DB nicht erreichbar | API antwortet mit `service_unavailable`, Agent leitet weiter | Alarm |
 | Failure during a call on our side (database, model, adapter) | `telephony/handler.py` says the outage sentence (docs/05 §6) and transfers to the team extension, the call log gets `error`; without a database the number from `TEAM_PHONE` in `.env`; if the transfer fails, the dialplan dials the team number (docs/20 §5, target, not yet measured) | error log |
 | The model keeps the guest waiting | On the phone line one guest turn, all its model calls and tools together, has `service_config.turn_deadline_seconds` (10 unless the restaurant sets another value, #252). Each model call is cut off after what is left of it; an answer that still arrives too late is neither spoken nor carried out. The guest hears the outage sentence and the call goes to the team, by transfer or, where nobody answers, by a callback (`agent/loop.py`). The text phone and the evals have no deadline | error log |
-| Voice layer down | `voice` down: the Asterisk dialplan dials the team number. Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
+| Voice layer down | `voice` down: the Asterisk dialplan dials `TEAM_PHONE` (`deploy/asterisk/conf/extensions.conf`, extension `unreached` in context `ai`; drilled on the workbench, docs/20 §5). Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
 | n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm |
 | Internet weg | Telefon klingelt beim Team (test phase: the router; operation: the trunk's forwarding rules; docs/20 §5, target, not yet measured) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |
@@ -155,7 +151,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 
 ## 7. Sicherheit
 
-- Agent-API nur über HTTPS, Authentifizierung per Bearer-Token (`AGENT_API_TOKEN`) Since 12.10.2026 the proxy no longer passes `/v1/tools/*` on: the voice layer calls it inside the Docker network (`docs/13_DEPLOYMENT.md` §3).
+- Agent-API nur über HTTPS, Authentifizierung per Bearer-Token (`AGENT_API_TOKEN`). Since 12.10.2026 the proxy no longer passes `/v1/tools/*` on (`docs/13_DEPLOYMENT.md` §3). No call uses it: `voice` runs the core and the domain in its own process, and `api/agent/dispatch.py` maps a tool name to its domain function without HTTP. `api/tools/` stays as the tested contract (docs/20 §2).
 - Rate-Limit je Session, damit ein hängender Agent keine Kosten produziert
 - Maximale Anrufdauer, danach automatische Weiterleitung ans Team
 - Schleifenschutz: `transfer_to_team` leitet nur auf die Durchwahl, nie auf die Hauptnummer

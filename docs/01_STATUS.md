@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.19
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.22
 
 ---
 
@@ -536,7 +536,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.2.19 · 14.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions
+- **v2.2.22 · 15.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions
+- **v2.2.21 · 14.10.2026:** README call flow follows the code: words in through Asterisk and the ear, one tool per hop through the LLM, confirm only after the yes, the slip after approval (primary mode at once), escalation to the team phone or after hours a callback, a voice failure rings the team phone
+- **v2.2.20 · 14.10.2026:** Codex round 1 on PR #303: the handler docstring stays provider-neutral, the diagram routes voice straight to the database, unreached is an extension in context ai
+- **v2.2.19 · 14.10.2026:** docs: docs/02, docs/13 and the handler's docstring describe the voice layer as built: Asterisk and voice behind the profile voice, the core in process without HTTP, the dialplan as the last fallback
 - **v2.2.18 · 14.10.2026:** README visual identity: MÆX logo, animated call flow, dated eval, progress and voice charts generated from docs/metrics
 - **v2.2.17 · 14.10.2026:** Codex round 3 on PR #297: registration retries for ever, asterisk health is the registration
 - **v2.2.16 · 14.10.2026:** Codex round 2 on PR #297: calls named by channel variables, Asterisk 22.11.0, pings, drills 15 of 15
