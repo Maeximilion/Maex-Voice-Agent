@@ -483,3 +483,18 @@ def test_call_on_the_stand_in_has_no_usage_line(session, tenant):
     call.finish()
 
     assert call.usage_line() is None
+
+
+def test_the_call_limit_is_the_tenants_on_the_text_phone_too(session, tenant):
+    """The text phone, the dev phone and the evals end a call at the limit in
+    `service_config`, as the phone line does, not at the setting (#207)."""
+    from api.agent.loop import SAY_TIMEOUT
+    from api.models import ServiceConfig
+
+    session.get(ServiceConfig, tenant.id).max_call_seconds = 0
+    session.flush()
+    call = SimCall(session, tenant, now=NOW, external_session_id=f"sim-{uuid.uuid4()}")
+
+    turn = call.say("Ich möchte einen Tisch reservieren.")
+
+    assert SAY_TIMEOUT in turn.say
