@@ -21,7 +21,13 @@ from api.agent.guards import (
     HINT_ITEM,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
-from api.agent.loop import MAX_TOOL_HOPS, SAY_NOBODY_REACHABLE, ConversationLoop
+from api.agent.loop import (
+    MAX_TOOL_HOPS,
+    SAY_NOBODY_REACHABLE,
+    SAY_ORDER_NOT_PLACED,
+    SUMMARY_OPEN_ORDER,
+    ConversationLoop,
+)
 from api.agent.state import ConversationState, initial_state
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
@@ -1258,3 +1264,21 @@ def test_a_callback_that_fails_still_ends_with_the_team(session, state):
 
     assert result.ended is True and state.stage == "transferred"
     assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_team_table_next_to_an_open_order_names_the_order(session, state):
+    """A guest with dishes in the order who also asks for a large table: the
+    call ends with the callback, and the card and the guest both say that the
+    order is not placed, or the team would never learn of it (#207)."""
+    state.slots["phone"] = CALLER
+    pizza = str(uuid.uuid4())
+    state.seen_items[pizza] = {"number": "12", "name": "Pizza Margherita"}
+    state.cart = [{"menu_item_id": pizza, "quantity": 2}]
+
+    result = _ask_for_nine(session, state)
+
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert SAY_ORDER_NOT_PLACED in result.say
+    summary = session.scalars(select(Callback)).one().summary
+    assert summary == f"{WISH}. {SUMMARY_OPEN_ORDER} 2x 12 Pizza Margherita."
