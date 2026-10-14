@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.39
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.40
 
 ---
 
@@ -411,6 +411,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 14.10.2026 | **Speech kit: an ear that heard nothing is never the pick** (#207): an ear with an empty transcript for every utterance is listed as failed, so the go gate can no longer say go on it (an empty transcript asks back and is never wrong). CI runs `test_telephony_speech_bench.py` once more with a hashed numpy 2.5.4 after the full run and fails on a skip; the `measure` test fakes the silence detector, which only the speech image has |
 | 13.10.2026 | **T-10.4: call session of the own voice layer** (`telephony/session.py`, ports `Ear`, `Mouth`, `Line` in `telephony/speech.py`, fakes): the rules of docs/20 §4 against fakes, `CallEvents` with silence and a failure of the voice layer, `say` with `interruptible`; a yes to "Sind Sie noch da?" confirms nothing; whole calls through session, handler and core |
 | 13.10.2026 | **Speech kit: spoken orders** (`--orders`, `--order-sizes`, up to 12 dishes), judged per order in `evals/heard.py`; new ear Canary 1b v2. First run on the pilot's menu, 180 orders: best ear 62.4 % of the orders right, 17.8 % with a dish or quantity not said; per dish said 5 to 7 % on every ear (docs/20 §11, §12) |
 | 13.10.2026 | **Bug: a dish said in a list was swallowed** (evals `abholung_0081`, `abholung_0082`): a part the sentence cut off is checked with the menu like a sentence of its own, so "Einmal die 13, zweimal die 23 und die S12" is three positions; a card number the menu does not have is a position of its own, so "Zweimal die 99 und Pho Bo" says that the 99 does not exist and takes Pho Bo once |
@@ -509,6 +510,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.40 · 14.10.2026:** Speech kit: an ear that heard nothing is never the pick; speech_bench tests run in CI with numpy (#207)
 - **v2.1.39 · 14.10.2026:** Record TypeScript as a future GUI option; keep D6 and the Python backend (note of 12.10.2026, found uncommitted in the main folder)
 - **v2.1.38 · 13.10.2026:** Ruleset on main applied (four required checks); Dependabot seen working on the compiled lock file (#261)
 - **v2.1.37 · 13.10.2026:** #252: an order that waits for Passt longer than the restaurant's minutes turns red on the tablet (migration 008, order_approval_overdue_minutes)

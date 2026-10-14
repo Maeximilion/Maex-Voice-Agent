@@ -237,6 +237,44 @@ def test_an_ear_that_failed_or_did_not_run_is_listed_and_not_picked(capsys, tmp_
     assert "no-go: no ear was measured" in out
 
 
+def test_an_ear_that_heard_nothing_is_never_picked(capsys, tmp_path):
+    """An empty transcript resolves to `name`, which is never wrong: an ear that
+    returned nothing at all had a wrong share of 0 and was the pick (#207)."""
+    deaf = [{**r, "text": " ", "got": "name"} for r in judged_rows("deaf", "aa")]
+    report = run({"deaf": {"load_seconds": 1}}, deaf)
+    assert report["go"] is False and report["ear"] is None
+    assert report["ears"] == [{"id": "deaf", "error": "heard nothing"}]
+    kit.print_report(report, tmp_path)
+    assert "failed: heard nothing" in capsys.readouterr().out
+    # Next to an ear that heard something, that one is the pick.
+    report = run(
+        {"deaf": {"load_seconds": 1}, "e": {"load_seconds": 1}},
+        deaf + judged_rows("e", "r" * 59 + "w"),
+    )
+    assert report["ear"] == "e" and report["go"]
+
+
+def test_an_ear_that_heard_something_on_few_samples_is_judged_as_usual():
+    rows = judged_rows("e", "raaa")
+    for r in rows[1:]:
+        r["text"] = ""
+    report = run({"e": {"load_seconds": 1}}, rows)
+    assert report["ear"] == "e" and report["go"]
+    assert report["ears"][0]["asked_share"] == 0.75
+
+
+def test_a_run_whose_ear_heard_nothing_exits_1(tmp_path, monkeypatch):
+    fake_containers(monkeypatch, "e")
+    assert kit.main(["--limit", "1", "--run-dir", str(tmp_path)]) == 1
+    report = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
+    assert report["go"] is False
+    ears = {e["id"]: e for e in report["ears"]}
+    assert ears["parakeet-v3-cpu"] == {
+        "id": "parakeet-v3-cpu",
+        "error": "heard nothing",
+    }
+
+
 def test_the_voice_the_picked_ear_understands_best_is_the_mouth():
     judged = judged_rows("e", "rrrr", voice="clear") + judged_rows(
         "e", "rraa", voice="dull"
@@ -271,7 +309,7 @@ def fake_containers(monkeypatch, verdicts: str):
         if "measure" in command:
             plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
             said = [s for s in plan["sentences"] if s["kind"] == "number"]
-            texts = {"r": "Nummer 23", "w": "Nummer 24"}
+            texts = {"r": "Nummer 23", "w": "Nummer 24", "e": ""}
             result = {
                 "ears": {"parakeet-v3-cpu": {"load_seconds": 1.0}},
                 "heard": [
@@ -683,7 +721,7 @@ def test_the_report_counts_the_key_terms_an_utterance_really_got(capsys, tmp_pat
     ]
     plan["key_terms"] = ["Edamame", "Gyoza", "Pho Bo"]
     plan["ears"] = [{"id": "terms"}, {"id": "plain"}]
-    base = {"voice": plan["voices"][0], "seconds": 0.1, "on_card": False}
+    base = {"voice": plan["voices"][0], "seconds": 0.1, "on_card": False, "text": "x"}
     number = {"id": "n0", "kind": "number", "expect": "23", "verdict": "right"}
     judged = [
         {**base, **number, "ear": "terms", "key_terms": 2},
