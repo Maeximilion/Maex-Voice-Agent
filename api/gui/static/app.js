@@ -105,9 +105,20 @@
     });
     return ids;
   }
+  // Orders that wait for "Passt" longer than the restaurant allows (data-overdue).
+  function overdueOrders() {
+    var ids = {};
+    document
+      .querySelectorAll("#bestellungen-liste [data-overdue]")
+      .forEach(function (el) {
+        ids[el.getAttribute("data-id")] = true;
+      });
+    return ids;
+  }
   // Was beim Laden schon da war, klingelt nicht.
   var bekannt = karten("rueckrufe-liste");
   var knownOrders = karten("bestellungen-liste");
+  var knownOverdue = overdueOrders();
   function newIds(vorher, jetzt) {
     return Object.keys(jetzt).filter(function (id) {
       return !(id in vorher);
@@ -119,16 +130,31 @@
       var currentOrders = karten("bestellungen-liste");
       var newOrders = newIds(knownOrders, currentOrders);
       knownOrders = currentOrders;
+      // A card that turned red since the last look: nobody has tapped "Passt",
+      // so nobody is looking. The alarm of a complaint, once per card.
+      var currentOverdue = overdueOrders();
+      var turnedRed = newIds(knownOverdue, currentOverdue);
+      knownOverdue = currentOverdue;
+      if (turnedRed.length) {
+        ton([660, 440, 660, 440]);
+        var red = document.querySelector(
+          '#bestellungen-liste [data-id="' + turnedRed[0] + '"]'
+        );
+        if (red) red.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
       if (!newOrders.length) return;
       // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
       // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
-      // niemand das Blinken.
-      ton([523, 659, 784]);
+      // niemand das Blinken. A card that turned red in the same redraw keeps
+      // the sound and the view: the new cards still blink.
+      if (!turnedRed.length) ton([523, 659, 784]);
       newOrders.forEach(function (id, i) {
         var el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
         if (!el) return;
         el.classList.add("neu");
-        if (i === 0) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        if (i === 0 && !turnedRed.length) {
+          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
       });
       return;
     }
