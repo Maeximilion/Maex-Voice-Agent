@@ -27,6 +27,7 @@ from api.agent.loop import (
     SAY_ORDER_NOT_PLACED,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
+    _order_lines,
 )
 from api.agent.state import ConversationState, initial_state
 from api.models import Call, Callback, Reservation
@@ -1282,3 +1283,30 @@ def test_a_team_table_next_to_an_open_order_names_the_order(session, state):
     assert SAY_ORDER_NOT_PLACED in result.say
     summary = session.scalars(select(Callback)).one().summary
     assert summary == f"{WISH}. {SUMMARY_OPEN_ORDER} 2x 12 Pizza Margherita."
+
+
+def test_a_long_open_order_keeps_every_line_on_the_card(session, state):
+    """Thirty lines with long names do not fit a callback: the card falls
+    back to card numbers and still names every line (Codex PR #300)."""
+    state.slots["phone"] = CALLER
+    for n in range(30):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza " + "x" * 40}
+        state.cart.append({"menu_item_id": dish, "quantity": 2})
+
+    _ask_for_nine(session, state)
+
+    summary = session.scalars(select(Callback)).one().summary
+    assert len(summary) <= 1000 and "Pizza" not in summary
+    assert all(f"2x {100 + n}" in summary for n in range(30))
+
+
+def test_what_does_not_fit_on_the_card_is_counted(state):
+    for n in range(10):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Salat"}
+        state.cart.append({"menu_item_id": dish, "quantity": 1})
+
+    assert _order_lines(state, 200).startswith("1x 100 Salat, 1x 101 Salat")
+    assert _order_lines(state, 80).startswith("1x 100, 1x 101, 1x 102")
+    assert _order_lines(state, 40) == "1x 100, 1x 101, 8 weitere Positionen"

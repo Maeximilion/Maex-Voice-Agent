@@ -90,6 +90,8 @@ SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
 _SUMMARY_DETAIL_MAX = 400
+# What a callback takes (CreateCallbackRequest.summary).
+_SUMMARY_MAX = 1000
 
 
 @dataclass
@@ -400,8 +402,8 @@ class ConversationLoop:
         The same open point as for every handover (docs/01_STATUS.md)."""
         wish = self._table_wish(state, args)
         if state.cart:
-            # Cut to what a callback takes (CreateCallbackRequest.summary).
-            wish = f"{wish} {SUMMARY_OPEN_ORDER} {_order_lines(state)}."[:1000]
+            head = f"{wish} {SUMMARY_OPEN_ORDER} "
+            wish = f"{head}{_order_lines(state, _SUMMARY_MAX - len(head) - 1)}."
         lead_say = [lead, SAY_ORDER_NOT_PLACED if state.cart else None]
         phone = state.slots.get("phone")
         if phone:
@@ -491,15 +493,29 @@ class ConversationLoop:
         return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
 
 
-def _order_lines(state: ConversationState) -> str:
+def _order_lines(state: ConversationState, room: int) -> str:
     """The open order as the team reads it, with number and name from the
-    menu search (CLAUDE.md §2 rule 1), never from the model."""
-    lines = []
+    menu search (CLAUDE.md §2 rule 1), never from the model. Longer than
+    `room`: card numbers only, the team reads the dishes from the card; and
+    what still does not fit is counted, never dropped in silence (Codex PR
+    #300)."""
+    full, short = [], []
     for line in state.cart:
         seen = state.seen_items.get(line["menu_item_id"], {})
-        dish = " ".join(seen[k] for k in ("number", "name") if seen.get(k))
-        lines.append(f"{line['quantity']}x {dish or 'Gericht'}")
-    return ", ".join(lines)
+        number, name = seen.get("number"), seen.get("name")
+        dish = " ".join(x for x in (number, name) if x) or "Gericht"
+        full.append(f"{line['quantity']}x {dish}")
+        short.append(f"{line['quantity']}x {number or name or 'Gericht'}")
+    if len(text := ", ".join(full)) <= room:
+        return text
+    for kept in range(len(short), -1, -1):
+        rest = len(short) - kept
+        parts = short[:kept] + (
+            [f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else []
+        )
+        if len(text := ", ".join(parts)) <= room:
+            return text
+    return text[: max(room, 0)]
 
 
 def _handoff_summary(reason: str, detail: str | None) -> str:
