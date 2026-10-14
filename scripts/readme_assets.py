@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import hashlib
 import itertools
 import json
@@ -44,7 +45,7 @@ import sys
 import tempfile
 import tomllib
 from collections.abc import Callable, Iterator
-from contextlib import ExitStack, contextmanager
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -2402,11 +2403,47 @@ def shown(path: Path) -> str:
     return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
 
 
+@contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """An exclusive lock between processes, released when the file closes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as fh:
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
+def pending_lock(folder: Path) -> AbstractContextManager[None]:
+    """One writer at a time on a folder's pending file: a kit appending a row, or
+    `pending --record` reading and removing it."""
+    return file_lock(folder / "voice_pending.lock")
+
+
+def under_history_lock[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Recording and redrawing as one step. Two recorders that finish together
+    would otherwise let the older drawing overwrite the newer one. Always taken
+    before a pending lock, never after."""
+
+    @functools.wraps(fn)
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        with file_lock(REPORTS / "history.lock"):
+            return fn(*args, **kwargs)
+
+    return run
+
+
 def suite_of(tags: list[str]) -> str:
     """A suite name for a partial run, from its tags: menu, noise -> menu-noise."""
     return re.sub(r"[^a-z0-9-]+", "-", "-".join(tags).lower()).strip("-") or "partial"
 
 
+@under_history_lock
 def auto_record(suite: str, since: float, reports: Path = REPORTS) -> int:
     """After `make eval` and `make eval-targets`: record every full real-model
     report written since `since`, and redraw. Not only the newest: of two runs
@@ -2495,23 +2532,7 @@ def pending(
     return reports, rows
 
 
-@contextmanager
-def pending_lock(folder: Path) -> Iterator[None]:
-    """One writer at a time on a folder's pending file: a kit appending a row, or
-    `pending --record` reading and removing it. Released when the file closes."""
-    folder.mkdir(parents=True, exist_ok=True)
-    with (folder / "voice_pending.lock").open("a") as fh:
-        if sys.platform == "win32":
-            import msvcrt
-
-            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(fh, fcntl.LOCK_EX)
-        yield
-
-
+@under_history_lock
 def record_pending(folders: list[Path] | None = None) -> int:
     folders = report_folders() if folders is None else folders
     reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
@@ -2609,6 +2630,7 @@ def kit_rows(kit: str, report: object, run_at: datetime) -> list[dict[str, str]]
     return rows
 
 
+@under_history_lock
 def record_measurements(rows: list[dict[str, str]], reports: Path = REPORTS) -> None:
     """Into the history on a branch, else into the pending file under evals/reports/."""
     if not rows:
@@ -2784,6 +2806,45 @@ def render(check: bool = False, png: bool = False) -> int:
     return 0
 
 
+@under_history_lock
+def record_by_hand(args: argparse.Namespace) -> int:
+    """`add` and `add-voice`: one row, then the images drawn from it."""
+    if args.cmd == "add":
+        path = args.report or newest_report(args.suite)
+        if path is None:
+            print("not recorded: no report found in evals/reports/", file=sys.stderr)
+            return 1
+        report = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            print(
+                f"{path}: "
+                + record_report(
+                    report,
+                    args.suite,
+                    args.reference,
+                    args.note,
+                    path=EVAL_HISTORY,
+                    report_name=path.name,
+                )
+            )
+        except RecordError as exc:
+            print(f"not recorded: {exc}", file=sys.stderr)
+            return 1
+    else:
+        row = {
+            "date": args.date.isoformat(),
+            "package": args.package,
+            "metric": args.metric,
+            "value": f"{args.value:g}",
+            "unit": args.unit,
+            "limit": args.limit,
+            "verdict": args.verdict,
+            "note": args.note,
+        }
+        print(record_voice(row, VOICE_HISTORY))
+    return render()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -2853,39 +2914,8 @@ def main(argv: list[str] | None = None) -> int:
                 "record them on a branch: python3 scripts/readme_assets.py pending --record"
             )
         return 0
-    if args.cmd == "add":
-        path = args.report or newest_report(args.suite)
-        if path is None:
-            print("not recorded: no report found in evals/reports/", file=sys.stderr)
-            return 1
-        report = json.loads(path.read_text(encoding="utf-8"))
-        try:
-            print(
-                f"{path}: "
-                + record_report(
-                    report, args.suite, args.reference, args.note, report_name=path.name
-                )
-            )
-        except RecordError as exc:
-            print(f"not recorded: {exc}", file=sys.stderr)
-            return 1
-        return 0
-    if args.cmd == "add-voice":
-        print(
-            record_voice(
-                {
-                    "date": args.date.isoformat(),
-                    "package": args.package,
-                    "metric": args.metric,
-                    "value": f"{args.value:g}",
-                    "unit": args.unit,
-                    "limit": args.limit,
-                    "verdict": args.verdict,
-                    "note": args.note,
-                }
-            )
-        )
-        return 0
+    if args.cmd in ("add", "add-voice"):
+        return record_by_hand(args)
     args.out.write_text(concept_sheet(), encoding="utf-8")
     return 0
 
