@@ -1,7 +1,7 @@
 # 19 – Claude Code Setup
 
 > The personal Claude Code setup behind this repository: three user-level hooks, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
-> Version 1.0 · 06.10.2026
+> Version 1.1 · 14.10.2026
 
 ---
 
@@ -9,7 +9,7 @@
 
 | Part | Where it lives | In the repository |
 |---|---|---|
-| Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, and its work in `origin/main`: its commits, or after a squash merge its changes, or a merged pull request with exactly its head commit, which needs `gh`; since 12.10.2026). Where another folder has `main` checked out, or `gh` had to be asked and could not answer, it warns instead of switching. `/done` runs it again after a merge | yes, versioned and tested |
+| Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, and its work in `origin/main`: its commits, or after a squash merge its changes, or a merged pull request with exactly its head commit, which needs `gh`; since 12.10.2026). Where another folder has `main` checked out, or `gh` had to be asked and could not answer, it warns instead of switching. A warning names the files that block the sync, or git's reason where a clean folder could not be fast-forwarded. Called with `--json`, as `.claude/settings.json` does, it goes out as a message the user sees (`systemMessage`) and as an instruction for Claude to raise it first (`additionalContext`); plain stdout of a SessionStart hook reaches Claude only (since 14.10.2026). Codex calls it without the flag and gets plain lines. `/done` runs it again after a merge | yes, versioned and tested |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
 | Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |
@@ -24,7 +24,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | Script | Event | What it does |
 |---|---|---|
 | `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts. |
-| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
+| `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
@@ -188,8 +188,15 @@ if [ -n "$dir" ]; then
   git -C "$dir" merge -q --ff-only origin/main 2>/dev/null
   # Still behind means the fast-forward was refused; say so instead of drifting.
   behind=$(git -C "$dir" rev-list --count main..origin/main 2>/dev/null)
-  [ "${behind:-0}" -gt 0 ] && jq -n --arg d "$dir" --arg b "$behind" \
-    '{systemMessage: "sync-main: main in \($d) is \($b) commits behind origin/main and was not fast-forwarded (uncommitted changes or local commits), check git status"}'
+  if [ "${behind:-0}" -gt 0 ]; then
+    # systemMessage reaches the user only, additionalContext Claude only: both, so the
+    # warning is neither missed nor left without action (14.10.2026, 192 commits behind).
+    event=PostToolUse; [ "$1" = "--always" ] && event=SessionStart
+    files=$(git -C "$dir" status --porcelain 2>/dev/null | head -n 10 | sed 's/^ //' | paste -sd ';' - | sed 's/;/; /g')
+    jq -n --arg d "$dir" --arg b "$behind" --arg f "${files:-none, local commits block it}" --arg e "$event" \
+      '"sync-main: main in \($d) is \($b) commits behind origin/main and was not fast-forwarded (uncommitted files: \($f)), check git status" as $m
+      | {systemMessage: $m, hookSpecificOutput: {hookEventName: $e, additionalContext: ($m + ". Say so at the top of your reply, with the files that block it, and get it fixed with Maxi before other work.")}}'
+  fi
 else
   # Refused means local main has commits origin/main lacks; say so instead of drifting.
   git fetch -q origin main:main 2>/dev/null \
@@ -400,4 +407,4 @@ It prints a JSON object with a "Branch sync check" text when the branch is behin
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 06.10.2026.
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 14.10.2026 (`sync-main.sh`), 06.10.2026 (the others).

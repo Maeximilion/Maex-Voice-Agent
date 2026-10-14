@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.28
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.29
 
 ---
 
@@ -401,6 +401,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 14.10.2026 | **A main folder that cannot be synced is shown to Maxi** (Maxi's call after the main folder fell 192 commits behind over two uncommitted doc edits and six draft files): the session start hook names the files that block the sync, or git's reason for a clean folder, and with `--json` sends it as a message Maxi sees plus an instruction for Claude to raise it first; a failed fast-forward of a folder another session has synced meanwhile no longer warns. The user-level after-merge hook reports the same way (docs/19). Not seen yet: how the desktop app shows the message at session start |
 | 13.10.2026 | **Speech kit: spoken orders** (`--orders`, `--order-sizes`, up to 12 dishes), judged per order in `evals/heard.py`; new ear Canary 1b v2. First run on the pilot's menu, 180 orders: best ear 62.4 % of the orders right, 17.8 % with a dish or quantity not said; per dish said 5 to 7 % on every ear (docs/20 §11, §12) |
 | 13.10.2026 | **Bug: a dish said in a list was swallowed** (evals `abholung_0081`, `abholung_0082`): a part the sentence cut off is checked with the menu like a sentence of its own, so "Einmal die 13, zweimal die 23 und die S12" is three positions; a card number the menu does not have is a position of its own, so "Zweimal die 99 und Pho Bo" says that the 99 does not exist and takes Pho Bo once |
 | 13.10.2026 | **Bug: a trailing letter heard as a word** (eval `abholung_0080`): "Nummer 26 der", "30 ja", "27 die", with nothing but filler behind the word, keep the lettered number as a candidate where the menu has it, and the search asks by name; the card format carries the lettered numbers of the menu. Real-menu recording judged again: picked ear 29 instead of 42 silent wrong numbers of 1,464 (2.0 %), 14 instead of 27 on real card numbers (docs/20 §11, §12) |
@@ -498,6 +499,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.29 · 14.10.2026:** The sync hooks show a main folder that cannot be synced to Maxi, with the blocking files, and tell Claude to raise it first
 - **v2.1.28 · 13.10.2026:** Codex review of 5aa6442 on PR #287: a tool is not cut off by the turn deadline, noted as an open point (P2)
 - **v2.1.27 · 13.10.2026:** #252: one guest turn on the phone has the tenant's deadline (turn_deadline_seconds), then the outage sentence and the team; the call handler closes the model client
 - **v2.1.26 · 13.10.2026:** Codex review of 7bd55b8 on PR #283: a limit of zero also holds an order that costs nothing; stale sentence on the unread field corrected

@@ -1,11 +1,34 @@
 #!/usr/bin/env bash
 # SessionStart hook: bring a clean local main up to date before work starts.
-# Silent on success, one warning line on failure, and never blocks the session.
+# Silent on success, a warning on failure (see below), and never blocks the session.
 # Git runs against the repository that holds this script, not the current directory:
 # after Claude changes directory the working directory no longer is the project.
 root="$(cd "$(dirname "$0")/../.." 2>/dev/null && pwd)" || exit 0
 git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || exit 0
-warn() { echo "SessionStart sync: $1, check git status"; }
+
+# Warnings go out once, at exit. Plain stdout of a SessionStart hook reaches Claude only,
+# and from 12 to 14.10.2026 the main folder fell 192 commits behind while such a note
+# went unread. So with --json (Claude Code) they become a message the user sees plus an
+# instruction for Claude; without it (Codex, a run by hand) they stay plain lines.
+mode=$1 warnings=
+warn() { warnings+="SessionStart sync: $1, check git status"$'\n'; }
+json_string() {
+  local s=$1
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}
+  printf '"%s"' "$s"
+}
+report() {
+  [ -n "$warnings" ] || return 0
+  warnings=${warnings%$'\n'}
+  if [ "$1" = --json ]; then
+    printf '{"systemMessage":%s,"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' \
+      "$(json_string "$warnings")" \
+      "$(json_string "$warnings. Say so at the top of your first reply, with the files that block it, and get it fixed with Maxi before other work.")"
+  else
+    printf '%s\n' "$warnings"
+  fi
+}
+trap 'report "$mode"' EXIT
 
 if ! git -C "$root" fetch --prune --quiet 2>/dev/null; then
   warn "git fetch failed"
@@ -74,11 +97,20 @@ if [ -z "$main_dir" ]; then
     || warn "local main has commits origin/main lacks and was not updated"
   exit 0
 fi
-if [ -z "$(git -C "$main_dir" status --porcelain 2>/dev/null)" ]; then
-  git -C "$main_dir" pull --ff-only --quiet 2>/dev/null || warn "git pull --ff-only failed"
-else
+blocking="$(git -C "$main_dir" status --porcelain 2>/dev/null)"
+if [ -z "$blocking" ]; then
+  # Fetched above, so no second fetch: a failed merge is about the folder, not the network.
+  failed="$(git -C "$main_dir" merge --ff-only --quiet origin/main 2>&1 >/dev/null)"
+  # Another session may have moved it in the meantime (14.10.2026: a warning for a folder
+  # that was in sync); only a folder still behind is worth a word.
   behind="$(git -C "$main_dir" rev-list --count main..origin/main 2>/dev/null)"
   [ "${behind:-0}" -gt 0 ] \
-    && warn "main in $main_dir has uncommitted changes and is $behind commits behind origin/main, not synced"
+    && warn "main in $main_dir is $behind commits behind origin/main and could not be fast-forwarded (git: ${failed##*$'\n'})"
+else
+  behind="$(git -C "$main_dir" rev-list --count main..origin/main 2>/dev/null)"
+  count="$(printf '%s\n' "$blocking" | wc -l | tr -d ' ')"
+  files="$(printf '%s\n' "$blocking" | head -n 10 | sed 's/^ //' | paste -sd ';' - | sed 's/;/; /g')"
+  [ "${behind:-0}" -gt 0 ] \
+    && warn "main in $main_dir has uncommitted changes and is $behind commits behind origin/main, not synced ($count files block it: $files)"
 fi
 exit 0
