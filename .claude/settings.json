@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/sync_main.sh\"",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/sync_main.sh\" --json",
             "timeout": 30
           }
         ]
