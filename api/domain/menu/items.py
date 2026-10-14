@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.domain.menu.numberwords import CardFormat
@@ -41,6 +41,14 @@ def active_numbers(session: Session, tenant_id: uuid.UUID) -> list[tuple[str, st
         )
     )
     return [(number, category) for number, category in rows]
+
+
+def active_count(session: Session, tenant_id: uuid.UUID) -> int:
+    """How many dishes the active menu has."""
+    count = select(func.count()).where(
+        MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True)
+    )
+    return session.scalar(count) or 0
 
 
 def card_format(session: Session, tenant_id: uuid.UUID) -> CardFormat:

@@ -178,6 +178,9 @@ class CallSession:
     def say(self, text: str, interruptible: bool = False) -> None:
         self._ask("say", (text, interruptible))
 
+    def expect(self, terms: list[str]) -> None:
+        self._ask("expect", list(terms))
+
     def transfer(self, target: str) -> None:
         self._ask("transfer", target)
 
@@ -398,6 +401,9 @@ class CallSession:
             self._protected_until = math.inf
         self._silence_due = None
         self._line.play(audio, self._mark)
+
+    def _on_expect(self, at: float, terms: list[str]) -> None:
+        self._ear.expect(terms)
 
     def _on_transfer(self, at: float, target: str) -> None:
         self._queue_ending(("transfer", target))
@@ -638,6 +644,11 @@ class Lines:
             logger.warning("a sentence for a call that is gone is not spoken")
             return
         session.say(text, interruptible)
+
+    def expect(self, session_id: str, terms: list[str]) -> None:
+        session = self._get(session_id)
+        if session is not None:
+            session.expect(terms)
 
     def transfer(self, session_id: str, target: str) -> None:
         session = self._get(session_id)

@@ -146,9 +146,10 @@ is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`
 | The session itself breaks | Nothing is hung up; the core logs the call as a failure, and the dialplan rings the team. |
 
 Not in the session, by design: the end of an utterance. That is the ear's (`Heard(final=True)`),
-from an engine's own endpoint or from the silence detector of its adapter (T-10.5); the orders run
-of 13.10.2026 says that silence must not be shorter than 700 ms (§11). The silence timeout and the
-sample rate are arguments of the session; their settings come with the service `voice` (T-1.11).
+from an engine's own endpoint or from the silence detector of its adapter; the orders run of
+13.10.2026 says that silence must not be shorter than 700 ms (§11), and the adapter of T-10.5 waits
+for 704 ms (§6). The silence timeout and the sample rate are arguments of the session; their
+settings come with the service `voice` (T-1.11).
 
 ---
 
@@ -206,6 +207,56 @@ never from a list in code.
   of T-10.3.
 - Numbers from local engines say little about operation. Latency and recognition for G1 are
   measured with the operation engines on the server.
+
+**Built with T-10.5 (14.10.2026): `adapters/stt_whisper.py`, `adapters/tts_piper.py`, key
+terms through `Ear.expect`.** Started on the local pair of T-10.3 before that task is closed (Maxi,
+14.10.2026).
+
+- **Ear: Whisper large-v3-turbo on the graphics card**, the ear for orders by the run of
+  13.10.2026 (§11), behind `SegmentingEar`. Whisper only transcribes, so the adapter adds what the
+  session needs (`speech.Heard`): the silence detector that ships with faster-whisper judges the
+  caller's audio in windows of 32 ms on a thread of the ear; while there is speech it reports a
+  partial with an empty text every 0.5 s, and after 704 ms of silence (22 windows) it hands the
+  utterance, with 288 ms of audio before and after it, to Whisper and reports the final. Less than
+  256 ms of speech is reported as no speech and never transcribed, so a click is no word and no
+  yes; the windows of speech are counted, not the span from the first to the last, so two clicks
+  with a pause between are no speech either (Codex PR #292, P1). Durations are counted in audio, not in arrival times; `ended_at` is when the audio of the
+  last window of speech began, by the arrival of the frames it came in, less the audio behind it
+  in each: the speech ended then or later, so a "Ja" stamped after the end of a read-back surely
+  ended after it, also when part of its window waited for a frame that came late (Codex PR #292,
+  P1 twice). When the ear is closed, what is still queued is dropped, not worked through. An error of detector or engine is raised by the next `feed`, which the
+  session takes as a failure of the ear; an engine that hangs is caught by the session's deadline
+  for the final (§4). The detector keeps its state from window to window: judged window by window
+  without it, its probabilities differ from those of the whole recording by up to 0.9, with it by
+  0.0 (checked 14.10.2026), so the adapter carries it, which reaches into the package that
+  `deploy/speech/` pins.
+- **Mouth: Piper `thorsten-medium`**, converted from the voice's 22,050 Hz to the line's 16 kHz
+  piece by piece. Which voice stays Maxi's to hear (D4).
+- **Key terms per turn, never the menu.** After each turn the handler hands the engine the names
+  of the dishes the agent named in what it just said (the guest answers "die 47 oder die 48?"
+  next), then those of the order, which a correction names (`handler.key_terms`). The names come
+  from the searches of the call, so from the active menu in the database, as the guest says them
+  (without "(4 Stück)"). Whisper keeps what fits half its prompt. Terms that would hold every dish of the active menu
+  (a menu of one dish, or of two both in question) are not handed over at all (Codex PR #292). The
+  agent's sentence is compared with the names as a guest says them. The two questions into a
+  silent line set the terms as well, so a "Ja" to "Sind Sie noch da?" is not heard with the names
+  of the dishes asked about before. A first version took only the
+  dishes that became known in the turn and gave a repeated question no terms; the dishes named in
+  the sentence are what the guest answers. Nothing is handed at the first mention of a dish: no
+  window of a few names can be chosen before the guest says one.
+- **Measured on the workbench, warm, graphics card (14.10.2026, synthetic voice through the
+  modelled line):** Whisper 0.28 s median per utterance (max 2.2 s of 12), detector 0.08 ms per
+  window, Piper 0.14 s to the first piece; a read-back of 12.5 s of audio takes 0.17 s to its
+  first piece and 0.76 s whole, and the session plays a sentence only when it is whole (open point
+  in `docs/01_STATUS.md`). After the caller stops speaking: 0.7 s of silence plus about 0.3 s of
+  the ear before the core has the turn. The engines are tested in the image of `deploy/speech/`
+  (`api/tests/test_telephony_speech_engines.py`, skipped elsewhere), the segmenting and the
+  mouth's conversion against stand-ins in CI.
+- **Not built here:** the settings (engine, model folder, device, voice file) and the image of the
+  service `voice` come with T-1.11, which builds the adapters from them; partial transcripts with
+  words, which a barge-in of two words needs (with this ear a sentence that may be interrupted
+  stops at the end of the caller's utterance); Whisper on the CPU, which took 3.9 s for a sentence
+  in T-10.3 and would miss the session's 10 s for a long order.
 
 **Thresholds (proposal; T-10.3 reported on 12.10.2026, the confirmation is Maxi's):** median voice
 to voice at most 1.5 s on turns with one tool hop; silent wrong card numbers at most 2 % on
@@ -416,6 +467,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 13.10.2026 | T-10.3, the real-menu run judged again | `python3 -m scripts.speech_spike --judge-only` on the transcripts of 12.10.2026 with the rule for a trailing letter heard as a word (eval `abholung_0080`); nothing spoken or heard again. Right / asked back / silent wrong over all 1,464 number sentences: Parakeet v3 60.7 / 37.4 / **2.0 %** (29 instead of 42; 1.5 % another dish); Whisper turbo 71.9 / 23.0 / 5.1 %, with key terms 72.1 / 22.5 / 5.3 %; Whisper small 62.9 / 30.1 / 7.0 %. The 692 utterances of real card numbers on the picked ear: 57.2 / 40.8 / **2.0 %** (14 instead of 27, of them 12 another dish); trailing letter 62.1 / 33.9 / **4.0 %** of 348; plain, S and SM unchanged at 0 %. 13 utterances of the picked ear moved from a wrong dish to a question (d as "der" 7, "dann" 1; e as "die" 1, "äh" 1; a as "ja" 1; b as "war" 1; f as "ist" 1), 39 over all ears; none that was right before asks now, and the share of right answers is the same. The 14 that are left: the letter is gone with nothing behind the number (4), it became another letter (6, g heard as D 4 times), other digits (4, "30e" as "dreißig eins"); 9 of them from `karlsson-low` | **The kit's limit of 2 % is met by 0.02 points (29 of 1,464), on one run of synthetic voices: at the limit, not under it.** What a rule can see in the transcript is closed; the 14 left are nothing a rule can tell from a plain order, they need a better ear for letters (key terms per utterance, second run), the read-back with its correction (PR #271), and real voices (T-10.7) |
 | 13.10.2026 | T-10.3, second run on the pilot's real menu | `python3 -m scripts.speech_spike --menu imports/menu_items.csv`, one run, with the rule of 13.10.2026, the full dish names and key terms per utterance (10 of the 173 names, the said one among them): 553 sentences (207 of the number eval, 173 card numbers, 173 names), 4 voices, 2,212 utterances per ear, 1,520 of them number sentences. Right / asked back / silent wrong over all number sentences: Parakeet v3 58.9 / 38.6 / **2.4 %** (37, 1.6 % another dish); Whisper turbo 71.8 / 23.2 / 4.9 %, with key terms 72.1 / 22.9 / 5.0 %; Whisper small 62.8 / 30.1 / 7.2 %. The 692 utterances of real card numbers: Parakeet 56.9 / 40.2 / **2.9 %** (20); Whisper turbo 74.0 / 21.1 / 4.9 %, with key terms 76.2 / 19.2 / 4.6 %; Whisper small 66.0 / 26.3 / 7.7 %. By form, Parakeet: plain 66.9 / 33.1 / 0 %, S and SM 34.3 / 65.1 / 0.6 %, trailing letter 63.2 / 31.3 / 5.5 %. Whisper turbo: plain 91.9 / 7.6 / 0.6 %, S and SM 47.7 / 48.3 / 4.1 % (55.8 / 39.0 / 5.2 % with key terms), trailing letter 78.2 / 14.4 / 7.5 %. **Parakeet's 20 silent wrong card numbers:** the letter gone with nothing behind the number 11, another letter 5 (g heard as D 4 times), other digits 4; 15 of the 20 from `karlsson-low`. None is a letter heard as a word: the rule of 13.10.2026 asked in 11 such utterances, the "ist" rule in 54. **Parakeet's questions are mostly no questions of a rule:** in 159 of the 692 card number utterances (23 %) the transcript holds no number at all, because the ear wrote the two words in another language or as noise ("Number four.", "Número cuanci.", "Mainz."); all 57 questions on plain numbers are of that kind. Whisper, which is told the language, has 24. Whisper's silent wrong S numbers are the dropped prefix ("Nummer s17" written "Nummer 17"). Dish names letter by letter: Whisper turbo 25.1 %, with key terms 80.9 %; Parakeet 17.6 %; Whisper small 12.6 % | **No-go: 2.4 % against the 2 % limit, and no ear is near 90 % right.** Between this run and the recording of 12.10.2026 the same ear moves by about one point (2.0 and 2.9 % on card numbers with the same rule), so one run of synthetic voices decides nothing at the limit. The two ears fail differently: Parakeet takes the fewest wrong numbers but loses a quarter of the short sentences to another language; Whisper turbo understands nine of ten plain numbers and four of five dish names with key terms, but drops a prefix or a letter without a trace more often. What is left on both is the letter the ear does not write at all, which no rule can see (§12) |
 | 13.10.2026 | T-10.3, spoken orders from the pilot's real menu | `python3 -m scripts.speech_spike --menu imports/menu_items.csv --orders 30 --order-sizes 2,3,4,6,9,12`, one run: 180 orders (30 each of 2, 3, 4, 6, 9 and 12 dishes, 3.5 to 17 seconds of speech), 4 voices, 720 utterances and 4,320 dishes said per ear; judged per order with the number rule of PR #282 and the positions of PR #284. Read as text all 180 orders are right, so every loss below is the ear's. A sixth ear is new: Canary 1b v2, Parakeet's sibling that takes the language. Orders right / asked / silent wrong, and dishes that arrived: Whisper turbo on the graphics card 62.4 / 19.9 / **17.8 %**, 82.5 %; with key terms (dish names, which are no help for a number) 60.0 / 24.2 / 15.8 %, 79.0 %; Parakeet v3 47.9 / 34.0 / 18.1 %, 73.4 %; Canary v2 47.9 / 36.2 / 15.8 %, 73.7 %; Whisper small 49.2 / 25.7 / 25.1 %, 72.4 %. **By size**, Whisper turbo: 2 dishes 82 / 15 / 2 %, 3 dishes 72 / 21 / 8 %, 4 dishes 72 / 21 / 8 %, 6 dishes 59 / 18 / 22 %, 9 dishes 51 / 18 / 31 %, 12 dishes 38 / 26 / 36 %. Parakeet: 85 / 13 / 2, 63 / 28 / 8, 68 / 23 / 9, 36 / 44 / 20, 23 / 43 / 33, 12 / 52 / 36 %. Canary: 78 / 22 / 1, 68 / 26 / 6, 59 / 35 / 6, 43 / 42 / 14, 19 / 47 / 34, 20 / 46 / 34 %. **Per dish said, a dish taken that was not said:** Parakeet 4.9 %, Whisper turbo with key terms 5.5 %, Canary 6.2 %, Whisper turbo 7.0 %, Whisper small 10.9 %. **Why an order is wrong** (Whisper turbo, 128 orders): another letter or the letter gone 77, another number 35, the right dish with another quantity 15 (the ear moves the comma: "die 4, dreimal die 56" heard as "die 4 dreimal, die 56"), a dish missing without a question 1. **Why an order asks:** almost always one piece that is no card number any more ("die FENF" for the 5, "die L" for the 11, "dreißig Zi" for 30c); the sentence not cut into dishes at all in 10 to 15 of 720. By voice, Whisper turbo: `kerstin-low` 74 / 14 / 12 %, `thorsten-medium` 71 / 14 / 15 %, `thorsten-high` 59 / 18 / 23 %, `karlsson-low` 46 / 33 / 21 %. Median per order: Whisper turbo 0.18 s, Parakeet 0.31 s, Whisper small 1.07 s, Canary 1.22 s (p95 3.2 s). **Silence detector:** a silence of 300 ms cuts 44.9 % of the orders in two, 500 ms 10.8 %, 700 ms 2.9 % | **No-go, and far from it: no ear takes an order of several dishes by number without a wrong dish in more than one of six orders.** The share of a wrong dish per dish said (5 to 7 %) is what the single numbers showed; it adds up with every dish, so an order of two is wrong in 2 % and an order of twelve in a third. Three things follow. The ear for orders is Whisper turbo: it brings 82 % of the dishes through, Parakeet and Canary 73 %; holding the ear to German (Canary) helps the two-word sentences of the earlier runs and nothing here, at four times the time. The silence that ends a turn has to be 700 ms or the detector cuts every tenth order in two (§12). And the read-back is no net under the ear but the step that decides: at this rate most orders of four dishes and more need one correction (§12) |
+| 14.10.2026 | T-10.5, the adapters on the workbench | `api/tests/test_telephony_speech_engines.py` and two timing scripts in the image of `deploy/speech/`, graphics card, the model files of the kit's run folder; Piper `thorsten-medium` speaks, the sentence goes through the modelled line (§10), the ear is Whisper large-v3-turbo behind `SegmentingEar`. A sentence fed in frames of 20 ms arrives as one utterance with partials before it, and its end is the window the detector finds over the whole recording, to the frame. "Ich hätte gern zweimal die Nummer 23." arrived word for word in 6 of 7 runs and once as "Nummer 3 und 20", which the number rule reads as 23 as well; the test speaks the voice without its noise ("Nummer 45"), so every run hears the same audio. with three duck names as key terms "Einmal die Ente süß-sauer, bitte." arrives word for word; a silent line reports nothing. Warm, 12 utterances: Whisper 0.28 s median, 2.2 s at most; the detector 0.08 ms per window of 32 ms; Piper 0.14 s to the first piece, a read-back of 12.5 s of audio 0.17 s to the first piece and 0.76 s whole. Of six sentences with a phone number the core reads four as said; Whisper writes the digits in its own groups ("0721 5.551.234", "01712345678", from words "0171 2345678"), "plus" as a word ("Plus 491712345678") and "01712.345.678 um 19 Uhr" are not read, and nothing wrong is taken. A spelled name arrives as "M-E-I-E-R". | **The pair runs as adapters.** Ear and mouth together are about 0.4 s of a turn on the card, plus the 0.7 s of silence that ends it. Synthetic voices only; what real callers, line noise and the echo of our own voice on the caller's leg do to the detector and to the numbers is T-10.7 |
 
 ---
 
@@ -474,7 +526,9 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   with its key term arrives in 90 % instead of 24 %, but only 25 of the 173 names fit the
   ear's prompt at once. T-10.5 ("key terms from the active menu") therefore has to choose the
   terms per turn, for instance the dishes that are in question at that point of the call,
-  instead of handing over the menu.
+  instead of handing over the menu. **Built so with T-10.5 (§6):** the dishes the agent just
+  named, then the order. Not measured yet on calls: how often a guest's answer is a dish the
+  agent had named (T-10.7).
 - **From T-10.3, what the synthetic callers cannot say:** the measurement ranks the engines, it
   does not predict real callers. The same sentences spoken by people over a real line are T-10.7;
   the thresholds of §6 are confirmed or changed with those numbers.
