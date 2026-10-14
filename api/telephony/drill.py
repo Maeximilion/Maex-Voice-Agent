@@ -1,0 +1,514 @@
+"""Outage drills of the AI telephone on the workbench (T-1.11, docs/20 §5 and §10).
+
+    python3 -m scripts.voice_drill [--dry-run] [--keep] [--down] [--run-dir DIR]
+
+    --dry-run   check the environment and print every step, change nothing
+    --keep      leave the containers running afterwards
+    --down      only stop the containers a run with --keep left behind
+    --run-dir   where the router's rendered configuration and the report go
+                (default deploy/asterisk/drill-run, ignored by git)
+
+Starts the AI telephone as the product runs it, the service `asterisk` of
+docker-compose.yml with its configuration in deploy/asterisk/conf/, and the
+service `voice` with the drill engines (an ear that hears nothing, a mouth of
+noise), a model address that does not exist and a throwaway database. In front
+of it a stand-in for the router (deploy/asterisk/drill/): the registrar the AI
+telephone registers at, the caller who rings it, and the team telephone. Then
+one call per drill:
+
+  silent caller   the AI answers, asks twice into the silence, says goodbye and
+                  hangs up; the team does not ring
+  own number      a call from the AI telephone's own number is refused; nobody
+                  answers and the team does not ring
+  keys            the caller's keys reach the core as a turn, the model cannot
+                  be reached, and the core hands the call over: the team rings,
+                  or, outside the opening hours by the core's guess (T-10.8), a
+                  callback card and goodbye
+  paused          the core sends the call to the team before a word: the team
+                  rings, and the AI never answered the call
+  voice crashes   `voice` is killed in the middle of a call: the team rings
+  voice down      `voice` is stopped: the team rings
+  database down   the database is stopped: the team rings
+
+A team ring is timed on this machine's monotonic clock from the call being
+placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
+Prints one line per point and writes `report.json` into the run directory.
+
+Needs Docker and Python 3.12, no sudo, and not root: the containers take the
+caller's uid. Invented numbers only, no host port. Token and password are made
+new on every run and live in the run directory and the containers only.
+
+Exit codes: 0 every point passed, 1 a point failed or a step broke, 2 wrong
+call or Docker not usable.
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+from collections.abc import Callable
+from pathlib import Path
+
+from api.telephony.spike import docker_problem, step, usable_run_dir
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+CONFIG_DIR = REPO_ROOT / "deploy" / "asterisk"
+COMPOSE_FILE = CONFIG_DIR / "docker-compose.drill.yml"
+PASSWORD_MARK = "@ACCESS_PASSWORD@"
+RUN_MARKER = ".voice-drill-run"
+# Invented: the router's caller n rings from +4972215550<n>.
+NUMBER_PREFIX = "+4972215550"
+VOICE_NUMBER = NUMBER_PREFIX + "100"
+TEAM_PHONE = NUMBER_PREFIX + "900"
+# docs/20 §5: each row of the outage map within the limit Maxi sets (proposal).
+TEAM_LIMIT_SECONDS = 30.0
+# What a call may take at most before the drill gives up on it.
+CALL_TIMEOUT_SECONDS = 60.0
+POLL_SECONDS = 0.25
+
+Check = tuple[str, bool, str]
+
+
+class DrillError(Exception):
+    """A step that broke, with the message for the user."""
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="python3 -m scripts.voice_drill", description=__doc__
+    )
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--keep", action="store_true")
+    parser.add_argument("--down", action="store_true")
+    parser.add_argument("--run-dir", type=Path, default=CONFIG_DIR / "drill-run")
+    args = parser.parse_args(argv)
+    run_dir = args.run_dir.resolve()
+
+    if os.getuid() == 0:
+        print(
+            "voice_drill: run it as an unprivileged user. The containers take the "
+            "caller's uid, as root they would run as root",
+            file=sys.stderr,
+        )
+        return 2
+    if not usable_run_dir(run_dir, RUN_MARKER):
+        print(
+            f"voice_drill: {run_dir} is not a run directory of this kit (it holds "
+            f"files and no {RUN_MARKER}): name an empty or a new one",
+            file=sys.stderr,
+        )
+        return 2
+    problem = docker_problem()
+    if problem:
+        print(f"voice_drill: {problem}", file=sys.stderr)
+        return 2
+    drill = Drill(run_dir, dry_run=args.dry_run)
+    if args.down:
+        return 0 if stop(drill) else 1
+    checks: list[Check] = []
+    tidied = True
+    try:
+        step("Render the router's configuration into", run_dir)
+        drill.compose("down", "--volumes")
+        if not args.dry_run:
+            render(run_dir, drill.secrets)
+        step("Start the AI telephone, the service voice and the router")
+        drill.compose("up", "-d", "--build", "--wait")
+        if not args.dry_run:
+            drill.registered()
+            drill.mode("primary")
+        for title, scenario in SCENARIOS:
+            step("Drill:", title)
+            if not args.dry_run:
+                checks += scenario(drill)
+        if not args.dry_run:
+            checks.append(drill.no_secret_in_the_logs())
+    except DrillError as exc:
+        print(f"voice_drill: {exc}", file=sys.stderr)
+        checks.append(("the drills ran to the end", False, str(exc)))
+    finally:
+        tidied = save_output(drill)
+        if not args.keep:
+            tidied = stop(drill) and tidied
+    result = 0 if args.dry_run else report(checks, run_dir)
+    return result if tidied else 1
+
+
+class Drill:
+    """The Compose project of the drills, and what a drill does with it."""
+
+    def __init__(self, run_dir: Path, *, dry_run: bool) -> None:
+        self.run_dir = run_dir
+        self.dry_run = dry_run
+        self.project = (
+            "voice-drill-" + hashlib.sha256(str(run_dir).encode()).hexdigest()[:8]
+        )
+        self.secrets = {
+            "VOICE_MEDIA_TOKEN": secrets.token_hex(16),
+            "ACCESS_PASSWORD": secrets.token_hex(16),
+        }
+        self._env = {
+            **os.environ,
+            **self.secrets,
+            "DRILL_RUN": str(run_dir),
+            "DRILL_UID": str(os.getuid()),
+            "DRILL_GID": str(os.getgid()),
+            "VOICE_NUMBER": VOICE_NUMBER,
+            "TEAM_PHONE": TEAM_PHONE,
+            "ACCESS_HOST": "router",
+            "ACCESS_USER": "ai",
+        }
+
+    def compose(self, *args: str) -> str:
+        command = [
+            "docker",
+            "compose",
+            "-p",
+            self.project,
+            "-f",
+            str(COMPOSE_FILE),
+            "--profile",
+            "voice",
+            *args,
+        ]
+        if self.dry_run:
+            print("   [dry-run]", " ".join(command))
+            return ""
+        done = subprocess.run(
+            command,
+            env=self._env,
+            capture_output=True,
+            text=True,
+            errors="replace",
+            check=False,
+        )
+        if done.returncode != 0:
+            raise DrillError(
+                f"`{' '.join(command)}` failed:\n{done.stderr.strip()[-2000:]}"
+            )
+        return done.stdout
+
+    def cli(self, service: str, command: str) -> str:
+        return self.compose("exec", "-T", service, "asterisk", "-rx", command)
+
+    def sql(self, statement: str) -> str:
+        return self.compose(
+            "exec", "-T", "db", "psql", "-U", "maex", "-d", "maex", "-tAc", statement
+        ).strip()
+
+    def mode(self, mode: str) -> None:
+        self.sql(f"update service_config set call_mode = '{mode}'")
+
+    def log(self, service: str) -> list[str]:
+        return self.compose("logs", "--no-color", service).splitlines()
+
+    def registered(self) -> None:
+        """The AI telephone is registered at the router, or the drills would
+        measure nothing."""
+        end = time.monotonic() + 30
+        while "Registered" not in self.cli("asterisk", "pjsip show registrations"):
+            if time.monotonic() > end:
+                raise DrillError("the AI telephone did not register at the router")
+            time.sleep(1)
+
+    def place(self, n: int) -> "Call":
+        call = Call(self, n)
+        self.cli("router", f"channel originate Local/{n}@dialout extension {n}@caller")
+        return call
+
+    def restart(self, service: str) -> None:
+        self.compose("up", "-d", "--wait", service)
+
+    def quiet(self) -> None:
+        """Wait until no call is left on the router, so the next drill starts
+        alone."""
+        end = time.monotonic() + CALL_TIMEOUT_SECONDS
+        while not self.cli("router", "core show channels count").startswith(
+            "0 active channels"
+        ):
+            if time.monotonic() > end:
+                raise DrillError("a call of the last drill does not end")
+            time.sleep(POLL_SECONDS)
+
+    def no_secret_in_the_logs(self) -> Check:
+        """Asterisk prints every dialplan step when it runs verbose; the media
+        token would be in that output (docs/20 §2)."""
+        found = [
+            service
+            for service in ("asterisk", "voice", "router")
+            for line in self.log(service)
+            if any(value in line for value in self.secrets.values())
+        ]
+        return (
+            "token and password are in no container's output",
+            not found,
+            "found in " + ", ".join(sorted(set(found))) if found else "none found",
+        )
+
+
+class Call:
+    """One call of the router's caller n, and the lines it left."""
+
+    def __init__(self, drill: Drill, n: int) -> None:
+        self.drill = drill
+        self.n = n
+        self.caller = f"{NUMBER_PREFIX}{n}"
+        # Only lines after this point belong to this call.
+        self._seen = {s: len(drill.log(s)) for s in ("router", "asterisk", "voice")}
+        self.placed = time.monotonic()
+
+    def lines(self, service: str) -> list[str]:
+        return self.drill.log(service)[self._seen[service] :]
+
+    def wait(
+        self, *patterns: str, timeout: float = CALL_TIMEOUT_SECONDS
+    ) -> tuple[str, float]:
+        """The first of `patterns` that shows in the router's log for this call,
+        and when it was seen."""
+        end = time.monotonic() + timeout
+        while True:
+            for line in self.lines("router"):
+                for pattern in patterns:
+                    if re.search(pattern, line):
+                        return pattern, time.monotonic()
+            if time.monotonic() > end:
+                raise DrillError(
+                    f"call {self.n}: none of {patterns} after {timeout:.0f} s"
+                )
+            time.sleep(POLL_SECONDS)
+
+    @property
+    def team_rings(self) -> str:
+        # Not by the caller's number: the team leg carries the user of our
+        # registration (`from_user`). One call at a time, and only lines after
+        # this one was placed count.
+        return rf"DRILL team rings at \{TEAM_PHONE}\b"
+
+    @property
+    def answered(self) -> str:
+        return rf"DRILL {self.n} answered"
+
+    @property
+    def ended(self) -> str:
+        return rf"DRILL {self.n} caller leg ended dialstatus=(\w*)"
+
+    def router_says(self, pattern: str) -> bool:
+        return any(re.search(pattern, line) for line in self.lines("router"))
+
+    def ending(self) -> str:
+        """What the AI telephone logged as this call's ending."""
+        for line in self.lines("asterisk"):
+            found = re.search(r"voice leg (\w*) ending \[([^\]]*)\]", line)
+            if found:
+                return f"{found.group(1)} [{found.group(2)}]"
+        return "none logged"
+
+    def dialstatus(self) -> str:
+        for line in self.lines("router"):
+            found = re.search(self.ended, line)
+            if found:
+                return found.group(1)
+        return ""
+
+
+def team_check(name: str, call: Call, since: float, extra: str = "") -> Check:
+    """The team rang for `call` within the limit, counted from `since`."""
+    _, seen = call.wait(call.team_rings, timeout=TEAM_LIMIT_SECONDS + 10)
+    seconds = seen - since
+    ok = seconds <= TEAM_LIMIT_SECONDS
+    return (name, ok, f"the team rang after {seconds:.1f} s{extra}")
+
+
+def drill_silent(drill: Drill) -> list[Check]:
+    call = drill.place(101)
+    call.wait(call.ended)
+    seconds = time.monotonic() - call.placed
+    drill.quiet()
+    return [
+        (
+            "silent caller: the AI answers, asks, says goodbye and hangs up",
+            call.dialstatus() == "ANSWER"
+            and call.ending().endswith("[hangup]")
+            and not call.router_says(call.team_rings),
+            f"call over after {seconds:.1f} s, ending {call.ending()}, "
+            f"team rang: {call.router_says(call.team_rings)}",
+        )
+    ]
+
+
+def drill_own_number(drill: Drill) -> list[Check]:
+    call = drill.place(100)
+    call.wait(call.ended, timeout=15)
+    drill.quiet()
+    refused = any("own number and refused" in line for line in call.lines("asterisk"))
+    return [
+        (
+            "own number: refused, nobody answers, the team does not ring",
+            refused
+            and call.dialstatus() != "ANSWER"
+            and not call.router_says(call.team_rings),
+            f"refused: {refused}, caller's dial status {call.dialstatus()}",
+        )
+    ]
+
+
+def drill_keys(drill: Drill) -> list[Check]:
+    call = drill.place(102)
+    first, seen = call.wait(call.team_rings, call.ended)
+    turned = any("model failed" in line for line in call.lines("voice"))
+    if first == call.team_rings:
+        handed = f"the team rang after {seen - call.placed:.1f} s"
+        ok = turned
+    else:
+        outcome = drill.sql(
+            "select outcome from calls order by started_at desc limit 1"
+        )
+        handed = f"no team ring, call outcome {outcome!r}"
+        ok = turned and outcome == "callback" and call.ending().endswith("[hangup]")
+    drill.quiet()
+    return [
+        (
+            "keys: a turn of the core, the model is down, the call is handed over",
+            ok,
+            f"turn reached the model: {turned}, {handed}",
+        )
+    ]
+
+
+def drill_paused(drill: Drill) -> list[Check]:
+    drill.mode("paused")
+    try:
+        call = drill.place(103)
+        check = team_check("paused: the team rings", call, call.placed)
+        # Answered only when the team picked up: the AI never did.
+        unanswered = call.ending().startswith("NOANSWER")
+    finally:
+        drill.mode("primary")
+    drill.quiet()
+    return [
+        check,
+        (
+            "paused: the AI never answered the call",
+            unanswered and f"[transfer {TEAM_PHONE}]" in call.ending(),
+            f"ending {call.ending()}",
+        ),
+    ]
+
+
+def drill_crash(drill: Drill) -> list[Check]:
+    call = drill.place(105)
+    call.wait(call.answered, timeout=15)
+    killed = time.monotonic()
+    drill.compose("kill", "voice")
+    try:
+        check = team_check(
+            "voice crashes mid-call: the team rings", call, killed, " from the kill"
+        )
+        ending = call.ending()
+    finally:
+        drill.restart("voice")
+    drill.quiet()
+    return [check, ("voice crashes: no ending from voice", "[]" in ending, ending)]
+
+
+def drill_voice_down(drill: Drill) -> list[Check]:
+    drill.compose("stop", "voice")
+    try:
+        call = drill.place(104)
+        check = team_check("voice down: the team rings", call, call.placed)
+        unreached = any("voice not reached" in line for line in call.lines("asterisk"))
+    finally:
+        drill.restart("voice")
+    drill.quiet()
+    return [
+        check,
+        ("voice down: the dialplan does not ask it for an ending", unreached, ""),
+    ]
+
+
+def drill_database_down(drill: Drill) -> list[Check]:
+    drill.compose("stop", "db")
+    try:
+        call = drill.place(106)
+        check = team_check("database down: the team rings", call, call.placed)
+    finally:
+        drill.restart("db")
+    drill.quiet()
+    return [check]
+
+
+SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
+    ("a silent caller (101)", drill_silent),
+    ("a call from our own number (100)", drill_own_number),
+    ("keys, and the model is down (102)", drill_keys),
+    ("mode paused (103)", drill_paused),
+    ("voice crashes in the middle of a call (105)", drill_crash),
+    ("voice is down (104)", drill_voice_down),
+    ("the database is down (106)", drill_database_down),
+]
+
+
+def render(run_dir: Path, secret: dict[str, str]) -> None:
+    """The router's configuration with a fresh password."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / RUN_MARKER).touch()
+    (run_dir / "report.json").unlink(missing_ok=True)
+    target = run_dir / "router"
+    shutil.rmtree(target, ignore_errors=True)
+    target.mkdir()
+    sources = [
+        CONFIG_DIR / "conf" / n
+        for n in ("asterisk.conf", "logger.conf", "modules.conf")
+    ]
+    sources += sorted((CONFIG_DIR / "drill").iterdir())
+    for source in sources:
+        rendered = target / source.name
+        rendered.touch(mode=0o600)
+        rendered.write_text(
+            source.read_text().replace(PASSWORD_MARK, secret["ACCESS_PASSWORD"])
+        )
+
+
+def save_output(drill: Drill) -> bool:
+    """What the containers printed, as drill.log in the run directory."""
+    if drill.dry_run:
+        return True
+    try:
+        output = drill.compose("logs", "--no-color", "asterisk", "router", "voice")
+        (drill.run_dir / "drill.log").write_text(output)
+    except (DrillError, OSError) as exc:
+        print(
+            f"voice_drill: saving the containers' output failed: {exc}", file=sys.stderr
+        )
+        return False
+    return True
+
+
+def stop(drill: Drill) -> bool:
+    step("Stop the containers")
+    try:
+        drill.compose("down", "--volumes")
+    except DrillError as exc:
+        print(f"voice_drill: {exc}", file=sys.stderr)
+        return False
+    return True
+
+
+def report(checks: list[Check], run_dir: Path) -> int:
+    print()
+    for name, ok, detail in checks:
+        print(f"{'pass' if ok else 'FAIL'}  {name}: {detail}")
+    passed = sum(ok for _, ok, _ in checks)
+    print(f"\n{passed} of {len(checks)} points passed")
+    (run_dir / "report.json").write_text(
+        json.dumps(
+            [{"point": n, "ok": ok, "detail": d} for n, ok, d in checks], indent=2
+        )
+    )
+    return 0 if checks and passed == len(checks) else 1

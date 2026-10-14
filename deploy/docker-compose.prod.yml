@@ -1,7 +1,8 @@
 # Produktion: zusammen mit der Basis-Datei starten
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
 #
-# Only caddy publishes a host port. db, api, n8n and push stay inside the Docker
+# Only caddy publishes a host port, and asterisk the media range of the AI
+# telephone. db, api, n8n and push stay inside the Docker
 # network because the base file gives them no port and this file adds none;
 # `ports: []` here would not remove one (Compose merges the lists). Naming the
 # files with -f also keeps docker-compose.override.yml, the dev ports, out.
@@ -45,6 +46,25 @@ services:
       - ./api:/app/api:ro
       - ./scripts:/app/scripts:ro
       - ./db:/app/db:ro
+
+  # The AI telephone, still behind the profile `voice` of the base file.
+  voice:
+    restart: always
+    environment:
+      ENV: prod
+    user: "10001:10001"
+    volumes:
+      - ./api:/app/api:ro
+      - ./prompts:/app/prompts:ro
+
+  asterisk:
+    restart: always
+    # The media of the calls, exactly the range of deploy/asterisk/conf/rtp.conf
+    # (api/tests/test_compose_ports.py). Signalling needs no port: Asterisk
+    # registers outwards and the access answers on that connection. TLS and the
+    # public media address come with the trunk (docs/20 §3).
+    ports:
+      - "10000-10039:10000-10039/udp"
 
   n8n:
     restart: always

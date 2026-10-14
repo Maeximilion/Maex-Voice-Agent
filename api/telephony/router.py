@@ -1,0 +1,127 @@
+"""The doors of the service `voice` (docs/20 §2 and §5).
+
+- `/media`: the media channel of Asterisk, one WebSocket connection per call.
+  Frames in go to the call's `MediaLine` and on to its session; frames out come
+  from the line through one writer per connection.
+- `/calls/{call_id}/ending`: once `Dial` returns, the dialplan asks how our leg
+  ended. "hangup" ends the call, "transfer <number>" is dialled, and anything
+  else, an empty answer or none at all, rings the team (CLAUDE.md §2 rule 5).
+
+Both want the media token as the password of Basic credentials. A call is named
+by the id of the caller's channel (`${UNIQUEID}`), which the dialplan passes as
+`call` and asks by.
+"""
+
+import asyncio
+import contextlib
+import re
+import threading
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, HTTPException, Request, WebSocket
+from fastapi.responses import PlainTextResponse
+from starlette.types import ASGIApp
+
+from api.core.logging import get_logger
+from api.telephony.adapters.asterisk import MediaLine, ProtocolError
+
+if TYPE_CHECKING:
+    from api.telephony.app import Voice
+
+# A frame Asterisk does not take within this time: the connection stalls, and a
+# leg we cannot reach is closed (`speech.Line`). The dialplan rings the team.
+WRITE_SECONDS = 2.0
+# Asterisk's UNIQUEID: seconds since 1970, a dot, a sequence number.
+_CALL_ID = re.compile(r"[0-9]{1,12}\.[0-9]{1,9}")
+
+logger = get_logger(__name__)
+router = APIRouter()
+
+
+@router.get("/health", response_class=PlainTextResponse)
+def health() -> str:
+    return "ok"
+
+
+@router.get("/calls/{call_id}/ending", response_class=PlainTextResponse)
+def ending(call_id: str, request: Request) -> str:
+    voice = _voice(request.app)
+    if not voice.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
+    return voice.ending(call_id)
+
+
+@router.websocket("/media")
+async def media(websocket: WebSocket) -> None:
+    voice = _voice(websocket.app)
+    call_id = websocket.query_params.get("call", "")
+    if not voice.authorized(
+        websocket.headers.get("authorization")
+    ) or not _CALL_ID.fullmatch(call_id):
+        # Closed before it is accepted: Asterisk sees a refused connection, Dial
+        # fails, and the dialplan rings the team.
+        logger.warning("media connection refused: no valid token or call id")
+        await websocket.close(code=1008)
+        return
+    await websocket.accept(subprotocol="media")
+    loop = asyncio.get_running_loop()
+    outbox: asyncio.Queue[str | bytes | None] = asyncio.Queue()
+
+    def send(frame: str | bytes | None) -> None:
+        loop.call_soon_threadsafe(outbox.put_nowait, frame)
+
+    line = MediaLine(send, ended=lambda how: voice.ended(call_id, how))
+    session = voice.open(
+        call_id, line=line, caller_id=websocket.query_params.get("caller") or None
+    )
+    line.attach(session)
+
+    def work() -> None:
+        try:
+            session.run()
+        finally:
+            voice.lines.remove(call_id)
+            # The writer closes the connection; after our HANGUP Asterisk has
+            # done so already. The loop may be gone with the server.
+            with contextlib.suppress(RuntimeError):
+                send(None)
+
+    threading.Thread(target=work, name=f"call {call_id}", daemon=True).start()
+    writer = asyncio.create_task(_write(websocket, outbox))
+    try:
+        while True:
+            message = await websocket.receive()
+            if message["type"] == "websocket.disconnect":
+                break
+            if message.get("text") is not None:
+                line.on_text(message["text"])
+            elif message.get("bytes") is not None:
+                line.on_audio(message["bytes"])
+    except ProtocolError:
+        logger.exception(
+            "frame of the media channel not understood, the team takes the call",
+            extra={"extra": {"session_id": call_id}},
+        )
+    finally:
+        line.closed()
+        await writer
+
+
+async def _write(
+    websocket: WebSocket, outbox: "asyncio.Queue[str | bytes | None]"
+) -> None:
+    try:
+        while (frame := await outbox.get()) is not None:
+            if isinstance(frame, bytes):
+                await asyncio.wait_for(websocket.send_bytes(frame), WRITE_SECONDS)
+            else:
+                await asyncio.wait_for(websocket.send_text(frame), WRITE_SECONDS)
+    except Exception:  # noqa: BLE001 - a lost or stalled leg, whatever the cause
+        # Without our ending the dialplan rings the team (`speech.Line`).
+        logger.warning("the media connection takes no more frames, closing it")
+    with contextlib.suppress(Exception):
+        await websocket.close()
+
+
+def _voice(app: ASGIApp) -> "Voice":
+    return app.state.voice  # type: ignore[attr-defined]

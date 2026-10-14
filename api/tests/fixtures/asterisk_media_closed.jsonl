@@ -1,0 +1,5 @@
+{"t": 0.0001, "dir": "probe", "query": "exten=705&call=1791966197.10&caller=%2B4972215550705", "subprotocols": ["media"], "authorization": "Basic"}
+{"t": 0.0005, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x7682f56d2920\",\"channel_id\":\"1791966197.11\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/nc(slin16)f(json)v(exten=705,call=1791966197.10,caller=%2B4972215550705)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\"}}"}
+{"t": 0.0006, "dir": "out", "text": "{\"command\": \"ANSWER\"}"}
+{"t": 0.0032, "dir": "out", "bytes": 32000}
+{"t": 1.5039, "dir": "probe", "closed": 1011}

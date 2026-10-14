@@ -30,6 +30,8 @@ api/ca-bundle.crt
 
 # Spike T-10.1: rendered configs (with a test password), recordings, logs
 deploy/asterisk/run/
+# Drills T-1.11: the router's rendered config (with a test password), logs
+deploy/asterisk/drill-run/
 
 # Spike T-10.3: model files, samples, results
 deploy/speech/run/

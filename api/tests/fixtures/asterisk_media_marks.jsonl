@@ -1,0 +1,11 @@
+{"t": 0.0002, "dir": "probe", "query": "exten=701&call=1791966110.0&caller=%2B4972215550701", "subprotocols": ["media"], "authorization": "Basic"}
+{"t": 0.0007, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x7682f60837e0\",\"channel_id\":\"1791966110.1\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/nc(slin16)f(json)v(exten=701,call=1791966110.0,caller=%2B4972215550701)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\"}}"}
+{"t": 0.5004, "dir": "out", "text": "{\"command\": \"ANSWER\"}"}
+{"t": 0.503, "dir": "out", "bytes": 32000}
+{"t": 0.5031, "dir": "out", "text": "{\"command\": \"MARK_MEDIA\", \"correlation_id\": \"m1\"}"}
+{"t": 0.5044, "dir": "out", "bytes": 16000}
+{"t": 0.5045, "dir": "out", "text": "{\"command\": \"MARK_MEDIA\", \"correlation_id\": \"m2\"}"}
+{"t": 1.5198, "dir": "in", "text": "{\"event\":\"MEDIA_MARK_PROCESSED\",\"channel_id\":\"1791966110.1\",\"correlation_id\":\"m1\"}"}
+{"t": 2.0198, "dir": "in", "text": "{\"event\":\"MEDIA_MARK_PROCESSED\",\"channel_id\":\"1791966110.1\",\"correlation_id\":\"m2\"}"}
+{"t": 2.0199, "dir": "out", "text": "{\"command\": \"HANGUP\"}"}
+{"t": 2.0208, "dir": "probe", "closed": 1000}

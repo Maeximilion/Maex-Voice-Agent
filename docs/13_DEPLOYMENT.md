@@ -142,11 +142,11 @@ The workbench keeps the single user of `.env.example`. Tests and evals create an
 
 **Compose:** `docker-compose.yml` (Basis) + `deploy/docker-compose.prod.yml` (Caddy, `restart: always`, `--reload` aus).
 
-**Published ports:** only Caddy publishes host ports (80 and 443). Postgres, API, n8n and the push server have no `ports:` entry in either of the two files and are reachable only inside the Docker network. Three rules keep it that way:
+**Published ports:** Caddy publishes 80 and 443, and the AI telephone (`asterisk`, profile `voice`, docs/20 §2) the UDP media range of `deploy/asterisk/conf/rtp.conf`, 10000 to 10039, exactly that and no signalling port: Asterisk registers outwards. Postgres, API, n8n, the push server and `voice` have no `ports:` entry in either of the two files and are reachable only inside the Docker network. Three rules keep it that way:
 
 - Compose merges `ports` lists across files. `ports: []` in an override removes nothing; until 05.10.2026 the production file relied on exactly that and the rendered stack published 5432, 8000 and 5678 on all interfaces. A service that needs a host port for development gets it in `docker-compose.override.yml`, never in the base file.
 - Always start with both `-f` flags as below. With `-f`, Compose does not read `docker-compose.override.yml`. A bare `docker compose up` on the server would start the development layout: no Caddy, ports on loopback.
-- Docker publishes ports past `ufw`. The firewall rule for 22 and 443 does not close a published container port, so the Compose files are the control. `api/tests/test_compose_ports.py` fails when the merged production configuration publishes a port outside Caddy. Check on the server after every deploy: `docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml ps` must show host ports for `caddy` only.
+- Docker publishes ports past `ufw`. The firewall rule for 22 and 443 does not close a published container port, so the Compose files are the control. `api/tests/test_compose_ports.py` fails when the merged production configuration publishes a port outside Caddy and the media range. The firewall opens that range for UDP once the AI telephone runs on the server. Check on the server after every deploy: `docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml ps` must show host ports for `caddy` and `asterisk` only.
 
 ```bash
 docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build

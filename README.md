@@ -2,7 +2,7 @@
 
 AI-powered phone intake for hospitality. An AI agent answers calls on the restaurant's main line, handles reservations, pickup, and delivery, and hands off confirmed transactions to kitchen, register, and team. Complaints and special cases escalate to a human. The team manages operations via a browser interface on a tablet.
 
-The voice layer (telephony, speech recognition, voice output) is planned as our own, running on our own EU server: decided 07.10.2026, not built yet (`docs/20_VOICE_LAYER.md`). This repository contains the domain logic, database, interface, and tests. Pilot operation, location, domain, and point-of-sale provider appear in docs as placeholders in angle brackets.
+The voice layer (telephony, speech recognition, voice output) is our own, running on our own EU server: decided 07.10.2026, built up to the speech engines and not yet connected to a real telephone line (`docs/20_VOICE_LAYER.md`). This repository contains the domain logic, database, interface, and tests. Pilot operation, location, domain, and point-of-sale provider appear in docs as placeholders in angle brackets.
 
 [![CI](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml)
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
@@ -38,7 +38,7 @@ The voice layer (telephony, speech recognition, voice output) is planned as our 
 
 **Not yet working:**
 
-- No phone line yet: the own voice layer is decided (07.10.2026, no platform vendor) and not built or measured (`docs/20_VOICE_LAYER.md`). The provider-neutral part is built (`api/telephony/`, T-1.13): the port, the call handler with AI disclosure, mode check, transfer and outage fallback, and a fake adapter that plays eval cases as phone calls; the media adapter of the own voice layer follows in T-1.11
+- No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. Missing: the speech engines (T-10.5), the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
@@ -90,7 +90,9 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `DATABASE_URL` | Postgres database connection of the application |
 | `OWNER_DATABASE_URL` | Only on the server: the owner of the schema, for migrations, backup and restore. `DATABASE_URL` then names a role without superuser that `bash scripts/db_role.sh` sets up; in `ENV=prod` the API does not start as a superuser (`docs/13_DEPLOYMENT.md` §3). Empty on the workbench |
 | `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). In `ENV=prod` the API does not start on the placeholder or on fewer than 32 characters (`openssl rand -hex 32`) |
-| `TEAM_PHONE` | Extension for forwarding to team |
+| `TEAM_PHONE` | Extension for forwarding to team; the AI telephone's dialplan rings it whenever the service `voice` cannot say where a call goes |
+| `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines. It does not start with one missing, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
+| `ACCESS_HOST`, `ACCESS_USER`, `ACCESS_PASSWORD` | Where the AI telephone registers: the pilot's router in the test phase, a SIP trunk in operation. Read by Asterisk only |
 | `MAX_CALL_SECONDS` | Maximum call duration a new tenant is seeded with. A call is ended by the tenant's own value (`service_config.max_call_seconds`) |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
@@ -105,7 +107,7 @@ db/          Alembic migrations
 prompts/     System prompt per version
 evals/       Test cases and runner for conversation quality
 n8n/         Workflow exports for cold path
-deploy/      Production compose and Caddyfile
+deploy/      Production compose, Caddyfile, the AI telephone's Asterisk config (asterisk/conf/) and its drills
 docs/        Specs and status
 ```
 

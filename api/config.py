@@ -63,6 +63,23 @@ class Settings(BaseSettings):
     llm_input_cents_per_mtok: int | None = Field(default=None, ge=0)
     llm_output_cents_per_mtok: int | None = Field(default=None, ge=0)
 
+    # Service `voice`, the own voice layer (docs/20 §7). It serves the tenant of
+    # `tenant_name`. Asterisk presents the token as the password of Basic
+    # credentials on the media connection and when the dialplan asks how a call
+    # ended; without one `voice` does not start.
+    voice_media_token: str = ""
+    # The number the AI telephone answers (E.164). `voice` does not start when
+    # the team number is this one: the team would ring us (docs/20 §5).
+    voice_number: str = ""
+    # Seconds of silence after a sentence before the code asks "Sind Sie noch
+    # da?" (docs/20 §4). An assumption until real calls say otherwise.
+    voice_silence_seconds: float = Field(default=8.0, gt=0)
+    # Ear and mouth (`telephony/app.py`). `fake` is the drill pair of the
+    # workbench, an ear that hears nothing and a mouth of noise, and is refused
+    # outside dev and test.
+    voice_ear: str = ""
+    voice_mouth: str = ""
+
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
 

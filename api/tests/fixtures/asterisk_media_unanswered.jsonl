@@ -1,0 +1,4 @@
+{"t": 0.0001, "dir": "probe", "query": "exten=703&call=1791966139.5&caller=%2B4972215550703", "subprotocols": ["media"], "authorization": "Basic"}
+{"t": 0.0005, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x7682f56d26a0\",\"channel_id\":\"1791966139.6\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/nc(slin16)f(json)v(exten=703,call=1791966139.5,caller=%2B4972215550703)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\"}}"}
+{"t": 1.0017, "dir": "out", "text": "{\"command\": \"HANGUP\"}"}
+{"t": 1.0021, "dir": "probe", "closed": 1000}

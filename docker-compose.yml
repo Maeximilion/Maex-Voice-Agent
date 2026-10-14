@@ -99,6 +99,70 @@ services:
       - ./scripts:/app/scripts
       - ./db:/app/db
 
+  # The own voice layer (docs/20 §2): the AI telephone. Started only with the
+  # profile `voice` (`docker compose --profile voice up -d`, or
+  # COMPOSE_PROFILES=voice in .env), never by a plain `up`: without a telephone
+  # access in .env there is nothing for it to answer.
+  voice:
+    profiles: ["voice"]
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    environment: *without_the_owner
+    # One worker: the live calls are held in this process (api/telephony/app.py).
+    command:
+      - uvicorn
+      - --factory
+      - api.telephony.app:from_settings
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    # The core of a call reads its prompt from prompts/.
+    volumes:
+      - ./api:/app/api
+      - ./prompts:/app/prompts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  asterisk:
+    profiles: ["voice"]
+    # Asterisk 22.10.1 with chan_websocket, as in the spike T-10.1. Pinned by
+    # digest, a third-party build.
+    image: andrius/asterisk:22.10.1_alpine-3.24-6bb254a@sha256:e598f443c1db2fcb5a7c5d5a2a2c2269d00ac92e24f97521ba3801fb8df84f39
+    restart: unless-stopped
+    # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
+    # image does, without its -vvvddd: verbose output prints every dialplan
+    # step with its values, the media token included.
+    entrypoint: ["/bin/sh", "/templates/render.sh"]
+    command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+    # Only what the AI telephone needs, not the whole .env: no database or
+    # model credentials in this container.
+    environment:
+      ASTERISK_TERMINAL_OPTS: "-n"
+      VOICE_NUMBER: ${VOICE_NUMBER:-}
+      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
+      TEAM_PHONE: ${TEAM_PHONE:-}
+      ACCESS_HOST: ${ACCESS_HOST:-}
+      ACCESS_USER: ${ACCESS_USER:-}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+    tmpfs:
+      - /etc/asterisk
+    volumes:
+      - ./deploy/asterisk/conf:/templates/conf:ro
+      - ./deploy/asterisk/render.sh:/templates/render.sh:ro
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core waitfullybooted"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
   n8n:
     # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)
     # without anyone noticing. Dependabot proposes updates as pull requests.
