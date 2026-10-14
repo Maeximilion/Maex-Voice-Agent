@@ -21,16 +21,12 @@ Own voice layer (Asterisk + service voice, own EU server; docs/20, built, real s
   │
   │  core and domain in the voice process, no HTTP (agent/dispatch.py)   ← heißer Pfad, Kunde wartet
   ▼
-Agent-API (FastAPI) ────────► Agent-DB (PostgreSQL, EU)
-  │                                ▲
-  │  Ereignis nach `confirm`       │
-  │  ← kalter Pfad                 │
-  ▼                                │
-n8n ── Kasse, SMS, Logs, Alarme   │
-Druckbrücke im Lokal ── Küchenbon  │  (holt ab, T-4.6)
-                                   │
-GUI (FastAPI + HTMX) ──────────────┘
-  Betrieb-Tablet · Admin-PC
+Agent-DB (PostgreSQL, EU) ◄──────────── Agent-API (FastAPI), not on a call
+  │                                       ▲
+  │  Ereignis nach `confirm` (Outbox)     ├── Druckbrücke im Lokal holt den Küchenbon ab (T-4.6)
+  │  ← kalter Pfad                        └── GUI (FastAPI + HTMX): Betrieb-Tablet · Admin-PC
+  ▼
+Dispatcher (own process) ──► n8n ── Kasse, SMS, Logs, Alarme
 
 Team-Durchwahl ◄── transfer_to_team, Rückrufe
 Transkription ──  auf dem EU-Server, nachts, Stufe 4 (nichts läuft bei Maxi)
@@ -130,7 +126,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | DB nicht erreichbar | API antwortet mit `service_unavailable`, Agent leitet weiter | Alarm |
 | Failure during a call on our side (database, model, adapter) | `telephony/handler.py` says the outage sentence (docs/05 §6) and transfers to the team extension, the call log gets `error`; without a database the number from `TEAM_PHONE` in `.env`; if the transfer fails, the dialplan dials the team number (docs/20 §5, target, not yet measured) | error log |
 | The model keeps the guest waiting | On the phone line one guest turn, all its model calls and tools together, has `service_config.turn_deadline_seconds` (10 unless the restaurant sets another value, #252). Each model call is cut off after what is left of it; an answer that still arrives too late is neither spoken nor carried out. The guest hears the outage sentence and the call goes to the team, by transfer or, where nobody answers, by a callback (`agent/loop.py`). The text phone and the evals have no deadline | error log |
-| Voice layer down | `voice` down: the Asterisk dialplan dials `TEAM_PHONE` (`deploy/asterisk/conf/extensions.conf`, context `unreached`; drilled on the workbench, docs/20 §5). Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
+| Voice layer down | `voice` down: the Asterisk dialplan dials `TEAM_PHONE` (`deploy/asterisk/conf/extensions.conf`, extension `unreached` in context `ai`; drilled on the workbench, docs/20 §5). Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
 | n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm |
 | Internet weg | Telefon klingelt beim Team (test phase: the router; operation: the trunk's forwarding rules; docs/20 §5, target, not yet measured) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |
