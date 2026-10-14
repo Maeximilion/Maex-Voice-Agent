@@ -502,20 +502,29 @@ def test_a_model_that_talks_on_is_cut_in_the_state():
     assert len(state.to_prompt_json()["last_say"]) == LAST_SAY_MAX
 
 
-@pytest.mark.parametrize("is_open", [True, False])
-def test_the_service_status_of_this_call_stays_in_the_state(is_open):
+@pytest.mark.parametrize(
+    ("is_open", "pickup"), [(True, True), (True, False), (False, False)]
+)
+def test_the_service_status_of_this_call_stays_in_the_state(is_open, pickup):
     """Without it a real model asked get_service_status at the start of every
-    turn: it could not know that it had asked before."""
+    turn: it could not know that it had asked before. Pickup can be off while
+    the restaurant is open, so both flags stay (Codex PR #291, P1)."""
     state = make_state()
     assert "service" not in state.to_prompt_json()
 
     apply_tool_result(
         state,
         "get_service_status",
-        ToolResult(ok=True, data={"is_open": is_open, "closes_at": None}),
+        ToolResult(
+            ok=True,
+            data={"is_open": is_open, "pickup_enabled": pickup, "closes_at": None},
+        ),
     )
 
-    assert state.to_prompt_json()["service"] == {"is_open": is_open}
+    assert state.to_prompt_json()["service"] == {
+        "is_open": is_open,
+        "pickup_enabled": pickup,
+    }
 
 
 def test_a_failed_status_request_leaves_the_status_unknown():
@@ -528,9 +537,14 @@ def test_a_failed_status_request_leaves_the_status_unknown():
     assert "service" not in state.to_prompt_json()
 
 
-def test_a_status_without_the_flag_is_not_taken_as_closed():
+@pytest.mark.parametrize(
+    "data", [{}, {"is_open": True}, {"is_open": True, "pickup_enabled": None}]
+)
+def test_a_status_with_a_flag_missing_is_not_kept(data):
+    """A missing flag is unknown, not "no": nothing is kept, and the model
+    asks again."""
     state = make_state()
 
-    apply_tool_result(state, "get_service_status", ToolResult(ok=True, data={}))
+    apply_tool_result(state, "get_service_status", ToolResult(ok=True, data=data))
 
-    assert state.service_open is None
+    assert state.service is None

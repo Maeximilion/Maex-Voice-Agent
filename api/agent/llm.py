@@ -113,7 +113,7 @@ Antworte immer mit genau einem JSON-Objekt, ohne Text davor oder danach:
 - `slots`: was der Gast in diesem Zug genannt hat, nur Neues oder Geändertes. Im nächsten Zug steht es im Zustand unter `slots`; was du nicht einträgst, ist verloren.
 - `not_understood`: der Name der Angabe, die du gerade nicht verstanden hast (zum Beispiel `party_size`), sonst null.
 Die Eingabe ist entweder das, was der Gast gesagt hat, oder das Ergebnis deines letzten Tool-Aufrufs als JSON mit dem Feld `tool`.
-Im Zustand: `last_say` ist dein letzter Satz an den Gast, der Gast antwortet darauf. Steht `greeted` im Zustand, ist der Gast begrüßt: nicht noch einmal. `service` ist die Antwort von `get_service_status` aus diesem Gespräch."""
+Im Zustand: `last_say` ist dein letzter Satz an den Gast, der Gast antwortet darauf. Steht `greeted` im Zustand, ist der Gast begrüßt: nicht noch einmal. `service` ist die Antwort von `get_service_status` aus diesem Gespräch: offen und ob Abholung angenommen wird."""
 
 # The same contract for a call that is about an order: with the field `cart`
 # and the names of the slots. Sent only while the state carries `cart`, which

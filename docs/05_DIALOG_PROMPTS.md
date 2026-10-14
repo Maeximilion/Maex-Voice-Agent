@@ -235,7 +235,7 @@ transcript:
   `greeted`). An offer of several dishes is therefore in sight for the one turn that
   answers it, by name and card number, never with an id; the order still takes only dishes
   the core knows (`guards.take_cart`).
-- `service`: `{"is_open": true}` once `get_service_status` answered in this call. A model
+- `service`: `{"is_open": true, "pickup_enabled": true}` once `get_service_status` answered in this call, both flags or nothing (pickup can be off while the restaurant is open, Codex PR #291). A model
   asked for the status at the start of every turn, one request each time, and then answered
   from the status instead of calling `check_slot`. The prompt asks for the status once per
   call, before an order or on a question about opening hours, and not for a table:

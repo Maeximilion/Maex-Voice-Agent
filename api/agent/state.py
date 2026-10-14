@@ -43,6 +43,9 @@ Stage = Literal[
 # Longest `last_say` the model gets back, in characters: a read-back with
 # three dishes fits, a model that talks on is cut.
 LAST_SAY_MAX = 300
+# What the state keeps of get_service_status: whether the restaurant is open,
+# and whether it takes pickups, which can be off while it is open.
+SERVICE_FLAGS = ("is_open", "pickup_enabled")
 
 
 class ConversationState(BaseModel):
@@ -108,10 +111,12 @@ class ConversationState(BaseModel):
     # every turn, so the state stays compact and never grows into a transcript
     # (docs/05 §5).
     last_say: str | None = None
-    # Whether the restaurant was open when get_service_status was asked in
-    # this call; None until then. The model reads from it that the status is
-    # known: it asked again at the start of every turn, one request each.
-    service_open: bool | None = None
+    # What get_service_status said in this call about being open and taking
+    # pickups (`SERVICE_FLAGS`); None until then. The model reads from it that
+    # the status is known: it asked again at the start of every turn, one
+    # request each. Both flags, or a model that sees only "open" could take a
+    # pickup while the kitchen takes none (Codex PR #291, P1).
+    service: dict[str, bool] | None = None
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
@@ -123,8 +128,8 @@ class ConversationState(BaseModel):
             data["greeted"] = True
         if self.last_say:
             data["last_say"] = self.last_say
-        if self.service_open is not None:
-            data["service"] = {"is_open": self.service_open}
+        if self.service is not None:
+            data["service"] = dict(self.service)
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -419,9 +424,14 @@ def apply_tool_result(
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_service_status":
-        is_open = result.data.get("is_open")
-        if isinstance(is_open, bool):
-            state.service_open = is_open
+        flags = {
+            key: result.data[key]
+            for key in SERVICE_FLAGS
+            if isinstance(result.data.get(key), bool)
+        }
+        # Only a whole answer: a flag that is missing is unknown, never "no".
+        if len(flags) == len(SERVICE_FLAGS):
+            state.service = flags
     elif name == "confirm":
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
