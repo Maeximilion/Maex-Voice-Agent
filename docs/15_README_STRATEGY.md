@@ -70,3 +70,63 @@ What does not belong in it: marketing text, emojis, feature promises, screenshot
 - Commands in code blocks, exactly as they are typed
 - If something does not work, it is listed under "Known Issues", not in a subordinate clause
 - No emojis, no badges that measure nothing
+- Badges in the palette below (`labelColor=17102B`, value colour `9D7BFF` or `E8FF2E`); the CI badge stays GitHub's own, because it is the only one that works on a private repository
+
+## Assets and design
+
+The README carries images in `.github/assets/`. All of them are written by `scripts/readme_assets.py` from data in the repository; none is drawn by hand, and none shows a number that is not in a file with a date.
+
+### The concept: "Night Service"
+
+The product's world is a restaurant phone ringing during evening service, answered by a machine that never guesses. Four motifs come from that world and nowhere else:
+
+- **Midnight Purple** is the line after dark: every image sits on its own midnight card, so it looks the same in GitHub's light and dark theme.
+- **Neon Yellow** is the lit sign of a restaurant that picks up. It marks what is built, passed or confirmed, and the headline number of each image.
+- **The order slip** is what the agent produces. Stat cards are slips: perforated top edge, monospace print, a dated header, line items.
+- **The voice waveform** is the conversation. It is the crossbar of the logo, the divider between sections, the line under the banner and the track of the gates.
+
+The logo is **MÆX**: the ligature Æ, in which the A and the E share one stroke, the way the AI and the code share one call. The A half is yellow (the AI understands), the E half violet (the code decides), the crossbar a waveform. The concept is `LOGO_STYLE = "split"` in the script; `python scripts/readme_assets.py concepts /tmp/maex-logo-concepts.svg` draws all four concepts side by side.
+
+### Tokens
+
+| Token | Value | Use |
+|---|---|---|
+| `bg` | `#0D0819` | Card background (midnight) |
+| `surface` | `#17102B` | Slips and nodes |
+| `grid` | `#2B2148` | Grid lines, slip borders, the dot pattern |
+| `ink` | `#F1ECFF` | Text |
+| `muted` | `#A89CCB` | Labels, dates, secondary text |
+| `neon` | `#E8FF2E` | Passed, built, done, the headline number |
+| `violet` | `#9D7BFF` | In progress, the second series, the spoken reply, the escalation path |
+| `coral` | `#FF5277` | Crashed, blocked, a hard violation, a no-go; never anything else |
+| `plum` | `#76699F` | Not passed, open, planned |
+
+Checked with the colour validator of the `dataviz` skill against `surface` (14.10.2026): every adjacent pair passes the colour-blind separation and the normal-vision floor, and every colour has at least 3:1 contrast. Neon yellow sits above the lightness band on purpose; it is the brand, and every mark in it carries a text label, so identity never rests on colour alone. Type is the system monospace stack; nothing loads a web font or a script.
+
+### The images
+
+| File | Shows | Source |
+|---|---|---|
+| `banner.svg` | Logo, one line, the state slip: latest real-model eval, version, stage, test functions in `api/tests` (rounded down to the hundred; parametrized cases make the run larger), next gate | all sources below |
+| `call-flow.svg` | The animated path of a call; each node is built, in progress or planned from its tasks | `FLOW_NODES` in the script, `docs/07_WORKPACKAGES.md` |
+| `call-flow-static.svg` | The same without motion | as above |
+| `progress.svg` | Tasks done, one bar per block, the gates | `docs/07_WORKPACKAGES.md`, `docs/01_STATUS.md` |
+| `eval-latest.svg` | The latest real-model run per suite | `docs/metrics/eval_history.csv` |
+| `eval-trend.svg` | Pass rate per suite over time, against the target of 99 % | `docs/metrics/eval_history.csv` |
+| `voice-bench.svg` | Voice layer measurements with limit and verdict | `docs/metrics/voice_history.csv` |
+| `rules.svg` | The six hard rules of `CLAUDE.md` §2 | `HARD_RULES` in the script |
+| `logo-mark.svg`, `logo-wordmark.svg`, `divider.svg` | Logo and divider | the script |
+| `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings. They carry no number, because CI cannot check a PNG | `render --png` |
+
+### Keeping them current
+
+- Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file.
+- CI runs `python scripts/readme_assets.py render --check` and fails when a committed image no longer matches its data. The two PNGs cannot be drawn in CI: `render --png` records the digest of their source SVGs in `.github/assets/png-sources.json`, and the check fails when a source SVG changed without new PNGs. The fix is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
+- `/done` renders after the status update; `/gate` also records the latest runs and renders the PNGs.
+- A real-model eval run is recorded right after it with `make eval-record`, which takes the newest report (`docs/08_EVALS.md` §4). A voice measurement is recorded like this, with its row in `docs/20_VOICE_LAYER.md` §11:
+
+  ```bash
+  python scripts/readme_assets.py add-voice 2026-10-14 T-1.11 "Outage drills end at the team phone" 15 "of 15 points" go --note "Asterisk 22.11.0"
+  ```
+- **A new component a call passes through gets its node in `FLOW_NODES` in the same PR that builds it**, with the task IDs that build it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
+- What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.
