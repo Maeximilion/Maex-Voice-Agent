@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import itertools
 import xml.dom.minidom
 from datetime import date
 from pathlib import Path
@@ -132,8 +133,10 @@ def test_every_flow_node_names_tasks_that_exist() -> None:
     for key, node in ra.FLOW_NODES.items():
         missing = [t for t in node["tasks"] if t not in known]
         assert not missing, f"{key} names unknown tasks {missing}"
-    for a, b, _t0, _color in ra.FLOW_EDGES:
+    for a, b, _channel in ra.FLOW_LINKS:
         assert a in ra.FLOW_NODES and b in ra.FLOW_NODES
+    for step in ra.FLOW_STEPS:
+        ra._link_for(step.a, step.b)  # raises when a step has no line to run on
 
 
 def test_read_status_finds_stage_and_gates() -> None:
@@ -479,3 +482,91 @@ def test_a_missing_or_changed_png_is_stale(
     assert ra.stale_pngs(assets) == ["social-preview.png"]
     (tmp_path / "logo-mark-512.png").unlink()
     assert ra.stale_pngs(assets) == ["social-preview.png", "logo-mark-512.png"]
+
+
+# --- the call flow follows the code (Maxi, 14.10.2026) ---------------------------
+
+TOOLS = ("status", "menu", "draft", "confirm")
+
+
+def _steps(a: str, b: str) -> list:
+    return [s for s in ra.FLOW_STEPS if (s.a, s.b) == (a, b)]
+
+
+def test_the_llm_talks_to_the_core_and_nothing_else() -> None:
+    """Hard rule 1 in the picture: the model never reaches a tool or the database."""
+    llm_links = {frozenset((a, b)) for a, b, _c in ra.FLOW_LINKS if "llm" in (a, b)}
+    assert llm_links == {frozenset(("core", "llm"))}
+    for step in ra.FLOW_STEPS:
+        if "llm" in (step.a, step.b):
+            assert {step.a, step.b} == {"core", "llm"}
+
+
+def test_one_thing_moves_at_a_time_inside_a_turn() -> None:
+    """One tool per hop: the steps through core, LLM, tools and Postgres never overlap."""
+    inner = {"core", "llm", "postgres", *TOOLS}
+    steps = sorted(
+        (s for s in ra.FLOW_STEPS if s.a in inner and s.b in inner), key=lambda s: s.t0
+    )
+    assert steps
+    for before, after in itertools.pairwise(steps):
+        assert after.t0 >= before.t1 - 1e-9, (before, after)
+
+
+def test_every_tool_hop_returns_to_the_llm_before_the_next_tool() -> None:
+    seq = [(s.a, s.b) for s in sorted(ra.FLOW_STEPS, key=lambda s: s.t0)]
+    for tool in ("status", "menu", "draft"):
+        i = seq.index(("core", tool))
+        assert seq[i - 2 : i] == [("core", "llm"), ("llm", "core")]
+        assert seq[i + 1 : i + 4] == [
+            (tool, "postgres"),
+            ("postgres", tool),
+            (tool, "core"),
+        ]
+
+
+def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
+    (readback_heard,) = _steps("access", "caller")
+    (confirm,) = _steps("core", "confirm")
+    words_in = sorted(s.t0 for s in _steps("caller", "access"))
+    assert len(words_in) == 2, "the order and the yes"
+    assert readback_heard.t1 <= words_in[1] < confirm.t0
+    (stored,) = _steps("confirm", "postgres")
+    for target in ("slip", "tablet"):
+        (handover,) = _steps("postgres", target)
+        assert handover.t0 >= stored.t1
+
+
+def test_a_person_is_reached_by_phone_not_by_the_tablet() -> None:
+    def ends_at_box(route: list[tuple[float, float]], key: str) -> bool:
+        x, y, w, h = ra._node_box(key)
+        ex, ey = route[-1]
+        return x - 1 <= ex <= x + w + 1 and y - 1 <= ey <= y + h + 1
+
+    assert ends_at_box(ra.ESCALATION_ROUTE, "teamphone")
+    assert ends_at_box(ra.OUTAGE_ROUTE, "teamphone")
+    ax, ay, aw, ah = ra._node_box("asterisk")
+    sx, sy = ra.OUTAGE_ROUTE[0]
+    assert ax <= sx <= ax + aw and sy >= ay + ah - 1, (
+        "the outage starts at the exchange"
+    )
+    cx, cy, cw, ch = ra._node_box("core")
+    sx, sy = ra.ESCALATION_ROUTE[0]
+    assert cx <= sx <= cx + cw and sy >= cy + ch - 1, "the handover starts at the core"
+
+
+def test_words_go_in_on_one_wire_and_the_reply_comes_back_on_the_other() -> None:
+    for step in ra.FLOW_STEPS:
+        link, _reverse = ra._link_for(step.a, step.b)
+        if link[2] == "in":
+            assert step.color == "neon"
+        if link[2] == "out":
+            assert step.color == "violet"
+
+
+def test_every_caption_is_shown_and_the_last_holds_to_the_loop_end() -> None:
+    flow = ra.build(ra.gather())["call-flow.svg"]
+    for _start, _end, words in ra.FLOW_CAPTIONS:
+        assert words in flow
+    assert ra.FLOW_CAPTIONS[-1][1] == ra.FLOW_LOOP
+    assert ra.FLOW_STILL in ra.build(ra.gather())["call-flow-static.svg"]

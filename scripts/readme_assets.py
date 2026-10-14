@@ -74,108 +74,268 @@ LOGO_STYLE = "split"
 LOGO_STYLES = ("neon", "wave", "split", "stamp")
 REPO_TITLE = "MÆX"
 
-# The call flow: one node per component, with the tasks that build it. A node is
-# "built" when all of its tasks are done, "in progress" when any has started, and
-# "planned" otherwise. A new component is one new entry here.
+# The call flow as the code runs it (api/telephony, api/agent/loop.py, api/domain):
+# Asterisk, our own exchange, hands the audio to the service `voice`; its ear turns
+# speech into text; the conversation core asks the LLM, which answers with one
+# sentence or one tool call; the core checks the call and runs the domain function,
+# which reads Postgres; the result goes back to the LLM, at most six hops; the
+# sentence goes out through the mouth. Nothing is confirmed before the caller's yes.
+#
+# One node per component, with the tasks that build it. A node is "built" when all
+# of its tasks are done, "in progress" when any has started, and "planned"
+# otherwise. A new component is one new entry here and its links.
 FLOW_NODES: dict[str, dict] = {
-    "caller": {"label": ["Caller"], "x": 70, "y": 250, "tasks": [], "kind": "person"},
-    "line": {
-        "label": ["Phone line", "Asterisk"],
-        "x": 215,
-        "y": 250,
-        "tasks": ["T-1.11", "T-10.2"],
+    "caller": {"label": ["Caller"], "x": 52, "y": 300, "tasks": [], "kind": "person"},
+    "access": {
+        "label": ["Access", "router, SIP"],
+        "x": 160,
+        "y": 300,
+        "w": 104,
+        "h": 64,
+        "tasks": ["T-10.1", "T-10.2"],
     },
-    "stt": {
-        "label": ["Speech", "to text"],
-        "x": 360,
-        "y": 250,
-        "tasks": ["T-10.5"],
+    "asterisk": {
+        "label": ["Asterisk", "our exchange"],
+        "x": 285,
+        "y": 300,
+        "w": 108,
+        "h": 64,
+        "tasks": ["T-1.11"],
     },
-    "tts": {
-        "label": ["Text to", "speech"],
-        "x": 360,
-        "y": 95,
-        "tasks": ["T-10.5"],
+    "ear": {
+        "label": ["Ear", "speech to text"],
+        "x": 425,
+        "y": 215,
+        "w": 128,
+        "h": 60,
+        "tasks": ["T-10.5", "T-1.11"],
+    },
+    "mouth": {
+        "label": ["Mouth", "text to speech"],
+        "x": 425,
+        "y": 385,
+        "w": 128,
+        "h": 60,
+        "tasks": ["T-10.5", "T-1.11"],
     },
     "core": {
-        "label": ["Conversation", "core"],
-        "x": 515,
-        "y": 250,
+        "label": ["Conversation", "core, guards"],
+        "x": 575,
+        "y": 300,
+        "w": 128,
+        "h": 72,
         "tasks": ["T-2.1", "T-2.2"],
     },
-    "llm": {"label": ["LLM"], "x": 680, "y": 130, "tasks": ["T-2.4"], "small": True},
+    "llm": {
+        "label": ["LLM", "understands"],
+        "x": 575,
+        "y": 150,
+        "w": 128,
+        "h": 60,
+        "tasks": ["T-2.4"],
+    },
+    "status": {
+        "label": ["Open now?", "get_service_status"],
+        "x": 750,
+        "y": 170,
+        "w": 150,
+        "h": 56,
+        "tasks": ["T-1.3"],
+        "code": True,
+    },
     "menu": {
-        "label": ["Menu", "lookup"],
-        "x": 680,
-        "y": 210,
-        "tasks": ["T-4.3", "T-4.4"],
-        "small": True,
-    },
-    "slots": {
-        "label": ["Hours", "and slots"],
-        "x": 680,
-        "y": 290,
-        "tasks": ["T-1.3", "T-1.4"],
-        "small": True,
-    },
-    "cart": {
-        "label": ["Cart", "and prices"],
-        "x": 680,
-        "y": 370,
-        "tasks": ["T-4.5"],
-        "small": True,
-    },
-    "server": {
-        "label": ["Domain", "Postgres"],
-        "x": 850,
+        "label": ["Menu", "search_menu"],
+        "x": 750,
         "y": 250,
-        "tasks": ["T-1.1", "T-1.6", "T-4.1"],
+        "w": 150,
+        "h": 56,
+        "tasks": ["T-4.3", "T-4.4"],
+        "code": True,
+    },
+    "draft": {
+        "label": ["Order draft", "draft_order"],
+        "x": 750,
+        "y": 330,
+        "w": 150,
+        "h": 56,
+        "tasks": ["T-4.5"],
+        "code": True,
+    },
+    "confirm": {
+        "label": ["Confirm", "confirm"],
+        "x": 750,
+        "y": 410,
+        "w": 150,
+        "h": 56,
+        "tasks": ["T-1.6"],
+        "code": True,
+    },
+    "postgres": {
+        "label": ["Postgres", "the facts"],
+        "x": 900,
+        "y": 290,
+        "w": 92,
+        "h": 112,
+        "tasks": ["T-1.1", "T-4.1"],
+        "kind": "db",
     },
     "slip": {
-        "label": ["Kitchen", "slip"],
-        "x": 1000,
-        "y": 165,
+        "label": ["Order slip", "print bridge"],
+        "x": 1048,
+        "y": 175,
+        "w": 110,
+        "h": 56,
         "tasks": ["T-4.6"],
     },
     "tablet": {
-        "label": ["Team", "tablet"],
-        "x": 1000,
-        "y": 335,
+        "label": ["Tablet", "Passt"],
+        "x": 1048,
+        "y": 275,
+        "w": 110,
+        "h": 56,
         "tasks": ["T-3.1", "T-3.4", "T-4.7"],
     },
-    "team": {"label": ["Team"], "x": 1130, "y": 250, "tasks": [], "kind": "person"},
-    "n8n": {
-        "label": ["Outbox", "n8n"],
-        "x": 850,
-        "y": 395,
+    "push": {
+        "label": ["Push", "outbox, n8n"],
+        "x": 1048,
+        "y": 375,
+        "w": 110,
+        "h": 56,
         "tasks": ["T-1.12"],
-        "small": True,
     },
+    "teamphone": {
+        "label": ["Team phone"],
+        "x": 1048,
+        "y": 500,
+        "w": 110,
+        "h": 56,
+        "tasks": ["T-1.8", "T-1.11"],
+    },
+    "team": {"label": ["Team"], "x": 1163, "y": 330, "tasks": [], "kind": "person"},
 }
-# Edges in the order a call walks them; t0 is the start inside the 8 s loop.
-FLOW_EDGES: list[tuple[str, str, float, str]] = [
-    ("caller", "line", 0.0, "neon"),
-    ("line", "stt", 0.6, "neon"),
-    ("stt", "core", 1.2, "neon"),
-    ("core", "llm", 1.9, "neon"),
-    ("core", "menu", 1.9, "neon"),
-    ("core", "slots", 1.9, "neon"),
-    ("core", "cart", 1.9, "neon"),
-    ("llm", "server", 2.7, "neon"),
-    ("menu", "server", 2.7, "neon"),
-    ("slots", "server", 2.7, "neon"),
-    ("cart", "server", 2.7, "neon"),
-    ("core", "tts", 3.5, "violet"),
-    ("tts", "line", 4.1, "violet"),
-    ("line", "caller", 4.7, "violet"),
-    ("server", "slip", 5.0, "neon"),
-    ("server", "tablet", 5.0, "neon"),
-    ("server", "n8n", 5.0, "plum"),
-    ("slip", "team", 5.7, "neon"),
-    ("tablet", "team", 5.7, "neon"),
+# Static lines. "in" and "out" are the two wires of the telephone and voice lanes
+# (the caller's words in, the spoken reply out); "both" carries dots either way.
+FLOW_LINKS: list[tuple[str, str, str]] = [
+    ("caller", "access", "in"),
+    ("access", "asterisk", "in"),
+    ("asterisk", "ear", "in"),
+    ("ear", "core", "in"),
+    ("core", "mouth", "out"),
+    ("mouth", "asterisk", "out"),
+    ("asterisk", "access", "out"),
+    ("access", "caller", "out"),
+    # The LLM talks to the core and to nothing else: it never reads Postgres.
+    ("core", "llm", "both"),
+    ("core", "status", "both"),
+    ("core", "menu", "both"),
+    ("core", "draft", "both"),
+    ("core", "confirm", "both"),
+    ("status", "postgres", "both"),
+    ("menu", "postgres", "both"),
+    ("draft", "postgres", "both"),
+    ("confirm", "postgres", "both"),
+    ("postgres", "slip", "both"),
+    ("postgres", "tablet", "both"),
+    ("postgres", "push", "both"),
+    ("slip", "team", "both"),
+    ("tablet", "team", "both"),
+    ("push", "team", "both"),
+    ("teamphone", "team", "both"),
 ]
-FLOW_LOOP = 8.0
-FLOW_HOP = 0.65
+
+
+def _hop(tool: str) -> list[tuple[str, str, str]]:
+    """One tool hop: the LLM asks for the tool, the core runs it against Postgres
+    and hands the result back to the LLM."""
+    return [
+        ("core", "llm", "neon"),
+        ("llm", "core", "neon"),
+        ("core", tool, "neon"),
+        (tool, "postgres", "neon"),
+        ("postgres", tool, "neon"),
+        (tool, "core", "neon"),
+    ]
+
+
+WORDS_IN = [
+    ("caller", "access", "neon"),
+    ("access", "asterisk", "neon"),
+    ("asterisk", "ear", "neon"),
+    ("ear", "core", "neon"),
+]
+# The story the dots tell: two turns of one order. A phase is a caption and its
+# steps in order; a tuple of steps inside a phase runs at the same time.
+FLOW_STORY: list[tuple[str, list]] = [
+    ("1  The caller orders.", WORDS_IN),
+    (
+        "2  The LLM understands, the code looks up: one tool per hop, at most six.",
+        _hop("status") + _hop("menu") + _hop("draft"),
+    ),
+    (
+        "3  The read-back goes out through the mouth.",
+        [
+            ("core", "llm", "neon"),
+            ("llm", "core", "violet"),
+            ("core", "mouth", "violet"),
+            ("mouth", "asterisk", "violet"),
+            ("asterisk", "access", "violet"),
+            ("access", "caller", "violet"),
+        ],
+    ),
+    (
+        "4  The caller says yes. Only now the core confirms.",
+        [
+            *WORDS_IN,
+            ("core", "llm", "neon"),
+            ("llm", "core", "neon"),
+            ("core", "confirm", "neon"),
+            ("confirm", "postgres", "neon"),
+        ],
+    ),
+    (
+        "5  Slip at the register, order on the tablet, for the team.",
+        [
+            (("postgres", "slip", "neon"), ("postgres", "tablet", "neon")),
+            (("slip", "team", "neon"), ("tablet", "team", "neon")),
+        ],
+    ),
+]
+FLOW_SEGMENT = 0.34
+FLOW_PAUSE = 0.25
+FLOW_HOLD = 1.5
+
+
+@dataclass(frozen=True)
+class FlowStep:
+    a: str
+    b: str
+    t0: float
+    t1: float
+    color: str
+
+
+def flow_timeline() -> tuple[list[FlowStep], list[tuple[float, float, str]], float]:
+    """Steps with their times, the captions with theirs, and the loop length."""
+    steps: list[FlowStep] = []
+    captions: list[tuple[float, float, str]] = []
+    t = 0.0
+    for caption, items in FLOW_STORY:
+        start = t
+        for item in items:
+            group = item if isinstance(item[0], tuple) else (item,)
+            for a, b, color in group:
+                steps.append(FlowStep(a, b, t, t + FLOW_SEGMENT, color))
+            t += FLOW_SEGMENT
+        captions.append((start, t + FLOW_PAUSE, caption))
+        t += FLOW_PAUSE
+    loop = round(t + FLOW_HOLD, 2)
+    # The last caption stays up through the hold, until the story starts again.
+    last_start, _end, last_words = captions[-1]
+    captions[-1] = (last_start, loop, last_words)
+    return steps, captions, loop
+
+
+FLOW_STEPS, FLOW_CAPTIONS, FLOW_LOOP = flow_timeline()
 
 BLOCK_NAMES = {
     "0": "Scaffold",
@@ -1454,40 +1614,53 @@ def asset_progress(facts: Facts) -> str:
 
 # ------------------------------------------------------------------------ call flow
 
+CHANNEL_OFFSET = {"in": -8.0, "out": 8.0, "both": 0.0}
+# Lanes: x range and label. The caller stands outside them, the team inside the last.
+FLOW_LANES = [
+    (100, 345, "telephone"),
+    (352, 495, "service voice"),
+    (503, 653, "AI understands"),
+    (661, 960, "code decides"),
+    (968, 1192, "team"),
+]
+# The two ways a call leaves the AI for a person, drawn under the lanes.
+ESCALATION_ROUTE = [
+    (530.0, 336.0),
+    (530.0, 560.0),
+    (954.0, 560.0),
+    (954.0, 492.0),
+    (993.0, 492.0),
+]
+OUTAGE_ROUTE = [
+    (236.0, 332.0),
+    (236.0, 600.0),
+    (976.0, 600.0),
+    (976.0, 510.0),
+    (993.0, 510.0),
+]
+
 
 def _node_box(key: str) -> tuple[float, float, float, float]:
     node = FLOW_NODES[key]
     if node.get("kind") == "person":
-        return node["x"] - 34, node["y"] - 34, 68, 68
-    w, h = (104, 56) if node.get("small") else (118, 72)
+        return node["x"] - 30, node["y"] - 30, 60, 60
+    w, h = node["w"], node["h"]
     return node["x"] - w / 2, node["y"] - h / 2, w, h
 
 
-def _edge_path(a: str, b: str) -> list[tuple[float, float]]:
-    """Orthogonal-ish route from a's side to b's side, with a soft elbow."""
+def _edge_path(a: str, b: str, offset: float = 0.0) -> list[tuple[float, float]]:
+    """Orthogonal route from a's side to b's side with one elbow, shifted by the
+    channel offset so the in and out wires of a lane run side by side."""
     ax, ay, aw, ah = _node_box(a)
     bx, by, bw, bh = _node_box(b)
-    acx, acy = ax + aw / 2, ay + ah / 2
-    bcx, bcy = bx + bw / 2, by + bh / 2
+    acx, acy = ax + aw / 2, ay + ah / 2 + offset
+    bcx, bcy = bx + bw / 2, by + bh / 2 + offset
     if abs(acx - bcx) < 5:
-        # Vertical: bottom of a to top of b, or the other way round.
+        # Vertical: from a's edge facing b to b's edge facing a.
         if bcy > acy:
             return [(acx, ay + ah), (bcx, by)]
         return [(acx, ay), (bcx, by + bh)]
-    if (
-        abs(acy - bcy) > 60
-        and abs(acx - bcx) < 200
-        and ((a in ("core", "line") and b == "tts") or a == "tts")
-    ):
-        # Up to the reply lane and back down.
-        if a == "tts":
-            sx, sy = ax, acy
-            return [(sx, sy), (bcx, sy), (bcx, by)]
-        return [(acx, ay), (acx, bcy), (bx + bw, bcy)]
-    if bcx > acx:
-        sx, ex = ax + aw, bx
-    else:
-        sx, ex = ax, bx + bw
+    sx, ex = (ax + aw, bx) if bcx > acx else (ax, bx + bw)
     mid = (sx + ex) / 2
     return [(sx, acy), (mid, acy), (mid, bcy), (ex, bcy)]
 
@@ -1514,10 +1687,26 @@ def _rounded(points: list[tuple[float, float]], r: float = 12) -> str:
 def _person(cx: float, cy: float, color: str) -> str:
     c = TOKENS[color]
     return (
-        f'<circle cx="{f(cx)}" cy="{f(cy - 12)}" r="11" fill="none" stroke="{c}" stroke-width="3"/>'
-        f'<path d="M{f(cx - 20)} {f(cy + 24)} Q{f(cx - 20)} {f(cy + 2)} {f(cx)} {f(cy + 2)} '
-        f'Q{f(cx + 20)} {f(cy + 2)} {f(cx + 20)} {f(cy + 24)}" fill="none" stroke="{c}" stroke-width="3" stroke-linecap="round"/>'
+        f'<circle cx="{f(cx)}" cy="{f(cy - 10)}" r="10" fill="none" stroke="{c}" stroke-width="3"/>'
+        f'<path d="M{f(cx - 18)} {f(cy + 21)} Q{f(cx - 18)} {f(cy + 3)} {f(cx)} {f(cy + 3)} '
+        f'Q{f(cx + 18)} {f(cy + 3)} {f(cx + 18)} {f(cy + 21)}" fill="none" stroke="{c}" stroke-width="3" stroke-linecap="round"/>'
     )
+
+
+def _cylinder(x: float, y: float, w: float, h: float, stroke: str) -> str:
+    """A database drum: top ellipse, body, front of the bottom ellipse."""
+    rx, ry = w / 2, 10
+    cx = x + w / 2
+    body = (
+        f'<path d="M{f(x)} {f(y + ry)} V{f(y + h - ry)} '
+        f'A{f(rx)} {f(ry)} 0 0 0 {f(x + w)} {f(y + h - ry)} V{f(y + ry)}" '
+        f'fill="{TOKENS["surface_hi"]}" stroke="{stroke}" stroke-width="2"/>'
+    )
+    top = (
+        f'<ellipse cx="{f(cx)}" cy="{f(y + ry)}" rx="{f(rx)}" ry="{ry}" '
+        f'fill="{TOKENS["surface_hi"]}" stroke="{stroke}" stroke-width="2"/>'
+    )
+    return body + top
 
 
 def _timing(start: float, end: float) -> tuple[str, str]:
@@ -1526,8 +1715,52 @@ def _timing(start: float, end: float) -> tuple[str, str]:
     return f"0;{a:.3f};{b:.3f};1", f"0;{a:.3f};{b:.3f}"
 
 
+def _link_for(a: str, b: str) -> tuple[tuple[str, str, str], bool]:
+    """The static link a step runs on, and whether the step runs against it."""
+    for link in FLOW_LINKS:
+        if (link[0], link[1]) == (a, b):
+            return link, False
+    for link in FLOW_LINKS:
+        if (link[1], link[0]) == (a, b) and link[2] == "both":
+            return link, True
+    raise KeyError(f"no link for the step {a} -> {b}")
+
+
+def _dot(path: str, step: FlowStep, reverse: bool) -> str:
+    kt, kt3 = _timing(step.t0, step.t1)
+    points = "1;1;0;0" if reverse else "0;0;1;1"
+    motion = (
+        f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{path}" '
+        f'keyPoints="{points}" keyTimes="{kt}" calcMode="linear"/>'
+        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
+        f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/>'
+    )
+    core = TOKENS["neon_core" if step.color == "neon" else "violet_core"]
+    return (
+        f'<circle class="dot" r="7" fill="{TOKENS[step.color]}" filter="url(#soft)" opacity="0">{motion}</circle>'
+        f'<circle class="dot" r="3.5" fill="{core}" opacity="0">{motion}</circle>'
+    )
+
+
+def _caption(start: float, end: float, words: str) -> str:
+    a, b = start / FLOW_LOOP, min(end / FLOW_LOOP, 0.999)
+    values, times = ("1;0", f"0;{b:.3f}") if a == 0 else ("0;1;0", f"0;{a:.3f};{b:.3f}")
+    anim = (
+        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
+        f'values="{values}" keyTimes="{times}" calcMode="discrete"/>'
+    )
+    return text(40, 84, words, 16, "neon", extra='class="caption" opacity="0"').replace(
+        "</text>", anim + "</text>"
+    )
+
+
+FLOW_STILL = (
+    "Words in (yellow), reply out (violet). One tool per hop. Confirm only after a yes."
+)
+
+
 def asset_call_flow(facts: Facts, animated: bool = True) -> str:
-    width, height = 1200, 520
+    width, height = 1200, 680
     states = facts.states
     parts = [dot_grid(width, height)]
     parts.append(text(40, 48, "HOW A CALL FLOWS", 14, "muted", spacing=2.4, weight=700))
@@ -1543,23 +1776,23 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         )
         parts.append(text(lx + 30, 49, label, 14, "muted"))
         lx += 52 + 8 * len(label)
-    for label, color in (("the order", "neon"), ("the reply", "violet")):
+    for label, color in (("words, order", "neon"), ("reply", "violet")):
         parts.append(f'<circle cx="{lx + 6}" cy="44" r="5" fill="{TOKENS[color]}"/>')
         parts.append(text(lx + 18, 49, label, 14, "muted"))
         lx += 32 + 8 * len(label)
-    # Lanes, so the eye reads three zones: voice, understanding, deciding.
-    for x0, x1, label in (
-        (140, 430, "voice layer"),
-        (440, 760, "AI understands"),
-        (770, 1070, "code decides"),
-    ):
+    if animated:
+        parts += [_caption(s, e, words) for s, e, words in FLOW_CAPTIONS]
+        parts.append(text(40, 84, FLOW_STILL, 16, "neon", extra='class="still"'))
+    else:
+        parts.append(text(40, 84, FLOW_STILL, 16, "neon"))
+    for x0, x1, label in FLOW_LANES:
         parts.append(
-            f'<rect x="{x0}" y="70" width="{x1 - x0}" height="420" rx="16" fill="{TOKENS["surface"]}" opacity="0.45"/>'
+            f'<rect x="{x0}" y="102" width="{x1 - x0}" height="548" rx="16" fill="{TOKENS["surface"]}" opacity="0.45"/>'
         )
         parts.append(
             text(
                 (x0 + x1) / 2,
-                484,
+                640,
                 label.upper(),
                 13,
                 "muted",
@@ -1567,16 +1800,34 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
                 spacing=2,
             )
         )
-    paths: dict[tuple[str, str], str] = {}
-    for a, b, _t0, color in FLOW_EDGES:
-        d = _rounded(_edge_path(a, b))
-        paths[(a, b)] = d
+    # The two ways to a person: drawn first, so nodes sit on top of them.
+    parts.append(
+        f'<path d="{_rounded(ESCALATION_ROUTE, 14)}" fill="none" stroke="{TOKENS["violet"]}" '
+        'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
+    )
+    parts.append(
+        text(
+            546, 552, "unsure or a complaint: transfer to the team phone", 13, "violet"
+        )
+    )
+    parts.append(
+        f'<path d="{_rounded(OUTAGE_ROUTE, 14)}" fill="none" stroke="{TOKENS["coral"]}" '
+        'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
+    )
+    parts.append(
+        text(252, 592, "any failure: the exchange rings the team phone", 13, "coral")
+    )
+    paths: dict[tuple[str, str, str], str] = {}
+    for link in FLOW_LINKS:
+        a, b, channel = link
+        d = _rounded(_edge_path(a, b, CHANNEL_OFFSET[channel]))
+        paths[link] = d
         planned = "planned" in (
             node_state(FLOW_NODES[a]["tasks"], states),
             node_state(FLOW_NODES[b]["tasks"], states),
         )
-        dash = ' stroke-dasharray="5 6"' if planned or color == "plum" else ""
-        stroke = TOKENS["grid"] if color != "violet" else "#3B2E66"
+        dash = ' stroke-dasharray="5 6"' if planned else ""
+        stroke = "#3B2E66" if channel == "out" else TOKENS["grid"]
         parts.append(
             f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="2"{dash}/>'
         )
@@ -1590,7 +1841,7 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         }[state]
         if node.get("kind") == "person":
             parts.append(
-                f'<circle cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" r="34" fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}" stroke-width="2"/>'
+                f'<circle cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" r="30" fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}" stroke-width="2"/>'
             )
             parts.append(_person(x + w / 2, y + h / 2, "ink"))
             parts.append(
@@ -1606,68 +1857,53 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
             )
             continue
         dash = ' stroke-dasharray="6 5"' if state == "planned" else ""
-        parts.append(
-            f'<rect class="node-{key}" x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="12" '
-            f'fill="{TOKENS["surface_hi"]}" stroke="{edge}" stroke-width="2"{dash}/>'
-        )
+        if node.get("kind") == "db":
+            parts.append(_cylinder(x, y, w, h, edge))
+        else:
+            parts.append(
+                f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="12" '
+                f'fill="{TOKENS["surface_hi"]}" stroke="{edge}" stroke-width="2"{dash}/>'
+            )
         lines = node["label"]
-        size = 13 if node.get("small") else 14
-        base = y + h / 2 - (len(lines) - 1) * 8 + 5
+        base = (
+            y
+            + h / 2
+            - (len(lines) - 1) * 9
+            + 5
+            + (6 if node.get("kind") == "db" else 0)
+        )
         for i, line in enumerate(lines):
+            code = node.get("code") and i == 1
             parts.append(
                 text(
                     x + w / 2,
-                    base + i * 17,
+                    base + i * 18,
                     line,
-                    size,
-                    "ink",
+                    14 if i == 0 else 13,
+                    "neon" if code else "ink",
                     anchor="middle",
                     weight=700 if i == 0 else 400,
                 )
             )
         tag = {"built": "built", "progress": "in progress", "planned": "planned"}[state]
-        parts.append(
-            text(
-                x + w / 2,
-                y + h + 15,
-                node.get("sub", tag),
-                13,
-                "muted",
-                anchor="middle",
-            )
-        )
+        parts.append(text(x + w / 2, y + h + 15, tag, 13, "muted", anchor="middle"))
         if animated:
-            parts.append(
-                f'<rect class="pulse" x="{f(x - 3)}" y="{f(y - 3)}" width="{f(w + 6)}" height="{f(h + 6)}" rx="14" '
-                f'fill="none" stroke="{edge}" stroke-width="3" opacity="0" filter="url(#soft)">'
-                + _pulse(key)
-                + "</rect>"
-            )
-    # The escalation path: unsure, hand to the team.
-    esc = _rounded([(490, 286), (490, 458), (1030, 458), (1030, 371)], 14)
-    parts.append(
-        f'<path d="{esc}" fill="none" stroke="{TOKENS["violet"]}" stroke-width="1.5" stroke-dasharray="3 6" opacity="0.7"/>'
-    )
-    parts.append(text(506, 450, "unsure: hand to the team", 13, "violet"))
+            pulse = _pulse(key)
+            if pulse:
+                parts.append(
+                    f'<rect class="pulse" x="{f(x - 3)}" y="{f(y - 3)}" width="{f(w + 6)}" height="{f(h + 6)}" rx="14" '
+                    f'fill="none" stroke="{edge}" stroke-width="3" opacity="0" filter="url(#soft)">'
+                    + pulse
+                    + "</rect>"
+                )
     if animated:
-        for a, b, t0, color in FLOW_EDGES:
-            if color == "plum":
-                continue
-            kt, kt3 = _timing(t0, t0 + FLOW_HOP)
-            fill = TOKENS[color]
-            parts.append(
-                f'<circle class="dot" r="5" fill="{fill}" filter="url(#soft)" opacity="0">'
-                f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{paths[(a, b)]}" '
-                f'keyPoints="0;0;1;1" keyTimes="{kt}" calcMode="linear"/>'
-                f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
-                f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/></circle>'
-                f'<circle class="dot" r="2.5" fill="{TOKENS["neon_core" if color == "neon" else "violet_core"]}" opacity="0">'
-                f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{paths[(a, b)]}" '
-                f'keyPoints="0;0;1;1" keyTimes="{kt}" calcMode="linear"/>'
-                f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
-                f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/></circle>'
-            )
-    css = "@media (prefers-reduced-motion:reduce){.dot,.pulse{display:none}}"
+        for step in FLOW_STEPS:
+            link, reverse = _link_for(step.a, step.b)
+            parts.append(_dot(paths[link], step, reverse))
+    css = (
+        ".still{display:none}"
+        "@media (prefers-reduced-motion:reduce){.dot,.pulse,.caption{display:none}.still{display:inline}}"
+    )
     built = [
         k
         for k, n in FLOW_NODES.items()
@@ -1679,10 +1915,15 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         if n["tasks"] and node_state(n["tasks"], states) != "built"
     ]
     desc = (
-        "A call from caller to team: phone line, speech to text, the conversation core that fans out to the "
-        "language model, menu lookup, hours and slots, cart and prices, which converge in the domain and "
-        "Postgres where code decides; then the kitchen slip and the team tablet. The reply goes back through "
-        "text to speech. Built: "
+        "One call as the code runs it. The caller reaches the access, router or SIP trunk, and "
+        "Asterisk, our own exchange, which hands the audio to the service voice. Its ear turns speech "
+        "into text for the conversation core. The core asks the language model, which answers with one "
+        "sentence or one tool call; the core checks the call and runs the tool, get_service_status, "
+        "search_menu or draft_order, against Postgres, and hands the result back to the model, one tool "
+        "per hop. The model never reads the database. The read-back goes out through the mouth. Only "
+        "after the caller's yes does the core run confirm; then the order slip prints at the register "
+        "and the order shows on the tablet. When the AI is unsure or hears a complaint, the call goes to "
+        "the team phone; on any failure the exchange rings the team phone. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)
@@ -1693,18 +1934,18 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
 
 def _pulse(key: str) -> str:
     """The node glows while a dot arrives at it."""
-    arrivals = sorted(
-        {t0 + FLOW_HOP for a, b, t0, c in FLOW_EDGES if b == key and c != "plum"}
-    )
+    arrivals = sorted({s.t1 for s in FLOW_STEPS if s.b == key})
     if not arrivals:
         return ""
     times, values = ["0"], ["0"]
     for t in arrivals:
         start, peak, end = (
             t / FLOW_LOOP,
-            (t + 0.15) / FLOW_LOOP,
-            min((t + 0.6) / FLOW_LOOP, 0.999),
+            (t + 0.12) / FLOW_LOOP,
+            min((t + 0.45) / FLOW_LOOP, 0.999),
         )
+        if float(times[-1]) >= start:
+            continue
         times += [f"{start:.3f}", f"{peak:.3f}", f"{end:.3f}"]
         values += ["0", "0.9", "0"]
     times.append("1")
