@@ -132,6 +132,8 @@ make eval MODEL=<name>         # Modellvergleich
 
 **Regressionsregel:** Ist ein Fall rot, der im letzten bestandenen Lauf mit demselben Modell und denselben Tags grün war, wird nicht gemerged. Kein „ist nur ein Fall". Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer, noch roter Fall aus `/bug` ist keine Regression, und neue grüne Fälle verdecken keinen kaputten (§3, T-5.1).
 
+**Recording a run.** `evals/reports/` is git-ignored, so a full run on a real model is recorded once in `docs/metrics/eval_history.csv`: `make eval-record REPORT=evals/reports/<run>.json` (with `SUITE=targets` for `make eval-targets`), then `make readme-assets`. The row keeps date, model, passed, crashed, known gaps, the hard metrics, false escalation, refused attempts and tokens per case; the README draws its eval slip and trend from it (`docs/15_README_STRATEGY.md`, "Assets and design"). Runs of the scripted stand-in are not recorded, except one reference row that names what CI measures; a partial run of a few tags goes in under its own suite name (the early `reservations` and `pickup` rows) and is kept, not drawn.
+
 ---
 
 ## 5. Woher die Fälle kommen

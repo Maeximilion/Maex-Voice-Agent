@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern backup lock
+.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-record readme-assets backup lock
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -33,6 +33,12 @@ eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (d
 
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval
+
+eval-record: ## Record a real-model eval report in docs/metrics/, REPORT=<file.json>, optional SUITE=targets
+	python scripts/readme_assets.py add $(REPORT) --suite $(or $(SUITE),cases)
+
+readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
+	python scripts/readme_assets.py render
 
 backup:
 	bash scripts/backup.sh

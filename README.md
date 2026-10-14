@@ -1,13 +1,42 @@
-# Maex Voice Agent
+<p align="center">
+  <img src=".github/assets/banner.svg" width="100%" alt="MÆX, Maex Voice Agent: the neon logo and a slip with the current state, namely version, stage, test count, next gate and the latest eval run on a real model.">
+</p>
+
+# MÆX (Maex Voice Agent)
+
+<p>
+  <a href="https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml"><img src="https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.12-9D7BFF?labelColor=17102B" alt="Python 3.12"></a>
+  <a href="https://www.postgresql.org/"><img src="https://img.shields.io/badge/postgresql-16-9D7BFF?labelColor=17102B" alt="PostgreSQL 16"></a>
+  <a href="#license-and-contact"><img src="https://img.shields.io/badge/license-proprietary-E8FF2E?labelColor=17102B" alt="License: proprietary"></a>
+</p>
+
+<p>
+  <a href="#how-a-call-flows">How a call flows</a> ·
+  <a href="#status">Status</a> ·
+  <a href="#measured-state">Measured state</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#development">Development</a> ·
+  <a href="#documentation">Docs</a>
+</p>
 
 AI-powered phone intake for hospitality. An AI agent answers calls on the restaurant's main line, handles reservations, pickup, and delivery, and hands off confirmed transactions to kitchen, register, and team. Complaints and special cases escalate to a human. The team manages operations via a browser interface on a tablet.
 
 The voice layer (telephony, speech recognition, voice output) is our own, running on our own EU server: decided 07.10.2026, built up to the speech engines and not yet connected to a real telephone line (`docs/20_VOICE_LAYER.md`). This repository contains the domain logic, database, interface, and tests. Pilot operation, location, domain, and point-of-sale provider appear in docs as placeholders in angle brackets.
 
-[![CI](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/Maeximilion/Maex-Voice-Agent/actions/workflows/ci.yml)
-[![Python 3.12](https://img.shields.io/badge/python-3.12-blue)](https://www.python.org/)
-[![PostgreSQL 16](https://img.shields.io/badge/postgresql-16-blue)](https://www.postgresql.org/)
-[![License](https://img.shields.io/badge/license-proprietary-lightgrey)](#license-and-contact)
+### How a call flows
+
+<p align="center">
+  <img src=".github/assets/call-flow.svg" width="100%" alt="Animated diagram of a call: the caller reaches the phone line, speech becomes text, the conversation core fans out to the language model, menu lookup, hours and slots, cart and prices, the branches meet in the domain and Postgres where code decides, and the order goes to the kitchen slip and the team tablet. The reply goes back through text to speech. When the AI is unsure, the call goes to the team. Each component is marked built, in progress or planned from the task list.">
+</p>
+
+The language model only understands what the caller wants. Whether a dish exists, what it costs, whether a table is free and whether the order is final is decided by code against the database. These six rules hold everywhere in the code; the full text is in [`CLAUDE.md`](CLAUDE.md):
+
+<p align="center">
+  <img src=".github/assets/rules.svg" width="100%" alt="The six hard rules: AI understands, code decides; never guess; nothing without confirmation; errors are measured; every outage ends with the team; token-efficient by design.">
+</p>
+
+<p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
 
 ## Status
 
@@ -16,7 +45,29 @@ The voice layer (telephony, speech recognition, voice output) is our own, runnin
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: budget, legal, voice path and stage order settled; open until the telephony path is measured |
-| As of | 2026-09-17 |
+| As of | 2026-10-14 |
+
+<p align="center">
+  <img src=".github/assets/progress.svg" width="100%" alt="Build progress: tasks done of all tasks, one bar per block of docs/07_WORKPACKAGES.md split into done, in progress, blocked and open, and the gates P and G0 to G5 on a line from plan to live operation.">
+</p>
+
+### Measured state
+
+The images below are drawn from the measurement files in [`docs/metrics/`](docs/metrics/), one dated row per run, so every number on this page has a date and a source. Real-model runs happen on the workbench against a local model with invented test cases only; CI runs the rule-based stand-in, which passes every regular case by design and therefore says nothing about a model.
+
+<p align="center">
+  <img src=".github/assets/eval-latest.svg" width="100%" alt="The latest eval run on a real model: passed and not passed cases for the regular and the target suite, with hard violations, missed escalations, false escalation rate and tokens per case. Numbers in docs/metrics/eval_history.csv.">
+</p>
+
+<p align="center">
+  <img src=".github/assets/eval-trend.svg" width="100%" alt="Pass rate of the real model over time for the regular and the target cases, against the target of 99 percent from docs/08_EVALS.md. Numbers in docs/metrics/eval_history.csv.">
+</p>
+
+<p align="center">
+  <img src=".github/assets/voice-bench.svg" width="100%" alt="Measurements of the own voice layer with date, value, limit and verdict go, at limit or no-go: the telephony spike, silent wrong numbers of the speech recognition, dishes heard right in spoken orders and the outage drills. Numbers in docs/metrics/voice_history.csv.">
+</p>
+
+How the images stay current: `python scripts/readme_assets.py add <report.json>` records an eval run, `add-voice` a voice measurement, and `render` redraws every image from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
 
 **What works:**
 
@@ -42,9 +93,11 @@ The voice layer (telephony, speech recognition, voice output) is our own, runnin
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)
-- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4); how well a model does is not measured yet
+- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). The first full runs on a local model (`qwen3.6-35b-a3b`, 13./14.10.2026) pass 26 of 41 regular cases and 2 of 27 target cases, far from the target of 99 % ("Measured state" above)
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
+
+<p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
 
 ## Requirements
 
@@ -79,11 +132,19 @@ pytest -q
 ruff check api scripts evals printbridge sim db && ruff format --check api scripts evals printbridge sim db && mypy
 ```
 
-Dependencies: `api/requirements.in` lists what the project needs, as version ranges, and is the file edited by hand. `api/requirements.txt` is compiled from it (`make lock`, pip-tools in the `python:3.12-slim` image) and pins every package, the indirect ones included, to one version with hashes; the image build and CI install it with `--require-hashes`, so both run the same versions. To add or bump a dependency, edit `requirements.in`, run `make lock`, commit both files; `make lock ARGS="--upgrade-package <name>"` moves one pin inside its range, `ARGS=--upgrade` all of them. The compiled file is for Linux and Python 3.12 (containers, CI, server). A venv on a Windows host cannot install it (checked 12.10.2026: `uvloop` is pinned and has no Windows build, and `tzdata` and `colorama`, which Windows needs, are missing, which hash mode refuses); use `pip install -r api/requirements.in` there, or the container.
+<details>
+<summary>Dependencies and the lock file</summary>
+
+`api/requirements.in` lists what the project needs, as version ranges, and is the file edited by hand. `api/requirements.txt` is compiled from it (`make lock`, pip-tools in the `python:3.12-slim` image) and pins every package, the indirect ones included, to one version with hashes; the image build and CI install it with `--require-hashes`, so both run the same versions. To add or bump a dependency, edit `requirements.in`, run `make lock`, commit both files; `make lock ARGS="--upgrade-package <name>"` moves one pin inside its range, `ARGS=--upgrade` all of them. The compiled file is for Linux and Python 3.12 (containers, CI, server). A venv on a Windows host cannot install it (checked 12.10.2026: `uvloop` is pinned and has no Windows build, and `tzdata` and `colorama`, which Windows needs, are missing, which hash mode refuses); use `pip install -r api/requirements.in` there, or the container.
+
+</details>
 
 ## Configuration
 
-All settings come from `.env`. Template and description of all variables: `.env.example`. Most important:
+All settings come from `.env`. Template and description of all variables: `.env.example`.
+
+<details>
+<summary>The most important variables</summary>
 
 | Variable | Purpose |
 |---|---|
@@ -98,17 +159,21 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
 | `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'` |
 
+</details>
+
 ## Project Structure
 
 ```text
-api/         FastAPI application: core, domain, agent, telephony, tools, events, jobs, gui
-sim/         Text phone: conversations with agent without telephony
-db/          Alembic migrations
-prompts/     System prompt per version
-evals/       Test cases and runner for conversation quality
-n8n/         Workflow exports for cold path
-deploy/      Production compose, Caddyfile, the AI telephone's Asterisk config (asterisk/conf/) and its drills
-docs/        Specs and status
+api/              FastAPI application: core, domain, agent, telephony, tools, events, jobs, gui
+sim/              Text phone: conversations with agent without telephony
+db/               Alembic migrations
+prompts/          System prompt per version
+evals/            Test cases and runner for conversation quality
+n8n/              Workflow exports for cold path
+deploy/           Production compose, Caddyfile, the AI telephone's Asterisk config (asterisk/conf/) and its drills
+scripts/          Seed, import, backup, drills, and the generator of the README images
+docs/             Specs and status; docs/metrics/ holds the dated measurements
+.github/assets/   README images, generated by scripts/readme_assets.py
 ```
 
 Layers and dependency rules: `docs/11_MODULE.md`.
@@ -120,8 +185,10 @@ make test        # pytest
 make lint        # ruff check, mypy
 make fmt         # ruff format
 make backup      # encrypted dump of the database of DATABASE_URL into backups/, needs BACKUP_PASSPHRASE_FILE (docs/13 §4)
-make eval        # 28 CI cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
+make eval        # 41 regular cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
+make eval-record REPORT=evals/reports/<run>.json  # record a real-model run in docs/metrics/, optional SUITE=targets
+make readme-assets  # redraw the README images from docs/metrics/, the task list and the status
 
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.cli --model qwen3:14b                 # the same on a local model (LLM_* in .env, docs/18 §5)
@@ -151,12 +218,13 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/12_CLAUDE_CODE_PLAYBOOKS.md` | Session workflows and slash commands |
 | `docs/13_DEPLOYMENT.md` | Operating locations, EU server, backups, CI |
 | `docs/14_MENU_IMPORT_FORMAT.md` | CSV format for menu digitization |
-| `docs/15_README_STRATEGY.md` | When and how to maintain this README |
+| `docs/15_README_STRATEGY.md` | When and how to maintain this README, its images and their design |
 | `docs/16_GITHUB_PROJECT.md` | GitHub Project board: one project, derived from issues and PRs |
 | `docs/17_ANRUFPROTOKOLL.md` | Call log without recording: CSV format, paper sheet, baseline and eval drafts |
 | `docs/18_MODEL_SELECTION.md` | Operation model, local test model, setup script, parallel calls |
 | `docs/19_CLAUDE_CODE_SETUP.md` | Personal Claude Code setup: user-level hooks, settings block, restore steps |
 | `docs/20_VOICE_LAYER.md` | Own voice layer: components, access, call session rules, outage map, cost model (decided 07.10.2026, not built) |
+| `docs/metrics/` | Dated measurements behind the README images: eval runs on real models and voice layer measurements |
 
 ## Contributing
 
@@ -168,8 +236,9 @@ Please report security issues confidentially, not as an issue: [SECURITY.md](SEC
 
 - Docker Hub rate-limits anonymous image downloads. If `make up` fails with rate limit: `docker login` with a free Docker Hub account, then restart.
 - Kitchen ticket printing: the test slip was checked on paper on the restaurant's Epson TM-T20II (register PC, Windows queue, 06.10.2026). A slip of a real order through the server has not been printed yet, and the network path is tested against a simulated printer only
-- `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`); tokens and cost per case are empty there. `make eval MODEL=<name>` runs the same cases on a model of the server in `LLM_BASE_URL` and fills them. The cost per case stays empty when `MODEL` names another model than `LLM_MODEL`: the prices in `.env` are not its own. No model has passed the full suite yet; the first full run and the prompt work are open (issue #37).
+- `make eval` measures the rule-based stand-in model (`sim/scripted_llm.py`); tokens and cost per case are empty there. `make eval MODEL=<name>` runs the same cases on a model of the server in `LLM_BASE_URL` and fills them. The cost per case stays empty when `MODEL` names another model than `LLM_MODEL`: the prices in `.env` are not its own. No model has passed the full suite yet: the first full runs on a local model reach 26 of 41 regular cases (14.10.2026); the prompt work is open (issue #37).
 - Behind a TLS-terminating proxy, `pip install` in image build fails with `CERTIFICATE_VERIFY_FAILED`. Fix: place the proxy's CA cert as `api/ca-bundle.crt` (in `.gitignore`), the build auto-includes it.
+- The README images are SVG files with their own midnight background, so they look the same in GitHub's light and dark theme. The animated call flow moves in browsers that run SVG animation; where motion is reduced, the static picture shows. The social preview (`.github/assets/social-preview.png`) has to be uploaded by hand in the repository settings, the API cannot set it.
 
 ## License and Contact
 

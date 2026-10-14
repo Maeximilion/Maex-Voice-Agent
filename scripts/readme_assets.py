@@ -1,0 +1,1890 @@
+#!/usr/bin/env python3
+"""The README's images: logo, banner, measured charts and the animated call flow.
+
+Every asset in `.github/assets/` is written by this script from data in the
+repository, so the start page cannot claim more than the docs do:
+
+- `docs/metrics/eval_history.csv`: one dated row per eval run on a real model
+- `docs/metrics/voice_history.csv`: one dated row per voice layer measurement
+- `docs/07_WORKPACKAGES.md`: task status, read for progress and the call flow
+- `docs/01_STATUS.md`: stage and gates; `README.md`: version; `api/tests`: test count
+
+Usage:
+    python scripts/readme_assets.py render            write all SVG assets
+    python scripts/readme_assets.py render --check    fail if a committed asset is stale
+    python scripts/readme_assets.py render --png      also the PNGs (needs Chromium)
+    python scripts/readme_assets.py add <report.json> [--suite cases|targets]
+    python scripts/readme_assets.py add-voice <date> <package> <metric> <value> ...
+
+Rendering is deterministic: every date comes from the data, never from today, so
+`--check` in CI only fails when the data moved and the images did not.
+Design rules and tokens: docs/15_README_STRATEGY.md section "Assets and design".
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from pathlib import Path
+from xml.sax.saxutils import escape
+from zoneinfo import ZoneInfo
+
+ROOT = Path(__file__).resolve().parent.parent
+ASSETS = ROOT / ".github" / "assets"
+EVAL_HISTORY = ROOT / "docs" / "metrics" / "eval_history.csv"
+VOICE_HISTORY = ROOT / "docs" / "metrics" / "voice_history.csv"
+WORKPACKAGES = ROOT / "docs" / "07_WORKPACKAGES.md"
+STATUS = ROOT / "docs" / "01_STATUS.md"
+README = ROOT / "README.md"
+TESTS = ROOT / "api" / "tests"
+BERLIN = ZoneInfo("Europe/Berlin")
+
+# --------------------------------------------------------------------------- tokens
+# "Night Service": the evening line after dark (Midnight Purple) and the lit sign of
+# a restaurant that picks up (Neon Yellow). Single source for every asset; the
+# palette was checked with the dataviz validator against SURFACE (CVD and contrast
+# pass; yellow sits above the lightness band on purpose and is always labelled).
+TOKENS = {
+    "bg": "#0D0819",
+    "surface": "#17102B",
+    "surface_hi": "#21183D",
+    "grid": "#2B2148",
+    "ink": "#F1ECFF",
+    "muted": "#A89CCB",
+    "neon": "#E8FF2E",
+    "neon_core": "#FAFFD6",
+    "violet": "#9D7BFF",
+    "violet_core": "#E9E1FF",
+    "coral": "#FF5277",
+    "plum": "#76699F",
+}
+FONT = "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace"
+# Which logo concept the assets use; the others stay drawable for the concept sheet.
+LOGO_STYLE = "split"
+LOGO_STYLES = ("neon", "wave", "split", "stamp")
+REPO_TITLE = "MÆX"
+
+# The call flow: one node per component, with the tasks that build it. A node is
+# "built" when all of its tasks are done, "in progress" when any has started, and
+# "planned" otherwise. A new component is one new entry here.
+FLOW_NODES: dict[str, dict] = {
+    "caller": {"label": ["Caller"], "x": 70, "y": 250, "tasks": [], "kind": "person"},
+    "line": {
+        "label": ["Phone line", "Asterisk"],
+        "x": 215,
+        "y": 250,
+        "tasks": ["T-1.11", "T-10.2"],
+    },
+    "stt": {
+        "label": ["Speech", "to text"],
+        "x": 360,
+        "y": 250,
+        "tasks": ["T-10.5"],
+    },
+    "tts": {
+        "label": ["Text to", "speech"],
+        "x": 360,
+        "y": 95,
+        "tasks": ["T-10.5"],
+    },
+    "core": {
+        "label": ["Conversation", "core"],
+        "x": 515,
+        "y": 250,
+        "tasks": ["T-2.1", "T-2.2"],
+    },
+    "llm": {"label": ["LLM"], "x": 680, "y": 130, "tasks": ["T-2.4"], "small": True},
+    "menu": {
+        "label": ["Menu", "lookup"],
+        "x": 680,
+        "y": 210,
+        "tasks": ["T-4.3", "T-4.4"],
+        "small": True,
+    },
+    "slots": {
+        "label": ["Hours", "and slots"],
+        "x": 680,
+        "y": 290,
+        "tasks": ["T-1.3", "T-1.4"],
+        "small": True,
+    },
+    "cart": {
+        "label": ["Cart", "and prices"],
+        "x": 680,
+        "y": 370,
+        "tasks": ["T-4.5"],
+        "small": True,
+    },
+    "server": {
+        "label": ["Domain", "Postgres"],
+        "x": 850,
+        "y": 250,
+        "tasks": ["T-1.1", "T-1.6", "T-4.1"],
+    },
+    "slip": {
+        "label": ["Kitchen", "slip"],
+        "x": 1000,
+        "y": 165,
+        "tasks": ["T-4.6"],
+    },
+    "tablet": {
+        "label": ["Team", "tablet"],
+        "x": 1000,
+        "y": 335,
+        "tasks": ["T-3.1", "T-3.4", "T-4.7"],
+    },
+    "team": {"label": ["Team"], "x": 1130, "y": 250, "tasks": [], "kind": "person"},
+    "n8n": {
+        "label": ["Outbox", "n8n"],
+        "x": 850,
+        "y": 395,
+        "tasks": ["T-1.12"],
+        "small": True,
+    },
+}
+# Edges in the order a call walks them; t0 is the start inside the 8 s loop.
+FLOW_EDGES: list[tuple[str, str, float, str]] = [
+    ("caller", "line", 0.0, "neon"),
+    ("line", "stt", 0.6, "neon"),
+    ("stt", "core", 1.2, "neon"),
+    ("core", "llm", 1.9, "neon"),
+    ("core", "menu", 1.9, "neon"),
+    ("core", "slots", 1.9, "neon"),
+    ("core", "cart", 1.9, "neon"),
+    ("llm", "server", 2.7, "neon"),
+    ("menu", "server", 2.7, "neon"),
+    ("slots", "server", 2.7, "neon"),
+    ("cart", "server", 2.7, "neon"),
+    ("core", "tts", 3.5, "violet"),
+    ("tts", "line", 4.1, "violet"),
+    ("line", "caller", 4.7, "violet"),
+    ("server", "slip", 5.0, "neon"),
+    ("server", "tablet", 5.0, "neon"),
+    ("server", "n8n", 5.0, "plum"),
+    ("slip", "team", 5.7, "neon"),
+    ("tablet", "team", 5.7, "neon"),
+]
+FLOW_LOOP = 8.0
+FLOW_HOP = 0.65
+
+BLOCK_NAMES = {
+    "0": "Scaffold",
+    "1": "Reservations",
+    "1b": "Conversation core",
+    "1c": "Own voice layer",
+    "2": "Tablet GUI",
+    "3": "Pickup",
+    "4": "Delivery",
+    "5": "Learning",
+    "5b": "Deployment",
+    "6": "Operations",
+}
+
+HARD_RULES = [
+    (
+        "AI understands, code decides",
+        "Prices, zones, hours and allergens",
+        "come only from the database.",
+    ),
+    ("Never guess", "No item enters an order without", "a definite menu_item_id."),
+    (
+        "Nothing without confirmation",
+        "Only the caller's explicit yes",
+        "turns a draft into an order.",
+    ),
+    (
+        "Errors are measured",
+        "Evals run before every merge.",
+        "No gate without numbers.",
+    ),
+    (
+        "Every outage ends with the team",
+        "If anything breaks, the team",
+        "phone rings. No call is lost.",
+    ),
+    (
+        "Token-efficient by design",
+        "Smallest context, smallest model",
+        "that passes the evals.",
+    ),
+]
+
+# ----------------------------------------------------------------------------- data
+
+EVAL_FIELDS = [
+    "date",
+    "model",
+    "suite",
+    "total",
+    "passed",
+    "crashed",
+    "pending",
+    "guessed",
+    "unconfirmed",
+    "missed_esc",
+    "false_esc_rate",
+    "refused",
+    "tokens_per_case",
+    "source",
+    "note",
+]
+VOICE_FIELDS = [
+    "date",
+    "package",
+    "metric",
+    "value",
+    "unit",
+    "limit",
+    "verdict",
+    "note",
+]
+STAND_IN = "scripted-stand-in"
+
+
+def _int(raw: str | None) -> int | None:
+    raw = (raw or "").strip()
+    return int(raw) if raw else None
+
+
+def _float(raw: str | None) -> float | None:
+    raw = (raw or "").strip()
+    return float(raw) if raw else None
+
+
+@dataclass
+class EvalRun:
+    date: date
+    model: str
+    suite: str
+    total: int
+    passed: int
+    crashed: int | None = None
+    pending: int | None = None
+    guessed: int | None = None
+    unconfirmed: int | None = None
+    missed_esc: int | None = None
+    false_esc_rate: float | None = None
+    refused: int | None = None
+    tokens_per_case: int | None = None
+    source: str = ""
+    note: str = ""
+
+    @property
+    def rate(self) -> float:
+        return self.passed / self.total if self.total else 0.0
+
+    @property
+    def hard(self) -> int | None:
+        """Sum of the three hard metrics, or None if any of them was not recorded."""
+        parts = [self.guessed, self.unconfirmed, self.missed_esc]
+        if any(p is None for p in parts):
+            return None
+        return sum(p for p in parts if p is not None)
+
+
+@dataclass
+class VoiceRow:
+    date: date
+    package: str
+    metric: str
+    value: float
+    unit: str
+    limit: str
+    verdict: str
+    note: str = ""
+    # As written in the CSV, so "2.0 %" stays "2.0 %" next to a limit of "2 %".
+    shown: str = ""
+
+
+def read_eval_history(path: Path = EVAL_HISTORY) -> list[EvalRun]:
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    runs = [
+        EvalRun(
+            date=date.fromisoformat(r["date"]),
+            model=r["model"],
+            suite=r["suite"],
+            total=int(r["total"]),
+            passed=int(r["passed"]),
+            crashed=_int(r.get("crashed")),
+            pending=_int(r.get("pending")),
+            guessed=_int(r.get("guessed")),
+            unconfirmed=_int(r.get("unconfirmed")),
+            missed_esc=_int(r.get("missed_esc")),
+            false_esc_rate=_float(r.get("false_esc_rate")),
+            refused=_int(r.get("refused")),
+            tokens_per_case=_int(r.get("tokens_per_case")),
+            source=r.get("source", ""),
+            note=r.get("note", ""),
+        )
+        for r in rows
+    ]
+    # Stable: rows of one day keep the order they were recorded in.
+    return sorted(runs, key=lambda run: run.date)
+
+
+def read_voice_history(path: Path = VOICE_HISTORY) -> list[VoiceRow]:
+    if not path.exists():
+        return []
+    with path.open(encoding="utf-8", newline="") as fh:
+        rows = list(csv.DictReader(fh))
+    out = [
+        VoiceRow(
+            date=date.fromisoformat(r["date"]),
+            package=r["package"],
+            metric=r["metric"],
+            value=float(r["value"]),
+            unit=r["unit"],
+            limit=r.get("limit", ""),
+            verdict=r["verdict"],
+            note=r.get("note", ""),
+            shown=r["value"].strip(),
+        )
+        for r in rows
+    ]
+    return sorted(out, key=lambda row: row.date)
+
+
+def run_from_report(report: dict, suite: str) -> dict[str, str]:
+    """One history row from a report JSON of `evals/report.py`."""
+    run_at = datetime.fromisoformat(report["run_at"])
+    if run_at.tzinfo is not None:
+        run_at = run_at.astimezone(BERLIN)
+    cases = report.get("cases", [])
+    hard = report.get("hard") or {}
+    rate = report.get("false_escalation_rate")
+
+    def shown(value: object) -> str:
+        return "" if value is None else str(value)
+
+    return {
+        "date": run_at.date().isoformat(),
+        "model": report.get("model") or STAND_IN,
+        "suite": suite,
+        "total": str(report["total"]),
+        "passed": str(report["passed"]),
+        "crashed": str(sum(1 for c in cases if c.get("error"))),
+        "pending": str(
+            sum(1 for c in cases if c.get("pending") and not c.get("error"))
+        ),
+        "guessed": shown(hard.get("guessed_items")),
+        "unconfirmed": shown(hard.get("unconfirmed")),
+        "missed_esc": shown(hard.get("missed_escalations")),
+        "false_esc_rate": "" if rate is None else f"{rate:.4f}",
+        "refused": shown(report.get("refused_attempts")),
+        "tokens_per_case": shown(report.get("tokens_per_case")),
+        "source": "report",
+        "note": "",
+    }
+
+
+def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
+    new = not path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8", newline="") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
+        if new:
+            writer.writeheader()
+        writer.writerow({k: row.get(k, "") for k in fields})
+
+
+# Status words of docs/07, German and English: the column is free text.
+DONE_WORDS = ("fertig", "done", "erledigt", "b fertig")
+PROGRESS_WORDS = ("in arbeit", "in progress", "part ")
+BLOCKED_WORDS = ("blockiert", "blocked")
+DROPPED_WORDS = ("dropped", "entfallen")
+
+
+def classify(status: str) -> str:
+    """done, progress, blocked, open or dropped for one status cell."""
+    text = status.strip().lower().lstrip("*")
+    if text.startswith(DROPPED_WORDS):
+        return "dropped"
+    if text.startswith(PROGRESS_WORDS) or "part 1 done" in text:
+        return "progress"
+    if text.startswith(DONE_WORDS):
+        return "done"
+    if text.startswith(BLOCKED_WORDS):
+        return "blocked"
+    return "open"
+
+
+@dataclass
+class Block:
+    key: str
+    name: str
+    tasks: dict[str, str] = field(default_factory=dict)
+
+    def count(self, state: str) -> int:
+        return sum(1 for s in self.tasks.values() if s == state)
+
+    @property
+    def total(self) -> int:
+        return sum(1 for s in self.tasks.values() if s != "dropped")
+
+
+BLOCK_RE = re.compile(r"^## Block (\w+)\b")
+ROW_RE = re.compile(r"^\| (T-\d+\.\d+) \|")
+DONE_DATE_RE = re.compile(
+    r"^(?:fertig|done|erledigt|b fertig)\D{0,12}(\d{2})\.(\d{2})\.(\d{4})", re.I
+)
+
+
+def read_blocks(text: str) -> tuple[list[Block], date | None]:
+    """Blocks with task states, and the date of the latest finished task."""
+    blocks: list[Block] = []
+    latest: date | None = None
+    for line in text.splitlines():
+        if m := BLOCK_RE.match(line):
+            key = m.group(1)
+            blocks.append(Block(key=key, name=BLOCK_NAMES.get(key, f"Block {key}")))
+            continue
+        if line.startswith("## ") and not line.startswith("## Block"):
+            # Sections after the blocks (order, definition of done) carry no tasks.
+            if blocks:
+                blocks.append(Block(key="", name=""))
+            continue
+        m = ROW_RE.match(line)
+        if not m or not blocks or not blocks[-1].key:
+            continue
+        status = line.rstrip().rstrip("|").rsplit("|", 1)[-1].strip()
+        blocks[-1].tasks[m.group(1)] = classify(status)
+        if d := DONE_DATE_RE.match(status.lower()):
+            day = date(int(d.group(3)), int(d.group(2)), int(d.group(1)))
+            latest = day if latest is None or day > latest else latest
+    return [b for b in blocks if b.key], latest
+
+
+def node_state(tasks: list[str], states: dict[str, str]) -> str:
+    known = [states[t] for t in tasks if t in states]
+    if not tasks or not known:
+        return "built" if not tasks else "planned"
+    if all(s == "done" for s in known):
+        return "built"
+    if any(s in ("done", "progress") for s in known):
+        return "progress"
+    return "planned"
+
+
+@dataclass
+class Gate:
+    key: str
+    passed: bool
+
+
+def read_status(text: str) -> tuple[str, list[Gate]]:
+    """Stage line and the gates from docs/01_STATUS.md."""
+    stage = "Stage ?"
+    if m := re.search(r"·\s*(Stage [^·]+?)\s*·", text):
+        stage = m.group(1).strip()
+    gates: list[Gate] = []
+    part = text.split("## Gates in Detail", 1)[-1]
+    for line in part.splitlines()[:20]:
+        if m := re.match(r"^\| (P|G\d) \|.*\| ([^|]+) \|\s*$", line):
+            gates.append(
+                Gate(m.group(1), m.group(2).strip().lower().startswith("passed"))
+            )
+    return stage, gates
+
+
+def read_version(text: str) -> str:
+    m = re.search(r"^\| Version \| ([^|]+) \|", text, re.M)
+    return m.group(1).strip() if m else "0.0.0"
+
+
+def count_tests(folder: Path = TESTS) -> int:
+    pattern = re.compile(r"^\s*(?:async\s+)?def test_", re.M)
+    return sum(
+        len(pattern.findall(p.read_text(encoding="utf-8")))
+        for p in folder.glob("test_*.py")
+    )
+
+
+@dataclass
+class Facts:
+    version: str
+    stage: str
+    gates: list[Gate]
+    blocks: list[Block]
+    progress_date: date | None
+    tests: int
+    runs: list[EvalRun]
+    voice: list[VoiceRow]
+
+    @property
+    def states(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for block in self.blocks:
+            out.update(block.tasks)
+        return out
+
+    def latest(self, suite: str) -> EvalRun | None:
+        real = [r for r in self.runs if r.suite == suite and r.model != STAND_IN]
+        return real[-1] if real else None
+
+    def stand_in(self, suite: str) -> EvalRun | None:
+        ref = [r for r in self.runs if r.suite == suite and r.model == STAND_IN]
+        return ref[-1] if ref else None
+
+
+def gather() -> Facts:
+    blocks, progress_date = read_blocks(WORKPACKAGES.read_text(encoding="utf-8"))
+    stage, gates = read_status(STATUS.read_text(encoding="utf-8"))
+    return Facts(
+        version=read_version(README.read_text(encoding="utf-8")),
+        stage=stage,
+        gates=gates,
+        blocks=blocks,
+        progress_date=progress_date,
+        tests=count_tests(),
+        runs=read_eval_history(),
+        voice=read_voice_history(),
+    )
+
+
+# -------------------------------------------------------------------------- drawing
+
+
+def f(value: float) -> str:
+    """Coordinates with at most one decimal, so the output stays stable."""
+    text = f"{value:.1f}"
+    return text[:-2] if text.endswith(".0") else text
+
+
+def de(day: date | None) -> str:
+    return day.isoformat() if day else "no date"
+
+
+def pct(rate: float) -> str:
+    return f"{rate * 100:.0f} %"
+
+
+def thousands(value: int) -> str:
+    return f"{value:,}"
+
+
+def text(
+    x: float,
+    y: float,
+    content: str,
+    size: float = 16,
+    fill: str = "ink",
+    anchor: str = "start",
+    weight: int = 400,
+    spacing: float = 0,
+    extra: str = "",
+) -> str:
+    color = TOKENS.get(fill, fill)
+    attrs = f'x="{f(x)}" y="{f(y)}" font-size="{f(size)}" fill="{color}"'
+    if anchor != "start":
+        attrs += f' text-anchor="{anchor}"'
+    if weight != 400:
+        attrs += f' font-weight="{weight}"'
+    if spacing:
+        attrs += f' letter-spacing="{f(spacing)}"'
+    if extra:
+        attrs += " " + extra
+    return f"<text {attrs}>{escape(content)}</text>"
+
+
+def document(
+    width: int, height: int, title: str, desc: str, body: str, css: str = ""
+) -> str:
+    style = f"text{{font-family:{FONT}}}" + css
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}" role="img" aria-labelledby="t d">\n'
+        f'<title id="t">{escape(title)}</title>\n<desc id="d">{escape(desc)}</desc>\n'
+        f"<style>{style}</style>\n"
+        "<defs>"
+        # User space regions: a flat stroke (a crossbar) has a bounding box of almost
+        # no height, and a region in percent of it would clip the glow.
+        f'<filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="{width}" height="{height}">'
+        '<feGaussianBlur stdDeviation="6"/></filter>'
+        f'<filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="{width}" height="{height}">'
+        '<feGaussianBlur stdDeviation="2.2"/></filter>'
+        "</defs>\n"
+        f'<rect width="{width}" height="{height}" rx="24" fill="{TOKENS["bg"]}"/>\n'
+        f"{body}\n</svg>\n"
+    )
+
+
+def dot_grid(width: int, height: int, step: int = 28) -> str:
+    """Faint dots behind the content, like a cutting mat for the drawing."""
+    return (
+        f'<pattern id="dots" width="{step}" height="{step}" patternUnits="userSpaceOnUse">'
+        f'<circle cx="2" cy="2" r="1.2" fill="{TOKENS["grid"]}"/></pattern>'
+        f'<rect width="{width}" height="{height}" rx="24" fill="url(#dots)" opacity="0.8"/>'
+    )
+
+
+def slip(x: float, y: float, w: float, h: float, header: str, date_label: str) -> str:
+    """An order slip: the frame of every stat card. Perforated top edge."""
+    parts = [
+        f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="10" '
+        f'fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}"/>'
+    ]
+    holes = int((w - 24) // 18)
+    for i in range(holes + 1):
+        cx = x + 12 + i * (w - 24) / holes
+        parts.append(
+            f'<circle cx="{f(cx)}" cy="{f(y)}" r="4.5" fill="{TOKENS["bg"]}"/>'
+        )
+    parts.append(
+        text(x + 24, y + 38, header.upper(), 14, "muted", spacing=2.4, weight=700)
+    )
+    parts.append(text(x + w - 24, y + 38, date_label, 14, "muted", anchor="end"))
+    parts.append(
+        f'<line x1="{f(x + 24)}" y1="{f(y + 54)}" x2="{f(x + w - 24)}" y2="{f(y + 54)}" '
+        f'stroke="{TOKENS["grid"]}" stroke-dasharray="4 6"/>'
+    )
+    return "\n".join(parts)
+
+
+def wave_points(
+    x0: float, x1: float, y: float, amp: float, periods: float, steps: int = 48
+) -> list[tuple[float, float]]:
+    pts = []
+    for i in range(steps + 1):
+        t = i / steps
+        # Envelope: quiet at both ends, loud in the middle, like a spoken word.
+        env = math.sin(math.pi * t)
+        pts.append(
+            (x0 + (x1 - x0) * t, y - amp * env * math.sin(2 * math.pi * periods * t))
+        )
+    return pts
+
+
+def path_of(points: list[tuple[float, float]]) -> str:
+    head, *rest = points
+    return f"M{f(head[0])} {f(head[1])}" + "".join(
+        f" L{f(px)} {f(py)}" for px, py in rest
+    )
+
+
+# ----------------------------------------------------------------------------- logo
+# Glyphs on a 100 unit cap height, as stroke paths: the logo is drawn, not typed,
+# so it looks the same on every machine. The Æ is the centre: A and E share one
+# stroke, the way the AI and the code share one call.
+
+
+def glyph_m(
+    x: float, y: float, s: float
+) -> list[tuple[str, list[tuple[float, float]]]]:
+    pts = [(0, 100), (0, 0), (36, 60), (72, 0), (72, 100)]
+    return [("a", [(x + px * s, y + py * s) for px, py in pts])]
+
+
+def glyph_ae(
+    x: float, y: float, s: float, wave: bool
+) -> list[tuple[str, list[tuple[float, float]]]]:
+    def p(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        return [(x + px * s, y + py * s) for px, py in points]
+
+    bar: list[tuple[float, float]] = (
+        wave_points(20, 86, 54, 7, 1.5, 36) if wave else [(21, 52), (86, 52)]
+    )
+    return [
+        ("a", p([(0, 100), (44, 0)])),
+        ("e", p([(44, 0), (98, 0)])),
+        ("e", p([(44, 0), (44, 100), (98, 100)])),
+        ("bar", p(bar)),
+    ]
+
+
+def glyph_x(
+    x: float, y: float, s: float
+) -> list[tuple[str, list[tuple[float, float]]]]:
+    return [
+        ("a", [(x, y), (x + 72 * s, y + 100 * s)]),
+        ("b", [(x + 72 * s, y), (x, y + 100 * s)]),
+    ]
+
+
+def neon(points: list[tuple[float, float]], width: float, color: str = "neon") -> str:
+    """A neon tube: blurred glow, the tube, and a pale core."""
+    d = path_of(points)
+    base = TOKENS[color]
+    core = TOKENS["neon_core" if color == "neon" else "violet_core"]
+    common = 'fill="none" stroke-linecap="round" stroke-linejoin="round"'
+    return (
+        f'<path d="{d}" {common} stroke="{base}" stroke-width="{f(width * 2.2)}" opacity="0.55" filter="url(#glow)"/>'
+        f'<path d="{d}" {common} stroke="{base}" stroke-width="{f(width)}"/>'
+        f'<path d="{d}" {common} stroke="{core}" stroke-width="{f(width * 0.32)}" opacity="0.9"/>'
+    )
+
+
+def wordmark(
+    x: float, y: float, height: float, style: str = LOGO_STYLE
+) -> tuple[str, float]:
+    """MÆX at (x, y) top left with a cap height; returns the SVG and the width."""
+    s = height / 100
+    width = max(4.0, 11 * s)
+    gap = 34 * s
+    wave = style in ("wave", "split", "stamp")
+    strokes: list[tuple[str, list[tuple[float, float]]]] = []
+    strokes += glyph_m(x, y, s)
+    ae_x = x + 72 * s + gap
+    strokes += glyph_ae(ae_x, y, s, wave)
+    x_x = ae_x + 98 * s + gap
+    strokes += glyph_x(x_x, y, s)
+    total = x_x + 72 * s - x
+    parts = []
+    for part, pts in strokes:
+        color = "neon"
+        if style == "split" and part in ("e",):
+            color = "violet"
+        parts.append(neon(pts, width, color))
+    body = "".join(parts)
+    if style == "stamp":
+        pad = 26 * s
+        frame = (
+            f'<rect x="{f(x - pad)}" y="{f(y - pad)}" width="{f(total + 2 * pad)}" '
+            f'height="{f(100 * s + 2 * pad)}" rx="{f(14 * s)}" fill="none" '
+            f'stroke="{TOKENS["neon"]}" stroke-width="{f(width * 0.5)}" stroke-dasharray="{f(10 * s)} {f(7 * s)}"/>'
+        )
+        body = frame + body
+    return body, total
+
+
+def monogram(x: float, y: float, size: float, style: str = LOGO_STYLE) -> str:
+    """The Æ alone in a rounded square: the icon and avatar."""
+    s = size * 0.0058
+    gw, gh = 98 * s, 100 * s
+    gx, gy = x + (size - gw) / 2, y + (size - gh) / 2
+    width = max(4.0, 11 * s)
+    parts = [
+        f'<rect x="{f(x)}" y="{f(y)}" width="{f(size)}" height="{f(size)}" rx="{f(size * 0.22)}" '
+        f'fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}" stroke-width="{f(size * 0.008)}"/>'
+    ]
+    for part, pts in glyph_ae(gx, gy, s, wave=style != "neon"):
+        color = "violet" if style == "split" and part == "e" else "neon"
+        parts.append(neon(pts, width, color))
+    return "".join(parts)
+
+
+def asset_logo_mark(style: str = LOGO_STYLE) -> str:
+    size = 512
+    return document(
+        size,
+        size,
+        "MÆX logo mark",
+        "The ligature Æ as a neon tube in a rounded square: the A and the E share one stroke, "
+        "the crossbar is a voice waveform.",
+        monogram(36, 36, size - 72, style),
+    ).replace(f'rx="24" fill="{TOKENS["bg"]}"', f'rx="112" fill="{TOKENS["bg"]}"', 1)
+
+
+def asset_logo_wordmark(style: str = LOGO_STYLE) -> str:
+    _, w = wordmark(0, 0, 120, style)
+    width, height = int(w + 160), 280
+    body, _ = wordmark(80, 80, 120, style)
+    return document(
+        width,
+        height,
+        "MÆX wordmark",
+        "The letters M, Æ and X drawn as neon tubes in Neon Yellow and Electric Violet on midnight purple.",
+        body,
+    )
+
+
+def concept_sheet() -> str:
+    """All logo concepts side by side, for choosing one. Not a README asset."""
+    width, height = 1200, 900
+    parts = [dot_grid(width, height)]
+    for i, style in enumerate(LOGO_STYLES):
+        col, row = i % 2, i // 2
+        ox, oy = 40 + col * 580, 40 + row * 430
+        parts.append(
+            f'<rect x="{ox}" y="{oy}" width="540" height="400" rx="16" fill="{TOKENS["surface"]}" '
+            f'stroke="{TOKENS["neon"] if style == LOGO_STYLE else TOKENS["grid"]}"/>'
+        )
+        parts.append(
+            text(
+                ox + 24,
+                oy + 40,
+                f"{i + 1}  {style.upper()}",
+                15,
+                "muted",
+                spacing=2,
+                weight=700,
+            )
+        )
+        mark, _ = wordmark(ox + 60, oy + 90, 70, style)
+        parts.append(mark)
+        parts.append(monogram(ox + 210, oy + 210, 160, style))
+    return document(
+        width, height, "MÆX logo concepts", "Four logo concepts.", "\n".join(parts)
+    )
+
+
+# --------------------------------------------------------------------------- banner
+
+
+def asset_banner(facts: Facts) -> str:
+    width, height = 1200, 440
+    cases = facts.latest("cases")
+    glow = (
+        '<radialGradient id="g1" cx="0.22" cy="0.38" r="0.5">'
+        f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0.13"/>'
+        f'<stop offset="1" stop-color="{TOKENS["neon"]}" stop-opacity="0"/></radialGradient>'
+        '<radialGradient id="g2" cx="0.85" cy="0.7" r="0.55">'
+        f'<stop offset="0" stop-color="{TOKENS["violet"]}" stop-opacity="0.22"/>'
+        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></radialGradient>'
+        '<linearGradient id="fade" x1="0" x2="1">'
+        f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0"/>'
+        f'<stop offset="0.25" stop-color="{TOKENS["neon"]}"/>'
+        f'<stop offset="0.75" stop-color="{TOKENS["violet"]}"/>'
+        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></linearGradient>'
+    )
+    parts = [
+        f"<defs>{glow}</defs>",
+        dot_grid(width, height),
+        f'<rect width="{width}" height="{height}" rx="24" fill="url(#g1)"/>',
+        f'<rect width="{width}" height="{height}" rx="24" fill="url(#g2)"/>',
+    ]
+    mark, _ = wordmark(72, 78, 104)
+    parts.append(mark)
+    parts.append(text(74, 252, "Maex Voice Agent", 30, "ink", weight=700))
+    parts.append(text(74, 288, "An AI phone agent for restaurants:", 18, "muted"))
+    parts.append(text(74, 314, "reservations, pickups and deliveries.", 18, "muted"))
+    parts.append(text(74, 340, "The AI understands. The code decides.", 18, "neon"))
+    # The voice line runs under everything, from the logo into the slip.
+    line = wave_points(40, 760, 392, 16, 9, 160)
+    parts.append(
+        f'<path class="wave" d="{path_of(line)}" fill="none" stroke="url(#fade)" '
+        'stroke-width="2.5" stroke-linecap="round"/>'
+    )
+    # The state slip.
+    sx, sy, sw, sh = 780, 64, 360, 312
+    parts.append(slip(sx, sy, sw, sh, "State", de(cases.date if cases else None)))
+    items = [
+        ("version", facts.version),
+        ("stage", facts.stage.replace("Stage ", "")),
+        ("tests", f"{thousands(facts.tests // 100 * 100)}+"),
+    ]
+    if cases:
+        items.insert(0, ("eval, real model", f"{cases.passed}/{cases.total}"))
+    next_gate = next((g.key for g in facts.gates if not g.passed), "none")
+    items.append(("next gate", next_gate))
+    for i, (label, value) in enumerate(items):
+        yy = sy + 92 + i * 40
+        parts.append(text(sx + 24, yy, label, 16, "muted"))
+        big = i == 0 and cases is not None
+        parts.append(
+            text(
+                sx + sw - 24,
+                yy,
+                value,
+                22 if big else 17,
+                "neon" if big else "ink",
+                anchor="end",
+                weight=700,
+            )
+        )
+    parts.append(
+        f'<line x1="{sx + 24}" y1="{sy + sh - 52}" x2="{sx + sw - 24}" y2="{sy + sh - 52}" '
+        f'stroke="{TOKENS["grid"]}" stroke-dasharray="4 6"/>'
+    )
+    model = cases.model if cases else "no real-model run yet"
+    parts.append(text(sx + 24, sy + sh - 22, model, 14, "muted"))
+    css = (
+        ".wave{stroke-dasharray:14 10;animation:flow 3s linear infinite}"
+        "@keyframes flow{to{stroke-dashoffset:-48}}"
+        "@media (prefers-reduced-motion:reduce){.wave{animation:none}}"
+    )
+    desc = (
+        f"MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version {facts.version}, "
+        f"{facts.stage}, about {facts.tests // 100 * 100} tests"
+        + (
+            f", latest real-model eval {cases.passed} of {cases.total} on {de(cases.date)}."
+            if cases
+            else "."
+        )
+    )
+    return document(width, height, "MÆX banner", desc, "\n".join(parts), css)
+
+
+# ------------------------------------------------------------------------ eval charts
+
+SEGMENTS = [
+    ("passed", "neon", "passed"),
+    ("pending", "violet", "known gap"),
+    ("crashed", "coral", "crashed"),
+    ("red", "plum", "not passed"),
+]
+
+
+def split_run(run: EvalRun) -> dict[str, int]:
+    crashed, pending = run.crashed or 0, run.pending or 0
+    return {
+        "passed": run.passed,
+        "pending": pending,
+        "crashed": crashed,
+        "red": max(0, run.total - run.passed - crashed - pending),
+    }
+
+
+def stacked_bar(
+    x: float, y: float, w: float, h: float, counts: dict[str, int], total: int
+) -> str:
+    parts = [
+        f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="4" fill="{TOKENS["bg"]}"/>'
+    ]
+    cursor = x
+    shown = [(k, c) for k, c, _ in SEGMENTS if counts.get(k)]
+    for key, color in shown:
+        seg = w * counts[key] / total if total else 0
+        # A 2 px surface gap between fills keeps segments apart without colour.
+        parts.append(
+            f'<rect x="{f(cursor)}" y="{f(y)}" width="{f(max(seg - 2, 1))}" height="{f(h)}" rx="4" fill="{TOKENS[color]}"/>'
+        )
+        cursor += seg
+    return "\n".join(parts)
+
+
+def asset_eval_latest(facts: Facts) -> str:
+    width, height = 1200, 460
+    cases, targets = facts.latest("cases"), facts.latest("targets")
+    latest = max((r for r in (cases, targets) if r), key=lambda r: r.date, default=None)
+    parts = [dot_grid(width, height)]
+    parts.append(
+        slip(
+            40,
+            40,
+            1120,
+            380,
+            "Eval slip · real model",
+            de(latest.date if latest else None),
+        )
+    )
+    if latest is None:
+        parts.append(text(64, 140, "No real-model run recorded yet.", 20, "muted"))
+        return document(
+            width,
+            height,
+            "Latest eval run",
+            "No real-model run recorded yet.",
+            "\n".join(parts),
+        )
+    parts.append(text(64, 124, latest.model, 20, "ink", weight=700))
+    parts.append(
+        text(1136, 124, "temperature 0, invented cases only", 15, "muted", anchor="end")
+    )
+    rows = [("Regular cases", cases), ("Target cases", targets)]
+    for i, (label, run) in enumerate(rows):
+        yy = 168 + i * 78
+        if run is None:
+            parts.append(text(64, yy + 18, f"{label}: not run", 16, "muted"))
+            continue
+        parts.append(text(64, yy, label, 15, "muted"))
+        parts.append(
+            text(64, yy + 30, f"{run.passed}/{run.total}", 26, "neon", weight=700)
+        )
+        parts.append(
+            text(
+                64 + 26 * 0.6 * len(f"{run.passed}/{run.total}") + 12,
+                yy + 30,
+                pct(run.rate),
+                16,
+                "ink",
+            )
+        )
+        parts.append(stacked_bar(300, yy + 8, 836, 26, split_run(run), run.total))
+        parts.append(text(1136, yy, de(run.date), 14, "muted", anchor="end"))
+    # Legend, always present: identity is never colour alone.
+    lx = 300
+    for _key, color, label in SEGMENTS:
+        parts.append(
+            f'<rect x="{lx}" y="318" width="14" height="14" rx="3" fill="{TOKENS[color]}"/>'
+        )
+        parts.append(text(lx + 22, 330, label, 15, "muted"))
+        lx += 34 + 9 * len(label)
+    if cases and cases.crashed is None:
+        parts.append(
+            text(
+                1136,
+                330,
+                "crashed cases not recorded for this run",
+                14,
+                "muted",
+                anchor="end",
+            )
+        )
+    # Line items of the regular cases.
+    run = cases or targets
+    assert run is not None
+    hard = run.hard
+    items = [
+        (
+            "hard violations",
+            "not recorded" if hard is None else str(hard),
+            hard not in (None, 0),
+        ),
+        (
+            "missed escalations",
+            "-" if run.missed_esc is None else str(run.missed_esc),
+            bool(run.missed_esc),
+        ),
+        (
+            "false escalation",
+            "-" if run.false_esc_rate is None else f"{run.false_esc_rate * 100:.1f} %",
+            bool(run.false_esc_rate and run.false_esc_rate > 0.05),
+        ),
+        (
+            "tokens per case",
+            "-" if run.tokens_per_case is None else thousands(run.tokens_per_case),
+            False,
+        ),
+    ]
+    for i, (label, value, bad) in enumerate(items):
+        x = 64 + i * 272
+        parts.append(text(x, 376, label, 14, "muted"))
+        parts.append(text(x, 404, value, 20, "coral" if bad else "ink", weight=700))
+    desc = (
+        f"Latest real-model eval on {de(latest.date)}, model {latest.model}. "
+        + (f"Regular cases {cases.passed} of {cases.total}. " if cases else "")
+        + (f"Target cases {targets.passed} of {targets.total}. " if targets else "")
+        + (
+            f"False escalation {run.false_esc_rate * 100:.1f} percent, limit 5 percent."
+            if run.false_esc_rate is not None
+            else ""
+        )
+    )
+    return document(width, height, "Latest eval run", desc, "\n".join(parts))
+
+
+def asset_eval_trend(facts: Facts) -> str:
+    width, height = 1200, 440
+    px0, px1, py0, py1 = 120, 900, 104, 330
+    parts = [dot_grid(width, height)]
+    parts.append(slip(40, 40, 1120, 370, "Pass rate over time · real model", ""))
+    series = {
+        suite: [r for r in facts.runs if r.suite == suite and r.model != STAND_IN]
+        for suite in ("cases", "targets")
+    }
+    dates = sorted({r.date for s in series.values() for r in s})
+    if not dates:
+        parts.append(text(64, 140, "No real-model run recorded yet.", 20, "muted"))
+        return document(
+            width,
+            height,
+            "Eval trend",
+            "No real-model run recorded yet.",
+            "\n".join(parts),
+        )
+    # X: one slot per run, runs of the same day side by side under one date.
+    per_day: dict[date, int] = {}
+    for items in series.values():
+        counted: dict[date, int] = {}
+        for r in items:
+            counted[r.date] = counted.get(r.date, 0) + 1
+        for d, n in counted.items():
+            per_day[d] = max(per_day.get(d, 0), n)
+    slots: list[date] = []
+    for d in dates:
+        slots += [d] * per_day[d]
+    step = (px1 - px0) / max(len(slots) - 1, 1)
+
+    def sx(day: date, k: int) -> float:
+        return px0 + (slots.index(day) + k) * step
+
+    def sy(rate: float) -> float:
+        return py1 - (py1 - py0) * rate
+
+    for tick in (0, 0.25, 0.5, 0.75, 1.0):
+        y = sy(tick)
+        parts.append(
+            f'<line x1="{px0}" y1="{f(y)}" x2="{px1}" y2="{f(y)}" stroke="{TOKENS["grid"]}"/>'
+        )
+        parts.append(
+            text(px0 - 14, y + 5, f"{tick * 100:.0f} %", 14, "muted", anchor="end")
+        )
+    # The target of docs/08: accuracy of at least 99 percent.
+    ty = sy(0.99)
+    parts.append(
+        f'<line x1="{px0}" y1="{f(ty)}" x2="{px1}" y2="{f(ty)}" stroke="{TOKENS["neon"]}" stroke-dasharray="6 6" opacity="0.6"/>'
+    )
+    parts.append(text(px1 + 12, ty + 5, "target 99 %", 14, "neon"))
+    for d in dates:
+        parts.append(
+            text(
+                sx(d, 0) + step * (per_day[d] - 1) / 2,
+                py1 + 28,
+                d.strftime("%d %b"),
+                14,
+                "muted",
+                anchor="middle",
+            )
+        )
+    names = {"cases": ("regular cases", "neon"), "targets": ("target cases", "violet")}
+    for suite, items in series.items():
+        if not items:
+            continue
+        label, color = names[suite]
+        seen: dict[date, int] = {}
+        pts = []
+        for r in items:
+            k = seen.get(r.date, 0)
+            seen[r.date] = k + 1
+            pts.append((sx(r.date, k), sy(r.rate), r))
+        parts.append(
+            f'<path d="{path_of([(x, y) for x, y, _ in pts])}" fill="none" stroke="{TOKENS[color]}" stroke-width="2" stroke-linejoin="round"/>'
+        )
+        for x, y, r in pts:
+            parts.append(
+                f'<circle cx="{f(x)}" cy="{f(y)}" r="5" fill="{TOKENS[color]}" stroke="{TOKENS["surface"]}" stroke-width="2">'
+                f"<title>{escape(f'{label} {de(r.date)}: {r.passed}/{r.total}')}</title></circle>"
+            )
+        lx, ly, last = pts[-1]
+        parts.append(
+            text(
+                lx + 12,
+                ly - 10,
+                f"{label} {last.passed}/{last.total}",
+                15,
+                color,
+                weight=700,
+            )
+        )
+    ref = facts.stand_in("cases")
+    note = (
+        f"Scripted stand-in model: {ref.passed}/{ref.total} regular cases."
+        if ref
+        else ""
+    )
+    parts.append(text(1136, 73, note, 14, "muted", anchor="end"))
+    desc = (
+        f"Pass rate of the real model from {de(dates[0])} to {de(dates[-1])}. "
+        + "; ".join(
+            f"{names[s][0]} latest {items[-1].passed} of {items[-1].total}"
+            for s, items in series.items()
+            if items
+        )
+    )
+    return document(width, height, "Eval trend", desc, "\n".join(parts))
+
+
+# ------------------------------------------------------------------------- progress
+
+
+def asset_progress(facts: Facts) -> str:
+    blocks = facts.blocks
+    width = 1200
+    height = 400 + len(blocks) * 34
+    done = sum(b.count("done") for b in blocks)
+    total = sum(b.total for b in blocks)
+    prog = sum(b.count("progress") for b in blocks)
+    blocked = sum(b.count("blocked") for b in blocks)
+    parts = [dot_grid(width, height)]
+    parts.append(
+        slip(40, 40, 1120, height - 80, "Build progress", de(facts.progress_date))
+    )
+    parts.append(text(64, 132, f"{done}/{total}", 40, "neon", weight=700))
+    parts.append(
+        text(
+            64 + 40 * 0.6 * len(f"{done}/{total}") + 16,
+            132,
+            f"tasks done · {pct(done / total if total else 0)}",
+            18,
+            "ink",
+        )
+    )
+    parts.append(
+        text(
+            1136,
+            132,
+            f"{prog} in progress · {blocked} blocked · {total - done - prog - blocked} open",
+            15,
+            "muted",
+            anchor="end",
+        )
+    )
+
+    def bar(
+        x: float,
+        y: float,
+        w: float,
+        h: float,
+        b_done: int,
+        b_prog: int,
+        b_blocked: int,
+        b_total: int,
+    ) -> str:
+        out = [
+            f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="{f(h / 2)}" fill="{TOKENS["bg"]}"/>'
+        ]
+        cursor = x
+        for n, color in ((b_done, "neon"), (b_prog, "violet"), (b_blocked, "coral")):
+            if not n or not b_total:
+                continue
+            seg = w * n / b_total
+            out.append(
+                f'<rect x="{f(cursor)}" y="{f(y)}" width="{f(max(seg - 2, 2))}" height="{f(h)}" rx="{f(h / 2)}" fill="{TOKENS[color]}"/>'
+            )
+            cursor += seg
+        return "".join(out)
+
+    parts.append(bar(64, 152, 1072, 18, done, prog, blocked, total))
+    top = 216
+    for i, b in enumerate(blocks):
+        y = top + i * 34
+        parts.append(text(64, y + 13, b.key, 15, "muted", weight=700))
+        parts.append(text(110, y + 13, b.name, 15, "ink"))
+        parts.append(
+            bar(
+                330,
+                y + 2,
+                700,
+                12,
+                b.count("done"),
+                b.count("progress"),
+                b.count("blocked"),
+                b.total,
+            )
+        )
+        parts.append(
+            text(1136, y + 13, f"{b.count('done')}/{b.total}", 15, "ink", anchor="end")
+        )
+    # Gates as stations on the line from the plan to live operation.
+    gy = top + len(blocks) * 34 + 56
+    gates = facts.gates
+    if gates:
+        gx0, gx1 = 170, 1030
+        gstep = (gx1 - gx0) / max(len(gates) - 1, 1)
+        line = wave_points(gx0, gx1, gy, 5, len(gates) * 1.5, 120)
+        parts.append(
+            f'<path d="{path_of(line)}" fill="none" stroke="{TOKENS["grid"]}" stroke-width="2"/>'
+        )
+        upto = max((i for i, g in enumerate(gates) if g.passed), default=-1)
+        if upto > 0:
+            lit = wave_points(gx0, gx0 + gstep * upto, gy, 5, upto * 1.5, 60)
+            parts.append(
+                f'<path d="{path_of(lit)}" fill="none" stroke="{TOKENS["neon"]}" stroke-width="2"/>'
+            )
+        nxt = next((i for i, g in enumerate(gates) if not g.passed), None)
+        for i, g in enumerate(gates):
+            cx = gx0 + i * gstep
+            if g.passed:
+                fill, stroke, label = TOKENS["neon"], TOKENS["neon"], "passed"
+            elif i == nxt:
+                fill, stroke, label = TOKENS["surface"], TOKENS["violet"], "next"
+            else:
+                fill, stroke, label = TOKENS["surface"], TOKENS["plum"], "open"
+            parts.append(
+                f'<circle cx="{f(cx)}" cy="{gy}" r="9" fill="{fill}" stroke="{stroke}" stroke-width="3"/>'
+            )
+            parts.append(
+                text(cx, gy - 18, g.key, 15, "ink", anchor="middle", weight=700)
+            )
+            parts.append(text(cx, gy + 30, label, 13, "muted", anchor="middle"))
+        parts.append(text(64, gy + 5, "gates", 14, "muted"))
+    legend = [
+        ("done", "neon"),
+        ("in progress", "violet"),
+        ("blocked", "coral"),
+        ("open", "bg"),
+    ]
+    lx = 330
+    ly = height - 66
+    for label, color in legend:
+        stroke = f' stroke="{TOKENS["plum"]}"' if color == "bg" else ""
+        parts.append(
+            f'<rect x="{lx}" y="{ly - 11}" width="14" height="14" rx="7" fill="{TOKENS[color]}"{stroke}/>'
+        )
+        parts.append(text(lx + 22, ly, label, 14, "muted"))
+        lx += 44 + 8 * len(label)
+    desc = (
+        f"{done} of {total} tasks done, {prog} in progress, {blocked} blocked, as of {de(facts.progress_date)}. "
+        + "; ".join(
+            f"block {b.key} {b.name} {b.count('done')} of {b.total}" for b in blocks
+        )
+        + ". Gates: "
+        + ", ".join(f"{g.key} {'passed' if g.passed else 'open'}" for g in gates)
+        + "."
+    )
+    return document(width, height, "Build progress", desc, "\n".join(parts))
+
+
+# ------------------------------------------------------------------------ call flow
+
+
+def _node_box(key: str) -> tuple[float, float, float, float]:
+    node = FLOW_NODES[key]
+    if node.get("kind") == "person":
+        return node["x"] - 34, node["y"] - 34, 68, 68
+    w, h = (104, 56) if node.get("small") else (118, 72)
+    return node["x"] - w / 2, node["y"] - h / 2, w, h
+
+
+def _edge_path(a: str, b: str) -> list[tuple[float, float]]:
+    """Orthogonal-ish route from a's side to b's side, with a soft elbow."""
+    ax, ay, aw, ah = _node_box(a)
+    bx, by, bw, bh = _node_box(b)
+    acx, acy = ax + aw / 2, ay + ah / 2
+    bcx, bcy = bx + bw / 2, by + bh / 2
+    if abs(acx - bcx) < 5:
+        # Vertical: bottom of a to top of b, or the other way round.
+        if bcy > acy:
+            return [(acx, ay + ah), (bcx, by)]
+        return [(acx, ay), (bcx, by + bh)]
+    if (
+        abs(acy - bcy) > 60
+        and abs(acx - bcx) < 200
+        and ((a in ("core", "line") and b == "tts") or a == "tts")
+    ):
+        # Up to the reply lane and back down.
+        if a == "tts":
+            sx, sy = ax, acy
+            return [(sx, sy), (bcx, sy), (bcx, by)]
+        return [(acx, ay), (acx, bcy), (bx + bw, bcy)]
+    if bcx > acx:
+        sx, ex = ax + aw, bx
+    else:
+        sx, ex = ax, bx + bw
+    mid = (sx + ex) / 2
+    return [(sx, acy), (mid, acy), (mid, bcy), (ex, bcy)]
+
+
+def _rounded(points: list[tuple[float, float]], r: float = 12) -> str:
+    """Path through points with rounded corners."""
+    if len(points) < 3:
+        return path_of(points)
+    out = f"M{f(points[0][0])} {f(points[0][1])}"
+    for i in range(1, len(points) - 1):
+        (x0, y0), (x1, y1), (x2, y2) = points[i - 1], points[i], points[i + 1]
+        d1 = math.hypot(x1 - x0, y1 - y0)
+        d2 = math.hypot(x2 - x1, y2 - y1)
+        if d1 < 1 or d2 < 1:
+            continue
+        rr = min(r, d1 / 2, d2 / 2)
+        p1 = (x1 - (x1 - x0) / d1 * rr, y1 - (y1 - y0) / d1 * rr)
+        p2 = (x1 + (x2 - x1) / d2 * rr, y1 + (y2 - y1) / d2 * rr)
+        out += f" L{f(p1[0])} {f(p1[1])} Q{f(x1)} {f(y1)} {f(p2[0])} {f(p2[1])}"
+    out += f" L{f(points[-1][0])} {f(points[-1][1])}"
+    return out
+
+
+def _person(cx: float, cy: float, color: str) -> str:
+    c = TOKENS[color]
+    return (
+        f'<circle cx="{f(cx)}" cy="{f(cy - 12)}" r="11" fill="none" stroke="{c}" stroke-width="3"/>'
+        f'<path d="M{f(cx - 20)} {f(cy + 24)} Q{f(cx - 20)} {f(cy + 2)} {f(cx)} {f(cy + 2)} '
+        f'Q{f(cx + 20)} {f(cy + 2)} {f(cx + 20)} {f(cy + 24)}" fill="none" stroke="{c}" stroke-width="3" stroke-linecap="round"/>'
+    )
+
+
+def _timing(start: float, end: float) -> tuple[str, str]:
+    """keyTimes for a dot that waits, travels from start to end, then hides."""
+    a, b = start / FLOW_LOOP, min(end / FLOW_LOOP, 0.999)
+    return f"0;{a:.3f};{b:.3f};1", f"0;{a:.3f};{b:.3f}"
+
+
+def asset_call_flow(facts: Facts, animated: bool = True) -> str:
+    width, height = 1200, 520
+    states = facts.states
+    parts = [dot_grid(width, height)]
+    parts.append(text(40, 48, "HOW A CALL FLOWS", 14, "muted", spacing=2.4, weight=700))
+    # Legend: node edges show build state, travelling dots show what moves.
+    lx = 560
+    for label, color, dash in (
+        ("built", "neon", ""),
+        ("in progress", "violet", ""),
+        ("planned", "plum", ' stroke-dasharray="4 3"'),
+    ):
+        parts.append(
+            f'<rect x="{lx}" y="36" width="22" height="16" rx="5" fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
+        )
+        parts.append(text(lx + 30, 49, label, 14, "muted"))
+        lx += 52 + 8 * len(label)
+    for label, color in (("the order", "neon"), ("the reply", "violet")):
+        parts.append(f'<circle cx="{lx + 6}" cy="44" r="5" fill="{TOKENS[color]}"/>')
+        parts.append(text(lx + 18, 49, label, 14, "muted"))
+        lx += 32 + 8 * len(label)
+    # Lanes, so the eye reads three zones: voice, understanding, deciding.
+    for x0, x1, label in (
+        (140, 430, "voice layer"),
+        (440, 760, "AI understands"),
+        (770, 1070, "code decides"),
+    ):
+        parts.append(
+            f'<rect x="{x0}" y="70" width="{x1 - x0}" height="420" rx="16" fill="{TOKENS["surface"]}" opacity="0.45"/>'
+        )
+        parts.append(
+            text(
+                (x0 + x1) / 2,
+                484,
+                label.upper(),
+                13,
+                "muted",
+                anchor="middle",
+                spacing=2,
+            )
+        )
+    paths: dict[tuple[str, str], str] = {}
+    for a, b, _t0, color in FLOW_EDGES:
+        d = _rounded(_edge_path(a, b))
+        paths[(a, b)] = d
+        planned = "planned" in (
+            node_state(FLOW_NODES[a]["tasks"], states),
+            node_state(FLOW_NODES[b]["tasks"], states),
+        )
+        dash = ' stroke-dasharray="5 6"' if planned or color == "plum" else ""
+        stroke = TOKENS["grid"] if color != "violet" else "#3B2E66"
+        parts.append(
+            f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="2"{dash}/>'
+        )
+    for key, node in FLOW_NODES.items():
+        x, y, w, h = _node_box(key)
+        state = node_state(node["tasks"], states)
+        edge = {
+            "built": TOKENS["neon"],
+            "progress": TOKENS["violet"],
+            "planned": TOKENS["plum"],
+        }[state]
+        if node.get("kind") == "person":
+            parts.append(
+                f'<circle cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" r="34" fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}" stroke-width="2"/>'
+            )
+            parts.append(_person(x + w / 2, y + h / 2, "ink"))
+            parts.append(
+                text(
+                    x + w / 2,
+                    y + h + 22,
+                    node["label"][0],
+                    15,
+                    "ink",
+                    anchor="middle",
+                    weight=700,
+                )
+            )
+            continue
+        dash = ' stroke-dasharray="6 5"' if state == "planned" else ""
+        parts.append(
+            f'<rect class="node-{key}" x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="12" '
+            f'fill="{TOKENS["surface_hi"]}" stroke="{edge}" stroke-width="2"{dash}/>'
+        )
+        lines = node["label"]
+        size = 13 if node.get("small") else 14
+        base = y + h / 2 - (len(lines) - 1) * 8 + 5
+        for i, line in enumerate(lines):
+            parts.append(
+                text(
+                    x + w / 2,
+                    base + i * 17,
+                    line,
+                    size,
+                    "ink",
+                    anchor="middle",
+                    weight=700 if i == 0 else 400,
+                )
+            )
+        tag = {"built": "built", "progress": "in progress", "planned": "planned"}[state]
+        parts.append(
+            text(
+                x + w / 2,
+                y + h + 15,
+                node.get("sub", tag),
+                13,
+                "muted",
+                anchor="middle",
+            )
+        )
+        if animated:
+            parts.append(
+                f'<rect class="pulse" x="{f(x - 3)}" y="{f(y - 3)}" width="{f(w + 6)}" height="{f(h + 6)}" rx="14" '
+                f'fill="none" stroke="{edge}" stroke-width="3" opacity="0" filter="url(#soft)">'
+                + _pulse(key)
+                + "</rect>"
+            )
+    # The escalation path: unsure, hand to the team.
+    esc = _rounded([(490, 286), (490, 458), (1030, 458), (1030, 371)], 14)
+    parts.append(
+        f'<path d="{esc}" fill="none" stroke="{TOKENS["violet"]}" stroke-width="1.5" stroke-dasharray="3 6" opacity="0.7"/>'
+    )
+    parts.append(text(506, 450, "unsure: hand to the team", 13, "violet"))
+    if animated:
+        for a, b, t0, color in FLOW_EDGES:
+            if color == "plum":
+                continue
+            kt, kt3 = _timing(t0, t0 + FLOW_HOP)
+            fill = TOKENS[color]
+            parts.append(
+                f'<circle class="dot" r="5" fill="{fill}" filter="url(#soft)" opacity="0">'
+                f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{paths[(a, b)]}" '
+                f'keyPoints="0;0;1;1" keyTimes="{kt}" calcMode="linear"/>'
+                f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
+                f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/></circle>'
+                f'<circle class="dot" r="2.5" fill="{TOKENS["neon_core" if color == "neon" else "violet_core"]}" opacity="0">'
+                f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{paths[(a, b)]}" '
+                f'keyPoints="0;0;1;1" keyTimes="{kt}" calcMode="linear"/>'
+                f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
+                f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/></circle>'
+            )
+    css = "@media (prefers-reduced-motion:reduce){.dot,.pulse{display:none}}"
+    built = [
+        k
+        for k, n in FLOW_NODES.items()
+        if n["tasks"] and node_state(n["tasks"], states) == "built"
+    ]
+    unfinished = [
+        k
+        for k, n in FLOW_NODES.items()
+        if n["tasks"] and node_state(n["tasks"], states) != "built"
+    ]
+    desc = (
+        "A call from caller to team: phone line, speech to text, the conversation core that fans out to the "
+        "language model, menu lookup, hours and slots, cart and prices, which converge in the domain and "
+        "Postgres where code decides; then the kitchen slip and the team tablet. The reply goes back through "
+        "text to speech. Built: "
+        + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
+        + ". Not finished: "
+        + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)
+        + "."
+    )
+    return document(width, height, "How a call flows", desc, "\n".join(parts), css)
+
+
+def _pulse(key: str) -> str:
+    """The node glows while a dot arrives at it."""
+    arrivals = sorted(
+        {t0 + FLOW_HOP for a, b, t0, c in FLOW_EDGES if b == key and c != "plum"}
+    )
+    if not arrivals:
+        return ""
+    times, values = ["0"], ["0"]
+    for t in arrivals:
+        start, peak, end = (
+            t / FLOW_LOOP,
+            (t + 0.15) / FLOW_LOOP,
+            min((t + 0.6) / FLOW_LOOP, 0.999),
+        )
+        times += [f"{start:.3f}", f"{peak:.3f}", f"{end:.3f}"]
+        values += ["0", "0.9", "0"]
+    times.append("1")
+    values.append("0")
+    return (
+        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
+        f'values="{";".join(values)}" keyTimes="{";".join(times)}"/>'
+    )
+
+
+# ---------------------------------------------------------------------- voice bench
+
+VERDICT_STYLE = {
+    "go": ("neon", "go"),
+    "no-go": ("coral", "no-go"),
+    "at limit": ("violet", "at limit"),
+}
+
+
+def asset_voice_bench(facts: Facts) -> str:
+    rows = facts.voice
+    width = 1200
+    height = 170 + max(len(rows), 1) * 58
+    parts = [dot_grid(width, height)]
+    parts.append(
+        slip(
+            40,
+            40,
+            1120,
+            height - 80,
+            "Voice layer · measured",
+            de(rows[-1].date if rows else None),
+        )
+    )
+    if not rows:
+        parts.append(text(64, 140, "No voice measurement recorded yet.", 20, "muted"))
+    for i, row in enumerate(rows):
+        y = 128 + i * 58
+        parts.append(text(64, y, row.date.strftime("%d %b"), 15, "muted"))
+        parts.append(text(160, y, row.metric, 16, "ink", weight=700))
+        parts.append(
+            text(
+                160,
+                y + 22,
+                f"{row.package} · {row.note}" if row.note else row.package,
+                14,
+                "muted",
+            )
+        )
+        value = f"{row.shown or f'{row.value:g}'} {row.unit}".strip()
+        parts.append(text(870, y, value, 20, "ink", anchor="end", weight=700))
+        if row.limit:
+            parts.append(
+                text(870, y + 22, f"limit {row.limit}", 13, "muted", anchor="end")
+            )
+        color, label = VERDICT_STYLE.get(row.verdict, ("plum", row.verdict))
+        cx = 1050
+        parts.append(
+            f'<rect x="{cx - 56}" y="{y - 20}" width="112" height="28" rx="14" fill="none" stroke="{TOKENS[color]}" stroke-width="2"/>'
+        )
+        parts.append(
+            text(
+                cx,
+                y - 1,
+                label.upper(),
+                14,
+                color,
+                anchor="middle",
+                weight=700,
+                spacing=1.5,
+            )
+        )
+    desc = "Voice layer measurements: " + "; ".join(
+        f"{de(r.date)} {r.metric} {r.value:g} {r.unit}, {r.verdict}" for r in rows
+    )
+    return document(width, height, "Voice layer measurements", desc, "\n".join(parts))
+
+
+# ------------------------------------------------------------------- rules, divider
+
+
+def asset_rules() -> str:
+    width, height = 1200, 420
+    parts = [dot_grid(width, height)]
+    parts.append(text(40, 48, "SIX HARD RULES", 14, "muted", spacing=2.4, weight=700))
+    for i, (title, l1, l2) in enumerate(HARD_RULES):
+        col, row = i % 3, i // 3
+        x, y = 40 + col * 380, 72 + row * 168
+        parts.append(
+            f'<rect x="{x}" y="{y}" width="360" height="148" rx="14" fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}"/>'
+        )
+        parts.append(text(x + 24, y + 44, f"{i + 1:02d}", 24, "neon", weight=700))
+        parts.append(text(x + 24, y + 76, title, 16, "ink", weight=700))
+        parts.append(text(x + 24, y + 106, l1, 15, "muted"))
+        parts.append(text(x + 24, y + 128, l2, 15, "muted"))
+    desc = "The six hard rules: " + "; ".join(f"{t}: {a} {b}" for t, a, b in HARD_RULES)
+    return document(width, height, "Six hard rules", desc, "\n".join(parts))
+
+
+def asset_divider() -> str:
+    width, height = 1200, 40
+    line = wave_points(20, 1180, 20, 9, 22, 400)
+    defs = (
+        '<defs><linearGradient id="dv" x1="0" x2="1">'
+        f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0"/>'
+        f'<stop offset="0.3" stop-color="{TOKENS["neon"]}"/>'
+        f'<stop offset="0.7" stop-color="{TOKENS["violet"]}"/>'
+        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></linearGradient></defs>'
+    )
+    body = (
+        defs
+        + f'<path d="{path_of(line)}" fill="none" stroke="url(#dv)" stroke-width="2" stroke-linecap="round"/>'
+    )
+    svg = document(width, height, "Divider", "A voice waveform.", body)
+    # The divider sits on the page itself: no background card.
+    return svg.replace(
+        f'<rect width="{width}" height="{height}" rx="24" fill="{TOKENS["bg"]}"/>\n', ""
+    )
+
+
+def asset_social(facts: Facts) -> str:
+    width, height = 1280, 640
+    cases = facts.latest("cases")
+    parts = [dot_grid(width, height)]
+    parts.append(
+        '<defs><radialGradient id="sg" cx="0.5" cy="0.4" r="0.6">'
+        f'<stop offset="0" stop-color="{TOKENS["violet"]}" stop-opacity="0.25"/>'
+        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></radialGradient></defs>'
+        f'<rect width="{width}" height="{height}" fill="url(#sg)"/>'
+    )
+    _, w = wordmark(0, 0, 150)
+    body, _ = wordmark((width - w) / 2, 150, 150)
+    parts.append(body)
+    parts.append(
+        text(width / 2, 400, "Maex Voice Agent", 40, "ink", anchor="middle", weight=700)
+    )
+    parts.append(
+        text(
+            width / 2,
+            446,
+            "AI phone agent for restaurants: reservations, pickups, deliveries",
+            22,
+            "muted",
+            anchor="middle",
+        )
+    )
+    if cases:
+        parts.append(
+            text(
+                width / 2,
+                520,
+                f"eval {cases.passed}/{cases.total} on {cases.model} · {de(cases.date)}",
+                18,
+                "neon",
+                anchor="middle",
+            )
+        )
+    svg = document(
+        width, height, "MÆX social preview", "MÆX, Maex Voice Agent.", "\n".join(parts)
+    )
+    # Full bleed: link previews crop the corners themselves.
+    return svg.replace(f'height="{height}" rx="24" fill=', f'height="{height}" fill=')
+
+
+# --------------------------------------------------------------------------- render
+
+
+def build(facts: Facts) -> dict[str, str]:
+    return {
+        "logo-mark.svg": asset_logo_mark(),
+        "logo-wordmark.svg": asset_logo_wordmark(),
+        "banner.svg": asset_banner(facts),
+        "call-flow.svg": asset_call_flow(facts),
+        "call-flow-static.svg": asset_call_flow(facts, animated=False),
+        "eval-latest.svg": asset_eval_latest(facts),
+        "eval-trend.svg": asset_eval_trend(facts),
+        "progress.svg": asset_progress(facts),
+        "voice-bench.svg": asset_voice_bench(facts),
+        "rules.svg": asset_rules(),
+        "divider.svg": asset_divider(),
+        "social-preview.svg": asset_social(facts),
+    }
+
+
+PNGS = {
+    "social-preview.png": ("social-preview.svg", 1280, 640),
+    "logo-mark-512.png": ("logo-mark.svg", 512, 512),
+}
+
+
+def chromium() -> str | None:
+    """Prefer Chromium's headless shell: the full browser cuts about 90 px off the
+    bottom of a screenshot, even with the new headless mode (checked 14.10.2026)."""
+    shells = sorted(
+        Path("/opt/pw-browsers").glob(
+            "chromium_headless_shell-*/chrome-linux*/headless_shell"
+        )
+    )
+    if shells:
+        return str(shells[-1])
+    for name in ("chromium", "chromium-browser", "google-chrome"):
+        if found := shutil.which(name):
+            return found
+    return None
+
+
+def to_png(svg: Path, out: Path, width: int, height: int) -> None:
+    browser = chromium()
+    if browser is None:
+        raise SystemExit("no Chromium found for --png")
+    with tempfile.TemporaryDirectory() as tmp:
+        page = Path(tmp) / "page.html"
+        page.write_text(
+            f'<html><body style="margin:0;background:transparent">'
+            f'<img src="{svg.resolve().as_uri()}" width="{width}" height="{height}"></body></html>',
+            encoding="utf-8",
+        )
+        subprocess.run(
+            [
+                browser,
+                "--headless=new",
+                "--no-sandbox",
+                "--disable-gpu",
+                "--hide-scrollbars",
+                "--default-background-color=00000000",
+                f"--window-size={width},{height}",
+                f"--screenshot={out}",
+                page.as_uri(),
+            ],
+            check=True,
+            capture_output=True,
+        )
+
+
+def render(check: bool = False, png: bool = False) -> int:
+    assets = build(gather())
+    stale = []
+    for name, content in assets.items():
+        target = ASSETS / name
+        current = target.read_text(encoding="utf-8") if target.exists() else None
+        if current == content:
+            continue
+        if check:
+            stale.append(name)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+            print(f"wrote {target}")
+    if stale:
+        print(
+            "README assets are stale: " + ", ".join(stale) + ".\n"
+            "Run `python scripts/readme_assets.py render` and commit .github/assets/.",
+            file=sys.stderr,
+        )
+        return 1
+    if png and not check:
+        for name, (source, w, h) in PNGS.items():
+            to_png(ASSETS / source, ASSETS / name, w, h)
+            print(f"wrote .github/assets/{name}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("render", help="write the SVG assets")
+    r.add_argument("--check", action="store_true", help="fail if an asset is stale")
+    r.add_argument("--png", action="store_true", help="also write the PNGs")
+    a = sub.add_parser("add", help="record an eval report JSON")
+    a.add_argument("report", type=Path)
+    a.add_argument("--suite", choices=["cases", "targets"], default="cases")
+    a.add_argument("--note", default="")
+    v = sub.add_parser("add-voice", help="record a voice layer measurement")
+    v.add_argument("date", type=date.fromisoformat)
+    v.add_argument("package")
+    v.add_argument("metric")
+    v.add_argument("value", type=float)
+    v.add_argument("unit")
+    v.add_argument("verdict", choices=sorted(VERDICT_STYLE))
+    v.add_argument("--limit", default="")
+    v.add_argument("--note", default="")
+    c = sub.add_parser("concepts", help="write the logo concept sheet")
+    c.add_argument("out", type=Path)
+    args = parser.parse_args(argv)
+    if args.cmd == "render":
+        return render(args.check, args.png)
+    if args.cmd == "add":
+        row = run_from_report(
+            json.loads(args.report.read_text(encoding="utf-8")), args.suite
+        )
+        row["note"] = args.note
+        append_row(EVAL_HISTORY, EVAL_FIELDS, row)
+        print(
+            f"recorded {row['suite']} {row['passed']}/{row['total']} on {row['date']}"
+        )
+        return 0
+    if args.cmd == "add-voice":
+        append_row(
+            VOICE_HISTORY,
+            VOICE_FIELDS,
+            {
+                "date": args.date.isoformat(),
+                "package": args.package,
+                "metric": args.metric,
+                "value": f"{args.value:g}",
+                "unit": args.unit,
+                "limit": args.limit,
+                "verdict": args.verdict,
+                "note": args.note,
+            },
+        )
+        return 0
+    args.out.write_text(concept_sheet(), encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

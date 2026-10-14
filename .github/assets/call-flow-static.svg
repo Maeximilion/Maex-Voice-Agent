@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="t d">
+<title id="t">How a call flows</title>
+<desc id="d">A call from caller to team: phone line, speech to text, the conversation core that fans out to the language model, menu lookup, hours and slots, cart and prices, which converge in the domain and Postgres where code decides; then the kitchen slip and the team tablet. The reply goes back through text to speech. Built: Speech to text, Text to speech, Conversation core, Menu lookup, Hours and slots, Cart and prices, Domain Postgres, Kitchen slip, Team tablet, Outbox n8n. Not finished: Phone line Asterisk, LLM.</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}@media (prefers-reduced-motion:reduce){.dot,.pulse{display:none}}</style>
+<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="520"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="520"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<rect width="1200" height="520" rx="24" fill="#0D0819"/>
+<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="520" rx="24" fill="url(#dots)" opacity="0.8"/>
+<text x="40" y="48" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">HOW A CALL FLOWS</text>
+<rect x="560" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="590" y="49" font-size="14" fill="#A89CCB">built</text>
+<rect x="652" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="682" y="49" font-size="14" fill="#A89CCB">in progress</text>
+<rect x="792" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#76699F" stroke-width="2" stroke-dasharray="4 3"/>
+<text x="822" y="49" font-size="14" fill="#A89CCB">planned</text>
+<circle cx="906" cy="44" r="5" fill="#E8FF2E"/>
+<text x="918" y="49" font-size="14" fill="#A89CCB">the order</text>
+<circle cx="1010" cy="44" r="5" fill="#9D7BFF"/>
+<text x="1022" y="49" font-size="14" fill="#A89CCB">the reply</text>
+<rect x="140" y="70" width="290" height="420" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="285" y="484" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">VOICE LAYER</text>
+<rect x="440" y="70" width="320" height="420" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="600" y="484" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">AI UNDERSTANDS</text>
+<rect x="770" y="70" width="300" height="420" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="920" y="484" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">CODE DECIDES</text>
+<path d="M104 250 L156 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M274 250 L301 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M419 250 L456 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M574 250 L589 250 Q601 250 601 238 L601 142 Q601 130 613 130 L628 130" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M574 250 L589 250 Q601 250 601 238 L601 222 Q601 210 613 210 L628 210" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M574 250 L589 250 Q601 250 601 262 L601 278 Q601 290 613 290 L628 290" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M574 250 L589 250 Q601 250 601 262 L601 358 Q601 370 613 370 L628 370" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M732 130 L749.5 130 Q761.5 130 761.5 142 L761.5 238 Q761.5 250 773.5 250 L791 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M732 210 L749.5 210 Q761.5 210 761.5 222 L761.5 238 Q761.5 250 773.5 250 L791 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M732 290 L749.5 290 Q761.5 290 761.5 278 L761.5 262 Q761.5 250 773.5 250 L791 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M732 370 L749.5 370 Q761.5 370 761.5 358 L761.5 262 Q761.5 250 773.5 250 L791 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M515 214 L515 107 Q515 95 503 95 L419 95" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M301 95 L227 95 Q215 95 215 107 L215 214" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M156 250 L104 250" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M909 250 L917 250 Q925 250 925 242 L925 173 Q925 165 933 165 L941 165" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M909 250 L917 250 Q925 250 925 258 L925 327 Q925 335 933 335 L941 335" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M850 286 L850 367" fill="none" stroke="#2B2148" stroke-width="2" stroke-dasharray="5 6"/>
+<path d="M1059 165 L1068.2 165 Q1077.5 165 1077.5 174.2 L1077.5 240.8 Q1077.5 250 1086.8 250 L1096 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M1059 335 L1068.2 335 Q1077.5 335 1077.5 325.8 L1077.5 259.2 Q1077.5 250 1086.8 250 L1096 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<circle cx="70" cy="250" r="34" fill="#17102B" stroke="#2B2148" stroke-width="2"/>
+<circle cx="70" cy="238" r="11" fill="none" stroke="#F1ECFF" stroke-width="3"/><path d="M50 274 Q50 252 70 252 Q90 252 90 274" fill="none" stroke="#F1ECFF" stroke-width="3" stroke-linecap="round"/>
+<text x="70" y="306" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">Caller</text>
+<rect class="node-line" x="156" y="214" width="118" height="72" rx="12" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="215" y="247" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Phone line</text>
+<text x="215" y="264" font-size="14" fill="#F1ECFF" text-anchor="middle">Asterisk</text>
+<text x="215" y="301" font-size="13" fill="#A89CCB" text-anchor="middle">in progress</text>
+<rect class="node-stt" x="301" y="214" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="360" y="247" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Speech</text>
+<text x="360" y="264" font-size="14" fill="#F1ECFF" text-anchor="middle">to text</text>
+<text x="360" y="301" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-tts" x="301" y="59" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="360" y="92" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Text to</text>
+<text x="360" y="109" font-size="14" fill="#F1ECFF" text-anchor="middle">speech</text>
+<text x="360" y="146" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-core" x="456" y="214" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="515" y="247" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Conversation</text>
+<text x="515" y="264" font-size="14" fill="#F1ECFF" text-anchor="middle">core</text>
+<text x="515" y="301" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-llm" x="628" y="102" width="104" height="56" rx="12" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="680" y="135" font-size="13" fill="#F1ECFF" text-anchor="middle" font-weight="700">LLM</text>
+<text x="680" y="173" font-size="13" fill="#A89CCB" text-anchor="middle">in progress</text>
+<rect class="node-menu" x="628" y="182" width="104" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="680" y="207" font-size="13" fill="#F1ECFF" text-anchor="middle" font-weight="700">Menu</text>
+<text x="680" y="224" font-size="13" fill="#F1ECFF" text-anchor="middle">lookup</text>
+<text x="680" y="253" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-slots" x="628" y="262" width="104" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="680" y="287" font-size="13" fill="#F1ECFF" text-anchor="middle" font-weight="700">Hours</text>
+<text x="680" y="304" font-size="13" fill="#F1ECFF" text-anchor="middle">and slots</text>
+<text x="680" y="333" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-cart" x="628" y="342" width="104" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="680" y="367" font-size="13" fill="#F1ECFF" text-anchor="middle" font-weight="700">Cart</text>
+<text x="680" y="384" font-size="13" fill="#F1ECFF" text-anchor="middle">and prices</text>
+<text x="680" y="413" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-server" x="791" y="214" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="850" y="247" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Domain</text>
+<text x="850" y="264" font-size="14" fill="#F1ECFF" text-anchor="middle">Postgres</text>
+<text x="850" y="301" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-slip" x="941" y="129" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1000" y="162" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Kitchen</text>
+<text x="1000" y="179" font-size="14" fill="#F1ECFF" text-anchor="middle">slip</text>
+<text x="1000" y="216" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect class="node-tablet" x="941" y="299" width="118" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1000" y="332" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Team</text>
+<text x="1000" y="349" font-size="14" fill="#F1ECFF" text-anchor="middle">tablet</text>
+<text x="1000" y="386" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<circle cx="1130" cy="250" r="34" fill="#17102B" stroke="#2B2148" stroke-width="2"/>
+<circle cx="1130" cy="238" r="11" fill="none" stroke="#F1ECFF" stroke-width="3"/><path d="M1110 274 Q1110 252 1130 252 Q1150 252 1150 274" fill="none" stroke="#F1ECFF" stroke-width="3" stroke-linecap="round"/>
+<text x="1130" y="306" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">Team</text>
+<rect class="node-n8n" x="798" y="367" width="104" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="850" y="392" font-size="13" fill="#F1ECFF" text-anchor="middle" font-weight="700">Outbox</text>
+<text x="850" y="409" font-size="13" fill="#F1ECFF" text-anchor="middle">n8n</text>
+<text x="850" y="438" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<path d="M490 286 L490 444 Q490 458 504 458 L1016 458 Q1030 458 1030 444 L1030 371" fill="none" stroke="#9D7BFF" stroke-width="1.5" stroke-dasharray="3 6" opacity="0.7"/>
+<text x="506" y="450" font-size="13" fill="#9D7BFF">unsure: hand to the team</text>
+</svg>
