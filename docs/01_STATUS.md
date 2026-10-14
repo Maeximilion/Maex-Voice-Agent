@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.44
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.46
 
 ---
 
@@ -411,6 +411,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 14.10.2026 | **Speech kit: an ear that heard nothing is never the pick** (#207): an ear with an empty transcript for every number sentence (a dish name it heard does not count) is listed as failed, so the go gate can no longer say go on it (an empty transcript asks back and is never wrong). CI runs `test_telephony_speech_bench.py` once more with a hashed numpy 2.5.4 after the full run and fails on a skip; the `measure` test fakes the silence detector, which only the speech image has |
 | 14.10.2026 | **Public repo hygiene** (daily review, issue #207): `scripts/decision_issue.py` reads only the keys marker at the end of the issue body, so a marker in an issue title can no longer replace the remembered set; the admin mockup's rejected delivery addresses use invented place names |
 | 14.10.2026 | **A main folder that cannot be synced is shown to Maxi** (Maxi's call after the main folder fell 192 commits behind over two uncommitted doc edits and six draft files): the session start hook names the files that block the sync, or git's reason for a clean folder, and with `--json` sends it as a message Maxi sees plus an instruction for Claude to raise it first; a failed fast-forward of a folder another session has synced meanwhile no longer warns. The user-level after-merge hook reports the same way (docs/19). Not seen yet: how the desktop app shows the message at session start |
 | 13.10.2026 | **T-10.4: call session of the own voice layer** (`telephony/session.py`, ports `Ear`, `Mouth`, `Line` in `telephony/speech.py`, fakes): the rules of docs/20 §4 against fakes, `CallEvents` with silence and a failure of the voice layer, `say` with `interruptible`; a yes to "Sind Sie noch da?" confirms nothing; whole calls through session, handler and core |
@@ -511,6 +512,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.46 · 14.10.2026:** Codex review of cef40e9 on PR #294: an ear is judged heard only by its number sentences
+- **v2.1.45 · 14.10.2026:** Speech kit: an ear that heard nothing is never the pick; speech_bench tests run in CI with numpy (#207)
 - **v2.1.44 · 14.10.2026:** Decision issue reads only its own keys marker; mockup uses invented place names
 - **v2.1.43 · 14.10.2026:** Codex review of 4d1cb80 on PR #290: the sync warning drops bytes that are not UTF-8, survives a shell with nounset; English fixture name
 - **v2.1.42 · 14.10.2026:** Codex review of 7da2dc2 on PR #290: the sync hook fetches main by name, so a single-branch clone does not keep a stale origin/main
