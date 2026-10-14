@@ -590,3 +590,13 @@ def test_every_caption_is_shown_and_the_last_holds_to_the_loop_end() -> None:
         assert words in flow
     assert ra.FLOW_CAPTIONS[-1][1] == ra.FLOW_LOOP
     assert ra.FLOW_STILL in ra.build(ra.gather())["call-flow-static.svg"]
+
+
+def test_the_picture_names_the_direct_print_and_the_voice_failure_exactly() -> None:
+    flow = ra.build(ra.gather())["call-flow.svg"]
+    assert "primary mode: at once" in ra.FLOW_CAPTIONS[-1][2]
+    # Only a failure of the service voice is the exchange's fallback; a model
+    # failure in the core takes the handover path (api/agent/loop.py _too_slow).
+    assert "any failure" not in flow
+    assert "the service voice fails" in flow
+    assert "model failure" in flow

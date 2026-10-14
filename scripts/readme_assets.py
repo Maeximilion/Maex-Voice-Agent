@@ -301,9 +301,10 @@ FLOW_STORY: list[tuple[str, list]] = [
         ],
     ),
     (
-        # The slip waits for the team's approval on the tablet, except in primary
-        # mode under the amount limit (api/domain/ordering/confirm.py, board.py).
-        "5  The order shows on the tablet. Once the team approves, the slip prints.",
+        # A held order: the slip waits for the team's approval on the tablet. In
+        # primary mode under the amount limit it prints at once, and the caption
+        # says so (api/domain/ordering/confirm.py, board.py).
+        "5  On the tablet; the slip prints after the team approves (primary mode: at once).",
         [
             ("postgres", "tablet", "neon"),
             ("tablet", "team", "neon"),
@@ -1822,17 +1823,21 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
     # transfer_to_team counts the team as reachable while a service is open;
     # otherwise the core leaves a callback for the tablet (api/agent/loop.py).
     parts.append(
-        text(
-            546, 534, "unsure or a complaint: transfer to the team phone,", 13, "violet"
-        )
+        text(546, 534, "unsure, complaint or model failure: team phone,", 13, "violet")
     )
-    parts.append(text(546, 552, "after hours a callback on the tablet", 13, "violet"))
+    parts.append(text(546, 552, "after hours: a callback on the tablet", 13, "violet"))
     parts.append(
         f'<path d="{_rounded(OUTAGE_ROUTE, 14)}" fill="none" stroke="{TOKENS["coral"]}" '
         'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
     )
     parts.append(
-        text(252, 592, "any failure: the exchange rings the team phone", 13, "coral")
+        text(
+            252,
+            592,
+            "the service voice fails: the exchange rings the team phone",
+            13,
+            "coral",
+        )
     )
     paths: dict[tuple[str, str, str], str] = {}
     for link in FLOW_LINKS:
@@ -1939,9 +1944,10 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         "search_menu or draft_order, against Postgres, and hands the result back to the model, one tool "
         "per hop. The model never reads the database. The read-back goes out through the mouth. Only "
         "after the caller's yes does the core run confirm, and the model tells the caller. The order "
-        "shows on the tablet, and once the team approves it the slip prints at the register. When the "
-        "AI is unsure or hears a complaint, the call goes to "
-        "the team phone, after opening hours it leaves a callback on the tablet; on any failure the exchange rings the team phone. Built: "
+        "shows on the tablet; the slip prints at the register once the team approves it, in primary "
+        "mode under the amount limit at once. When the AI is unsure, hears a complaint or the model "
+        "fails, the call goes to the team phone, after opening hours it leaves a callback on the "
+        "tablet; when the service voice itself fails, the exchange rings the team phone. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)
