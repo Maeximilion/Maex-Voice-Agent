@@ -71,6 +71,18 @@ jobs:
       # Latenzbudget < 300 ms (CLAUDE.md §7) seriell auf dem ruhigen Runner.
       - name: Latenztests seriell
         run: pytest -q -m latency
+      # The telephone line of the speech kit needs numpy, which the production
+      # image must not carry: installed only here, after the full run, so that run
+      # stays as it was. The version is the one the speech image resolves
+      # (deploy/speech/Dockerfile pins no numpy itself); the hash is the cp312
+      # manylinux x86_64 wheel. A skip in this file fails the step (#207).
+      - name: Speech kit tests with numpy
+        shell: bash
+        run: |
+          echo "numpy==2.5.4 --hash=sha256:fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a" > "$RUNNER_TEMP/numpy.txt"
+          pip install --require-hashes --no-deps -r "$RUNNER_TEMP/numpy.txt"
+          pytest -q -rs api/tests/test_telephony_speech_bench.py | tee "$RUNNER_TEMP/bench.txt"
+          ! grep -q skipped "$RUNNER_TEMP/bench.txt"
 
   docker-smoke:
     runs-on: ubuntu-latest

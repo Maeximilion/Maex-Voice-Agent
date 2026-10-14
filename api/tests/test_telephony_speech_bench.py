@@ -1,6 +1,7 @@
 """telephony/speech_bench.py: the telephone line between mouth and ear.
 
-Needs numpy, which only the image of `deploy/speech/` has: skipped elsewhere.
+Needs numpy, which the API image does not have: skipped in the full run. CI
+runs this file once more with numpy installed and fails on a skip (#207).
 The engines themselves are not tested here, the run of the kit is their test.
 """
 
@@ -60,6 +61,14 @@ def test_an_ear_with_a_sample_hears_every_nth_utterance(tmp_path, monkeypatch):
         PiperVoice=types.SimpleNamespace(load=lambda path: Voice())
     )
     monkeypatch.setitem(sys.modules, "piper", piper)
+    # The silence detector comes with faster-whisper, which only the speech
+    # image has; CI runs this file with numpy alone (#207).
+    vad = types.SimpleNamespace(
+        VadOptions=lambda **options: options,
+        get_speech_timestamps=lambda audio, options: [{"start": 0, "end": 1}],
+    )
+    monkeypatch.setitem(sys.modules, "faster_whisper", types.SimpleNamespace(vad=vad))
+    monkeypatch.setitem(sys.modules, "faster_whisper.vad", vad)
     monkeypatch.setattr(
         speech_bench,
         "load_ear",
