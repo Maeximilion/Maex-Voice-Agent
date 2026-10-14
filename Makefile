@@ -25,20 +25,33 @@ lint:
 fmt:
 	docker compose exec api ruff format api scripts evals printbridge sim db
 
-eval:     ## Eval-Suite, optional TAGS=menu,noise
-	docker compose exec api python -m evals.runner $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
+# The runner works in the api container, which sees neither .git nor .github/: the run is
+# recorded here on the host, after it (docs/08 §4). Best effort: a failed record
+# prints a warning, and the target exits with the eval's own code.
+PYTHON ?= python3
+define eval_and_record
+	@start=$$(date +%s); \
+	docker compose exec api python -m evals.runner $(1) $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),); \
+	code=$$?; \
+	$(PYTHON) scripts/readme_assets.py auto-record --suite $(2) --since $$start \
+		|| echo "warning: the eval run was not recorded (docs/08 §4)" >&2; \
+	exit $$code
+endef
+
+eval:     ## Eval-Suite, optional TAGS=menu,noise; a full real-model run records itself on a branch
+	$(call eval_and_record,,cases)
 
 eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (docs/08 §1)
-	docker compose exec api python -m evals.runner --cases evals/targets $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
+	$(call eval_and_record,--cases evals/targets,targets)
 
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval
 
-eval-record: ## Record the newest real-model eval report in docs/metrics/ (SUITE=targets for the target cases, REPORT=<file> for an older one)
-	python scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
+eval-record: ## Record an eval report by hand and redraw (SUITE=targets, REPORT=<file>); make eval does it on its own
+	$(PYTHON) scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
 
 readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
-	python scripts/readme_assets.py render
+	$(PYTHON) scripts/readme_assets.py render
 
 backup:
 	bash scripts/backup.sh

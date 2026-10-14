@@ -15,6 +15,10 @@ Usage:
     python scripts/readme_assets.py render --png      also the PNGs (needs Chromium)
     python scripts/readme_assets.py add <report.json> [--suite cases|targets]
     python scripts/readme_assets.py add-voice <date> <package> <metric> <value> ...
+    python scripts/readme_assets.py pending [--record]   runs not yet in docs/metrics/
+
+`make eval`, `make eval-targets` and the voice kits record on their own (`auto-record`,
+`record_kit_run`), on a branch only: on `main` a result waits in evals/reports/.
 
 Rendering is deterministic: every date comes from the data, never from today, so
 `--check` in CI only fails when the data moved and the images did not.
@@ -25,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import functools
 import hashlib
 import itertools
 import json
@@ -34,8 +39,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable, Iterator
+from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -439,7 +446,12 @@ VOICE_FIELDS = [
     "limit",
     "verdict",
     "note",
+    # When a kit's run ended; empty for a row recorded by hand. Two runs of one day
+    # with the same result stay two rows.
+    "run_at",
 ]
+# What makes two voice rows the same measurement, next to run_at.
+VOICE_KEY = ("date", "package", "metric", "value", "unit")
 STAND_IN = "scripted-stand-in"
 # What `evals/runner.py` writes as model for the rule-based stand-in (its default).
 STAND_IN_NAMES = {"", "scripted", STAND_IN}
@@ -505,13 +517,37 @@ class VoiceRow:
     note: str = ""
     # As written in the CSV, so "2.0 %" stays "2.0 %" next to a limit of "2 %".
     shown: str = ""
+    run_at: str = ""
+
+
+def unique(rows: list[dict[str, str]], key: Callable[[dict[str, str]], object]):
+    """Rows in file order without repeats: `merge=union` in .gitattributes keeps a
+    row that both sides of a merge appended twice."""
+    seen: set[object] = set()
+    out = []
+    for row in rows:
+        if (k := key(row)) not in seen:
+            seen.add(k)
+            out.append(row)
+    return out
+
+
+def _eval_identity(row: dict[str, str]) -> object:
+    # A backfilled row has no report name: only an identical line is a repeat.
+    return eval_key(row) if row.get("report") else tuple(sorted(row.items()))
+
+
+def _voice_identity(row: dict[str, str]) -> object:
+    # Values as numbers: "2.0" in the backfill is 2 from the command line.
+    measured = tuple(float(row[k]) if k == "value" else row[k] for k in VOICE_KEY)
+    return (row.get("run_at") or "", *measured)
 
 
 def read_eval_history(path: Path = EVAL_HISTORY) -> list[EvalRun]:
     if not path.exists():
         return []
     with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+        rows = unique(list(csv.DictReader(fh)), _eval_identity)
     runs = [
         EvalRun(
             date=date.fromisoformat(r["date"]),
@@ -543,7 +579,7 @@ def read_voice_history(path: Path = VOICE_HISTORY) -> list[VoiceRow]:
     if not path.exists():
         return []
     with path.open(encoding="utf-8", newline="") as fh:
-        rows = list(csv.DictReader(fh))
+        rows = unique(list(csv.DictReader(fh)), _voice_identity)
     out = [
         VoiceRow(
             date=date.fromisoformat(r["date"]),
@@ -555,10 +591,11 @@ def read_voice_history(path: Path = VOICE_HISTORY) -> list[VoiceRow]:
             verdict=r["verdict"],
             note=r.get("note", ""),
             shown=r["value"].strip(),
+            run_at=r.get("run_at") or "",
         )
         for r in rows
     ]
-    return sorted(out, key=lambda row: row.date)
+    return sorted(out, key=lambda row: (row.date, row.run_at))
 
 
 def run_from_report(report: dict, suite: str) -> dict[str, str]:
@@ -611,19 +648,18 @@ def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
         writer.writerow({k: row.get(k, "") for k in fields})
 
 
-def record_report(
+def checked_row(
     report: dict,
     suite: str | None,
     reference: bool = False,
     note: str = "",
-    path: Path = EVAL_HISTORY,
     report_name: str = "",
-) -> str:
-    """Append one report to the history; refuse what would corrupt the charts.
+) -> dict[str, str]:
+    """The history row of one report, or RecordError for what would corrupt the charts.
 
     A run with tags is partial and needs its own suite name, so it never poses as
-    the full suite; the stand-in goes in only as the explicit reference row; the
-    same report recorded twice stays one row.
+    the full suite; the stand-in goes in only as the explicit reference row; a run
+    in which no request reached the model measures nothing.
     """
     tags = report.get("tags") or []
     if suite is None:
@@ -656,38 +692,62 @@ def record_report(
             f"no request to model {row['model']!r} succeeded (mistyped name or the "
             "server down): nothing of this run measures the model"
         )
-    # The report file carries microseconds, run_at only seconds: the file name is
-    # the identity, run_at and model the fallback for a report given without one.
-    key = (report_name, suite) if report_name else (row["run_at"], row["model"], suite)
-    if path.exists():
-        with path.open(encoding="utf-8", newline="") as fh:
-            for old in csv.DictReader(fh):
-                seen = (
-                    (old.get("report", ""), old["suite"])
-                    if report_name
-                    else (old.get("run_at", ""), old["model"], old["suite"])
-                )
-                if seen == key:
-                    return f"already recorded: {suite} run of {row['run_at']}"
+    return row
+
+
+def eval_key(row: dict[str, str]) -> tuple[str, ...]:
+    """The identity of a run in the history. The report file carries microseconds,
+    run_at only seconds: the file name is the identity, run_at and model the
+    fallback for a report given without one."""
+    if row.get("report"):
+        return (row["report"], row["suite"])
+    return (row.get("run_at", ""), row["model"], row["suite"])
+
+
+def is_recorded(row: dict[str, str], path: Path = EVAL_HISTORY) -> bool:
+    if not path.exists():
+        return False
+    with path.open(encoding="utf-8", newline="") as fh:
+        # A row of the file is compared under the key of the new one, so a report
+        # given by name never matches a backfilled row without a name.
+        keys = {
+            eval_key(
+                {**old, "report": old.get("report", "") if row.get("report") else ""}
+            )
+            for old in csv.DictReader(fh)
+        }
+    return eval_key(row) in keys
+
+
+def record_report(
+    report: dict,
+    suite: str | None,
+    reference: bool = False,
+    note: str = "",
+    path: Path = EVAL_HISTORY,
+    report_name: str = "",
+) -> str:
+    """Append one report to the history; the same report recorded twice stays one row."""
+    row = checked_row(report, suite, reference, note, report_name)
+    if is_recorded(row, path):
+        return f"already recorded: {row['suite']} run of {row['run_at']}"
     append_row(path, EVAL_FIELDS, row)
-    return f"recorded {suite} {row['passed']}/{row['total']} on {row['date']}"
+    return f"recorded {row['suite']} {row['passed']}/{row['total']} on {row['date']}"
 
 
-VOICE_KEY = ("date", "package", "metric", "value", "unit")
+def is_voice_recorded(row: dict[str, str], path: Path = VOICE_HISTORY) -> bool:
+    if not path.exists():
+        return False
+    with path.open(encoding="utf-8", newline="") as fh:
+        return any(
+            _voice_identity(old) == _voice_identity(row) for old in csv.DictReader(fh)
+        )
 
 
 def record_voice(row: dict[str, str], path: Path = VOICE_HISTORY) -> str:
     """Append one voice measurement; the same one twice stays one row."""
-    if path.exists():
-        with path.open(encoding="utf-8", newline="") as fh:
-            for old in csv.DictReader(fh):
-                # Compare values as numbers: "2.0" in the backfill is 2 from the CLI.
-                same = all(
-                    float(old[k]) == float(row[k]) if k == "value" else old[k] == row[k]
-                    for k in VOICE_KEY
-                )
-                if same:
-                    return f"already recorded: {row['metric']} on {row['date']}"
+    if is_voice_recorded(row, path):
+        return f"already recorded: {row['metric']} on {row['date']}"
     append_row(path, VOICE_FIELDS, row)
     return f"recorded {row['metric']} on {row['date']}"
 
@@ -2013,7 +2073,9 @@ VERDICT_STYLE = {
 
 
 def asset_voice_bench(facts: Facts) -> str:
-    rows = facts.voice
+    # The latest row of each quantity: the kits record one row per run.
+    latest = {row.metric: row for row in facts.voice}
+    rows = sorted(latest.values(), key=lambda row: row.date)
     width = 1200
     height = 170 + max(len(rows), 1) * 58
     parts = [dot_grid(width, height)]
@@ -2174,9 +2236,335 @@ def newest_report(suite: str | None, reports: Path = REPORTS) -> Path | None:
     """The newest report of the runner: `evals/reports/` for the regular cases and
     a run with tags, `evals/reports/targets/` for the target cases (runner.py
     `default_report_dir`). File names sort by time (`eval_%Y%m%d_%H%M%S_%f`)."""
-    folder = reports / "targets" if suite == "targets" else reports
-    found = sorted(folder.glob("eval_*.json"))
+    found = sorted(report_folder(suite, reports).glob("eval_*.json"))
     return found[-1] if found else None
+
+
+def report_folder(suite: str | None, reports: Path = REPORTS) -> Path:
+    return reports / "targets" if suite == "targets" else reports
+
+
+# ------------------------------------------------------------- recording on its own
+
+# A measurement made on `main` waits here, in the ignored report folder.
+VOICE_PENDING = "voice_pending.csv"
+# What each voice kit reports, by the package that built it (docs/20 §10).
+KIT_PACKAGE = {"drill": "T-1.11", "spike": "T-10.1 step 1", "speech": "T-10.3"}
+KIT_METRIC = {
+    "drill": "Outage drills end at the team phone",
+    "spike": "Telephony spike: audio both ways",
+}
+
+
+def git(*args: str, root: Path = ROOT) -> str | None:
+    try:
+        return subprocess.run(
+            ["git", *args], cwd=root, capture_output=True, text=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return None
+
+
+def recording_branch(root: Path = ROOT) -> str | None:
+    """The branch a measurement may be written on, None on `main`.
+
+    Nothing is edited on `main` (CLAUDE.md §8), and a file left in the main folder
+    blocks the sync hook. A detached head or no git at all counts as `main`."""
+    name = (git("rev-parse", "--abbrev-ref", "HEAD", root=root) or "").strip()
+    return None if name in ("", "HEAD", "main") else name
+
+
+def report_folders(root: Path = ROOT) -> list[Path]:
+    """`evals/reports/` of this checkout and of the folder that has `main` checked
+    out, where a run made on `main` waits for a branch."""
+    folders = [root / "evals" / "reports"]
+    listing = git("worktree", "list", "--porcelain", root=root) or ""
+    for record in listing.split("\n\n"):
+        lines = record.splitlines()
+        if "branch refs/heads/main" in lines and lines[0].startswith("worktree "):
+            main = Path(lines[0].removeprefix("worktree ")) / "evals" / "reports"
+            if main.resolve() != folders[0].resolve():
+                folders.append(main)
+    return folders
+
+
+def shown(path: Path) -> str:
+    return str(path.relative_to(ROOT)) if path.is_relative_to(ROOT) else str(path)
+
+
+@contextmanager
+def file_lock(path: Path) -> Iterator[None]:
+    """An exclusive lock between processes, released when the file closes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a") as fh:
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
+
+
+def pending_lock(folder: Path) -> AbstractContextManager[None]:
+    """One writer at a time on a folder's pending file: a kit appending a row, or
+    `pending --record` reading and removing it."""
+    return file_lock(folder / "voice_pending.lock")
+
+
+def under_history_lock[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """Recording and redrawing as one step. Two recorders that finish together
+    would otherwise let the older drawing overwrite the newer one. Always taken
+    before a pending lock, never after."""
+
+    @functools.wraps(fn)
+    def run(*args: P.args, **kwargs: P.kwargs) -> R:
+        with file_lock(REPORTS / "history.lock"):
+            return fn(*args, **kwargs)
+
+    return run
+
+
+def suite_of(tags: list[str]) -> str:
+    """A suite name for a partial run, from its tags: menu, noise -> menu-noise."""
+    return re.sub(r"[^a-z0-9-]+", "-", "-".join(tags).lower()).strip("-") or "partial"
+
+
+@under_history_lock
+def auto_record(suite: str, since: float, reports: Path = REPORTS) -> int:
+    """After `make eval` and `make eval-targets`: record every full real-model
+    report written since `since`, and redraw. Not only the newest: of two runs
+    that overlap, the later one to finish still records the other. Says why when
+    it records nothing."""
+    fresh = [
+        path
+        for path in sorted(report_folder(suite, reports).glob("eval_*.json"))
+        if path.stat().st_mtime >= since
+    ]
+    if not fresh:
+        print("readme_assets: the run wrote no report, nothing recorded")
+        return 0
+    on_branch = recording_branch() is not None
+    recorded = False
+    for path in fresh:
+        try:
+            report = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            print(f"readme_assets: {shown(path)} is no complete report, not recorded")
+            continue
+        if (report.get("model") or "") in STAND_IN_NAMES:
+            print("readme_assets: a run of the scripted stand-in is not recorded")
+            continue
+        if tags := report.get("tags"):
+            print(
+                f"readme_assets: a run with tags ({', '.join(tags)}) is partial and "
+                "not recorded on its own"
+                + (
+                    ". To record it under a suite of its own:\n  python3 "
+                    f"scripts/readme_assets.py add {shown(path)} --suite {suite_of(tags)}"
+                    if on_branch
+                    else "; on main nothing is recorded"
+                )
+            )
+            continue
+        try:
+            checked_row(report, suite, report_name=path.name)
+        except RecordError as exc:
+            print(f"readme_assets: not recorded: {exc}")
+            continue
+        if not on_branch:
+            print(
+                "readme_assets: on main nothing is recorded; the report stays in "
+                f"{shown(path.parent)} and `python3 scripts/readme_assets.py pending` "
+                "lists it until /done records it on a branch"
+            )
+            continue
+        print(
+            f"{shown(path)}: "
+            + record_report(report, suite, report_name=path.name, path=EVAL_HISTORY)
+        )
+        recorded = True
+    return render() if recorded else 0
+
+
+def pending(
+    folders: list[Path] | None = None,
+    history: Path = EVAL_HISTORY,
+    voice: Path = VOICE_HISTORY,
+) -> tuple[list[tuple[Path, str]], list[dict[str, str]]]:
+    """Full real-model reports and voice results not yet in `docs/metrics/`."""
+    reports: list[tuple[Path, str]] = []
+    rows: list[dict[str, str]] = []
+    names: set[tuple[str, str]] = set()
+    for folder in report_folders() if folders is None else folders:
+        for suite, sub in (("cases", folder), ("targets", folder / "targets")):
+            for path in sorted(sub.glob("eval_*.json")):
+                try:
+                    report = json.loads(path.read_text(encoding="utf-8"))
+                    row = checked_row(report, suite, report_name=path.name)
+                except (ValueError, KeyError, RecordError):
+                    # Not a full real-model run, or a file the runner never finished.
+                    continue
+                if (path.name, suite) not in names and not is_recorded(row, history):
+                    names.add((path.name, suite))
+                    reports.append((path, suite))
+        waiting = folder / VOICE_PENDING
+        if waiting.exists():
+            with waiting.open(encoding="utf-8", newline="") as fh:
+                rows += [
+                    r
+                    for r in unique(list(csv.DictReader(fh)), _voice_identity)
+                    if not is_voice_recorded(r, voice) and r not in rows
+                ]
+    return reports, rows
+
+
+@under_history_lock
+def record_pending(folders: list[Path] | None = None) -> int:
+    folders = report_folders() if folders is None else folders
+    reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
+    if not reports and not rows:
+        print("nothing pending")
+        return 0
+    if recording_branch() is None:
+        print("on main nothing is recorded: run this on a branch", file=sys.stderr)
+        return 1
+    with ExitStack() as held:
+        # Every pending file stays locked from the read to its removal: a kit that
+        # finishes meanwhile waits and then starts a new one.
+        for folder in folders:
+            held.enter_context(pending_lock(folder))
+        reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
+        for path, suite in reports:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            print(
+                f"{shown(path)}: "
+                + record_report(report, suite, report_name=path.name, path=EVAL_HISTORY)
+            )
+        for row in rows:
+            print(record_voice(row, VOICE_HISTORY))
+        for folder in folders:
+            (folder / VOICE_PENDING).unlink(missing_ok=True)
+    return render()
+
+
+def kit_rows(kit: str, report: object, run_at: datetime) -> list[dict[str, str]]:
+    """The headline numbers of one run of a voice kit, as rows of the voice history.
+
+    The drill and the spike report a list of points; a run is go when every point
+    passed. The speech kit reports one silent-wrong rate per judged ear against its
+    own limit, and the dishes its best ear heard right. A trial (`--limit`) is no
+    measurement and gives no row."""
+    base = {
+        "date": run_at.astimezone(BERLIN).date().isoformat(),
+        "package": KIT_PACKAGE[kit],
+        "note": "",
+        # In UTC: a local time sorts wrong across the hour that repeats in October.
+        # With microseconds: two kits in parallel can end in the same second.
+        "run_at": run_at.astimezone(UTC).isoformat(),
+    }
+    if kit in KIT_METRIC:
+        assert isinstance(report, list)
+        if not report:
+            return []
+        ok = sum(1 for point in report if point.get("ok", point.get("passed")))
+        return [
+            {
+                **base,
+                "metric": KIT_METRIC[kit],
+                "value": str(ok),
+                "unit": f"of {len(report)} points",
+                "limit": "",
+                "verdict": "go" if ok == len(report) else "no-go",
+            }
+        ]
+    assert isinstance(report, dict)
+    if report["sentences"] < report["all_sentences"]:
+        return []
+    limit = float(report["wrong_limit"])
+    if dishes := report.get("own_menu_dishes"):
+        base["note"] = f"own menu of {dishes} dishes"
+    judged = [
+        e
+        for e in report["ears"]
+        if "error" not in e and e["id"] not in report.get("sampled", [])
+    ]
+    orders = any("order_dishes" in e for e in judged)
+    rows = [
+        {
+            **base,
+            "metric": f"{'Orders taken wrong silently' if orders else 'Silent wrong numbers'} ({e['id']})",
+            "value": f"{e['wrong_share'] * 100:.1f}",
+            "unit": "%",
+            "limit": f"{limit * 100:g} %",
+            "verdict": "go" if e["wrong_share"] <= limit else "no-go",
+        }
+        for e in judged
+    ]
+    best = next((e for e in judged if e["id"] == report.get("ear")), None)
+    if best:
+        share = best["order_dishes_right_share"] if orders else best["dishes_share"]
+        what = "Dishes heard right in orders" if orders else "Dish names heard right"
+        rows.append(
+            {
+                **base,
+                "metric": f"{what} ({best['id']})",
+                "value": f"{share * 100:.1f}",
+                "unit": "%",
+                "limit": "",
+                "verdict": "go" if report["go"] else "no-go",
+            }
+        )
+    return rows
+
+
+@under_history_lock
+def record_measurements(rows: list[dict[str, str]], reports: Path = REPORTS) -> None:
+    """Into the history on a branch, else into the pending file under evals/reports/."""
+    if not rows:
+        return
+    if recording_branch() is None:
+        with pending_lock(reports):
+            for row in rows:
+                append_row(reports / VOICE_PENDING, VOICE_FIELDS, row)
+        print(
+            f"readme_assets: on main nothing is recorded; {len(rows)} voice result(s) "
+            f"wait in {shown(reports / VOICE_PENDING)} until /done records them on a branch"
+        )
+        return
+    for row in rows:
+        print(f"readme_assets: {record_voice(row, VOICE_HISTORY)}")
+    render()
+
+
+def record_kit_run(kit: str, argv: list[str], run_dir: Path, started: float) -> None:
+    """After a voice kit (`scripts/voice_drill.py` and its siblings): record what its
+    run reported. Best effort: a failure here prints a warning and never changes
+    the kit's exit code."""
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--run-dir", type=Path, default=run_dir)
+    for flag in ("--dry-run", "--down"):
+        parser.add_argument(flag, action="store_true")
+    # A trial of the speech kit, also with a limit above the number of sentences.
+    parser.add_argument("--limit")
+    try:
+        args, _ = parser.parse_known_args(argv)
+        result = args.run_dir.resolve() / "report.json"
+        if args.dry_run or args.down or args.limit is not None:
+            return
+        # A report from before this run (a step broke before the kit wrote one).
+        if not result.exists() or result.stat().st_mtime < started:
+            return
+        report = json.loads(result.read_text(encoding="utf-8"))
+        # The run's own time, from its report: the identity of the row.
+        ended = datetime.fromtimestamp(result.stat().st_mtime, BERLIN)
+        record_measurements(kit_rows(kit, report, ended))
+    except Exception as exc:  # noqa: BLE001 - the kit's result must survive this
+        print(
+            f"readme_assets: warning: the run was not recorded: {exc}", file=sys.stderr
+        )
 
 
 PNGS = {
@@ -2301,6 +2689,45 @@ def render(check: bool = False, png: bool = False) -> int:
     return 0
 
 
+@under_history_lock
+def record_by_hand(args: argparse.Namespace) -> int:
+    """`add` and `add-voice`: one row, then the images drawn from it."""
+    if args.cmd == "add":
+        path = args.report or newest_report(args.suite)
+        if path is None:
+            print("not recorded: no report found in evals/reports/", file=sys.stderr)
+            return 1
+        report = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            print(
+                f"{path}: "
+                + record_report(
+                    report,
+                    args.suite,
+                    args.reference,
+                    args.note,
+                    path=EVAL_HISTORY,
+                    report_name=path.name,
+                )
+            )
+        except RecordError as exc:
+            print(f"not recorded: {exc}", file=sys.stderr)
+            return 1
+    else:
+        row = {
+            "date": args.date.isoformat(),
+            "package": args.package,
+            "metric": args.metric,
+            "value": f"{args.value:g}",
+            "unit": args.unit,
+            "limit": args.limit,
+            "verdict": args.verdict,
+            "note": args.note,
+        }
+        print(record_voice(row, VOICE_HISTORY))
+    return render()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -2333,44 +2760,45 @@ def main(argv: list[str] | None = None) -> int:
     v.add_argument("verdict", choices=sorted(VERDICT_STYLE))
     v.add_argument("--limit", default="")
     v.add_argument("--note", default="")
+    auto = sub.add_parser(
+        "auto-record", help="record the run `make eval` just made (Makefile only)"
+    )
+    auto.add_argument("--suite", default="cases", choices=FULL_SUITES)
+    auto.add_argument(
+        "--since", type=float, default=0.0, help="epoch seconds the run started at"
+    )
+    pend = sub.add_parser(
+        "pending", help="list the runs and voice results not yet in docs/metrics/"
+    )
+    pend.add_argument("--record", action="store_true", help="record them (not on main)")
     c = sub.add_parser("concepts", help="write the logo concept sheet")
     c.add_argument("out", type=Path)
     args = parser.parse_args(argv)
+    if args.cmd in ("add", "add-voice") and recording_branch() is None:
+        print(
+            "not recorded: on main nothing is edited (CLAUDE.md §8); switch to a branch",
+            file=sys.stderr,
+        )
+        return 1
     if args.cmd == "render":
         return render(args.check, args.png)
-    if args.cmd == "add":
-        path = args.report or newest_report(args.suite)
-        if path is None:
-            print("not recorded: no report found in evals/reports/", file=sys.stderr)
-            return 1
-        report = json.loads(path.read_text(encoding="utf-8"))
-        try:
+    if args.cmd == "auto-record":
+        return auto_record(args.suite, args.since)
+    if args.cmd == "pending":
+        if args.record:
+            return record_pending()
+        reports, rows = pending()
+        for report_path, suite in reports:
+            print(f"eval {suite}: {shown(report_path)}")
+        for row in rows:
+            print(f"voice: {row['date']} {row['metric']} {row['value']} {row['unit']}")
+        if reports or rows:
             print(
-                f"{path}: "
-                + record_report(
-                    report, args.suite, args.reference, args.note, report_name=path.name
-                )
+                "record them on a branch: python3 scripts/readme_assets.py pending --record"
             )
-        except RecordError as exc:
-            print(f"not recorded: {exc}", file=sys.stderr)
-            return 1
         return 0
-    if args.cmd == "add-voice":
-        print(
-            record_voice(
-                {
-                    "date": args.date.isoformat(),
-                    "package": args.package,
-                    "metric": args.metric,
-                    "value": f"{args.value:g}",
-                    "unit": args.unit,
-                    "limit": args.limit,
-                    "verdict": args.verdict,
-                    "note": args.note,
-                }
-            )
-        )
-        return 0
+    if args.cmd in ("add", "add-voice"):
+        return record_by_hand(args)
     args.out.write_text(concept_sheet(), encoding="utf-8")
     return 0
 

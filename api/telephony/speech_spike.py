@@ -657,6 +657,10 @@ def summarize(
         "ear": best and best["id"],
         "mouth": mouth and mouth["voice"],
         "go": ear is not None,
+        # For whoever records the run (`scripts/readme_assets.py`): the limit each
+        # ear is judged by, and the ears that were only timed and never judged.
+        "wrong_limit": WRONG_LIMIT,
+        "sampled": sorted(sampled),
     }
     if best and mouth:
         ear_and_mouth = best["median_seconds"] + mouth["first_audio_seconds"]

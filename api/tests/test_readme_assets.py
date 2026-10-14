@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import csv
 import itertools
+import threading
 import xml.dom.minidom
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import pytest
@@ -613,3 +614,460 @@ def test_tablet_and_reply_start_together_when_confirm_commits() -> None:
     assert shown.t0 == back.t0
     # Right after the commit, at most the short pause between two captions.
     assert stored.t1 <= shown.t0 <= stored.t1 + ra.FLOW_PAUSE + 1e-9
+
+
+# --- measurements record themselves (T-0.9) -------------------------------------
+
+
+@pytest.fixture
+def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    """Histories in tmp_path, a branch to record on, and render counted, not run."""
+    state: dict = {"renders": 0, "reports": tmp_path / "reports"}
+    state["reports"].mkdir()
+    monkeypatch.setattr(ra, "REPORTS", state["reports"])
+    monkeypatch.setattr(ra, "EVAL_HISTORY", tmp_path / "eval.csv")
+    monkeypatch.setattr(ra, "VOICE_HISTORY", tmp_path / "voice.csv")
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: "task/x")
+
+    def render() -> int:
+        state["renders"] += 1
+        return 0
+
+    monkeypatch.setattr(ra, "render", render)
+    return state
+
+
+def write_report(folder: Path, name: str, **over: object) -> Path:
+    path = folder / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(ra.json.dumps(report(**over)), encoding="utf-8")
+    return path
+
+
+def test_a_full_real_model_run_records_itself_once_on_a_branch(recording: dict) -> None:
+    write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    assert ra.auto_record("cases", 0, recording["reports"]) == 0
+    assert ra.auto_record("cases", 0, recording["reports"]) == 0
+    runs = ra.read_eval_history(ra.EVAL_HISTORY)
+    assert [(r.suite, r.passed, r.total) for r in runs] == [("cases", 2, 4)]
+    assert recording["renders"] == 2
+
+
+def test_targets_are_read_from_their_own_folder(recording: dict) -> None:
+    write_report(recording["reports"] / "targets", "eval_20261015_100000_000001.json")
+    ra.auto_record("targets", 0, recording["reports"])
+    assert [r.suite for r in ra.read_eval_history(ra.EVAL_HISTORY)] == ["targets"]
+
+
+@pytest.mark.parametrize(
+    ("over", "said"),
+    [
+        ({"tags": ["menu"]}, "--suite menu"),
+        ({"model": "scripted"}, "stand-in"),
+        ({"cases": [{"passed": False, "requests": 0}]}, "no request"),
+    ],
+)
+def test_a_partial_a_stand_in_or_an_unmetered_run_is_not_recorded(
+    recording: dict, capsys: pytest.CaptureFixture[str], over: dict, said: str
+) -> None:
+    write_report(recording["reports"], "eval_20261015_100000_000001.json", **over)
+    assert ra.auto_record("cases", 0, recording["reports"]) == 0
+    assert said in capsys.readouterr().out
+    assert not ra.EVAL_HISTORY.exists()
+    assert recording["renders"] == 0
+
+
+def test_a_report_older_than_the_run_is_not_taken_for_it(
+    recording: dict, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    ra.auto_record("cases", path.stat().st_mtime + 60, recording["reports"])
+    assert "wrote no report" in capsys.readouterr().out
+    assert not ra.EVAL_HISTORY.exists()
+
+
+def test_on_main_nothing_is_written_and_pending_lists_the_run(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    folder = recording["reports"]
+    path = write_report(folder, "eval_20261015_100000_000001.json")
+    write_report(folder, "eval_20261015_090000_000001.json", tags=["menu"])
+    write_report(folder / "targets", "eval_20261015_080000_000001.json", model="")
+    (folder / "eval_20261015_070000_000001.json").write_text("{not json")
+    ra.auto_record("cases", 0, folder)
+    assert not ra.EVAL_HISTORY.exists()
+    reports, rows = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert reports == [(path, "cases")] and rows == []
+
+
+def test_pending_records_on_a_branch_and_then_lists_nothing(recording: dict) -> None:
+    folder = recording["reports"]
+    write_report(folder, "eval_20261015_100000_000001.json")
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    assert ra.record_pending([folder]) == 0
+    assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 1
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 1
+    assert not (folder / ra.VOICE_PENDING).exists()
+    assert ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY) == ([], [])
+
+
+def test_pending_refuses_to_record_on_main(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    assert ra.record_pending([recording["reports"]]) == 1
+    assert not ra.EVAL_HISTORY.exists()
+
+
+RUN_AT = datetime(2026, 10, 15, 21, 30, tzinfo=ra.BERLIN)
+
+
+def drill_row(value: str = "15") -> dict[str, str]:
+    return {
+        "run_at": "2026-10-15T19:30:00+00:00",
+        "date": "2026-10-15",
+        "package": "T-1.11",
+        "metric": "Outage drills end at the team phone",
+        "value": value,
+        "unit": "of 15 points",
+        "limit": "",
+        "verdict": "go",
+        "note": "",
+    }
+
+
+def test_the_drill_and_the_spike_record_their_points() -> None:
+    day = RUN_AT
+    drill = [{"point": "a", "ok": True}, {"point": "b", "ok": False}]
+    spike = [{"point": "a", "passed": True}, {"point": "b", "passed": True}]
+    assert ra.kit_rows("drill", drill, day) == [
+        {**drill_row("1"), "unit": "of 2 points", "verdict": "no-go"}
+    ]
+    (row,) = ra.kit_rows("spike", spike, day)
+    assert (row["package"], row["value"], row["unit"], row["verdict"]) == (
+        "T-10.1 step 1",
+        "2",
+        "of 2 points",
+        "go",
+    )
+    assert ra.kit_rows("drill", [], day) == []
+
+
+def speech_report(**over: object) -> dict:
+    data: dict = {
+        "sentences": 100,
+        "all_sentences": 100,
+        "own_menu_dishes": 0,
+        "wrong_limit": 0.02,
+        "sampled": ["ear-c"],
+        "ear": "ear-a",
+        "go": True,
+        "ears": [
+            {"id": "ear-a", "wrong_share": 0.015, "dishes_share": 0.9},
+            {"id": "ear-b", "wrong_share": 0.0241, "dishes_share": 0.95},
+            {"id": "ear-c", "wrong_share": 0.0, "dishes_share": 1.0},
+            {"id": "ear-d", "error": "heard nothing"},
+        ],
+    }
+    data.update(over)
+    return data
+
+
+def test_the_speech_kit_records_each_judged_ear_and_the_best_dishes() -> None:
+    rows = ra.kit_rows("speech", speech_report(), RUN_AT)
+    got = [(r["metric"], r["value"], r["limit"], r["verdict"]) for r in rows]
+    assert got == [
+        ("Silent wrong numbers (ear-a)", "1.5", "2 %", "go"),
+        ("Silent wrong numbers (ear-b)", "2.4", "2 %", "no-go"),
+        ("Dish names heard right (ear-a)", "90.0", "", "go"),
+    ]
+
+
+def test_a_speech_trial_records_nothing_and_orders_get_their_own_names() -> None:
+    day = RUN_AT
+    assert ra.kit_rows("speech", speech_report(sentences=10), day) == []
+    ears = [
+        {
+            "id": "ear-a",
+            "wrong_share": 0.05,
+            "order_dishes": 400,
+            "order_dishes_right_share": 0.825,
+        }
+    ]
+    rows = ra.kit_rows(
+        "speech", speech_report(ears=ears, go=False, own_menu_dishes=173), day
+    )
+    assert [(r["metric"], r["value"], r["verdict"], r["note"]) for r in rows] == [
+        (
+            "Orders taken wrong silently (ear-a)",
+            "5.0",
+            "no-go",
+            "own menu of 173 dishes",
+        ),
+        (
+            "Dishes heard right in orders (ear-a)",
+            "82.5",
+            "no-go",
+            "own menu of 173 dishes",
+        ),
+    ]
+
+
+def test_a_kit_run_on_main_waits_in_the_pending_file(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    ra.record_measurements([drill_row()], recording["reports"])
+    assert not ra.VOICE_HISTORY.exists()
+    _, rows = ra.pending([recording["reports"]], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert rows == [drill_row()]
+
+
+def test_a_kit_run_records_only_its_own_fresh_report(
+    recording: dict, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "report.json").write_text('[{"point": "a", "ok": true}]')
+    started = (run / "report.json").stat().st_mtime
+    ra.record_kit_run("drill", ["--dry-run"], run, started)
+    ra.record_kit_run("drill", [], run, started + 60)
+    assert not ra.VOICE_HISTORY.exists()
+    ra.record_kit_run("drill", ["--keep", "--run-dir", str(run)], tmp_path, started)
+    assert [r.value for r in ra.read_voice_history(ra.VOICE_HISTORY)] == [1.0]
+    # A report the recorder cannot read is a warning, never the kit's failure.
+    (run / "report.json").write_text('{"sentences": 1}')
+    ra.record_kit_run("speech", [], run, started)
+    assert "warning" in capsys.readouterr().err
+
+
+def test_recording_happens_on_a_branch_only(tmp_path: Path) -> None:
+    def git(*args: str) -> None:
+        ra.subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    # No repository, or no git at all (the api image has none): never a branch.
+    assert ra.recording_branch(tmp_path) is None
+    if ra.shutil.which("git") is None:
+        pytest.skip("git is not installed here")
+    git("init", "-q", "-b", "main")
+    git(
+        "-c",
+        "user.name=t",
+        "-c",
+        "user.email=t@example.com",
+        "commit",
+        "-q",
+        "--allow-empty",
+        "-m",
+        "x",
+    )
+    assert ra.recording_branch(tmp_path) is None
+    git("checkout", "-q", "-b", "task/x")
+    assert ra.recording_branch(tmp_path) == "task/x"
+    git("checkout", "-q", "--detach")
+    assert ra.recording_branch(tmp_path) is None
+
+
+def test_a_row_both_sides_of_a_merge_appended_is_read_once(tmp_path: Path) -> None:
+    path = tmp_path / "eval.csv"
+    ra.record_report(report(), None, path=path, report_name="eval_a.json")
+    line = path.read_text().splitlines()[-1]
+    path.write_text(path.read_text() + line + "\n")
+    assert len(ra.read_eval_history(path)) == 1
+    voice = tmp_path / "voice.csv"
+    ra.append_row(voice, ra.VOICE_FIELDS, drill_row())
+    ra.append_row(voice, ra.VOICE_FIELDS, {**drill_row(), "value": "15.0"})
+    assert len(ra.read_voice_history(voice)) == 1
+
+
+def test_the_voice_chart_shows_the_latest_row_of_each_quantity() -> None:
+    def row(day: int, metric: str, value: float) -> ra.VoiceRow:
+        return ra.VoiceRow(
+            date(2026, 10, day),
+            "T-10.3",
+            metric,
+            value,
+            "%",
+            "",
+            "go",
+            shown=f"{value}",
+        )
+
+    facts = ra.Facts(
+        "0.1.0",
+        "Stage 0",
+        [],
+        [],
+        None,
+        0,
+        [],
+        [row(13, "A", 2.0), row(13, "B", 7.0), row(14, "A", 2.4)],
+    )
+    chart = ra.asset_voice_bench(facts)
+    assert "2.4 %" in chart and "7.0 %" in chart and "2.0 %" not in chart
+
+
+# --- Codex round 1 on fa42b15 ----------------------------------------------------
+
+
+def test_two_drill_runs_of_one_day_with_the_same_result_stay_two_rows(
+    recording: dict,
+) -> None:
+    first = ra.kit_rows("drill", [{"point": "a", "ok": True}], RUN_AT)
+    later = ra.kit_rows("drill", [{"point": "a", "ok": True}], RUN_AT.replace(hour=23))
+    ra.record_measurements(first)
+    ra.record_measurements(first)
+    ra.record_measurements(later)
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 2
+
+
+def test_overlapping_runs_each_get_recorded(recording: dict) -> None:
+    """A slow run that started first finishes last: its report is recorded too."""
+    folder = recording["reports"]
+    write_report(folder, "eval_20261015_100000_000001.json")
+    write_report(
+        folder, "eval_20261015_100500_000001.json", run_at="2026-10-15T10:05:00+00:00"
+    )
+    ra.auto_record("cases", 0, folder)
+    assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 2
+
+
+def test_the_main_folder_is_the_one_with_main_checked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listing = (
+        f"worktree {tmp_path / 'primary'}\nHEAD 1\nbranch refs/heads/task/x\n\n"
+        f"worktree {tmp_path / 'linked'}\nHEAD 2\nbranch refs/heads/main\n\n"
+        f"worktree {tmp_path / 'other'}\nHEAD 3\ndetached\n"
+    )
+    monkeypatch.setattr(ra, "git", lambda *args, root=ra.ROOT: listing)
+    assert ra.report_folders(tmp_path / "primary") == [
+        tmp_path / "primary" / "evals" / "reports",
+        tmp_path / "linked" / "evals" / "reports",
+    ]
+
+
+def test_a_tagged_run_on_main_names_no_command_and_add_refuses_main(
+    recording: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    path = write_report(
+        recording["reports"], "eval_20261015_100000_000001.json", tags=["menu"]
+    )
+    ra.auto_record("cases", 0, recording["reports"])
+    assert "add" not in capsys.readouterr().out
+    assert ra.main(["add", str(path), "--suite", "menu"]) == 1
+    assert ra.main(["add-voice", "2026-10-15", "T-1.11", "m", "1", "u", "go"]) == 1
+    assert not ra.EVAL_HISTORY.exists() and not ra.VOICE_HISTORY.exists()
+
+
+def test_a_kit_on_main_waits_for_the_recorder_holding_the_lock(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex on f25cb90: writer and recorder share one lock, so no row is lost."""
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    folder = recording["reports"]
+    kit = threading.Thread(target=ra.record_measurements, args=([drill_row()], folder))
+    with ra.pending_lock(folder):
+        kit.start()
+        kit.join(0.3)
+        assert kit.is_alive() and not (folder / ra.VOICE_PENDING).exists()
+    kit.join(5)
+    assert not kit.is_alive()
+    _, rows = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert rows == [drill_row()]
+
+
+def test_pending_record_holds_the_lock_while_it_reads_and_removes(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    held: list[bool] = []
+    real_record_voice = ra.record_voice
+
+    def while_recording(row: dict[str, str], path: Path = ra.VOICE_HISTORY) -> str:
+        def take_the_lock() -> None:
+            with ra.pending_lock(folder):
+                pass
+
+        probe = threading.Thread(target=take_the_lock, daemon=True)
+        probe.start()
+        probe.join(0.3)
+        held.append(probe.is_alive())
+        return real_record_voice(row, path)
+
+    monkeypatch.setattr(ra, "record_voice", while_recording)
+    ra.record_pending([folder])
+    assert held == [True]
+    assert not (folder / ra.VOICE_PENDING).exists()
+
+
+def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
+    recording: dict,
+) -> None:
+    summer = datetime(2026, 10, 25, 0, 30, tzinfo=ra.UTC)  # 02:30 CEST
+    winter = datetime(2026, 10, 25, 1, 15, tzinfo=ra.UTC)  # 02:15 CET, later
+    ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": False}], winter))
+    ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": True}], summer))
+    runs = ra.read_voice_history(ra.VOICE_HISTORY)
+    assert [r.verdict for r in runs] == ["go", "no-go"]
+    assert {r.date for r in runs} == {date(2026, 10, 25)}
+
+
+# --- Codex round 4 on fca329a ----------------------------------------------------
+
+
+def test_recording_by_hand_redraws_the_images(recording: dict) -> None:
+    path = write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    assert ra.main(["add", str(path)]) == 0
+    assert ra.main(["add-voice", "2026-10-15", "T-1.11", "m", "1", "u", "go"]) == 0
+    assert recording["renders"] == 2
+    assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 1
+
+
+def test_a_second_recorder_waits_until_the_first_has_drawn(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Record and render are one step under the history lock."""
+    write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    held: list[bool] = []
+
+    def render() -> int:
+        def take_the_lock() -> None:
+            with ra.file_lock(ra.REPORTS / "history.lock"):
+                pass
+
+        probe = threading.Thread(target=take_the_lock, daemon=True)
+        probe.start()
+        probe.join(0.3)
+        held.append(probe.is_alive())
+        return 0
+
+    monkeypatch.setattr(ra, "render", render)
+    ra.auto_record("cases", 0, recording["reports"])
+    assert held == [True]
+
+
+# --- Codex round 5 on edb0de3 ----------------------------------------------------
+
+
+def test_a_speech_trial_with_any_limit_records_nothing(
+    recording: dict, tmp_path: Path
+) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "report.json").write_text(ra.json.dumps(speech_report()))
+    ra.record_kit_run("speech", ["--limit", "10000", "--run-dir", str(run)], run, 0)
+    assert not ra.VOICE_HISTORY.exists()
+
+
+def test_two_kits_ending_in_the_same_second_stay_two_rows(recording: dict) -> None:
+    point = [{"point": "a", "ok": True}]
+    ra.record_measurements(ra.kit_rows("drill", point, RUN_AT.replace(microsecond=1)))
+    ra.record_measurements(ra.kit_rows("drill", point, RUN_AT.replace(microsecond=2)))
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 2
