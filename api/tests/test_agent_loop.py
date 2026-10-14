@@ -817,6 +817,38 @@ def test_guest_sentence_rides_along_on_a_tool_hop(session, state):
     assert "guest_said" not in next_turn
 
 
+def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
+    """The guest's words answer the sentence that ended the last turn, so the
+    model reads them next to it. On a tool hop it is left out: next to a tool
+    result a real model said it again word for word instead of the read-back
+    the tool had delivered (first full eval run, 13.10.2026). The first
+    sentence of a call also counts as the greeting."""
+    llm = FakeLLM(
+        [
+            LLMTurn(say="Für wie viele Personen?"),
+            LLMTurn(tool_call=ToolCall(name="get_service_status")),
+            LLMTurn(say="Und um wie viel Uhr?"),
+            LLMTurn(say="Gern."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Einen Tisch bitte")
+    loop.run_turn(state, "Für vier")
+    loop.run_turn(state, "Um sieben")
+
+    first, second, hop, third = (call[1] for call in llm.calls)
+    assert "last_say" not in first
+    assert "greeted" not in first
+    assert second["last_say"] == "Für wie viele Personen?"
+    assert second["greeted"] is True
+    assert "last_say" not in hop
+    # NOW is eight in the morning: closed, and known for the rest of the call.
+    assert hop["service"] == {"is_open": False, "pickup_enabled": False}
+    assert third["last_say"] == "Und um wie viel Uhr?"
+    assert third["service"] == hop["service"]
+
+
 def test_model_sees_what_the_guest_called_for_on_the_next_turn(session, state):
     """The wish of the first sentence stands in the state of every request
     after it, the one of the same turn included."""
