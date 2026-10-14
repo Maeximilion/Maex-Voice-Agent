@@ -44,6 +44,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | reservation_max_party_size_same_day | INT ≥ 0 | the same limit for a table on the same day, default 5 (#252, migration 007). The smaller of the two counts on that day |
 | order_approval_above_cents | INT ≥ 0 | an order whose total is above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000, 0 holds every order (#252, migration 007). Read by `confirm` since 13.10.2026 (`domain/ordering/confirm.py`, docs/04 §confirm) |
 | turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
+| order_approval_overdue_minutes | INT ≥ 1 | how long an order may wait for "Passt" on the tablet before its card turns red; default 5 (#252, migration 008). Counted from the guest's yes, the audit entry `order.confirmed`. Read by the order board (`domain/ordering/board.py`); a changed value shows within the next poll of the tablet |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -341,5 +342,6 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 | 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
 | 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
 | 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
+| 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

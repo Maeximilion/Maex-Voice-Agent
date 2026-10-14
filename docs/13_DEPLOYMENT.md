@@ -220,6 +220,8 @@ gh api "repos/{owner}/{repo}/rulesets" --jq '.[] | "\(.id) \(.name) \(.enforceme
 gh api -X PUT "repos/{owner}/{repo}/rulesets/24583491" --input .github/rulesets/main.json
 ```
 
+**Applied 13.10.2026:** the active ruleset on `main` (id 24583491) carries these rules; `gh api "repos/{owner}/{repo}/rules/branches/main"` lists the pull request rule, no deletion, no force push and the four required checks. Its name on GitHub is still `t-4.6-probebo`: the second command above is refused with "Name must be unique" as long as the disabled ruleset `Main` (id 23989916) exists, because GitHub compares the names without case. The rules were sent with the existing name instead. To send the file as it is, rename or delete the disabled ruleset first.
+
 A job renamed in `ci.yml` has to be renamed there too, otherwise the old name never reports and every pull request waits.
 
 ---

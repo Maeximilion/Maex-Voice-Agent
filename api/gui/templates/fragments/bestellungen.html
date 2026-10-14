@@ -13,7 +13,9 @@
 {% else %}
 <ul class="cards">
   {% for o in orders %}
-  <li class="card order {{ 'failed' if o.failed }}{{ ' awaiting' if o.awaiting and not o.failed }}" data-id="{{ o.id }}">
+  {# overdue: waits for "Passt" longer than the restaurant allows (#252). app.js
+     reads data-overdue and rings once when a card turns red. #}
+  <li class="card order {{ 'failed' if o.failed }}{{ 'overdue' if o.overdue and not o.failed }}{{ ' awaiting' if o.awaiting and not o.failed and not o.overdue }}" data-id="{{ o.id }}"{% if o.overdue and not o.failed %} data-overdue="1"{% endif %}>
     <div class="res-head">
       <b class="time">{{ o.time }}</b>
       <span class="badge accent">{{ o.type }}</span>
