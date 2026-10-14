@@ -2573,7 +2573,8 @@ def kit_rows(kit: str, report: object, run_at: datetime) -> list[dict[str, str]]
         "package": KIT_PACKAGE[kit],
         "note": "",
         # In UTC: a local time sorts wrong across the hour that repeats in October.
-        "run_at": run_at.astimezone(UTC).isoformat(timespec="seconds"),
+        # With microseconds: two kits in parallel can end in the same second.
+        "run_at": run_at.astimezone(UTC).isoformat(),
     }
     if kit in KIT_METRIC:
         assert isinstance(report, list)
@@ -2657,10 +2658,12 @@ def record_kit_run(kit: str, argv: list[str], run_dir: Path, started: float) -> 
     parser.add_argument("--run-dir", type=Path, default=run_dir)
     for flag in ("--dry-run", "--down"):
         parser.add_argument(flag, action="store_true")
+    # A trial of the speech kit, also with a limit above the number of sentences.
+    parser.add_argument("--limit")
     try:
         args, _ = parser.parse_known_args(argv)
         result = args.run_dir.resolve() / "report.json"
-        if args.dry_run or args.down:
+        if args.dry_run or args.down or args.limit is not None:
             return
         # A report from before this run (a step broke before the kit wrote one).
         if not result.exists() or result.stat().st_mtime < started:

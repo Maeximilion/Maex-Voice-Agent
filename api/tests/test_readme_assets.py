@@ -1174,3 +1174,23 @@ def test_a_second_recorder_waits_until_the_first_has_drawn(
     monkeypatch.setattr(ra, "render", render)
     ra.auto_record("cases", 0, recording["reports"])
     assert held == [True]
+
+
+# --- Codex round 5 on edb0de3 ----------------------------------------------------
+
+
+def test_a_speech_trial_with_any_limit_records_nothing(
+    recording: dict, tmp_path: Path
+) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    (run / "report.json").write_text(ra.json.dumps(speech_report()))
+    ra.record_kit_run("speech", ["--limit", "10000", "--run-dir", str(run)], run, 0)
+    assert not ra.VOICE_HISTORY.exists()
+
+
+def test_two_kits_ending_in_the_same_second_stay_two_rows(recording: dict) -> None:
+    point = [{"point": "a", "ok": True}]
+    ra.record_measurements(ra.kit_rows("drill", point, RUN_AT.replace(microsecond=1)))
+    ra.record_measurements(ra.kit_rows("drill", point, RUN_AT.replace(microsecond=2)))
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 2
