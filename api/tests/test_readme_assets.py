@@ -60,10 +60,10 @@ def report(**over: object) -> dict:
         "refused_attempts": 3,
         "tokens_per_case": 21000,
         "cases": [
-            {"passed": True, "error": None, "pending": None},
-            {"passed": True, "error": None, "pending": None},
-            {"passed": False, "error": "Timeout", "pending": None},
-            {"passed": False, "error": None, "pending": "T-6.5"},
+            {"passed": True, "error": None, "pending": None, "requests": 2},
+            {"passed": True, "error": None, "pending": None, "requests": 2},
+            {"passed": False, "error": "Timeout", "pending": None, "requests": 2},
+            {"passed": False, "error": None, "pending": "T-6.5", "requests": 2},
         ],
     }
     data.update(over)
@@ -246,9 +246,10 @@ def test_animation_hides_under_reduced_motion() -> None:
 def test_check_reports_a_stale_asset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    real = ra.ASSETS
+    for name in (*ra.PNGS, ra.PNG_SOURCES):
+        (tmp_path / name).write_bytes((real / name).read_bytes())
     monkeypatch.setattr(ra, "ASSETS", tmp_path)
-    sidecar = ra.ROOT / ".github" / "assets" / ra.PNG_SOURCES
-    (tmp_path / ra.PNG_SOURCES).write_text(sidecar.read_text(encoding="utf-8"))
     assert ra.render() == 0
     assert ra.render(check=True) == 0
     (tmp_path / "progress.svg").write_text("<svg/>", encoding="utf-8")
@@ -449,3 +450,32 @@ def test_recording_the_same_voice_measurement_twice_keeps_one_row(
     assert len(ra.read_voice_history(path)) == 1
     ra.record_voice({**row, "value": "14"}, path)
     assert len(ra.read_voice_history(path)) == 2
+
+
+# --- fourth Codex round on c5eb108 ---------------------------------------------
+
+
+def test_a_real_model_run_without_a_single_request_is_refused(tmp_path: Path) -> None:
+    crashed_early = report(
+        cases=[{"passed": False, "error": "boom", "requests": 0, "unmetered": 0}]
+    )
+    with pytest.raises(ra.RecordError, match="no request"):
+        ra.record_report(crashed_early, None, path=tmp_path / "h.csv")
+    no_usage_fields = report(cases=[{"passed": False}])
+    with pytest.raises(ra.RecordError, match="no request"):
+        ra.record_report(no_usage_fields, None, path=tmp_path / "h.csv")
+
+
+def test_a_missing_or_changed_png_is_stale(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = ra.ASSETS
+    for name in (*ra.PNGS, ra.PNG_SOURCES):
+        (tmp_path / name).write_bytes((real / name).read_bytes())
+    monkeypatch.setattr(ra, "ASSETS", tmp_path)
+    assets = ra.build(ra.gather())
+    assert ra.stale_pngs(assets) == []
+    (tmp_path / "social-preview.png").write_bytes(b"not a png")
+    assert ra.stale_pngs(assets) == ["social-preview.png"]
+    (tmp_path / "logo-mark-512.png").unlink()
+    assert ra.stale_pngs(assets) == ["social-preview.png", "logo-mark-512.png"]

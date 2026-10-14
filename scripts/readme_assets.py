@@ -458,13 +458,10 @@ def record_report(
             "it as the reference row"
         )
     cases = report.get("cases", [])
-    requests = sum(c.get("requests", 0) for c in cases)
-    if (
-        row["model"] != STAND_IN
-        and requests
-        and requests == sum(c.get("unmetered", 0) for c in cases)
-    ):
-        # The verdict of evals/report.py: the cases show handovers, not a model.
+    metered = sum(c.get("requests", 0) - c.get("unmetered", 0) for c in cases)
+    # No metered request at all: every request failed, or every case crashed
+    # before its first one. Either way the cases show handovers, not a model.
+    if row["model"] != STAND_IN and metered <= 0:
         raise RecordError(
             f"no request to model {row['model']!r} succeeded (mistyped name or the "
             "server down): nothing of this run measures the model"
@@ -1951,17 +1948,23 @@ def svg_digest(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
+def file_digest(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+
 def stale_pngs(assets: dict[str, str]) -> list[str]:
-    """PNGs drawn from another version of their SVG than the one built now.
+    """PNGs that are missing, changed by hand, or drawn from another version of
+    their SVG than the one built now.
 
     CI cannot run Chromium, so `render --png` records the digest of each source
-    SVG next to the PNGs and `--check` compares it with the SVG of today."""
+    SVG and of the PNG it drew; `--check` compares both with today."""
     path = ASSETS / PNG_SOURCES
     recorded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     return [
         name
         for name, (source, _w, _h) in PNGS.items()
-        if recorded.get(name) != svg_digest(assets[source])
+        if recorded.get(name)
+        != {"source": svg_digest(assets[source]), "png": file_digest(ASSETS / name)}
     ]
 
 
@@ -1990,7 +1993,10 @@ def render(check: bool = False, png: bool = False) -> int:
         digests = {}
         for name, (source, w, h) in PNGS.items():
             to_png(ASSETS / source, ASSETS / name, w, h)
-            digests[name] = svg_digest(assets[source])
+            digests[name] = {
+                "source": svg_digest(assets[source]),
+                "png": file_digest(ASSETS / name),
+            }
             print(f"wrote .github/assets/{name}")
         (ASSETS / PNG_SOURCES).write_text(
             json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8"
