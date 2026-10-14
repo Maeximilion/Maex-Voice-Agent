@@ -120,13 +120,20 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 
 ### Keeping them current
 
-- Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file.
-- CI runs `python scripts/readme_assets.py render --check` and fails when a committed image no longer matches its data. The two PNGs cannot be drawn in CI: `render --png` records the digest of their source SVGs in `.github/assets/png-sources.json`, and the check fails when a source SVG changed without new PNGs. The fix is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
-- `/done` renders after the status update; `/gate` also records the latest runs and renders the PNGs.
-- A real-model eval run is recorded right after it with `make eval-record`, which takes the newest report (`docs/08_EVALS.md` §4). A voice measurement is recorded like this, with its row in `docs/20_VOICE_LAYER.md` §11:
+Every manual step around the README is either automatic or ends up somewhere it cannot be forgotten. Who updates what:
 
-  ```bash
-  python scripts/readme_assets.py add-voice 2026-10-14 T-1.11 "Outage drills end at the team phone" 15 "of 15 points" go --note "Asterisk 22.11.0"
-  ```
+| What | Updated by | How |
+|---|---|---|
+| `docs/metrics/eval_history.csv` | itself | `make eval` and `make eval-targets` record a full real-model run on the host after the container run (`auto-record`, `docs/08_EVALS.md` §4), on a branch only. On `main` the report waits in `evals/reports/`; `python3 scripts/readme_assets.py pending` lists it, `/start` shows it, `/done` records it with `pending --record`. A run with tags is not recorded and prints the command that would record it |
+| `docs/metrics/voice_history.csv` | itself | `python3 -m scripts.voice_drill`, `scripts.voice_spike` and `scripts.speech_spike` record their headline numbers through `record_voice`: drill and spike points (go when every point passed), the silent-wrong rate of each judged ear against the kit's own limit, and the dishes its best ear heard right. A trial (`--limit`, `--dry-run`) records nothing. On `main` the rows wait in `evals/reports/voice_pending.csv` like an eval report. `add-voice` stays for a measurement no kit makes |
+| The row in `docs/20_VOICE_LAYER.md` §11 | by hand | It is a judgement, not a number |
+| The SVGs in `.github/assets/` | itself, CI check | Every record above redraws them; `/done` runs `render` after the status update. CI runs `render --check` and fails when a committed image no longer matches its data |
+| `social-preview.png`, `logo-mark-512.png` | by hand | `render --png` needs Chromium, so CI cannot draw them: it records the digest of their source SVGs in `.github/assets/png-sources.json`, and `--check` fails when a source SVG changed without new PNGs. GitHub has no API for the social preview: Maxi uploads it in the repository settings |
+| README status, "What works", "Not yet" | by hand at `/gate` | As in "Gate workflow" above |
+| A node of the call flow | by hand, in the PR that builds the component | See the last rule below |
+
+- Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file. A recorded measurement carries the day it was recorded.
+- `docs/metrics/*.csv` merge by union (`.gitattributes`): two branches that each appended a row keep both after a merge, and `render` reads a row that came in twice once (eval rows by report name, voice rows by date, package, metric, value and unit). The voice chart shows the latest row of each quantity.
+- The fix for a stale image is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
 - **A new component a call passes through gets its node in `FLOW_NODES` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it, and a step in `FLOW_STORY` where a call passes it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
 - What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.
