@@ -7,9 +7,11 @@ import itertools
 import threading
 import xml.dom.minidom
 from datetime import date, datetime
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts import readme_assets as ra
 
@@ -143,10 +145,10 @@ def test_every_flow_node_names_tasks_that_exist() -> None:
 def test_read_status_finds_stage_and_gates() -> None:
     stage, gates = ra.read_status(STATUS)
     assert stage == "Stage 0 (Foundation)"
-    assert [(g.key, g.passed) for g in gates] == [
-        ("P", True),
-        ("G0", False),
-        ("G1", False),
+    assert [(g.key, g.passed, g.content) for g in gates] == [
+        ("P", True, "Plan released"),
+        ("G0", False, "Budget"),
+        ("G1", False, "Reservation"),
     ]
 
 
@@ -907,6 +909,143 @@ def test_the_voice_chart_shows_the_latest_row_of_each_quantity() -> None:
     )
     chart = ra.asset_voice_bench(facts)
     assert "2.4 %" in chart and "7.0 %" in chart and "2.0 %" not in chart
+
+
+# --- README text from data (T-0.10) ---------------------------------------------
+
+
+def facts(states: dict[str, str], gates: list[ra.Gate] | None = None) -> ra.Facts:
+    block = ra.Block("0", "Scaffold", dict(states))
+    return ra.Facts(
+        "0.1.0",
+        "Stage 0 (Foundation)",
+        gates
+        if gates is not None
+        else [ra.Gate("P", True, "Plan"), ra.Gate("G0", False, "Budget · Rights")],
+        [block],
+        date(2026, 10, 14),
+        0,
+        [],
+        [],
+    )
+
+
+def test_the_status_table_comes_from_the_status_and_the_task_list() -> None:
+    assert ra.status_region(facts({})).splitlines()[2:] == [
+        "| Version | 0.1.0 |",
+        "| Stage | 0, Foundation |",
+        "| Next Gate | G0: Budget · Rights |",
+        "| As of | 2026-10-14 |",
+    ]
+    done = facts({}, [ra.Gate("P", True, "Plan")])
+    assert "| Next Gate | none, every gate passed |" in ra.status_region(done)
+    with pytest.raises(SystemExit, match="no gate rows"):
+        ra.status_region(facts({}, []))
+
+
+def test_a_capability_moves_to_what_works_when_all_its_tasks_are_done() -> None:
+    caps = [
+        ra.Capability("A works", ["T-0.1", "T-0.2"], missing="No A yet"),
+        ra.Capability("B works", ["T-0.1"]),
+        ra.Capability("C works", [], missing="No C yet", waits_for="C1"),
+        ra.Capability("D works", []),
+    ]
+    half = ra.capabilities_region(facts({"T-0.1": "done", "T-0.2": "progress"}), caps)
+    works, missing = half.split("**Not yet working:**")
+    assert "- B works" in works and "- D works" in works
+    assert "- No A yet" in missing and "- No C yet" in missing
+    full = ra.capabilities_region(facts({"T-0.1": "done", "T-0.2": "done"}), caps)
+    works, missing = full.split("**Not yet working:**")
+    assert "- A works" in works
+    # Waits for something outside the task list: stays until the line is removed.
+    assert "- No C yet" in missing and "C works" not in full
+
+
+def test_only_the_text_between_the_markers_is_written() -> None:
+    text = "intro\n<!-- readme:status -->\nold\n<!-- /readme:status -->\nby hand\n"
+    assert ra.fill_regions(text, {"status": "new\nrows"}) == (
+        "intro\n<!-- readme:status -->\nnew\nrows\n<!-- /readme:status -->\nby hand\n"
+    )
+    with pytest.raises(SystemExit, match="readme:capabilities"):
+        ra.fill_regions(text, {"capabilities": "x"})
+
+
+def test_every_capability_names_tasks_that_exist() -> None:
+    blocks, _ = ra.read_blocks(ra.WORKPACKAGES.read_text(encoding="utf-8"))
+    known = {t for b in blocks for t in b.tasks}
+    caps = ra.read_capabilities()
+    assert caps
+    for cap in caps:
+        assert set(cap.tasks) <= known, cap.works
+        assert cap.works.strip() and "\n" not in cap.works
+
+
+# --- a new component cannot be forgotten (T-0.10) --------------------------------
+
+
+def components() -> set[str]:
+    """What a call can pass through: the core's tools, the Compose services and
+    the adapters of the telephone line."""
+    from api.agent.dispatch import TOOLS
+
+    compose = ra.ROOT / "docker-compose.yml"
+    services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
+    folder = ra.ROOT / "api" / "telephony" / "adapters"
+    # Modules and packages: an adapter of several files is a folder.
+    adapters = [*folder.glob("*.py"), *(p.parent for p in folder.glob("*/__init__.py"))]
+    return (
+        {f"tool:{name}" for name in TOOLS}
+        | {f"service:{name}" for name in services}
+        | {f"adapter:{p.stem}" for p in adapters if p.stem != "__init__"}
+    )
+
+
+def not_in_the_picture(found: set[str]) -> list[str]:
+    patterns = [c for node in ra.FLOW_NODES.values() for c in node.get("covers", [])]
+    return sorted(
+        c
+        for c in found
+        if c not in ra.NOT_DRAWN and not any(fnmatch(c, p) for p in patterns)
+    )
+
+
+def test_every_component_on_the_call_path_has_a_node_or_a_reason() -> None:
+    missing = not_in_the_picture(components())
+    assert not missing, (
+        f"{missing}: give each a node in FLOW_NODES (`covers`) or a line in NOT_DRAWN "
+        "with the reason (docs/15, Keeping them current)"
+    )
+
+
+def test_an_adapter_package_counts_as_a_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapters = tmp_path / "api" / "telephony" / "adapters"
+    (adapters / "vendor").mkdir(parents=True)
+    (adapters / "vendor" / "__init__.py").write_text("")
+    (adapters / "asterisk.py").write_text("")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
+    monkeypatch.setattr(ra, "ROOT", tmp_path)
+    assert {"adapter:vendor", "adapter:asterisk"} <= components()
+
+
+def test_a_new_tool_service_or_adapter_is_caught() -> None:
+    found = components() | {"tool:refund", "service:cache", "adapter:stt_other"}
+    # A new ear matches the ear's pattern; the rest has no node.
+    assert not_in_the_picture(found) == ["service:cache", "tool:refund"]
+
+
+def test_no_cover_and_no_reason_outlives_its_component() -> None:
+    found = components()
+    stale = [c for c in ra.NOT_DRAWN if c not in found]
+    dead = [
+        p
+        for node in ra.FLOW_NODES.values()
+        for p in node.get("covers", [])
+        if not any(fnmatch(c, p) for c in found)
+    ]
+    assert not stale and not dead, (stale, dead)
+    assert all(reason.strip() for reason in ra.NOT_DRAWN.values())
 
 
 # --- Codex round 1 on fa42b15 ----------------------------------------------------

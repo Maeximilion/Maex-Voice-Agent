@@ -8,6 +8,10 @@ repository, so the start page cannot claim more than the docs do:
 - `docs/metrics/voice_history.csv`: one dated row per voice layer measurement
 - `docs/07_WORKPACKAGES.md`: task status, read for progress and the call flow
 - `docs/01_STATUS.md`: stage and gates; `README.md`: version; `api/tests`: test count
+- `docs/metrics/capabilities.toml`: the README's "What works" and "Not yet working"
+
+`render` also writes the README's text regions (`<!-- readme:status -->` and
+`<!-- readme:capabilities -->`); everything outside them is written by hand.
 
 Usage:
     python scripts/readme_assets.py render            write all SVG assets
@@ -39,6 +43,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
@@ -54,6 +59,7 @@ VOICE_HISTORY = ROOT / "docs" / "metrics" / "voice_history.csv"
 WORKPACKAGES = ROOT / "docs" / "07_WORKPACKAGES.md"
 STATUS = ROOT / "docs" / "01_STATUS.md"
 README = ROOT / "README.md"
+CAPABILITIES = ROOT / "docs" / "metrics" / "capabilities.toml"
 TESTS = ROOT / "api" / "tests"
 BERLIN = ZoneInfo("Europe/Berlin")
 
@@ -92,6 +98,11 @@ REPO_TITLE = "MÆX"
 # One node per component, with the tasks that build it. A node is "built" when all
 # of its tasks are done, "in progress" when any has started, and "planned"
 # otherwise. A new component is one new entry here and its links.
+#
+# `covers` names what a node stands for: tools of `api/agent/dispatch.TOOLS`,
+# services of docker-compose.yml and adapters under `api/telephony/adapters/`
+# (patterns allowed). A test fails when one of them is neither covered nor in
+# NOT_DRAWN, so a new component cannot be forgotten here.
 FLOW_NODES: dict[str, dict] = {
     "caller": {"label": ["Caller"], "x": 52, "y": 300, "tasks": [], "kind": "person"},
     "access": {
@@ -109,6 +120,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 108,
         "h": 64,
         "tasks": ["T-1.11"],
+        "covers": ["service:asterisk", "adapter:asterisk"],
     },
     "ear": {
         "label": ["Ear", "speech to text"],
@@ -117,6 +129,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 128,
         "h": 60,
         "tasks": ["T-10.5", "T-1.11"],
+        "covers": ["service:voice", "adapter:stt_*"],
     },
     "mouth": {
         "label": ["Mouth", "text to speech"],
@@ -125,6 +138,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 128,
         "h": 60,
         "tasks": ["T-10.5", "T-1.11"],
+        "covers": ["service:voice", "adapter:tts_*"],
     },
     "core": {
         "label": ["Conversation", "core, guards"],
@@ -133,6 +147,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 128,
         "h": 72,
         "tasks": ["T-2.1", "T-2.2"],
+        "covers": ["service:api"],
     },
     "llm": {
         "label": ["LLM", "understands"],
@@ -149,6 +164,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 150,
         "h": 56,
         "tasks": ["T-1.3"],
+        "covers": ["tool:get_service_status"],
         "code": True,
     },
     "menu": {
@@ -158,6 +174,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 150,
         "h": 56,
         "tasks": ["T-4.3", "T-4.4"],
+        "covers": ["tool:search_menu"],
         "code": True,
     },
     "draft": {
@@ -167,6 +184,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 150,
         "h": 56,
         "tasks": ["T-4.5"],
+        "covers": ["tool:draft_order"],
         "code": True,
     },
     "confirm": {
@@ -176,6 +194,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 150,
         "h": 56,
         "tasks": ["T-1.6"],
+        "covers": ["tool:confirm"],
         "code": True,
     },
     "postgres": {
@@ -185,6 +204,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 92,
         "h": 112,
         "tasks": ["T-1.1", "T-4.1"],
+        "covers": ["service:db"],
         "kind": "db",
     },
     "slip": {
@@ -202,6 +222,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 110,
         "h": 56,
         "tasks": ["T-3.1", "T-3.4", "T-4.7"],
+        "covers": ["tool:create_callback"],
     },
     "push": {
         "label": ["Push", "outbox, n8n"],
@@ -210,6 +231,7 @@ FLOW_NODES: dict[str, dict] = {
         "w": 110,
         "h": 56,
         "tasks": ["T-1.12"],
+        "covers": ["service:push", "service:dispatcher", "service:n8n"],
     },
     "teamphone": {
         "label": ["Team phone"],
@@ -218,8 +240,17 @@ FLOW_NODES: dict[str, dict] = {
         "w": 110,
         "h": 56,
         "tasks": ["T-1.8", "T-1.11"],
+        "covers": ["tool:transfer_to_team"],
     },
     "team": {"label": ["Team"], "x": 1163, "y": 330, "tasks": [], "kind": "person"},
+}
+# What the picture leaves out on purpose, each with its reason.
+NOT_DRAWN: dict[str, str] = {
+    "tool:check_slot": "a reservation takes the same hop through the core; the picture follows a pickup call",
+    "tool:create_reservation": "a reservation takes the same hop through the core; the picture follows a pickup call",
+    "tool:get_item_details": "a question about a dish, the same hop and the same menu as search_menu",
+    "adapter:fake": "plays calls from files for the tests and the text phone, never on a call",
+    "adapter:fake_speech": "the ear and mouth of the drills and the tests, never on a real call",
 }
 # Static lines. "in" and "out" are the two wires of the telephone and voice lanes
 # (the caller's words in, the spoken reply out); "both" carries dots either way.
@@ -834,6 +865,7 @@ def node_state(tasks: list[str], states: dict[str, str]) -> str:
 class Gate:
     key: str
     passed: bool
+    content: str = ""
 
 
 def read_status(text: str) -> tuple[str, list[Gate]]:
@@ -844,10 +876,10 @@ def read_status(text: str) -> tuple[str, list[Gate]]:
     gates: list[Gate] = []
     part = text.split("## Gates in Detail", 1)[-1]
     for line in part.splitlines()[:20]:
-        if m := re.match(r"^\| (P|G\d) \|.*\| ([^|]+) \|\s*$", line):
-            gates.append(
-                Gate(m.group(1), m.group(2).strip().lower().startswith("passed"))
-            )
+        if re.match(r"^\| (P|G\d) \|.*\|\s*$", line):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            passed = cells[-1].lower().startswith("passed")
+            gates.append(Gate(cells[0], passed, cells[1] if len(cells) > 2 else ""))
     return stage, gates
 
 
@@ -2209,6 +2241,88 @@ def asset_social() -> str:
     return svg.replace(f'height="{height}" rx="24" fill=', f'height="{height}" fill=')
 
 
+# ------------------------------------------------------------------- README text
+
+# The README's text regions, each between `<!-- readme:<name> -->` and
+# `<!-- /readme:<name> -->`; everything outside them is written by hand.
+REGION_RE = r"(<!-- readme:{name} -->\n).*?(\n<!-- /readme:{name} -->)"
+
+
+@dataclass
+class Capability:
+    works: str
+    tasks: list[str]
+    missing: str = ""
+    waits_for: str = ""
+
+    def done(self, states: dict[str, str]) -> bool:
+        return not self.waits_for and all(states.get(t) == "done" for t in self.tasks)
+
+
+def read_capabilities(path: Path = CAPABILITIES) -> list[Capability]:
+    with path.open("rb") as fh:
+        return [Capability(**entry) for entry in tomllib.load(fh)["capability"]]
+
+
+def status_region(facts: Facts) -> str:
+    """The status table: the version as written in it by hand (`/gate`), stage and
+    next gate from docs/01, the date of the last finished task."""
+    stage = facts.stage
+    if m := re.fullmatch(r"Stage (\S+) \((.+)\)", stage):
+        stage = f"{m.group(1)}, {m.group(2)}"
+    if not facts.gates:
+        # A renamed heading or a moved table, never "every gate passed".
+        raise SystemExit("docs/01_STATUS.md: no gate rows under '## Gates in Detail'")
+    gate = next((g for g in facts.gates if not g.passed), None)
+    next_gate = f"{gate.key}: {gate.content}" if gate else "none, every gate passed"
+    return "\n".join(
+        [
+            "| | |",
+            "|---|---|",
+            f"| Version | {facts.version} |",
+            f"| Stage | {stage} |",
+            f"| Next Gate | {next_gate} |",
+            f"| As of | {de(facts.progress_date)} |",
+        ]
+    )
+
+
+def capabilities_region(facts: Facts, capabilities: list[Capability]) -> str:
+    states = facts.states
+    works = [c.works for c in capabilities if c.done(states)]
+    missing = [c.missing or c.works for c in capabilities if not c.done(states)]
+    return "\n".join(
+        [
+            "**What works:**",
+            "",
+            *(f"- {s}" for s in works),
+            "",
+            "**Not yet working:**",
+            "",
+            *(f"- {s}" for s in missing),
+        ]
+    )
+
+
+def fill_regions(text: str, regions: dict[str, str]) -> str:
+    for name, body in regions.items():
+        m = re.search(REGION_RE.format(name=name), text, re.S)
+        if m is None:
+            raise SystemExit(f"README.md has no region readme:{name}")
+        text = text[: m.end(1)] + body + text[m.start(2) :]
+    return text
+
+
+def readme_text(facts: Facts, current: str) -> str:
+    return fill_regions(
+        current,
+        {
+            "status": status_region(facts),
+            "capabilities": capabilities_region(facts, read_capabilities()),
+        },
+    )
+
+
 # --------------------------------------------------------------------------- render
 
 
@@ -2645,8 +2759,16 @@ def stale_pngs(assets: dict[str, str]) -> list[str]:
 
 
 def render(check: bool = False, png: bool = False) -> int:
-    assets = build(gather())
+    facts = gather()
+    assets = build(facts)
     stale = []
+    readme = README.read_text(encoding="utf-8")
+    if (text := readme_text(facts, readme)) != readme:
+        if check:
+            stale.append("README.md")
+        else:
+            README.write_text(text, encoding="utf-8")
+            print(f"wrote {README}")
     for name, content in assets.items():
         target = ASSETS / name
         current = target.read_text(encoding="utf-8") if target.exists() else None
@@ -2661,7 +2783,8 @@ def render(check: bool = False, png: bool = False) -> int:
     if stale:
         print(
             "README assets are stale: " + ", ".join(stale) + ".\n"
-            "Run `python scripts/readme_assets.py render` and commit .github/assets/.",
+            "Run `python scripts/readme_assets.py render` and commit .github/assets/ "
+            "and README.md.",
             file=sys.stderr,
         )
         return 1
