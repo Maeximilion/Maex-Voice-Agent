@@ -85,7 +85,7 @@ The product's world is a restaurant phone ringing during evening service, answer
 - **The order slip** is what the agent produces. Stat cards are slips: perforated top edge, monospace print, a dated header, line items.
 - **The voice waveform** is the conversation. It is the crossbar of the logo, the divider between sections, the line under the banner and the track of the gates.
 
-The logo is **MÆX**: the ligature Æ, in which the A and the E share one stroke, the way the AI and the code share one call. The A half is yellow (the AI understands), the E half violet (the code decides), the crossbar a waveform. The concept is `LOGO_STYLE = "split"` in the script; `python scripts/readme_assets.py concepts <file.svg>` draws all four concepts side by side.
+The logo is **MÆX**: the ligature Æ, in which the A and the E share one stroke, the way the AI and the code share one call. The A half is yellow (the AI understands), the E half violet (the code decides), the crossbar a waveform. The concept is `LOGO_STYLE = "split"` in the script; `python scripts/readme_assets.py concepts /tmp/maex-logo-concepts.svg` draws all four concepts side by side.
 
 ### Tokens
 
@@ -107,7 +107,7 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 
 | File | Shows | Source |
 |---|---|---|
-| `banner.svg` | Logo, one line, the state slip: latest real-model eval, version, stage, tests (rounded down to the hundred), next gate | all sources below |
+| `banner.svg` | Logo, one line, the state slip: latest real-model eval, version, stage, test functions in `api/tests` (rounded down to the hundred; parametrized cases make the run larger), next gate | all sources below |
 | `call-flow.svg` | The animated path of a call; each node is built, in progress or planned from its tasks | `FLOW_NODES` in the script, `docs/07_WORKPACKAGES.md` |
 | `call-flow-static.svg` | The same without motion | as above |
 | `progress.svg` | Tasks done, one bar per block, the gates | `docs/07_WORKPACKAGES.md`, `docs/01_STATUS.md` |
@@ -116,13 +116,17 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 | `voice-bench.svg` | Voice layer measurements with limit and verdict | `docs/metrics/voice_history.csv` |
 | `rules.svg` | The six hard rules of `CLAUDE.md` §2 | `HARD_RULES` in the script |
 | `logo-mark.svg`, `logo-wordmark.svg`, `divider.svg` | Logo and divider | the script |
-| `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings | `render --png` |
+| `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings. They carry no number, because CI cannot check a PNG | `render --png` |
 
 ### Keeping them current
 
 - Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file.
 - CI runs `python scripts/readme_assets.py render --check` and fails when a committed image no longer matches its data. The fix is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
 - `/done` renders after the status update; `/gate` also records the latest runs and renders the PNGs.
-- A real-model eval run is recorded with `make eval-record REPORT=<file>` (`docs/08_EVALS.md` §4), a voice measurement with `python scripts/readme_assets.py add-voice <date> <package> <metric> <value> <unit> <verdict>`, with its row in `docs/20_VOICE_LAYER.md` §11.
+- A real-model eval run is recorded with `make eval-record REPORT=evals/reports/eval_20261014_213000_000000.json`, the name of its own report in place of the example (`docs/08_EVALS.md` §4). A voice measurement is recorded like this, with its row in `docs/20_VOICE_LAYER.md` §11:
+
+  ```bash
+  python scripts/readme_assets.py add-voice 2026-10-14 T-1.11 "Outage drills end at the team phone" 15 "of 15 points" go --note "Asterisk 22.11.0"
+  ```
 - **A new component a call passes through gets its node in `FLOW_NODES` in the same PR that builds it**, with the task IDs that build it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
 - What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.

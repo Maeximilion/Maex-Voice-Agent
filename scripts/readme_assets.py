@@ -222,6 +222,7 @@ HARD_RULES = [
 
 EVAL_FIELDS = [
     "date",
+    "run_at",
     "model",
     "suite",
     "total",
@@ -248,6 +249,14 @@ VOICE_FIELDS = [
     "note",
 ]
 STAND_IN = "scripted-stand-in"
+# What `evals/runner.py` writes as model for the rule-based stand-in (its default).
+STAND_IN_NAMES = {"", "scripted", STAND_IN}
+SUITE_RE = re.compile(r"[a-z0-9][a-z0-9-]*")
+FULL_SUITES = ("cases", "targets")
+
+
+class RecordError(Exception):
+    """A report that must not go into the history as asked."""
 
 
 def _int(raw: str | None) -> int | None:
@@ -368,9 +377,12 @@ def run_from_report(report: dict, suite: str) -> dict[str, str]:
     def shown(value: object) -> str:
         return "" if value is None else str(value)
 
+    model = report.get("model") or ""
     return {
         "date": run_at.date().isoformat(),
-        "model": report.get("model") or STAND_IN,
+        # The report's own timestamp: the key that makes recording it twice a no-op.
+        "run_at": report["run_at"],
+        "model": STAND_IN if model in STAND_IN_NAMES else model,
         "suite": suite,
         "total": str(report["total"]),
         "passed": str(report["passed"]),
@@ -397,6 +409,49 @@ def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
         if new:
             writer.writeheader()
         writer.writerow({k: row.get(k, "") for k in fields})
+
+
+def record_report(
+    report: dict,
+    suite: str | None,
+    reference: bool = False,
+    note: str = "",
+    path: Path = EVAL_HISTORY,
+) -> str:
+    """Append one report to the history; refuse what would corrupt the charts.
+
+    A run with tags is partial and needs its own suite name, so it never poses as
+    the full suite; the stand-in goes in only as the explicit reference row; the
+    same report recorded twice stays one row.
+    """
+    tags = report.get("tags") or []
+    if suite is None:
+        if tags:
+            raise RecordError(
+                f"the run has tags {', '.join(tags)}, so it is partial: name its suite, "
+                "for example --suite reservations"
+            )
+        suite = "cases"
+    if not SUITE_RE.fullmatch(suite):
+        raise RecordError(f"suite {suite!r}: lowercase letters, digits and dashes only")
+    if tags and suite in FULL_SUITES:
+        raise RecordError(
+            f"the run has tags {', '.join(tags)}: it cannot stand for the full suite {suite!r}"
+        )
+    row = run_from_report(report, suite)
+    row["note"] = note
+    if row["model"] == STAND_IN and not reference:
+        raise RecordError(
+            "this is the scripted stand-in, not a real model; pass --reference to record "
+            "it as the reference row"
+        )
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as fh:
+            for old in csv.DictReader(fh):
+                if old.get("run_at") == row["run_at"] and old["suite"] == suite:
+                    return f"already recorded: {suite} run of {row['run_at']}"
+    append_row(path, EVAL_FIELDS, row)
+    return f"recorded {suite} {row['passed']}/{row['total']} on {row['date']}"
 
 
 # Status words of docs/07, German and English: the column is free text.
@@ -529,8 +584,12 @@ class Facts:
             out.update(block.tasks)
         return out
 
-    def latest(self, suite: str) -> EvalRun | None:
-        real = [r for r in self.runs if r.suite == suite and r.model != STAND_IN]
+    def latest(self, suite: str, model: str | None = None) -> EvalRun | None:
+        real = [
+            r
+            for r in self.runs
+            if r.suite == suite and r.model != STAND_IN and model in (None, r.model)
+        ]
         return real[-1] if real else None
 
     def stand_in(self, suite: str) -> EvalRun | None:
@@ -872,7 +931,7 @@ def asset_banner(facts: Facts) -> str:
     items = [
         ("version", facts.version),
         ("stage", facts.stage.replace("Stage ", "")),
-        ("tests", f"{thousands(facts.tests // 100 * 100)}+"),
+        ("test functions", f"{thousands(facts.tests // 100 * 100)}+"),
     ]
     if cases:
         items.insert(0, ("eval, real model", f"{cases.passed}/{cases.total}"))
@@ -956,7 +1015,13 @@ def stacked_bar(
 
 def asset_eval_latest(facts: Facts) -> str:
     width, height = 1200, 460
-    cases, targets = facts.latest("cases"), facts.latest("targets")
+    # One card, one model: the targets of the same model as the regular cases, and
+    # only when that model has none, the latest targets with their model named.
+    cases = facts.latest("cases")
+    targets = facts.latest("targets", cases.model if cases else None)
+    if targets is None:
+        targets = facts.latest("targets")
+    head = cases or targets
     latest = max((r for r in (cases, targets) if r), key=lambda r: r.date, default=None)
     parts = [dot_grid(width, height)]
     parts.append(
@@ -978,7 +1043,9 @@ def asset_eval_latest(facts: Facts) -> str:
             "No real-model run recorded yet.",
             "\n".join(parts),
         )
-    parts.append(text(64, 124, latest.model, 20, "ink", weight=700))
+    parts.append(
+        text(64, 124, head.model if head else latest.model, 20, "ink", weight=700)
+    )
     parts.append(
         text(1136, 124, "temperature 0, invented cases only", 15, "muted", anchor="end")
     )
@@ -1002,7 +1069,12 @@ def asset_eval_latest(facts: Facts) -> str:
             )
         )
         parts.append(stacked_bar(300, yy + 8, 836, 26, split_run(run), run.total))
-        parts.append(text(1136, yy, de(run.date), 14, "muted", anchor="end"))
+        when = (
+            de(run.date)
+            if head and run.model == head.model
+            else f"{run.model} · {de(run.date)}"
+        )
+        parts.append(text(1136, yy, when, 14, "muted", anchor="end"))
     # Legend, always present: identity is never colour alone.
     lx = 300
     for _key, color, label in SEGMENTS:
@@ -1053,7 +1125,7 @@ def asset_eval_latest(facts: Facts) -> str:
         parts.append(text(x, 376, label, 14, "muted"))
         parts.append(text(x, 404, value, 20, "coral" if bad else "ink", weight=700))
     desc = (
-        f"Latest real-model eval on {de(latest.date)}, model {latest.model}. "
+        f"Latest real-model eval on {de(latest.date)}, model {head.model if head else latest.model}. "
         + (f"Regular cases {cases.passed} of {cases.total}. " if cases else "")
         + (f"Target cases {targets.passed} of {targets.total}. " if targets else "")
         + (
@@ -1690,9 +1762,10 @@ def asset_divider() -> str:
     )
 
 
-def asset_social(facts: Facts) -> str:
+def asset_social() -> str:
+    """Logo, name and one line only: the PNG made from it is uploaded by hand and
+    CI cannot check it, so it carries nothing that goes stale."""
     width, height = 1280, 640
-    cases = facts.latest("cases")
     parts = [dot_grid(width, height)]
     parts.append(
         '<defs><radialGradient id="sg" cx="0.5" cy="0.4" r="0.6">'
@@ -1716,17 +1789,6 @@ def asset_social(facts: Facts) -> str:
             anchor="middle",
         )
     )
-    if cases:
-        parts.append(
-            text(
-                width / 2,
-                520,
-                f"eval {cases.passed}/{cases.total} on {cases.model} · {de(cases.date)}",
-                18,
-                "neon",
-                anchor="middle",
-            )
-        )
     svg = document(
         width, height, "MÆX social preview", "MÆX, Maex Voice Agent.", "\n".join(parts)
     )
@@ -1750,7 +1812,7 @@ def build(facts: Facts) -> dict[str, str]:
         "voice-bench.svg": asset_voice_bench(facts),
         "rules.svg": asset_rules(),
         "divider.svg": asset_divider(),
-        "social-preview.svg": asset_social(facts),
+        "social-preview.svg": asset_social(),
     }
 
 
@@ -1840,8 +1902,16 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--png", action="store_true", help="also write the PNGs")
     a = sub.add_parser("add", help="record an eval report JSON")
     a.add_argument("report", type=Path)
-    a.add_argument("--suite", choices=["cases", "targets"], default="cases")
+    a.add_argument(
+        "--suite",
+        help="cases (default for a run without tags), targets, or the name of a partial run",
+    )
     a.add_argument("--note", default="")
+    a.add_argument(
+        "--reference",
+        action="store_true",
+        help="record the scripted stand-in as reference",
+    )
     v = sub.add_parser("add-voice", help="record a voice layer measurement")
     v.add_argument("date", type=date.fromisoformat)
     v.add_argument("package")
@@ -1857,14 +1927,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "render":
         return render(args.check, args.png)
     if args.cmd == "add":
-        row = run_from_report(
-            json.loads(args.report.read_text(encoding="utf-8")), args.suite
-        )
-        row["note"] = args.note
-        append_row(EVAL_HISTORY, EVAL_FIELDS, row)
-        print(
-            f"recorded {row['suite']} {row['passed']}/{row['total']} on {row['date']}"
-        )
+        report = json.loads(args.report.read_text(encoding="utf-8"))
+        try:
+            print(record_report(report, args.suite, args.reference, args.note))
+        except RecordError as exc:
+            print(f"not recorded: {exc}", file=sys.stderr)
+            return 1
         return 0
     if args.cmd == "add-voice":
         append_row(

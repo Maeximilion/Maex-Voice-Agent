@@ -256,3 +256,66 @@ def test_check_reports_a_stale_asset(
 def test_committed_assets_match_their_data() -> None:
     """The same check CI runs; a failure here means `make readme-assets`."""
     assert ra.render(check=True) == 0
+
+
+# --- recording guards (Codex on 73a0005) -----------------------------------------
+
+
+def test_the_scripted_stand_in_is_refused_unless_it_is_the_reference(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "eval_history.csv"
+    with pytest.raises(ra.RecordError, match="stand-in"):
+        ra.record_report(report(model="scripted"), None, path=path)
+    assert not path.exists()
+    ra.record_report(report(model="scripted"), None, reference=True, path=path)
+    (run,) = ra.read_eval_history(path)
+    assert run.model == ra.STAND_IN
+
+
+def test_a_tagged_run_needs_a_suite_of_its_own(tmp_path: Path) -> None:
+    path = tmp_path / "eval_history.csv"
+    tagged = report(tags=["reservierung"])
+    with pytest.raises(ra.RecordError, match="partial"):
+        ra.record_report(tagged, None, path=path)
+    with pytest.raises(ra.RecordError, match="full suite"):
+        ra.record_report(tagged, "cases", path=path)
+    with pytest.raises(ra.RecordError, match="lowercase"):
+        ra.record_report(tagged, "Reservations!", path=path)
+    ra.record_report(tagged, "reservations", path=path)
+    assert [r.suite for r in ra.read_eval_history(path)] == ["reservations"]
+
+
+def test_recording_the_same_report_twice_keeps_one_row(tmp_path: Path) -> None:
+    path = tmp_path / "eval_history.csv"
+    first = ra.record_report(report(), None, path=path)
+    again = ra.record_report(report(), None, path=path)
+    assert first.startswith("recorded")
+    assert again.startswith("already recorded")
+    assert len(ra.read_eval_history(path)) == 1
+    # The same report as targets is a different row, not a duplicate.
+    ra.record_report(report(), "targets", path=path)
+    assert len(ra.read_eval_history(path)) == 2
+
+
+def test_the_eval_card_names_the_model_of_a_foreign_target_row() -> None:
+    facts = ra.gather()
+    day = date(2026, 10, 20)
+    facts.runs = [
+        ra.EvalRun(day, "model-a", "targets", 27, 5),
+        ra.EvalRun(day, "model-b", "cases", 41, 30),
+    ]
+    card = ra.build(facts)["eval-latest.svg"]
+    assert ">model-b<" in card
+    assert "model-a · 2026-10-20" in card
+    # With targets of the same model, those are shown and no model is named twice.
+    facts.runs.append(ra.EvalRun(day, "model-b", "targets", 27, 9))
+    card = ra.build(facts)["eval-latest.svg"]
+    assert ">9/27<" in card
+    assert "model-a" not in card
+
+
+def test_the_social_preview_carries_no_number_that_can_go_stale() -> None:
+    social = ra.build(ra.gather())["social-preview.svg"]
+    assert "eval" not in social
+    assert "/41" not in social

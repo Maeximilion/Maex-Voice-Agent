@@ -34,8 +34,8 @@ eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (d
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval
 
-eval-record: ## Record a real-model eval report in docs/metrics/, REPORT=<file.json>, optional SUITE=targets
-	python scripts/readme_assets.py add $(REPORT) --suite $(or $(SUITE),cases)
+eval-record: ## Record a real-model eval report in docs/metrics/ (REPORT=path of the JSON, optional SUITE=targets)
+	python scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
 
 readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
 	python scripts/readme_assets.py render

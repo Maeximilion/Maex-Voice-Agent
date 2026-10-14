@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/assets/banner.svg" width="100%" alt="MÆX, Maex Voice Agent: the neon logo and a slip with the current state, namely version, stage, test count, next gate and the latest eval run on a real model.">
+  <img src=".github/assets/banner.svg" width="100%" alt="MÆX, Maex Voice Agent: the neon logo and a slip with the current state, namely version, stage, number of test functions, next gate and the latest eval run on a real model.">
 </p>
 
 # MÆX (Maex Voice Agent)
@@ -67,7 +67,7 @@ The images below are drawn from the measurement files in [`docs/metrics/`](docs/
   <img src=".github/assets/voice-bench.svg" width="100%" alt="Measurements of the own voice layer with date, value, limit and verdict go, at limit or no-go: the telephony spike, silent wrong numbers of the speech recognition, dishes heard right in spoken orders and the outage drills. Numbers in docs/metrics/voice_history.csv.">
 </p>
 
-How the images stay current: `python scripts/readme_assets.py add <report.json>` records an eval run, `add-voice` a voice measurement, and `render` redraws every image from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
+How the images stay current: `python scripts/readme_assets.py add evals/reports/eval_20261014_213000_000000.json` records the eval run of that report, `add-voice` a voice measurement, and `render` redraws every image from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
 
 **What works:**
 
@@ -187,7 +187,7 @@ make fmt         # ruff format
 make backup      # encrypted dump of the database of DATABASE_URL into backups/, needs BACKUP_PASSPHRASE_FILE (docs/13 §4)
 make eval        # 41 regular cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
-make eval-record REPORT=evals/reports/<run>.json  # record a real-model run in docs/metrics/, optional SUITE=targets
+make eval-record REPORT=evals/reports/eval_20261014_213000_000000.json  # record that real-model run in docs/metrics/, SUITE=targets for the target cases
 make readme-assets  # redraw the README images from docs/metrics/, the task list and the status
 
 python -m sim.cli                                   # conversation in the terminal
