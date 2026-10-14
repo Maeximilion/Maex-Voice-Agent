@@ -61,7 +61,9 @@ def check_slot(
     reserved_for: datetime,
     party_size: int,
     now: datetime | None = None,
+    call_id: uuid.UUID | None = None,
 ) -> SlotCheck:
+    """`call_id` is the asking call: its own drafts do not count (#207)."""
     # Eine Abfrage statt zwei: der heisse Pfad braucht Zeitzone und Abstaende (D12).
     row = session.execute(
         select(Tenant, ServiceConfig)
@@ -102,6 +104,7 @@ def check_slot(
         windows,
         now=now,
         draft_lifetime=timedelta(seconds=config.max_call_seconds),
+        call_id=call_id,
     )
     lead = timedelta(minutes=config.reservation_lead_minutes)
     last = timedelta(minutes=config.reservation_last_start_minutes)
