@@ -81,10 +81,17 @@ _HANDOFF_SUMMARIES = {
 _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden."
 # How the card of a table the team decides on begins (`team_callback`, #252).
 SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
+# A table for the team ends the call while an order is still open: the order
+# is not booked, and both the card and the guest say so (#207). Draft wording,
+# checked with the announcement texts (docs/05 §6).
+SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
+SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
 _SUMMARY_DETAIL_MAX = 400
+# What a callback takes (CreateCallbackRequest.summary).
+_SUMMARY_MAX = 1000
 
 
 @dataclass
@@ -394,6 +401,10 @@ class ConversationLoop:
         still stands either lost a wish or sent a stale one (Codex PR #280).
         The same open point as for every handover (docs/01_STATUS.md)."""
         wish = self._table_wish(state, args)
+        if state.cart:
+            head = f"{wish} {SUMMARY_OPEN_ORDER} "
+            wish = f"{head}{_order_lines(state, _SUMMARY_MAX - len(head) - 1)}."
+        lead_say = [lead, SAY_ORDER_NOT_PLACED if state.cart else None]
         phone = state.slots.get("phone")
         if phone:
             callback = self._dispatch(
@@ -403,10 +414,10 @@ class ConversationLoop:
             )
             apply_tool_result(state, "create_callback", callback)
             if callback.ok:
-                said = [s for s in (lead, callback.say) if s]
+                said = [s for s in (*lead_say, callback.say) if s]
                 return TurnResult(state=state, say=said, ended=True)
         handed = self._handoff(state, SAY_ESCALATION, "out_of_scope", wish)
-        handed.say = [s for s in (lead, *handed.say) if s]
+        handed.say = [s for s in (*lead_say, *handed.say) if s]
         return handed
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
@@ -480,6 +491,35 @@ class ConversationLoop:
 
         state.stage = "ended"
         return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
+
+
+def _order_lines(state: ConversationState, room: int) -> str:
+    """The open order as the team reads it, with number and name from the
+    menu search (CLAUDE.md §2 rule 1), never from the model, and with the
+    chosen options and the note of each line: two pizzas of different sizes
+    are two lines (Codex PR #300). Longer than `room`: without the names, the
+    team reads the dishes from the card; and what still does not fit is
+    counted, never dropped in silence."""
+    full, short = [], []
+    for line in state.cart:
+        seen = state.seen_items.get(line["menu_item_id"], {})
+        number, name = seen.get("number"), seen.get("name")
+        chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
+        extra = "; ".join([*chosen, *([line["note"]] if line.get("note") else [])])
+        tail = f" ({extra})" if extra else ""
+        dish = " ".join(x for x in (number, name) if x) or "Gericht"
+        full.append(f"{line['quantity']}x {dish}{tail}")
+        short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
+    if len(text := ", ".join(full)) <= room:
+        return text
+    for kept in range(len(short), -1, -1):
+        rest = len(short) - kept
+        parts = short[:kept] + (
+            [f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else []
+        )
+        if len(text := ", ".join(parts)) <= room:
+            return text
+    return text[: max(room, 0)]
 
 
 def _handoff_summary(reason: str, detail: str | None) -> str:
