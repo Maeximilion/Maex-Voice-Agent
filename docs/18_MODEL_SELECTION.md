@@ -129,6 +129,7 @@ test answer is valid.
 
 - `mistral-small` does not fit next to the desktop's share of the GPU memory; the spilled part makes it five times slower than `qwen3:14b`. **The workbench uses `qwen3:14b`** (`LLM_MODEL=qwen3:14b` in `.env`); `mistral-small` stays usable for eval runs where time does not matter.
 - `mistral-small` filled `reserved_for` with an invented absolute date (`2024-07-20T19:00:00`) for "Samstag"; the test prompt gives no current date. `qwen3:14b` kept the guest's words. The real prompt carries the date; the evals have to show whether this happens there too.
+- **First full eval run (13./14.10.2026):** Ollama was no longer installed in the workbench's Ubuntu, so the run used the local llama-server of the review bot (`qwen3.6-35b-a3b`, port 8080, `LLM_REASONING_EFFORT=none`): `llm start`, or `/usr/local/bin/llama-server-run` as the user without sudo. Results in `docs/01_STATUS.md`.
 - **WSL memory (keep for later):** WSL sees 31 GiB of the 64 GB RAM (WSL default: half). Enough for `qwen3:14b` and `mistral-small`. Only for `--model qwen3:30b` or larger models raise it first: on Windows create or edit `%UserProfile%\.wslconfig` with
 
   ```ini
