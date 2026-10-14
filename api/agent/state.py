@@ -40,6 +40,25 @@ Stage = Literal[
 ]
 
 
+# Longest `last_say` the model gets back, in characters: a read-back with
+# three dishes fits, a model that talks on is cut.
+LAST_SAY_MAX = 300
+
+
+def last_words(say: str) -> str:
+    """The sentence as `last_say` keeps it. A long one keeps its end: the
+    guest answers the question it closes with, such as the "Passt das so?" of
+    a read-back of six dishes (Codex PR #291)."""
+    if len(say) <= LAST_SAY_MAX:
+        return say
+    return "…" + say[-(LAST_SAY_MAX - 1) :]
+
+
+# What the state keeps of get_service_status: whether the restaurant is open,
+# and whether it takes pickups, which can be off while it is open.
+SERVICE_FLAGS = ("is_open", "pickup_enabled")
+
+
 class ConversationState(BaseModel):
     call_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -91,9 +110,24 @@ class ConversationState(BaseModel):
     # The sentence that ended the last turn asked for the guest's number
     # (`guards.note_said`): the answer needs no word for what its digits are.
     asked_for_phone: bool = False
-    # Set by the phone line (telephony/handler.py), which says the AI disclosure
-    # before the first turn: the model must not greet a second time.
+    # The guest has heard a first sentence: the model must not greet a second
+    # time. Set by the phone line (telephony/handler.py), which says the AI
+    # disclosure before the first turn, and with the first sentence of a call
+    # on the text phone (`guards.note_said`), where the model says it.
     greeted: bool = False
+    # The sentence that ended the last turn (`guards.note_said`), cut to
+    # `LAST_SAY_MAX`. A model keeps nothing between turns: without it a "Ja",
+    # a name or "nein, das wars" answers a question the model no longer knows
+    # it asked (first full eval run, 13.10.2026). One sentence, replaced with
+    # every turn, so the state stays compact and never grows into a transcript
+    # (docs/05 §5).
+    last_say: str | None = None
+    # What get_service_status said in this call about being open and taking
+    # pickups (`SERVICE_FLAGS`); None until then. The model reads from it that
+    # the status is known: it asked again at the start of every turn, one
+    # request each. Both flags, or a model that sees only "open" could take a
+    # pickup while the kitchen takes none (Codex PR #291, P1).
+    service: dict[str, bool] | None = None
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
@@ -103,6 +137,10 @@ class ConversationState(BaseModel):
         data: dict[str, Any] = {"stage": self.stage, "open": self.open_questions}
         if self.greeted:
             data["greeted"] = True
+        if self.last_say:
+            data["last_say"] = self.last_say
+        if self.service is not None:
+            data["service"] = dict(self.service)
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -396,6 +434,15 @@ def apply_tool_result(
             state.cart = cart_lines((args or {}).get("items"))
     elif name == "search_menu":
         _note_search(state, result.data)
+    elif name == "get_service_status":
+        flags = {
+            key: result.data[key]
+            for key in SERVICE_FLAGS
+            if isinstance(result.data.get(key), bool)
+        }
+        # Only a whole answer: a flag that is missing is unknown, never "no".
+        if len(flags) == len(SERVICE_FLAGS):
+            state.service = flags
     elif name == "confirm":
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.

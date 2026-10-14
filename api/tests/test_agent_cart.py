@@ -254,13 +254,19 @@ def test_dish_that_is_not_in_the_order_never_goes_back_to_the_model():
     search had found: the candidate the guest had not chosen stayed in sight,
     and two turns later the model put it into the order. A dish reaches the
     next turn only as a line of the order: neither the other candidate of an
-    answered question nor a clear hit that was not taken up."""
+    answered question nor a clear hit that was not taken up.
+
+    The question itself is in sight for the one turn that answers it
+    (`last_say`), by name and card number and without an id, and is gone with
+    the sentence that ends that turn."""
     state = new_state()
     searched(state, SUPPE)
     searched(state, ENTE, PHO, match_type="ambiguous")
     note_said(state, "Meinen Sie Nummer 47 Ente knusprig oder Nummer 13 Pho Bo?")
 
     take_cart(state, [line(PHO)])
+    assert ENTE not in str(state.to_prompt_json())
+    note_said(state, "Alles klar, Nummer 13. Darf es noch etwas sein?")
 
     shown = str(state.to_prompt_json())
     assert PHO in shown
