@@ -24,7 +24,7 @@ from api.agent.state import initial_state
 from api.core.errors import NotFound
 from api.core.logging import get_logger, log
 from api.core.time import utcnow
-from api.domain.calls import end_call, start_call
+from api.domain.calls import call_routing, end_call, start_call
 from api.domain.menu.items import active_numbers
 from api.models import Call, Tenant
 from api.schemas.calls import CallEnded, EndCallRequest, StartCallRequest
@@ -124,8 +124,14 @@ class SimCall:
         )
         # With the tool reference: a real model learns the tools from the
         # prompt, the stand-in reads none of it. Built before the call row too.
+        # The tenant's call limit, as on the phone line: with the setting a
+        # call here would outlast the seats its drafts hold (#207).
         self._loop = ConversationLoop(
-            session, self._llm, build_system_prompt(tools=True), now=self._now
+            session,
+            self._llm,
+            build_system_prompt(tools=True),
+            max_call_seconds=call_routing(session, tenant.id).max_call_seconds,
+            now=self._now,
         )
         started = start_call(
             session,
