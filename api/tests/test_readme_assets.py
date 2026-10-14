@@ -843,7 +843,10 @@ def test_recording_happens_on_a_branch_only(tmp_path: Path) -> None:
     def git(*args: str) -> None:
         ra.subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
 
+    # No repository, or no git at all (the api image has none): never a branch.
     assert ra.recording_branch(tmp_path) is None
+    if ra.shutil.which("git") is None:
+        pytest.skip("git is not installed here")
     git("init", "-q", "-b", "main")
     git(
         "-c",
