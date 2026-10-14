@@ -169,8 +169,11 @@ services:
     volumes:
       - ./deploy/asterisk/conf:/templates/conf:ro
       - ./deploy/asterisk/render.sh:/templates/render.sh:ro
+    # Healthy only while registered at the access: booted but not registered,
+    # no call reaches the AI telephone, and `docker compose ps` should say so
+    # (Codex on PR #297).
     healthcheck:
-      test: ["CMD", "asterisk", "-rx", "core waitfullybooted"]
+      test: ["CMD-SHELL", "asterisk -rx 'pjsip show registrations' | grep -q ' Registered '"]
       interval: 10s
       timeout: 5s
       retries: 6
