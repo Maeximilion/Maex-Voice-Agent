@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.51
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.52
 
 ---
 
@@ -514,6 +514,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.52 · 14.10.2026:** Codex review of 42962fb on PR #289: the main folder's path is kept whole, also when it ends in a line break
 - **v2.1.51 · 14.10.2026:** Codex review of e93c838 on PR #289: the main folder is found by git itself, and the scan exits 0 without one
 - **v2.1.50 · 14.10.2026:** Codex review of 5b2da14 on PR #289: /start scans leftovers before it stops on a hook warning, with a runnable command, and never tidies a leftovers branch away
 - **v2.1.49 · 14.10.2026:** Nothing is edited on main and nothing is left behind; /start reports leftovers (uncommitted files in a main folder, stashes, leftovers/* branches) at every session start
