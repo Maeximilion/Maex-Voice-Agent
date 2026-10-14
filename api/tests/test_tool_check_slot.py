@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.db import get_db
 from api.main import app
+from api.models import Call, Reservation
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -133,3 +134,38 @@ def test_a_party_above_the_limit_answers_team_callback(client):
         "team_callback": True,
     }
     assert body["say"].startswith("Für neun Personen kann ich den Tisch nicht selbst")
+
+
+def test_the_drafts_of_the_asking_call_do_not_count(client, migrated_db_url):
+    """#207: the tool hands its call on, so a call's own draft does not fill
+    the evening for that call; for any other call it does."""
+    http, tenant_id = client
+    at = _next_tuesday_1830()
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        call = Call(
+            tenant_id=uuid.UUID(tenant_id),
+            external_session_id="ext",
+            started_at=datetime.now(UTC),
+            delete_after=at.date(),
+        )
+        s.add(call)
+        s.flush()
+        s.add(
+            Reservation(
+                tenant_id=call.tenant_id,
+                call_id=call.id,
+                status="draft",
+                guest_name="Test",
+                phone="+4900000000",
+                party_size=40,
+                reserved_for=at,
+                idempotency_key=uuid.uuid4().hex,
+            )
+        )
+        s.commit()
+        own = str(call.id)
+    engine.dispose()
+
+    assert _call(http, tenant_id, call_id=own).json()["data"]["available"] is True
+    assert _call(http, tenant_id).json()["data"]["available"] is False
