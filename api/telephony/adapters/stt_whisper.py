@@ -86,7 +86,7 @@ class SegmentingEar:
         # utterance.
         self._before: deque[bytes] = deque(maxlen=_windows(PAD_SECONDS))
         # The windows of the utterance that is being said, None outside one;
-        # where its speech began and ends in them; when its last speech arrived;
+        # where its speech began and ends in them; when its last speech ended;
         # windows of silence since; the length at the last partial.
         self._audio: list[bytes] | None = None
         self._first = 0
@@ -131,11 +131,15 @@ class SegmentingEar:
         while len(self._pending) >= _WINDOW_BYTES:
             window = self._pending[:_WINDOW_BYTES]
             self._pending = self._pending[_WINDOW_BYTES:]
-            self._judge(window, at)
+            # `at` is when the end of the frame arrived. A window that ends
+            # earlier in it ended that much earlier: a "Ja" at the start of a
+            # frame that reaches past the end of a read-back was said inside
+            # it (Codex PR #292, hard rule 3).
+            self._judge(window, at - len(self._pending) / 2 / SAMPLE_RATE)
 
     def _judge(self, window: bytes, at: float) -> None:
-        """One window, `at` being when its last frame arrived. Durations are
-        counted in audio, not in arrival times: frames can come in bursts."""
+        """One window, `at` being when its audio ended. Durations are counted
+        in audio, not in arrival times: frames can come in bursts."""
         probability = self._probability(window)
         if self._audio is None:
             if probability < SPEECH:

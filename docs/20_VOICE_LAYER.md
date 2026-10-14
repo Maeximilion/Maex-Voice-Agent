@@ -219,8 +219,10 @@ terms through `Ear.expect`.** Started on the local pair of T-10.3 before that ta
   partial with an empty text every 0.5 s, and after 704 ms of silence (22 windows) it hands the
   utterance, with 288 ms of audio before and after it, to Whisper and reports the final. Speech
   shorter than 256 ms is reported as no speech and never transcribed, so a click is no word and
-  no yes. Durations are counted in audio, not in arrival times; `ended_at` is when the last window
-  of speech arrived. An error of detector or engine is raised by the next `feed`, which the
+  no yes. Durations are counted in audio, not in arrival times; `ended_at` is when the audio of the
+  last window of speech ended: the arrival of its frame, less the audio behind it in that frame,
+  so a "Ja" early in a frame that reaches past the end of a read-back counts as said inside it
+  (Codex PR #292, P1). An error of detector or engine is raised by the next `feed`, which the
   session takes as a failure of the ear; an engine that hangs is caught by the session's deadline
   for the final (§4). The detector keeps its state from window to window: judged window by window
   without it, its probabilities differ from those of the whole recording by up to 0.9, with it by

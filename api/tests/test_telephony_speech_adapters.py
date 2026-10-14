@@ -186,8 +186,21 @@ def test_frames_of_any_size_are_judged_in_windows():
         frame=FRAME,
     )
     assert len(finals(heard)) == 1
-    # Arrival is stamped per frame, so the end is known to one frame.
-    assert abs(finals(heard)[0].ended_at - 41 * SECONDS) <= FRAME / 2 / SAMPLE_RATE
+    assert finals(heard)[0].ended_at == at(41)
+
+
+def test_each_window_is_stamped_with_the_end_of_its_own_audio():
+    """A frame can carry several windows. A "Ja" at its start with silence
+    behind it ended before the frame arrived; stamped with the arrival of the
+    frame, it would count as said after a read-back that ended in between
+    (Codex PR #292, P1, hard rule 3)."""
+    heard = hear(
+        SegmentingEar(Engine(), probability),
+        speech(10) + silence(30),
+        frame=2 * WINDOW * 40,
+    )
+    assert heard[0].ended_at == at(1)
+    assert finals(heard)[0].ended_at == at(10)
 
 
 def test_an_engine_that_fails_fails_the_next_feed():
