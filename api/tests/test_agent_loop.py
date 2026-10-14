@@ -1310,3 +1310,31 @@ def test_what_does_not_fit_on_the_card_is_counted(state):
     assert _order_lines(state, 200).startswith("1x 100 Salat, 1x 101 Salat")
     assert _order_lines(state, 80).startswith("1x 100, 1x 101, 1x 102")
     assert _order_lines(state, 40) == "1x 100, 1x 101, 8 weitere Positionen"
+
+
+def test_options_and_the_note_of_a_line_reach_the_card(state):
+    """Two pizzas of different sizes are two lines, and "ohne Zwiebeln" is
+    what the kitchen has to know: the card shows both (Codex PR #300)."""
+    pizza = str(uuid.uuid4())
+    state.seen_items[pizza] = {"number": "12", "name": "Pizza Margherita"}
+    state.cart = [
+        {
+            "menu_item_id": pizza,
+            "quantity": 1,
+            "options": [{"group": "Größe", "name": "groß"}],
+            "note": "ohne Zwiebeln",
+        },
+        {
+            "menu_item_id": pizza,
+            "quantity": 2,
+            "options": [{"group": "Größe", "name": "klein"}],
+        },
+    ]
+
+    assert _order_lines(state, 200) == (
+        "1x 12 Pizza Margherita (Größe: groß; ohne Zwiebeln), "
+        "2x 12 Pizza Margherita (Größe: klein)"
+    )
+    assert _order_lines(state, 70) == (
+        "1x 12 (Größe: groß; ohne Zwiebeln), 2x 12 (Größe: klein)"
+    )

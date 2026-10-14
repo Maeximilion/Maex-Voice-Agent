@@ -495,17 +495,21 @@ class ConversationLoop:
 
 def _order_lines(state: ConversationState, room: int) -> str:
     """The open order as the team reads it, with number and name from the
-    menu search (CLAUDE.md §2 rule 1), never from the model. Longer than
-    `room`: card numbers only, the team reads the dishes from the card; and
-    what still does not fit is counted, never dropped in silence (Codex PR
-    #300)."""
+    menu search (CLAUDE.md §2 rule 1), never from the model, and with the
+    chosen options and the note of each line: two pizzas of different sizes
+    are two lines (Codex PR #300). Longer than `room`: without the names, the
+    team reads the dishes from the card; and what still does not fit is
+    counted, never dropped in silence."""
     full, short = [], []
     for line in state.cart:
         seen = state.seen_items.get(line["menu_item_id"], {})
         number, name = seen.get("number"), seen.get("name")
+        chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
+        extra = "; ".join([*chosen, *([line["note"]] if line.get("note") else [])])
+        tail = f" ({extra})" if extra else ""
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
-        full.append(f"{line['quantity']}x {dish}")
-        short.append(f"{line['quantity']}x {number or name or 'Gericht'}")
+        full.append(f"{line['quantity']}x {dish}{tail}")
+        short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
     if len(text := ", ".join(full)) <= room:
         return text
     for kept in range(len(short), -1, -1):
