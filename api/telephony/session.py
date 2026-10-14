@@ -636,7 +636,12 @@ class Lines:
         self._sessions: dict[str, CallSession] = {}
 
     def add(self, session: CallSession) -> None:
+        """Raises `ValueError` for a call that is live already: a second
+        session would take the first one's place, and with it what the core
+        asks of that call (T-1.11)."""
         with self._lock:
+            if session.session_id in self._sessions:
+                raise ValueError(f"call {session.session_id!r} is live already")
             self._sessions[session.session_id] = session
 
     def remove(self, session_id: str) -> None:

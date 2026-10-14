@@ -134,13 +134,19 @@ def test_a_secret_in_a_containers_output_fails(tmp_path):
 
 def test_a_callers_number_in_the_output_of_voice_fails(tmp_path):
     stage = Stage(tmp_path, {})
-    # The call to a `voice` that is down is left out: Asterisk's warning
-    # repeats the dial string then.
-    stage.logs["asterisk"].append("WARNING: failed to voice/v(caller=%2B4972215550104)")
     assert stage.no_caller_in_the_logs()[1]
     stage.logs["voice"].append('"WebSocket /media?call=1.0&caller=%2B4972215550101"')
     _, ok, detail = stage.no_caller_in_the_logs()
     assert not ok and detail == "found in voice"
+
+
+def test_the_caller_of_the_call_that_found_voice_down_counts_too(tmp_path):
+    """Asterisk logs the dial string when `voice` cannot be reached; the
+    dial string carries no number since round 2 of Codex on PR #297."""
+    stage = Stage(tmp_path, {})
+    stage.logs["asterisk"].append("WARNING: failed to voice/v(caller=%2B4972215550104)")
+    _, ok, detail = stage.no_caller_in_the_logs()
+    assert not ok and detail == "found in asterisk"
 
 
 def test_the_team_number_in_the_output_of_asterisk_fails(tmp_path):

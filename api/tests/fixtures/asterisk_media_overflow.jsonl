@@ -1,24 +1,24 @@
-{"t": 0.0001, "dir": "probe", "query": "exten=704&call=1791966155.8&caller=%2B4972215550704", "subprotocols": ["media"], "authorization": "Basic"}
-{"t": 0.0005, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x7682f6083ba0\",\"channel_id\":\"1791966155.9\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/nc(slin16)f(json)v(exten=704,call=1791966155.8,caller=%2B4972215550704)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\"}}"}
-{"t": 0.0006, "dir": "out", "text": "{\"command\": \"ANSWER\"}"}
-{"t": 0.0632, "dir": "out", "bytes": 65280}
-{"t": 0.0634, "dir": "out", "bytes": 65280}
-{"t": 0.0635, "dir": "out", "bytes": 65280}
-{"t": 0.0636, "dir": "out", "bytes": 65280}
-{"t": 0.0637, "dir": "out", "bytes": 65280}
-{"t": 0.0637, "dir": "out", "bytes": 65280}
-{"t": 0.0639, "dir": "out", "bytes": 65280}
-{"t": 0.064, "dir": "out", "bytes": 65280}
-{"t": 0.064, "dir": "out", "bytes": 65280}
+{"t": 0.0, "dir": "probe", "query": "", "subprotocols": ["media"], "authorization": "Basic"}
+{"t": 0.0005, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x79c035aa8a60\",\"channel_id\":\"1791982024.7\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/nc(slin16)f(json)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\",\"__VOICE_EXTEN\":\"704\",\"__VOICE_CALLER\":\"+4972215550704\",\"__VOICE_CALL\":\"1791982024.6\"}}"}
+{"t": 0.0005, "dir": "out", "text": "{\"command\": \"ANSWER\"}"}
 {"t": 0.0641, "dir": "out", "bytes": 65280}
-{"t": 0.0641, "dir": "out", "bytes": 65280}
-{"t": 0.0642, "dir": "out", "bytes": 65280}
-{"t": 0.0642, "dir": "out", "bytes": 16640}
-{"t": 0.0643, "dir": "out", "text": "{\"command\": \"MARK_MEDIA\", \"correlation_id\": \"m1\"}"}
-{"t": 0.0643, "dir": "out", "text": "{\"command\": \"GET_STATUS\"}"}
-{"t": 0.0647, "dir": "in", "text": "{\"event\":\"MEDIA_XOFF\",\"channel_id\":\"1791966155.9\"}"}
-{"t": 0.065, "dir": "in", "text": "{\"event\":\"STATUS\",\"channel_id\":\"1791966155.9\",\"queue_length\":1020,\"xon_level\":800,\"xoff_level\":900,\"queue_full\":true,\"bulk_media\":false,\"media_paused\":false}"}
-{"t": 4.5004, "dir": "in", "text": "{\"event\":\"MEDIA_XON\",\"channel_id\":\"1791966155.9\"}"}
-{"t": 20.4803, "dir": "in", "text": "{\"event\":\"MEDIA_MARK_PROCESSED\",\"channel_id\":\"1791966155.9\",\"correlation_id\":\"m1\"}"}
-{"t": 20.4804, "dir": "out", "text": "{\"command\": \"HANGUP\"}"}
-{"t": 20.481, "dir": "probe", "closed": 1000}
+{"t": 0.0643, "dir": "out", "bytes": 65280}
+{"t": 0.0643, "dir": "out", "bytes": 65280}
+{"t": 0.0643, "dir": "out", "bytes": 65280}
+{"t": 0.0643, "dir": "out", "bytes": 65280}
+{"t": 0.0643, "dir": "out", "bytes": 65280}
+{"t": 0.0644, "dir": "out", "bytes": 65280}
+{"t": 0.0644, "dir": "out", "bytes": 65280}
+{"t": 0.0644, "dir": "out", "bytes": 65280}
+{"t": 0.0644, "dir": "out", "bytes": 65280}
+{"t": 0.0645, "dir": "out", "bytes": 65280}
+{"t": 0.0645, "dir": "out", "bytes": 65280}
+{"t": 0.0645, "dir": "out", "bytes": 16640}
+{"t": 0.0646, "dir": "out", "text": "{\"command\": \"MARK_MEDIA\", \"correlation_id\": \"m1\"}"}
+{"t": 0.0646, "dir": "out", "text": "{\"command\": \"GET_STATUS\"}"}
+{"t": 0.0655, "dir": "in", "text": "{\"event\":\"MEDIA_XOFF\",\"channel_id\":\"1791982024.7\"}"}
+{"t": 0.0658, "dir": "in", "text": "{\"event\":\"STATUS\",\"channel_id\":\"1791982024.7\",\"queue_length\":1020,\"xon_level\":800,\"xoff_level\":900,\"queue_full\":true,\"bulk_media\":false,\"media_paused\":false}"}
+{"t": 4.5003, "dir": "in", "text": "{\"event\":\"MEDIA_XON\",\"channel_id\":\"1791982024.7\"}"}
+{"t": 20.4793, "dir": "in", "text": "{\"event\":\"MEDIA_MARK_PROCESSED\",\"channel_id\":\"1791982024.7\",\"correlation_id\":\"m1\"}"}
+{"t": 20.4794, "dir": "out", "text": "{\"command\": \"HANGUP\"}"}
+{"t": 20.48, "dir": "probe", "closed": 1000}

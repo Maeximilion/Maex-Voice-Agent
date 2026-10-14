@@ -27,6 +27,20 @@ for name in VOICE_NUMBER VOICE_MEDIA_TOKEN TEAM_PHONE ACCESS_HOST ACCESS_USER AC
     esac
 done
 
+# Numbers the dialplan can use. A TEAM_PHONE it cannot dial would let every
+# outage end in a dead line (rule 5); the rule is the one `voice` holds a
+# transfer target to (`adapters/asterisk.py`). VOICE_NUMBER is E.164 in
+# Germany: the loop guard derives 0049... and 0... from its "+49".
+number() { printf '%s' "$1" | grep -Eqx "$2"; }
+if ! number "$TEAM_PHONE" '\+?[0-9]{3,20}'; then
+    echo "asterisk does not start: TEAM_PHONE is not a number to dial" >&2
+    exit 1
+fi
+if ! number "$VOICE_NUMBER" '\+49[1-9][0-9]{4,12}'; then
+    echo "asterisk does not start: VOICE_NUMBER is not a German number in E.164" >&2
+    exit 1
+fi
+
 # The team on our own number: the dialplan would ring us, the loop guard would
 # drop the call, and every caller would be lost (rule 5). `voice` refuses the
 # same; this is for the calls that reach the team without it.

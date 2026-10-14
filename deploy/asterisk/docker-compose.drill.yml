@@ -78,7 +78,7 @@ services:
   router:
     # The stand-in for the router or the trunk: the registrar the AI telephone
     # registers at, the caller who rings it, and the team telephone.
-    image: andrius/asterisk:22.10.1_alpine-3.24-6bb254a@sha256:e598f443c1db2fcb5a7c5d5a2a2c2269d00ac92e24f97521ba3801fb8df84f39
+    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
     environment:
       PUID: ${DRILL_UID}
       PGID: ${DRILL_GID}

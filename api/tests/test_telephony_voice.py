@@ -9,7 +9,6 @@ dialplan does when our leg is gone. No network, no Asterisk.
 import asyncio
 import base64
 import json
-import logging
 import time
 
 import pytest
@@ -25,7 +24,7 @@ from api.domain.calls import tenant_named
 from api.telephony import app as voice_app
 from api.telephony import router as router_module
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
-from api.telephony.app import Voice, create_app, voice_from_settings, without_query
+from api.telephony.app import Voice, create_app, voice_from_settings
 from api.telephony.handler import GREETING
 from api.telephony.router import _write
 from api.telephony.session import Lines
@@ -40,7 +39,8 @@ from api.tests.test_telephony import (  # noqa: F401 - fixtures
 from api.tests.test_telephony_asterisk import recorded_event
 
 TOKEN = "media-token-for-tests-only-0123456789"
-CALL = "1791966129.0"
+# The call the recorded MEDIA_START names (`__VOICE_CALL`, `__VOICE_CALLER`).
+CALL = "1791981978.0"
 TEAM = "+4972215550900"
 
 
@@ -49,8 +49,16 @@ def basic(password: str, user: str = "asterisk") -> dict[str, str]:
     return {"authorization": f"Basic {credentials}"}
 
 
-def media_start() -> str:
-    return recorded_event("asterisk_media_marks.jsonl", "MEDIA_START")
+def media_start(**variables: str | None) -> str:
+    """The recorded MEDIA_START, its channel variables changed as given (None
+    takes one out)."""
+    frame = json.loads(recorded_event("asterisk_media_marks.jsonl", "MEDIA_START"))
+    for name, value in variables.items():
+        if value is None:
+            frame["channel_variables"].pop(name, None)
+        else:
+            frame["channel_variables"][name] = value
+    return json.dumps(frame)
 
 
 def processed(correlation_id: str) -> str:
@@ -113,9 +121,11 @@ def phone():
         yield client, core
 
 
-def connect(client: TestClient, call: str = CALL, headers: dict | None = None):
+def connect(client: TestClient, headers: dict | None = None):
+    """As Asterisk connects since T-1.11: no query, the call is named in
+    MEDIA_START."""
     return client.websocket_connect(
-        f"/media?call={call}&caller=%2B4972215550701",
+        "/media",
         subprotocols=["media"],
         headers=basic(TOKEN) if headers is None else headers,
     )
@@ -316,12 +326,74 @@ def test_the_media_door_wants_the_token(phone, headers):
     assert core.seen == []
 
 
-@pytest.mark.parametrize("call", ["", "abc", "1.2;3", "1791966129.0/../x"])
-def test_the_media_door_wants_a_call_id_the_dialplan_can_ask_by(phone, call):
+@pytest.mark.parametrize("call", [None, "", "abc", "1.2;3", "1791966129.0/../x"])
+def test_a_connection_whose_media_start_names_no_call_is_closed(phone, call):
+    """No session, no core: the dialplan finds no ending and rings the team."""
     client, core = phone
-    with pytest.raises(WebSocketDisconnect), connect(client, call=call):
-        pass
+    with connect(client) as ws:
+        ws.send_text(media_start(__VOICE_CALL=call))
+        assert ws.receive()["type"] == "websocket.close"
     assert core.seen == []
+
+
+def test_a_first_frame_that_is_no_media_start_is_closed(phone):
+    client, core = phone
+    with connect(client) as ws:
+        ws.send_bytes(bytes(640))
+        assert ws.receive()["type"] == "websocket.close"
+    assert core.seen == []
+
+
+def test_the_call_and_the_caller_come_from_media_start_not_the_url(phone):
+    """The URL carries nothing (Asterisk #2194 hands v() parameters to other
+    calls, and logs the URL); a query is ignored."""
+    client, core = phone
+    with client.websocket_connect(
+        "/media?call=1.1&caller=%2B4900", subprotocols=["media"], headers=basic(TOKEN)
+    ) as ws:
+        ws.send_text(media_start(__VOICE_CALL="1791999999.7"))
+        assert receive_command(ws) == {"command": "ANSWER"}
+    assert core.seen[0] == ("started", "1791999999.7")
+
+
+def test_a_second_connection_for_a_live_call_is_refused(phone):
+    """The first keeps the call: a second session would take its place
+    (Codex on PR #297)."""
+    client, core = phone
+    with connect(client) as first:
+        first.send_text(media_start())
+        assert receive_command(first) == {"command": "ANSWER"}
+        with connect(client) as second:
+            second.send_text(media_start())
+            assert second.receive()["type"] == "websocket.close"
+        # The first call is still the one the core reaches, and it goes on:
+        # its greeting is still playing.
+        assert client.app.state.voice.lines.caller_id(CALL) == "+4972215550701"
+        first.send_text(processed(sentence(first)))
+    assert core.seen.count(("started", CALL)) == 1
+
+
+def test_a_media_start_the_line_cannot_take_is_a_failure(phone):
+    """It names a call, so a session is made; its format is not ours, so the
+    line refuses it. The core hears of a failure and the session goes (own
+    review of PR #297)."""
+    client, core = phone
+    with connect(client) as ws:
+        ws.send_text(json.dumps({**json.loads(media_start()), "format": "ulaw"}))
+        while ws.receive()["type"] != "websocket.close":
+            pass
+    wait_for(lambda: ("failure",) in core.seen)
+    wait_for(lambda: client.app.state.voice.lines.caller_id(CALL) is None)
+    assert ending(client) != "hangup"
+
+
+def test_a_connection_gone_before_media_start_leaves_nothing(phone, caplog):
+    client, core = phone
+    with connect(client) as ws:
+        ws.close()
+    time.sleep(0.1)
+    assert core.seen == []
+    assert not [r for r in caplog.records if r.levelname == "ERROR"]
 
 
 def test_the_ending_door_wants_the_token(phone):
@@ -347,23 +419,6 @@ def test_without_a_token_nothing_is_let_in():
         silence_seconds=60.0,
     )
     assert not voice.authorized(basic("")["authorization"])
-
-
-def test_the_callers_number_in_the_url_stays_out_of_the_log():
-    """uvicorn logs each WebSocket with its query string, where the dialplan
-    puts the caller's number (security review of T-1.11)."""
-    record = logging.LogRecord(
-        "uvicorn.error",
-        logging.INFO,
-        __file__,
-        1,
-        '%s - "WebSocket %s" [accepted]',
-        ("172.19.0.5:43656", "/media?call=1791968728.0&caller=%2B4972215550101"),
-        None,
-    )
-
-    assert without_query(record)
-    assert record.getMessage() == '172.19.0.5:43656 - "WebSocket /media" [accepted]'
 
 
 def test_health_answers_without_a_token(phone):
@@ -497,5 +552,9 @@ def test_the_service_does_not_start_when_the_team_is_its_own_number(its_database
 
 def test_a_tenant_is_found_by_its_name_and_only_when_it_is_the_one(session, tenant):  # noqa: F811
     assert tenant_named(session, tenant.name) == tenant.id
-    with pytest.raises(NotFound):
+    with pytest.raises(NotFound) as missing:
         tenant_named(session, "Nobody")
+    # The restaurant's name stays out of the message, which ends in a log
+    # (Codex on PR #297).
+    assert "Nobody" not in str(missing.value)
+    assert "0 tenants" in str(missing.value)

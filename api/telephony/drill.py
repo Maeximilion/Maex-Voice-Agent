@@ -28,6 +28,9 @@ one call per drill:
                   rings, and the AI never answered the call
   voice crashes   `voice` is killed in the middle of a call: the team rings
   voice down      `voice` is stopped: the team rings
+  voice frozen    `voice` is paused, it takes the connection and answers
+                  nothing: the team rings
+  frozen mid-call `voice` is paused after it answered: the team rings
   database down   the database is stopped: the team rings
 
 A team ring is timed on this machine's monotonic clock from the call being
@@ -256,13 +259,16 @@ class Drill:
     def no_caller_in_the_logs(self) -> Check:
         """A caller's number belongs in the call log, which has a deletion
         period, not in the output of `voice` or `asterisk` (docs/17); nor does
-        the team's, which can be somebody's own mobile. The call to a `voice`
-        that is down is left out: Asterisk's warning repeats the dial string
-        then (docs/20 §12)."""
+        the team's, which can be somebody's own mobile. Every drill's caller,
+        also the one whose call found `voice` down: Asterisk logs the dial
+        string then, which therefore carries no number (Codex on PR #297)."""
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in (101, 102, 103, 105, 106)),
+                *(
+                    f"{NUMBER_PREFIX}{n}"
+                    for n in (101, 102, 103, 104, 105, 106, 107, 108)
+                ),
                 TEAM_PHONE,
             ]
             for form in (number, "%2B" + number[1:])
@@ -468,6 +474,38 @@ def drill_voice_down(drill: Drill) -> list[Check]:
     ]
 
 
+def drill_voice_frozen(drill: Drill) -> list[Check]:
+    """`voice` takes the connection and answers nothing: its process is paused,
+    so the kernel completes the TCP handshake and the WebSocket handshake waits
+    for ever. Asterisk before 22.11.0 waited with it and the team never rang
+    (Asterisk issue #1979, Codex on PR #297)."""
+    drill.compose("pause", "voice")
+    try:
+        call = drill.place(107)
+        check = team_check("voice frozen: the team rings", call, call.placed)
+    finally:
+        drill.compose("unpause", "voice")
+    drill.quiet()
+    return [check]
+
+
+def drill_voice_frozen_mid_call(drill: Drill) -> list[Check]:
+    """`voice` stops answering after it took the call: only Asterisk's pings
+    notice (websocket_client.conf); the backstop of the dialplan is an hour."""
+    call = drill.place(108)
+    call.wait(call.answered, timeout=15)
+    frozen = time.monotonic()
+    drill.compose("pause", "voice")
+    try:
+        check = team_check(
+            "voice frozen mid-call: the team rings", call, frozen, " from the freeze"
+        )
+    finally:
+        drill.compose("unpause", "voice")
+    drill.quiet()
+    return [check]
+
+
 def drill_database_down(drill: Drill) -> list[Check]:
     drill.compose("stop", "db")
     try:
@@ -486,6 +524,8 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("mode paused (103)", drill_paused),
     ("voice crashes in the middle of a call (105)", drill_crash),
     ("voice is down (104)", drill_voice_down),
+    ("voice is frozen (107)", drill_voice_frozen),
+    ("voice freezes in the middle of a call (108)", drill_voice_frozen_mid_call),
     ("the database is down (106)", drill_database_down),
 ]
 

@@ -20,7 +20,6 @@ model, with the drill engines outside dev and test, or without its tenant.
 import base64
 import binascii
 import hmac
-import logging
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -129,19 +128,7 @@ def create_app(voice: Voice) -> FastAPI:
 def from_settings() -> FastAPI:
     """The app of the service, from `.env`; the factory uvicorn starts."""
     configure_logging(settings.log_level)
-    logging.getLogger("uvicorn.error").addFilter(without_query)
     return create_app(voice_from_settings())
-
-
-def without_query(record: logging.LogRecord) -> bool:
-    """uvicorn logs every WebSocket with its query string, and the dialplan puts
-    the caller's number there. The number belongs in the call log, which has a
-    deletion period, not in the output of the container (docs/17)."""
-    if isinstance(record.args, tuple):
-        record.args = tuple(
-            arg.split("?", 1)[0] if isinstance(arg, str) else arg for arg in record.args
-        )
-    return True
 
 
 def voice_from_settings() -> Voice:

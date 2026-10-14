@@ -143,9 +143,11 @@ services:
 
   asterisk:
     profiles: ["voice"]
-    # Asterisk 22.10.1 with chan_websocket, as in the spike T-10.1. Pinned by
-    # digest, a third-party build.
-    image: andrius/asterisk:22.10.1_alpine-3.24-6bb254a@sha256:e598f443c1db2fcb5a7c5d5a2a2c2269d00ac92e24f97521ba3801fb8df84f39
+    # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
+    # build. Not older: before 22.11.0 a `voice` that takes the connection and
+    # answers nothing held the call for ever, and the team never rang (Asterisk
+    # issue #1979, the drill "voice frozen").
+    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
     restart: unless-stopped
     # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
     # image does, without its -vvvddd: verbose output prints every dialplan

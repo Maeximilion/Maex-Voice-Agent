@@ -1,7 +1,10 @@
-"""telephony/adapters/asterisk.py: the wire format of the media channel (T-10.1).
+"""telephony/adapters/asterisk.py: the wire format of the media channel (T-10.1)
+and the line on it (T-1.11).
 
-The frames in `fixtures/asterisk_media_*.jsonl` were recorded by the probe from
-Asterisk 22.10.1 on the workbench (invented caller numbers, test tones only).
+The frames in `fixtures/asterisk_media_*.jsonl` were recorded on the workbench
+(invented caller numbers, test tones only): `_two_way`, `_stop` and `_hangup` by
+the probe of T-10.1 from Asterisk 22.10.1, the others by a capture endpoint from
+Asterisk 22.11.0 (see below).
 """
 
 import json
@@ -17,6 +20,7 @@ from api.telephony.adapters.asterisk import (
     MEDIA_START,
     MediaLine,
     ProtocolError,
+    call_of,
     command,
     parse_event,
     sample_rate,
@@ -101,9 +105,11 @@ def test_sample_rate_of_the_formats_we_dial():
 # -- the media line (T-1.11) ---------------------------------------------------------
 #
 # `asterisk_media_marks`, `_flush`, `_overflow`, `_unanswered` and `_closed` were
-# recorded on 14.10.2026 from Asterisk 22.10.1 dialled with `n` (no answer until
-# ANSWER), by a capture endpoint that sent marks with its own correlation ids.
-# The tests take Asterisk's frames as recorded and put our ids into them.
+# recorded on 14.10.2026 from Asterisk 22.11.0 dialled as the product dials:
+# `n` (no answer until ANSWER), no URI parameters, the call named by inherited
+# variables. A capture endpoint sent marks with its own correlation ids; 22.10.1
+# behaved the same on every point. The tests take Asterisk's frames as recorded
+# and put our ids into them.
 
 
 def recorded(name: str) -> list[dict]:
@@ -194,16 +200,46 @@ def test_media_start_starts_the_session_with_the_recorded_format():
 
 
 def test_the_recorded_call_was_dialled_without_answer_and_with_basic_credentials():
-    """What router and dialplan rely on: the call id and the caller number as
-    URI parameters, the subprotocol, and `username`/`password` of
-    websocket_client.conf as Basic credentials."""
+    """What router and dialplan rely on: no query in the URL, the call named by
+    inherited variables in MEDIA_START, the subprotocol, and `username` and
+    `password` of websocket_client.conf as Basic credentials."""
     first = recorded("asterisk_media_unanswered.jsonl")[0]
 
-    assert "call=" in first["query"] and "caller=%2B49" in first["query"]
+    assert first["query"] == ""
     assert first["subprotocols"] == ["media"]
     assert first["authorization"] == "Basic"
-    start = json.loads(recorded_events("asterisk_media_unanswered.jsonl")[0])
-    assert "/nc(slin16)" in start["channel_variables"]["DIALEDPEERNUMBER"]
+    start = parse_event(recorded_events("asterisk_media_unanswered.jsonl")[0])
+    assert start.data["channel_variables"]["DIALEDPEERNUMBER"].endswith(
+        "/nc(slin16)f(json)"
+    )
+    name = call_of(start)
+    assert name.call_id == start.data["channel_variables"]["__VOICE_CALL"]
+    assert name.caller_id == "+4972215550703"
+
+
+@pytest.mark.parametrize(
+    "variables",
+    [
+        None,
+        {},
+        {"__VOICE_CALLER": "+4972215550701"},
+        {"__VOICE_CALL": ""},
+        {"__VOICE_CALL": "abc"},
+        {"__VOICE_CALL": "1.2;Dial(x)"},
+        {"__VOICE_CALL": 5},
+    ],
+)
+def test_a_media_start_without_a_call_id_names_no_call(variables):
+    frame = json.loads(recorded_event("asterisk_media_marks.jsonl", MEDIA_START))
+    frame["channel_variables"] = variables
+    with pytest.raises(ProtocolError):
+        call_of(parse_event(json.dumps(frame)))
+
+
+def test_a_withheld_caller_is_no_caller_id():
+    frame = json.loads(recorded_event("asterisk_media_marks.jsonl", MEDIA_START))
+    frame["channel_variables"]["__VOICE_CALLER"] = ""
+    assert call_of(parse_event(json.dumps(frame))).caller_id is None
 
 
 def test_a_format_we_do_not_dial_ends_the_call():

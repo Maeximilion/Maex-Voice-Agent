@@ -7,8 +7,12 @@ from us. Audio we send is queued and paced by Asterisk.
 
 `MediaLine` implements `speech.Line` on one such connection (T-1.11), and hands
 what Asterisk reports to the call session. What it relies on was seen on the wire
-(Asterisk 22.10.1, frames in `api/tests/fixtures/asterisk_media_*.jsonl`):
+(Asterisk 22.10.1 and 22.11.0, frames in `api/tests/fixtures/asterisk_media_*.jsonl`):
 
+- `MEDIA_START` names the call: the dialplan sets `__VOICE_CALL` (the caller's
+  channel id) and `__VOICE_CALLER`, and the media channel inherits and reports
+  them (`call_of`). Not URI parameters of `v()`, which Asterisk 22 can hand to
+  another call's connection.
 - With `n` in the dial string the channel is not answered until `ANSWER`: the
   caller hears ringing, and a call the core sends to the team before its first
   sentence is never answered by us.
@@ -79,6 +83,12 @@ _TARGET = re.compile(r"\+?[0-9]{3,20}")
 # Marks of the session's sentences, and of the messages of audio, on the wire.
 _SENTENCE = "s"
 _CHUNK = "c"
+# The variables the dialplan sets for the media channel to inherit; Asterisk
+# reports an inherited one under its name with the two underscores.
+CALL_VARIABLE = "__VOICE_CALL"
+CALLER_VARIABLE = "__VOICE_CALLER"
+# Asterisk's UNIQUEID: seconds since 1970, a dot, a sequence number.
+_CALL_ID = re.compile(r"[0-9]{1,12}\.[0-9]{1,9}")
 
 _SAMPLE_RATES = {"slin": 8000, "slin16": 16000}
 
@@ -121,6 +131,26 @@ def sample_rate(media_format: str) -> int:
         return _SAMPLE_RATES[media_format]
     except KeyError:
         raise ProtocolError(f"unexpected media format: {media_format}") from None
+
+
+@dataclass(frozen=True)
+class CallName:
+    call_id: str
+    caller_id: str | None
+
+
+def call_of(start: Event) -> CallName:
+    """Which call a connection is for, from its `MEDIA_START`. Raises
+    `ProtocolError` when the dialplan's variables are missing or malformed:
+    a connection that cannot be told apart from another call's is no call."""
+    variables = start.data.get("channel_variables")
+    if not isinstance(variables, dict):
+        raise ProtocolError("MEDIA_START without channel variables")
+    call_id = variables.get(CALL_VARIABLE)
+    if not isinstance(call_id, str) or not _CALL_ID.fullmatch(call_id):
+        raise ProtocolError("MEDIA_START without a call id from the dialplan")
+    caller = variables.get(CALLER_VARIABLE)
+    return CallName(call_id, caller if isinstance(caller, str) and caller else None)
 
 
 class MediaLine:

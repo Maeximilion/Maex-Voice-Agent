@@ -8,13 +8,13 @@
   else, an empty answer or none at all, rings the team (CLAUDE.md §2 rule 5).
 
 Both want the media token as the password of Basic credentials. A call is named
-by the id of the caller's channel (`${UNIQUEID}`), which the dialplan passes as
-`call` and asks by.
+by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
+media channel as an inherited variable, which `MEDIA_START` reports
+(`adapters.asterisk.call_of`), and asks by it.
 """
 
 import asyncio
 import contextlib
-import re
 import threading
 from typing import TYPE_CHECKING
 
@@ -23,7 +23,13 @@ from fastapi.responses import PlainTextResponse
 from starlette.types import ASGIApp
 
 from api.core.logging import get_logger
-from api.telephony.adapters.asterisk import MediaLine
+from api.telephony.adapters.asterisk import (
+    MEDIA_START,
+    MediaLine,
+    ProtocolError,
+    call_of,
+    parse_event,
+)
 
 if TYPE_CHECKING:
     from api.telephony.app import Voice
@@ -32,8 +38,6 @@ if TYPE_CHECKING:
 # A frame Asterisk does not take within this time: the connection stalls, and a
 # leg we cannot reach is closed (`speech.Line`). The dialplan rings the team.
 WRITE_SECONDS = 2.0
-# Asterisk's UNIQUEID: seconds since 1970, a dot, a sequence number.
-_CALL_ID = re.compile(r"[0-9]{1,12}\.[0-9]{1,9}")
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -55,16 +59,31 @@ def ending(call_id: str, request: Request) -> str:
 @router.websocket("/media")
 async def media(websocket: WebSocket) -> None:
     voice = _voice(websocket.app)
-    call_id = websocket.query_params.get("call", "")
-    if not voice.authorized(
-        websocket.headers.get("authorization")
-    ) or not _CALL_ID.fullmatch(call_id):
+    if not voice.authorized(websocket.headers.get("authorization")):
         # Closed before it is accepted: Asterisk sees a refused connection, Dial
         # fails, and the dialplan rings the team.
-        logger.warning("media connection refused: no valid token or call id")
+        logger.warning("media connection refused: no valid token")
         await websocket.close(code=1008)
         return
     await websocket.accept(subprotocol="media")
+    # Which call this is comes with the first frame, MEDIA_START. A connection
+    # that does not say, or names a call that is already live, is closed
+    # without a session: the dialplan finds no ending and rings the team.
+    message = await websocket.receive()
+    if message["type"] == "websocket.disconnect":
+        return  # gone before it said which call: nothing to clean up
+    first = message.get("text") or ""
+    try:
+        start = parse_event(first)
+        if start.name != MEDIA_START:
+            raise ProtocolError(f"first frame is {start.name}, not {MEDIA_START}")
+        name = call_of(start)
+    except ProtocolError:
+        logger.exception("media connection without a call it can be told by")
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1008)
+        return
+    call_id = name.call_id
     loop = asyncio.get_running_loop()
     outbox: asyncio.Queue[str | bytes | None] = asyncio.Queue()
 
@@ -72,9 +91,14 @@ async def media(websocket: WebSocket) -> None:
         loop.call_soon_threadsafe(outbox.put_nowait, frame)
 
     line = MediaLine(send, ended=lambda how: voice.ended(call_id, how))
-    session = voice.open(
-        call_id, line=line, caller_id=websocket.query_params.get("caller") or None
-    )
+    try:
+        session = voice.open(call_id, line=line, caller_id=name.caller_id)
+    except ValueError:
+        # Two connections for one call: the first keeps it, this one is refused.
+        logger.exception("a second media connection for a live call")
+        with contextlib.suppress(Exception):
+            await websocket.close(code=1008)
+        return
     line.attach(session)
 
     def work() -> None:
@@ -90,6 +114,10 @@ async def media(websocket: WebSocket) -> None:
     threading.Thread(target=work, name=f"call {call_id}", daemon=True).start()
     writer = asyncio.create_task(_write(websocket, outbox, session))
     try:
+        # MEDIA_START once more, now to the line: it takes the frame size and
+        # starts the session. Inside the try, so a start the line cannot take
+        # is a failure like any other frame (own review of PR #297).
+        line.on_text(first)
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":

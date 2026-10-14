@@ -39,7 +39,8 @@ def tenant_named(session: Session, name: str) -> uuid.UUID:
     a guess."""
     found = session.scalars(select(Tenant.id).where(Tenant.name == name)).all()
     if len(found) != 1:
-        raise NotFound(f"{len(found)} tenants named {name!r}, expected one")
+        # Without the name: it is the restaurant's, and this ends in a log.
+        raise NotFound(f"TENANT_NAME names {len(found)} tenants, expected one")
     return found[0]
 
 
