@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">Eval trend</title>
-<desc id="d">Pass rate of the real model from 2026-10-13 to 2026-10-14. regular cases latest 26 of 41; target cases latest 2 of 27</desc>
+<desc id="d">Pass rate of model qwen3.6-35b-a3b from 2026-10-13 to 2026-10-14. regular cases latest 26 of 41; target cases latest 2 of 27</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -67,7 +67,7 @@
 <circle cx="1111.5" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="1129.7" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="1148" cy="40" r="4.5" fill="#0D0819"/>
-<text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">PASS RATE OVER TIME · REAL MODEL</text>
+<text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">PASS RATE OVER TIME · QWEN3.6-35B-A3B</text>
 <text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end"></text>
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
 <line x1="120" y1="330" x2="900" y2="330" stroke="#2B2148"/>

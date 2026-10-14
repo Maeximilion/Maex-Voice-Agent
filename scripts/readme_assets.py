@@ -193,8 +193,8 @@ BLOCK_NAMES = {
 HARD_RULES = [
     (
         "AI understands, code decides",
-        "Prices, zones, hours and allergens",
-        "come only from the database.",
+        "Prices, zones, hours, availability,",
+        "allergens: from the database only.",
     ),
     ("Never guess", "No item enters an order without", "a definite menu_item_id."),
     (
@@ -484,6 +484,25 @@ def record_report(
                     return f"already recorded: {suite} run of {row['run_at']}"
     append_row(path, EVAL_FIELDS, row)
     return f"recorded {suite} {row['passed']}/{row['total']} on {row['date']}"
+
+
+VOICE_KEY = ("date", "package", "metric", "value", "unit")
+
+
+def record_voice(row: dict[str, str], path: Path = VOICE_HISTORY) -> str:
+    """Append one voice measurement; the same one twice stays one row."""
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as fh:
+            for old in csv.DictReader(fh):
+                # Compare values as numbers: "2.0" in the backfill is 2 from the CLI.
+                same = all(
+                    float(old[k]) == float(row[k]) if k == "value" else old[k] == row[k]
+                    for k in VOICE_KEY
+                )
+                if same:
+                    return f"already recorded: {row['metric']} on {row['date']}"
+    append_row(path, VOICE_FIELDS, row)
+    return f"recorded {row['metric']} on {row['date']}"
 
 
 # Status words of docs/07, German and English: the column is free text.
@@ -1181,10 +1200,16 @@ def asset_eval_latest(facts: Facts) -> str:
 def asset_eval_trend(facts: Facts) -> str:
     width, height = 1200, 440
     px0, px1, py0, py1 = 120, 900, 104, 330
+    # One model per chart: a line through two models would show a model change as
+    # progress over time. The model is the one of the latest regular run.
+    head = facts.latest("cases") or facts.latest("targets")
+    model = head.model if head else ""
     parts = [dot_grid(width, height)]
-    parts.append(slip(40, 40, 1120, 370, "Pass rate over time · real model", ""))
+    parts.append(
+        slip(40, 40, 1120, 370, f"Pass rate over time · {model or 'real model'}", "")
+    )
     series = {
-        suite: [r for r in facts.runs if r.suite == suite and r.model != STAND_IN]
+        suite: [r for r in facts.runs if r.suite == suite and r.model == model]
         for suite in ("cases", "targets")
     }
     dates = sorted({r.date for s in series.values() for r in s})
@@ -1279,7 +1304,7 @@ def asset_eval_trend(facts: Facts) -> str:
     )
     parts.append(text(1136, 73, note, 14, "muted", anchor="end"))
     desc = (
-        f"Pass rate of the real model from {de(dates[0])} to {de(dates[-1])}. "
+        f"Pass rate of model {model} from {de(dates[0])} to {de(dates[-1])}. "
         + "; ".join(
             f"{names[s][0]} latest {items[-1].passed} of {items[-1].total}"
             for s, items in series.items()
@@ -2037,19 +2062,19 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
     if args.cmd == "add-voice":
-        append_row(
-            VOICE_HISTORY,
-            VOICE_FIELDS,
-            {
-                "date": args.date.isoformat(),
-                "package": args.package,
-                "metric": args.metric,
-                "value": f"{args.value:g}",
-                "unit": args.unit,
-                "limit": args.limit,
-                "verdict": args.verdict,
-                "note": args.note,
-            },
+        print(
+            record_voice(
+                {
+                    "date": args.date.isoformat(),
+                    "package": args.package,
+                    "metric": args.metric,
+                    "value": f"{args.value:g}",
+                    "unit": args.unit,
+                    "limit": args.limit,
+                    "verdict": args.verdict,
+                    "note": args.note,
+                }
+            )
         )
         return 0
     args.out.write_text(concept_sheet(), encoding="utf-8")

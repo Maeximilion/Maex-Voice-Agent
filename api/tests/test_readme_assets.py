@@ -403,3 +403,49 @@ def test_newest_report_follows_the_runner_folders(tmp_path: Path) -> None:
     )
     assert newest is not None and newest.name == "eval_20261020_200000_000001.json"
     assert targets is not None and targets.name == "eval_20261019_100000_000001.json"
+
+
+# --- third Codex round on 08639c9 ----------------------------------------------
+
+
+def test_rule_one_names_every_kind_of_data_that_only_the_database_gives() -> None:
+    title, *lines = ra.HARD_RULES[0]
+    rule = " ".join(lines)
+    assert title == "AI understands, code decides"
+    for word in ("Prices", "zones", "hours", "availability", "allergens"):
+        assert word in rule
+
+
+def test_the_trend_draws_one_model_only() -> None:
+    facts = ra.gather()
+    facts.runs = [
+        ra.EvalRun(date(2026, 10, 20), "model-a", "cases", 41, 10),
+        ra.EvalRun(date(2026, 10, 21), "model-a", "cases", 41, 12),
+        ra.EvalRun(date(2026, 10, 22), "model-b", "cases", 41, 30),
+    ]
+    trend = ra.build(facts)["eval-trend.svg"]
+    assert "MODEL-B" in trend
+    assert "regular cases 2026-10-22: 30/41" in trend
+    assert "10/41" not in trend and "12/41" not in trend
+
+
+def test_recording_the_same_voice_measurement_twice_keeps_one_row(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "voice.csv"
+    row = {
+        "date": "2026-10-14",
+        "package": "T-1.11",
+        "metric": "Outage drills end at the team phone",
+        "value": "15",
+        "unit": "of 15 points",
+        "limit": "",
+        "verdict": "go",
+        "note": "",
+    }
+    assert ra.record_voice(row, path).startswith("recorded")
+    assert ra.record_voice(dict(row), path).startswith("already recorded")
+    assert ra.record_voice({**row, "value": "15.0"}, path).startswith("already")
+    assert len(ra.read_voice_history(path)) == 1
+    ra.record_voice({**row, "value": "14"}, path)
+    assert len(ra.read_voice_history(path)) == 2
