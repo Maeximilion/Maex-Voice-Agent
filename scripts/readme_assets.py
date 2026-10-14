@@ -188,7 +188,7 @@ FLOW_NODES: dict[str, dict] = {
         "tasks": ["T-4.6"],
     },
     "tablet": {
-        "label": ["Tablet", "Passt"],
+        "label": ["Tablet", "approval"],
         "x": 1048,
         "y": 275,
         "w": 110,
@@ -283,24 +283,38 @@ FLOW_STORY: list[tuple[str, list]] = [
         ],
     ),
     (
-        "4  The caller says yes. Only now the core confirms.",
+        "4  The caller says yes. Only now the core confirms, and the LLM says so.",
         [
             *WORDS_IN,
             ("core", "llm", "neon"),
             ("llm", "core", "neon"),
             ("core", "confirm", "neon"),
             ("confirm", "postgres", "neon"),
+            ("postgres", "confirm", "neon"),
+            ("confirm", "core", "neon"),
+            ("core", "llm", "neon"),
+            ("llm", "core", "violet"),
+            ("core", "mouth", "violet"),
+            ("mouth", "asterisk", "violet"),
+            ("asterisk", "access", "violet"),
+            ("access", "caller", "violet"),
         ],
     ),
     (
-        "5  Slip at the register, order on the tablet, for the team.",
+        # The slip waits for the team's approval on the tablet, except in primary
+        # mode under the amount limit (api/domain/ordering/confirm.py, board.py).
+        "5  The order shows on the tablet. Once the team approves, the slip prints.",
         [
-            (("postgres", "slip", "neon"), ("postgres", "tablet", "neon")),
-            (("slip", "team", "neon"), ("tablet", "team", "neon")),
+            ("postgres", "tablet", "neon"),
+            ("tablet", "team", "neon"),
+            ("team", "tablet", "neon"),
+            ("tablet", "postgres", "neon"),
+            ("postgres", "slip", "neon"),
+            ("slip", "team", "neon"),
         ],
     ),
 ]
-FLOW_SEGMENT = 0.34
+FLOW_SEGMENT = 0.3
 FLOW_PAUSE = 0.25
 FLOW_HOLD = 1.5
 
@@ -1805,11 +1819,14 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         f'<path d="{_rounded(ESCALATION_ROUTE, 14)}" fill="none" stroke="{TOKENS["violet"]}" '
         'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
     )
+    # transfer_to_team counts the team as reachable while a service is open;
+    # otherwise the core leaves a callback for the tablet (api/agent/loop.py).
     parts.append(
         text(
-            546, 552, "unsure or a complaint: transfer to the team phone", 13, "violet"
+            546, 534, "unsure or a complaint: transfer to the team phone,", 13, "violet"
         )
     )
+    parts.append(text(546, 552, "after hours a callback on the tablet", 13, "violet"))
     parts.append(
         f'<path d="{_rounded(OUTAGE_ROUTE, 14)}" fill="none" stroke="{TOKENS["coral"]}" '
         'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
@@ -1921,9 +1938,10 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         "sentence or one tool call; the core checks the call and runs the tool, get_service_status, "
         "search_menu or draft_order, against Postgres, and hands the result back to the model, one tool "
         "per hop. The model never reads the database. The read-back goes out through the mouth. Only "
-        "after the caller's yes does the core run confirm; then the order slip prints at the register "
-        "and the order shows on the tablet. When the AI is unsure or hears a complaint, the call goes to "
-        "the team phone; on any failure the exchange rings the team phone. Built: "
+        "after the caller's yes does the core run confirm, and the model tells the caller. The order "
+        "shows on the tablet, and once the team approves it the slip prints at the register. When the "
+        "AI is unsure or hears a complaint, the call goes to "
+        "the team phone, after opening hours it leaves a callback on the tablet; on any failure the exchange rings the team phone. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)

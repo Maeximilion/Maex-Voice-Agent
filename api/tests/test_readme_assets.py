@@ -526,7 +526,9 @@ def test_every_tool_hop_returns_to_the_llm_before_the_next_tool() -> None:
 
 
 def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
-    (readback_heard,) = _steps("access", "caller")
+    readback_heard, confirmation_heard = sorted(
+        _steps("access", "caller"), key=lambda s: s.t0
+    )
     (confirm,) = _steps("core", "confirm")
     words_in = sorted(s.t0 for s in _steps("caller", "access"))
     assert len(words_in) == 2, "the order and the yes"
@@ -535,6 +537,24 @@ def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
     for target in ("slip", "tablet"):
         (handover,) = _steps("postgres", target)
         assert handover.t0 >= stored.t1
+    # The result of confirm goes back through the loop: the caller hears it.
+    (back,) = _steps("confirm", "core")
+    assert stored.t1 <= back.t0 < confirmation_heard.t0
+
+
+def test_the_slip_waits_for_the_approval_on_the_tablet() -> None:
+    (shown,) = _steps("postgres", "tablet")
+    (approved,) = _steps("team", "tablet")
+    (stored,) = _steps("tablet", "postgres")
+    (printed,) = _steps("postgres", "slip")
+    assert shown.t1 <= approved.t0 < stored.t0 < printed.t0
+
+
+def test_flow_labels_are_english() -> None:
+    """Repository text is English (CLAUDE.md §8); the tablet's German button
+    text stays in the product, not in the diagram."""
+    words = {w for node in ra.FLOW_NODES.values() for w in node["label"]}
+    assert "Passt" not in words
 
 
 def test_a_person_is_reached_by_phone_not_by_the_tablet() -> None:
