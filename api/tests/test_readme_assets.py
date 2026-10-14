@@ -5,7 +5,7 @@ from __future__ import annotations
 import csv
 import itertools
 import xml.dom.minidom
-from datetime import date
+from datetime import date, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 
@@ -662,7 +662,7 @@ def test_targets_are_read_from_their_own_folder(recording: dict) -> None:
 @pytest.mark.parametrize(
     ("over", "said"),
     [
-        ({"tags": ["menu"]}, "--suite <name>"),
+        ({"tags": ["menu"]}, "--suite menu"),
         ({"model": "scripted"}, "stand-in"),
         ({"cases": [{"passed": False, "requests": 0}]}, "no request"),
     ],
@@ -721,8 +721,12 @@ def test_pending_refuses_to_record_on_main(
     assert not ra.EVAL_HISTORY.exists()
 
 
+RUN_AT = datetime(2026, 10, 15, 21, 30, tzinfo=ra.BERLIN)
+
+
 def drill_row(value: str = "15") -> dict[str, str]:
     return {
+        "run_at": "2026-10-15T21:30:00+02:00",
         "date": "2026-10-15",
         "package": "T-1.11",
         "metric": "Outage drills end at the team phone",
@@ -735,7 +739,7 @@ def drill_row(value: str = "15") -> dict[str, str]:
 
 
 def test_the_drill_and_the_spike_record_their_points() -> None:
-    day = date(2026, 10, 15)
+    day = RUN_AT
     drill = [{"point": "a", "ok": True}, {"point": "b", "ok": False}]
     spike = [{"point": "a", "passed": True}, {"point": "b", "passed": True}]
     assert ra.kit_rows("drill", drill, day) == [
@@ -772,7 +776,7 @@ def speech_report(**over: object) -> dict:
 
 
 def test_the_speech_kit_records_each_judged_ear_and_the_best_dishes() -> None:
-    rows = ra.kit_rows("speech", speech_report(), date(2026, 10, 15))
+    rows = ra.kit_rows("speech", speech_report(), RUN_AT)
     got = [(r["metric"], r["value"], r["limit"], r["verdict"]) for r in rows]
     assert got == [
         ("Silent wrong numbers (ear-a)", "1.5", "2 %", "go"),
@@ -782,7 +786,7 @@ def test_the_speech_kit_records_each_judged_ear_and_the_best_dishes() -> None:
 
 
 def test_a_speech_trial_records_nothing_and_orders_get_their_own_names() -> None:
-    day = date(2026, 10, 15)
+    day = RUN_AT
     assert ra.kit_rows("speech", speech_report(sentences=10), day) == []
     ears = [
         {
@@ -1079,3 +1083,80 @@ def test_mark_uploaded_needs_the_png(assets: Path) -> None:
     (assets / "social-preview.png").unlink()
     assert ra.mark_uploaded() == 1
     assert not (assets / ra.UPLOADED).exists()
+
+
+# --- Codex round 1 on fa42b15 ----------------------------------------------------
+
+
+def test_two_drill_runs_of_one_day_with_the_same_result_stay_two_rows(
+    recording: dict,
+) -> None:
+    first = ra.kit_rows("drill", [{"point": "a", "ok": True}], RUN_AT)
+    later = ra.kit_rows("drill", [{"point": "a", "ok": True}], RUN_AT.replace(hour=23))
+    ra.record_measurements(first)
+    ra.record_measurements(first)
+    ra.record_measurements(later)
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 2
+
+
+def test_overlapping_runs_each_get_recorded(recording: dict) -> None:
+    """A slow run that started first finishes last: its report is recorded too."""
+    folder = recording["reports"]
+    write_report(folder, "eval_20261015_100000_000001.json")
+    write_report(
+        folder, "eval_20261015_100500_000001.json", run_at="2026-10-15T10:05:00+00:00"
+    )
+    ra.auto_record("cases", 0, folder)
+    assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 2
+
+
+def test_the_main_folder_is_the_one_with_main_checked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    listing = (
+        f"worktree {tmp_path / 'primary'}\nHEAD 1\nbranch refs/heads/task/x\n\n"
+        f"worktree {tmp_path / 'linked'}\nHEAD 2\nbranch refs/heads/main\n\n"
+        f"worktree {tmp_path / 'other'}\nHEAD 3\ndetached\n"
+    )
+    monkeypatch.setattr(ra, "git", lambda *args, root=ra.ROOT: listing)
+    assert ra.report_folders(tmp_path / "primary") == [
+        tmp_path / "primary" / "evals" / "reports",
+        tmp_path / "linked" / "evals" / "reports",
+    ]
+
+
+def test_a_tagged_run_on_main_names_no_command_and_add_refuses_main(
+    recording: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    path = write_report(
+        recording["reports"], "eval_20261015_100000_000001.json", tags=["menu"]
+    )
+    ra.auto_record("cases", 0, recording["reports"])
+    assert "add" not in capsys.readouterr().out
+    assert ra.main(["add", str(path), "--suite", "menu"]) == 1
+    assert ra.main(["add-voice", "2026-10-15", "T-1.11", "m", "1", "u", "go"]) == 1
+    assert not ra.EVAL_HISTORY.exists() and not ra.VOICE_HISTORY.exists()
+
+
+def test_a_row_a_kit_appends_while_pending_is_recorded_is_kept(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    real_record_voice = ra.record_voice
+
+    def kit_finishes_meanwhile(
+        row: dict[str, str], path: Path = ra.VOICE_HISTORY
+    ) -> str:
+        # A kit on main appends while the claimed rows are being recorded.
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
+        return real_record_voice(row, path)
+
+    monkeypatch.setattr(ra, "record_voice", kit_finishes_meanwhile)
+    ra.record_pending([folder])
+    assert [r.value for r in ra.read_voice_history(ra.VOICE_HISTORY)] == [15.0]
+    _, waiting = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert [r["value"] for r in waiting] == ["14"]
