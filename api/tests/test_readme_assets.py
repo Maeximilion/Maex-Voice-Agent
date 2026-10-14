@@ -1160,3 +1160,12 @@ def test_a_row_a_kit_appends_while_pending_is_recorded_is_kept(
     assert [r.value for r in ra.read_voice_history(ra.VOICE_HISTORY)] == [15.0]
     _, waiting = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
     assert [r["value"] for r in waiting] == ["14"]
+
+
+def test_mark_uploaded_refuses_main(
+    assets: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: None)
+    (assets / ra.UPLOADED).unlink(missing_ok=True)
+    assert ra.main(["mark-uploaded"]) == 1
+    assert not (assets / ra.UPLOADED).exists()

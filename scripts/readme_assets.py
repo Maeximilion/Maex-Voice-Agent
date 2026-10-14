@@ -2882,7 +2882,7 @@ def main(argv: list[str] | None = None) -> int:
     c = sub.add_parser("concepts", help="write the logo concept sheet")
     c.add_argument("out", type=Path)
     args = parser.parse_args(argv)
-    if args.cmd in ("add", "add-voice") and recording_branch() is None:
+    if args.cmd in ("add", "add-voice", "mark-uploaded") and recording_branch() is None:
         print(
             "not recorded: on main nothing is edited (CLAUDE.md §8); switch to a branch",
             file=sys.stderr,
