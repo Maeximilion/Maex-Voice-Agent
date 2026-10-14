@@ -320,7 +320,10 @@ def main() -> int:
     partial = False
     for path in [args.findings, *args.also]:
         if not os.path.exists(path):
-            print(f"{path} is missing: its step failed, the run is partial", file=sys.stderr)
+            print(
+                f"{path} is missing: its step failed, the run is partial",
+                file=sys.stderr,
+            )
             partial = True
             continue
         with open(path, encoding="utf-8") as handle:
