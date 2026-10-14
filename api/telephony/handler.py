@@ -10,8 +10,10 @@ or says goodbye and hangs up, and writes the call log.
 Every failure ends with the team (CLAUDE.md §2 rule 5): an exception anywhere in a
 call, from the database, the model or the adapter, is answered with the outage
 sentence and a transfer to the team extension. If even that transfer fails, the
-error is raised to the adapter, so its webhook fails and the platform's own
-fallback takes the call (docs/02 §5).
+error is raised to whoever fed the event: the call session ends as failed and
+closes our leg without a hangup (`telephony/session.py`), and Asterisk's dialplan,
+which ends a call only on "hangup", rings the team at `TEAM_PHONE`
+(`deploy/asterisk/conf/extensions.conf`, docs/02 §5, docs/20 §5).
 
 Live calls are held in this process. A turn for a call this process does not know
 (after a restart) goes to the team instead of being answered without context.
