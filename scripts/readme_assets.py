@@ -39,9 +39,10 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
@@ -2373,8 +2374,8 @@ def pending(
                 if (path.name, suite) not in names and not is_recorded(row, history):
                     names.add((path.name, suite))
                     reports.append((path, suite))
-        # The file itself and one that record_pending claimed (`voice_pending.csv.<pid>`).
-        for waiting in sorted(folder.glob(VOICE_PENDING + "*")):
+        waiting = folder / VOICE_PENDING
+        if waiting.exists():
             with waiting.open(encoding="utf-8", newline="") as fh:
                 rows += [
                     r
@@ -2382,6 +2383,23 @@ def pending(
                     if not is_voice_recorded(r, voice) and r not in rows
                 ]
     return reports, rows
+
+
+@contextmanager
+def pending_lock(folder: Path) -> Iterator[None]:
+    """One writer at a time on a folder's pending file: a kit appending a row, or
+    `pending --record` reading and removing it. Released when the file closes."""
+    folder.mkdir(parents=True, exist_ok=True)
+    with (folder / "voice_pending.lock").open("a") as fh:
+        if sys.platform == "win32":
+            import msvcrt
+
+            msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fh, fcntl.LOCK_EX)
+        yield
 
 
 def record_pending(folders: list[Path] | None = None) -> int:
@@ -2393,30 +2411,22 @@ def record_pending(folders: list[Path] | None = None) -> int:
     if recording_branch() is None:
         print("on main nothing is recorded: run this on a branch", file=sys.stderr)
         return 1
-    # Claim each pending file before reading it: a kit that finishes meanwhile
-    # starts a new one, which this run neither drops nor deletes.
-    # ponytail: a kit that opened the file just before the claim and writes just
-    # after the read loses its row; a lock if kits ever run side by side.
-    for folder in folders:
-        if (folder / VOICE_PENDING).exists():
-            os.replace(
-                folder / VOICE_PENDING, folder / f"{VOICE_PENDING}.{os.getpid()}"
+    with ExitStack() as held:
+        # Every pending file stays locked from the read to its removal: a kit that
+        # finishes meanwhile waits and then starts a new one.
+        for folder in folders:
+            held.enter_context(pending_lock(folder))
+        reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
+        for path, suite in reports:
+            report = json.loads(path.read_text(encoding="utf-8"))
+            print(
+                f"{shown(path)}: "
+                + record_report(report, suite, report_name=path.name, path=EVAL_HISTORY)
             )
-    # What this run reads and may delete: its own claim and any an interrupted run
-    # left, not one a second recorder makes after this point.
-    claims = [c for folder in folders for c in folder.glob(VOICE_PENDING + ".*")]
-    reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
-    for path, suite in reports:
-        report = json.loads(path.read_text(encoding="utf-8"))
-        print(
-            f"{shown(path)}: "
-            + record_report(report, suite, report_name=path.name, path=EVAL_HISTORY)
-        )
-    for row in rows:
-        print(record_voice(row, VOICE_HISTORY))
-    for claim in claims:
-        # Another recorder may have read and removed a leftover claim already.
-        claim.unlink(missing_ok=True)
+        for row in rows:
+            print(record_voice(row, VOICE_HISTORY))
+        for folder in folders:
+            (folder / VOICE_PENDING).unlink(missing_ok=True)
     return render()
 
 
@@ -2428,10 +2438,11 @@ def kit_rows(kit: str, report: object, run_at: datetime) -> list[dict[str, str]]
     own limit, and the dishes its best ear heard right. A trial (`--limit`) is no
     measurement and gives no row."""
     base = {
-        "date": run_at.date().isoformat(),
+        "date": run_at.astimezone(BERLIN).date().isoformat(),
         "package": KIT_PACKAGE[kit],
         "note": "",
-        "run_at": run_at.isoformat(timespec="seconds"),
+        # In UTC: a local time sorts wrong across the hour that repeats in October.
+        "run_at": run_at.astimezone(UTC).isoformat(timespec="seconds"),
     }
     if kit in KIT_METRIC:
         assert isinstance(report, list)
@@ -2493,8 +2504,9 @@ def record_measurements(rows: list[dict[str, str]], reports: Path = REPORTS) -> 
     if not rows:
         return
     if recording_branch() is None:
-        for row in rows:
-            append_row(reports / VOICE_PENDING, VOICE_FIELDS, row)
+        with pending_lock(reports):
+            for row in rows:
+                append_row(reports / VOICE_PENDING, VOICE_FIELDS, row)
         print(
             f"readme_assets: on main nothing is recorded; {len(rows)} voice result(s) "
             f"wait in {shown(reports / VOICE_PENDING)} until /done records them on a branch"
