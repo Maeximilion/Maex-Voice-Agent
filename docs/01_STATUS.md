@@ -429,7 +429,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
-| 14.10.2026 | **T-1.11 part 2: the engines inside `voice`** (summary above): Whisper and Piper by `VOICE_EAR` and `VOICE_MOUTH`, the image target `voice`, the watchdog, the call log closed on the end of the leg, the phone line's database sessions bounded at 2 s. Three open points of the reviews closed (PR #286, #287, #292). |
+| 14.10.2026 | **T-1.11 part 2: the engines inside `voice`** (summary above): Whisper and Piper by `VOICE_EAR` and `VOICE_MOUTH`, the image target `voice`, the watchdog, the call log closed on the end of the leg, the phone line's database sessions bounded at 2 s. Three open points of the reviews closed (PR #286, #287, #292). On 15.10.2026 in the same PR (#298): the final call-log write runs unbounded (Codex), and two findings of the daily review (#207): a hang-up while the call opens closes its log, and a phone call logs its model and cost like the text phone. |
 | 14.10.2026 | **T-1.11 part 1: the AI telephone on the workbench** (summary above): `MediaLine` against frames recorded for it, the service `voice` (`router.py`, `app.py`), the Asterisk configuration and its Compose services, outage drills 15 of 15. Full suite 4,564 passed, 93 skipped before the merge of T-10.5; evals identical to `main`. Part 2 open |
 | 14.10.2026 | **Production refuses an agent token with whitespace** (ported from Codex's PR #272 of 12.10.2026, which went stale and is closed as superseded; follow-up of #252): outside dev and test the API and the dispatcher no longer start on a token that contains whitespace anywhere, so the public placeholder padded to 32 characters is refused like the placeholder itself; whitespace is refused, never trimmed. Request authentication applies the same rule even where the settings check was bypassed. The dated audit record of #272 (docs/13 §8) was not carried over: it describes the revision of 12.10 |
 | 14.10.2026 | **T-2.4 part 4: first full eval run on a real model** (local llama-server, `qwen3.6-35b-a3b`): `main` 17/41 and 16/41, after `last_say` and `service` in the state and the prompt changes 26/41, false escalation 9.1 % from 15 to 18 %, tokens per case down 13 %; three findings at `xhigh` noted as open points |
@@ -536,7 +536,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.2.22 · 15.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions
+- **v2.2.22 · 15.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions; the final log write unbounded, hang-up during the start, model cost on phone calls (#207)
 - **v2.2.21 · 14.10.2026:** README call flow follows the code: words in through Asterisk and the ear, one tool per hop through the LLM, confirm only after the yes, the slip after approval (primary mode at once), escalation to the team phone or after hours a callback, a voice failure rings the team phone
 - **v2.2.20 · 14.10.2026:** Codex round 1 on PR #303: the handler docstring stays provider-neutral, the diagram routes voice straight to the database, unreached is an extension in context ai
 - **v2.2.19 · 14.10.2026:** docs: docs/02, docs/13 and the handler's docstring describe the voice layer as built: Asterisk and voice behind the profile voice, the core in process without HTTP, the dialplan as the last fallback

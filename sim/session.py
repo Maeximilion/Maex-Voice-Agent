@@ -6,10 +6,9 @@ ist identisch und steht deshalb hier, statt zweimal.
 """
 
 import argparse
-import logging
 import uuid
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -18,11 +17,11 @@ from sqlalchemy.orm import Session
 
 from api.agent.llm import ChatCompletionsLLM, LLMClient, Usage, cost_cents
 from api.agent.loop import ConversationLoop
-from api.agent.outcome import CLOSING_STAGES, call_outcome
+from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import initial_state
 from api.core.errors import NotFound
-from api.core.logging import get_logger, log
+from api.core.logging import get_logger
 from api.core.time import utcnow
 from api.domain.calls import end_call, start_call
 from api.domain.menu.items import active_numbers
@@ -158,20 +157,12 @@ class SimCall:
         Kennzahl wertlos (Codex-Review PR #104, P2)."""
         outcome, intent = call_outcome(self.state)
         usage = self.usage
-        cost = cost_cents(usage)
         # Once per call: a repeated `finish` writes nothing (`end_call` is
         # idempotent), and a second line would double the tokens of this call
         # for whoever adds the lines up (Codex PR #211, P2).
-        if usage.model is not None and not self._usage_logged:
+        if not self._usage_logged:
             self._usage_logged = True
-            log(
-                logger,
-                logging.INFO,
-                "model usage",
-                call_id=str(self.call_id),
-                **asdict(usage),
-                cost_cents=cost,
-            )
+            log_usage(logger, self.call_id, usage)
         return end_call(
             self._session,
             EndCallRequest(
@@ -179,7 +170,7 @@ class SimCall:
                 tenant_id=self._tenant.id,
                 outcome=outcome,
                 intent=intent,
-                cost_cents=cost,
+                cost_cents=cost_cents(usage),
                 model=usage.model,
             ),
             now=self._fixed_now or utcnow(),
@@ -187,15 +178,8 @@ class SimCall:
 
     @property
     def usage(self) -> Usage:
-        """What the model of this call used. Only a real model counts tokens
-        (`ChatCompletionsLLM.usage`); a stand-in has none, and its call gets
-        neither a model nor a cost."""
-        usage: Usage = getattr(self._llm, "usage", None) or Usage()
-        if not usage.requests:
-            # The caller hung up before the model was asked once: the call log
-            # must not name a model that never ran (Codex PR #211, P2).
-            return Usage()
-        return usage
+        """What the model of this call used (`call_usage`)."""
+        return call_usage(self._llm)
 
     def usage_line(self) -> str | None:
         """Model, requests, tokens and cost for the terminal, or None on the

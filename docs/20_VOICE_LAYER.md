@@ -366,7 +366,10 @@ a thread cannot be cancelled, and a hung inference would hold the model every la
 The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
 that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the
-goodbye was played, and as `error` when the line fails on it.
+goodbye was played, and as `error` when the line fails on it. That last write is not bounded:
+nobody waits on it, and a lock held for a moment must not leave the call without an end. A call
+whose leg ends while it is still being opened is closed once it is open, with no greeting. The
+call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 
 For Asterisk only, never in Python: the registrar's host, user and password (`ACCESS_HOST`,
 `ACCESS_USER`, `ACCESS_PASSWORD`), and the public media address (not yet, it comes with the trunk).
