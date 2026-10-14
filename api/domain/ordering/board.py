@@ -18,21 +18,21 @@ die Freigabe an die Kueche. Korrekturen stehen in `correction.py`.
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import Text, and_, case, cast, func, literal, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
-from api.core.time import business_day, business_day_bounds_utc
+from api.core.time import business_day, business_day_bounds_utc, utcnow
 from api.domain.ordering.labels import (
     ACTION_CORRECTED,
     current_labels_many,
     labels_for_rows,
 )
 from api.domain.ordering.ticket import send_ticket
-from api.models import AuditLog, Order, OrderItem
+from api.models import AuditLog, Order, OrderItem, ServiceConfig
 
 CONFIRMED = "confirmed"
 APPROVED = "approved"
@@ -40,6 +40,12 @@ FAILED = "failed"
 ACTOR_TABLET = "gui:tablet"
 ACTION_APPROVED = "order.approved"
 ACTION_RESENT = "order.resent"
+# The audit entry `confirm` writes at the guest's yes (domain/ordering/confirm.py):
+# from then on an order that needs "Passt" waits for the team.
+ACTION_CONFIRMED = "order.confirmed"
+# The order's creation is stamped by the application, the audit entry by the
+# database: how far the search for the entry reaches back before the creation.
+CLOCK_MARGIN = timedelta(hours=1)
 
 
 @dataclass(frozen=True)
@@ -69,6 +75,13 @@ class BoardOrder:
     # Grund der juengsten Korrektur im Tablet, sonst None.
     corrected: str | None
     lines: list[BoardLine]
+    # Since when the order waits for "Passt": the guest's yes. None once the
+    # kitchen has, or should have had, its ticket.
+    waiting_since: datetime | None = None
+    # Waiting longer than the restaurant allows
+    # (`service_config.order_approval_overdue_minutes`, #252): nobody has
+    # approved it, so nobody cooks it.
+    overdue: bool = False
 
 
 def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
@@ -115,6 +128,14 @@ def list_new(
     if not orders:
         return []
     ids = [o.id for o in orders]
+    waiting = _waiting_since(session, tenant_id)
+    overdue = _overdue(session, tenant_id, waiting, now)
+    # Red cards stay first; among the rest the ones nobody has approved in time
+    # come before the ones that still have time. Stable: oldest first within each.
+    orders = sorted(
+        orders,
+        key=lambda o: 0 if o.handover_state == FAILED else 1 if o.id in overdue else 2,
+    )
 
     items: dict[uuid.UUID, list[OrderItem]] = {oid: [] for oid in ids}
     for row in session.scalars(
@@ -151,9 +172,66 @@ def list_new(
                 )
                 for row, (number, name) in zip(items[o.id], labels[o.id], strict=True)
             ],
+            waiting_since=waiting.get(o.id),
+            overdue=o.id in overdue,
         )
         for o in orders
     ]
+
+
+def _waiting_since(session: Session, tenant_id: uuid.UUID) -> dict[uuid.UUID, datetime]:
+    """Every order of the tenant that still needs "Passt", and since when it
+    waits: the guest's yes, which is the audit entry `confirm` writes.
+
+    Without that entry the order's creation counts: a missing row must not
+    leave a card that never turns red (CLAUDE.md §2 rule 5). The column polls
+    this every few seconds, so the entry is looked up from the order's own
+    creation on (less a margin for two clocks), which the index on
+    `audit_log (tenant_id, at)` answers without reading the older log.
+    """
+    yes = (
+        select(func.min(AuditLog.at))
+        .where(
+            AuditLog.tenant_id == Order.tenant_id,
+            AuditLog.entity == "order",
+            AuditLog.entity_id == Order.id,
+            AuditLog.action == ACTION_CONFIRMED,
+            AuditLog.at >= Order.created_at - CLOCK_MARGIN,
+        )
+        .correlate(Order)
+        .scalar_subquery()
+    )
+    rows = session.execute(
+        select(Order.id, func.coalesce(yes, Order.created_at)).where(
+            Order.tenant_id == tenant_id,
+            Order.deleted_at.is_(None),
+            Order.status == CONFIRMED,
+            Order.handover_state.is_(None),
+        )
+    )
+    return {row[0]: row[1] for row in rows}
+
+
+def _overdue(
+    session: Session,
+    tenant_id: uuid.UUID,
+    waiting: dict[uuid.UUID, datetime],
+    now: datetime | None,
+) -> set[uuid.UUID]:
+    """The waiting orders nobody has approved within the restaurant's minutes
+    (`service_config.order_approval_overdue_minutes`, never a number here)."""
+    if not waiting:
+        return set()
+    minutes = session.execute(
+        select(ServiceConfig.order_approval_overdue_minutes).where(
+            ServiceConfig.tenant_id == tenant_id
+        )
+    ).scalar_one_or_none()
+    if minutes is None:
+        # A tenant without its configuration has no rule to be late by.
+        return set()
+    late = (now or utcnow()) - timedelta(minutes=minutes)
+    return {order_id for order_id, since in waiting.items() if since <= late}
 
 
 def _last_correction_reasons(
@@ -206,7 +284,13 @@ def new_orders_change_token(
             ),
         ).where(*_filters(tenant_id, start, end))
     ).one()
-    return f"{count}:{digest}"
+    # No row changes when an order becomes overdue, only the clock: which
+    # orders are overdue is part of the fingerprint, or no tablet would redraw.
+    waiting = _waiting_since(session, tenant_id)
+    overdue = ",".join(
+        sorted(str(i) for i in _overdue(session, tenant_id, waiting, now))
+    )
+    return f"{count}:{digest}:{overdue}"
 
 
 def _locked(session: Session, tenant_id: uuid.UUID, order_id: uuid.UUID) -> Order:

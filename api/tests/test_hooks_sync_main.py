@@ -10,6 +10,7 @@ worktree. They need bash and git. The api container has no git and does not moun
 tools they run, and in CI a missing tool is a failure.
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -95,14 +96,15 @@ def repos(tmp_path, request):
     hook.parent.mkdir(parents=True)
     shutil.copyfile(HOOK, hook)
 
-    def run_hook() -> str:
+    def run_hook(*args: str, **extra_env: str) -> str:
         assert BASH is not None  # checked at the top of this fixture
+        # Strict UTF-8: Claude Code cannot read output that is not.
         done = subprocess.run(
-            [BASH, hook.as_posix()],
+            [BASH, hook.as_posix(), *args],
             cwd=feature,
-            env=env,
+            env={**env, **extra_env},
             capture_output=True,
-            text=True,
+            encoding="utf-8",
             timeout=60,
         )
         assert done.returncode == 0, done.stderr
@@ -158,6 +160,25 @@ def test_clean_main_in_another_worktree_is_fast_forwarded(repos):
     assert tracked.read_text(encoding="utf-8") == "second\n"
 
 
+def test_a_clone_that_fetches_other_branches_only_still_gets_main(repos):
+    # Codex PR #290: a single-branch clone's fetch leaves origin/main stale, and a
+    # merge of that stale ref would leave main behind without a word.
+    repos.git(repos.main_checkout, "push", "-q", "origin", "feature")
+    repos.git(
+        repos.main_checkout,
+        "config",
+        "remote.origin.fetch",
+        "+refs/heads/feature:refs/remotes/origin/feature",
+    )
+    repos.land_on_origin("second")
+
+    assert repos.run_hook() == ""
+    upstream = repos.tmp_path / "upstream"
+    assert repos.git(repos.main_checkout, "rev-parse", "main") == repos.git(
+        upstream, "rev-parse", "main"
+    )
+
+
 def test_dirty_main_behind_origin_is_reported_and_left_alone(repos):
     repos.land_on_origin("second")
     tracked = repos.main_checkout / "tracked.txt"
@@ -168,8 +189,95 @@ def test_dirty_main_behind_origin_is_reported_and_left_alone(repos):
     assert "has uncommitted changes" in output
     assert "is 1 commits behind origin/main" in output
     assert repos.main_checkout.name in output
+    # The files that block it, so nobody has to go and look first.
+    assert "1 files block it: M tracked.txt" in output
     assert repos.commits_behind() == 1
     assert tracked.read_text(encoding="utf-8") == "local edit\n"
+
+
+def test_for_claude_code_the_warning_is_json_the_user_sees(repos):
+    # 12 to 14.10.2026: plain output reached Claude only and the main folder fell
+    # 192 commits behind. A file name git has to quote puts a backslash and a
+    # quotation mark into the message, which the JSON has to survive.
+    repos.land_on_origin("second")
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+    (repos.main_checkout / "Note ä.txt").write_text("draft\n", encoding="utf-8")
+
+    sent = json.loads(repos.run_hook("--json"))
+
+    shown = sent["systemMessage"]
+    assert "is 1 commits behind origin/main" in shown
+    assert "2 files block it" in shown and "tracked.txt" in shown
+    assert '?? "Note \\303\\244.txt"' in shown
+    told = sent["hookSpecificOutput"]
+    assert told["hookEventName"] == "SessionStart"
+    assert told["additionalContext"].startswith(shown)
+    assert "top of your first reply" in told["additionalContext"]
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows has no control character in a path"
+)
+@pytest.mark.parametrize("repos", ["main\x0ccheckout"], indirect=True)
+def test_a_control_character_in_the_path_still_makes_valid_json(repos):
+    # Codex PR #290: a form feed in the folder name went out raw and broke the JSON,
+    # and Claude Code drops a hook output it cannot parse.
+    repos.land_on_origin("second")
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+
+    sent = json.loads(repos.run_hook("--json"))
+
+    assert "main\x0ccheckout" in sent["systemMessage"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows paths are always Unicode")
+# surrogateescape: how Python on Linux spells a path byte that is not UTF-8.
+@pytest.mark.parametrize(
+    "repos", [b"main\xffcheckout".decode("utf-8", "surrogateescape")], indirect=True
+)
+def test_a_path_that_is_not_utf8_still_makes_valid_json(repos):
+    # Codex PR #290: a byte 0xff in the folder name went out raw, and output that is
+    # not UTF-8 cannot be read at all. The byte is dropped, the rest stays.
+    repos.land_on_origin("second")
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+
+    sent = json.loads(repos.run_hook("--json"))
+
+    assert "maincheckout has uncommitted changes" in sent["systemMessage"]
+
+
+def test_a_shell_that_treats_unset_variables_as_errors_still_syncs(repos):
+    # Codex PR #290: an exported SHELLOPTS with nounset reaches the hook, and Codex
+    # calls it without an argument.
+    repos.land_on_origin("second")
+
+    assert repos.run_hook(SHELLOPTS="nounset") == ""
+    assert repos.commits_behind() == 0
+
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+    repos.land_on_origin("third")
+    assert "has uncommitted changes" in repos.run_hook(SHELLOPTS="nounset")
+
+
+def test_for_claude_code_a_main_folder_in_order_stays_silent(repos):
+    repos.land_on_origin("second")
+
+    assert repos.run_hook("--json") == ""
+    assert repos.commits_behind() == 0
+
+
+def test_a_clean_main_that_cannot_be_fast_forwarded_says_why(repos):
+    # The old hook said only "git pull --ff-only failed".
+    (repos.main_checkout / "local.txt").write_text("local\n", encoding="utf-8")
+    repos.git(repos.main_checkout, "add", "local.txt")
+    repos.git(repos.main_checkout, "commit", "-q", "-m", "local only")
+    repos.land_on_origin("second")
+
+    output = repos.run_hook()
+
+    assert "is 1 commits behind origin/main and could not be fast-forwarded" in output
+    assert "(git: " in output and "(git: )" not in output
+    assert (repos.main_checkout / "local.txt").exists()
 
 
 def test_dirty_main_that_is_up_to_date_stays_silent(repos):

@@ -67,6 +67,10 @@ class ServiceConfig(Timestamps, Base):
             "turn_deadline_seconds >= 1",
             name="ck_service_config_turn_deadline_seconds",
         ),
+        CheckConstraint(
+            "order_approval_overdue_minutes >= 1",
+            name="ck_service_config_order_approval_overdue_minutes",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -118,6 +122,11 @@ class ServiceConfig(Timestamps, Base):
     )
     turn_deadline_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="10"
+    )
+    # An order that waits for "Passt" on the tablet longer than this is overdue:
+    # its card turns red (#252, migration 008, domain/ordering/board.py).
+    order_approval_overdue_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
     )
 
 
