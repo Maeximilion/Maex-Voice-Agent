@@ -56,7 +56,7 @@ What does not belong in it: marketing text, emojis, feature promises, screenshot
 ```text
 /gate G1
 1. docs/01_STATUS.md: gate table to "passed" with the date, link the evidence (eval report, log)
-2. README.md: update status, version, "What works" and "Next steps" according to this file
+2. README.md: the version row of the status table; status, "What works" and "Not yet working" are written by `render` (step 3a of `/gate`, "Keeping them current" below), and a capability whose wording no longer fits is edited in `docs/metrics/capabilities.toml`
 3. Run the Quick Start once on a clean checkout. What does not work gets fixed, not commented.
 4. CHANGELOG.md: section for the new version from the commits since the last tag
 5. Commit: docs: README and status for <gate>, version <x.y.z>
@@ -129,11 +129,12 @@ Every manual step around the README is either automatic or ends up somewhere it 
 | The row in `docs/20_VOICE_LAYER.md` §11 | by hand | It is a judgement, not a number |
 | The SVGs in `.github/assets/` | itself, CI check | Every record above redraws them; `/done` runs `render` after the status update. CI runs `render --check` and fails when a committed image no longer matches its data |
 | `social-preview.png`, `logo-mark-512.png` | by hand | `render --png` needs Chromium, so CI cannot draw them: it records the digest of their source SVGs in `.github/assets/png-sources.json`, and `--check` fails when a source SVG changed without new PNGs. GitHub has no API for the social preview: Maxi uploads it in the repository settings |
-| README status, "What works", "Not yet" | by hand at `/gate` | As in "Gate workflow" above |
-| A node of the call flow | by hand, in the PR that builds the component | See the last rule below |
+| README status table (region `readme:status`) | itself, CI check | `render` writes stage and next gate from `docs/01_STATUS.md` (the first gate not passed, with its content from "Gates in Detail") and "As of", the date of the last finished task in `docs/07_WORKPACKAGES.md`. The version stays manual: `/gate` edits its row, and `render` keeps what it finds there |
+| README "What works" and "Not yet working" (region `readme:capabilities`) | itself, CI check; the sentences by hand | `render` writes both lists from `docs/metrics/capabilities.toml`: one sentence and the task IDs per capability. A capability moves to "What works" by itself once all its tasks are done; until then its `missing` sentence stands under "Not yet working". One that waits for something outside the task list (C1, a decision, a setup step) names it in `waits_for` and stays until that line is removed by hand. A new capability or a new wording is an edit of that file, never of the README |
+| A node of the call flow | by hand, in the PR that builds the component; a test | `api/tests/test_readme_assets.py` fails when a tool of `api/agent/dispatch.TOOLS`, a service of `docker-compose.yml` or an adapter under `api/telephony/adapters/` has no node that `covers` it and is not in `NOT_DRAWN` with a one-line reason. See the last rule below |
 
 - Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file. A recorded measurement carries the day it was recorded.
 - `docs/metrics/*.csv` merge by union (`.gitattributes`): two branches that each appended a row keep both after a merge, and `render` reads a row that came in twice once (eval rows by report name, voice rows by date, package, metric, value and unit). The voice chart shows the latest row of each quantity.
 - The fix for a stale image is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
-- **A new component a call passes through gets its node in `FLOW_NODES` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it, and a step in `FLOW_STORY` where a call passes it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
+- **A new component a call passes through gets its node in `FLOW_NODES` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it, what it `covers` (tool, service or adapter) and a step in `FLOW_STORY` where a call passes it; one that is left out on purpose gets a line in `NOT_DRAWN` with its reason instead; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
 - What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.
