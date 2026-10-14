@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.45
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.46
 
 ---
 
@@ -512,6 +512,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.46 · 14.10.2026:** Codex review of 5b2da14 on PR #289: /start scans leftovers before it stops on a hook warning, with a runnable command, and never tidies a leftovers branch away
 - **v2.1.45 · 14.10.2026:** Nothing is edited on main and nothing is left behind; /start reports leftovers (uncommitted files in a main folder, stashes, leftovers/* branches) at every session start
 - **v2.1.44 · 14.10.2026:** Decision issue reads only its own keys marker; mockup uses invented place names
 - **v2.1.43 · 14.10.2026:** Codex review of 4d1cb80 on PR #290: the sync warning drops bytes that are not UTF-8, survives a shell with nounset; English fixture name
