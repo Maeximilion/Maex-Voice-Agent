@@ -27,7 +27,7 @@ CADDYFILE = REPO_ROOT / "deploy" / "Caddyfile"
 BASE = REPO_ROOT / "docker-compose.yml"
 PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
 # Services that run this repository's code from a bind mount.
-OWN_CODE = ("api", "dispatcher")
+OWN_CODE = ("api", "dispatcher", "voice")
 # Everything else under these prefixes is for inside the Docker network.
 PUBLIC_PATHS = {"/gui", "/gui/*", "/v1/kitchen/*", "/health"}
 ROOT_USERS = {"", "0", "root"}
@@ -166,10 +166,31 @@ def test_the_base_file_keeps_the_source_writable_for_development():
 
 
 def test_own_code_does_not_run_as_root_in_production():
-    production = _services(_load(PROD))
+    """The user of the production file, else the one of the base file."""
+    base, production = _services(_load(BASE)), _services(_load(PROD))
     for service in OWN_CODE:
-        user = str(production.get(service, {}).get("user", ""))
+        user = str(
+            production.get(service, {}).get("user")
+            or base.get(service, {}).get("user", "")
+        )
         assert user.split(":")[0] not in ROOT_USERS, f"{service} runs as root"
+
+
+def test_the_telephone_secrets_reach_only_the_service_that_uses_them():
+    """`env_file: .env` hands a container every line of .env (Codex on PR #297).
+    The access password is Asterisk's, which gets its values one by one; the
+    media token is `voice`'s and the dialplan's."""
+    base = _services(_load(BASE))
+    for service, kept in (
+        ("api", set()),
+        ("dispatcher", set()),
+        ("voice", {"VOICE_MEDIA_TOKEN"}),
+    ):
+        environment = base[service].get("environment") or {}
+        for name in {"ACCESS_PASSWORD", "VOICE_MEDIA_TOKEN"} - kept:
+            assert environment.get(name) == "", f"{service} is handed {name}"
+    assert base["voice"]["environment"]["VOICE_MEDIA_TOKEN"] != ""
+    assert "env_file" not in base["asterisk"]
 
 
 def test_own_code_knows_it_runs_in_production():

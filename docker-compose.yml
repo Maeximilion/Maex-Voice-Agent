@@ -29,10 +29,14 @@ services:
     # reads its environment must not find the superuser's password there.
     # scripts/migrate.sh hands the owner's URL to Alembic in a container of its
     # own: inside this one the application could read it from /proc.
+    # The same for the AI telephone's secrets: the access password is for
+    # Asterisk only, the media token for `voice` (docs/20 §7).
     environment: &without_the_owner
       POSTGRES_PASSWORD: ""
       OWNER_DATABASE_URL: ""
       BACKUP_DATABASE_URL: ""
+      ACCESS_PASSWORD: ""
+      VOICE_MEDIA_TOKEN: ""
     depends_on:
       db:
         condition: service_healthy
@@ -98,6 +102,81 @@ services:
       - ./api:/app/api
       - ./scripts:/app/scripts
       - ./db:/app/db
+
+  # The own voice layer (docs/20 §2): the AI telephone. Started only with the
+  # profile `voice` (`docker compose --profile voice up -d`, or
+  # COMPOSE_PROFILES=voice in .env), never by a plain `up`: without a telephone
+  # access in .env there is nothing for it to answer.
+  voice:
+    profiles: ["voice"]
+    build: ./api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *without_the_owner
+      # Its own secret, from .env by interpolation.
+      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
+    # Not root, from the start (docs/01 open points): it reads its mounts and
+    # writes nothing there.
+    user: "10001:10001"
+    # One worker: the live calls are held in this process (api/telephony/app.py).
+    command:
+      - uvicorn
+      - --factory
+      - api.telephony.app:from_settings
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+    depends_on:
+      db:
+        condition: service_healthy
+    # The core of a call reads its prompt from prompts/.
+    volumes:
+      - ./api:/app/api
+      - ./prompts:/app/prompts
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  asterisk:
+    profiles: ["voice"]
+    # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
+    # build. Not older: before 22.11.0 a `voice` that takes the connection and
+    # answers nothing held the call for ever, and the team never rang (Asterisk
+    # issue #1979, the drill "voice frozen").
+    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
+    restart: unless-stopped
+    # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
+    # image does, without its -vvvddd: verbose output prints every dialplan
+    # step with its values, the media token included.
+    entrypoint: ["/bin/sh", "/templates/render.sh"]
+    command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+    # Only what the AI telephone needs, not the whole .env: no database or
+    # model credentials in this container.
+    environment:
+      ASTERISK_TERMINAL_OPTS: "-n"
+      VOICE_NUMBER: ${VOICE_NUMBER:-}
+      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
+      TEAM_PHONE: ${TEAM_PHONE:-}
+      ACCESS_HOST: ${ACCESS_HOST:-}
+      ACCESS_USER: ${ACCESS_USER:-}
+      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+    tmpfs:
+      - /etc/asterisk
+    volumes:
+      - ./deploy/asterisk/conf:/templates/conf:ro
+      - ./deploy/asterisk/render.sh:/templates/render.sh:ro
+    # Healthy only while registered at the access: booted but not registered,
+    # no call reaches the AI telephone, and `docker compose ps` should say so
+    # (Codex on PR #297).
+    healthcheck:
+      test: ["CMD-SHELL", "asterisk -rx 'pjsip show registrations' | grep -q ' Registered '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
 
   n8n:
     # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)

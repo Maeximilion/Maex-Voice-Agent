@@ -10,6 +10,7 @@ reach the team, not the switched-off agent.
 import uuid
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
@@ -30,6 +31,17 @@ class CallRouting:
     # The longest a guest waits in silence for the answer to one sentence
     # before the call goes to the team (#252).
     turn_deadline_seconds: int
+
+
+def tenant_named(session: Session, name: str) -> uuid.UUID:
+    """The tenant a process serves, by the name in its settings (docs/20 §7).
+    Names are not unique in the table: two of the same name are an error, not
+    a guess."""
+    found = session.scalars(select(Tenant.id).where(Tenant.name == name)).all()
+    if len(found) != 1:
+        # Without the name: it is the restaurant's, and this ends in a log.
+        raise NotFound(f"TENANT_NAME names {len(found)} tenants, expected one")
+    return found[0]
 
 
 def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:

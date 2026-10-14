@@ -46,6 +46,21 @@ services:
       - ./scripts:/app/scripts:ro
       - ./db:/app/db:ro
 
+  # The AI telephone, still behind the profile `voice` of the base file.
+  voice:
+    restart: always
+    environment:
+      ENV: prod
+    volumes:
+      - ./api:/app/api:ro
+      - ./prompts:/app/prompts:ro
+
+  asterisk:
+    restart: always
+    # No host port. The media range of rtp.conf is published with the trunk,
+    # together with the public media address Asterisk has to announce for it;
+    # published without that address it would carry nothing (docs/20 §3, §12).
+
   n8n:
     restart: always
     volumes:
