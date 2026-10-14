@@ -626,6 +626,7 @@ def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     """Histories in tmp_path, a branch to record on, and render counted, not run."""
     state: dict = {"renders": 0, "reports": tmp_path / "reports"}
     state["reports"].mkdir()
+    monkeypatch.setattr(ra, "REPORTS", state["reports"])
     monkeypatch.setattr(ra, "EVAL_HISTORY", tmp_path / "eval.csv")
     monkeypatch.setattr(ra, "VOICE_HISTORY", tmp_path / "voice.csv")
     monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: "task/x")
@@ -1139,6 +1140,40 @@ def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
     runs = ra.read_voice_history(ra.VOICE_HISTORY)
     assert [r.verdict for r in runs] == ["go", "no-go"]
     assert {r.date for r in runs} == {date(2026, 10, 25)}
+
+
+# --- Codex round 4 on fca329a ----------------------------------------------------
+
+
+def test_recording_by_hand_redraws_the_images(recording: dict) -> None:
+    path = write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    assert ra.main(["add", str(path)]) == 0
+    assert ra.main(["add-voice", "2026-10-15", "T-1.11", "m", "1", "u", "go"]) == 0
+    assert recording["renders"] == 2
+    assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 1
+
+
+def test_a_second_recorder_waits_until_the_first_has_drawn(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Record and render are one step under the history lock."""
+    write_report(recording["reports"], "eval_20261015_100000_000001.json")
+    held: list[bool] = []
+
+    def render() -> int:
+        def take_the_lock() -> None:
+            with ra.file_lock(ra.REPORTS / "history.lock"):
+                pass
+
+        probe = threading.Thread(target=take_the_lock, daemon=True)
+        probe.start()
+        probe.join(0.3)
+        held.append(probe.is_alive())
+        return 0
+
+    monkeypatch.setattr(ra, "render", render)
+    ra.auto_record("cases", 0, recording["reports"])
+    assert held == [True]
 
 
 # --- the maintenance bot reports the images (T-0.11) ------------------------------
