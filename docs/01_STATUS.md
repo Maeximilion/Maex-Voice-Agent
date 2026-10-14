@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.12
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.13
 
 ---
 
@@ -335,6 +335,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| A speech engine that hangs keeps its model busy after the call went to the team (`telephony/adapters/stt_whisper.py`) | Codex on `61a2df2` (PR #292, P2), 14.10.2026: the session's deadline sends the caller to the team and closes the ear, but an inference that never returns stays inside the ear's thread, and the model is shared by every call of the process, so later calls can stall behind it. A thread in Python cannot be cancelled; bounding it takes the engine in a process of its own that can be ended, or a watchdog that restarts the service `voice`. The caller is safe either way (rule 5: the session's deadline rings the team) | T-1.11, with the process of the service `voice` and its health check |
 | A sentence goes to the line only when the mouth has made all of it (`telephony/session.py` `_synthesize`) | Codex on PR #286 (13.10.2026, P2). `Mouth.speak` delivers audio in pieces, and the session joins them before `Line.play`: with an engine that streams, the caller waits for the whole sentence instead of the first piece. No cost with the local voice of the test phase (0.08 to 0.27 s for a sentence, docs/20 §11) and nothing to measure against while there are only fakes. Queuing piece by piece changes the mark, the deadline and what a failure in the middle of a sentence means. Measured with T-10.5 (14.10.2026): Piper takes 0.17 s to the first piece of a read-back of 12.5 s and 0.76 s to all of it, so a long read-back starts about 0.6 s later than it could; a short sentence differs little. | T-10.7, with latency by stage on the phone path |
 | The leftover scan of `/start` does not see a tracked file hidden by an index flag (`.claude/commands/start.md` step 2a) | Codex on `0351aa6` (PR #289, P2), 14.10.2026: a file on `main` marked `assume-unchanged` or `skip-worktree` and then edited is not listed by `git status`, yet blocks a later fast-forward that changes it. Nobody sets these flags in this project; the hook's warning names the blocked pull anyway (PR #290). Seeing them needs `git ls-files -v` and a comparison of their contents | When such a flag is used, or a pull is blocked without a file in the scan |
 | A model says opening hours in the wrong hour (`agent/loop.py` `_tool_result_as_input`) | First full eval run, 13.10.2026: `get_service_status` gives `closes_at` in UTC, and the model said "bis 21 Uhr" and "bis 22 Uhr" for the same 22:00. Times in a tool result should reach the model in the restaurant's local time. Opening hours are an `xhigh` trigger | Next T-2.4 session, at `xhigh` |
@@ -527,6 +528,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.13 · 14.10.2026:** Codex review of 61a2df2 on PR #292: a hung speech engine noted as an open point for T-1.11
 - **v2.2.12 · 14.10.2026:** Codex review of fc91f40 on PR #292: windows stamped with when their audio began; a closed ear drops queued audio
 - **v2.2.11 · 14.10.2026:** Codex review of cc5c277 on PR #292: a question into the silence sets the key terms too
 - **v2.2.10 · 14.10.2026:** Codex review of fb9e39a on PR #292: speech windows counted, no key terms that are the whole menu, spoken names compared, runnable engine-test commands
