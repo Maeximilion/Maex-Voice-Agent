@@ -254,6 +254,16 @@ def test_an_ear_that_heard_nothing_is_never_picked(capsys, tmp_path):
     assert report["ear"] == "e" and report["go"]
 
 
+def test_an_ear_that_heard_only_a_dish_name_is_never_picked():
+    # Codex PR #294: the gate is about numbers, so a dish name the ear heard must
+    # not let one through that returned nothing for every number sentence.
+    deaf = [{**r, "text": "", "got": "name"} for r in judged_rows("deaf", "aa")]
+    dish = {**judged_rows("deaf", "r")[0], "id": "d0", "kind": "dish"}
+    report = run({"deaf": {"load_seconds": 1}}, [*deaf, dish])
+    assert report["go"] is False and report["ear"] is None
+    assert report["ears"] == [{"id": "deaf", "error": "heard nothing"}]
+
+
 def test_an_ear_that_heard_something_on_few_samples_is_judged_as_usual():
     rows = judged_rows("e", "raaa")
     for r in rows[1:]:

@@ -681,9 +681,10 @@ def _ear(
     if "error" in info or not numbers:
         return {"id": ear_id, "error": info.get("error", "heard no number sentence")}
     # An empty transcript resolves to `name`, which is never wrong, so an ear
-    # that returned nothing at all would be the pick (#207). One that heard
-    # something on a few samples is judged as usual: the rest counts as asked.
-    if not any(r["text"].strip() for r in rows):
+    # that returned nothing for every number sentence would be the pick (#207);
+    # a dish name it heard does not count, the gate is about numbers (Codex PR
+    # #294). One that heard a few numbers is judged as usual: the rest is asked.
+    if not any(r["text"].strip() for r in numbers):
         return {"id": ear_id, "error": "heard nothing"}
     seconds = sorted(r["seconds"] for r in rows)
     terms: dict[str, Any] = {}
