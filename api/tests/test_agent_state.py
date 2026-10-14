@@ -494,12 +494,27 @@ def test_only_one_sentence_is_kept_never_a_transcript():
     assert "Was darf es sein?" not in str(state.to_prompt_json())
 
 
-def test_a_model_that_talks_on_is_cut_in_the_state():
+def test_a_long_sentence_keeps_its_end_with_the_question():
+    """A read-back of six dishes runs past the limit; the guest's yes answers
+    its closing question, so that is what stays (Codex PR #291, P2)."""
     state = make_state()
+    long_read_back = "Einmal Nummer 23 Frühlingsrollen, " * 12 + "Passt das so?"
 
-    note_said(state, "a" * (LAST_SAY_MAX + 50))
+    note_said(state, long_read_back)
 
-    assert len(state.to_prompt_json()["last_say"]) == LAST_SAY_MAX
+    kept = state.to_prompt_json()["last_say"]
+    assert len(kept) == LAST_SAY_MAX
+    assert kept.startswith("…")
+    assert kept.endswith("Passt das so?")
+
+
+def test_a_sentence_at_the_limit_stays_whole():
+    state = make_state()
+    said = "a" * LAST_SAY_MAX
+
+    note_said(state, said)
+
+    assert state.to_prompt_json()["last_say"] == said
 
 
 @pytest.mark.parametrize(

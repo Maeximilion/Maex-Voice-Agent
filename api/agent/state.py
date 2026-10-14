@@ -43,6 +43,17 @@ Stage = Literal[
 # Longest `last_say` the model gets back, in characters: a read-back with
 # three dishes fits, a model that talks on is cut.
 LAST_SAY_MAX = 300
+
+
+def last_words(say: str) -> str:
+    """The sentence as `last_say` keeps it. A long one keeps its end: the
+    guest answers the question it closes with, such as the "Passt das so?" of
+    a read-back of six dishes (Codex PR #291)."""
+    if len(say) <= LAST_SAY_MAX:
+        return say
+    return "…" + say[-(LAST_SAY_MAX - 1) :]
+
+
 # What the state keeps of get_service_status: whether the restaurant is open,
 # and whether it takes pickups, which can be off while it is open.
 SERVICE_FLAGS = ("is_open", "pickup_enabled")

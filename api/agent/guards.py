@@ -44,7 +44,7 @@ from api.agent.guest_details import (
 )
 from api.agent.llm import ToolCall
 from api.agent.state import (
-    LAST_SAY_MAX,
+    last_words,
     ConversationState,
     cart_lines,
     order_corrected,
@@ -145,7 +145,7 @@ def note_said(state: ConversationState, say: str) -> None:
     state.readback_heard = state.readback is not None and read_out(say, state.readback)
     # What the guest answers next refers to this sentence (`last_say`), and
     # with a first sentence said the call has begun: no second greeting.
-    state.last_say = say[:LAST_SAY_MAX]
+    state.last_say = last_words(say)
     state.greeted = True
     state.asked_for_phone = names_a_phone_number(say)
     heard = say.lower()

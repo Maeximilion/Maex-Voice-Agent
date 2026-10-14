@@ -226,7 +226,8 @@ own result until the hop limit (seen 07.10.2026).
 Two fields of the state, both of constant size, so the state still never grows into a
 transcript:
 
-- `last_say`: the one sentence that ended the last turn, cut to 300 characters
+- `last_say`: the one sentence that ended the last turn, at most 300 characters, a longer
+  one with its end and the closing question kept
   (`agent/state.py` `LAST_SAY_MAX`, set in `guards.note_said`), replaced with every turn.
   The guest's next words answer it. Without it a real model searched "Auf den Namen
   Mueller" on the menu, said goodbye on "Nein, das wars" with an empty order, and answered
