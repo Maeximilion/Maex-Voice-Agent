@@ -52,7 +52,14 @@ def create_reservation(
     note = (req.note or "").strip() or None
 
     lock_capacity_days(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
-    slot = check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
+    slot = check_slot(
+        session,
+        req.tenant_id,
+        req.reserved_for,
+        req.party_size,
+        now=now,
+        call_id=req.call_id,
+    )
     if slot.team_callback:
         raise TeamDecides("party above what the agent books itself", say=slot.say)
     if not slot.available:

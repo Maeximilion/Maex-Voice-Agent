@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
-from api.models import Call
+from api.models import Call, Reservation
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -428,3 +428,50 @@ def test_a_full_evening_is_a_conflict_without_the_signal(session, tenant_id, cal
     )
     assert not result.ok and result.error_code == "conflict"
     assert result.data == {} and result.hint is None
+
+
+def test_check_slot_leaves_out_the_drafts_of_its_own_call(session, tenant_id, call_id):
+    """#207: after a draft the guest moves the time. The draft of this call
+    must not fill the evening for the same guest (35 + 5 + 5 > 40)."""
+    other = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-2",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(other)
+    session.flush()
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=other.id,
+            status="confirmed",
+            guest_name="Schmidt",
+            phone="+4900000000",
+            party_size=35,
+            reserved_for=berlin(DIENSTAG, 18),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+    wish = {"party_size": 5, "reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
+    draft = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {"guest_name": "Müller", "phone": "+4972215551234", **wish},
+        now=NOW,
+    )
+    assert draft.ok
+
+    moved = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_slot",
+        {**wish, "reserved_for": berlin(DIENSTAG, 19, 30).isoformat()},
+        now=NOW,
+    )
+
+    assert moved.data["available"] is True
