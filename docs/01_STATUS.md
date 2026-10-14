@@ -1,11 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.22
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.24
 
 ---
 
 ## Summary
+
+**The README's status and its lists "What works" and "Not yet working" are written from data, and a new component on the call path cannot be forgotten (T-0.10, 15.10.2026).** `render` writes the status table (stage and next gate from this file, "As of" from the last finished task in docs/07; the version stays manual for `/gate`) and both lists from `docs/metrics/capabilities.toml`, where a capability moves to "What works" by itself once all its tasks are done; one that waits for something outside the task list (C1, a setup step) says so in `waits_for` and stays until that line goes. A test fails when a tool of `agent/dispatch.TOOLS`, a Compose service or a telephony adapter has neither a node in the call flow nor a reason in `NOT_DRAWN`. Next: T-0.11.
+
+**Measurements record themselves (T-0.9, 15.10.2026), the first of three PRs for the self-updating README (Maxi, 14.10.2026).** `make eval` and `make eval-targets` record a full real-model run in `docs/metrics/eval_history.csv` and redraw the README images on their own, on the host after the container run, best effort and with the eval's exit code; a run with tags, the stand-in and a run in which no request reached the model are not recorded. The voice kits record their headline numbers (drill and spike points, the silent-wrong rate per judged ear, the dishes the best ear heard right). On `main` nothing is written (CLAUDE.md §8): the result waits in `evals/reports/`, `python3 scripts/readme_assets.py pending` lists it, `/start` shows it and `/done` records it on the task's branch. The metrics CSVs merge by union. Proven on the workbench on a branch and on `main`. Two runs of the same code on `qwen3.6-35b-a3b` gave 20/41 and 24/41 (the head of 14.10. had 26/41), a spread of four cases, wider than the noise of up to three measured on 13.10.; only the branch run is in the history. Next: T-0.10 (README text from data) and T-0.11 (the maintenance bot reports stale images).
 
 **The README has a visual identity and draws its numbers from dated files (14.10.2026).** Logo MÆX (the Æ as a neon tube, A in Neon Yellow, E in Electric Violet, a voice waveform as crossbar), banner, an animated call flow whose nodes read built, in progress or planned from this task list, build progress per block with the gates, the latest real-model eval and its trend, the voice layer measurements and the six hard rules, all on Midnight Purple. `scripts/readme_assets.py` writes every image into `.github/assets/` from `docs/metrics/eval_history.csv` (backfilled from the runs of 06.10. to 14.10.2026 in this file), `docs/metrics/voice_history.csv` (from `docs/20_VOICE_LAYER.md` §11), `docs/07_WORKPACKAGES.md`, this file and the README; CI fails when an image no longer matches its data, `/done` renders, `/gate` also records runs. Rules and tokens: `docs/15_README_STRATEGY.md` "Assets and design". Open for Maxi: upload `.github/assets/social-preview.png` once under Settings, Social preview (the API cannot set it). Assumption: crashed cases and two of the hard metrics of the backfilled runs are not in the status notes, so the images show them as not recorded instead of 0.
 
@@ -536,6 +540,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.24 · 15.10.2026:** T-0.10: README status and capabilities written from data, a test for every component on the call path
+- **v2.2.23 · 15.10.2026:** T-0.9: measurements record themselves: make eval and the voice kits record on a branch, on main a pending entry that /done records
 - **v2.2.22 · 15.10.2026:** docs: work packages T-0.9 to T-0.11, the self-updating README (measurements record themselves, README text from data, the maintenance bot reports stale images)
 - **v2.2.21 · 14.10.2026:** README call flow follows the code: words in through Asterisk and the ear, one tool per hop through the LLM, confirm only after the yes, the slip after approval (primary mode at once), escalation to the team phone or after hours a callback, a voice failure rings the team phone
 - **v2.2.20 · 14.10.2026:** Codex round 1 on PR #303: the handler docstring stays provider-neutral, the diagram routes voice straight to the database, unreached is an extension in context ai
