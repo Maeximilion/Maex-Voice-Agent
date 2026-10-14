@@ -108,7 +108,7 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 | File | Shows | Source |
 |---|---|---|
 | `banner.svg` | Logo, one line, the state slip: latest real-model eval, version, stage, test functions in `api/tests` (rounded down to the hundred; parametrized cases make the run larger), next gate | all sources below |
-| `call-flow.svg` | The animated path of a call; each node is built, in progress or planned from its tasks | `FLOW_NODES` in the script, `docs/07_WORKPACKAGES.md` |
+| `call-flow.svg` | One call in two turns as the code runs it: words in through access, Asterisk and the ear; the core asks the LLM and runs one tool per hop against Postgres (the LLM has no line to a tool or the database); the read-back out through the mouth; `confirm` only after the yes, then the spoken reply and the order on the tablet at the same time; the slip after the team's approval (primary mode: at once); escalation to the team phone or, after hours and with the caller's number, a callback on the tablet; a failure of the service `voice` rings the team phone. Each node is built, in progress or planned from its tasks; the tests in `api/tests/test_readme_assets.py` hold the story to the code | `FLOW_NODES`, `FLOW_LINKS`, `FLOW_STORY` in the script, `docs/07_WORKPACKAGES.md` |
 | `call-flow-static.svg` | The same without motion | as above |
 | `progress.svg` | Tasks done, one bar per block, the gates | `docs/07_WORKPACKAGES.md`, `docs/01_STATUS.md` |
 | `eval-latest.svg` | The latest real-model run per suite | `docs/metrics/eval_history.csv` |
@@ -128,5 +128,5 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
   ```bash
   python scripts/readme_assets.py add-voice 2026-10-14 T-1.11 "Outage drills end at the team phone" 15 "of 15 points" go --note "Asterisk 22.11.0"
   ```
-- **A new component a call passes through gets its node in `FLOW_NODES` in the same PR that builds it**, with the task IDs that build it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
+- **A new component a call passes through gets its node in `FLOW_NODES` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it, and a step in `FLOW_STORY` where a call passes it; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
 - What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.
