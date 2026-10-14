@@ -152,7 +152,8 @@ class Drill:
         )
         self.secrets = {
             "VOICE_MEDIA_TOKEN": secrets.token_hex(16),
-            "ACCESS_PASSWORD": secrets.token_hex(16),
+            # A ";" as a password of a provider may hold one (render.sh).
+            "ACCESS_PASSWORD": secrets.token_hex(8) + ";" + secrets.token_hex(8),
         }
         self._env = {
             **os.environ,
@@ -368,19 +369,25 @@ def drill_silent(drill: Drill) -> list[Check]:
 
 
 def drill_own_number(drill: Drill) -> list[Check]:
-    call = drill.place(100)
-    call.wait(call.ended, timeout=15)
-    drill.quiet()
-    refused = any("own number and refused" in line for line in call.lines("asterisk"))
-    return [
-        (
-            "own number: refused, nobody answers, the team does not ring",
-            refused
-            and call.dialstatus() != "ANSWER"
-            and not call.router_says(call.team_rings),
-            f"refused: {refused}, caller's dial status {call.dialstatus()}",
+    """100 rings from VOICE_NUMBER as E.164, 200 from it in the national form."""
+    checks: list[Check] = []
+    for n, form in ((100, "E.164"), (200, "national form")):
+        call = drill.place(n)
+        call.wait(call.ended, timeout=15)
+        drill.quiet()
+        refused = any(
+            "own number and refused" in line for line in call.lines("asterisk")
         )
-    ]
+        checks.append(
+            (
+                f"own number ({form}): refused, nobody answers, the team does not ring",
+                refused
+                and call.dialstatus() != "ANSWER"
+                and not call.router_says(call.team_rings),
+                f"refused: {refused}, caller's dial status {call.dialstatus()}",
+            )
+        )
+    return checks
 
 
 def drill_keys(drill: Drill) -> list[Check]:
@@ -495,9 +502,9 @@ def render(run_dir: Path, secret: dict[str, str]) -> None:
     for source in sources:
         rendered = target / source.name
         rendered.touch(mode=0o600)
-        rendered.write_text(
-            source.read_text().replace(PASSWORD_MARK, secret["ACCESS_PASSWORD"])
-        )
+        # Escaped as render.sh does for the AI telephone: ";" starts a comment.
+        password = secret["ACCESS_PASSWORD"].replace(";", r"\;")
+        rendered.write_text(source.read_text().replace(PASSWORD_MARK, password))
 
 
 def save_output(drill: Drill) -> bool:

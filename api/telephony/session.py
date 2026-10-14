@@ -173,6 +173,12 @@ class CallSession:
         """The caller's leg is gone."""
         self._post("closed")
 
+    def broken(self) -> None:
+        """The line cannot go on: the telephone system sent what the adapter
+        does not understand. A failure of the voice layer like a failing
+        engine, not a caller who hung up (T-1.11)."""
+        self._post("broken")
+
     # -- what the core asks for (through `Lines`) --------------------------------------
 
     def say(self, text: str, interruptible: bool = False) -> None:
@@ -413,6 +419,9 @@ class CallSession:
 
     def _on_closed(self, at: float, _: None) -> None:
         self._end("closed")
+
+    def _on_broken(self, at: float, _: None) -> None:
+        self._voice_failed()
 
     def _timers(self, now: float) -> None:
         played_due = self._played_due()

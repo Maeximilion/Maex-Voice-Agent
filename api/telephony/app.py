@@ -21,7 +21,6 @@ import base64
 import binascii
 import hmac
 import logging
-import re
 import threading
 from collections import OrderedDict
 from collections.abc import Callable
@@ -34,6 +33,7 @@ from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings
 from api.core.logging import configure_logging
 from api.db import SessionLocal, engine, refuse_a_superuser_role
 from api.domain.calls import call_routing, tenant_named
+from api.domain.customers.phone import E164
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.handler import CallHandler
 from api.telephony.port import CallEvents
@@ -50,7 +50,6 @@ DRILL_ENGINES = frozenset({"fake"})
 # How many endings are kept for the dialplan. It asks within a second of the
 # end of our leg; an ending nobody asked for goes after this many newer ones.
 ENDINGS_KEPT = 1000
-_E164 = re.compile(r"\+[1-9][0-9]{6,14}")
 
 
 class Voice:
@@ -152,7 +151,7 @@ def voice_from_settings() -> Voice:
     local = settings.env in LOCAL_ENVS
     if not local and len(token) < TOKEN_MIN_LENGTH:
         _refuse(f"VOICE_MEDIA_TOKEN is shorter than {TOKEN_MIN_LENGTH} characters")
-    if not _E164.fullmatch(settings.voice_number):
+    if not E164.match(settings.voice_number):
         _refuse("VOICE_NUMBER is not a number in E.164 format")
     ear = EARS.get(settings.voice_ear)
     mouth = MOUTHS.get(settings.voice_mouth)

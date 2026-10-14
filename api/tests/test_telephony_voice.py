@@ -6,6 +6,7 @@ and answers the marks the line sends. Then it asks `/calls/{id}/ending` as the
 dialplan does when our leg is gone. No network, no Asterisk.
 """
 
+import asyncio
 import base64
 import json
 import logging
@@ -22,9 +23,11 @@ from api.config import settings
 from api.core.errors import NotFound
 from api.domain.calls import tenant_named
 from api.telephony import app as voice_app
+from api.telephony import router as router_module
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.app import Voice, create_app, voice_from_settings, without_query
 from api.telephony.handler import GREETING
+from api.telephony.router import _write
 from api.telephony.session import Lines
 from api.tests.test_telephony import (  # noqa: F401 - fixtures
     TEAM_PHONE,
@@ -229,15 +232,51 @@ def test_a_caller_who_hangs_up_ends_the_call_in_the_core(phone):
     assert ending(client) == ""
 
 
-def test_a_frame_that_is_not_the_format_ends_our_leg_without_an_ending(phone):
+def test_a_frame_that_is_not_the_format_is_a_failure_and_no_hangup(phone):
+    """The core hears of a failure of the voice layer, not of a caller who hung
+    up, and the dialplan finds no ending (code review of T-1.11)."""
     client, core = phone
     with connect(client) as ws:
+        ws.send_text(media_start())
+        assert receive_command(ws) == {"command": "ANSWER"}
         ws.send_text("MEDIA_START connection_id:voice format:ulaw")  # plain-text format
-        with pytest.raises(WebSocketDisconnect):
-            ws.receive_text()
+        # The greeting's frames, then the service closes its side.
+        while ws.receive()["type"] != "websocket.close":
+            pass
 
+    wait_for(lambda: ("failure",) in core.seen)
     assert ending(client) == ""
-    wait_for(lambda: ("ended",) in core.seen)
+
+
+def test_a_connection_that_takes_no_more_frames_is_a_lost_leg():
+    """The writer reports it to the session at once, as `speech.Line` asks."""
+
+    class Stalled:
+        closed = False
+
+        async def send_text(self, text: str) -> None:
+            await asyncio.sleep(60)
+
+        async def close(self) -> None:
+            self.closed = True
+
+    class Leg:
+        lost = False
+
+        def closed(self) -> None:
+            self.lost = True
+
+    async def run() -> tuple[Stalled, Leg]:
+        websocket, leg = Stalled(), Leg()
+        outbox: asyncio.Queue = asyncio.Queue()
+        outbox.put_nowait('{"command": "ANSWER"}')
+        await _write(websocket, outbox, leg)  # type: ignore[arg-type]
+        return websocket, leg
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(router_module, "WRITE_SECONDS", 0.05)
+        websocket, leg = asyncio.run(run())
+    assert leg.lost and websocket.closed
 
 
 @pytest.mark.parametrize(

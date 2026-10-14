@@ -156,11 +156,12 @@ def test_every_run_makes_new_secrets_and_a_project_per_folder(tmp_path):
 def test_the_router_gets_the_password_of_the_run_and_nothing_else_is_shared(
     tmp_path,
 ):
-    secret = {"ACCESS_PASSWORD": "pw-of-this-run", "VOICE_MEDIA_TOKEN": "token"}
+    secret = {"ACCESS_PASSWORD": "pw-of;this-run", "VOICE_MEDIA_TOKEN": "token"}
     drill.render(tmp_path, secret)
     router_dir = tmp_path / "router"
     pjsip = (router_dir / "pjsip.conf").read_text()
-    assert "password=pw-of-this-run" in pjsip and drill.PASSWORD_MARK not in pjsip
+    # Escaped: ";" starts a comment in Asterisk's configuration.
+    assert r"password=pw-of\;this-run" in pjsip and drill.PASSWORD_MARK not in pjsip
     assert (tmp_path / drill.RUN_MARKER).exists()
     for rendered in router_dir.iterdir():
         assert stat.S_IMODE(rendered.stat().st_mode) == 0o600

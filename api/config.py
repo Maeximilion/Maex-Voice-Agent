@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     llm_output_cents_per_mtok: int | None = Field(default=None, ge=0)
 
     # Service `voice`, the own voice layer (docs/20 §7). It serves the tenant of
-    # `tenant_name`. Asterisk presents the token as the password of Basic
+    # `tenant_name`. The telephone system presents the token as the password of Basic
     # credentials on the media connection and when the dialplan asks how a call
     # ended; without one `voice` does not start.
     voice_media_token: str = ""

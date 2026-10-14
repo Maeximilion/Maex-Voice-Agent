@@ -10,6 +10,8 @@
 # the team telephones as before (docs/20 §3).
 set -eu
 
+newline='
+'
 for name in VOICE_NUMBER VOICE_MEDIA_TOKEN TEAM_PHONE ACCESS_HOST ACCESS_USER ACCESS_PASSWORD; do
     # eval on a fixed list of names, never on input.
     eval "value=\${$name:-}"
@@ -17,10 +19,30 @@ for name in VOICE_NUMBER VOICE_MEDIA_TOKEN TEAM_PHONE ACCESS_HOST ACCESS_USER AC
         echo "asterisk does not start: $name is not set (.env, docs/20 §7)" >&2
         exit 1
     fi
+    case "$value" in
+        *"$newline"*)
+            echo "asterisk does not start: $name holds a line break" >&2
+            exit 1
+            ;;
+    esac
 done
 
+# The team on our own number: the dialplan would ring us, the loop guard would
+# drop the call, and every caller would be lost (rule 5). `voice` refuses the
+# same; this is for the calls that reach the team without it.
+if [ "$TEAM_PHONE" = "$VOICE_NUMBER" ] || [ "$TEAM_PHONE" = "0${VOICE_NUMBER#+49}" ]; then
+    echo "asterisk does not start: TEAM_PHONE is the AI telephone's own number" >&2
+    exit 1
+fi
+
+# ";" starts a comment in Asterisk's configuration: a password with one would be
+# cut short without a word. Escaped for the files only; the environment the
+# dialplan reads keeps the values as they are.
+esc() { printf '%s' "$1" | sed 's/;/\\;/g'; }
 for file in /templates/conf/*.conf; do
-    envsubst '${VOICE_MEDIA_TOKEN} ${ACCESS_HOST} ${ACCESS_USER} ${ACCESS_PASSWORD}' \
+    VOICE_MEDIA_TOKEN="$(esc "$VOICE_MEDIA_TOKEN")" ACCESS_HOST="$(esc "$ACCESS_HOST")" \
+        ACCESS_USER="$(esc "$ACCESS_USER")" ACCESS_PASSWORD="$(esc "$ACCESS_PASSWORD")" \
+        envsubst '${VOICE_MEDIA_TOKEN} ${ACCESS_HOST} ${ACCESS_USER} ${ACCESS_PASSWORD}' \
         < "$file" > "/etc/asterisk/$(basename "$file")"
 done
 

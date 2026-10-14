@@ -23,7 +23,7 @@ from fastapi.responses import PlainTextResponse
 from starlette.types import ASGIApp
 
 from api.core.logging import get_logger
-from api.telephony.adapters.asterisk import MediaLine, ProtocolError
+from api.telephony.adapters.asterisk import MediaLine
 
 if TYPE_CHECKING:
     from api.telephony.app import Voice
@@ -87,7 +87,7 @@ async def media(websocket: WebSocket) -> None:
                 send(None)
 
     threading.Thread(target=work, name=f"call {call_id}", daemon=True).start()
-    writer = asyncio.create_task(_write(websocket, outbox))
+    writer = asyncio.create_task(_write(websocket, outbox, line))
     try:
         while True:
             message = await websocket.receive()
@@ -97,18 +97,21 @@ async def media(websocket: WebSocket) -> None:
                 line.on_text(message["text"])
             elif message.get("bytes") is not None:
                 line.on_audio(message["bytes"])
-    except ProtocolError:
+    except Exception:
+        # Not a caller who hung up: the voice layer failed on this call, and
+        # the call log says so. The dialplan rings the team.
         logger.exception(
             "frame of the media channel not understood, the team takes the call",
             extra={"extra": {"session_id": call_id}},
         )
+        session.broken()
     finally:
         line.closed()
         await writer
 
 
 async def _write(
-    websocket: WebSocket, outbox: "asyncio.Queue[str | bytes | None]"
+    websocket: WebSocket, outbox: "asyncio.Queue[str | bytes | None]", line: MediaLine
 ) -> None:
     try:
         while (frame := await outbox.get()) is not None:
@@ -117,8 +120,11 @@ async def _write(
             else:
                 await asyncio.wait_for(websocket.send_text(frame), WRITE_SECONDS)
     except Exception:  # noqa: BLE001 - a lost or stalled leg, whatever the cause
-        # Without our ending the dialplan rings the team (`speech.Line`).
+        # Reported to the session at once, as `speech.Line` asks, not when the
+        # close handshake with a stalled peer gives up. Without our ending the
+        # dialplan rings the team.
         logger.warning("the media connection takes no more frames, closing it")
+        line.closed()
     with contextlib.suppress(Exception):
         await websocket.close()
 

@@ -52,7 +52,6 @@ services:
     restart: always
     environment:
       ENV: prod
-    user: "10001:10001"
     volumes:
       - ./api:/app/api:ro
       - ./prompts:/app/prompts:ro
