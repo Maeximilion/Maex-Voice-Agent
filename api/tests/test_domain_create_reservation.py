@@ -160,8 +160,9 @@ def test_voller_abend_ist_conflict_ohne_mittag(session, tenant_id, call_id):
     lift_party_limits(session, tenant_id)
     # T-1.14: Alternativen nur im selben Service; der Abend ist ganz voll.
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
+    other = _other_call(session, tenant_id)
     with pytest.raises(Conflict) as exc:
-        create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
+        create_reservation(session, request(tenant_id, other, party_size=1), now=NOW)
     assert "halb sieben ist leider nichts frei" in exc.value.say
     assert session.scalar(select(func.count()).select_from(Reservation)) == 1
 
@@ -262,11 +263,13 @@ def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
 
 
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
+    # For every other call: a call's own drafts do not count against it (#207).
     lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=39), now=NOW)
-    create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
+    second, third = _other_call(session, tenant_id), _other_call(session, tenant_id)
+    create_reservation(session, request(tenant_id, second, party_size=1), now=NOW)
     with pytest.raises(Conflict):
-        create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
+        create_reservation(session, request(tenant_id, third, party_size=1), now=NOW)
 
 
 # --- A draft holds its seats only while its call can still confirm it (#250) ---
@@ -373,6 +376,113 @@ def test_a_confirmed_table_keeps_its_seats_after_the_call(session, tenant_id, ca
         )
 
 
+# --- A call's own drafts do not count against it (#207) ---
+
+WEDNESDAY_EVENING = berlin(MITTWOCH, 19)
+
+
+def _seat(session, tenant_id, call, guests: int, status: str = "confirmed") -> None:
+    """What the window already holds, written directly."""
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=call,
+            status=status,
+            guest_name="Schmidt",
+            phone="+4900000000",
+            party_size=guests,
+            reserved_for=WEDNESDAY_EVENING,
+            idempotency_key=uuid.uuid4().hex,
+            created_at=NOW,
+        )
+    )
+    session.commit()
+
+
+def _six(tenant_id, call_id, **overrides) -> CreateReservationRequest:
+    wish = {"party_size": 6, "reserved_for": WEDNESDAY_EVENING, **overrides}
+    return request(tenant_id, call_id, **wish)
+
+
+def _confirm(session, tenant_id, call_id, reservation_id):
+    return confirm(
+        session,
+        ConfirmRequest(
+            call_id=call_id,
+            tenant_id=tenant_id,
+            entity="reservation",
+            entity_id=reservation_id,
+            idempotency_key=uuid.uuid4().hex,
+        ),
+        now=NOW,
+    )
+
+
+@pytest.mark.parametrize(
+    "correction",
+    [{"reserved_for": berlin(MITTWOCH, 19, 30)}, {"party_size": 8}],
+    ids=["new_time", "more_guests"],
+)
+def test_a_corrected_draft_does_not_count_against_its_own_call(
+    session, tenant_id, call_id, correction
+):
+    """30 of 40 seats booked, the guest drafts six and then corrects the time or
+    the party size. Ten seats are free: the corrected table is drafted, and the
+    yes books it. Before, the first draft stood in the way (36 + 6 > 40)."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+    corrected = create_reservation(
+        session, _six(tenant_id, call_id, **correction), now=NOW
+    )
+
+    assert corrected.status == "draft"
+    assert _confirm(session, tenant_id, call_id, corrected.reservation_id).status == (
+        "confirmed"
+    )
+
+
+def test_the_draft_of_another_live_call_still_counts(session, tenant_id, call_id):
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    _seat(session, tenant_id, other, 6, status="draft")
+
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
+def test_a_confirmed_table_of_the_same_call_still_counts(session, tenant_id, call_id):
+    """A second table in the same call: the first is booked, not replaced."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    first = create_reservation(session, _six(tenant_id, call_id), now=NOW)
+    _confirm(session, tenant_id, call_id, first.reservation_id)
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, 30)),
+            now=NOW,
+        )
+
+
+def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
+    """A call may hold two drafts now, but `confirm` counts every confirmed
+    seat: only one of them can be booked."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    first = create_reservation(session, _six(tenant_id, call_id), now=NOW)
+    second = create_reservation(
+        session,
+        _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, 30)),
+        now=NOW,
+    )
+
+    assert _confirm(session, tenant_id, call_id, first.reservation_id).status == (
+        "confirmed"
+    )
+    with pytest.raises(Conflict):
+        _confirm(session, tenant_id, call_id, second.reservation_id)
+
+
 def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
     """Gleicher Schlüssel, gleiche Antwort — auch wenn der Tag zwischen den Aufrufen wechselt."""
     kurz_vor_mitternacht = datetime(2026, 9, 15, 23, 50, tzinfo=BERLIN)
@@ -400,15 +510,19 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
             seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
         )
         lift_party_limits(s, tenant)
-        call = Call(
-            tenant_id=tenant,
-            external_session_id="ext",
-            started_at=NOW,
-            delete_after=DIENSTAG,
-        )
-        s.add(call)
+        # One call per request: a call's own drafts do not count against it (#207).
+        calls = [
+            Call(
+                tenant_id=tenant,
+                external_session_id=f"ext-{n}",
+                started_at=NOW,
+                delete_after=DIENSTAG,
+            )
+            for n in range(8)
+        ]
+        s.add_all(calls)
         s.commit()
-        call = call.id
+        call_ids = [call.id for call in calls]
 
     start = threading.Barrier(8)
     results: list[object] = []
@@ -421,7 +535,10 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
                 create_reservation(
                     own,
                     request(
-                        tenant, call, idempotency_key=f"parallel-{n}", party_size=10
+                        tenant,
+                        call_ids[n],
+                        idempotency_key=f"parallel-{n}",
+                        party_size=10,
                     ),
                     now=NOW,
                 )
