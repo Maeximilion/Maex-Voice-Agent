@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.6
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.7
 
 ---
 
@@ -333,6 +333,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| The leftover scan of `/start` does not see a tracked file hidden by an index flag (`.claude/commands/start.md` step 2a) | Codex on `0351aa6` (PR #289, P2), 14.10.2026: a file on `main` marked `assume-unchanged` or `skip-worktree` and then edited is not listed by `git status`, yet blocks a later fast-forward that changes it. Nobody sets these flags in this project; the hook's warning names the blocked pull anyway (PR #290). Seeing them needs `git ls-files -v` and a comparison of their contents | When such a flag is used, or a pull is blocked without a file in the scan |
 | A model says opening hours in the wrong hour (`agent/loop.py` `_tool_result_as_input`) | First full eval run, 13.10.2026: `get_service_status` gives `closes_at` in UTC, and the model said "bis 21 Uhr" and "bis 22 Uhr" for the same 22:00. Times in a tool result should reach the model in the restaurant's local time. Opening hours are an `xhigh` trigger | Next T-2.4 session, at `xhigh` |
 | A model can tell a guest that nothing booked is booked (`agent/loop.py`, the sentence that ends a turn) | First full eval run, 13.10.2026: on "Ja, passt" with no draft the model said "Ihre Abholung ist bestätigt. Der Abholcode lautet 8842"; nothing was booked and the hard metrics stay at 0, because they read the database. Before the phone path: a sentence that names a pickup code or a confirmation only after `confirm` went through. Rule 3, `xhigh` | Next T-2.4 session, at `xhigh`, before real calls |
 | A second `transfer_to_team` after a successful one runs to the hop limit (`agent/loop.py`) | First full eval run, 13.10.2026: after `available: true` the model called the tool again five times, and the call ended with `SAY_STUCK` instead of the transfer. The core could end the turn on a successful transfer, as it does for a table the team decides on. Transfer is an `xhigh` trigger | Next T-2.4 session, at `xhigh` |
@@ -523,6 +524,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.7 · 14.10.2026:** Codex review of 0351aa6 on PR #289: the leftover step promises an age only where its command prints one; index flags noted as an open point
 - **v2.2.6 · 14.10.2026:** PR #289: the leftover step names the Git setting in words, which the command file check read as a file
 - **v2.2.5 · 14.10.2026:** Codex review of 5ef4c2d on PR #289: the leftover scan lists untracked files whatever the config says; the Codex start skill has the same steps
 - **v2.2.4 · 14.10.2026:** Codex review of 42962fb on PR #289: the main folder's path is kept whole, also when it ends in a line break
