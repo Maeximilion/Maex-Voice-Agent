@@ -46,6 +46,9 @@ jobs:
         # A crash here must not stop the board: decision_issue.py treats the missing
         # file as a partial run.
         continue-on-error: true
+        # Only on main: a run started by hand on another branch would report that
+        # branch's images as main's. Skipped, the decision step keeps the section.
+        if: github.ref == 'refs/heads/main'
         run: python scripts/readme_assets.py findings "$RUNNER_TEMP/images.json"
 
       - name: Zugang pruefen
@@ -83,7 +86,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: >-
           python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
-          --also "$RUNNER_TEMP/images.json"
+          --also "README images=$RUNNER_TEMP/images.json"
 
       - name: Assignee und Label der Pull Requests ergaenzen
         # Zuletzt, damit ein Fehler hier Board und Entscheidungs-Issue nicht aufhaelt.

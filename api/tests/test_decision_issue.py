@@ -280,57 +280,57 @@ def test_a_body_without_a_marker_has_no_keys() -> None:
 
 # --- a partial run: one source of findings failed (T-0.11) ------------------------
 
-BILDER = "README images"
+IMAGES = "README images"
 STALE = {
     "label": "README images out of date on main (banner.svg)",
     "id": "banner.svg:ab12",
 }
 
 
-def test_ein_partieller_lauf_behaelt_die_abschnitte_der_fehlenden_quelle() -> None:
+def test_a_partial_run_keeps_the_sections_of_the_failed_source() -> None:
     """The board step failed: its sections and keys stay, the images are added."""
-    vorher = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
-    ergebnis = decision_issue.plan_partial(vorher, {BILDER: [STALE]}, WER)
-    assert ergebnis.action == "update"
-    assert "#82 `bump python`" in ergebnis.body and "banner.svg" in ergebnis.body
-    assert "banner.svg" in ergebnis.comment and "#82" not in ergebnis.comment
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
+    result = decision_issue.plan_partial(before, {IMAGES: [STALE]}, WER)
+    assert result.action == "update"
+    assert "#82 `bump python`" in result.body and "banner.svg" in result.body
+    assert "banner.svg" in result.comment and "#82" not in result.comment
     # The next full run finds both keys known: nobody is mentioned again.
-    danach = decision_issue.plan(
-        ergebnis.body, {OHNE_MERGE: [PR_82], BILDER: [STALE]}, WER
+    after = decision_issue.plan(
+        result.body, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER
     )
-    assert danach.comment is None
+    assert after.comment is None
 
 
-def test_ein_partieller_lauf_schliesst_nie() -> None:
+def test_a_partial_run_never_closes() -> None:
     """Nothing open in the images, the board unknown: the issue stays as it is."""
-    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
+    created = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
     # The body after the first daily update, without the mention of the creation.
-    vorher = decision_issue.plan(angelegt, {OHNE_MERGE: [PR_82]}, WER).body
-    ergebnis = decision_issue.plan_partial(vorher, {BILDER: []}, WER)
-    assert ergebnis.action == "none"
-    assert decision_issue.plan_partial(None, {BILDER: []}, WER).action == "none"
+    before = decision_issue.plan(created, {OHNE_MERGE: [PR_82]}, WER).body
+    result = decision_issue.plan_partial(before, {IMAGES: []}, WER)
+    assert result.action == "none"
+    assert decision_issue.plan_partial(None, {IMAGES: []}, WER).action == "none"
 
 
-def test_ein_partieller_lauf_ersetzt_nur_seinen_eigenen_abschnitt() -> None:
-    vorher = decision_issue.plan(None, {OHNE_MERGE: [PR_82], BILDER: [STALE]}, WER).body
-    erledigt = decision_issue.plan_partial(vorher, {BILDER: []}, WER)
-    assert erledigt.action == "update"
-    assert "banner.svg" not in erledigt.body.split("<!--")[0]
-    assert "#82 `bump python`" in erledigt.body
-    assert [h for h, _ in decision_issue.sections(erledigt.body)] == [OHNE_MERGE]
+def test_a_partial_run_replaces_only_its_own_section() -> None:
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER).body
+    cleared = decision_issue.plan_partial(before, {IMAGES: []}, WER)
+    assert cleared.action == "update"
+    assert "banner.svg" not in cleared.body.split("<!--")[0]
+    assert "#82 `bump python`" in cleared.body
+    assert [h for h, _ in decision_issue.sections(cleared.body)] == [OHNE_MERGE]
 
 
-def test_ein_partieller_lauf_ohne_issue_legt_es_mit_den_bildern_an() -> None:
-    ergebnis = decision_issue.plan_partial(None, {BILDER: [STALE]}, WER)
-    assert ergebnis.action == "create" and ergebnis.body.startswith(WER)
+def test_a_partial_run_without_an_issue_creates_it_with_the_images() -> None:
+    result = decision_issue.plan_partial(None, {IMAGES: [STALE]}, WER)
+    assert result.action == "create" and result.body.startswith(WER)
 
 
-def test_fehlende_datei_macht_den_lauf_partiell(
+def test_a_missing_file_makes_the_run_partial(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """main(): the board's file is missing, the images' file is read."""
-    bilder = tmp_path / "images.json"
-    bilder.write_text('{"README images": []}', encoding="utf-8")
+    images = tmp_path / "images.json"
+    images.write_text('{"README images": []}', encoding="utf-8")
     seen = {}
 
     def fake_rest(method: str, path: str, token: str, payload: dict | None = None):
@@ -343,15 +343,31 @@ def test_fehlende_datei_macht_den_lauf_partiell(
         ]
 
     def fake_partial(*args: object, **kwargs: object):
-        seen["partial"] = True
+        seen["unknown"] = args[4]
         return decision_issue.Plan("none")
 
     monkeypatch.setattr(decision_issue, "rest", fake_rest)
     monkeypatch.setattr(decision_issue, "plan_partial", fake_partial)
     monkeypatch.setenv("GITHUB_TOKEN", "t")
     monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    also = f"{IMAGES}={images}"
     monkeypatch.setattr(
-        sys, "argv", ["x", str(tmp_path / "befunde.json"), "--also", str(bilder)]
+        sys, "argv", ["x", str(tmp_path / "befunde.json"), "--also", also]
     )
     assert decision_issue.main() == 0
-    assert seen == {"partial": True}
+    # The board failed: which headings it owns is not known.
+    assert seen == {"unknown": None}
+    board = tmp_path / "befunde.json"
+    board.write_text("{}", encoding="utf-8")
+    images.unlink()
+    assert decision_issue.main() == 0
+    # The images failed: only their heading is unknown.
+    assert seen == {"unknown": {IMAGES}}
+
+
+def test_a_partial_run_with_the_board_present_clears_its_resolved_findings() -> None:
+    """Codex on a72e970: the images failed, the board ran and found nothing."""
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER).body
+    result = decision_issue.plan_partial(before, {}, WER, unknown={IMAGES})
+    assert [h for h, _ in decision_issue.sections(result.body)] == [IMAGES]
+    assert "#82" not in result.body.split("<!--")[0]

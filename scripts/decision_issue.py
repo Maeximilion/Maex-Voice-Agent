@@ -6,12 +6,13 @@ Zweck : Die taegliche Projektpflege korrigiert, was sie darf, und meldet den Res
         daraus ein einziges Issue: anlegen, wenn etwas offen ist, taeglich
         aktualisieren, schliessen, wenn nichts mehr offen ist. Erwaehnt wird nur bei
         neuen Befunden, nicht jeden Tag fuer dieselben.
-Aufruf: python scripts/decision_issue.py BEFUNDE.json [--also MORE.json ...] [--dry-run]
+Aufruf: python scripts/decision_issue.py BEFUNDE.json [--also 'HEADING=MORE.json' ...] [--dry-run]
         BEFUNDE.json schreibt scripts/project_report.py --findings-json.
-        MORE.json: further findings, such as `scripts/readme_assets.py findings`.
-        When one of the files is missing (its step failed), the run is partial:
-        the sections the existing files report on are rewritten, every other
-        section of the issue stays as it is, and the issue is never closed.
+        MORE.json: further findings, such as `scripts/readme_assets.py findings`,
+        with the heading they own. When a file is missing (its step failed), the
+        run is partial: the sections of the failed source stay as they are (all
+        sections the others do not report on, when the board failed), every
+        other section is rewritten, and the issue is never closed.
 Umgeb.: GITHUB_TOKEN       der eingebaute Token der Action. Bewusst nicht der PAT:
                            eine Erwaehnung vom eigenen Konto loest bei GitHub keine
                            Benachrichtigung aus, eine von github-actions schon.
@@ -187,13 +188,16 @@ def plan_partial(
     findings: dict[str, list[dict]],
     mention: str,
     closed: bool = False,
+    unknown: set[str] | None = None,
 ) -> Plan:
     """A run in which a source of findings failed (the board step without token).
 
-    `findings` holds every heading the sources that did run own, an empty list for
-    one with nothing open. Only those sections are rewritten; every other section
-    and all keys stay, so nothing is dropped or reported again on the day after,
-    and the issue never closes on what is unknown.
+    `unknown` names the headings of the sources that failed; None when the board
+    failed, whose headings are not known in advance: then every section the
+    sources that did run do not report on counts as unknown. Those sections stay
+    as they were, every other one is rewritten from `findings`. All old keys stay,
+    so nothing is reported again on the day after, and the issue never closes on
+    what is unknown.
     """
     open_findings = {h: e for h, e in findings.items() if e}
     if existing_body is None or closed:
@@ -204,7 +208,9 @@ def plan_partial(
         )
     old = parse_keys(existing_body)
     kept = [
-        text for heading, text in sections(existing_body) if heading not in findings
+        text
+        for heading, text in sections(existing_body)
+        if (heading in unknown if unknown is not None else heading not in findings)
     ]
     body = render_body(open_findings, INTRO, kept, old)
     current = finding_keys(open_findings)
@@ -297,7 +303,9 @@ def main() -> int:
         "--also",
         action="append",
         default=[],
-        help="more findings, for example from readme_assets.py findings",
+        metavar="HEADING=FILE",
+        help="more findings and the heading they own, for example "
+        "'README images=images.json' from readme_assets.py findings",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="Nur zeigen, was passieren wuerde."
@@ -318,13 +326,19 @@ def main() -> int:
 
     findings: dict[str, list[dict]] = {}
     partial = False
-    for path in [args.findings, *args.also]:
+    # The headings of the --also sources that failed; None once the board failed.
+    unknown: set[str] | None = set()
+    for heading, path in [(None, args.findings), *(a.split("=", 1) for a in args.also)]:
         if not os.path.exists(path):
             print(
                 f"{path} is missing: its step failed, the run is partial",
                 file=sys.stderr,
             )
             partial = True
+            if heading is None:
+                unknown = None
+            elif unknown is not None:
+                unknown.add(heading)
             continue
         with open(path, encoding="utf-8") as handle:
             findings.update(json.load(handle))
@@ -344,7 +358,7 @@ def main() -> int:
         existing = (issue.get("body") or "") if issue else None
         closed = bool(issue and issue.get("state") == "closed")
         if partial:
-            todo = plan_partial(existing, findings, mention, closed)
+            todo = plan_partial(existing, findings, mention, closed, unknown)
         else:
             # A source with nothing open reports its heading with an empty list.
             open_findings = {h: e for h, e in findings.items() if e}
