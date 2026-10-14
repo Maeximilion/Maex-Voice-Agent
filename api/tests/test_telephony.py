@@ -1106,3 +1106,26 @@ def test_the_menu_size_counts_the_active_dishes(session, tenant):
     assert size > 1
     assert active_count(session, tenant.id) == size - 1
     assert active_count(session, uuid.uuid4()) == 0
+
+
+def test_a_question_into_the_silence_takes_the_key_terms_of_the_question(
+    session, tenant
+):
+    """After "Sind Sie noch da?" the guest says "Ja"; the names of the dishes
+    asked about before would bend that yes into a dish (Codex PR #292, P2).
+    The terms follow what was said last, as after every turn."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Hallo, ich moechte etwas zum Abholen bestellen.",
+            },
+            {"role": "customer", "text": "Einmal Ente."},
+            {"role": "customer", "silence": True},
+        ]
+    }
+    port.play(case, handler_for(session, tenant, port))
+    assert port.terms[-2] == ["Ente knusprig", "Ente süß-sauer", "Ente mit Mango"]
+    assert port.terms[-1] == []

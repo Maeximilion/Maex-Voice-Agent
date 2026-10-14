@@ -237,7 +237,9 @@ terms through `Ear.expect`.** Started on the local pair of T-10.3 before that ta
   from the searches of the call, so from the active menu in the database, as the guest says them
   (without "(4 Stück)"). Whisper keeps what fits half its prompt. Terms that would hold every dish of the active menu
   (a menu of one dish, or of two both in question) are not handed over at all (Codex PR #292). The
-  agent's sentence is compared with the names as a guest says them. A first version took only the
+  agent's sentence is compared with the names as a guest says them. The two questions into a
+  silent line set the terms as well, so a "Ja" to "Sind Sie noch da?" is not heard with the names
+  of the dishes asked about before. A first version took only the
   dishes that became known in the turn and gave a repeated question no terms; the dishes named in
   the sentence are what the guest answers. Nothing is handed at the first mention of a dish: no
   window of a few names can be chosen before the guest says one.

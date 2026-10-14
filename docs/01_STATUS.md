@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.51
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.52
 
 ---
 
@@ -515,6 +515,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.52 · 14.10.2026:** Codex review of cc5c277 on PR #292: a question into the silence sets the key terms too
 - **v2.1.51 · 14.10.2026:** Codex review of fb9e39a on PR #292: speech windows counted, no key terms that are the whole menu, spoken names compared, runnable engine-test commands
 - **v2.1.50 · 14.10.2026:** Codex review of 5a92366 on PR #292: each detector window is stamped with the end of its own audio
 - **v2.1.49 · 14.10.2026:** T-10.5 done: Whisper ear behind a silence detector, Piper mouth, key terms per turn

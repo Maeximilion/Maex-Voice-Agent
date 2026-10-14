@@ -283,6 +283,10 @@ class CallHandler:
         # read-back: a "Ja" to it confirms nothing (rule 3), the core reads the
         # draft out again first.
         note_said(live.state, question)
+        # And the key terms follow it: the names asked about before would bend
+        # a "Ja" into a dish (Codex PR #292).
+        menu_size = active_count(live.session, live.tenant_id)
+        self._port.expect(live.session_id, key_terms(live.state, question, menu_size))
         self._port.say(live.session_id, question, interruptible=True)
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
