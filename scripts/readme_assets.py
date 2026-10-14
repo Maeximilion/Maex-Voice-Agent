@@ -1825,7 +1825,15 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
     parts.append(
         text(546, 534, "unsure, complaint or model failure: team phone,", 13, "violet")
     )
-    parts.append(text(546, 552, "after hours: a callback on the tablet", 13, "violet"))
+    parts.append(
+        text(
+            546,
+            552,
+            "after hours, number known: a callback on the tablet",
+            13,
+            "violet",
+        )
+    )
     parts.append(
         f'<path d="{_rounded(OUTAGE_ROUTE, 14)}" fill="none" stroke="{TOKENS["coral"]}" '
         'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
@@ -1946,8 +1954,8 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         "after the caller's yes does the core run confirm, and the model tells the caller. The order "
         "shows on the tablet; the slip prints at the register once the team approves it, in primary "
         "mode under the amount limit at once. When the AI is unsure, hears a complaint or the model "
-        "fails, the call goes to the team phone, after opening hours it leaves a callback on the "
-        "tablet; when the service voice itself fails, the exchange rings the team phone. Built: "
+        "fails, the call goes to the team phone; after opening hours, when the caller's number is "
+        "known, it leaves a callback on the tablet; when the service voice itself fails, the exchange rings the team phone. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)

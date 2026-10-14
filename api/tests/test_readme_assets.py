@@ -600,3 +600,6 @@ def test_the_picture_names_the_direct_print_and_the_voice_failure_exactly() -> N
     assert "any failure" not in flow
     assert "the service voice fails" in flow
     assert "model failure" in flow
+    # A callback needs the caller's number; without one the call ends with the
+    # honest "nobody reachable" sentence (api/agent/loop.py _handoff).
+    assert "number known" in flow
