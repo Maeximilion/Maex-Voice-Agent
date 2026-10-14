@@ -21,7 +21,14 @@ from api.agent.guards import (
     HINT_ITEM,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
-from api.agent.loop import MAX_TOOL_HOPS, SAY_NOBODY_REACHABLE, ConversationLoop
+from api.agent.loop import (
+    MAX_TOOL_HOPS,
+    SAY_NOBODY_REACHABLE,
+    SAY_ORDER_NOT_PLACED,
+    SUMMARY_OPEN_ORDER,
+    ConversationLoop,
+    _order_lines,
+)
 from api.agent.state import ConversationState, initial_state
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
@@ -1258,3 +1265,76 @@ def test_a_callback_that_fails_still_ends_with_the_team(session, state):
 
     assert result.ended is True and state.stage == "transferred"
     assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_team_table_next_to_an_open_order_names_the_order(session, state):
+    """A guest with dishes in the order who also asks for a large table: the
+    call ends with the callback, and the card and the guest both say that the
+    order is not placed, or the team would never learn of it (#207)."""
+    state.slots["phone"] = CALLER
+    pizza = str(uuid.uuid4())
+    state.seen_items[pizza] = {"number": "12", "name": "Pizza Margherita"}
+    state.cart = [{"menu_item_id": pizza, "quantity": 2}]
+
+    result = _ask_for_nine(session, state)
+
+    assert result.ended is True and state.stage == "callback"
+    assert result.say[0].startswith(TEAM_SAY)
+    assert SAY_ORDER_NOT_PLACED in result.say
+    summary = session.scalars(select(Callback)).one().summary
+    assert summary == f"{WISH}. {SUMMARY_OPEN_ORDER} 2x 12 Pizza Margherita."
+
+
+def test_a_long_open_order_keeps_every_line_on_the_card(session, state):
+    """Thirty lines with long names do not fit a callback: the card falls
+    back to card numbers and still names every line (Codex PR #300)."""
+    state.slots["phone"] = CALLER
+    for n in range(30):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza " + "x" * 40}
+        state.cart.append({"menu_item_id": dish, "quantity": 2})
+
+    _ask_for_nine(session, state)
+
+    summary = session.scalars(select(Callback)).one().summary
+    assert len(summary) <= 1000 and "Pizza" not in summary
+    assert all(f"2x {100 + n}" in summary for n in range(30))
+
+
+def test_what_does_not_fit_on_the_card_is_counted(state):
+    for n in range(10):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Salat"}
+        state.cart.append({"menu_item_id": dish, "quantity": 1})
+
+    assert _order_lines(state, 200).startswith("1x 100 Salat, 1x 101 Salat")
+    assert _order_lines(state, 80).startswith("1x 100, 1x 101, 1x 102")
+    assert _order_lines(state, 40) == "1x 100, 1x 101, 8 weitere Positionen"
+
+
+def test_options_and_the_note_of_a_line_reach_the_card(state):
+    """Two pizzas of different sizes are two lines, and "ohne Zwiebeln" is
+    what the kitchen has to know: the card shows both (Codex PR #300)."""
+    pizza = str(uuid.uuid4())
+    state.seen_items[pizza] = {"number": "12", "name": "Pizza Margherita"}
+    state.cart = [
+        {
+            "menu_item_id": pizza,
+            "quantity": 1,
+            "options": [{"group": "Größe", "name": "groß"}],
+            "note": "ohne Zwiebeln",
+        },
+        {
+            "menu_item_id": pizza,
+            "quantity": 2,
+            "options": [{"group": "Größe", "name": "klein"}],
+        },
+    ]
+
+    assert _order_lines(state, 200) == (
+        "1x 12 Pizza Margherita (Größe: groß; ohne Zwiebeln), "
+        "2x 12 Pizza Margherita (Größe: klein)"
+    )
+    assert _order_lines(state, 70) == (
+        "1x 12 (Größe: groß; ohne Zwiebeln), 2x 12 (Größe: klein)"
+    )
