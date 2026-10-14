@@ -1,7 +1,6 @@
-"""Production Compose: caddy publishes 80 and 443, asterisk the media range of the
-AI telephone, and nothing else publishes a host port.
+"""Production Compose: caddy is the only service that publishes a host port.
 
-docs/13 §3 promises the web on 443 only and a Postgres that is reachable only
+docs/13 §3 promises "Internet 443 only" and a Postgres that is reachable only
 inside the Docker network. Docker publishes ports past ufw, so a `ports:` entry
 on the server is open whatever the host firewall says - the Compose files are
 the only place where this promise is kept or broken.
@@ -34,16 +33,11 @@ PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
 DEV = REPO_ROOT / "docker-compose.override.yml"
 DEPLOYMENT_DOC = REPO_ROOT / "docs" / "13_DEPLOYMENT.md"
 PRODUCTION_FILES = "-f docker-compose.yml -f deploy/docker-compose.prod.yml"
-# The reverse proxy, and the media of the AI telephone (docs/20 §3). Every other
-# service is reached through the proxy or not at all.
-PUBLISHERS = {"caddy", "asterisk"}
+# The reverse proxy. Every other service is reached through it or not at all.
+PUBLISHERS = {"caddy"}
 # HTTPS, and HTTP for the certificate challenge and the redirect. Nothing else,
 # not even on the proxy: its admin API on 2019 would be just as open.
 PROXY_PORTS = {80, 443}
-# Exactly the range of rtp.conf, UDP, on every address: the access sends the
-# media there. No signalling port: Asterisk registers outwards.
-MEDIA_RANGE = "10000-10039:10000-10039/udp"
-RTP_CONF = REPO_ROOT / "deploy" / "asterisk" / "conf" / "rtp.conf"
 LOOPBACK = {"127.0.0.1", "::1"}
 
 
@@ -179,29 +173,15 @@ def test_the_proxy_is_what_production_publishes():
     """The check above would also pass on files that publish nothing at all."""
     ports = _merged_ports(_production())
     assert {"db", "api", "n8n", "push"} <= set(ports), sorted(ports)
-    published = [_published(entry) for entry in ports["caddy"]]
-    assert 443 in published, "caddy does not publish 443, the stack is unreachable"
-    # A range or a random port is not in the set either and fails here.
-    assert set(published) <= PROXY_PORTS, f"caddy publishes {published}"
-
-
-def test_the_ai_telephone_publishes_its_media_range_and_nothing_else():
-    """Entry by entry, so a wider range, TCP or a signalling port fails."""
-    ports = _merged_ports(_production())
-    assert ports["asterisk"] == [MEDIA_RANGE], ports["asterisk"]
-    assert not any(_host_ip(entry) for entry in ports["asterisk"])
-
-
-def test_the_published_media_range_is_the_one_asterisk_uses():
-    """Asterisk picks its media ports from rtp.conf. A port outside what is
-    published would leave a caller without sound."""
-    conf = dict(
-        line.split("=", 1)
-        for line in RTP_CONF.read_text(encoding="utf-8").splitlines()
-        if "=" in line and not line.startswith(";")
+    published = {
+        name: [_published(entry) for entry in ports[name]] for name in PUBLISHERS
+    }
+    assert 443 in published["caddy"], (
+        "caddy does not publish 443, the stack is unreachable"
     )
-    first, last = conf["rtpstart"].strip(), conf["rtpend"].strip()
-    assert f"{first}-{last}:{first}-{last}/udp" == MEDIA_RANGE
+    for name, host_ports in published.items():
+        # A range or a random port is not in the set either and fails here.
+        assert set(host_ports) <= PROXY_PORTS, f"{name} publishes {host_ports}"
 
 
 def test_no_production_service_sits_on_the_host_network():

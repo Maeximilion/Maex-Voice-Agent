@@ -29,10 +29,14 @@ services:
     # reads its environment must not find the superuser's password there.
     # scripts/migrate.sh hands the owner's URL to Alembic in a container of its
     # own: inside this one the application could read it from /proc.
+    # The same for the AI telephone's secrets: the access password is for
+    # Asterisk only, the media token for `voice` (docs/20 §7).
     environment: &without_the_owner
       POSTGRES_PASSWORD: ""
       OWNER_DATABASE_URL: ""
       BACKUP_DATABASE_URL: ""
+      ACCESS_PASSWORD: ""
+      VOICE_MEDIA_TOKEN: ""
     depends_on:
       db:
         condition: service_healthy
@@ -108,7 +112,10 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
-    environment: *without_the_owner
+    environment:
+      <<: *without_the_owner
+      # Its own secret, from .env by interpolation.
+      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
     # Not root, from the start (docs/01 open points): it reads its mounts and
     # writes nothing there.
     user: "10001:10001"

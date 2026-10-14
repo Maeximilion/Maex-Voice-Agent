@@ -27,6 +27,7 @@ from api.telephony.adapters.asterisk import MediaLine
 
 if TYPE_CHECKING:
     from api.telephony.app import Voice
+    from api.telephony.session import CallSession
 
 # A frame Asterisk does not take within this time: the connection stalls, and a
 # leg we cannot reach is closed (`speech.Line`). The dialplan rings the team.
@@ -87,7 +88,7 @@ async def media(websocket: WebSocket) -> None:
                 send(None)
 
     threading.Thread(target=work, name=f"call {call_id}", daemon=True).start()
-    writer = asyncio.create_task(_write(websocket, outbox, line))
+    writer = asyncio.create_task(_write(websocket, outbox, session))
     try:
         while True:
             message = await websocket.receive()
@@ -111,20 +112,28 @@ async def media(websocket: WebSocket) -> None:
 
 
 async def _write(
-    websocket: WebSocket, outbox: "asyncio.Queue[str | bytes | None]", line: MediaLine
+    websocket: WebSocket,
+    outbox: "asyncio.Queue[str | bytes | None]",
+    session: "CallSession",
 ) -> None:
+    """Reported to the session at once, as `speech.Line` asks, not when the
+    close handshake with a stalled peer gives up. Without our ending the
+    dialplan rings the team either way."""
     try:
         while (frame := await outbox.get()) is not None:
             if isinstance(frame, bytes):
                 await asyncio.wait_for(websocket.send_bytes(frame), WRITE_SECONDS)
             else:
                 await asyncio.wait_for(websocket.send_text(frame), WRITE_SECONDS)
-    except Exception:  # noqa: BLE001 - a lost or stalled leg, whatever the cause
-        # Reported to the session at once, as `speech.Line` asks, not when the
-        # close handshake with a stalled peer gives up. Without our ending the
-        # dialplan rings the team.
-        logger.warning("the media connection takes no more frames, closing it")
-        line.closed()
+    except TimeoutError:
+        # Asterisk is there and takes nothing: a failure of the voice layer,
+        # and the call log says so (Codex on PR #297).
+        logger.warning("the media connection stalled, closing it")
+        session.broken()
+    except Exception:  # noqa: BLE001 - the leg is gone, whatever the cause
+        # A send into a connection Asterisk closed: the caller hung up.
+        logger.warning("the media connection is gone")
+        session.closed()
     with contextlib.suppress(Exception):
         await websocket.close()
 

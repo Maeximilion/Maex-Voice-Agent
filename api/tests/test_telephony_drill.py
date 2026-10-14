@@ -90,10 +90,7 @@ def test_paused_passes_only_when_the_ai_never_answered(tmp_path):
             {
                 103: {
                     "router": [*router(103, "dials"), TEAM_RINGS],
-                    "asterisk": [
-                        f"call 1.1: voice leg {dialstatus} ending "
-                        f"[transfer {drill.TEAM_PHONE}]"
-                    ],
+                    "asterisk": [f"call 1.1: voice leg {dialstatus} ending [transfer]"],
                 }
             },
         )
@@ -144,6 +141,14 @@ def test_a_callers_number_in_the_output_of_voice_fails(tmp_path):
     stage.logs["voice"].append('"WebSocket /media?call=1.0&caller=%2B4972215550101"')
     _, ok, detail = stage.no_caller_in_the_logs()
     assert not ok and detail == "found in voice"
+
+
+def test_the_team_number_in_the_output_of_asterisk_fails(tmp_path):
+    """It can be somebody's own mobile (Codex on PR #297)."""
+    stage = Stage(tmp_path, {})
+    stage.logs["asterisk"].append(f"call 1.1: to the team at {drill.TEAM_PHONE}")
+    _, ok, detail = stage.no_caller_in_the_logs()
+    assert not ok and detail == "found in asterisk"
 
 
 def test_every_run_makes_new_secrets_and_a_project_per_folder(tmp_path):

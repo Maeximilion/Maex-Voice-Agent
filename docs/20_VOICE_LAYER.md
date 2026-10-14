@@ -164,7 +164,8 @@ capture endpoint against Asterisk 22.10.1 (frames in `api/tests/fixtures/asteris
 | A full queue | Asterisk keeps about 1000 frames (20 s). Recorded: 25 s sent at once, the queue full at 1020 frames, the rest dropped without a word and the mark behind it reported at 20.5 s. So the line keeps at most three messages of audio (about 6 s) unplayed at Asterisk, each acknowledged by a mark of its own, and holds the rest back; the mark of a sentence goes out after its last audio. |
 | Barge-in | `FLUSH_MEDIA`; recorded: marks queued before it are never reported. What the line held back is dropped with it. |
 | Transfer and hangup | The media channel has no transfer. The line records the ending for the dialplan ("hangup" or "transfer <number>", the number checked for digits) before it sends `HANGUP`; `Dial` goes on (`g`) and the dialplan asks `/calls/{id}/ending`. Only "hangup" ends the call. |
-| A connection that stalls | A frame Asterisk does not take within 2 s closes the connection and tells the session at once that the leg is gone (the requirement of the row "The line does not answer" above); without an ending the dialplan rings the team. |
+| A connection that stalls | A frame Asterisk does not take within 2 s closes the connection and tells the session at once (the requirement of the row "The line does not answer" above): a failure of the voice layer (`broken`); a send into a connection Asterisk already closed is a caller who hung up. Without an ending the dialplan rings the team. |
+| What Asterisk logs | The call's id and the kind of ending ("hangup", "transfer"), never a number: neither the caller's nor the team's, which can be somebody's own mobile (Codex on PR #297). |
 | A frame the line does not understand | A failure of the voice layer (`CallSession.broken`), not a caller who hung up: the call log says so, and without an ending the dialplan rings the team. |
 | Access | `/media` and `/calls/{id}/ending` want the media token as the password of Basic credentials, which is how Asterisk sends `username` and `password` of `websocket_client.conf` (recorded). A refused connection fails `Dial`, and the team rings. |
 
@@ -648,8 +649,16 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **From T-1.11, not built:** a keepalive on the media connection (`enable_pingpongs` needs Asterisk
   22.11, the image is 22.10.1); against a `voice` that holds a call and does nothing there is the
   backstop of an hour in the dialplan. The hold sentence while a turn runs (§4). TLS and the public
-  media address for a trunk (§3). `voice` holds its live calls in one process, so a restart sends
-  every live call to the team, as the drill of a crash shows.
+  media address for a trunk (§3), and with that address the media range of `rtp.conf` published on
+  the server, exactly that range, with the port test's allow-list for it: published without the
+  address it would carry nothing, so production publishes nothing beside the proxy until then
+  (Codex on PR #297). `voice` holds its live calls in one process, so a restart sends every live
+  call to the team, as the drill of a crash shows.
+- **From T-1.11, a team that does not pick up:** the dialplan rings the team for 30 s and then ends
+  the call; the caller hears nothing more. That is the row "The team does not pick up" of §5, the
+  task T-10.8 (a callback card, and a sentence that nobody is reachable), which waits for T-1.11.
+  Until then the core sends a call to the team only when the opening hours say somebody is there,
+  and no real customer calls the AI telephone (§3, test number).
 
 ---
 

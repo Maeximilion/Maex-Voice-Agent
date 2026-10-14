@@ -30,7 +30,9 @@ done
 # The team on our own number: the dialplan would ring us, the loop guard would
 # drop the call, and every caller would be lost (rule 5). `voice` refuses the
 # same; this is for the calls that reach the team without it.
-if [ "$TEAM_PHONE" = "$VOICE_NUMBER" ] || [ "$TEAM_PHONE" = "0${VOICE_NUMBER#+49}" ]; then
+# In every form the dialplan's loop guard knows: +49..., 0049... and 0....
+if [ "$TEAM_PHONE" = "$VOICE_NUMBER" ] || [ "$TEAM_PHONE" = "00${VOICE_NUMBER#+}" ] ||
+    [ "$TEAM_PHONE" = "0${VOICE_NUMBER#+49}" ]; then
     echo "asterisk does not start: TEAM_PHONE is the AI telephone's own number" >&2
     exit 1
 fi

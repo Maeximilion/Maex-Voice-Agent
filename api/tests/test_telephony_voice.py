@@ -248,35 +248,52 @@ def test_a_frame_that_is_not_the_format_is_a_failure_and_no_hangup(phone):
     assert ending(client) == ""
 
 
-def test_a_connection_that_takes_no_more_frames_is_a_lost_leg():
-    """The writer reports it to the session at once, as `speech.Line` asks."""
+class _Socket:
+    """Asterisk's end of the connection: it stalls, or it is gone."""
 
-    class Stalled:
-        closed = False
+    def __init__(self, gone: bool) -> None:
+        self.gone = gone
+        self.closed = False
 
-        async def send_text(self, text: str) -> None:
-            await asyncio.sleep(60)
+    async def send_text(self, text: str) -> None:
+        if self.gone:
+            raise RuntimeError("Cannot call send once a close message has been sent")
+        await asyncio.sleep(60)
 
-        async def close(self) -> None:
-            self.closed = True
+    async def close(self) -> None:
+        self.closed = True
 
-    class Leg:
-        lost = False
 
-        def closed(self) -> None:
-            self.lost = True
+class _Told:
+    """What the writer tells the session."""
 
-    async def run() -> tuple[Stalled, Leg]:
-        websocket, leg = Stalled(), Leg()
+    def __init__(self) -> None:
+        self.told: list[str] = []
+
+    def broken(self) -> None:
+        self.told.append("broken")
+
+    def closed(self) -> None:
+        self.told.append("closed")
+
+
+@pytest.mark.parametrize(("gone", "told"), [(False, "broken"), (True, "closed")])
+def test_the_writer_tells_a_stalled_leg_from_one_that_is_gone(gone, told):
+    """A stall is a failure of the voice layer, a send into a closed connection
+    a caller who hung up; either way the session hears it at once (Codex on
+    PR #297)."""
+
+    async def run() -> tuple[_Socket, _Told]:
+        websocket, session = _Socket(gone), _Told()
         outbox: asyncio.Queue = asyncio.Queue()
         outbox.put_nowait('{"command": "ANSWER"}')
-        await _write(websocket, outbox, leg)  # type: ignore[arg-type]
-        return websocket, leg
+        await _write(websocket, outbox, session)  # type: ignore[arg-type]
+        return websocket, session
 
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(router_module, "WRITE_SECONDS", 0.05)
-        websocket, leg = asyncio.run(run())
-    assert leg.lost and websocket.closed
+        websocket, session = asyncio.run(run())
+    assert session.told == [told] and websocket.closed
 
 
 @pytest.mark.parametrize(

@@ -255,13 +255,17 @@ class Drill:
 
     def no_caller_in_the_logs(self) -> Check:
         """A caller's number belongs in the call log, which has a deletion
-        period, not in the output of `voice` or `asterisk` (docs/17). The call
-        to a `voice` that is down is left out: Asterisk's warning repeats the
-        dial string then (docs/20 §12)."""
+        period, not in the output of `voice` or `asterisk` (docs/17); nor does
+        the team's, which can be somebody's own mobile. The call to a `voice`
+        that is down is left out: Asterisk's warning repeats the dial string
+        then (docs/20 §12)."""
         numbers = [
             form
-            for n in (101, 102, 103, 105, 106)
-            for form in (f"{NUMBER_PREFIX}{n}", f"%2B{NUMBER_PREFIX[1:]}{n}")
+            for number in [
+                *(f"{NUMBER_PREFIX}{n}" for n in (101, 102, 103, 105, 106)),
+                TEAM_PHONE,
+            ]
+            for form in (number, "%2B" + number[1:])
         ]
         found = sorted(
             {
@@ -272,7 +276,7 @@ class Drill:
             }
         )
         return (
-            "no caller's number in the output of voice or asterisk",
+            "no caller's or team number in the output of voice or asterisk",
             not found,
             "found in " + ", ".join(found) if found else "none found",
         )
@@ -427,7 +431,7 @@ def drill_paused(drill: Drill) -> list[Check]:
         check,
         (
             "paused: the AI never answered the call",
-            unanswered and f"[transfer {TEAM_PHONE}]" in call.ending(),
+            unanswered and "[transfer]" in call.ending(),
             f"ending {call.ending()}",
         ),
     ]
