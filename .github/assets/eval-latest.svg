@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="t d">
 <title id="t">Latest eval run</title>
-<desc id="d">Latest real-model eval on 2026-10-14, model qwen3.6-35b-a3b. Regular cases 26 of 41. Target cases 2 of 27. False escalation 9.1 percent, limit 5 percent.</desc>
+<desc id="d">Latest real-model eval on 2026-10-15, model qwen3.6-35b-a3b. Regular cases 20 of 41. Target cases 2 of 27. False escalation 15.2 percent, limit 5 percent.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="460" rx="24" fill="#0D0819"/>
@@ -68,17 +68,17 @@
 <circle cx="1129.7" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="1148" cy="40" r="4.5" fill="#0D0819"/>
 <text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">EVAL SLIP · REAL MODEL</text>
-<text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-14</text>
+<text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-15</text>
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
 <text x="64" y="124" font-size="20" fill="#F1ECFF" font-weight="700">qwen3.6-35b-a3b</text>
 <text x="1136" y="124" font-size="15" fill="#A89CCB" text-anchor="end">temperature 0, invented cases only</text>
 <text x="64" y="168" font-size="15" fill="#A89CCB">Regular cases</text>
-<text x="64" y="198" font-size="26" fill="#E8FF2E" font-weight="700">26/41</text>
-<text x="154" y="198" font-size="16" fill="#F1ECFF">63 %</text>
+<text x="64" y="198" font-size="26" fill="#E8FF2E" font-weight="700">20/41</text>
+<text x="154" y="198" font-size="16" fill="#F1ECFF">49 %</text>
 <rect x="300" y="176" width="836" height="26" rx="4" fill="#0D0819"/>
-<rect x="300" y="176" width="528.1" height="26" rx="4" fill="#E8FF2E"/>
-<rect x="830.1" y="176" width="303.9" height="26" rx="4" fill="#76699F"/>
-<text x="1136" y="168" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-14</text>
+<rect x="300" y="176" width="405.8" height="26" rx="4" fill="#E8FF2E"/>
+<rect x="707.8" y="176" width="426.2" height="26" rx="4" fill="#76699F"/>
+<text x="1136" y="168" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-15</text>
 <text x="64" y="246" font-size="15" fill="#A89CCB">Target cases</text>
 <text x="64" y="276" font-size="26" fill="#E8FF2E" font-weight="700">2/27</text>
 <text x="138.4" y="276" font-size="16" fill="#F1ECFF">7 %</text>
@@ -94,13 +94,12 @@
 <text x="525" y="330" font-size="15" fill="#A89CCB">crashed</text>
 <rect x="600" y="318" width="14" height="14" rx="3" fill="#76699F"/>
 <text x="622" y="330" font-size="15" fill="#A89CCB">not passed</text>
-<text x="1136" y="330" font-size="14" fill="#A89CCB" text-anchor="end">crashed cases not recorded for this run</text>
 <text x="64" y="376" font-size="14" fill="#A89CCB">hard violations</text>
-<text x="64" y="404" font-size="20" fill="#F1ECFF" font-weight="700">not recorded</text>
+<text x="64" y="404" font-size="20" fill="#FF5277" font-weight="700">1</text>
 <text x="336" y="376" font-size="14" fill="#A89CCB">missed escalations</text>
 <text x="336" y="404" font-size="20" fill="#FF5277" font-weight="700">1</text>
 <text x="608" y="376" font-size="14" fill="#A89CCB">false escalation</text>
-<text x="608" y="404" font-size="20" fill="#FF5277" font-weight="700">9.1 %</text>
+<text x="608" y="404" font-size="20" fill="#FF5277" font-weight="700">15.2 %</text>
 <text x="880" y="376" font-size="14" fill="#A89CCB">tokens per case</text>
-<text x="880" y="404" font-size="20" fill="#F1ECFF" font-weight="700">22,200</text>
+<text x="880" y="404" font-size="20" fill="#F1ECFF" font-weight="700">21,714</text>
 </svg>

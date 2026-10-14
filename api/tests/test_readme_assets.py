@@ -623,7 +623,7 @@ def test_tablet_and_reply_start_together_when_confirm_commits() -> None:
 @pytest.fixture
 def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     """Histories in tmp_path, a branch to record on, and render counted, not run."""
-    state = {"renders": 0, "reports": tmp_path / "reports"}
+    state: dict = {"renders": 0, "reports": tmp_path / "reports"}
     state["reports"].mkdir()
     monkeypatch.setattr(ra, "EVAL_HISTORY", tmp_path / "eval.csv")
     monkeypatch.setattr(ra, "VOICE_HISTORY", tmp_path / "voice.csv")

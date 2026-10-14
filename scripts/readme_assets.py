@@ -758,15 +758,19 @@ def record_report(
     return f"recorded {row['suite']} {row['passed']}/{row['total']} on {row['date']}"
 
 
+def is_voice_recorded(row: dict[str, str], path: Path = VOICE_HISTORY) -> bool:
+    if not path.exists():
+        return False
+    with path.open(encoding="utf-8", newline="") as fh:
+        return any(
+            _voice_identity(old) == _voice_identity(row) for old in csv.DictReader(fh)
+        )
+
+
 def record_voice(row: dict[str, str], path: Path = VOICE_HISTORY) -> str:
     """Append one voice measurement; the same one twice stays one row."""
-    if path.exists():
-        with path.open(encoding="utf-8", newline="") as fh:
-            if any(
-                _voice_identity(old) == _voice_identity(row)
-                for old in csv.DictReader(fh)
-            ):
-                return f"already recorded: {row['metric']} on {row['date']}"
+    if is_voice_recorded(row, path):
+        return f"already recorded: {row['metric']} on {row['date']}"
     append_row(path, VOICE_FIELDS, row)
     return f"recorded {row['metric']} on {row['date']}"
 
@@ -2427,15 +2431,6 @@ def auto_record(suite: str, since: float, reports: Path = REPORTS) -> int:
     return render()
 
 
-def is_voice_recorded(row: dict[str, str], path: Path = VOICE_HISTORY) -> bool:
-    if not path.exists():
-        return False
-    with path.open(encoding="utf-8", newline="") as fh:
-        return any(
-            _voice_identity(old) == _voice_identity(row) for old in csv.DictReader(fh)
-        )
-
-
 def pending(
     folders: list[Path] | None = None,
     history: Path = EVAL_HISTORY,
@@ -2780,8 +2775,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.record:
             return record_pending()
         reports, rows = pending()
-        for path, suite in reports:
-            print(f"eval {suite}: {shown(path)}")
+        for report_path, suite in reports:
+            print(f"eval {suite}: {shown(report_path)}")
         for row in rows:
             print(f"voice: {row['date']} {row['metric']} {row['value']} {row['unit']}")
         if reports or rows:
