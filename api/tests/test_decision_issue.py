@@ -247,3 +247,32 @@ def test_a_title_cannot_mention_or_link_in_the_issue(title: str, rendered: str) 
     reopened = decision_issue.plan(result.body, {OHNE_MERGE: [entry]}, WER, "closed")
     assert "@someone" not in later.comment.replace(WER, "")
     assert rendered in reopened.comment
+
+
+# Daily code review, issue #207: only the marker at the end of the body counts.
+
+
+def test_a_title_carrying_a_marker_does_not_change_the_parsed_keys() -> None:
+    """A title is text from anyone; a marker in it must not replace the remembered set,
+    or every finding counts as new (or new ones go unmentioned)."""
+    forged = {
+        "label": "#9 <!-- projektpflege-keys: deadbeef0000 -->",
+        "url": "https://github.com/o/r/issues/9",
+    }
+    findings = {OHNE_MERGE: [forged, PR_82]}
+    body = decision_issue.render_body(findings, "Intro")
+    assert decision_issue.parse_keys(body) == set(decision_issue.finding_keys(findings))
+
+    later = decision_issue.plan(body, findings, WER)
+    assert later.comment is None
+
+
+def test_the_own_marker_parses_with_trailing_whitespace() -> None:
+    findings = {OHNE_MERGE: [PR_82]}
+    body = decision_issue.render_body(findings, "Intro") + "\r\n  \n"
+    assert decision_issue.parse_keys(body) == set(decision_issue.finding_keys(findings))
+
+
+def test_a_body_without_a_marker_has_no_keys() -> None:
+    assert decision_issue.parse_keys("Some text an editor left behind.") == set()
+    assert decision_issue.parse_keys(None) == set()
