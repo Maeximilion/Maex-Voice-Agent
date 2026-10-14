@@ -16,6 +16,7 @@ class FakeEar:
 
     def __init__(self) -> None:
         self.frames: list[tuple[bytes, float]] = []
+        self.expected: list[str] = []
         self.closed = False
         # Set to make the engine fail on the next frame.
         self.broken = False
@@ -28,6 +29,9 @@ class FakeEar:
         if self.broken:
             raise RuntimeError("speech-to-text engine failed")
         self.frames.append((frame, at))
+
+    def expect(self, terms: list[str]) -> None:
+        self.expected = terms
 
     def close(self) -> None:
         self.closed = True

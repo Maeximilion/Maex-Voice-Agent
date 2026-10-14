@@ -46,6 +46,7 @@ from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
     cart_lines,
+    last_words,
     order_corrected,
     replace_cart,
     same_order,
@@ -137,14 +138,21 @@ def note_said(state: ConversationState, say: str) -> None:
 
     And whether the sentence asked for the guest's number: then the digits of
     the answer are a number to call without a word that says so
-    (`state.note_guest_details`)."""
+    (`state.note_guest_details`).
+
+    The sentence itself goes back to the model with the next turn
+    (`ConversationState.last_say`): the guest's next words answer it."""
     state.readback_heard = state.readback is not None and read_out(say, state.readback)
+    # What the guest answers next refers to this sentence (`last_say`), and
+    # with a first sentence said the call has begun: no second greeting.
+    state.last_say = last_words(say)
+    state.greeted = True
     state.asked_for_phone = names_a_phone_number(say)
     heard = say.lower()
     named = {
         item_id
         for item_id, (number, name) in state.offered_items.items()
-        if _named(heard, number.lower(), name.lower())
+        if names_dish(heard, number.lower(), name.lower())
     }
     state.known_item_ids |= named
     state.offered_items = {
@@ -154,8 +162,9 @@ def note_said(state: ConversationState, say: str) -> None:
     }
 
 
-def _named(heard: str, number: str, name: str) -> bool:
-    """A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
+def names_dish(heard: str, number: str, name: str) -> bool:
+    """Whether a sentence (lower case) names the dish (`number` and `name` in
+    lower case). A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
     dish. Half a name names none either, and a name counts only as whole
     words: "Reis" is not named by "Preis" or "Reisnudeln" (Codex PR #222)."""
     if name and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", heard):

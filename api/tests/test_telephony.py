@@ -20,11 +20,21 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMTurn
+from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
-from api.models import Call, Callback, Reservation, ServiceConfig
+from api.domain.menu.importer import apply
+from api.domain.menu.items import active_count
+from api.models import Call, Callback, MenuItem, Reservation, ServiceConfig
 from api.telephony.adapters.fake import FakeTelephony, load_call
-from api.telephony.handler import FAREWELL, SAY_OUTAGE, STILL_THERE, CallHandler
+from api.telephony.handler import (
+    FAREWELL,
+    SAY_OUTAGE,
+    STILL_THERE,
+    CallHandler,
+    key_terms,
+)
+from evals.runner import menu_plan
 from scripts.seed import seed
 from sim.scripted_llm import QUESTIONS, SAY_CONFIRMED, ScriptedLLM
 from sim.session import menu_numbers, resolve_tenant
@@ -1021,3 +1031,101 @@ def test_a_call_the_agent_does_not_take_rings_the_team_unanswered(session, tenan
     wire = _Wire(session, tenant)
     assert wire.line.actions == [("transfer", TEAM_PHONE)]
     assert wire.call.outcome == "transfer"
+
+
+# -- key terms for the speech engine (T-10.5) ------------------------------------------
+
+
+def test_key_terms_are_the_dishes_in_question_never_the_menu(session, tenant):
+    """After each turn the engine gets the names of the dishes the agent just
+    named, which the guest answers next, and then those of the order
+    (docs/20 §6); a turn that names none and has no order gives none."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = load_call(
+        CASES / "abholung_0060_duck_is_ambiguous_the_chosen_one_is_sold_out.json"
+    )
+    port.play(case, handler_for(session, tenant, port))
+
+    ducks = ["Ente knusprig", "Ente süß-sauer", "Ente mit Mango"]
+    assert port.terms == [
+        [],  # "Was möchten Sie bestellen?"
+        ducks,  # "Meinen Sie Nummer 47 Ente knusprig oder ...?"
+        ducks,  # the same question again, the one chosen is sold out
+        [],
+        [],
+        ["Ente mit Mango"],  # the read-back
+        [],
+    ]
+
+
+def test_key_terms_are_names_as_a_guest_says_them(session, tenant):
+    """The number of pieces is part of a name on the card, not of what a guest
+    says ("Frühlingsrollen (4 Stück)")."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = load_call(CASES / "abholung_0001_zwei_positionen_mit_option.json")
+    port.play(case, handler_for(session, tenant, port))
+    assert ["Frühlingsrollen", "Ente knusprig"] in port.terms
+
+
+def _seen(*dishes: tuple[str, str]) -> ConversationState:
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    for number, name in dishes:
+        state.seen_items[number] = {"number": number, "name": name}
+    return state
+
+
+def test_a_dish_named_without_its_pieces_is_named():
+    """The agent says a name as a guest does, without "(4 Stück)" (Codex PR
+    #292, P2)."""
+    state = _seen(("23", "Frühlingsrollen (4 Stück)"), ("24", "Wan Tan"))
+    said = "Meinen Sie die Frühlingsrollen oder die Wan Tan?"
+    assert key_terms(state, said, menu_size=50) == ["Frühlingsrollen", "Wan Tan"]
+
+
+def test_key_terms_that_would_be_the_whole_menu_are_not_handed_over():
+    """On a menu of one dish, or of two both in question, the terms would be
+    the menu (CLAUDE.md §2 rule 6, Codex PR #292, P1)."""
+    state = _seen(("1", "Pho Bo"), ("2", "Pho Ga"))
+    said = "Meinen Sie Nummer 1 Pho Bo oder Nummer 2 Pho Ga?"
+    assert key_terms(state, said, menu_size=2) == []
+    assert key_terms(state, said, menu_size=3) == ["Pho Bo", "Pho Ga"]
+    one = _seen(("1", "Pho Bo"))
+    assert key_terms(one, "Einmal Nummer 1 Pho Bo?", menu_size=1) == []
+
+
+def test_the_menu_size_counts_the_active_dishes(session, tenant):
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    size = active_count(session, tenant.id)
+    dish = session.scalars(
+        select(MenuItem).where(MenuItem.tenant_id == tenant.id)
+    ).first()
+    dish.active = False
+    session.commit()
+    assert size > 1
+    assert active_count(session, tenant.id) == size - 1
+    assert active_count(session, uuid.uuid4()) == 0
+
+
+def test_a_question_into_the_silence_takes_the_key_terms_of_the_question(
+    session, tenant
+):
+    """After "Sind Sie noch da?" the guest says "Ja"; the names of the dishes
+    asked about before would bend that yes into a dish (Codex PR #292, P2).
+    The terms follow what was said last, as after every turn."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Hallo, ich moechte etwas zum Abholen bestellen.",
+            },
+            {"role": "customer", "text": "Einmal Ente."},
+            {"role": "customer", "silence": True},
+        ]
+    }
+    port.play(case, handler_for(session, tenant, port))
+    assert port.terms[-2] == ["Ente knusprig", "Ente süß-sauer", "Ente mit Mango"]
+    assert port.terms[-1] == []

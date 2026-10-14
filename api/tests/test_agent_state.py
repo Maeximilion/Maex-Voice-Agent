@@ -5,9 +5,11 @@ import uuid
 import pytest
 
 from api.agent.dispatch import ToolResult
+from api.agent.guards import note_said
 from api.agent.intent import heard
 from api.agent.outcome import call_outcome
 from api.agent.state import (
+    LAST_SAY_MAX,
     ConversationState,
     apply_state_patch,
     apply_tool_result,
@@ -463,3 +465,101 @@ def test_call_that_ends_before_a_draft_is_logged_with_its_wish():
     note_intent(state, "Ich möchte etwas zum Abholen bestellen")
 
     assert call_outcome(state) == ("abandoned", "pickup")
+
+
+# --- What a model that keeps nothing gets back: its last sentence, the status ---
+
+
+def test_the_last_sentence_goes_back_to_the_model_with_the_next_turn():
+    """Seen on the first full eval run (13.10.2026): "Ja, passt" after a
+    question the model no longer knew it had asked was answered with an
+    invented confirmation, and a name was searched on the menu."""
+    state = make_state()
+    assert "last_say" not in state.to_prompt_json()
+
+    note_said(state, "Auf welchen Namen darf ich die Bestellung notieren?")
+
+    assert state.to_prompt_json()["last_say"] == (
+        "Auf welchen Namen darf ich die Bestellung notieren?"
+    )
+
+
+def test_only_one_sentence_is_kept_never_a_transcript():
+    state = make_state()
+    note_said(state, "Was darf es sein?")
+
+    note_said(state, "Darf es noch etwas sein?")
+
+    assert state.to_prompt_json()["last_say"] == "Darf es noch etwas sein?"
+    assert "Was darf es sein?" not in str(state.to_prompt_json())
+
+
+def test_a_long_sentence_keeps_its_end_with_the_question():
+    """A read-back of six dishes runs past the limit; the guest's yes answers
+    its closing question, so that is what stays (Codex PR #291, P2)."""
+    state = make_state()
+    long_read_back = "Einmal Nummer 23 Frühlingsrollen, " * 12 + "Passt das so?"
+
+    note_said(state, long_read_back)
+
+    kept = state.to_prompt_json()["last_say"]
+    assert len(kept) == LAST_SAY_MAX
+    assert kept.startswith("…")
+    assert kept.endswith("Passt das so?")
+
+
+def test_a_sentence_at_the_limit_stays_whole():
+    state = make_state()
+    said = "a" * LAST_SAY_MAX
+
+    note_said(state, said)
+
+    assert state.to_prompt_json()["last_say"] == said
+
+
+@pytest.mark.parametrize(
+    ("is_open", "pickup"), [(True, True), (True, False), (False, False)]
+)
+def test_the_service_status_of_this_call_stays_in_the_state(is_open, pickup):
+    """Without it a real model asked get_service_status at the start of every
+    turn: it could not know that it had asked before. Pickup can be off while
+    the restaurant is open, so both flags stay (Codex PR #291, P1)."""
+    state = make_state()
+    assert "service" not in state.to_prompt_json()
+
+    apply_tool_result(
+        state,
+        "get_service_status",
+        ToolResult(
+            ok=True,
+            data={"is_open": is_open, "pickup_enabled": pickup, "closes_at": None},
+        ),
+    )
+
+    assert state.to_prompt_json()["service"] == {
+        "is_open": is_open,
+        "pickup_enabled": pickup,
+    }
+
+
+def test_a_failed_status_request_leaves_the_status_unknown():
+    state = make_state()
+
+    apply_tool_result(
+        state, "get_service_status", ToolResult(ok=False, error_code="not_found")
+    )
+
+    assert "service" not in state.to_prompt_json()
+
+
+@pytest.mark.parametrize(
+    "data", [{}, {"is_open": True}, {"is_open": True, "pickup_enabled": None}]
+)
+def test_a_status_with_a_flag_missing_is_not_kept(data):
+    """A missing flag is unknown, not "no": nothing is kept, and the model
+    asks again."""
+    state = make_state()
+
+    apply_tool_result(state, "get_service_status", ToolResult(ok=True, data=data))
+
+    assert state.service is None

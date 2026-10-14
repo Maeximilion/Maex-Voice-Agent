@@ -89,7 +89,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 |---|---|
 | `DATABASE_URL` | Postgres database connection of the application |
 | `OWNER_DATABASE_URL` | Only on the server: the owner of the schema, for migrations, backup and restore. `DATABASE_URL` then names a role without superuser that `bash scripts/db_role.sh` sets up; in `ENV=prod` the API does not start as a superuser (`docs/13_DEPLOYMENT.md` §3). Empty on the workbench |
-| `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). In `ENV=prod` the API does not start on the placeholder or on fewer than 32 characters (`openssl rand -hex 32`) |
+| `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). Outside `ENV=dev` and `ENV=test`, the API does not start on the placeholder, fewer than 32 characters, or any whitespace (`openssl rand -hex 32`) |
 | `TEAM_PHONE` | Extension for forwarding to team; the AI telephone's dialplan rings it whenever the service `voice` cannot say where a call goes |
 | `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines. It does not start with one missing, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
 | `ACCESS_HOST`, `ACCESS_USER`, `ACCESS_PASSWORD` | Where the AI telephone registers: the pilot's router in the test phase, a SIP trunk in operation. Read by Asterisk only |

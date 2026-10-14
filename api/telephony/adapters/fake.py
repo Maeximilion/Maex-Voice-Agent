@@ -51,6 +51,9 @@ class FakeTelephony:
 
     def __init__(self) -> None:
         self.actions: list[Action] = []
+        # The key terms handed over after each turn. Not an action: they
+        # change nothing the caller hears.
+        self.terms: list[list[str]] = []
         self._caller_ids: dict[str, str | None] = {}
         self._open: set[str] = set()
 
@@ -87,6 +90,9 @@ class FakeTelephony:
 
     def say(self, session_id: str, text: str, interruptible: bool = False) -> None:
         self.actions.append(Action("say", session_id, text, interruptible))
+
+    def expect(self, session_id: str, terms: list[str]) -> None:
+        self.terms.append(terms)
 
     def transfer(self, session_id: str, target: str) -> None:
         self.actions.append(Action("transfer", session_id, target))
