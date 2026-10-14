@@ -449,6 +449,10 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 **Nobody reachable** (`agent/loop.py` `SAY_NOBODY_REACHABLE`, draft): the core gives up, the team is not reachable and there is no number for a callback. No sentence that promises the team is spoken then.
 > „Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant niemanden. Bitte rufen Sie später noch einmal an."
 
+**Silent line** (`telephony/handler.py` `STILL_THERE`, drafts): the caller has said nothing since the agent's last sentence ended. The code asks twice, then says the farewell and hangs up (docs/20 §4). A yes to one of these questions confirms no draft.
+> „Sind Sie noch da?"
+> „Ich höre Sie leider nicht. Sind Sie noch dran?"
+
 **Verabschiedung**
 > „Vielen Dank für Ihren Anruf. Auf Wiederhören."
 

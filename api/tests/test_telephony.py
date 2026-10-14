@@ -24,7 +24,7 @@ from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
 from api.models import Call, Callback, Reservation, ServiceConfig
 from api.telephony.adapters.fake import FakeTelephony, load_call
-from api.telephony.handler import FAREWELL, SAY_OUTAGE, CallHandler
+from api.telephony.handler import FAREWELL, SAY_OUTAGE, STILL_THERE, CallHandler
 from scripts.seed import seed
 from sim.scripted_llm import QUESTIONS, SAY_CONFIRMED, ScriptedLLM
 from sim.session import menu_numbers, resolve_tenant
@@ -709,3 +709,315 @@ def test_an_answer_that_comes_after_the_tenants_limit_is_not_spoken(session, ten
 
     assert REPLY not in port.says("s-1")
     assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+# -- the own voice layer: what may be talked over, silence, a failing ear (T-10.4) --
+
+
+def _reservation_until_the_read_back(*after: dict) -> dict:
+    return {**RESERVATION, "transcript": [*RESERVATION["transcript"][:3], *after]}
+
+
+SILENCE = {"role": "customer", "silence": True}
+YES = {"role": "customer", "text": "Ja, passt so."}
+
+
+def test_a_question_may_be_talked_over_the_disclosure_and_the_read_back_may_not(
+    session, tenant
+):
+    port = FakeTelephony()
+    sid = port.play(RESERVATION, handler_for(session, tenant, port))
+
+    says, open_to_talk = port.says(sid), port.interruptible(sid)
+    assert says[0] not in open_to_talk  # the AI disclosure
+    assert QUESTIONS["guest_name"] in " ".join(open_to_talk)
+    read_back = next(line for line in says if line.endswith("Passt das so?"))
+    assert read_back not in open_to_talk
+    assert says[-1] not in open_to_talk  # the confirmation before the hangup
+
+
+def test_a_sentence_the_core_counts_as_heard_is_not_talked_over(session, tenant):
+    """Codex PR #286: the core takes the sentence that ends a turn as heard. If
+    it asked for the guest's number, the digits of the next sentence are that
+    number; if it named a dish, that dish may enter the order. A guest who
+    talked over such a sentence would be measured against words they never
+    heard, so these sentences are played to the end."""
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+        ]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+    says, open_to_talk = port.says(sid), port.interruptible(sid)
+    assert QUESTIONS["phone"] in says[-1]  # the number is withheld
+    assert says[-1] not in open_to_talk
+    assert QUESTIONS["guest_name"] in " ".join(open_to_talk)
+
+
+def test_what_is_said_before_a_transfer_is_not_talked_over(session, tenant):
+    port = FakeTelephony()
+    case = load_call(CASES / "eskalation_0001_beschwerde.json")
+    sid = port.play(case, handler_for(session, tenant, port))
+    assert port.transfers(sid) == [TEAM_PHONE]
+    assert port.interruptible(sid) == []
+
+
+def test_a_silent_line_is_asked_twice_then_the_agent_says_goodbye(session, tenant):
+    port = FakeTelephony()
+    case = {"transcript": [SILENCE, SILENCE, SILENCE, YES]}
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert port.says(sid)[1:] == [*STILL_THERE, FAREWELL]
+    assert port.interruptible(sid) == list(STILL_THERE)
+    assert port.actions[-1].kind == "hangup" and not port.transfers(sid)
+    assert the_call(session, sid).ended_at is not None
+
+
+def test_a_caller_who_answers_is_asked_from_the_start_the_next_time(session, tenant):
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            SILENCE,
+            SILENCE,
+            {"role": "customer", "text": "Ich haette gern einen Tisch."},
+            SILENCE,
+            SILENCE,
+            SILENCE,
+        ]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+    asked = [line for line in port.says(sid) if line in STILL_THERE]
+    assert asked == [*STILL_THERE, *STILL_THERE]
+    assert port.says(sid)[-1] == FAREWELL
+
+
+def test_a_yes_to_are_you_still_there_confirms_nothing(session, tenant):
+    """Hard rule 3: after the read-back the guest is silent, the code asks "Sind
+    Sie noch da?", and the "Ja" to that is no yes to the reservation. The draft
+    is read out again, and only the yes to it books."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(_reservation_until_the_read_back(SILENCE, YES), handler)
+
+    call = the_call(session, sid)
+    reservation = session.scalars(
+        select(Reservation).where(Reservation.call_id == call.id)
+    ).one()
+    assert reservation.status == "draft"
+    says = port.says(sid)
+    asked_at = says.index(STILL_THERE[0])
+    read_back = says[asked_at - 1]
+    assert says[asked_at + 1 :] == [read_back]  # read out again, nothing booked
+    assert SAY_CONFIRMED not in says
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(_reservation_until_the_read_back(SILENCE, YES, YES), handler)
+    booked = session.scalars(
+        select(Reservation).where(Reservation.call_id == the_call(session, sid).id)
+    ).one()
+    assert booked.status == "confirmed" and port.says(sid)[-1] == SAY_CONFIRMED
+
+
+def test_a_guest_who_stays_silent_after_the_read_back_books_nothing(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    case = _reservation_until_the_read_back(SILENCE, SILENCE, SILENCE)
+    sid = port.play(case, handler)
+    call = the_call(session, sid)
+    reservation = session.scalars(
+        select(Reservation).where(Reservation.call_id == call.id)
+    ).one()
+    assert reservation.status == "draft" and port.actions[-1].kind == "hangup"
+    assert port.says(sid)[-1] == FAREWELL
+
+
+def test_a_failing_ear_or_mouth_ends_with_the_outage_sentence_and_the_team(
+    session, tenant
+):
+    port = FakeTelephony()
+    case = {
+        "transcript": [
+            {"role": "customer", "text": "Ich haette gern einen Tisch."},
+            {"role": "customer", "voice_failure": True},
+            YES,
+        ]
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert port.says(sid)[-1] == SAY_OUTAGE
+    assert port.transfers(sid) == [TEAM_PHONE]
+    assert the_call(session, sid).outcome == "error"
+
+
+def test_silence_or_a_failure_on_an_unknown_call_goes_to_the_team(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    handler.on_silence("lost-1")
+    handler.on_voice_failure("lost-2")
+    # The tenant's number is not known for a call this process never saw.
+    assert port.transfers("lost-1") == port.transfers("lost-2") == [settings.team_phone]
+
+
+# -- a whole call through the session: ear, core and mouth (T-10.4) -----------------
+
+
+# The first sentence of RESERVATION.
+WISH = "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr."
+
+
+class _Wire:
+    """A call on the own voice layer with fakes for ear, mouth and line: the
+    handler and the core are the real ones."""
+
+    def __init__(self, session, tenant):
+        from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
+        from api.telephony.session import CallSession, Lines
+
+        self.now = 50.0
+        self.line, self.ear, self.lines = FakeLine(), FakeEar(), Lines()
+        self.call = CallSession(
+            "voice-1",
+            line=self.line,
+            ear=self.ear,
+            mouth=FakeMouth(),
+            events=handler_for(session, tenant, self.lines),
+            caller_id="0721 5551234",
+            clock=lambda: self.now,
+            silence_seconds=6.0,
+        )
+        self.lines.add(self.call)
+        self.call.start()
+        self.call.drain()
+
+    def played(self) -> None:
+        """The line has played everything that was queued."""
+        self.now += 3.0
+        self.call.played(self.line.mark)
+        self.call.drain()
+
+    def says(self, text: str, **more) -> None:
+        from api.telephony.speech import Heard
+
+        self.now += 1.0
+        self.ear.hear(Heard(text, ended_at=self.now, **more))
+        self.call.drain()
+
+    def until_the_read_back(self) -> str:
+        self.played()
+        self.says(WISH)
+        self.played()
+        self.says("Auf den Namen Mueller.")
+        return self.line.played()[-1]
+
+
+def _reservation_of(session, session_id: str) -> Reservation:
+    call = the_call(session, session_id)
+    return session.scalars(
+        select(Reservation).where(Reservation.call_id == call.id)
+    ).one()
+
+
+def test_a_reservation_on_the_wire_is_booked_by_the_yes_after_the_read_back(
+    session, tenant
+):
+    wire = _Wire(session, tenant)
+    assert wire.line.kinds() == ["answer", "play"]  # the greeting answers the line
+    read_back = wire.until_the_read_back()
+    assert read_back.endswith("Passt das so?")
+
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert wire.line.played()[-1] == SAY_CONFIRMED
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+    # The hangup waits until the caller has heard the confirmation.
+    assert "hangup" not in wire.line.kinds() and wire.call.outcome == "open"
+    wire.played()
+    assert wire.line.kinds()[-1] == "hangup" and wire.call.outcome == "hangup"
+    assert the_call(session, "voice-1").outcome == "completed"
+
+
+def test_a_yes_spoken_into_the_read_back_books_nothing(session, tenant):
+    """Hard rule 3 on the wire: the guest says "Ja" while the read-back is still
+    playing. It is no answer; the yes after the read-back is."""
+    wire = _Wire(session, tenant)
+    read_back = wire.until_the_read_back()
+    wire.says("Ja, passt so.")  # the read-back has not been played to the end
+    assert wire.line.played()[-1] == read_back
+    assert "flush" not in wire.line.kinds()
+    assert _reservation_of(session, "voice-1").status == "draft"
+
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+
+
+def test_a_yes_that_was_queued_before_the_read_back_books_nothing(session, tenant):
+    """Hard rule 3 on the wire (Codex PR #286): the guest gives the name and
+    says "Ja" at once, before the worker has handled the name. The core has
+    "said" the read-back by then, but the guest has not heard a word of it."""
+    from api.telephony.speech import Heard
+
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says(WISH)
+    wire.played()
+    wire.now += 1.0
+    wire.ear.hear(Heard("Auf den Namen Mueller.", ended_at=wire.now))
+    wire.ear.hear(Heard("Ja, passt so.", ended_at=wire.now + 0.5))
+    wire.call.drain()
+    assert wire.line.played()[-1].endswith("Passt das so?")
+    assert _reservation_of(session, "voice-1").status == "draft"
+
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+
+
+def test_line_noise_after_the_read_back_is_no_yes(session, tenant):
+    wire = _Wire(session, tenant)
+    read_back = wire.until_the_read_back()
+    wire.played()
+    wire.says("Ja", speech=False)  # words an engine made of noise
+    assert wire.line.played()[-1] == read_back
+    assert _reservation_of(session, "voice-1").status == "draft"
+
+
+def test_a_silent_caller_on_the_wire_is_asked_twice_and_then_let_go(session, tenant):
+    wire = _Wire(session, tenant)
+    wire.until_the_read_back()
+    for _ in range(3):
+        wire.played()
+        wire.now += 6.5
+        wire.call.drain()
+    assert wire.line.played()[-3:] == [*STILL_THERE, FAREWELL]
+    wire.played()
+    assert wire.call.outcome == "hangup"
+    assert _reservation_of(session, "voice-1").status == "draft"
+
+
+def test_an_ear_that_breaks_on_the_wire_sends_the_call_to_the_team(session, tenant):
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.ear.broken = True
+    wire.call.audio(b"\x00\x00")
+    wire.call.drain()
+    assert wire.line.played()[-1] == SAY_OUTAGE
+    wire.played()
+    assert wire.line.actions[-1] == ("transfer", TEAM_PHONE)
+    assert wire.call.outcome == "transfer"
+    assert the_call(session, "voice-1").outcome == "error"
+
+
+def test_a_call_the_agent_does_not_take_rings_the_team_unanswered(session, tenant):
+    """Mode `paused`: the transfer comes before any sentence, so the line is
+    never answered by us (docs/20 §4, call start)."""
+    set_mode(session, tenant.id, "paused")
+    wire = _Wire(session, tenant)
+    assert wire.line.actions == [("transfer", TEAM_PHONE)]
+    assert wire.call.outcome == "transfer"
