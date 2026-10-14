@@ -1169,3 +1169,25 @@ def test_mark_uploaded_refuses_main(
     (assets / ra.UPLOADED).unlink(missing_ok=True)
     assert ra.main(["mark-uploaded"]) == 1
     assert not (assets / ra.UPLOADED).exists()
+
+
+def test_a_claim_made_by_another_recorder_meanwhile_is_not_deleted(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex on cae5196: recorder A must not delete what recorder B claimed later."""
+    folder = recording["reports"]
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    real_record_voice = ra.record_voice
+
+    def other_recorder_claims(
+        row: dict[str, str], path: Path = ra.VOICE_HISTORY
+    ) -> str:
+        ra.append_row(
+            folder / "voice_pending.csv.99999", ra.VOICE_FIELDS, drill_row("14")
+        )
+        return real_record_voice(row, path)
+
+    monkeypatch.setattr(ra, "record_voice", other_recorder_claims)
+    ra.record_pending([folder])
+    assert (folder / "voice_pending.csv.99999").exists()
+    assert not list(folder.glob(f"{ra.VOICE_PENDING}.{ra.os.getpid()}"))
