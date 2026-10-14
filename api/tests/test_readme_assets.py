@@ -982,3 +982,25 @@ def test_a_row_a_kit_appends_while_pending_is_recorded_is_kept(
     assert [r.value for r in ra.read_voice_history(ra.VOICE_HISTORY)] == [15.0]
     _, waiting = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
     assert [r["value"] for r in waiting] == ["14"]
+
+
+def test_a_claim_made_by_another_recorder_meanwhile_is_not_deleted(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Codex on cae5196: recorder A must not delete what recorder B claimed later."""
+    folder = recording["reports"]
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    real_record_voice = ra.record_voice
+
+    def other_recorder_claims(
+        row: dict[str, str], path: Path = ra.VOICE_HISTORY
+    ) -> str:
+        ra.append_row(
+            folder / "voice_pending.csv.99999", ra.VOICE_FIELDS, drill_row("14")
+        )
+        return real_record_voice(row, path)
+
+    monkeypatch.setattr(ra, "record_voice", other_recorder_claims)
+    ra.record_pending([folder])
+    assert (folder / "voice_pending.csv.99999").exists()
+    assert not list(folder.glob(f"{ra.VOICE_PENDING}.{ra.os.getpid()}"))

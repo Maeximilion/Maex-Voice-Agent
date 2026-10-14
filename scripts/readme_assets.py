@@ -2402,6 +2402,9 @@ def record_pending(folders: list[Path] | None = None) -> int:
             os.replace(
                 folder / VOICE_PENDING, folder / f"{VOICE_PENDING}.{os.getpid()}"
             )
+    # What this run reads and may delete: its own claim and any an interrupted run
+    # left, not one a second recorder makes after this point.
+    claims = [c for folder in folders for c in folder.glob(VOICE_PENDING + ".*")]
     reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
     for path, suite in reports:
         report = json.loads(path.read_text(encoding="utf-8"))
@@ -2411,10 +2414,9 @@ def record_pending(folders: list[Path] | None = None) -> int:
         )
     for row in rows:
         print(record_voice(row, VOICE_HISTORY))
-    # Every claimed file, also one an interrupted run left: all its rows are in now.
-    for folder in folders:
-        for claim in folder.glob(VOICE_PENDING + ".*"):
-            claim.unlink()
+    for claim in claims:
+        # Another recorder may have read and removed a leftover claim already.
+        claim.unlink(missing_ok=True)
     return render()
 
 
