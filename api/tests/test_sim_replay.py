@@ -483,3 +483,31 @@ def test_call_on_the_stand_in_has_no_usage_line(session, tenant):
     call.finish()
 
     assert call.usage_line() is None
+
+
+def test_the_call_limit_is_the_tenants_on_the_text_phone_too(
+    session, tenant, monkeypatch
+):
+    """The text phone, the dev phone and the evals end a call at the limit in
+    `service_config`, as the phone line does, not at the setting (#207).
+    Checked on what the loop is built with: a limit of 0 against the real
+    clock would depend on the clock moving between two reads."""
+    from api.models import ServiceConfig
+    from sim import session as sim_session
+
+    built = {}
+
+    class Recording(sim_session.ConversationLoop):
+        def __init__(self, *args, **kwargs):
+            built.update(kwargs)
+            super().__init__(*args, **kwargs)
+
+    monkeypatch.setattr(sim_session, "ConversationLoop", Recording)
+    session.get(ServiceConfig, tenant.id).max_call_seconds = (
+        settings.max_call_seconds + 1
+    )
+    session.flush()
+
+    SimCall(session, tenant, now=NOW, external_session_id=f"sim-{uuid.uuid4()}")
+
+    assert built["max_call_seconds"] == settings.max_call_seconds + 1
