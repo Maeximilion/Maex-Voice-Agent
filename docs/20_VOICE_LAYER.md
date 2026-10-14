@@ -221,9 +221,10 @@ terms through `Ear.expect`.** Started on the local pair of T-10.3 before that ta
   256 ms of speech is reported as no speech and never transcribed, so a click is no word and no
   yes; the windows of speech are counted, not the span from the first to the last, so two clicks
   with a pause between are no speech either (Codex PR #292, P1). Durations are counted in audio, not in arrival times; `ended_at` is when the audio of the
-  last window of speech ended: the arrival of its frame, less the audio behind it in that frame,
-  so a "Ja" early in a frame that reaches past the end of a read-back counts as said inside it
-  (Codex PR #292, P1). An error of detector or engine is raised by the next `feed`, which the
+  last window of speech began, by the arrival of the frames it came in, less the audio behind it
+  in each: the speech ended then or later, so a "Ja" stamped after the end of a read-back surely
+  ended after it, also when part of its window waited for a frame that came late (Codex PR #292,
+  P1 twice). When the ear is closed, what is still queued is dropped, not worked through. An error of detector or engine is raised by the next `feed`, which the
   session takes as a failure of the ear; an engine that hangs is caught by the session's deadline
   for the final (§4). The detector keeps its state from window to window: judged window by window
   without it, its probabilities differ from those of the whole recording by up to 0.9, with it by

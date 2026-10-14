@@ -80,8 +80,11 @@ class SegmentingEar:
         self._error: Exception | None = None
         self._sink: Callable[[Heard], None] = lambda heard: None
         self.worker: threading.Thread | None = None
-        # Only the worker touches what follows.
+        self._closed = False
+        # Only the worker touches what follows. Audio short of a window, and
+        # when it began.
         self._pending = b""
+        self._pending_from = 0.0
         # The last windows before speech began, as the start of the next
         # utterance.
         self._before: deque[bytes] = deque(maxlen=_windows(PAD_SECONDS))
@@ -113,13 +116,15 @@ class SegmentingEar:
         self._terms = list(terms)
 
     def close(self) -> None:
-        # What is still being said when the line is gone is nobody's turn.
+        # What is still being said when the line is gone is nobody's turn, and
+        # what is still queued is not worked through (Codex PR #292).
+        self._closed = True
         self._frames.put(None)
 
     # -- the worker ---------------------------------------------------------------------
 
     def _work(self) -> None:
-        while (item := self._frames.get()) is not None:
+        while (item := self._frames.get()) is not None and not self._closed:
             try:
                 self._take(*item)
             except Exception as exc:
@@ -128,19 +133,26 @@ class SegmentingEar:
                 return
 
     def _take(self, frame: bytes, at: float) -> None:
+        # `at` is when the end of the frame arrived. Each window is stamped
+        # with when its audio began: speech in it ended then or later, so a
+        # "Ja" stamped after the end of a read-back surely ended after it
+        # (hard rule 3). Audio that waited for the next frame keeps its own
+        # time, however late that frame comes (Codex PR #292).
+        if not self._pending:
+            self._pending_from = at - len(frame) / 2 / SAMPLE_RATE
         self._pending += frame
         while len(self._pending) >= _WINDOW_BYTES:
             window = self._pending[:_WINDOW_BYTES]
             self._pending = self._pending[_WINDOW_BYTES:]
-            # `at` is when the end of the frame arrived. A window that ends
-            # earlier in it ended that much earlier: a "Ja" at the start of a
-            # frame that reaches past the end of a read-back was said inside
-            # it (Codex PR #292, hard rule 3).
-            self._judge(window, at - len(self._pending) / 2 / SAMPLE_RATE)
+            began = self._pending_from
+            # What is left came with this frame: what waited was always
+            # shorter than a window.
+            self._pending_from = at - len(self._pending) / 2 / SAMPLE_RATE
+            self._judge(window, began)
 
     def _judge(self, window: bytes, at: float) -> None:
-        """One window, `at` being when its audio ended. Durations are counted
-        in audio, not in arrival times: frames can come in bursts."""
+        """One window, `at` being when its audio began. Durations are
+        counted in audio, not in arrival times: frames can come in bursts."""
         probability = self._probability(window)
         if self._audio is None:
             if probability < SPEECH:

@@ -6,6 +6,7 @@ keeps what it was given. The real engines are tested in
 `test_telephony_speech_engines.py`, inside the image that has them.
 """
 
+import threading
 from itertools import pairwise
 from types import SimpleNamespace
 from typing import Any
@@ -71,14 +72,22 @@ def hear(ear, audio: bytes, *, frame: int = 2 * WINDOW, terms=None):
     for start in range(0, len(audio), frame):
         chunk = audio[start : start + frame]
         ear.feed(chunk, (start + len(chunk)) / 2 / SAMPLE_RATE)
-    ear.close()
-    ear.worker.join(5)
+    end_of_audio(ear)
     return heard
 
 
+def end_of_audio(ear: SegmentingEar) -> None:
+    """Let the worker take everything fed, then stop it. `close` would drop
+    what is still queued, as on a call that is gone."""
+    ear._frames.put(None)
+    assert ear.worker is not None
+    ear.worker.join(5)
+
+
 def at(n: int) -> Any:
-    """When the n-th window (counted from 1) arrived."""
-    return pytest.approx(n * SECONDS)
+    """When the audio of the n-th window (counted from 1) began: speech in it
+    ended at that time or later."""
+    return pytest.approx((n - 1) * SECONDS)
 
 
 def finals(heard):
@@ -202,7 +211,7 @@ def test_frames_of_any_size_are_judged_in_windows():
     assert finals(heard)[0].ended_at == at(41)
 
 
-def test_each_window_is_stamped_with_the_end_of_its_own_audio():
+def test_each_window_is_stamped_with_its_own_audio():
     """A frame can carry several windows. A "Ja" at its start with silence
     behind it ended before the frame arrived; stamped with the arrival of the
     frame, it would count as said after a read-back that ended in between
@@ -214,6 +223,47 @@ def test_each_window_is_stamped_with_the_end_of_its_own_audio():
     )
     assert heard[0].ended_at == at(1)
     assert finals(heard)[0].ended_at == at(10)
+
+
+def test_a_window_keeps_the_time_of_audio_that_waited_for_the_next_frame():
+    """The rest of a "Ja" waits in the ear until the next frame completes its
+    window. If that frame comes late, after a read-back ended, the window must
+    keep the time of the audio that waited (Codex PR #292, P1, hard rule 3)."""
+    heard: list[Heard] = []
+    ear = SegmentingEar(Engine(), probability)
+    ear.open(heard.append)
+    half = WINDOW  # bytes: half a window
+    ear.feed(speech(9) + b"\x01" * half, 1.0)
+    ear.feed(b"\x01" * half + silence(30), 5.0)
+    end_of_audio(ear)
+    began = 1.0 - half / 2 / SAMPLE_RATE  # where the tenth window began
+    assert finals(heard)[0].ended_at == pytest.approx(began)
+
+
+def test_a_closed_ear_drops_what_is_still_queued():
+    """An engine that took long, a call that was handed to the team meanwhile:
+    the audio queued behind it is not worked through, and nothing more is
+    transcribed for a call that is gone (Codex PR #292, P2)."""
+    working, release = threading.Event(), threading.Event()
+
+    class Slow(Engine):
+        def __call__(self, audio: bytes, terms: list[str]) -> str:
+            working.set()
+            release.wait(5)
+            return super().__call__(audio, terms)
+
+    engine = Slow()
+    ear = SegmentingEar(engine, probability)
+    ear.open(lambda heard: None)
+    first = speech(10) + silence(30)
+    ear.feed(first, len(first) / 2 / SAMPLE_RATE)
+    assert working.wait(5)
+    for n in range(5):
+        ear.feed(speech(10) + silence(30), 2.0 + n)
+    ear.close()
+    release.set()
+    ear.worker.join(5)
+    assert len(engine.given) == 1
 
 
 def test_an_engine_that_fails_fails_the_next_feed():

@@ -36,7 +36,7 @@ from faster_whisper.vad import VadOptions, get_speech_timestamps
 from piper import PiperVoice
 from piper.config import SynthesisConfig
 
-from api.telephony.adapters.stt_whisper import SAMPLE_RATE, Whisper
+from api.telephony.adapters.stt_whisper import SAMPLE_RATE, WINDOW, Whisper
 from api.telephony.adapters.tts_piper import PiperMouth
 from api.telephony.speech import Heard
 from api.telephony.speech_bench import telephone
@@ -114,12 +114,12 @@ def test_a_spoken_order_is_heard_as_one_utterance(mouth, whisper):
     assert "45" in finals[0].text
     assert any(not h.final for h in heard[: heard.index(finals[0])])
     # Where the speech ends by the detector run over the whole recording: the
-    # ear finds the same window, stamped with the frame that completed it.
+    # ear finds the same window and stamps it with when its audio began.
     pcm = np.frombuffer(silence + sentence + silence, dtype=np.int16)
     audio = pcm.astype(np.float32) / 32768
     options = VadOptions(min_silence_duration_ms=700, speech_pad_ms=0)
     speech_end = get_speech_timestamps(audio, options)[-1]["end"] / SAMPLE_RATE
-    assert speech_end <= finals[0].ended_at <= speech_end + FRAME / 2 / SAMPLE_RATE
+    assert finals[0].ended_at == pytest.approx(speech_end - WINDOW / SAMPLE_RATE)
 
 
 def test_the_key_terms_reach_whisper(mouth, whisper):
