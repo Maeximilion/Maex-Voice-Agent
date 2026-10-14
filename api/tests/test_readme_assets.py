@@ -939,6 +939,8 @@ def test_the_status_table_comes_from_the_status_and_the_task_list() -> None:
     ]
     done = facts({}, [ra.Gate("P", True, "Plan")])
     assert "| Next Gate | none, every gate passed |" in ra.status_region(done)
+    with pytest.raises(SystemExit, match="no gate rows"):
+        ra.status_region(facts({}, []))
 
 
 def test_a_capability_moves_to_what_works_when_all_its_tasks_are_done() -> None:
@@ -988,7 +990,9 @@ def components() -> set[str]:
 
     compose = ra.ROOT / "docker-compose.yml"
     services = yaml.safe_load(compose.read_text(encoding="utf-8"))["services"]
-    adapters = (ra.ROOT / "api" / "telephony" / "adapters").glob("*.py")
+    folder = ra.ROOT / "api" / "telephony" / "adapters"
+    # Modules and packages: an adapter of several files is a folder.
+    adapters = [*folder.glob("*.py"), *(p.parent for p in folder.glob("*/__init__.py"))]
     return (
         {f"tool:{name}" for name in TOOLS}
         | {f"service:{name}" for name in services}
@@ -1011,6 +1015,18 @@ def test_every_component_on_the_call_path_has_a_node_or_a_reason() -> None:
         f"{missing}: give each a node in FLOW_NODES (`covers`) or a line in NOT_DRAWN "
         "with the reason (docs/15, Keeping them current)"
     )
+
+
+def test_an_adapter_package_counts_as_a_component(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    adapters = tmp_path / "api" / "telephony" / "adapters"
+    (adapters / "vendor").mkdir(parents=True)
+    (adapters / "vendor" / "__init__.py").write_text("")
+    (adapters / "asterisk.py").write_text("")
+    (tmp_path / "docker-compose.yml").write_text("services: {}\n")
+    monkeypatch.setattr(ra, "ROOT", tmp_path)
+    assert {"adapter:vendor", "adapter:asterisk"} <= components()
 
 
 def test_a_new_tool_service_or_adapter_is_caught() -> None:
