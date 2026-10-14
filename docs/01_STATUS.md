@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.40
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.44
 
 ---
 
@@ -413,6 +413,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 14.10.2026 | **A main folder that cannot be synced is shown to Maxi** (Maxi's call after the main folder fell 192 commits behind over two uncommitted doc edits and six draft files): the session start hook names the files that block the sync, or git's reason for a clean folder, and with `--json` sends it as a message Maxi sees plus an instruction for Claude to raise it first; a failed fast-forward of a folder another session has synced meanwhile no longer warns. The user-level after-merge hook reports the same way (docs/19). Not seen yet: how the desktop app shows the message at session start |
 | 13.10.2026 | **T-10.4: call session of the own voice layer** (`telephony/session.py`, ports `Ear`, `Mouth`, `Line` in `telephony/speech.py`, fakes): the rules of docs/20 §4 against fakes, `CallEvents` with silence and a failure of the voice layer, `say` with `interruptible`; a yes to "Sind Sie noch da?" confirms nothing; whole calls through session, handler and core |
 | 13.10.2026 | **Speech kit: spoken orders** (`--orders`, `--order-sizes`, up to 12 dishes), judged per order in `evals/heard.py`; new ear Canary 1b v2. First run on the pilot's menu, 180 orders: best ear 62.4 % of the orders right, 17.8 % with a dish or quantity not said; per dish said 5 to 7 % on every ear (docs/20 §11, §12) |
 | 13.10.2026 | **Bug: a dish said in a list was swallowed** (evals `abholung_0081`, `abholung_0082`): a part the sentence cut off is checked with the menu like a sentence of its own, so "Einmal die 13, zweimal die 23 und die S12" is three positions; a card number the menu does not have is a position of its own, so "Zweimal die 99 und Pho Bo" says that the 99 does not exist and takes Pho Bo once |
@@ -511,7 +512,11 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.1.40 · 14.10.2026:** T-10.5 done: Whisper ear behind a silence detector, Piper mouth, key terms per turn
+- **v2.1.44 · 14.10.2026:** T-10.5 done: Whisper ear behind a silence detector, Piper mouth, key terms per turn
+- **v2.1.43 · 14.10.2026:** Codex review of 4d1cb80 on PR #290: the sync warning drops bytes that are not UTF-8, survives a shell with nounset; English fixture name
+- **v2.1.42 · 14.10.2026:** Codex review of 7da2dc2 on PR #290: the sync hook fetches main by name, so a single-branch clone does not keep a stale origin/main
+- **v2.1.41 · 14.10.2026:** Codex review of ef4f7e3 on PR #290: the hook's JSON escapes every control character, so a path holding one still makes valid output
+- **v2.1.40 · 14.10.2026:** The sync hooks show a main folder that cannot be synced to Maxi, with the blocking files, and tell Claude to raise it first
 - **v2.1.39 · 14.10.2026:** Record TypeScript as a future GUI option; keep D6 and the Python backend (note of 12.10.2026, found uncommitted in the main folder)
 - **v2.1.38 · 13.10.2026:** Ruleset on main applied (four required checks); Dependabot seen working on the compiled lock file (#261)
 - **v2.1.37 · 13.10.2026:** #252: an order that waits for Passt longer than the restaurant's minutes turns red on the tablet (migration 008, order_approval_overdue_minutes)
