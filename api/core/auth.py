@@ -4,7 +4,7 @@ import hmac
 
 from fastapi import Header
 
-from api.config import settings
+from api.config import LOCAL_ENVS, settings, valid_production_token
 from api.core.errors import Unauthorized
 
 
@@ -15,9 +15,11 @@ def token_matches(authorization: str) -> bool:
     nothing behind it. Compared in constant time, like the kitchen token below.
     """
     token = settings.agent_api_token
-    return bool(token) and hmac.compare_digest(
-        authorization.encode(), f"Bearer {token}".encode()
-    )
+    if not token or (
+        settings.env not in LOCAL_ENVS and not valid_production_token(token)
+    ):
+        return False
+    return hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode())
 
 
 def require_token(authorization: str = Header(default="")) -> None:

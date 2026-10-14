@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.13
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.14
 
 ---
 
@@ -424,6 +424,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 14.10.2026 | **Production refuses an agent token with whitespace** (ported from Codex's PR #272 of 12.10.2026, which went stale and is closed as superseded; follow-up of #252): outside dev and test the API and the dispatcher no longer start on a token that contains whitespace anywhere, so the public placeholder padded to 32 characters is refused like the placeholder itself; whitespace is refused, never trimmed. Request authentication applies the same rule even where the settings check was bypassed. The dated audit record of #272 (docs/13 §8) was not carried over: it describes the revision of 12.10 |
 | 14.10.2026 | **T-2.4 part 4: first full eval run on a real model** (local llama-server, `qwen3.6-35b-a3b`): `main` 17/41 and 16/41, after `last_say` and `service` in the state and the prompt changes 26/41, false escalation 9.1 % from 15 to 18 %, tokens per case down 13 %; three findings at `xhigh` noted as open points |
 | 13.10.2026 | **Real menu allergens in the workbench database**: five dishes confirmed by Maxi, three corrected by hand against the register (What's next, item 3); the test order of 12.10.2026 deleted again |
 | 14.10.2026 | **A corrected reservation draft no longer counts against its own call (finding of the daily code review, #207):** `booked_guests` counted every live draft, the asking call's earlier one included, and a correction writes a new draft next to the old one. With 30 of 40 seats confirmed, a guest who drafted six and then moved the time or the party size heard the evening was full (36 + 6 > 40) with ten seats free. The drafts of the asking call are now left out in the one place all three checks count through (`capacity.booked_guests`): `check_slot` (tool and conversation core pass the request's `call_id`), `create_reservation` and `confirm` (`has_room`, which before left out only the draft itself and would have refused the corrected draft at the yes). Drafts of every other live call still count, and so do the asking call's confirmed tables: a second table in the same call is not a correction, and `confirm` counts every confirmed seat under the day lock, so a call that holds two drafts for one window books only what fits. Checked: 9 new tests (domain, conversation dispatch, HTTP tool; 7 red before the fix, the two guards green before and after), three older tests that drafted from one call to fill a window now use a call each (docs/04 updated); full suite 4,496 passed, 93 skipped (git, numpy and pg_dump missing in the api image); cases 41 of 41, targets 1 of 27 and number eval 211 of 211, identical to `main` case by case; `check_slot` p95 40.2 ms (morning path 13.7 ms), `create_reservation` 31.5 ms, `confirm` 21.3 ms. Open: the replaced draft still holds its seats for other callers until the call ends or `max_call_seconds` passes, as before |
@@ -528,12 +529,13 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.2.13 · 14.10.2026:** Codex review of 61a2df2 on PR #292: a hung speech engine noted as an open point for T-1.11
-- **v2.2.12 · 14.10.2026:** Codex review of fc91f40 on PR #292: windows stamped with when their audio began; a closed ear drops queued audio
-- **v2.2.11 · 14.10.2026:** Codex review of cc5c277 on PR #292: a question into the silence sets the key terms too
-- **v2.2.10 · 14.10.2026:** Codex review of fb9e39a on PR #292: speech windows counted, no key terms that are the whole menu, spoken names compared, runnable engine-test commands
-- **v2.2.9 · 14.10.2026:** Codex review of 5a92366 on PR #292: each detector window is stamped with the end of its own audio
-- **v2.2.8 · 14.10.2026:** T-10.5 done: Whisper ear behind a silence detector, Piper mouth, key terms per turn
+- **v2.2.14 · 14.10.2026:** Codex review of 61a2df2 on PR #292: a hung speech engine noted as an open point for T-1.11
+- **v2.2.13 · 14.10.2026:** Codex review of fc91f40 on PR #292: windows stamped with when their audio began; a closed ear drops queued audio
+- **v2.2.12 · 14.10.2026:** Codex review of cc5c277 on PR #292: a question into the silence sets the key terms too
+- **v2.2.11 · 14.10.2026:** Codex review of fb9e39a on PR #292: speech windows counted, no key terms that are the whole menu, spoken names compared, runnable engine-test commands
+- **v2.2.10 · 14.10.2026:** Codex review of 5a92366 on PR #292: each detector window is stamped with the end of its own audio
+- **v2.2.9 · 14.10.2026:** T-10.5 done: Whisper ear behind a silence detector, Piper mouth, key terms per turn
+- **v2.2.8 · 14.10.2026:** Production refuses an agent token with whitespace (ported from PR #272, follow-up of #252)
 - **v2.2.7 · 14.10.2026:** Codex review of 0351aa6 on PR #289: the leftover step promises an age only where its command prints one; index flags noted as an open point
 - **v2.2.6 · 14.10.2026:** PR #289: the leftover step names the Git setting in words, which the command file check read as a file
 - **v2.2.5 · 14.10.2026:** Codex review of 5ef4c2d on PR #289: the leftover scan lists untracked files whatever the config says; the Codex start skill has the same steps
