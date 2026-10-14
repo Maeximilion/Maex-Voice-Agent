@@ -35,7 +35,9 @@ TITLE = "Projektpflege: offene Entscheidungen"
 INTRO = "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheiden kann."
 # Die Schluessel der gemeldeten Befunde stehen unsichtbar im Issue. Nur so erkennt
 # der naechste Lauf, was neu ist, ohne eigenen Speicher.
-KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->")
+# Anchored to the end of the body: render_body writes the marker last, after the
+# titles, and a title (anyone can open an issue) may carry a marker of its own.
+KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->\s*\Z")
 
 
 # "#12 " in front of a title; the number stays outside the code span so GitHub
