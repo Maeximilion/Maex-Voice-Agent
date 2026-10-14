@@ -3,13 +3,21 @@ through a modelled telephone line, Whisper hears it through the segmenting ear.
 
 Runs only where the engines and their model files are: in the image of
 `deploy/speech/` on the workbench, with the models of the kit's run folder
-mounted (docs/20 §10). Skipped everywhere else, CI included:
+mounted (docs/20 §10). Skipped everywhere else, CI included. Ubuntu terminal,
+in the repository folder or a worktree of it; `MODELS` is where the kit keeps
+its model files (`python3 -m scripts.speech_spike` downloads them there):
 
-    docker run --rm --network none --gpus all -v "$RUN/models:/models:ro" \\
+    MODELS="$HOME/Maex-Voice-Agent/deploy/speech/run/models"
+    docker run --rm --network none --gpus all -v "$MODELS:/models:ro" \\
       -v "$PWD:/app" -w /app -e SPEECH_MODELS=/models maex-speech-spike \\
-      python -m pytest -q -s api/tests/test_telephony_speech_engines.py
+      python -m pytest -q -s -p no:cacheprovider api/tests/test_telephony_speech_engines.py
 
-Without a graphics card set `SPEECH_DEVICE=cpu` (Whisper takes seconds then).
+Without a graphics card (Whisper takes seconds per sentence then):
+
+    docker run --rm --network none -v "$MODELS:/models:ro" \\
+      -v "$PWD:/app" -w /app -e SPEECH_MODELS=/models -e SPEECH_DEVICE=cpu \\
+      maex-speech-spike \\
+      python -m pytest -q -s -p no:cacheprovider api/tests/test_telephony_speech_engines.py
 """
 
 import os

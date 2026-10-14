@@ -217,9 +217,10 @@ terms through `Ear.expect`.** Started on the local pair of T-10.3 before that ta
   session needs (`speech.Heard`): the silence detector that ships with faster-whisper judges the
   caller's audio in windows of 32 ms on a thread of the ear; while there is speech it reports a
   partial with an empty text every 0.5 s, and after 704 ms of silence (22 windows) it hands the
-  utterance, with 288 ms of audio before and after it, to Whisper and reports the final. Speech
-  shorter than 256 ms is reported as no speech and never transcribed, so a click is no word and
-  no yes. Durations are counted in audio, not in arrival times; `ended_at` is when the audio of the
+  utterance, with 288 ms of audio before and after it, to Whisper and reports the final. Less than
+  256 ms of speech is reported as no speech and never transcribed, so a click is no word and no
+  yes; the windows of speech are counted, not the span from the first to the last, so two clicks
+  with a pause between are no speech either (Codex PR #292, P1). Durations are counted in audio, not in arrival times; `ended_at` is when the audio of the
   last window of speech ended: the arrival of its frame, less the audio behind it in that frame,
   so a "Ja" early in a frame that reaches past the end of a read-back counts as said inside it
   (Codex PR #292, P1). An error of detector or engine is raised by the next `feed`, which the
@@ -234,7 +235,9 @@ terms through `Ear.expect`.** Started on the local pair of T-10.3 before that ta
   of the dishes the agent named in what it just said (the guest answers "die 47 oder die 48?"
   next), then those of the order, which a correction names (`handler.key_terms`). The names come
   from the searches of the call, so from the active menu in the database, as the guest says them
-  (without "(4 Stück)"). Whisper keeps what fits half its prompt. A first version took only the
+  (without "(4 Stück)"). Whisper keeps what fits half its prompt. Terms that would hold every dish of the active menu
+  (a menu of one dish, or of two both in question) are not handed over at all (Codex PR #292). The
+  agent's sentence is compared with the names as a guest says them. A first version took only the
   dishes that became known in the turn and gave a repeated question no terms; the dishes named in
   the sentence are what the guest answers. Nothing is handed at the first mention of a dish: no
   window of a few names can be chosen before the guest says one.

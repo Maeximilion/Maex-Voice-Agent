@@ -86,10 +86,11 @@ class SegmentingEar:
         # utterance.
         self._before: deque[bytes] = deque(maxlen=_windows(PAD_SECONDS))
         # The windows of the utterance that is being said, None outside one;
-        # where its speech began and ends in them; when its last speech ended;
-        # windows of silence since; the length at the last partial.
+        # how many of them are speech; where its speech ends in them; when its
+        # last speech ended; windows of silence since; the length at the last
+        # partial.
         self._audio: list[bytes] | None = None
-        self._first = 0
+        self._spoken = 0
         self._end = 0
         self._ended_at = 0.0
         self._quiet = 0
@@ -147,7 +148,7 @@ class SegmentingEar:
                 return
             self._audio = [*self._before, window]
             self._before.clear()
-            self._first = len(self._audio) - 1
+            self._spoken = 0
             self._partial = len(self._audio)
             self._mark_speech(at)
             self._sink(Heard("", final=False, ended_at=at))
@@ -167,6 +168,7 @@ class SegmentingEar:
 
     def _mark_speech(self, at: float) -> None:
         assert self._audio is not None
+        self._spoken += 1
         self._quiet = 0
         self._end = len(self._audio)
         self._ended_at = at
@@ -176,7 +178,9 @@ class SegmentingEar:
         pad = _windows(PAD_SECONDS)
         audio = b"".join(self._audio[: self._end + pad])
         self._before.extend(self._audio[self._end :])
-        speech = self._end - self._first >= _windows(MIN_SPEECH_SECONDS)
+        # Windows of speech, not the span from the first to the last: two
+        # clicks with a pause between are no speech (Codex PR #292).
+        speech = self._spoken >= _windows(MIN_SPEECH_SECONDS)
         self._audio = None
         if not speech:
             self._sink(Heard("", ended_at=self._ended_at, speech=False))

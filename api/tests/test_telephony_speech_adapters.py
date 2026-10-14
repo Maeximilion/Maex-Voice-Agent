@@ -142,6 +142,19 @@ def test_a_click_is_no_speech_and_the_engine_is_not_asked():
     assert engine.given == []
 
 
+def test_clicks_with_a_pause_between_are_no_speech():
+    """Two clicks less than the turn end apart span more than the shortest
+    speech, but hold 64 ms of it; the engine could make a "ja" of them
+    (Codex PR #292, P1, hard rule 3)."""
+    engine = Engine()
+    heard = hear(
+        SegmentingEar(engine, probability),
+        speech(1) + silence(windows(MIN_SPEECH_SECONDS) + 2) + speech(1) + silence(30),
+    )
+    assert [(h.text, h.speech) for h in finals(heard)] == [("", False)]
+    assert engine.given == []
+
+
 def test_a_probability_in_between_continues_what_was_before():
     engine = Engine()
     # In between after speech: still speech.

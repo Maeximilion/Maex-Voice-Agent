@@ -42,6 +42,7 @@ from api.config import settings
 from api.core.logging import bind_call_id, get_logger
 from api.core.time import utcnow
 from api.domain.calls import CallRouting, call_routing, end_call, start_call
+from api.domain.menu.items import active_count
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
 from api.telephony.port import TelephonyPort
 from api.telephony.speech_spike import spoken_name
@@ -260,7 +261,9 @@ class CallHandler:
             and not counted_as_heard
             and live.state.stage not in _NOT_INTERRUPTIBLE
         )
-        self._port.expect(live.session_id, key_terms(live.state, " ".join(result.say)))
+        menu_size = active_count(live.session, live.tenant_id)
+        said = " ".join(result.say)
+        self._port.expect(live.session_id, key_terms(live.state, said, menu_size))
         for line in result.say:
             self._port.say(live.session_id, line, interruptible=interruptible)
         if live.state.stage == "transferred":
@@ -413,24 +416,27 @@ def _close_model(llm: LLMClient | None) -> None:
         logger.exception("model client could not be closed")
 
 
-def key_terms(state: ConversationState, said: str) -> list[str]:
+def key_terms(state: ConversationState, said: str, menu_size: int) -> list[str]:
     """The dish names in question after a turn, for the speech engine (docs/20
     §6): first those the agent named in what it said (the guest answers "die
     26 oder die 26d?" next), then those of the order, which a correction
     names. They come from the searches of this call, so from the active menu in
-    the database, and are never the menu (CLAUDE.md §2 rule 6)."""
+    the database, and are never the menu (CLAUDE.md §2 rule 6): terms that
+    would hold every dish of it, `menu_size`, are not handed over at all."""
     heard = said.lower()
     ids = [
         *(
             item_id
             for item_id, seen in state.seen_items.items()
-            if names_dish(heard, seen["number"].lower(), seen["name"].lower())
+            # As a guest says the name: the agent does too, without "(4 Stück)".
+            if names_dish(
+                heard, seen["number"].lower(), spoken_name(seen["name"]).lower()
+            )
         ),
         *(line["menu_item_id"] for line in state.cart),
     ]
-    names = (
-        spoken_name(state.seen_items[item_id]["name"])
-        for item_id in ids
-        if item_id in state.seen_items
-    )
+    known = list(dict.fromkeys(i for i in ids if i in state.seen_items))
+    if len(known) >= menu_size:
+        return []
+    names = (spoken_name(state.seen_items[item_id]["name"]) for item_id in known)
     return list(dict.fromkeys(name for name in names if name))
