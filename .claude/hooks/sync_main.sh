@@ -10,10 +10,11 @@ git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 # and from 12 to 14.10.2026 the main folder fell 192 commits behind while such a note
 # went unread. So with --json (Claude Code) they become a message the user sees plus an
 # instruction for Claude; without it (Codex, a run by hand) they stay plain lines.
-mode=$1 warnings=
+# ${1-}: an exported SHELLOPTS with nounset reaches this script, and Codex passes nothing.
+mode=${1-} warnings=
 warn() { warnings+="SessionStart sync: $1, check git status"$'\n'; }
 json_string() {
-  local s=$1 i o c u
+  local s=$1 i o c u t
   s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}
   # Every other control character too: a path may hold one, and Claude Code drops
   # output it cannot parse.
@@ -21,6 +22,10 @@ json_string() {
     printf -v o '%03o' "$i"; printf -v c "\\$o"; printf -v u '\\u%04x' "$i"
     s=${s//"$c"/$u}
   done
+  # A Unix path may also hold bytes that are not UTF-8, and such output cannot be read
+  # at all: iconv drops them. Without iconv the text goes out as it is.
+  t="$(printf '%s' "$s" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null)"
+  [ -n "$t" ] && s=$t
   printf '"%s"' "$s"
 }
 report() {

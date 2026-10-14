@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.42
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.43
 
 ---
 
@@ -510,6 +510,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.43 · 14.10.2026:** Codex review of 4d1cb80 on PR #290: the sync warning drops bytes that are not UTF-8, survives a shell with nounset; English fixture name
 - **v2.1.42 · 14.10.2026:** Codex review of 7da2dc2 on PR #290: the sync hook fetches main by name, so a single-branch clone does not keep a stale origin/main
 - **v2.1.41 · 14.10.2026:** Codex review of ef4f7e3 on PR #290: the hook's JSON escapes every control character, so a path holding one still makes valid output
 - **v2.1.40 · 14.10.2026:** The sync hooks show a main folder that cannot be synced to Maxi, with the blocking files, and tell Claude to raise it first
