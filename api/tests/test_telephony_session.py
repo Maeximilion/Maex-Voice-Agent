@@ -852,8 +852,9 @@ def test_a_crash_in_the_core_ends_the_session_without_a_hangup(call):
     call.said("Hallo", after=1.0)
     assert call.s.outcome == "failed"
     assert "hangup" not in call.line.kinds() and "transfer" not in call.line.kinds()
-    # The core closes its call log as a failure, not as a caller who hung up.
-    assert call.core.calls[-1] == ("voice_failure",)
+    # The core is told of the failure first, so it logs one, not a caller who
+    # hung up; then of the end of the leg, on which it closes its call log.
+    assert call.core.calls[-2:] == [("voice_failure",), ("ended",)]
 
 
 def test_a_transfer_the_telephone_system_refuses_fails_the_session(call):

@@ -72,3 +72,57 @@ def test_engine_faehrt_read_committed():
     with engine.connect() as conn:
         stufe = conn.execute(text("SHOW transaction_isolation")).scalar_one()
     assert stufe == "read committed", f"erwartet read committed, bekam {stufe}"
+
+
+# -- sessions of the phone line: bounded waits (T-1.11 part 2) ----------------------
+
+
+def test_a_bounded_session_gives_up_on_a_row_lock(migrated_db_url):
+    """A tool of the phone line that waits on a row lock fails after the
+    bound instead of keeping the guest on the line, and commits nothing
+    (Codex on PR #287)."""
+    from sqlalchemy.exc import OperationalError
+
+    from api.db import bounded_sessions
+
+    holder = create_engine(migrated_db_url)
+    bounded = bounded_sessions(200, url=migrated_db_url)
+    with holder.connect() as conn:
+        conn.execute(text("create table lock_probe (id int primary key)"))
+        conn.execute(text("insert into lock_probe values (1)"))
+        conn.commit()
+        conn.execute(text("select id from lock_probe where id = 1 for update"))
+        with (
+            bounded() as db,
+            pytest.raises(OperationalError, match="statement timeout"),
+        ):
+            db.execute(text("select id from lock_probe where id = 1 for update"))
+    holder.dispose()
+
+
+def test_a_bounded_session_ends_a_slow_statement(migrated_db_url):
+    from sqlalchemy.exc import OperationalError
+
+    from api.db import bounded_sessions
+
+    with (
+        bounded_sessions(200, url=migrated_db_url)() as db,
+        pytest.raises(OperationalError, match="statement timeout"),
+    ):
+        db.execute(text("select pg_sleep(2)"))
+
+
+def test_the_bound_holds_on_every_connection_after_a_rollback(migrated_db_url):
+    """Set when the connection is made, so it survives the pool's rollback
+    and a commit, and the application's own sessions stay unbounded."""
+    from api.db import bounded_sessions
+
+    sessions = bounded_sessions(200, url=migrated_db_url)
+    for _ in range(3):
+        with sessions() as db:
+            db.execute(text("select 1"))
+            db.rollback()
+            assert db.scalar(text("show statement_timeout")) == "200ms"
+            db.commit()
+    with SessionLocal() as db:
+        assert db.scalar(text("show statement_timeout")) == "0"

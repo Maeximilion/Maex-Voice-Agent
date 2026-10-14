@@ -5,7 +5,9 @@ the provider (docs/11 §telephony). The code, not the model, says the AI disclos
 before anything else (docs/05 §6). The mode decides whether the agent answers at
 all (docs/02 §4). Each turn runs through the same `agent/loop.py` as `sim/` and the
 evals; when the conversation says transferred or over, the handler dials the team
-or says goodbye and hangs up, and writes the call log.
+or says goodbye and hangs up. It closes the call log when the adapter reports the
+end of the leg (`on_call_ended`), not when it asks for it: the last sentence is
+still playing then, and the line may still fail.
 
 Every failure ends with the team (CLAUDE.md §2 rule 5): an exception anywhere in a
 call, from the database, the model or the adapter, is answered with the outage
@@ -130,6 +132,9 @@ class CallHandler:
         self._fallback_team_phone = fallback_team_phone or settings.team_phone
         self._lock = threading.Lock()
         self._live: dict[str, _LiveCall] = {}
+        # Calls the core has sent to the team or ended, until the adapter reports
+        # the end of the leg; with the outcome to log, None to derive it.
+        self._ending: dict[str, tuple[_LiveCall, Outcome | None]] = {}
         self._starting: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
 
@@ -197,8 +202,11 @@ class CallHandler:
 
     def on_voice_failure(self, session_id: str) -> None:
         """Ear or mouth failed: the outage sentence, as far as it can still be
-        spoken, and the team (rule 5)."""
-        live = self._lookup(session_id)
+        spoken, and the team (rule 5). Also on a call the core was ending: a
+        goodbye nobody may have heard is no reason to hang up."""
+        with self._lock:
+            ending = self._ending.get(session_id)
+        live = ending[0] if ending is not None else self._lookup(session_id)
         if live is not None:
             logger.error(
                 "the voice layer failed, handing the call to the team",
@@ -208,11 +216,13 @@ class CallHandler:
 
     def on_call_ended(self, session_id: str) -> None:
         with self._lock:
-            live = self._live.pop(session_id, None)
+            live, outcome = self._live.pop(session_id, None), None
             if live is None:
-                return  # closed by us already, or never known
+                live, outcome = self._ending.pop(session_id, (None, None))
+            if live is None:
+                return  # closed already, or never known
             self._remember_closed(session_id)
-        self._finish(live)
+        self._finish(live, outcome)
 
     # -- the call ----------------------------------------------------------------
 
@@ -290,17 +300,15 @@ class CallHandler:
         self._port.say(live.session_id, question, interruptible=True)
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
-        self._close(live.session_id)
         live.state.stage = "transferred"
+        self._await_end(live)
         self._port.transfer(live.session_id, target)
-        self._finish(live)
 
     def _hangup(self, live: _LiveCall, *, last_said: str) -> None:
         if not _GOODBYE.search(last_said):
             self._port.say(live.session_id, FAREWELL)
-        self._close(live.session_id)
+        self._await_end(live)
         self._port.hangup(live.session_id)
-        self._finish(live)
 
     def _guarded(self, live: _LiveCall, step: Callable[[], None]) -> None:
         try:
@@ -314,11 +322,20 @@ class CallHandler:
 
     def _fail(self, session_id: str, live: _LiveCall | None) -> None:
         """Outage sentence, then the team. The sentence is best effort, the
-        transfer is not: if the platform refuses it, the error goes to the adapter."""
+        transfer is not: if the platform refuses it, the call is logged as an
+        error at once and the error goes to the adapter."""
         with self._lock:
             self._live.pop(session_id, None)
+            self._ending.pop(session_id, None)
             self._starting.discard(session_id)
             self._remember_closed(session_id)
+            if live is not None:
+                self._ending[session_id] = (live, "error")
+        if live is not None:
+            try:
+                live.session.rollback()
+            except Exception:
+                logger.exception("rollback after the failure failed")
         target = live.team_phone if live is not None else self._fallback_team_phone
         try:
             try:
@@ -331,14 +348,12 @@ class CallHandler:
                 "transfer to the team failed, the platform fallback has to take the call",
                 extra={"extra": {"session_id": session_id}},
             )
-            raise
-        finally:
+            # No end of the leg will be reported for a transfer that never began.
+            with self._lock:
+                self._ending.pop(session_id, None)
             if live is not None:
-                try:
-                    live.session.rollback()
-                except Exception:
-                    logger.exception("rollback after the failure failed")
                 self._finish(live, outcome="error")
+            raise
 
     def _finish(self, live: _LiveCall, outcome: Outcome | None = None) -> None:
         """Write the call log and release the session. Never raises: the call has
@@ -382,14 +397,18 @@ class CallHandler:
     def _known(self, session_id: str) -> bool:
         return (
             session_id in self._live
+            or session_id in self._ending
             or session_id in self._starting
             or session_id in self._closed
         )
 
-    def _close(self, session_id: str) -> None:
+    def _await_end(self, live: _LiveCall) -> None:
+        """The core is done with the call: nothing the caller says reaches it
+        any more, and the log waits for the end of the leg."""
         with self._lock:
-            self._live.pop(session_id, None)
-            self._remember_closed(session_id)
+            self._live.pop(live.session_id, None)
+            self._ending[live.session_id] = (live, None)
+            self._remember_closed(live.session_id)
 
     def _remember_closed(self, session_id: str) -> None:
         self._closed[session_id] = None
