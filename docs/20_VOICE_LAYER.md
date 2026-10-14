@@ -50,8 +50,8 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 | Voice process | service `voice`, same image as `api`, one worker | `api/telephony/app.py` |
 | WebSocket endpoint, dialplan callback | inside `voice` | `api/telephony/router.py` |
 | Media protocol of Asterisk | | `api/telephony/adapters/asterisk.py` |
-| Call session, provider neutral | | `api/telephony/session.py` |
-| Ports for ear and mouth | | `api/telephony/speech.py` |
+| Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
+| Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
 | Speech engines and their fakes | | `api/telephony/adapters/stt_<engine>.py`, `tts_<engine>.py`, `fake_speech.py` |
 
 **Reused unchanged:** `api/agent/`, `api/domain/`, `api/events/`, `api/gui/`, `sim/`, `evals/`,
@@ -108,6 +108,47 @@ core runs in a worker thread, and the port methods only enqueue.
 
 `CallEvents` gains what a platform used to hide: silence and a failure of the voice layer itself.
 `TelephonyPort.say` gains whether a sentence may be interrupted.
+
+**Built with T-10.4 (13.10.2026): `telephony/session.py`, `telephony/speech.py`, fakes in
+`adapters/fake_speech.py`.** One worker and one queue per call: audio, keys, what the ear heard
+and what the line finished playing are queued with the time they happened and handled strictly one
+after another. The core runs in that worker. What it asks of the line (`Lines`, the
+`TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
+returns, before anything that queued up behind it; timers fire on the time of the events, never
+ahead of an event that waited in the queue, and an event's time and its place in the queue are
+taken under one lock. Three ports: `Ear`, `Mouth` and
+`Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
+`flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
+is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
+`failed` it rings the team (§5). What the table left open, as built:
+
+| Topic | As built |
+|---|---|
+| Which sentences may be interrupted | The handler decides per turn: a plain question of the agent may, and so may the two questions into a silent line. Never the AI disclosure at the start, anything said while a draft waits for its yes, the confirmation, the farewell, the outage sentence or a sentence before a transfer; and never a sentence the core counts as heard: one that asks for the guest's number, or one after which a dish may enter the order (it named the dish, or said back what was found). A guest who talked over it would be measured against words they never heard (Codex PR #286). A flush drops everything queued, so nothing is interrupted while one sentence that may not be is still to be played. |
+| Barge-in by a finished utterance | Two words of a partial stop the sentence, as the table says. A finished utterance of one word ("Nein") stops it too: the agent takes the answer instead of talking over it. |
+| Said while the core was working | An utterance that ended before the answer began to play is the next turn and does not stop that answer. If the answer is a read-back, the utterance is dropped like one spoken into it. |
+| Keys and the read-back | Keys pressed into a sentence that may not be interrupted are dropped, like an utterance. |
+| Keys without end | An entry is handed over at 20 digits whatever the gaps, so a key every two seconds cannot keep a call from ever reaching a turn. |
+| Silence | The session reports it once per silence (`on_silence`); the handler asks "Sind Sie noch da?", then "Ich höre Sie leider nicht. Sind Sie noch dran?", then says the farewell and hangs up. **A yes to one of these questions confirms nothing** (hard rule 3): the question is now the last thing the guest heard, so the core reads the draft out again first. A guest who stays silent books nothing. |
+| Speech without a transcript | Once is a cough; twice in a row is a failure of the ear and goes to the team. |
+| The line does not report the end of playback | After the length of the audio plus 5 s it is a failure of the call and goes to the team. Whether the caller heard the sentence is not known then, so a read-back never counts as heard (Codex PR #286). A transfer that waited for the report happens all the same. A hangup that waited does not: the session ends as failed, so the dialplan rings the team instead of taking a farewell nobody may have heard for a finished call. |
+| The mouth does not finish a sentence, or makes no audio | Each sentence has a deadline of 10 s; an engine that hangs is a failure like one that raises, and does not hold the one worker of the call (Codex PR #286). So is an engine that returns no audio without an error: queued as it is, the line would report a read-back as played that nobody heard. A sentence without words is not spoken at all and is no failure. A mouth that failed is not asked again on that call: the outage sentence is skipped, so the transfer does not wait a second deadline. The ear's `feed` must not wait for its engine at all: an adapter whose engine blocks runs it on a thread of its own. |
+| The caller speaks, and no word is known yet | The ear reports it as a partial, with an empty text where the engine has no partial transcripts, at least once a second. Silence is counted from that, so a long order is not answered with "Sind Sie noch da?" in the middle of it. Speech without words stops no sentence. |
+| When playback begins | When the audio is on the line, not when the sentence was asked for: what the caller said while the mouth was working is the next turn and no barge-in. The same holds for a partial and for a key: what is older than the answer on the line stops nothing. A partial counts by the time of its audio, not of its report, because the ear may lag and audio may have waited in the queue. |
+| The line does not answer | The line must not block: every method of `Line` hands its command to the telephone system and returns. The session cannot bound a call to the line itself the way it bounds the mouth: a command it gave up waiting for could still be carried out later, a hangup while the dialplan is already ringing the team (Codex PR #286). An adapter whose transport can stall bounds and cancels its own commands and reports a lost leg as closed; that is a requirement on the media adapter of T-1.11. |
+| A silent line and the tenant's call limit | A caller who never speaks is asked twice and let go by the silence rule, after three silence timeouts. The call limit (`max_call_seconds`) is checked where a turn begins, and its handover to the team is for a call on which somebody speaks; a line on which nobody does is ended, not handed over. With a limit shorter than three silence timeouts the silence rule ends the call a little after the limit. |
+| A failure the core does not answer | If the core neither transfers nor hangs up after a failure, the session ends as failed instead of staying on a line it no longer listens to. |
+| An answer that was already waiting | The guest says the order and "Ja" in one breath, and the worker is still on the first sentence. By then the core has "said" the read-back and counts it as heard, while the guest has not heard a word. So what the core asks for in a turn is carried out before the next queued event: the read-back protects itself first, and the waiting "Ja" is dropped like one spoken into it (Codex PR #286). |
+| The worker is late | A key, an answer or a report from the line that arrived in time counts as in time, however late it is looked at: timers run up to the time of the next queued event, not to the clock. Two keys a second apart stay one answer after a slow turn, and a report that waited is no lost report. |
+| The ear begins an utterance and never ends it | A partial says that the caller is speaking; the finished utterance has to follow within 10 s of the last partial, and within 60 s of the first, or it is a failure of the ear and the call goes to the team. The second limit is for a detector stuck in "speech": the tenant's call limit is checked when a turn begins, and without an end of the utterance no turn would. From the first partial to the final no silence is counted, also when playback ends in between. A final that is dropped (noise, nothing understood, said into a read-back) starts the silence anew. So a call that is open always waits for something with a deadline: playback and its report, an utterance and its end, a key and the gap, or the silence (Codex PR #286). |
+| A hangup on a call whose voice failed | Never carried out, whoever asked for it and when: if the farewell cannot be spoken, the hangup behind it would drop the caller. The core's transfer takes the call, or the dialplan. |
+| A transfer and a hangup both asked for | The first one stands, except that a transfer replaces a hangup that still waits for its sentence: a failure during the farewell goes to the team. |
+| The session itself breaks | Nothing is hung up; the core logs the call as a failure, and the dialplan rings the team. |
+
+Not in the session, by design: the end of an utterance. That is the ear's (`Heard(final=True)`),
+from an engine's own endpoint or from the silence detector of its adapter (T-10.5); the orders run
+of 13.10.2026 says that silence must not be shorter than 700 ms (§11). The silence timeout and the
+sample rate are arguments of the session; their settings come with the service `voice` (T-1.11).
 
 ---
 

@@ -133,12 +133,12 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 ### `telephony/` – der einzige Ort, der den Anbieter kennt
 | Datei | Verantwortung |
 |---|---|
-| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); docs/20 §4 plans additions (whether a sentence may be interrupted, silence, failure of the voice layer) |
+| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); since T-10.4 with `on_silence` and `on_voice_failure`, and `say` takes whether the sentence may be interrupted (docs/20 §4) |
 | `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers when the state says so, or says goodbye (unless the agent just did) and hangs up, closes the call log; every failure ends with the outage sentence and a transfer |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
 | `app.py` | planned (docs/20 §2): the process of the service `voice` |
-| `session.py` | planned (docs/20 §2): call session, provider neutral |
-| `speech.py` | planned (docs/20 §2): the ports for ear (speech-to-text) and mouth (text-to-speech) |
+| `session.py` | call session of the own voice layer, one per call (T-10.4, docs/20 §4): one worker and one queue, feeds the ear, decides what is the caller's turn, plays what the core says through the mouth; keeps a read-back uninterrupted and its answer behind it, drains speech before a transfer or hangup, buffers the keypad, counts silence, turns a failure of ear or mouth into `on_voice_failure`. `Lines` is the `TelephonyPort` over all sessions. Knows no engine and no telephone system |
+| `speech.py` | the ports of the voice layer (T-10.4): `Ear` (speech-to-text, reports `Heard`), `Mouth` (text-to-speech) and `Line` (the caller's leg: answer, play, flush, transfer, hangup) |
 | `adapters/asterisk.py` | media channel of Asterisk. Exists since T-10.1: the wire format only (events, commands, message limit), checked against frames recorded from Asterisk 22.10.1 (`api/tests/fixtures/asterisk_media_*.jsonl`). Planned with T-1.11 (docs/20 §2): the adapter that implements the port on top of it |
 | `audio.py` | test tones in raw call audio: make one, find its frequency and how long it sounds (T-10.1). Standard library only |
 | `probe.py` | measuring endpoint of the spike T-10.1: stands where `voice` will stand, plays a tone per dialed extension, reacts to keys, logs every control frame. Plain ASGI, no database, no settings. Driven by `spike.py`; the Asterisk configuration of the spike is `deploy/asterisk/` (docs/20 §10) |
@@ -147,7 +147,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `speech_spike.py` | kit of the spike T-10.3: names the candidates (ears, voices), builds the plan from the eval files, runs bench and judge (`evals/heard.py`) as containers, the last two without a network, and prints the tables and the pick. With `--orders` the plan holds spoken orders of several dishes instead, each judged as one order. `scripts/speech_spike.py` is only its entry. Standard library only |
 | `adapters/stt_<engine>.py` | planned (docs/20 §2): one speech-to-text engine each |
 | `adapters/tts_<engine>.py` | planned (docs/20 §2): one text-to-speech engine each |
-| `adapters/fake_speech.py` | planned (docs/20 §2): fake ear and mouth for tests |
+| `adapters/fake_speech.py` | fake ear, mouth and line for tests (T-10.4): the ear says what a test tells it, the mouth returns the sentence as its audio, the line records what it was asked to do |
 | `router.py` | planned (docs/20 §2): the WebSocket endpoint for call audio and the dialplan callback |
 
 The port has two directions (T-1.13): `CallEvents` is what the media side of the voice layer reports (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`), implemented once by `handler.py`; `TelephonyPort` is what we make the line do (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`), implemented by each adapter. Calls are named by the session id of the media side (`calls.external_session_id`). `start_recording` is called nowhere before the legal check in docs/09. `fake.py` reads the eval case format (docs/08 §1) plus customer entries with `dtmf` or `hangup`, so every case in `evals/cases/` plays as a phone call. `router.py` and the other planned files come with the media adapter of our own voice layer (T-1.11, T-10.4).

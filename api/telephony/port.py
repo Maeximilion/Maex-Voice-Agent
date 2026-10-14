@@ -22,8 +22,12 @@ class TelephonyPort(Protocol):
         format), None when withheld. A SIP URI is the adapter's to strip."""
         ...
 
-    def say(self, session_id: str, text: str) -> None:
-        """Speak `text` to the caller. In the order of the calls."""
+    def say(self, session_id: str, text: str, interruptible: bool = False) -> None:
+        """Speak `text` to the caller. In the order of the calls.
+
+        `interruptible`: may the caller talk over this sentence and stop it?
+        Never a read-back, the disclosure at the start or a sentence before a
+        transfer or hangup: those are played to the end (docs/20 §4)."""
         ...
 
     def transfer(self, session_id: str, target: str) -> None:
@@ -52,6 +56,19 @@ class CallEvents(Protocol):
 
     def on_dtmf(self, session_id: str, digits: str) -> None:
         """The caller pressed keys (docs/05 §2, step 4 of the understanding ladder)."""
+        ...
+
+    def on_silence(self, session_id: str) -> None:
+        """The caller has said nothing since the last sentence was played to
+        the end, for as long as the silence timeout says. Reported once per
+        silence; the next one counts from the end of what is said in answer."""
+        ...
+
+    def on_voice_failure(self, session_id: str) -> None:
+        """The voice layer itself failed on this call: the ear or the mouth
+        raised, or the ear makes nothing of the caller's speech. A platform
+        used to hide this; with our own layer the core has to send the call to
+        the team (docs/20 §4, CLAUDE.md §2 rule 5)."""
         ...
 
     def on_call_ended(self, session_id: str) -> None:
