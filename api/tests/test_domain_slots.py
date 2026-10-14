@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
@@ -155,6 +155,30 @@ def test_entwurf_zaehlt_storno_und_geloeschte_nicht(session, tenant_id, book):
         check_slot(session, tenant_id, berlin(DIENSTAG, 12, 0), 30, now=NOW).available
         is True
     )
+
+
+def test_the_drafts_of_the_asking_call_do_not_count(session, tenant_id, book):
+    """#207: a guest who corrects a draft is not told the evening is full by
+    the draft itself; for any other call the draft still holds its seats."""
+    book(berlin(DIENSTAG, 18, 0), 38, status="draft")
+    own = session.scalar(select(Reservation.call_id))
+    at = berlin(DIENSTAG, 19, 0)
+
+    assert check_slot(session, tenant_id, at, 4, now=NOW, call_id=own).available
+    assert not check_slot(
+        session, tenant_id, at, 4, now=NOW, call_id=uuid.uuid4()
+    ).available
+    assert not check_slot(session, tenant_id, at, 4, now=NOW).available
+
+
+def test_a_confirmed_table_counts_for_its_own_call_too(session, tenant_id, book):
+    """Only drafts are replaced by a correction; a booked table stays booked."""
+    book(berlin(DIENSTAG, 18, 0), 38)
+    own = session.scalar(select(Reservation.call_id))
+
+    assert not check_slot(
+        session, tenant_id, berlin(DIENSTAG, 19, 0), 4, now=NOW, call_id=own
+    ).available
 
 
 def test_gruppe_groesser_als_jedes_fenster_bekommt_keine_alternativen(

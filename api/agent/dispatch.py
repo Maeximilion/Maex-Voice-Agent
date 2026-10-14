@@ -79,7 +79,14 @@ def _check_slot(
     now: datetime | None,
 ) -> BaseModel:
     req = CheckSlotRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    return check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
+    return check_slot(
+        session,
+        req.tenant_id,
+        req.reserved_for,
+        req.party_size,
+        now=now,
+        call_id=req.call_id,
+    )
 
 
 # Placeholder until the key from the validated request is known.
