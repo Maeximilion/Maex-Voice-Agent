@@ -36,7 +36,10 @@ report() {
 }
 trap 'report "$mode"' EXIT
 
-if ! git -C "$root" fetch --prune --quiet 2>/dev/null; then
+# main named explicitly: the refspec of a single-branch clone leaves it out of a plain
+# fetch, and everything below reads origin/main.
+if ! git -C "$root" fetch --prune --quiet 2>/dev/null \
+  || ! git -C "$root" fetch --quiet origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null; then
   warn "git fetch failed"
   exit 0
 fi

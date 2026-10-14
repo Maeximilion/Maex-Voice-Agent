@@ -159,6 +159,25 @@ def test_clean_main_in_another_worktree_is_fast_forwarded(repos):
     assert tracked.read_text(encoding="utf-8") == "second\n"
 
 
+def test_a_clone_that_fetches_other_branches_only_still_gets_main(repos):
+    # Codex PR #290: a single-branch clone's fetch leaves origin/main stale, and a
+    # merge of that stale ref would leave main behind without a word.
+    repos.git(repos.main_checkout, "push", "-q", "origin", "feature")
+    repos.git(
+        repos.main_checkout,
+        "config",
+        "remote.origin.fetch",
+        "+refs/heads/feature:refs/remotes/origin/feature",
+    )
+    repos.land_on_origin("second")
+
+    assert repos.run_hook() == ""
+    upstream = repos.tmp_path / "upstream"
+    assert repos.git(repos.main_checkout, "rev-parse", "main") == repos.git(
+        upstream, "rev-parse", "main"
+    )
+
+
 def test_dirty_main_behind_origin_is_reported_and_left_alone(repos):
     repos.land_on_origin("second")
     tracked = repos.main_checkout / "tracked.txt"
