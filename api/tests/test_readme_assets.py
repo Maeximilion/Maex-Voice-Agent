@@ -603,3 +603,13 @@ def test_the_picture_names_the_direct_print_and_the_voice_failure_exactly() -> N
     # A callback needs the caller's number; without one the call ends with the
     # honest "nobody reachable" sentence (api/agent/loop.py _handoff).
     assert "number known" in flow
+
+
+def test_tablet_and_reply_start_together_when_confirm_commits() -> None:
+    """The tablet polls Postgres; it does not wait for the spoken reply."""
+    (stored,) = _steps("confirm", "postgres")
+    (shown,) = _steps("postgres", "tablet")
+    (back,) = _steps("postgres", "confirm")
+    assert shown.t0 == back.t0
+    # Right after the commit, at most the short pause between two captions.
+    assert stored.t1 <= shown.t0 <= stored.t1 + ra.FLOW_PAUSE + 1e-9

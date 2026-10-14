@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import itertools
 import json
 import math
 import re
@@ -257,6 +258,14 @@ def _hop(tool: str) -> list[tuple[str, str, str]]:
     ]
 
 
+def _together(*chains: list[tuple[str, str, str]]) -> list[tuple]:
+    """Chains that run at the same time: their n-th steps share one slot."""
+    return [
+        tuple(step for step in slot if step is not None)
+        for slot in itertools.zip_longest(*chains)
+    ]
+
+
 WORDS_IN = [
     ("caller", "access", "neon"),
     ("access", "asterisk", "neon"),
@@ -283,36 +292,42 @@ FLOW_STORY: list[tuple[str, list]] = [
         ],
     ),
     (
-        "4  The caller says yes. Only now the core confirms, and the LLM says so.",
+        "4  The caller says yes. Only now the core confirms.",
         [
             *WORDS_IN,
             ("core", "llm", "neon"),
             ("llm", "core", "neon"),
             ("core", "confirm", "neon"),
             ("confirm", "postgres", "neon"),
-            ("postgres", "confirm", "neon"),
-            ("confirm", "core", "neon"),
-            ("core", "llm", "neon"),
-            ("llm", "core", "violet"),
-            ("core", "mouth", "violet"),
-            ("mouth", "asterisk", "violet"),
-            ("asterisk", "access", "violet"),
-            ("access", "caller", "violet"),
         ],
     ),
     (
-        # A held order: the slip waits for the team's approval on the tablet. In
-        # primary mode under the amount limit it prints at once, and the caption
-        # says so (api/domain/ordering/confirm.py, board.py).
-        "5  On the tablet; the slip prints after the team approves (primary mode: at once).",
-        [
-            ("postgres", "tablet", "neon"),
-            ("tablet", "team", "neon"),
-            ("team", "tablet", "neon"),
-            ("tablet", "postgres", "neon"),
-            ("postgres", "slip", "neon"),
-            ("slip", "team", "neon"),
-        ],
+        # Once confirm commits, two things run at the same time: the result goes
+        # back through the loop to the caller, and the tablet (polling Postgres)
+        # shows the order. A held order prints after the team's approval; in
+        # primary mode under the amount limit the slip is due at once
+        # (api/domain/ordering/confirm.py, board.py, api/agent/loop.py).
+        "5  In parallel: the reply goes out; the order on the tablet, the slip after approval (primary mode: at once).",
+        _together(
+            [
+                ("postgres", "confirm", "neon"),
+                ("confirm", "core", "neon"),
+                ("core", "llm", "neon"),
+                ("llm", "core", "violet"),
+                ("core", "mouth", "violet"),
+                ("mouth", "asterisk", "violet"),
+                ("asterisk", "access", "violet"),
+                ("access", "caller", "violet"),
+            ],
+            [
+                ("postgres", "tablet", "neon"),
+                ("tablet", "team", "neon"),
+                ("team", "tablet", "neon"),
+                ("tablet", "postgres", "neon"),
+                ("postgres", "slip", "neon"),
+                ("slip", "team", "neon"),
+            ],
+        ),
     ),
 ]
 FLOW_SEGMENT = 0.3
