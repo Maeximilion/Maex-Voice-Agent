@@ -8,7 +8,7 @@
 > trägt `call_id` und `tenant_id`, jede Antwort `{ ok, data, say }` bzw. `{ ok: false, error, say }`.
 
 ## get_service_status
-**Wann:** einmal je Gespräch: vor einer Bestellung, oder wenn der Gast nach den Öffnungszeiten fragt. Steht `service` im Zustand, ist die Antwort schon da. Für eine Reservierung nicht nötig: `check_slot` kennt die Öffnung.
+**Wann:** vor einer Bestellung, wenn `service` im Zustand fehlt; `service` sagt nur, ob offen ist und ob Abholung angenommen wird. Fragt der Gast, bis wann offen ist oder wie lange es dauert: erneut aufrufen. Für eine Reservierung nicht nötig: `check_slot` kennt die Öffnung.
 **Eingabe:** keine Felder.
 **Liefert:** ob offen, bis wann, Wartezeiten, Betriebsmodus.
 

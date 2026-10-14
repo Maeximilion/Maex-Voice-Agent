@@ -237,9 +237,10 @@ transcript:
   the core knows (`guards.take_cart`).
 - `service`: `{"is_open": true, "pickup_enabled": true}` once `get_service_status` answered in this call, both flags or nothing (pickup can be off while the restaurant is open, Codex PR #291). A model
   asked for the status at the start of every turn, one request each time, and then answered
-  from the status instead of calling `check_slot`. The prompt asks for the status once per
-  call, before an order or on a question about opening hours, and not for a table:
-  `check_slot` knows the opening hours.
+  from the status instead of calling `check_slot`. The prompt asks for the status before an order
+  when `service` is missing, again on a question about closing time or waiting time (the
+  state keeps only the two flags, Codex PR #291), and not for a table: `check_slot` knows
+  the opening hours.
 
 **Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the
 system prompt, the compact state and one input per call, never a transcript. It answers
