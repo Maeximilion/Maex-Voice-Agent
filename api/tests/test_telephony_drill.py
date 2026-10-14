@@ -135,6 +135,17 @@ def test_a_secret_in_a_containers_output_fails(tmp_path):
     assert not ok and "asterisk" in detail
 
 
+def test_a_callers_number_in_the_output_of_voice_fails(tmp_path):
+    stage = Stage(tmp_path, {})
+    # The call to a `voice` that is down is left out: Asterisk's warning
+    # repeats the dial string then.
+    stage.logs["asterisk"].append("WARNING: failed to voice/v(caller=%2B4972215550104)")
+    assert stage.no_caller_in_the_logs()[1]
+    stage.logs["voice"].append('"WebSocket /media?call=1.0&caller=%2B4972215550101"')
+    _, ok, detail = stage.no_caller_in_the_logs()
+    assert not ok and detail == "found in voice"
+
+
 def test_every_run_makes_new_secrets_and_a_project_per_folder(tmp_path):
     one, two = drill.Drill(tmp_path, dry_run=True), drill.Drill(tmp_path, dry_run=True)
     assert one.secrets != two.secrets

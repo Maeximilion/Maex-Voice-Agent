@@ -38,7 +38,7 @@ The voice layer (telephony, speech recognition, voice output) is our own, runnin
 
 **Not yet working:**
 
-- No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. Missing: the speech engines (T-10.5), the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
+- No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. Missing: the speech engines of T-10.5 inside the service `voice` (T-1.11 part 2), the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
 - No real menu data yet: the CSVs come from the chat digitization (C1)

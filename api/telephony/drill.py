@@ -129,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
                 checks += scenario(drill)
         if not args.dry_run:
             checks.append(drill.no_secret_in_the_logs())
+            checks.append(drill.no_caller_in_the_logs())
     except DrillError as exc:
         print(f"voice_drill: {exc}", file=sys.stderr)
         checks.append(("the drills ran to the end", False, str(exc)))
@@ -249,6 +250,30 @@ class Drill:
             "token and password are in no container's output",
             not found,
             "found in " + ", ".join(sorted(set(found))) if found else "none found",
+        )
+
+    def no_caller_in_the_logs(self) -> Check:
+        """A caller's number belongs in the call log, which has a deletion
+        period, not in the output of `voice` or `asterisk` (docs/17). The call
+        to a `voice` that is down is left out: Asterisk's warning repeats the
+        dial string then (docs/20 §12)."""
+        numbers = [
+            form
+            for n in (101, 102, 103, 105, 106)
+            for form in (f"{NUMBER_PREFIX}{n}", f"%2B{NUMBER_PREFIX[1:]}{n}")
+        ]
+        found = sorted(
+            {
+                service
+                for service in ("asterisk", "voice")
+                for line in self.log(service)
+                if any(number in line for number in numbers)
+            }
+        )
+        return (
+            "no caller's number in the output of voice or asterisk",
+            not found,
+            "found in " + ", ".join(found) if found else "none found",
         )
 
 

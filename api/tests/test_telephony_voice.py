@@ -8,6 +8,7 @@ dialplan does when our leg is gone. No network, no Asterisk.
 
 import base64
 import json
+import logging
 import time
 
 import pytest
@@ -22,7 +23,7 @@ from api.core.errors import NotFound
 from api.domain.calls import tenant_named
 from api.telephony import app as voice_app
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
-from api.telephony.app import Voice, create_app, voice_from_settings
+from api.telephony.app import Voice, create_app, voice_from_settings, without_query
 from api.telephony.handler import GREETING
 from api.telephony.session import Lines
 from api.tests.test_telephony import (  # noqa: F401 - fixtures
@@ -290,6 +291,23 @@ def test_without_a_token_nothing_is_let_in():
         silence_seconds=60.0,
     )
     assert not voice.authorized(basic("")["authorization"])
+
+
+def test_the_callers_number_in_the_url_stays_out_of_the_log():
+    """uvicorn logs each WebSocket with its query string, where the dialplan
+    puts the caller's number (security review of T-1.11)."""
+    record = logging.LogRecord(
+        "uvicorn.error",
+        logging.INFO,
+        __file__,
+        1,
+        '%s - "WebSocket %s" [accepted]',
+        ("172.19.0.5:43656", "/media?call=1791968728.0&caller=%2B4972215550101"),
+        None,
+    )
+
+    assert without_query(record)
+    assert record.getMessage() == '172.19.0.5:43656 - "WebSocket /media" [accepted]'
 
 
 def test_health_answers_without_a_token(phone):

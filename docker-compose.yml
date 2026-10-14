@@ -109,6 +109,9 @@ services:
     restart: unless-stopped
     env_file: .env
     environment: *without_the_owner
+    # Not root, from the start (docs/01 open points): it reads its mounts and
+    # writes nothing there.
+    user: "10001:10001"
     # One worker: the live calls are held in this process (api/telephony/app.py).
     command:
       - uvicorn

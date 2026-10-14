@@ -20,6 +20,7 @@ model, with the drill engines outside dev and test, or without its tenant.
 import base64
 import binascii
 import hmac
+import logging
 import re
 import threading
 from collections import OrderedDict
@@ -41,7 +42,7 @@ from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Ear, Line, Mouth
 
 # Ear and mouth by their name in the settings. The engines of the test phase
-# come with T-10.5.
+# of T-10.5 come with T-1.11 part 2.
 EARS: dict[str, Callable[[], Ear]] = {"fake": FakeEar}
 MOUTHS: dict[str, Callable[[], Mouth]] = {"fake": FakeMouth}
 # They hear nothing and speak noise: for drills of the workbench only.
@@ -129,7 +130,19 @@ def create_app(voice: Voice) -> FastAPI:
 def from_settings() -> FastAPI:
     """The app of the service, from `.env`; the factory uvicorn starts."""
     configure_logging(settings.log_level)
+    logging.getLogger("uvicorn.error").addFilter(without_query)
     return create_app(voice_from_settings())
+
+
+def without_query(record: logging.LogRecord) -> bool:
+    """uvicorn logs every WebSocket with its query string, and the dialplan puts
+    the caller's number there. The number belongs in the call log, which has a
+    deletion period, not in the output of the container (docs/17)."""
+    if isinstance(record.args, tuple):
+        record.args = tuple(
+            arg.split("?", 1)[0] if isinstance(arg, str) else arg for arg in record.args
+        )
+    return True
 
 
 def voice_from_settings() -> Voice:
