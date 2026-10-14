@@ -26,7 +26,24 @@ def test_the_placeholder_is_what_the_example_file_ships():
     assert f"AGENT_API_TOKEN={TOKEN_PLACEHOLDER}" in example.splitlines()
 
 
-@pytest.mark.parametrize("token", [TOKEN_PLACEHOLDER, "", "short", "k" * 31])
+@pytest.mark.parametrize(
+    "token",
+    [
+        TOKEN_PLACEHOLDER,
+        "",
+        "short",
+        "k" * 31,
+        " " * 32,
+        " " * 12 + TOKEN_PLACEHOLDER,
+        TOKEN_PLACEHOLDER + " " * 12,
+        " " * 16 + "short" + " " * 16,
+        " " + LONG_ENOUGH,
+        LONG_ENOUGH + " ",
+        "k" * 16 + " " + "k" * 16,
+        "\u00a0" + LONG_ENOUGH,
+        LONG_ENOUGH + "\t",
+    ],
+)
 def test_production_does_not_start_on_a_weak_token(token):
     with pytest.raises(ValidationError, match="AGENT_API_TOKEN"):
         _settings(env="prod", agent_api_token=token)

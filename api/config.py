@@ -14,6 +14,15 @@ TOKEN_MIN_LENGTH = 32
 LOCAL_ENVS = frozenset({"dev", "test"})
 
 
+def valid_production_token(token: str) -> bool:
+    """Whitespace cannot turn a public or short value into a usable token."""
+    return (
+        token != TOKEN_PLACEHOLDER
+        and len(token) >= TOKEN_MIN_LENGTH
+        and not any(character.isspace() for character in token)
+    )
+
+
 class Settings(BaseSettings):
     # hide_input_in_errors: a value that fails validation is a secret or sits next
     # to one, and the error goes to the log.
@@ -78,13 +87,11 @@ class Settings(BaseSettings):
         out, would otherwise run on a value that is printed in this repository.
         """
         token = self.agent_api_token
-        if self.env not in LOCAL_ENVS and (
-            token == TOKEN_PLACEHOLDER or len(token) < TOKEN_MIN_LENGTH
-        ):
+        if self.env not in LOCAL_ENVS and not valid_production_token(token):
             # The value itself stays out of the message: it ends up in a log.
             raise ValueError(
-                "AGENT_API_TOKEN is the placeholder or shorter than "
-                f"{TOKEN_MIN_LENGTH} characters; set a random one in .env "
+                "AGENT_API_TOKEN is the placeholder, contains whitespace, or is "
+                f"shorter than {TOKEN_MIN_LENGTH} characters; set a random one in .env "
                 "(openssl rand -hex 32)"
             )
         return self
