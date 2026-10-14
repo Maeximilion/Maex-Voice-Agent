@@ -1,7 +1,7 @@
-date,package,metric,value,unit,limit,verdict,note
-2026-10-11,T-10.1 step 1,Telephony spike: audio both ways,28,of 28 points,,go,test PBX and scripted softphone
-2026-10-13,T-10.3,Silent wrong numbers (Parakeet v3),2.0,%,2 %,at limit,"1,464 number sentences, synthetic voices"
-2026-10-13,T-10.3,Silent wrong numbers (Parakeet v3),2.4,%,2 %,no-go,second run on the real menu
-2026-10-13,T-10.3,Dishes heard right in orders (Whisper turbo),82.5,%,,no-go,180 spoken orders of 2 to 12 dishes
-2026-10-14,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,Asterisk 22.11.0
-2026-10-15,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,
+date,package,metric,value,unit,limit,verdict,note,run_at
+2026-10-11,T-10.1 step 1,Telephony spike: audio both ways,28,of 28 points,,go,test PBX and scripted softphone,
+2026-10-13,T-10.3,Silent wrong numbers (Parakeet v3),2.0,%,2 %,at limit,"1,464 number sentences, synthetic voices",
+2026-10-13,T-10.3,Silent wrong numbers (Parakeet v3),2.4,%,2 %,no-go,second run on the real menu,
+2026-10-13,T-10.3,Dishes heard right in orders (Whisper turbo),82.5,%,,no-go,180 spoken orders of 2 to 12 dishes,
+2026-10-14,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,Asterisk 22.11.0,
+2026-10-15,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,,
