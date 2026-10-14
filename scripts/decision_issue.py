@@ -6,8 +6,12 @@ Zweck : Die taegliche Projektpflege korrigiert, was sie darf, und meldet den Res
         daraus ein einziges Issue: anlegen, wenn etwas offen ist, taeglich
         aktualisieren, schliessen, wenn nichts mehr offen ist. Erwaehnt wird nur bei
         neuen Befunden, nicht jeden Tag fuer dieselben.
-Aufruf: python scripts/decision_issue.py BEFUNDE.json [--dry-run]
+Aufruf: python scripts/decision_issue.py BEFUNDE.json [--also MORE.json ...] [--dry-run]
         BEFUNDE.json schreibt scripts/project_report.py --findings-json.
+        MORE.json: further findings, such as `scripts/readme_assets.py findings`.
+        When one of the files is missing (its step failed), the run is partial:
+        the sections the existing files report on are rewritten, every other
+        section of the issue stays as it is, and the issue is never closed.
 Umgeb.: GITHUB_TOKEN       der eingebaute Token der Action. Bewusst nicht der PAT:
                            eine Erwaehnung vom eigenen Konto loest bei GitHub keine
                            Benachrichtigung aus, eine von github-actions schon.
@@ -38,6 +42,10 @@ INTRO = "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheide
 # Anchored to the end of the body: render_body writes the marker last, after the
 # titles, and a title (anyone can open an issue) may carry a marker of its own.
 KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->\s*\Z")
+
+
+# One section of the body as render_body writes it: heading, blank line, items, blank line.
+SECTION = re.compile(r"^### (.+) \(\d+\)\n\n(?:- .*\n)*\n", re.M)
 
 
 # "#12 " in front of a title; the number stays outside the code span so GitHub
@@ -95,7 +103,17 @@ def parse_keys(body: str | None) -> set[str]:
     return set(filter(None, match.group(1).split(","))) if match else set()
 
 
-def render_body(findings: dict[str, list[dict]], intro: str) -> str:
+def sections(body: str) -> list[tuple[str, str]]:
+    """Heading and text of every section in an issue body."""
+    return [(m.group(1), m.group(0)) for m in SECTION.finditer(body)]
+
+
+def render_body(
+    findings: dict[str, list[dict]],
+    intro: str,
+    kept: list[str] | None = None,
+    kept_keys: set[str] | None = None,
+) -> str:
     lines = [intro, ""]
     for heading, entries in findings.items():
         lines.append(f"### {heading} ({len(entries)})")
@@ -105,11 +123,13 @@ def render_body(findings: dict[str, list[dict]], intro: str) -> str:
             link = f"[{label}]({entry['url']})" if entry.get("url") else label
             lines.append(f"- [ ] {link}")
         lines.append("")
+    # Sections of a partial run that no file reported on, as they were.
+    lines += [section.rstrip("\n") + "\n" for section in kept or []]
     lines.append(
         "Erledigen ueber `/project` oder direkt am Board. Das Issue aktualisiert sich "
         "taeglich und schliesst sich, sobald nichts mehr offen ist."
     )
-    keys = ",".join(sorted(finding_keys(findings)))
+    keys = ",".join(sorted(set(finding_keys(findings)) | (kept_keys or set())))
     lines.append(f"<!-- projektpflege-keys: {keys} -->")
     return "\n".join(lines)
 
@@ -160,6 +180,41 @@ def plan(
     if body != existing_body:
         return Plan("update", body=body)
     return Plan("none")
+
+
+def plan_partial(
+    existing_body: str | None,
+    findings: dict[str, list[dict]],
+    mention: str,
+    closed: bool = False,
+) -> Plan:
+    """A run in which a source of findings failed (the board step without token).
+
+    `findings` holds every heading the sources that did run own, an empty list for
+    one with nothing open. Only those sections are rewritten; every other section
+    and all keys stay, so nothing is dropped or reported again on the day after,
+    and the issue never closes on what is unknown.
+    """
+    open_findings = {h: e for h, e in findings.items() if e}
+    if existing_body is None or closed:
+        return (
+            plan(existing_body, open_findings, mention, closed)
+            if open_findings
+            else Plan("none")
+        )
+    old = parse_keys(existing_body)
+    kept = [
+        text for heading, text in sections(existing_body) if heading not in findings
+    ]
+    body = render_body(open_findings, INTRO, kept, old)
+    current = finding_keys(open_findings)
+    new = sorted(key for key in current if key not in old)
+    if new:
+        listing = "\n".join(f"- {current[key]}" for key in new)
+        return Plan(
+            "update", body=body, comment=f"{mention} Neu dazugekommen:\n\n{listing}"
+        )
+    return Plan("update", body=body) if body != existing_body else Plan("none")
 
 
 def rest(
@@ -239,6 +294,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("findings", help="JSON von project_report.py --findings-json")
     parser.add_argument(
+        "--also",
+        action="append",
+        default=[],
+        help="more findings, for example from readme_assets.py findings",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="Nur zeigen, was passieren wuerde."
     )
     args = parser.parse_args()
@@ -255,8 +316,15 @@ def main() -> int:
         return 2
     mention = os.environ.get("DECISION_MENTION") or f"@{repo.split('/')[0]}"
 
-    with open(args.findings, encoding="utf-8") as handle:
-        findings = json.load(handle)
+    findings: dict[str, list[dict]] = {}
+    partial = False
+    for path in [args.findings, *args.also]:
+        if not os.path.exists(path):
+            print(f"{path} is missing: its step failed, the run is partial", file=sys.stderr)
+            partial = True
+            continue
+        with open(path, encoding="utf-8") as handle:
+            findings.update(json.load(handle))
 
     try:
         issues = rest(
@@ -270,12 +338,14 @@ def main() -> int:
         issue = next((i for i in issues if "pull_request" not in i), None)
         # Ein Issue mit leerem Text liefert body = null. Das ist nicht dasselbe wie
         # "kein Issue" und darf nicht zu einem zweiten Issue fuehren.
-        todo = plan(
-            (issue.get("body") or "") if issue else None,
-            findings,
-            mention,
-            closed=bool(issue and issue.get("state") == "closed"),
-        )
+        existing = (issue.get("body") or "") if issue else None
+        closed = bool(issue and issue.get("state") == "closed")
+        if partial:
+            todo = plan_partial(existing, findings, mention, closed)
+        else:
+            # A source with nothing open reports its heading with an empty list.
+            open_findings = {h: e for h, e in findings.items() if e}
+            todo = plan(existing, open_findings, mention, closed)
         if args.dry_run:
             print(f"Geplant: {todo.action}")
             if todo.comment:

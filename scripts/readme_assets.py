@@ -20,6 +20,8 @@ Usage:
     python scripts/readme_assets.py add <report.json> [--suite cases|targets]
     python scripts/readme_assets.py add-voice <date> <package> <metric> <value> ...
     python scripts/readme_assets.py pending [--record]   runs not yet in docs/metrics/
+    python scripts/readme_assets.py findings <out.json>  what the maintenance bot reports
+    python scripts/readme_assets.py mark-uploaded        social preview uploaded in Settings
 
 `make eval`, `make eval-targets` and the voice kits record on their own (`auto-record`,
 `record_kit_run`), on a branch only: on `main` a result waits in evals/reports/.
@@ -2672,31 +2674,87 @@ def stale_pngs(assets: dict[str, str]) -> list[str]:
     ]
 
 
+def outdated(facts: Facts, assets: dict[str, str]) -> dict[Path, str]:
+    """Every generated file whose committed text differs from what the data gives
+    now, with the text it should have: the README's regions and the SVGs."""
+    out: dict[Path, str] = {}
+    readme = README.read_text(encoding="utf-8")
+    if (text := readme_text(facts, readme)) != readme:
+        out[README] = text
+    for name, content in assets.items():
+        target = ASSETS / name
+        if not target.exists() or target.read_text(encoding="utf-8") != content:
+            out[target] = content
+    return out
+
+
+# The digest of the social preview as last uploaded in the repository settings.
+# Its own file: `render --png` rewrites png-sources.json as a whole.
+UPLOADED = "social-preview.uploaded"
+IMAGES_HEADING = "README images"
+
+
+def image_findings() -> dict[str, list[dict[str, str]]]:
+    """What the maintenance bot reports about the images on `main`, for the one
+    decision issue (`scripts/decision_issue.py --also`). Keyed by asset and
+    digest, so the same stale state is reported once and a new one again."""
+    facts = gather()
+    assets = build(facts)
+    entries = [
+        {
+            "label": f"README images out of date on main ({target.name}): "
+            "run make readme-assets in the next PR",
+            "id": f"{target.name}:{svg_digest(content)}",
+        }
+        for target, content in outdated(facts, assets).items()
+    ]
+    entries += [
+        {
+            "label": f"README images out of date on main ({name}): run python "
+            "scripts/readme_assets.py render --png in the next PR",
+            "id": f"{name}:{svg_digest(assets[PNGS[name][0]])}",
+        }
+        for name in stale_pngs(assets)
+    ]
+    social = file_digest(ASSETS / "social-preview.png")
+    uploaded = ASSETS / UPLOADED
+    if social and social != (
+        uploaded.read_text(encoding="utf-8").strip() if uploaded.exists() else ""
+    ):
+        entries.append(
+            {
+                "label": "Social preview changed: upload "
+                ".github/assets/social-preview.png in Settings, then run python "
+                "scripts/readme_assets.py mark-uploaded",
+                "id": f"social-preview.png:{social}",
+            }
+        )
+    # The heading with an empty list says: nothing open here (decision_issue.py).
+    return {IMAGES_HEADING: entries}
+
+
+def mark_uploaded() -> int:
+    digest = file_digest(ASSETS / "social-preview.png")
+    if digest is None:
+        print("no .github/assets/social-preview.png to mark", file=sys.stderr)
+        return 1
+    (ASSETS / UPLOADED).write_text(digest + "\n", encoding="utf-8")
+    print(f"marked as uploaded: {digest[:12]}; commit .github/assets/{UPLOADED}")
+    return 0
+
+
 def render(check: bool = False, png: bool = False) -> int:
     facts = gather()
     assets = build(facts)
-    stale = []
-    readme = README.read_text(encoding="utf-8")
-    if (text := readme_text(facts, readme)) != readme:
-        if check:
-            stale.append("README.md")
-        else:
-            README.write_text(text, encoding="utf-8")
-            print(f"wrote {README}")
-    for name, content in assets.items():
-        target = ASSETS / name
-        current = target.read_text(encoding="utf-8") if target.exists() else None
-        if current == content:
-            continue
-        if check:
-            stale.append(name)
-        else:
+    changed = outdated(facts, assets)
+    if not check:
+        for target, content in changed.items():
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
             print(f"wrote {target}")
-    if stale:
+    elif changed:
         print(
-            "README assets are stale: " + ", ".join(stale) + ".\n"
+            "README assets are stale: " + ", ".join(t.name for t in changed) + ".\n"
             "Run `python scripts/readme_assets.py render` and commit .github/assets/ "
             "and README.md.",
             file=sys.stderr,
@@ -2769,11 +2827,26 @@ def main(argv: list[str] | None = None) -> int:
         "pending", help="list the runs and voice results not yet in docs/metrics/"
     )
     pend.add_argument("--record", action="store_true", help="record them (not on main)")
+    fnd = sub.add_parser(
+        "findings", help="stale images and the social preview, as decision issue JSON"
+    )
+    fnd.add_argument("out", type=Path)
+    sub.add_parser(
+        "mark-uploaded", help="record the social preview as uploaded in Settings"
+    )
     c = sub.add_parser("concepts", help="write the logo concept sheet")
     c.add_argument("out", type=Path)
     args = parser.parse_args(argv)
     if args.cmd == "render":
         return render(args.check, args.png)
+    if args.cmd == "findings":
+        found = image_findings()
+        args.out.write_text(json.dumps(found, indent=2) + "\n", encoding="utf-8")
+        for entry in found[IMAGES_HEADING]:
+            print(entry["label"])
+        return 0
+    if args.cmd == "mark-uploaded":
+        return mark_uploaded()
     if args.cmd == "auto-record":
         return auto_record(args.suite, args.since)
     if args.cmd == "pending":

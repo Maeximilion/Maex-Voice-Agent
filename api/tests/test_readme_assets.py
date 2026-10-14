@@ -1021,3 +1021,58 @@ def test_no_cover_and_no_reason_outlives_its_component() -> None:
     ]
     assert not stale and not dead, (stale, dead)
     assert all(reason.strip() for reason in ra.NOT_DRAWN.values())
+
+
+# --- the maintenance bot reports the images (T-0.11) ------------------------------
+
+
+@pytest.fixture
+def assets(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    for path in ra.ASSETS.iterdir():
+        if path.is_file():
+            (tmp_path / path.name).write_bytes(path.read_bytes())
+    monkeypatch.setattr(ra, "ASSETS", tmp_path)
+    return tmp_path
+
+
+def test_nothing_open_still_names_the_heading(assets: Path) -> None:
+    assert ra.mark_uploaded() == 0
+    assert ra.image_findings() == {ra.IMAGES_HEADING: []}
+
+
+def test_a_stale_image_is_reported_by_name_and_digest(assets: Path) -> None:
+    ra.mark_uploaded()
+    (assets / "progress.svg").write_text("<svg/>", encoding="utf-8")
+    (entry,) = ra.image_findings()[ra.IMAGES_HEADING]
+    name, digest = entry["id"].split(":")
+    assert name == "progress.svg" and len(digest) == 64
+    assert "make readme-assets" in entry["label"]
+    # The same stale state gives the same key, so the issue mentions it once.
+    assert ra.image_findings()[ra.IMAGES_HEADING] == [entry]
+
+
+def test_a_new_social_preview_is_reported_until_it_is_marked_uploaded(
+    assets: Path,
+) -> None:
+    (assets / ra.UPLOADED).unlink(missing_ok=True)
+    (social,) = ra.image_findings()[ra.IMAGES_HEADING]
+    assert (
+        social["id"]
+        == f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}"
+    )
+    assert "mark-uploaded" in social["label"]
+    ra.mark_uploaded()
+    assert ra.image_findings()[ra.IMAGES_HEADING] == []
+    # A PNG drawn again is a new upload, and also a PNG CI cannot vouch for.
+    (assets / "social-preview.png").write_bytes(b"another png")
+    ids = [e["id"] for e in ra.image_findings()[ra.IMAGES_HEADING]]
+    assert f"social-preview.png:{ra.file_digest(assets / 'social-preview.png')}" in ids
+    assert any(
+        "render --png" in e["label"] for e in ra.image_findings()[ra.IMAGES_HEADING]
+    )
+
+
+def test_mark_uploaded_needs_the_png(assets: Path) -> None:
+    (assets / "social-preview.png").unlink()
+    assert ra.mark_uploaded() == 1
+    assert not (assets / ra.UPLOADED).exists()
