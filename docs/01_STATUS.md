@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.37
+> Status: 14.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.1.38
 
 ---
 
@@ -505,6 +505,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.1.38 · 14.10.2026:** Codex review of ef4f7e3 on PR #290: the hook's JSON escapes every control character, so a path holding one still makes valid output
 - **v2.1.37 · 14.10.2026:** The sync hooks show a main folder that cannot be synced to Maxi, with the blocking files, and tell Claude to raise it first
 - **v2.1.36 · 13.10.2026:** Codex review of f654c17 on PR #286: the line must not block (the session's deadline on it is taken back); partials and keys count by their own time
 - **v2.1.35 · 13.10.2026:** Codex second pass on 686bd9c (PR #286): every call to the line has a deadline; a mouth that failed is not asked again; speech older than the answer stops nothing

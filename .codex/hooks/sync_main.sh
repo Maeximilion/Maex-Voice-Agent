@@ -13,8 +13,14 @@ git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || exit 0
 mode=$1 warnings=
 warn() { warnings+="SessionStart sync: $1, check git status"$'\n'; }
 json_string() {
-  local s=$1
-  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}
+  local s=$1 i o c u
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\r'/}; s=${s//$'\n'/\\n}
+  # Every other control character too: a path may hold one, and Claude Code drops
+  # output it cannot parse.
+  for i in {1..31}; do
+    printf -v o '%03o' "$i"; printf -v c "\\$o"; printf -v u '\\u%04x' "$i"
+    s=${s//"$c"/$u}
+  done
   printf '"%s"' "$s"
 }
 report() {

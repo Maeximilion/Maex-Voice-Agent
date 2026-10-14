@@ -195,6 +195,21 @@ def test_for_claude_code_the_warning_is_json_the_user_sees(repos):
     assert "top of your first reply" in told["additionalContext"]
 
 
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows has no control character in a path"
+)
+@pytest.mark.parametrize("repos", ["main\x0ccheckout"], indirect=True)
+def test_a_control_character_in_the_path_still_makes_valid_json(repos):
+    # Codex PR #290: a form feed in the folder name went out raw and broke the JSON,
+    # and Claude Code drops a hook output it cannot parse.
+    repos.land_on_origin("second")
+    (repos.main_checkout / "tracked.txt").write_text("local edit\n", encoding="utf-8")
+
+    sent = json.loads(repos.run_hook("--json"))
+
+    assert "main\x0ccheckout" in sent["systemMessage"]
+
+
 def test_for_claude_code_a_main_folder_in_order_stays_silent(repos):
     repos.land_on_origin("second")
 
