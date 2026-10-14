@@ -144,7 +144,7 @@ def note_said(state: ConversationState, say: str) -> None:
     named = {
         item_id
         for item_id, (number, name) in state.offered_items.items()
-        if _named(heard, number.lower(), name.lower())
+        if names_dish(heard, number.lower(), name.lower())
     }
     state.known_item_ids |= named
     state.offered_items = {
@@ -154,8 +154,9 @@ def note_said(state: ConversationState, say: str) -> None:
     }
 
 
-def _named(heard: str, number: str, name: str) -> bool:
-    """A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
+def names_dish(heard: str, number: str, name: str) -> bool:
+    """Whether a sentence (lower case) names the dish (`number` and `name` in
+    lower case). A bare number is no card number: "um 13 Uhr" or "13,47 Euro" name no
     dish. Half a name names none either, and a name counts only as whole
     words: "Reis" is not named by "Preis" or "Reisnudeln" (Codex PR #222)."""
     if name and re.search(rf"(?<!\w){re.escape(name)}(?!\w)", heard):

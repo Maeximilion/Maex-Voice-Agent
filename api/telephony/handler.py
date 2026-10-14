@@ -32,7 +32,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from api.agent.guards import note_said
+from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient
 from api.agent.loop import ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome
@@ -44,6 +44,7 @@ from api.core.time import utcnow
 from api.domain.calls import CallRouting, call_routing, end_call, start_call
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
 from api.telephony.port import TelephonyPort
+from api.telephony.speech_spike import spoken_name
 
 # docs/05 §6. Drafts until the legal check in docs/09; the greeting carries no
 # recording notice because nothing is recorded.
@@ -259,6 +260,7 @@ class CallHandler:
             and not counted_as_heard
             and live.state.stage not in _NOT_INTERRUPTIBLE
         )
+        self._port.expect(live.session_id, key_terms(live.state, " ".join(result.say)))
         for line in result.say:
             self._port.say(live.session_id, line, interruptible=interruptible)
         if live.state.stage == "transferred":
@@ -409,3 +411,26 @@ def _close_model(llm: LLMClient | None) -> None:
         close()
     except Exception:
         logger.exception("model client could not be closed")
+
+
+def key_terms(state: ConversationState, said: str) -> list[str]:
+    """The dish names in question after a turn, for the speech engine (docs/20
+    §6): first those the agent named in what it said (the guest answers "die
+    26 oder die 26d?" next), then those of the order, which a correction
+    names. They come from the searches of this call, so from the active menu in
+    the database, and are never the menu (CLAUDE.md §2 rule 6)."""
+    heard = said.lower()
+    ids = [
+        *(
+            item_id
+            for item_id, seen in state.seen_items.items()
+            if names_dish(heard, seen["number"].lower(), seen["name"].lower())
+        ),
+        *(line["menu_item_id"] for line in state.cart),
+    ]
+    names = (
+        spoken_name(state.seen_items[item_id]["name"])
+        for item_id in ids
+        if item_id in state.seen_items
+    )
+    return list(dict.fromkeys(name for name in names if name))

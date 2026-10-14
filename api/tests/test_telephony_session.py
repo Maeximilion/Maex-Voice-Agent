@@ -1086,6 +1086,7 @@ def test_the_port_reaches_a_call_by_its_session_id(call):
     call.start()
     call.lines.say("s1", "Guten Tag.")
     call.lines.say("other", "Niemand hört das.")
+    call.lines.expect("other", ["Pho Bo"])
     call.lines.hangup("other")
     call.s.drain()
     assert call.line.played() == ["Guten Tag."]
@@ -1094,6 +1095,20 @@ def test_the_port_reaches_a_call_by_its_session_id(call):
         call.lines.transfer("other", "+497215550000")
     call.lines.remove("s1")
     assert call.lines.caller_id("s1") is None
+
+
+def test_key_terms_reach_the_ear_before_the_answer_to_the_turn(call):
+    """Asked for in a turn, they are handed over when the turn returns, so the
+    guest's answer to its question is heard with them (docs/20 §6)."""
+    call.core.replies["Einmal Ente."] = [
+        ("expect", ["Knusprige Ente", "Ente süß-sauer"]),
+        ("say", "Die knusprige oder die süß-saure?", True),
+    ]
+    call.start(GREETING)
+    call.played()
+    call.said("Einmal Ente.", after=1.0)
+    assert call.ear.expected == ["Knusprige Ente", "Ente süß-sauer"]
+    assert call.line.played()[-1] == "Die knusprige oder die süß-saure?"
 
 
 def test_nothing_is_recorded(call):

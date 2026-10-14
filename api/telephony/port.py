@@ -30,6 +30,13 @@ class TelephonyPort(Protocol):
         transfer or hangup: those are played to the end (docs/20 §4)."""
         ...
 
+    def expect(self, session_id: str, terms: list[str]) -> None:
+        """Key terms for the speech engine: the dish names in question at this
+        point of the call, never the menu (docs/20 §6, CLAUDE.md §2 rule 6).
+        They help the engine write a name it would otherwise miss; what the
+        guest ordered is still decided by the search, never by them."""
+        ...
+
     def transfer(self, session_id: str, target: str) -> None:
         """Hand the live call to `target` (E.164). After this the line is no
         longer ours. Raises when the platform refuses."""

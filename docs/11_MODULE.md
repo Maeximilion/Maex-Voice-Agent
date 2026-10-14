@@ -133,7 +133,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 ### `telephony/` – der einzige Ort, der den Anbieter kennt
 | Datei | Verantwortung |
 |---|---|
-| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); since T-10.4 with `on_silence` and `on_voice_failure`, and `say` takes whether the sentence may be interrupted (docs/20 §4) |
+| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); since T-10.4 with `on_silence` and `on_voice_failure`, and `say` takes whether the sentence may be interrupted (docs/20 §4); since T-10.5 `TelephonyPort.expect`, the key terms for the speech engine (docs/20 §6) |
 | `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers when the state says so, or says goodbye (unless the agent just did) and hangs up, closes the call log; every failure ends with the outage sentence and a transfer |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
 | `app.py` | planned (docs/20 §2): the process of the service `voice` |
@@ -145,8 +145,8 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `spike.py` | kit of the spike T-10.1: starts the test PBX, the scripted softphone and the probe as containers, places the calls and judges them from the probe's logs and the softphone's recordings. In `telephony/` because it drives the PBX; `scripts/voice_spike.py` is only its entry. Standard library only |
 | `speech_bench.py` | bench of the spike T-10.3, runs inside the image of `deploy/speech/`: downloads the open engines' model files, speaks the sentences of a plan with every voice, sends them through the band of a telephone line (`telephone`), lets every ear transcribe them and writes what was heard with the timings. Judges nothing and knows nothing of the menu. The only file here that needs numpy; the engine packages are imported where they are used and live in that image only |
 | `speech_spike.py` | kit of the spike T-10.3: names the candidates (ears, voices), builds the plan from the eval files, runs bench and judge (`evals/heard.py`) as containers, the last two without a network, and prints the tables and the pick. With `--orders` the plan holds spoken orders of several dishes instead, each judged as one order. `scripts/speech_spike.py` is only its entry. Standard library only |
-| `adapters/stt_<engine>.py` | planned (docs/20 §2): one speech-to-text engine each |
-| `adapters/tts_<engine>.py` | planned (docs/20 §2): one text-to-speech engine each |
+| `adapters/stt_<engine>.py` | one speech-to-text engine each (docs/20 §2). `stt_whisper.py` since T-10.5: `SegmentingEar`, the silence detector that turns an engine which only transcribes into an `Ear` (partials while the caller speaks, the end of an utterance after 704 ms of silence, on a thread of its own), and `Whisper`, the engine loaded once per process. Its packages are imported where they are used and live in the image of the voice service |
+| `adapters/tts_<engine>.py` | one text-to-speech engine each (docs/20 §2). `tts_piper.py` since T-10.5: a Piper voice as a `Mouth`, converted to the rate of the line |
 | `adapters/fake_speech.py` | fake ear, mouth and line for tests (T-10.4): the ear says what a test tells it, the mouth returns the sentence as its audio, the line records what it was asked to do |
 | `router.py` | planned (docs/20 §2): the WebSocket endpoint for call audio and the dialplan callback |
 

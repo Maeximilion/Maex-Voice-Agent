@@ -66,6 +66,13 @@ class Ear(Protocol):
         and reports through the sink."""
         ...
 
+    def expect(self, terms: list[str]) -> None:
+        """Words the caller's next utterances may hold (the dishes in question
+        at this point of the call), until the next call of `expect`. An engine
+        that takes key terms keeps what fits its prompt, one that takes none
+        ignores them. Never raises."""
+        ...
+
     def close(self) -> None:
         """The call is over. Never raises."""
         ...

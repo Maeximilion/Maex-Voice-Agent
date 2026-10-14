@@ -22,9 +22,11 @@ from sqlalchemy.orm import Session
 from api.agent.llm import LLMTurn
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
+from api.domain.menu.importer import apply
 from api.models import Call, Callback, Reservation, ServiceConfig
 from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import FAREWELL, SAY_OUTAGE, STILL_THERE, CallHandler
+from evals.runner import menu_plan
 from scripts.seed import seed
 from sim.scripted_llm import QUESTIONS, SAY_CONFIRMED, ScriptedLLM
 from sim.session import menu_numbers, resolve_tenant
@@ -1021,3 +1023,39 @@ def test_a_call_the_agent_does_not_take_rings_the_team_unanswered(session, tenan
     wire = _Wire(session, tenant)
     assert wire.line.actions == [("transfer", TEAM_PHONE)]
     assert wire.call.outcome == "transfer"
+
+
+# -- key terms for the speech engine (T-10.5) ------------------------------------------
+
+
+def test_key_terms_are_the_dishes_in_question_never_the_menu(session, tenant):
+    """After each turn the engine gets the names of the dishes the agent just
+    named, which the guest answers next, and then those of the order
+    (docs/20 §6); a turn that names none and has no order gives none."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = load_call(
+        CASES / "abholung_0060_duck_is_ambiguous_the_chosen_one_is_sold_out.json"
+    )
+    port.play(case, handler_for(session, tenant, port))
+
+    ducks = ["Ente knusprig", "Ente süß-sauer", "Ente mit Mango"]
+    assert port.terms == [
+        [],  # "Was möchten Sie bestellen?"
+        ducks,  # "Meinen Sie Nummer 47 Ente knusprig oder ...?"
+        ducks,  # the same question again, the one chosen is sold out
+        [],
+        [],
+        ["Ente mit Mango"],  # the read-back
+        [],
+    ]
+
+
+def test_key_terms_are_names_as_a_guest_says_them(session, tenant):
+    """The number of pieces is part of a name on the card, not of what a guest
+    says ("Frühlingsrollen (4 Stück)")."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = load_call(CASES / "abholung_0001_zwei_positionen_mit_option.json")
+    port.play(case, handler_for(session, tenant, port))
+    assert ["Frühlingsrollen", "Ente knusprig"] in port.terms
