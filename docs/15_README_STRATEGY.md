@@ -121,9 +121,9 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 ### Keeping them current
 
 - Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file.
-- CI runs `python scripts/readme_assets.py render --check` and fails when a committed image no longer matches its data. The fix is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
+- CI runs `python scripts/readme_assets.py render --check` and fails when a committed image no longer matches its data. The two PNGs cannot be drawn in CI: `render --png` records the digest of their source SVGs in `.github/assets/png-sources.json`, and the check fails when a source SVG changed without new PNGs. The fix is always `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
 - `/done` renders after the status update; `/gate` also records the latest runs and renders the PNGs.
-- A real-model eval run is recorded with `make eval-record REPORT=evals/reports/eval_20261014_213000_000000.json`, the name of its own report in place of the example (`docs/08_EVALS.md` §4). A voice measurement is recorded like this, with its row in `docs/20_VOICE_LAYER.md` §11:
+- A real-model eval run is recorded right after it with `make eval-record`, which takes the newest report (`docs/08_EVALS.md` §4). A voice measurement is recorded like this, with its row in `docs/20_VOICE_LAYER.md` §11:
 
   ```bash
   python scripts/readme_assets.py add-voice 2026-10-14 T-1.11 "Outage drills end at the team phone" 15 "of 15 points" go --note "Asterisk 22.11.0"

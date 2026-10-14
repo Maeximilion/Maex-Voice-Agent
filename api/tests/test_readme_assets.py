@@ -247,6 +247,8 @@ def test_check_reports_a_stale_asset(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(ra, "ASSETS", tmp_path)
+    sidecar = ra.ROOT / ".github" / "assets" / ra.PNG_SOURCES
+    (tmp_path / ra.PNG_SOURCES).write_text(sidecar.read_text(encoding="utf-8"))
     assert ra.render() == 0
     assert ra.render(check=True) == 0
     (tmp_path / "progress.svg").write_text("<svg/>", encoding="utf-8")
@@ -319,3 +321,85 @@ def test_the_social_preview_carries_no_number_that_can_go_stale() -> None:
     social = ra.build(ra.gather())["social-preview.svg"]
     assert "eval" not in social
     assert "/41" not in social
+
+
+# --- second Codex round on 93576eb ---------------------------------------------
+
+
+def test_a_run_in_which_no_request_reached_the_model_is_refused(tmp_path: Path) -> None:
+    dead = report(cases=[{"passed": False, "requests": 3, "unmetered": 3}])
+    with pytest.raises(ra.RecordError, match="no request"):
+        ra.record_report(dead, None, path=tmp_path / "h.csv")
+    alive = report(cases=[{"passed": True, "requests": 3, "unmetered": 1}])
+    assert ra.record_report(alive, None, path=tmp_path / "h.csv").startswith("recorded")
+
+
+def test_two_reports_of_the_same_second_stay_two_rows(tmp_path: Path) -> None:
+    path = tmp_path / "h.csv"
+    ra.record_report(report(), None, path=path, report_name="eval_1_000001.json")
+    ra.record_report(report(), None, path=path, report_name="eval_1_000002.json")
+    again = ra.record_report(
+        report(), None, path=path, report_name="eval_1_000002.json"
+    )
+    assert again.startswith("already recorded")
+    assert len(ra.read_eval_history(path)) == 2
+
+
+def test_runs_of_one_day_sort_by_their_own_time(tmp_path: Path) -> None:
+    path = tmp_path / "h.csv"
+    late = report(run_at="2026-10-20T20:00:00+02:00", passed=4)
+    early = report(run_at="2026-10-20T09:00:00+02:00", passed=1)
+    ra.record_report(late, None, path=path)
+    ra.record_report(early, None, path=path)
+    assert [r.passed for r in ra.read_eval_history(path)] == [1, 4]
+
+
+def test_a_passed_case_still_marked_pending_counts_once() -> None:
+    row = ra.run_from_report(
+        report(
+            total=3,
+            passed=1,
+            cases=[
+                {"passed": True, "pending": "T-6.5"},
+                {"passed": False, "pending": "T-6.5"},
+                {"passed": False},
+            ],
+        ),
+        "targets",
+    )
+    assert (row["passed"], row["pending"]) == ("1", "1")
+
+
+def test_the_description_names_the_model_of_a_foreign_target_row() -> None:
+    facts = ra.gather()
+    day = date(2026, 10, 20)
+    facts.runs = [
+        ra.EvalRun(day, "model-a", "targets", 27, 5),
+        ra.EvalRun(day, "model-b", "cases", 41, 30),
+    ]
+    card = ra.build(facts)["eval-latest.svg"]
+    assert "Target cases 5 of 27, from model model-a" in card
+
+
+def test_png_derivatives_go_stale_with_their_source() -> None:
+    assets = ra.build(ra.gather())
+    assert ra.stale_pngs(assets) == []
+    assets["logo-mark.svg"] += "<!-- changed -->"
+    assert ra.stale_pngs(assets) == ["logo-mark-512.png"]
+
+
+def test_newest_report_follows_the_runner_folders(tmp_path: Path) -> None:
+    assert ra.newest_report(None, tmp_path) is None
+    (tmp_path / "targets").mkdir()
+    for name in (
+        "eval_20261020_090000_000001.json",
+        "eval_20261020_200000_000001.json",
+    ):
+        (tmp_path / name).write_text("{}")
+    (tmp_path / "targets" / "eval_20261019_100000_000001.json").write_text("{}")
+    newest, targets = (
+        ra.newest_report(None, tmp_path),
+        ra.newest_report("targets", tmp_path),
+    )
+    assert newest is not None and newest.name == "eval_20261020_200000_000001.json"
+    assert targets is not None and targets.name == "eval_20261019_100000_000001.json"

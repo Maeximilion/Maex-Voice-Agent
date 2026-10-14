@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">MÆX banner</title>
-<desc id="d">MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version 0.0.1, Stage 0 (Foundation), about 2300 tests, latest real-model eval 26 of 41 on 2026-10-14.</desc>
+<desc id="d">MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version 0.0.1, Stage 0 (Foundation), about 2400 tests, latest real-model eval 26 of 41 on 2026-10-14.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}.wave{stroke-dasharray:14 10;animation:flow 3s linear infinite}@keyframes flow{to{stroke-dashoffset:-48}}@media (prefers-reduced-motion:reduce){.wave{animation:none}}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -44,7 +44,7 @@
 <text x="804" y="236" font-size="16" fill="#A89CCB">stage</text>
 <text x="1116" y="236" font-size="17" fill="#F1ECFF" text-anchor="end" font-weight="700">0 (Foundation)</text>
 <text x="804" y="276" font-size="16" fill="#A89CCB">test functions</text>
-<text x="1116" y="276" font-size="17" fill="#F1ECFF" text-anchor="end" font-weight="700">2,300+</text>
+<text x="1116" y="276" font-size="17" fill="#F1ECFF" text-anchor="end" font-weight="700">2,400+</text>
 <text x="804" y="316" font-size="16" fill="#A89CCB">next gate</text>
 <text x="1116" y="316" font-size="17" fill="#F1ECFF" text-anchor="end" font-weight="700">G0</text>
 <line x1="804" y1="324" x2="1116" y2="324" stroke="#2B2148" stroke-dasharray="4 6"/>

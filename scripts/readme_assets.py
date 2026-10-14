@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import re
@@ -223,6 +224,7 @@ HARD_RULES = [
 EVAL_FIELDS = [
     "date",
     "run_at",
+    "report",
     "model",
     "suite",
     "total",
@@ -286,6 +288,7 @@ class EvalRun:
     tokens_per_case: int | None = None
     source: str = ""
     note: str = ""
+    run_at: str = ""
 
     @property
     def rate(self) -> float:
@@ -336,11 +339,14 @@ def read_eval_history(path: Path = EVAL_HISTORY) -> list[EvalRun]:
             tokens_per_case=_int(r.get("tokens_per_case")),
             source=r.get("source", ""),
             note=r.get("note", ""),
+            run_at=r.get("run_at", ""),
         )
         for r in rows
     ]
-    # Stable: rows of one day keep the order they were recorded in.
-    return sorted(runs, key=lambda run: run.date)
+    # By day, then by the report's own timestamp, so a run recorded late still
+    # sits in its place. Backfilled rows have none and keep their file order,
+    # ahead of the timed runs of the same day (sorted() is stable).
+    return sorted(runs, key=lambda run: (run.date, run.run_at))
 
 
 def read_voice_history(path: Path = VOICE_HISTORY) -> list[VoiceRow]:
@@ -388,7 +394,11 @@ def run_from_report(report: dict, suite: str) -> dict[str, str]:
         "passed": str(report["passed"]),
         "crashed": str(sum(1 for c in cases if c.get("error"))),
         "pending": str(
-            sum(1 for c in cases if c.get("pending") and not c.get("error"))
+            sum(
+                1
+                for c in cases
+                if c.get("pending") and not c.get("error") and not c.get("passed")
+            )
         ),
         "guessed": shown(hard.get("guessed_items")),
         "unconfirmed": shown(hard.get("unconfirmed")),
@@ -417,6 +427,7 @@ def record_report(
     reference: bool = False,
     note: str = "",
     path: Path = EVAL_HISTORY,
+    report_name: str = "",
 ) -> str:
     """Append one report to the history; refuse what would corrupt the charts.
 
@@ -440,15 +451,36 @@ def record_report(
         )
     row = run_from_report(report, suite)
     row["note"] = note
+    row["report"] = report_name
     if row["model"] == STAND_IN and not reference:
         raise RecordError(
             "this is the scripted stand-in, not a real model; pass --reference to record "
             "it as the reference row"
         )
+    cases = report.get("cases", [])
+    requests = sum(c.get("requests", 0) for c in cases)
+    if (
+        row["model"] != STAND_IN
+        and requests
+        and requests == sum(c.get("unmetered", 0) for c in cases)
+    ):
+        # The verdict of evals/report.py: the cases show handovers, not a model.
+        raise RecordError(
+            f"no request to model {row['model']!r} succeeded (mistyped name or the "
+            "server down): nothing of this run measures the model"
+        )
+    # The report file carries microseconds, run_at only seconds: the file name is
+    # the identity, run_at and model the fallback for a report given without one.
+    key = (report_name, suite) if report_name else (row["run_at"], row["model"], suite)
     if path.exists():
         with path.open(encoding="utf-8", newline="") as fh:
             for old in csv.DictReader(fh):
-                if old.get("run_at") == row["run_at"] and old["suite"] == suite:
+                seen = (
+                    (old.get("report", ""), old["suite"])
+                    if report_name
+                    else (old.get("run_at", ""), old["model"], old["suite"])
+                )
+                if seen == key:
                     return f"already recorded: {suite} run of {row['run_at']}"
     append_row(path, EVAL_FIELDS, row)
     return f"recorded {suite} {row['passed']}/{row['total']} on {row['date']}"
@@ -1127,7 +1159,16 @@ def asset_eval_latest(facts: Facts) -> str:
     desc = (
         f"Latest real-model eval on {de(latest.date)}, model {head.model if head else latest.model}. "
         + (f"Regular cases {cases.passed} of {cases.total}. " if cases else "")
-        + (f"Target cases {targets.passed} of {targets.total}. " if targets else "")
+        + (
+            f"Target cases {targets.passed} of {targets.total}"
+            + (
+                f", from model {targets.model} on {de(targets.date)}. "
+                if head and targets.model != head.model
+                else ". "
+            )
+            if targets
+            else ""
+        )
         + (
             f"False escalation {run.false_esc_rate * 100:.1f} percent, limit 5 percent."
             if run.false_esc_rate is not None
@@ -1816,6 +1857,18 @@ def build(facts: Facts) -> dict[str, str]:
     }
 
 
+REPORTS = ROOT / "evals" / "reports"
+
+
+def newest_report(suite: str | None, reports: Path = REPORTS) -> Path | None:
+    """The newest report of the runner: `evals/reports/` for the regular cases and
+    a run with tags, `evals/reports/targets/` for the target cases (runner.py
+    `default_report_dir`). File names sort by time (`eval_%Y%m%d_%H%M%S_%f`)."""
+    folder = reports / "targets" if suite == "targets" else reports
+    found = sorted(folder.glob("eval_*.json"))
+    return found[-1] if found else None
+
+
 PNGS = {
     "social-preview.png": ("social-preview.svg", 1280, 640),
     "logo-mark-512.png": ("logo-mark.svg", 512, 512),
@@ -1866,6 +1919,27 @@ def to_png(svg: Path, out: Path, width: int, height: int) -> None:
         )
 
 
+PNG_SOURCES = "png-sources.json"
+
+
+def svg_digest(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def stale_pngs(assets: dict[str, str]) -> list[str]:
+    """PNGs drawn from another version of their SVG than the one built now.
+
+    CI cannot run Chromium, so `render --png` records the digest of each source
+    SVG next to the PNGs and `--check` compares it with the SVG of today."""
+    path = ASSETS / PNG_SOURCES
+    recorded = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    return [
+        name
+        for name, (source, _w, _h) in PNGS.items()
+        if recorded.get(name) != svg_digest(assets[source])
+    ]
+
+
 def render(check: bool = False, png: bool = False) -> int:
     assets = build(gather())
     stale = []
@@ -1888,9 +1962,23 @@ def render(check: bool = False, png: bool = False) -> int:
         )
         return 1
     if png and not check:
+        digests = {}
         for name, (source, w, h) in PNGS.items():
             to_png(ASSETS / source, ASSETS / name, w, h)
+            digests[name] = svg_digest(assets[source])
             print(f"wrote .github/assets/{name}")
+        (ASSETS / PNG_SOURCES).write_text(
+            json.dumps(digests, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    elif old_pngs := stale_pngs(assets):
+        print(
+            "README PNGs are stale: " + ", ".join(old_pngs) + ".\n"
+            "Run `python scripts/readme_assets.py render --png` (needs Chromium) and "
+            "commit .github/assets/.",
+            file=sys.stderr,
+        )
+        # Writing the SVGs still succeeded; only the check fails on it.
+        return 1 if check else 0
     return 0
 
 
@@ -1901,7 +1989,12 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--check", action="store_true", help="fail if an asset is stale")
     r.add_argument("--png", action="store_true", help="also write the PNGs")
     a = sub.add_parser("add", help="record an eval report JSON")
-    a.add_argument("report", type=Path)
+    a.add_argument(
+        "report",
+        type=Path,
+        nargs="?",
+        help="report JSON; default: the newest one the runner wrote for this suite",
+    )
     a.add_argument(
         "--suite",
         help="cases (default for a run without tags), targets, or the name of a partial run",
@@ -1927,9 +2020,18 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "render":
         return render(args.check, args.png)
     if args.cmd == "add":
-        report = json.loads(args.report.read_text(encoding="utf-8"))
+        path = args.report or newest_report(args.suite)
+        if path is None:
+            print("not recorded: no report found in evals/reports/", file=sys.stderr)
+            return 1
+        report = json.loads(path.read_text(encoding="utf-8"))
         try:
-            print(record_report(report, args.suite, args.reference, args.note))
+            print(
+                f"{path}: "
+                + record_report(
+                    report, args.suite, args.reference, args.note, report_name=path.name
+                )
+            )
         except RecordError as exc:
             print(f"not recorded: {exc}", file=sys.stderr)
             return 1
