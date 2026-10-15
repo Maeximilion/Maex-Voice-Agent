@@ -207,9 +207,10 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
         # and the run takes 4.5 s of every start (ultra review on PR #310).
         transcribe(bytes(2 * SAMPLE_RATE), [])  # a second of silence
     # The detector too, on one of its own: its model is loaded here, not in
-    # the first call. Each call gets a fresh one, it keeps state from window
-    # to window (Codex on PR #310).
-    silero()(bytes(2 * WINDOW))
+    # the first call, and watched like the engines' loads. Each call gets a
+    # fresh one, it keeps state from window to window (Codex on PR #310).
+    with watchdog.watch("detector", ENGINE_LOAD_SECONDS):
+        silero()(bytes(2 * WINDOW))
     return lambda: SegmentingEar(transcribe, watchdog.watched("detector", silero()))
 
 

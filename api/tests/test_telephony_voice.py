@@ -831,7 +831,7 @@ def test_the_mouth_makes_the_sentences_of_several_calls_side_by_side():
     assert met == [True, True]
 
 
-@pytest.mark.parametrize("ear", [True, False])
+@pytest.mark.parametrize("ear", [True, False, "detector"])
 def test_an_engine_that_hangs_while_it_loads_ends_the_process(
     stand_in_engines, monkeypatch, ear
 ):
@@ -851,7 +851,9 @@ def test_an_engine_that_hangs_while_it_loads_ends_the_process(
         watchdog.check()
         raise RuntimeError("stopped here: the process would have ended")
 
-    if ear:
+    if ear == "detector":
+        monkeypatch.setattr(stt_whisper, "silero", loading)
+    elif ear:
         monkeypatch.setattr(stt_whisper, "Whisper", loading)
     else:
         monkeypatch.setattr(tts_piper, "piper", loading)
