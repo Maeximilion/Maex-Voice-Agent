@@ -2426,7 +2426,7 @@ def file_lock(path: Path) -> Iterator[None]:
 
 def pending_lock(folder: Path) -> AbstractContextManager[None]:
     """One writer at a time on a folder's pending file: a kit appending a row, or
-    `pending --record` reading and removing it."""
+    `pending --record` reading it."""
     return file_lock(folder / "voice_pending.lock")
 
 
@@ -2548,8 +2548,9 @@ def record_pending(folders: list[Path] | None = None) -> int:
         print("on main nothing is recorded: run this on a branch", file=sys.stderr)
         return 1
     with ExitStack() as held:
-        # Every pending file stays locked from the read to its removal: a kit that
-        # finishes meanwhile waits and then starts a new one.
+        # No pending file is read while a kit appends to it. The file stays: if this
+        # branch is closed without a merge, `main`'s history lacks the rows and
+        # `pending` lists them again (#207).
         for folder in folders:
             held.enter_context(pending_lock(folder))
         reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
@@ -2561,8 +2562,6 @@ def record_pending(folders: list[Path] | None = None) -> int:
             )
         for row in rows:
             print(record_voice(row, VOICE_HISTORY))
-        for folder in folders:
-            (folder / VOICE_PENDING).unlink(missing_ok=True)
     return render()
 
 

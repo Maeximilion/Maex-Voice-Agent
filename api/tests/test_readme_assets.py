@@ -710,8 +710,27 @@ def test_pending_records_on_a_branch_and_then_lists_nothing(recording: dict) -> 
     assert ra.record_pending([folder]) == 0
     assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 1
     assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 1
-    assert not (folder / ra.VOICE_PENDING).exists()
+    assert (folder / ra.VOICE_PENDING).exists()
     assert ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY) == ([], [])
+
+
+def test_rows_recorded_on_a_closed_branch_still_wait_for_main(
+    recording: dict, tmp_path: Path
+) -> None:
+    """#207: a branch that records and is then closed unmerged loses nothing."""
+    folder = recording["reports"]
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    assert ra.record_pending([folder]) == 0
+    main_history = tmp_path / "main_voice.csv"
+    _, rows = ra.pending([folder], ra.EVAL_HISTORY, main_history)
+    assert rows == [drill_row()]
+    # A second recording on the same branch adds no row twice.
+    assert ra.record_pending([folder]) == 0
+    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 1
+    # A row a kit adds later is the only one still pending on that branch.
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
+    _, rows = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert rows == [drill_row("14")]
 
 
 def test_pending_refuses_to_record_on_main(
@@ -1121,7 +1140,7 @@ def test_a_kit_on_main_waits_for_the_recorder_holding_the_lock(
     assert rows == [drill_row()]
 
 
-def test_pending_record_holds_the_lock_while_it_reads_and_removes(
+def test_pending_record_holds_the_lock_while_it_reads(
     recording: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     folder = recording["reports"]
@@ -1143,7 +1162,6 @@ def test_pending_record_holds_the_lock_while_it_reads_and_removes(
     monkeypatch.setattr(ra, "record_voice", while_recording)
     ra.record_pending([folder])
     assert held == [True]
-    assert not (folder / ra.VOICE_PENDING).exists()
 
 
 def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
