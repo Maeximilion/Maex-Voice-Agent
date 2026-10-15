@@ -72,7 +72,7 @@ tasks = []
 
 [[capability]]
 works = '''Calls reach the agent on a phone line through the own voice layer (`docs/20_VOICE_LAYER.md`): Asterisk takes the call, the service `voice` hears and speaks with its own speech engines, and every way it can fail ends at the team telephone'''
-missing = '''No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. Missing: the speech engines of T-10.5 inside the service `voice` (T-1.11 part 2), the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)'''
+missing = '''No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. The speech engines run inside `voice` since T-1.11 part 2 (Whisper and Piper, the model files of the speech kit). Missing: the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)'''
 tasks = ["T-1.11", "T-10.1", "T-10.2", "T-10.7"]
 
 [[capability]]

@@ -48,12 +48,12 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 | Piece | Runs as | Place |
 |---|---|---|
 | Registration, dialplan, media | Compose service `asterisk` (22.11.0, pinned by digest; not older, §11), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
-| Voice process | Compose service `voice`, same image as `api`, one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
+| Voice process | Compose service `voice`, the API's image with the speech engines (target `voice` of `api/Dockerfile`), one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
 | WebSocket endpoint, dialplan callback | inside `voice`: `/media` and `/calls/{id}/ending`; built (T-1.11) | `api/telephony/router.py` |
 | Media protocol of Asterisk and the line on it | built (T-1.11) | `api/telephony/adapters/asterisk.py` |
 | Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
 | Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
-| Speech engines and their fakes | | `api/telephony/adapters/stt_<engine>.py`, `tts_<engine>.py`, `fake_speech.py` |
+| Speech engines and their fakes | built (T-10.5), inside `voice` since T-1.11 part 2 | `api/telephony/adapters/stt_<engine>.py`, `tts_<engine>.py`, `fake_speech.py` |
 
 **Reused unchanged:** `api/agent/`, `api/domain/`, `api/events/`, `api/gui/`, `sim/`, `evals/`,
 `api/telephony/adapters/fake.py`. `CallHandler` stays the only `CallEvents` implementation and
@@ -349,10 +349,27 @@ outbound minutes so a call's cost can be written to `calls.cost_cents`.
 
 Built with T-1.11: the tenant is `TENANT_NAME` (exactly one of that name in the database);
 `VOICE_MEDIA_TOKEN` (at least 32 characters outside dev and test); `VOICE_NUMBER`, the AI
-telephone's own number; `VOICE_EAR` and `VOICE_MOUTH` (only `fake`, the drill pair, until T-1.11 part 2 wires the engines of T-10.5,
-and refused outside dev and test); `VOICE_SILENCE_SECONDS` (8, an assumption). `voice` does not
+telephone's own number; `VOICE_EAR` and `VOICE_MOUTH` (`whisper` and `piper`, the engines of T-10.5, or `fake`, the drill
+pair, refused outside dev and test); `VOICE_EAR_DEVICE` (`cuda` or `cpu`); `VOICE_MOUTH_VOICE`
+(the Piper voice, D4); `VOICE_SILENCE_SECONDS` (8, an assumption). `voice` does not
 start without any of them, without a model (`LLM_*`), or with the team on its own number. The
 prices come with T-10.6.
+
+Built with T-1.11 part 2: the engines' packages are in the target `voice` of `api/Dockerfile`
+(`api/requirements-voice.txt`, hashed, about 3 GB more than the API's image, most of it CUDA);
+their model files are the speech kit's, mounted read-only from `deploy/speech/run/models` (a
+worktree hard-links them from the main checkout, `docker-compose.yml`). Whisper asks for the
+graphics card; a host without one needs `deploy: !reset {}` for `voice` and
+`VOICE_EAR_DEVICE=cpu`. `voice` does not start with an engine it cannot load. A watchdog ends
+the process when one engine call takes longer than 30 s (exit 70), and Compose starts it again:
+a thread cannot be cancelled, and a hung inference would hold the model every later call needs.
+The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
+that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
+log is closed when the line reports the end of the leg, with the session's outcome: after the
+goodbye was played, and as `error` when the line fails on it. That last write is not bounded:
+nobody waits on it, and a lock held for a moment must not leave the call without an end. A call
+whose leg ends while it is still being opened is closed once it is open, with no greeting. The
+call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 
 For Asterisk only, never in Python: the registrar's host, user and password (`ACCESS_HOST`,
 `ACCESS_USER`, `ACCESS_PASSWORD`), and the public media address (not yet, it comes with the trunk).
@@ -553,11 +570,18 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 14.10.2026 | T-1.11, registration at the access | The drill stack, the stand-in router stopped for 180 s and 300 s, and made to refuse the AI telephone's password for 150 s; each once with Asterisk's default retries and once with the product's (`max_retries` at its maximum, `fatal_retry_interval=60`, `auth_rejection_permanent=no`) | Router away: registered again within 10 to 30 s after it came back, with either setting. Password refused for a while: with the defaults rejected for good, until somebody restarts Asterisk; with the product's settings registered again within 30 s. The health check of `asterisk` is the registration now: `unhealthy` about 2 minutes into an outage, `healthy` again once registered (Codex on PR #297, P2) |
 | 14.10.2026 | T-1.11, which call a connection is | The capture endpoint on Asterisk 22.11.0: 10 rounds of ten calls set up by one `Dial` to ten legs, the call named by inherited variables; 10 rounds the same with `v()` parameters; then ten calls without `v()` | Inherited variables: 100 of 100 connections reported their own call (checked against Asterisk's own log of each call id). `v()`: 100 of 100 too in these rounds, but the ten later calls without `v()` all carried a query of an earlier `v()` call: the leak of Asterisk issue #2194 (open, no fix), on 22.11.0 as reported for 22.9.0. So the product names a call by variables, which the issue does not touch |
 | 14.10.2026 | T-10.5, the adapters on the workbench | `api/tests/test_telephony_speech_engines.py` and two timing scripts in the image of `deploy/speech/`, graphics card, the model files of the kit's run folder; Piper `thorsten-medium` speaks, the sentence goes through the modelled line (§10), the ear is Whisper large-v3-turbo behind `SegmentingEar`. A sentence fed in frames of 20 ms arrives as one utterance with partials before it, and its end is the window the detector finds over the whole recording, to the frame. "Ich hätte gern zweimal die Nummer 23." arrived word for word in 6 of 7 runs and once as "Nummer 3 und 20", which the number rule reads as 23 as well; the test speaks the voice without its noise ("Nummer 45"), so every run hears the same audio. with three duck names as key terms "Einmal die Ente süß-sauer, bitte." arrives word for word; a silent line reports nothing. Warm, 12 utterances: Whisper 0.28 s median, 2.2 s at most; the detector 0.08 ms per window of 32 ms; Piper 0.14 s to the first piece, a read-back of 12.5 s of audio 0.17 s to the first piece and 0.76 s whole. Of six sentences with a phone number the core reads four as said; Whisper writes the digits in its own groups ("0721 5.551.234", "01712345678", from words "0171 2345678"), "plus" as a word ("Plus 491712345678") and "01712.345.678 um 19 Uhr" are not read, and nothing wrong is taken. A spelled name arrives as "M-E-I-E-R". | **The pair runs as adapters.** Ear and mouth together are about 0.4 s of a turn on the card, plus the 0.7 s of silence that ends it. Synthetic voices only; what real callers, line noise and the echo of our own voice on the caller's leg do to the detector and to the numbers is T-10.7 |
+| 14.10.2026 | T-1.11 part 2, the engines inside `voice` | The image of the target `voice` on the workbench (graphics card, the kit's model files read-only); `api/tests/test_telephony_speech_engines.py` in it; `voice` started as Compose starts it (uid 10001) with `whisper` and `piper` against a throwaway database; `python3 -m scripts.voice_drill` twice on the branch | The engine tests 4 of 4, among them a whole call through `/media` on the engines as the service loads them: Piper greets, "Ich hätte gern zweimal die Nummer 45." goes in as frames of the media channel and reaches the core word for word, the goodbye is played and the line hung up; mouth to first audio 0.08 s, ear 0.48 s after the audio. `voice` healthy 4 s after its start, the models loaded (two warnings: Hugging Face cannot write its tree cache into the read-only folder, onnxruntime cannot keep a telemetry id). Drills: first run 10 of 11, in "voice frozen" the team rang after 4 s and hung up after 2 s, but the caller's leg on the stand-in router stayed open until the kit gave up after 60 s (§12); second run 15 of 15 (kill 0.4 s, `paused` 0.2 s, `voice` stopped 5.2 s, frozen 4.5 s, frozen mid-call 8.1 s, database stopped 8.4 s). Not measured: an engine that really hangs in the service (the watchdog is tested against a clock), real voices, the router |
 
 ---
 
 ## 12. Open questions
 
+- **A caller's leg left open after the team hung up (seen once, 14.10.2026):** in the drill
+  "voice frozen" of the first of two runs on the branch of T-1.11 part 2, the team leg rang and
+  hung up, and the caller's leg stayed up on the stand-in router for the 60 s the kit waits; the
+  product's Asterisk logged nothing after "to the team". The second run, and every run of part
+  1, ended the call. The backstop of the dialplan is an hour. Watch for it in T-10.2: a real
+  caller hangs up, but the line stays busy until then.
 - **SIP trunk (T-10.12, deferred):** which provider; which forwarding types the restaurant's carrier
   offers in its network, whether the caller number is passed, what a forwarded minute costs, how
   long a no-answer forward waits; whether one number can be ported while the internet contract

@@ -13,13 +13,14 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
 from api.agent.llm import LLMError
 from api.config import settings
 from api.core.errors import NotFound
+from api.db import bounded_sessions
 from api.domain.calls import tenant_named
 from api.telephony import app as voice_app
 from api.telephony import router as router_module
@@ -180,7 +181,9 @@ def test_a_call_is_answered_spoken_to_and_ended_by_our_hangup(phone):
         with pytest.raises(WebSocketDisconnect):
             ws.receive_text()  # the service closes its side as well
 
-    assert core.seen == [("started", CALL), ("keys", "1")]
+    # The end of the leg is reported after our hangup too: the core closes its
+    # call log then, not when it asked for the hangup (T-1.11 part 2).
+    assert core.seen == [("started", CALL), ("keys", "1"), ("ended",)]
     assert ending(client) == "hangup"
     # Asked once: a second question gets nothing, which rings the team.
     assert ending(client) == ""
@@ -533,6 +536,11 @@ def its_database(startable, migrated_db_url, tenant):  # noqa: F811
     startable.setattr(
         voice_app, "SessionLocal", sessionmaker(bind=create_engine(migrated_db_url))
     )
+    startable.setattr(
+        voice_app,
+        "bounded_sessions",
+        lambda ms: bounded_sessions(ms, url=migrated_db_url),
+    )
     return startable
 
 
@@ -558,3 +566,85 @@ def test_a_tenant_is_found_by_its_name_and_only_when_it_is_the_one(session, tena
     # (Codex on PR #297).
     assert "Nobody" not in str(missing.value)
     assert "0 tenants" in str(missing.value)
+
+
+# -- the engines in the service and their watchdog (T-1.11 part 2) ----------------------
+
+
+class _Exit:
+    def __init__(self) -> None:
+        self.codes: list[int] = []
+
+    def __call__(self, code: int) -> None:
+        self.codes.append(code)
+
+
+def watchdog_at(clock: list[float]) -> tuple[voice_app.Watchdog, _Exit]:
+    end = _Exit()
+    return voice_app.Watchdog(limit=30.0, clock=lambda: clock[0], end=end), end
+
+
+def test_an_engine_call_that_hangs_ends_the_process():
+    """A thread cannot be cancelled, and the model is shared by every call: the
+    process ends and Compose starts it again (docs/20 §5)."""
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    with watchdog.watch("ear"):
+        clock[0] += 30.0
+        watchdog.check()
+        assert end.codes == []  # at the limit, not past it
+        clock[0] += 0.5
+        watchdog.check()
+    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+
+
+def test_an_engine_call_that_returned_is_not_watched_any_more():
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    transcribe = watchdog.watched("ear", lambda audio, terms: "ja")
+    assert transcribe(b"", []) == "ja"
+    with pytest.raises(ZeroDivisionError):
+        watchdog.watched("ear", lambda: 1 / 0)()
+    clock[0] += 3600.0
+    watchdog.check()
+    assert end.codes == []
+
+
+def test_the_mouth_is_watched_while_it_speaks():
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+
+    class Slow:
+        def speak(self, text):
+            yield b"\x01\x00"
+            clock[0] += 31.0  # the engine hangs between two pieces
+            watchdog.check()
+            yield b"\x02\x00"
+
+    assert b"".join(voice_app.WatchedMouth(Slow(), watchdog).speak("Hallo")) == (
+        b"\x01\x00\x02\x00"
+    )
+    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+
+
+def test_ear_and_mouth_that_cannot_be_loaded_keep_the_service_down(
+    its_database, tmp_path
+):
+    """Without the engines' packages (the API's image) or without their model
+    files: refused at start, and the dialplan rings the team meanwhile."""
+    its_database.setattr(voice_app, "MODELS", tmp_path)
+    its_database.setattr(settings, "voice_ear", "whisper")
+    with pytest.raises(RuntimeError, match="could not be loaded"):
+        voice_from_settings()
+    its_database.setattr(settings, "voice_ear", "fake")
+    its_database.setattr(settings, "voice_mouth", "piper")
+    with pytest.raises(RuntimeError, match="could not be loaded"):
+        voice_from_settings()
+
+
+def test_the_phone_line_waits_on_the_database_no_longer_than_its_bound(its_database):
+    voice = voice_from_settings()
+    with voice._events._session_factory() as db:  # type: ignore[attr-defined]
+        assert db.scalar(text("show statement_timeout")) == (
+            f"{voice_app.DB_TIMEOUT_MS // 1000}s"
+        )

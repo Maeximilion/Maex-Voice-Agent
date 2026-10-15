@@ -8,18 +8,21 @@ the AI disclosure at the start and the outage sentence before a transfer.
 """
 
 import json
+import logging
+import threading
 import uuid
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMTurn
+from api.agent.llm import LLMTurn, Usage
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
@@ -612,6 +615,7 @@ def limited_call(
         session, tenant, port, llm_factory=lambda s: llm(), clock=clock, now=now
     )
     speak_after(handler, port, clock, seconds, sid=sid)
+    handler.on_call_ended(sid)  # the line reports the end, as any adapter does
     return port
 
 
@@ -885,12 +889,13 @@ class _Wire:
     """A call on the own voice layer with fakes for ear, mouth and line: the
     handler and the core are the real ones."""
 
-    def __init__(self, session, tenant):
+    def __init__(self, session, tenant, *, refuses_transfer: bool = False):
         from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
         from api.telephony.session import CallSession, Lines
 
         self.now = 50.0
         self.line, self.ear, self.lines = FakeLine(), FakeEar(), Lines()
+        self.line.refuses_transfer = refuses_transfer
         self.call = CallSession(
             "voice-1",
             line=self.line,
@@ -1033,6 +1038,96 @@ def test_a_call_the_agent_does_not_take_rings_the_team_unanswered(session, tenan
     assert wire.call.outcome == "transfer"
 
 
+# -- the call log closes on the end of the leg (T-1.11 part 2) ------------------------
+
+
+def _confirmed_and_saying_goodbye(session, tenant) -> _Wire:
+    """A reservation on the wire, confirmed: the agent's last sentence is
+    queued, and the hangup waits for it."""
+    wire = _Wire(session, tenant)
+    wire.until_the_read_back()
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert wire.call.outcome == "open"
+    return wire
+
+
+def _logged(session, session_id: str) -> Call:
+    session.expire_all()
+    return the_call(session, session_id)
+
+
+def test_the_call_log_closes_once_the_last_sentence_was_played(session, tenant):
+    """Not when the core asks for the hangup: the guest is still hearing the
+    confirmation then (Codex on PR #286)."""
+    wire = _confirmed_and_saying_goodbye(session, tenant)
+    assert _logged(session, "voice-1").ended_at is None
+
+    wire.played()
+    call = _logged(session, "voice-1")
+    assert call.ended_at is not None and call.outcome == "completed"
+
+
+def test_a_caller_who_hangs_up_during_the_goodbye_closes_the_log_then(session, tenant):
+    wire = _confirmed_and_saying_goodbye(session, tenant)
+    wire.call.closed()
+    wire.call.drain()
+    assert wire.call.outcome == "closed"
+    call = _logged(session, "voice-1")
+    assert call.ended_at is not None and call.outcome == "completed"
+
+
+def test_a_goodbye_the_line_never_reports_goes_to_the_team_as_an_error(session, tenant):
+    """Whether the guest heard the last sentence is not known: the call is not
+    hung up but goes to the team, with the outage sentence, and the log says
+    so. The booking stands (rule 5)."""
+    wire = _confirmed_and_saying_goodbye(session, tenant)
+    wire.now += 60.0  # past the sentence and the grace for its report
+    wire.call.drain()
+    assert wire.line.played()[-1] == SAY_OUTAGE
+    wire.now += 60.0  # the outage sentence is not reported either
+    wire.call.drain()
+
+    assert wire.line.actions[-1] == ("transfer", TEAM_PHONE)
+    assert "hangup" not in wire.line.kinds()
+    assert _logged(session, "voice-1").outcome == "error"
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+
+
+def test_a_transfer_the_line_refuses_is_logged_as_an_error(session, tenant):
+    """The session ends as failed and the dialplan rings the team; the log
+    must not say `transferred` (Codex on PR #286)."""
+    set_mode(session, tenant.id, "paused")
+    wire = _Wire(session, tenant, refuses_transfer=True)
+    assert wire.call.outcome == "failed"
+    call = _logged(session, "voice-1")
+    assert call.ended_at is not None and call.outcome == "error"
+
+
+def test_the_handler_keeps_a_finished_call_open_until_its_end_is_reported(
+    session, tenant
+):
+    """Any adapter: after the core's hangup the log waits for `on_call_ended`,
+    and nothing the caller says in between reaches the agent."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    for line in (WISH, "Auf den Namen Mueller.", "Ja, passt so."):
+        handler.on_user_turn("s-1", line)
+    assert port.hangups("s-1")
+    said = len(port.says("s-1"))
+    assert _logged(session, "s-1").ended_at is None
+
+    handler.on_user_turn("s-1", "Ach, noch was.")
+    handler.on_silence("s-1")
+    handler.on_call_ended("s-1")
+
+    assert len(port.says("s-1")) == said and not port.transfers("s-1")
+    call = _logged(session, "s-1")
+    assert call.ended_at is not None and call.outcome == "completed"
+
+
 # -- key terms for the speech engine (T-10.5) ------------------------------------------
 
 
@@ -1129,3 +1224,154 @@ def test_a_question_into_the_silence_takes_the_key_terms_of_the_question(
     port.play(case, handler_for(session, tenant, port))
     assert port.terms[-2] == ["Ente knusprig", "Ente süß-sauer", "Ente mit Mango"]
     assert port.terms[-1] == []
+
+
+def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
+    session, tenant, migrated_db_url
+):
+    """The phone line's sessions end a statement at their bound (`voice` uses
+    `db.bounded_sessions`): a tool that waits on a lock sends the guest to the
+    team instead of keeping them on the line (Codex on PR #287)."""
+    from api.db import bounded_sessions
+
+    port = FakeTelephony()
+    bounded = bounded_sessions(300, url=migrated_db_url)
+    handler = handler_for(session, tenant, port, session_factory=bounded)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+
+    holder = create_engine(migrated_db_url)
+    with holder.connect() as conn:
+        # The draft of the next turn is written into this table.
+        conn.execute(text("lock table reservations in access exclusive mode"))
+        handler.on_user_turn("s-1", "Auf den Namen Mueller.")
+        assert port.says("s-1")[-1] == SAY_OUTAGE
+        assert port.transfers("s-1") == [TEAM_PHONE]
+    holder.dispose()
+    handler.on_call_ended("s-1")
+    assert _logged(session, "s-1").outcome == "error"
+
+
+def test_the_end_of_the_call_waits_out_a_lock_longer_than_the_bound(
+    session, tenant, migrated_db_url
+):
+    """The bound is for a guest waiting on a turn. The log of a call that is
+    over is written past it, or a lock held for a moment would leave the call
+    without an end and an outcome for good (Codex on PR #298)."""
+    from api.db import bounded_sessions
+
+    port = FakeTelephony()
+    bounded = bounded_sessions(300, url=migrated_db_url)
+    handler = handler_for(session, tenant, port, session_factory=bounded)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    call_id = the_call(session, "s-1").id
+    session.rollback()
+
+    holder = create_engine(migrated_db_url)
+    conn = holder.connect()
+    conn.execute(text("select 1 from calls where id = :id for update"), {"id": call_id})
+    release = threading.Timer(1.0, conn.rollback)  # longer than the bound
+    release.start()
+    handler.on_call_ended("s-1")
+    release.join()
+    conn.close()
+    holder.dispose()
+
+    call = _logged(session, "s-1")
+    assert call.ended_at is not None
+    assert call.outcome == "abandoned"
+
+
+def _ending_during_start(monkeypatch, handler, *, fail: bool = False):
+    """`start_call` that is told about the end of the leg while it writes the
+    call row, the way an adapter on another thread would."""
+    import api.telephony.handler as module
+
+    real = module.start_call
+
+    def start_call(session, req, **kwargs):
+        handler.on_call_ended(req.external_session_id)
+        if fail:
+            raise OperationalError("INSERT", {}, Exception("connection lost"))
+        return real(session, req, **kwargs)
+
+    monkeypatch.setattr(module, "start_call", start_call)
+
+
+def test_a_hangup_while_the_call_opens_closes_its_log(session, tenant, monkeypatch):
+    """The end of the leg arrives while the call row is written: the call is
+    closed once it is open, not left live with no end (#207)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: NoLLM())
+    _ending_during_start(monkeypatch, handler)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert not port.says("s-1")  # no greeting into a dead line
+    call = _logged(session, "s-1")
+    assert call.ended_at is not None
+    assert call.outcome == "abandoned"
+    # A late event of that call is ignored, not handed to the team.
+    handler.on_user_turn("s-1", WISH)
+    handler.on_call_ended("s-1")
+    assert not port.transfers("s-1")
+
+
+def test_a_hangup_while_the_call_fails_to_open_rings_nobody(
+    session, tenant, monkeypatch
+):
+    """Nobody is left on the line to hand to the team."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    _ending_during_start(monkeypatch, handler, fail=True)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert not port.says("s-1")
+    assert not port.transfers("s-1")
+    handler.on_user_turn("s-1", WISH)
+    assert not port.transfers("s-1")
+
+
+def test_a_phone_call_logs_its_model_cost(session, tenant, monkeypatch, caplog):
+    """Like the text telephone (`sim/session.py`): model and cost on the call,
+    the exact tokens in the line "model usage" (#207)."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    usage = Usage(
+        model="test-model", requests=2, prompt_tokens=18000, completion_tokens=800
+    )
+
+    def metered(s):
+        llm = scripted(session, tenant)(s)
+        llm.usage = usage
+        return llm
+
+    port = FakeTelephony()
+    with caplog.at_level(logging.INFO, logger="api.telephony.handler"):
+        sid = port.play(
+            RESERVATION, handler_for(session, tenant, port, llm_factory=metered)
+        )
+
+    call = _logged(session, sid)
+    assert call.model == "test-model"
+    # 18000 x 300 + 800 x 1500 = 6.6 million, per million tokens: 6.6 cents, up.
+    assert call.cost_cents == 7
+    lines = [r.extra for r in caplog.records if r.getMessage() == "model usage"]
+    assert lines == [{"call_id": str(call.id), **asdict(usage), "cost_cents": 7}]
+
+
+def test_a_phone_call_on_the_stand_in_logs_no_model(session, tenant, caplog):
+    port = FakeTelephony()
+    with caplog.at_level(logging.INFO, logger="api.telephony.handler"):
+        sid = port.play(RESERVATION, handler_for(session, tenant, port))
+
+    call = _logged(session, sid)
+    assert call.model is None
+    assert call.cost_cents is None
+    assert not [r for r in caplog.records if r.getMessage() == "model usage"]

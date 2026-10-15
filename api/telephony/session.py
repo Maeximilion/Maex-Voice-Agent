@@ -613,18 +613,21 @@ class CallSession:
             self._ear.close()
         except Exception:
             logger.exception("the ear could not be closed")
-        # The core closes its call log: the caller hung up, or the session
-        # broke, which it logs as a failure. Its outage sentence and transfer
-        # reach nobody then; the dialplan rings the team. After our own hangup
-        # or transfer the core has closed the call already.
+        # A session that broke is a failure the core logs as one. Its outage
+        # sentence and transfer reach nobody then; the dialplan rings the team.
         try:
-            if outcome == "closed":
-                self._events.on_call_ended(self.session_id)
-            elif outcome == "failed" and not self._failure_told:
+            if outcome == "failed" and not self._failure_told:
                 self._failure_told = True
                 self._events.on_voice_failure(self.session_id)
         except Exception:
-            logger.exception("the core could not be told how the call ended")
+            logger.exception("the core could not be told that the voice failed")
+        # Then, however it ended, the end of the leg: the core closes its call
+        # log now, after the last sentence was played and the line has our
+        # hangup or transfer, not when it asked for them.
+        try:
+            self._events.on_call_ended(self.session_id)
+        except Exception:
+            logger.exception("the core could not be told that the call ended")
 
 
 class Lines:

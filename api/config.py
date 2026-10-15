@@ -1,6 +1,6 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -83,11 +83,18 @@ class Settings(BaseSettings):
     # Seconds of silence after a sentence before the code asks "Sind Sie noch
     # da?" (docs/20 §4). An assumption until real calls say otherwise.
     voice_silence_seconds: float = Field(default=8.0, gt=0)
-    # Ear and mouth (`telephony/app.py`). `fake` is the drill pair of the
+    # Ear and mouth (`telephony/app.py`): `whisper` and `piper`, the local
+    # engines of the test phase (docs/20 §6). `fake` is the drill pair of the
     # workbench, an ear that hears nothing and a mouth of noise, and is refused
     # outside dev and test.
     voice_ear: str = ""
     voice_mouth: str = ""
+    # Whisper on the graphics card, or on the processor, where it takes
+    # seconds for a sentence (docs/20 §11).
+    voice_ear_device: Literal["cuda", "cpu"] = "cuda"
+    # The Piper voice, by the name of its file among the model files. Which
+    # one is Maxi's to hear (D4).
+    voice_mouth_voice: str = "de_DE-thorsten-medium"
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45

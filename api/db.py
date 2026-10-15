@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 
-from sqlalchemy import Engine, create_engine, text
+from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,14 +25,39 @@ logger = get_logger("api.db")
 # hide_parameters: a failed statement is logged with its SQL, never with its
 # values. Those are guest names, phone numbers and notes, and a log line is
 # outside every deletion period of docs/03.
-engine = create_engine(
-    settings.database_url,
-    pool_pre_ping=True,
-    isolation_level="READ COMMITTED",
-    hide_parameters=True,
-)
+_ENGINE_ARGS = {
+    "pool_pre_ping": True,
+    "isolation_level": "READ COMMITTED",
+    "hide_parameters": True,
+}
+engine = create_engine(settings.database_url, **_ENGINE_ARGS)
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+
+
+def bounded_sessions(
+    timeout_ms: int, *, url: str = settings.database_url
+) -> sessionmaker[Session]:
+    """Sessions on connections of their own on which every statement fails
+    after `timeout_ms`, a wait for a lock inside it included.
+
+    For the phone line (`telephony/app.py`), where a guest holds a receiver: a
+    tool that waits on a row lock would keep them waiting past the turn's
+    deadline and could still commit after it (Codex on PR #287). The statement
+    fails instead, its transaction rolls back, and the call goes to the team
+    (CLAUDE.md §2 rule 5). Set when a connection is made, so a rollback of the
+    pool does not undo it; the application's other sessions stay unbounded.
+    """
+    bounded = create_engine(url, **_ENGINE_ARGS)
+    ms = int(timeout_ms)
+
+    @event.listens_for(bounded, "connect")
+    def _bound(dbapi_connection, _record) -> None:  # type: ignore[no-untyped-def]
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute(f"set statement_timeout = {ms}")
+        dbapi_connection.commit()
+
+    return sessionmaker(bind=bounded, autoflush=False, expire_on_commit=False)
 
 
 def refuse_a_superuser_role(env: str, db: Engine) -> None:

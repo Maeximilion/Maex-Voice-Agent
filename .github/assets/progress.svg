@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="t d">
 <title id="t">Build progress</title>
-<desc id="d">48 of 89 tasks done, 5 in progress, 6 blocked, as of 2026-10-15. block 0 Scaffold 11 of 11; block 1 Reservations 13 of 14; block 1b Conversation core 4 of 5; block 1c Own voice layer 2 of 12; block 2 Tablet GUI 5 of 7; block 3 Pickup 13 of 15; block 4 Delivery 0 of 9; block 5 Learning 0 of 5; block 5b Deployment 0 of 5; block 6 Operations 0 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
+<desc id="d">49 of 89 tasks done, 4 in progress, 6 blocked, as of 2026-10-15. block 0 Scaffold 11 of 11; block 1 Reservations 14 of 14; block 1b Conversation core 4 of 5; block 1c Own voice layer 2 of 12; block 2 Tablet GUI 5 of 7; block 3 Pickup 13 of 15; block 4 Delivery 0 of 9; block 5 Learning 0 of 5; block 5b Deployment 0 of 5; block 6 Operations 0 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="740"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="740"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="740" rx="24" fill="#0D0819"/>
@@ -70,18 +70,18 @@
 <text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">BUILD PROGRESS</text>
 <text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-15</text>
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
-<text x="64" y="132" font-size="40" fill="#E8FF2E" font-weight="700">48/89</text>
-<text x="200" y="132" font-size="18" fill="#F1ECFF">tasks done · 54 %</text>
-<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">5 in progress · 6 blocked · 30 open</text>
-<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="576.2" height="18" rx="9" fill="#E8FF2E"/><rect x="642.2" y="152" width="58.2" height="18" rx="9" fill="#9D7BFF"/><rect x="702.4" y="152" width="70.3" height="18" rx="9" fill="#FF5277"/>
+<text x="64" y="132" font-size="40" fill="#E8FF2E" font-weight="700">49/89</text>
+<text x="200" y="132" font-size="18" fill="#F1ECFF">tasks done · 55 %</text>
+<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">4 in progress · 6 blocked · 30 open</text>
+<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="588.2" height="18" rx="9" fill="#E8FF2E"/><rect x="654.2" y="152" width="46.2" height="18" rx="9" fill="#9D7BFF"/><rect x="702.4" y="152" width="70.3" height="18" rx="9" fill="#FF5277"/>
 <text x="64" y="229" font-size="15" fill="#A89CCB" font-weight="700">0</text>
 <text x="110" y="229" font-size="15" fill="#F1ECFF">Scaffold</text>
 <rect x="330" y="218" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="218" width="698" height="12" rx="6" fill="#E8FF2E"/>
 <text x="1136" y="229" font-size="15" fill="#F1ECFF" text-anchor="end">11/11</text>
 <text x="64" y="263" font-size="15" fill="#A89CCB" font-weight="700">1</text>
 <text x="110" y="263" font-size="15" fill="#F1ECFF">Reservations</text>
-<rect x="330" y="252" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="252" width="648" height="12" rx="6" fill="#E8FF2E"/><rect x="980" y="252" width="48" height="12" rx="6" fill="#9D7BFF"/>
-<text x="1136" y="263" font-size="15" fill="#F1ECFF" text-anchor="end">13/14</text>
+<rect x="330" y="252" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="252" width="698" height="12" rx="6" fill="#E8FF2E"/>
+<text x="1136" y="263" font-size="15" fill="#F1ECFF" text-anchor="end">14/14</text>
 <text x="64" y="297" font-size="15" fill="#A89CCB" font-weight="700">1b</text>
 <text x="110" y="297" font-size="15" fill="#F1ECFF">Conversation core</text>
 <rect x="330" y="286" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="286" width="558" height="12" rx="6" fill="#E8FF2E"/><rect x="890" y="286" width="138" height="12" rx="6" fill="#9D7BFF"/>

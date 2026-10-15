@@ -109,7 +109,10 @@ services:
   # access in .env there is nothing for it to answer.
   voice:
     profiles: ["voice"]
-    build: ./api
+    # The API's image plus the speech engines (api/Dockerfile, target voice).
+    build:
+      context: ./api
+      target: voice
     restart: unless-stopped
     env_file: .env
     environment:
@@ -131,15 +134,31 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # The core of a call reads its prompt from prompts/.
+    # The core of a call reads its prompt from prompts/, the engines their
+    # model files from /models: those the speech kit downloads (docs/20 §10).
+    # A worktree hard-links them from the main checkout:
+    # mkdir -p deploy/speech/run && cp -al ~/Maex-Voice-Agent/deploy/speech/run/models deploy/speech/run/
     volumes:
       - ./api:/app/api
       - ./prompts:/app/prompts
+      - ./deploy/speech/run/models:/models:ro
+    # Whisper on the graphics card (VOICE_EAR_DEVICE=cuda, the workbench's).
+    # ponytail: asked for on every host that runs the profile; one without a
+    # graphics card needs `deploy: !reset {}` in its own Compose file.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
       interval: 10s
       timeout: 3s
       retries: 3
+      # Loading the engines takes its time; until then nothing listens.
+      start_period: 120s
 
   asterisk:
     profiles: ["voice"]

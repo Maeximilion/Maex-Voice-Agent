@@ -80,5 +80,6 @@ class CallEvents(Protocol):
 
     def on_call_ended(self, session_id: str) -> None:
         """The line is gone: the caller hung up, or the platform closed it after
-        our hangup or transfer."""
+        our hangup or transfer. Reported once for every call, also after a
+        failure; the core closes its call log on it."""
         ...
