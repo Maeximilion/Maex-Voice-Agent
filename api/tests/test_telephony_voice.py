@@ -722,31 +722,6 @@ def test_the_mouth_counts_only_the_time_it_speaks():
     assert end.codes == []
 
 
-@pytest.mark.parametrize(
-    ("device", "limit"),
-    [
-        ("cuda", voice_app.ENGINE_HANG_SECONDS),
-        ("cpu", voice_app.ENGINE_HANG_SECONDS_ON_CPU),
-    ],
-)
-def test_on_the_processor_the_watchdog_allows_the_ear_its_minutes(
-    its_database, device, limit
-):
-    """On the processor the ear takes about its audio's length for a
-    sentence, and more passes when it is unsure: a slow run there is no hang."""
-    limits = []
-
-    class Recording(voice_app.Watchdog):
-        def __init__(self, **kwargs):
-            limits.append(kwargs.get("limit"))
-            super().__init__(**kwargs)
-
-    its_database.setattr(voice_app, "Watchdog", Recording)
-    its_database.setattr(settings, "voice_ear_device", device)
-    voice_from_settings()
-    assert limits == [limit]
-
-
 @pytest.fixture
 def stand_in_engines(monkeypatch):
     """The engines' classes stand in for the packages, which only the image of
@@ -814,3 +789,94 @@ def test_an_engine_that_loads_but_cannot_run_keeps_the_service_down(
     its_database.setattr(settings, "voice_ear", "whisper")
     with pytest.raises(RuntimeError, match="could not be loaded"):
         voice_from_settings()
+
+
+@pytest.mark.parametrize(("device", "ended"), [("cuda", True), ("cpu", False)])
+def test_on_the_processor_the_ear_is_allowed_its_minutes(
+    stand_in_engines, monkeypatch, device, ended
+):
+    """On the processor the ear takes about its audio's length for a
+    sentence, and more passes when it is unsure: a slow run there is no hang."""
+    from api.telephony.adapters import stt_whisper
+
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    loaded = []
+
+    def transcribe(self, pcm, terms):
+        if loaded:  # a run of 31 s, once the engine is loaded
+            clock[0] += 31.0
+            watchdog.check()
+        return ""
+
+    monkeypatch.setattr(stt_whisper.Whisper, "transcribe", transcribe)
+    # The ear of a call is its engine's watched call here.
+    monkeypatch.setattr(stt_whisper, "SegmentingEar", lambda transcribe, _: transcribe)
+    monkeypatch.setattr(settings, "voice_ear_device", device)
+    hear = voice_app._whisper(watchdog)()
+    loaded.append(True)
+    hear(b"\x00\x00", [])
+    assert end.codes == ([voice_app.EXIT_ENGINE_HUNG] if ended else [])
+
+
+def test_on_the_processor_the_mouth_keeps_its_30_seconds(stand_in_engines, monkeypatch):
+    """The mouth runs on the processor anyway. With the long limit a hung
+    mouth would send every call to the team for ten minutes (Codex on PR
+    #310)."""
+    from api.telephony.adapters import tts_piper
+
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    loaded = []
+
+    class Mouth:
+        def speak(self, text):
+            if loaded:
+                clock[0] += 31.0
+                watchdog.check()
+            yield b"\x01\x00"
+
+    monkeypatch.setattr(tts_piper, "piper", lambda voice: Mouth())
+    monkeypatch.setattr(settings, "voice_ear_device", "cpu")
+    mouth = voice_app._piper(watchdog)()
+    loaded.append(True)
+    b"".join(mouth.speak("Hallo."))
+    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+
+
+def test_the_watchdog_runs_before_the_engines_first_runs(
+    its_database, stand_in_engines, monkeypatch
+):
+    """A first run that hangs, rather than raising, ends the process and
+    Compose starts it again; without the watchdog it would never start
+    (Codex on PR #310)."""
+    from api.telephony.adapters import stt_whisper
+
+    order = []
+    monkeypatch.setattr(
+        voice_app.Watchdog, "start", lambda self: order.append("watchdog")
+    )
+    monkeypatch.setattr(
+        stt_whisper.Whisper,
+        "transcribe",
+        lambda self, pcm, terms: order.append("ear") or "",
+    )
+    its_database.setattr(settings, "voice_ear", "whisper")
+    voice_from_settings()
+    assert order == ["watchdog", "ear"]
+
+
+def test_on_the_processor_the_service_keeps_the_watchdogs_30_seconds(its_database):
+    """What the mouth and the detector are held to; the ear's minutes are its
+    own (above)."""
+    limits = []
+
+    class Recording(voice_app.Watchdog):
+        def __init__(self, **kwargs):
+            super().__init__(**kwargs)
+            limits.append(self._limit)
+
+    its_database.setattr(voice_app, "Watchdog", Recording)
+    its_database.setattr(settings, "voice_ear_device", "cpu")
+    voice_from_settings()
+    assert limits == [voice_app.ENGINE_HANG_SECONDS]

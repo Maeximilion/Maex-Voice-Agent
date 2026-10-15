@@ -69,6 +69,7 @@ ENGINE_HANG_SECONDS = 30.0
 # about the length of its audio for a sentence (3.9 s, docs/20 §11), up to six
 # passes when it is unsure of the words, and an utterance may last a minute
 # (`session.UTTERANCE_LIMIT_SECONDS`). A healthy run takes minutes there.
+# For the ear only: the mouth runs on the processor anyway.
 ENGINE_HANG_SECONDS_ON_CPU = 600.0
 # The exit code of a process its watchdog ended (EX_SOFTWARE).
 EXIT_ENGINE_HUNG = 70
@@ -103,27 +104,31 @@ class Watchdog:
         self._clock = clock
         self._end = end
         self._lock = threading.Lock()
-        self._running: dict[object, tuple[str, float]] = {}
+        self._running: dict[object, tuple[str, float, float]] = {}
 
     @contextmanager
-    def watch(self, what: str) -> Iterator[None]:
+    def watch(self, what: str, limit: float | None = None) -> Iterator[None]:
+        """Watched until the block is left; hung past `limit`, by default the
+        watchdog's own."""
         key = object()
         with self._lock:
-            self._running[key] = (what, self._clock())
+            self._running[key] = (what, self._clock(), limit or self._limit)
         try:
             yield
         finally:
             with self._lock:
                 del self._running[key]
 
-    def watched(self, what: str, call: Callable[..., _T]) -> Callable[..., _T]:
+    def watched(
+        self, what: str, call: Callable[..., _T], limit: float | None = None
+    ) -> Callable[..., _T]:
         """`call`, one run at a time and watched while it runs. One model
         serves every call of the process: a call that waits for it is in line,
         not stuck, and its wait does not count (ultra review on PR #298)."""
         turn = threading.Lock()
 
         def watched_call(*args: object) -> _T:
-            with turn, self.watch(what):
+            with turn, self.watch(what, limit):
                 return call(*args)
 
         return watched_call
@@ -134,8 +139,8 @@ class Watchdog:
             hung = sorted(
                 {
                     what
-                    for what, since in self._running.values()
-                    if now - since > self._limit
+                    for what, since, limit in self._running.values()
+                    if now - since > limit
                 }
             )
         if hung:
@@ -194,7 +199,11 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
         device=settings.voice_ear_device,
         compute_type="float16" if gpu else "int8",
     )
-    transcribe = watchdog.watched("ear", whisper.transcribe)
+    # Only the ear gets the processor's minutes: the mouth and the detector
+    # keep the watchdog's 30 s (Codex on PR #310).
+    transcribe = watchdog.watched(
+        "ear", whisper.transcribe, None if gpu else ENGINE_HANG_SECONDS_ON_CPU
+    )
     transcribe(bytes(2 * SAMPLE_RATE), [])  # a second of silence
     return lambda: SegmentingEar(transcribe, watchdog.watched("detector", silero()))
 
@@ -325,12 +334,11 @@ def voice_from_settings() -> Voice:
         team_phone = call_routing(db, tenant_id).team_phone
     if settings.voice_number in {team_phone, settings.team_phone}:
         _refuse("the team number is the AI telephone's own number")
-    # Last: loading takes seconds, and on the graphics card its memory.
-    watchdog = Watchdog(
-        limit=ENGINE_HANG_SECONDS
-        if settings.voice_ear_device == "cuda"
-        else ENGINE_HANG_SECONDS_ON_CPU
-    )
+    # Last: loading takes seconds, and on the graphics card its memory. The
+    # watchdog runs first: an engine whose first run hangs ends the process
+    # instead of keeping it from ever starting (Codex on PR #310).
+    watchdog = Watchdog()
+    watchdog.start()
     try:
         make_ear, make_mouth = ear(watchdog), mouth(watchdog)
     except Exception as exc:
@@ -338,7 +346,6 @@ def voice_from_settings() -> Voice:
             f"voice does not start: ear {settings.voice_ear!r} or mouth "
             f"{settings.voice_mouth!r} could not be loaded ({exc})"
         ) from exc
-    watchdog.start()
 
     lines = Lines()
     handler = CallHandler(

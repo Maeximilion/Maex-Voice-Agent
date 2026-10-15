@@ -163,7 +163,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build the image of voice
         run: docker build --target voice --tag maex-voice:ci ./api
+      # The import first: without the packages the test file would skip
+      # itself and pass (Codex on PR #310).
       - name: Engines without their model files are refused
         run: |
           docker run --rm --network none -v "$PWD:/app" -w /app maex-voice:ci \
-            python -m pytest -q -p no:cacheprovider api/tests/test_telephony_engine_loading.py
+            sh -c 'python -c "import faster_whisper, piper" &&
+              python -m pytest -q -p no:cacheprovider api/tests/test_telephony_engine_loading.py'

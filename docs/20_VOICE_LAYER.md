@@ -365,9 +365,10 @@ mouth are services (§6). `voice` does not start with an engine it cannot load o
 runs its engine once at start (the ear 0.4 s, then 0.1 s a run, 15.10.2026). A watchdog ends
 the process when one engine call works longer than 30 s (exit 70), and Compose starts it again:
 a thread cannot be cancelled, and a hung inference would hold the model every later call needs.
-Each engine takes one call at a time, and the wait for it does not count. With the ear on the
-processor the limit is 600 s: it takes about its audio's length for a sentence there, and up to
-six passes when it is unsure.
+It runs before the engines' first runs, so one that hangs at start ends the process too. Each
+engine takes one call at a time, and the wait for it does not count. The ear on the processor is
+allowed 600 s: it takes about its audio's length for a sentence there, and up to six passes when
+it is unsure; the mouth and the detector keep their 30 s.
 The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
 that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the

@@ -280,3 +280,6 @@ def test_production_reserves_no_graphics_card_for_voice():
     assert "devices" in str(_services(base)["voice"]["deploy"])
     deploy = _services(prod)["voice"].get("deploy")
     assert isinstance(deploy, _Tagged) and deploy.tag == "!reset"
+    # And the ear is not sent there either: `.env.example` says `cuda`, and
+    # Whisper would fail on every start (Codex on PR #310).
+    assert _services(prod)["voice"]["environment"]["VOICE_EAR_DEVICE"] == "cpu"

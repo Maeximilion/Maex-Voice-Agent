@@ -51,6 +51,9 @@ services:
     restart: always
     environment:
       ENV: prod
+      # No graphics card on the EU server (below): a local ear runs on the
+      # processor, whatever .env says (Codex on PR #310).
+      VOICE_EAR_DEVICE: cpu
     volumes:
       - ./api:/app/api:ro
       - ./prompts:/app/prompts:ro
