@@ -11,6 +11,7 @@
 |---|---|---|
 | Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, and its work in `origin/main`: its commits, or after a squash merge its changes, or a merged pull request with exactly its head commit, which needs `gh`; since 12.10.2026). Where another folder has `main` checked out, or `gh` had to be asked and could not answer, it warns instead of switching. A warning names the files that block the sync, or git's reason where a clean folder could not be fast-forwarded. Called with `--json`, as `.claude/settings.json` does, it goes out as a message the user sees (`systemMessage`) and as an instruction for Claude to raise it first (`additionalContext`); plain stdout of a SessionStart hook reaches Claude only (since 14.10.2026). Codex calls it without the flag and gets plain lines. `/done` runs it again after a merge | yes, versioned and tested |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
+| Launcher `claude-rc` (Ubuntu only) | `~/.local/bin/claude-rc` | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
 | Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |
 | Memory notes | `~/.claude/projects/` on Windows, linked into Ubuntu | no |
@@ -345,6 +346,49 @@ fi
 jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
 ```
 
+### claude-rc (Ubuntu only)
+
+Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` at every start, and runtime state (daemon, sessions, caches) stays apart. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
+
+```bash
+#!/usr/bin/env bash
+# Claude Code with Remote Control, without the Headroom proxy.
+# Remote Control refuses a custom ANTHROPIC_BASE_URL, and ~/.claude/settings.json sets one
+# (Headroom on 127.0.0.1:8787) that a shell variable cannot override. This launcher runs
+# Claude with its own config folder ~/.claude-rc: login, hooks, plugins, skills, memory and
+# history are links into ~/.claude, and settings.json is rebuilt from ~/.claude/settings.json
+# without ANTHROPIC_BASE_URL at every start. Runtime state (daemon, sessions, caches) stays
+# separate, so a Headroom session and this one never share a process.
+# Usage, inside the checkout (cd ~/Maex-Voice-Agent):
+#   claude-rc           interactive session, linked to claude.ai through Remote Control
+#   claude-rc server    Remote Control server: claude.ai, the app and projects start sessions here
+#   further arguments go to "claude remote-control" after "server", else to claude
+set -euo pipefail
+src="$HOME/.claude" dst="$HOME/.claude-rc"
+mkdir -p "$dst"
+shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
+        history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
+for name in "${shared[@]}"; do
+  # A real file in ~/.claude-rc (Claude replaced a link) is left alone.
+  if [ -e "$src/$name" ] && { [ -L "$dst/$name" ] || [ ! -e "$dst/$name" ]; }; then
+    ln -sfn "$src/$name" "$dst/$name"
+  fi
+done
+if [ -L "$dst/.claude.json" ] || [ ! -e "$dst/.claude.json" ]; then
+  ln -sfn "$HOME/.claude.json" "$dst/.claude.json"
+fi
+jq 'del(.env.ANTHROPIC_BASE_URL)' "$src/settings.json" > "$dst/settings.json.new"
+mv "$dst/settings.json.new" "$dst/settings.json"
+
+unset ANTHROPIC_BASE_URL
+export CLAUDE_CONFIG_DIR="$dst"
+if [ "${1-}" = server ]; then
+  shift
+  exec claude remote-control "$@"
+fi
+exec claude --remote-control "$@"
+```
+
 ## 5. Restore
 
 ### Windows
@@ -396,6 +440,18 @@ tmp="$(mktemp ~/.claude/settings.json.new.XXXXXX)" \
 
 Delete the backups once the check passed.
 
+`claude-rc`, same console: save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`.
+
+### Ubuntu threads for projects and claude.ai
+
+A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
+
+```bash
+cd ~/Maex-Voice-Agent && claude-rc server --spawn worktree --name ubuntu-workbench
+```
+
+The first start asks `Enable Remote Control? (y/n)` once; answer `y`. Each session it starts gets its own git worktree, so two sessions never write in the main folder. The server runs as long as the terminal stays open and the PC is on; `Ctrl+C` stops it. A plain interactive session that can also be followed from claude.ai is `claude-rc` without `server`.
+
 ## 6. Check that a hook fires
 
 A hook that runs without anything to report leaves no visible trace. For `sync-main.sh --branch`, feed it by hand from a branch that is behind `main`. Console: Git Bash or Ubuntu terminal, inside the checkout.
@@ -419,12 +475,14 @@ A project in the desktop app is one coordinating chat that starts threads. Wheth
 
 If step 1 shows nothing although a plain local session on `main` does, the project chat does not load hooks: say so here, and the coordinating chat has to apply the table on its own (`CLAUDE.md` section 6, "Threads").
 
+| 5 | Ubuntu terminal: `cd ~/Maex-Voice-Agent && claude-rc server --spawn worktree --name ubuntu-workbench`. Project chat: `Starte einen Thread in Ubuntu (ubuntu-workbench) mit Sonnet 5.5, effort medium: nur uname -a und printenv CLAUDE_EFFORT ausfuehren und melden.` | The thread runs in a worktree under `~/Maex-Voice-Agent`, reports `Linux ... microsoft-standard-WSL2`, Sonnet 5.5 and `medium`, and no routing line appears |
+
 Results:
 
-| Date | App version | Step 1 | Step 2 | Step 3 | Step 4 |
-|---|---|---|---|---|---|
-| open | | | | | |
+| Date | App version | Step 1 | Step 2 | Step 3 | Step 4 | Step 5 |
+|---|---|---|---|---|---|---|
+| open | | | | | | |
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 14.10.2026 (`sync-main.sh`), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 15.10.2026 (`claude-rc`), 14.10.2026 (`sync-main.sh`), 06.10.2026 (the others).
