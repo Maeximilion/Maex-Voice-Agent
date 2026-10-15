@@ -16,22 +16,26 @@ log=docs/09_OPERATIONS_LEGAL.md
 # prompts/: the system prompt goes into the live model's context.
 exposed=(api/ prompts/ printbridge/ deploy/ n8n/ db/migrations/ docker-compose.yml
   docker-compose.override.yml .github/workflows/ scripts/backup.sh scripts/restore.sh
-  scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh ':!*.md' ':!api/tests/')
+  scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh ':!*README.md' ':!api/tests/')
+# Only READMEs are left out of the Markdown: the prompts in prompts/ are Markdown too.
 
-rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
 mode=${1-}
+ref=origin/main
+# A gate and a go-live step judge what is checked out; /start judges main, also when
+# it checks the tasks (--tasks sets AUDIT_REF), from a worktree that may be behind.
+case "$mode" in --gate | --task) ref=${AUDIT_REF:-HEAD} ;; esac
+# The docs as of the ref judged: main's task list and audit log when main is judged.
+doc() { if [ "$ref" = origin/main ]; then git show "origin/main:$1"; else cat "$1"; fi; }
+
 if [ "$mode" = --tasks ]; then
   # Rows that carry the note and are open or in progress (the last column is the status).
   awk -F'|' -v note='Security audit before go-live (docs/09 §5)' 'index($0, note) {
     s = $(NF - 1); sub(/^ +/, "", s)
     if (s ~ /^(open|offen|in progress|in Arbeit)/) { id = $2; gsub(/ /, "", id); print id }
-  }' docs/07_WORKPACKAGES.md | while read -r id; do AUDIT_REF=origin/main bash "$0" --task "$id"; done
+  }' <(doc docs/07_WORKPACKAGES.md) | while read -r id; do AUDIT_REF=origin/main bash "$0" --task "$id"; done
   exit 0
 fi
-ref=origin/main
-# A gate and a go-live step judge what is checked out; /start judges main, also when
-# it checks the tasks (--tasks sets AUDIT_REF), from a worktree that may be behind.
-case "$mode" in --gate | --task) ref=${AUDIT_REF:-HEAD} ;; esac
+rows=$(doc "$log" | sed -n '/^### Audit log/,/^## /p' | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
 
 if [ "$mode" = --task ]; then
   task=${2:?task ID missing}

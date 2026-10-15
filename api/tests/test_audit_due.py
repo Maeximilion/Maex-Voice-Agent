@@ -75,6 +75,13 @@ def repo(tmp_path):
             f"| {d} | {k} | `{c}` | {s} | ok |\n" for d, k, c, s in rows
         )
         (root / "docs" / "09_OPERATIONS_LEGAL.md").write_text(text, encoding="utf-8")
+        git("add", "docs")
+        git("commit", "-qm", "audit log")
+
+    def tasks(text):
+        (root / "docs" / "07_WORKPACKAGES.md").write_text(text, encoding="utf-8")
+        git("add", "docs")
+        git("commit", "-qm", "tasks")
 
     def run(*args, main="HEAD"):
         git("update-ref", "refs/remotes/origin/main", main)
@@ -92,7 +99,7 @@ def repo(tmp_path):
 
     git("init", "-q")
     handles = Repo((commit, log, due))
-    handles.git, handles.run = git, run
+    handles.git, handles.run, handles.tasks = git, run, tasks
     return handles
 
 
@@ -156,11 +163,12 @@ def test_a_task_audit_is_due_again_after_a_change(repo):
 
 def test_a_commit_that_is_not_on_main_is_refused(repo):
     commit, log, _ = repo
-    on_main = commit("api/core/a.py")
+    commit("api/core/a.py")
     repo.git("checkout", "-qb", "feature")
     gone = commit("api/core/b.py")
+    repo.git("checkout", "-q", "-")
     log((day(1), "full", gone, "all"))
-    result = repo.run(main=on_main)
+    result = repo.run()
     assert result.returncode == 2
     assert f"commit {gone} of {day(1)} is not on origin/main" in result.stderr
 
@@ -185,17 +193,16 @@ def test_a_long_row_naming_many_commits_reads_the_commit_column(repo):
     assert f"baseline: {day(1)} {base}" in due()
 
 
-def test_tasks_checks_only_open_rows_with_the_note(repo, tmp_path):
+def test_tasks_checks_only_open_rows_with_the_note(repo):
     commit, log, due = repo
     base = commit("api/core/a.py")
     log((day(1), "component", base, "T-9.2"))
     note = "Security audit before go-live (docs/09 §5)"
-    (tmp_path / "r" / "docs" / "07_WORKPACKAGES.md").write_text(
+    repo.tasks(
         f"| T-9.2 | - | server. {note} | 13 | - | open |\n"
         f"| T-10.1 | - | router. {note} | 20 | - | in progress, step 1 done |\n"
         f"| T-10.12 | - | trunk. {note} | 20 | - | deferred |\n"
-        "| T-3.1 | - | GUI | 06 | - | open |\n",
-        encoding="utf-8",
+        "| T-3.1 | - | GUI | 06 | - | open |\n"
     )
     out = due("--tasks")
     assert "audit for T-9.2: recorded" in out
@@ -204,16 +211,28 @@ def test_tasks_checks_only_open_rows_with_the_note(repo, tmp_path):
     assert "T-3.1" not in out
 
 
-def test_tasks_judges_main_from_a_worktree_that_is_behind(repo, tmp_path):
+def test_tasks_judges_main_from_a_worktree_that_is_behind(repo):
     commit, log, _ = repo
     audited = commit("api/core/a.py")
-    note = "Security audit before go-live (docs/09 §5)"
-    rows = f"| T-9.2 | - | server. {note} | 13 | - | open |\n"
-    newer = commit("api/tools/b.py")
-    repo.git("checkout", "-q", audited)
     log((day(1), "component", audited, "T-9.2"))
-    (tmp_path / "r" / "docs" / "07_WORKPACKAGES.md").write_text(rows, encoding="utf-8")
-    assert "audit for T-9.2: recorded" in repo.run("--task", "T-9.2", main=newer).stdout
+    note = "Security audit before go-live (docs/09 §5)"
+    repo.tasks(f"| T-9.2 | - | server. {note} | 13 | - | open |\n")
+    newer = commit("api/tools/b.py")
+    # The worktree is back at the audited commit, without the docs main has.
+    repo.git("checkout", "-q", audited)
     out = repo.run("--tasks", main=newer).stdout
     assert "audit for T-9.2: due again" in out
     assert "  api/tools/b.py\n" in out
+
+
+def test_prompt_markdown_counts_and_readmes_do_not(repo):
+    commit, log, due = repo
+    base = commit("api/core/a.py")
+    log((day(40), "full", base, "all"))
+    commit("n8n/README.md")
+    commit("docs/notes.md")
+    assert "exposed files changed since: 0" in due()
+    commit("prompts/system_v2.md")
+    out = due()
+    assert "exposed files changed since: 1" in out
+    assert "  prompts/system_v2.md\n" in out
