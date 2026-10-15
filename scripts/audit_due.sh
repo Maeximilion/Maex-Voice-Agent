@@ -11,14 +11,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 log=docs/09_OPERATIONS_LEGAL.md
 # The exposed areas: what faces the outside or decides whether a call reaches the team.
-# api/domain/ and api/models/ whole: the GUI and the tools render what their queries
-# return, so a lost tenant filter there leaks guest data.
-exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ api/events/
-  api/domain/ api/models/ api/main.py api/config.py api/db.py api/Dockerfile
-  api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt
-  deploy/ n8n/ docker-compose.yml docker-compose.override.yml .github/workflows/
-  db/migrations/ scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh
-  ':!*.md' ':!api/tests/')
+# All of api/ (only its tests left out): the tools, the GUI and the agent reach almost
+# every package, so a list of single packages kept missing one (schemas, domain, models).
+exposed=(api/ printbridge/ deploy/ n8n/ db/migrations/ docker-compose.yml
+  docker-compose.override.yml .github/workflows/ scripts/backup.sh scripts/restore.sh
+  scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh ':!*.md' ':!api/tests/')
 
 rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
 mode=${1-}
