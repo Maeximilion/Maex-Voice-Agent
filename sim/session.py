@@ -166,7 +166,7 @@ class SimCall:
         # Once per call: a repeated `finish` writes nothing (`end_call` is
         # idempotent), and a second line would double the tokens of this call
         # for whoever adds the lines up (Codex PR #211, P2).
-        if not self._usage_logged:
+        if usage.model is not None and not self._usage_logged:
             self._usage_logged = True
             log_usage(logger, self.call_id, usage)
         return end_call(

@@ -7,6 +7,7 @@ therefore run here once more, instead of going through FastAPI and the
 middleware in `core/tool_log.py`.
 """
 
+import contextlib
 import json
 import logging
 import time
@@ -462,6 +463,14 @@ def _log_call(
     try:
         append_tool_call(session, str(call_id), str(tenant_id), entry)
     except Exception:  # noqa: BLE001 - logging must never break the answer
+        # The failed statement leaves the transaction aborted, and the next
+        # one of the turn would fail too, after a booking that stands (ultra
+        # review on PR #298). Nothing more is lost by it: what was not
+        # committed went with the failed statement. A rollback that fails
+        # too means a lost connection, which the next statement reports; the
+        # answer still goes out (Codex on PR #310).
+        with contextlib.suppress(Exception):
+            session.rollback()
         log(
             logger,
             logging.WARNING,

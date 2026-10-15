@@ -53,6 +53,11 @@ class TelephonyPort(Protocol):
 
 
 class CallEvents(Protocol):
+    """What the line reports of its calls. The events of one call come one
+    after another, never two at once (`CallSession` reports them on the call's
+    worker): the handler uses a call's database session on the thread that
+    reports. Events of different calls may come at the same time."""
+
     def on_call_started(self, session_id: str) -> None:
         """A call was picked up. Called again for the same session on a retry."""
         ...
