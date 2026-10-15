@@ -187,3 +187,52 @@ def test_matching_session_is_silent_and_advice_is_given_once(run):
     assert run(HOOKS_PROMPT, "claude-opus-5-5", "high") is None
     assert run(HOOKS_PROMPT, sid="again") is not None
     assert run(HOOKS_PROMPT, sid="again") is None
+
+
+def test_a_pure_search_for_a_hard_rule_term_stays_on_haiku(run):
+    out = run("Search the repository for every menu_item_id reference")
+    assert "claude-haiku-4-5 at effort none" in message(out)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Add tests for existing code behavior in the order list",
+        "Fix the review comments on this pull request",
+        "Confirm the existing GUI tests pass",
+    ],
+)
+def test_sonnet_work_from_the_table_is_recognised(run, prompt):
+    assert run(prompt) is None
+
+
+def test_confirm_counts_only_with_an_order_booking_or_its_code(run):
+    out = run("Change how confirm handles the order", "claude-opus-5-5", "high")
+    assert "effort xhigh" in message(out)
+    out = run("Make sure we confirm the order only after a yes", sid="order")
+    assert "effort xhigh" in message(out)
+
+
+def test_a_mixed_docs_and_code_task_keeps_the_higher_setting(run):
+    prompt = "Update README and domain order logic to fix the migration downgrade"
+    assert "effort xhigh" in message(run(prompt))
+
+
+def test_a_python_import_is_not_a_data_import(run):
+    out = run("Fix the circular import in core/config.py")
+    assert "claude-opus-5-5 at effort high" in message(out)
+    assert run("Run the menu import for the new register export", sid="menu") is None
+
+
+@pytest.mark.parametrize(
+    "brief",
+    [
+        "Route: claude-opus-5-5 xhgh\nUpdate the domain code.",
+        "Route: claude-opus-5-5\nUpdate the domain code.",
+        "Route: claude-opus-5-5 high please\nUpdate the domain code.",
+    ],
+)
+def test_a_malformed_route_line_is_reported(run, brief):
+    out = run(brief, "claude-opus-5-5", "high")
+    assert "Route line is not" in message(out)
+    assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]

@@ -9,9 +9,10 @@
 #     otherwise -> classify the prompt by keyword and compare with the table
 # The user-level model-router.sh stays out of this repo (it yields to CLAUDE.md), so this
 # is the only router here. The keyword lists are a heuristic: tune them below.
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|\bconfirm|bestätig|escalat|eskal|transfer|outage|fallback|\bdraft\b'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|fallback|\bdraft\b'
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\bhooks?\b|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
-sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|\bimport|status update|templates?\b|\bjinja|htmx'
+# Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
+sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing (code|tests?)|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
 # prompt are the topic of the text, not code that decides.
 # ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
@@ -48,7 +49,14 @@ case "$first" in
   "<"*) head=${first#*>}; [ -n "${head// }" ] || head=$(awk 'NF { n++ } n == 2 { print; exit }' <<<"$prompt") ;;
   *) head=$first ;;
 esac
-route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+( +(low|medium|high|xhigh|max|none))?' <<<"$head")
+# Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
+route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
+if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
+  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" (effort low, medium, high, xhigh, max or none), so the setting of this thread cannot be checked."
+  jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
+    additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
+  exit 0
+fi
 if [ -n "$route" ]; then
   read -r _ want effort <<<"${route,,}"
 else
@@ -61,10 +69,15 @@ else
     /*) [[ "$lower" == *" "* ]] || exit 0 ;;
   esac
   grep -qiE "$ack" <<<"$lower" && exit 0
-  if grep -qiE "$docpath" <<<"$lower" && ! grep -qiE "$codepath|alembic|migrations/" <<<"$lower"; then
+  # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
+  if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
+    want=claude-haiku-4-5 effort=none
+  # Docs-only: no code path and no implementation area (domain, agent/, code, logic, ...);
+  # a mixed docs and code task takes the higher setting below.
+  elif grep -qiE "$docpath" <<<"$lower" \
+    && ! grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic)\b" <<<"$lower"; then
     want=claude-sonnet-5-5 effort=medium
   elif grep -qiE "$xhigh" <<<"$lower"; then want=claude-opus-5-5 effort=xhigh
-  elif grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then want=claude-haiku-4-5 effort=none
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
   elif grep -qiE "$sonnet" <<<"$lower"; then want=claude-sonnet-5-5 effort=medium
   else
