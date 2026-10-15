@@ -236,3 +236,35 @@ def test_prompt_markdown_counts_and_readmes_do_not(repo):
     out = due()
     assert "exposed files changed since: 1" in out
     assert "  prompts/system_v2.md\n" in out
+
+
+def test_a_staged_change_counts_when_the_worktree_is_restored(repo, tmp_path):
+    commit, log, due = repo
+    audited = commit("deploy/Caddyfile")
+    log((day(1), "component", audited, "T-9.2"))
+    caddyfile = tmp_path / "r" / "deploy" / "Caddyfile"
+    original = caddyfile.read_text(encoding="utf-8")
+    caddyfile.write_text("public path\n", encoding="utf-8")
+    repo.git("add", "deploy/Caddyfile")
+    caddyfile.write_text(original, encoding="utf-8")
+    out = due("--task", "T-9.2")
+    assert "  deploy/Caddyfile\n" in out
+    assert "due again" in out
+
+
+def test_main_judges_with_its_own_copy_of_the_script(repo, tmp_path):
+    commit, log, _ = repo
+    behind = commit("api/core/a.py")
+    log((day(1), "full", behind, "all"))
+    script = tmp_path / "r" / "scripts" / "audit_due.sh"
+    text = script.read_text(encoding="utf-8")
+    script.write_text(
+        text.replace("set -euo pipefail\n", "set -euo pipefail\necho 'main copy'\n", 1),
+        encoding="utf-8",
+    )
+    repo.git("commit", "-qam", "main changes the checker")
+    newer = repo.git("rev-parse", "--short", "HEAD")
+    repo.git("checkout", "-q", behind)
+    out = repo.run(main=newer).stdout
+    assert out.startswith("main copy\n")
+    assert f"baseline: {day(1)} {behind}" in out

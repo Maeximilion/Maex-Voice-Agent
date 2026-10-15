@@ -8,7 +8,20 @@
 #   bash scripts/audit_due.sh --task T  /task:  is the last audit naming task T still current
 #   bash scripts/audit_due.sh --tasks   /start: --task for every open row with the go-live note
 set -euo pipefail
-cd "$(dirname "$0")/.."
+root=${AUDIT_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}
+cd "$root"
+# When main is judged, main's own copy of this script judges it: a worktree that is
+# behind would otherwise apply an older list of exposed areas or an older verdict.
+case "${1-}" in
+  "" | --tasks)
+    if [ -z "${AUDIT_FROM_MAIN-}" ] && main_hash=$(git rev-parse -q --verify origin/main:scripts/audit_due.sh) \
+      && [ "$main_hash" != "$(git hash-object "$0")" ]; then
+      copy=$(git rev-parse --git-path audit_due.main.sh)
+      git cat-file blob "$main_hash" > "$copy"
+      AUDIT_FROM_MAIN=1 AUDIT_ROOT=$root exec bash "$copy" "$@"
+    fi
+    ;;
+esac
 log=docs/09_OPERATIONS_LEGAL.md
 # The exposed areas: what faces the outside or decides whether a call reaches the team.
 # All of api/ (only its tests left out): the tools, the GUI and the agent reach almost
@@ -66,6 +79,7 @@ if [ "$ref" = HEAD ]; then
   # A gate or a go-live step judges the checkout as it is: committed, staged, unstaged
   # and new files alike, so an edit not yet committed cannot slip past.
   files=$( (git diff --name-only "$commit" -- "${exposed[@]}"
+    git diff --cached --name-only "$commit" -- "${exposed[@]}"
     git ls-files --others --exclude-standard -- "${exposed[@]}") | sort -u)
 else
   files=$(git diff --name-only "$commit..$ref" -- "${exposed[@]}")
