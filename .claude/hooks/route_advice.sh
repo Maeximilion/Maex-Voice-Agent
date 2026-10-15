@@ -65,7 +65,21 @@ want_f=$(family "${name,,}") have_f=$(family "$model")
 
 now="session is on $model, effort ${have_effort:-unknown}"
 if [ -n "$route" ]; then
-  msg="routing check: the brief asks for $name at effort ${effort:-any}, but this $now. A thread cannot switch itself: name this in the report to the session that started it."
+  msg="routing check: the brief asks for $name at effort ${effort:-any}, but this $now."
+  # First time: stop before any work, so the starting session can switch this thread
+  # (set_session_model / set_session_effort work on a thread it started, never on itself)
+  # and send the brief again. Same mismatch after that resend: the switch did not take
+  # (fork, cloud), so carry on and report it. After that: silent, never a loop.
+  hash=$(cksum <<<"$msg")
+  seen=$(grep -cx "$hash" "$state/$sid.seen" 2>/dev/null)
+  echo "$hash" >> "$state/$sid.seen"
+  case "${seen:-0}" in
+    0) ctx="Routing mismatch: do not start the task and use no tools. Reply with exactly this one line, then end your turn: ROUTE-MISMATCH want=$name ${effort:-any} have=$model ${have_effort:-unknown}. The session that started you switches your model and effort and sends the brief again." ;;
+    1) ctx="The brief was sent again but this thread still runs on the wrong setting: carry on with the task and name the mismatch in your report. $msg" ;;
+    *) exit 0 ;;
+  esac
+  jq -n --arg m "$msg" --arg c "$ctx" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
+  exit 0
 elif [ "$have_f" -lt "$want_f" ] || { [ "$have_f" = "$want_f" ] && [ "$(level "$have_effort")" -lt "$(level "$effort")" ]; }; then
   msg="routing advice: this prompt fits $name at effort $effort (CLAUDE.md Model Routing); $now. Switch up in the model menu if you want, no need to resend."
 else

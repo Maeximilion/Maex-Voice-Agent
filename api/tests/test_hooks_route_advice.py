@@ -98,6 +98,25 @@ def test_route_line_that_the_thread_did_not_get_is_reported(run):
     assert "session is on claude-opus-5-5, effort xhigh" in out["systemMessage"]
 
 
+def test_mismatch_stops_once_then_carries_on_then_is_silent(run):
+    first = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
+    context = first["hookSpecificOutput"]["additionalContext"]
+    assert "do not start the task" in context
+    assert (
+        "ROUTE-MISMATCH want=claude-sonnet-5-5 medium have=claude-opus-5-5 xhigh"
+        in context
+    )
+    # The resend still on the wrong setting: no second stop, no loop.
+    second = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
+    assert "carry on" in second["hookSpecificOutput"]["additionalContext"]
+    assert run(BRIEF, model="claude-opus-5-5", effort="xhigh") is None
+
+
+def test_switched_thread_gets_the_resent_brief_without_a_note(run):
+    assert run(BRIEF, model="claude-opus-5-5", effort="xhigh") is not None
+    assert run(BRIEF, model="claude-sonnet-5-5", effort="medium") is None
+
+
 def test_route_line_is_read_inside_a_tagged_brief(run):
     out = run(f"<brief>\n{BRIEF}\n</brief>", model="claude-opus-5-5", effort="high")
     assert "routing check" in out["systemMessage"]
