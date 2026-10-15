@@ -213,7 +213,10 @@ def _piper(watchdog: Watchdog) -> Callable[[], Mouth]:
 
     voice = settings.voice_mouth_voice or VOICE
     mouth = WatchedMouth(piper(MODELS / "piper" / f"{voice}.onnx"), watchdog)
-    b"".join(mouth.speak("Guten Tag."))
+    # Empty without an error is a failure too, as in the session
+    # (`CallSession._synthesize`) (Codex on PR #310).
+    if not b"".join(mouth.speak("Guten Tag.")):
+        raise RuntimeError("the mouth made no audio")
     # One for every call: it keeps nothing from one sentence to the next.
     return lambda: mouth
 

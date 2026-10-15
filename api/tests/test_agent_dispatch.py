@@ -499,3 +499,24 @@ def test_a_tool_log_that_fails_leaves_the_session_usable(
 
     assert result.ok
     assert session.execute(text("select 1")).scalar_one() == 1
+
+
+def test_a_tool_log_whose_rollback_fails_too_still_answers(
+    session, tenant_id, call_id, monkeypatch
+):
+    """A lost connection fails the rollback as well; the tool's answer still
+    goes out (Codex on PR #310)."""
+    import sys
+
+    from sqlalchemy.exc import OperationalError
+
+    dispatch_module = sys.modules["api.agent.dispatch"]
+
+    def lost(*args, **kwargs):
+        raise OperationalError("UPDATE", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(dispatch_module, "append_tool_call", lost)
+    monkeypatch.setattr(session, "rollback", lost)
+    result = dispatch(session, call_id, tenant_id, "get_service_status", {}, now=NOW)
+
+    assert result.ok

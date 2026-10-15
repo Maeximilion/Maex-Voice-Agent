@@ -880,3 +880,17 @@ def test_on_the_processor_the_service_keeps_the_watchdogs_30_seconds(its_databas
     its_database.setattr(settings, "voice_ear_device", "cpu")
     voice_from_settings()
     assert limits == [voice_app.ENGINE_HANG_SECONDS]
+
+
+def test_a_mouth_that_makes_no_audio_is_not_loaded(stand_in_engines, monkeypatch):
+    """The session takes an empty stream for a failure of the mouth; at start
+    it keeps the service down (Codex on PR #310)."""
+    from api.telephony.adapters import tts_piper
+
+    class Silent:
+        def speak(self, text):
+            return iter(())
+
+    monkeypatch.setattr(tts_piper, "piper", lambda voice: Silent())
+    with pytest.raises(RuntimeError, match="no audio"):
+        voice_app._piper(voice_app.Watchdog())
