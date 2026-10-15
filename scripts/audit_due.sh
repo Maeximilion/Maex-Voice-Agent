@@ -14,7 +14,7 @@ exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ ap
   api/domain/calls/ api/domain/callbacks/ api/main.py api/config.py api/db.py api/Dockerfile
   api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt
   deploy/ n8n/ docker-compose.yml docker-compose.override.yml .github/workflows/
-  scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh
+  db/migrations/ scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh
   ':!*.md' ':!api/tests/')
 
 rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
@@ -40,14 +40,22 @@ if [ -z "$row" ]; then
 fi
 
 date=$(cut -d'|' -f2 <<<"$row" | tr -d ' ')
-commit=$(grep -oE '`[0-9a-f]{7,40}`' <<<"$row" | head -n 1 | tr -d '`')
+# The Commit column itself, so a Scope or Result that names other commits cannot mislead.
+commit=$(cut -d'|' -f4 <<<"$row" | tr -d ' `')
 # The log records commits on main: a feature-branch commit is gone after a squash merge.
 if ! git merge-base --is-ancestor "$commit" "$ref" 2>/dev/null; then
   echo "audit log: commit $commit of $date is not on $ref; record the main commit the audit read" >&2
   exit 2
 fi
 age=$(( ($(date +%s) - $(date -d "${date:6:4}-${date:3:2}-${date:0:2}" +%s)) / 86400 ))
-files=$(git diff --name-only "$commit..$ref" -- "${exposed[@]}")
+if [ "$ref" = HEAD ]; then
+  # A gate or a go-live step judges the checkout as it is: committed, staged, unstaged
+  # and new files alike, so an edit not yet committed cannot slip past.
+  files=$( (git diff --name-only "$commit" -- "${exposed[@]}"
+    git ls-files --others --exclude-standard -- "${exposed[@]}") | sort -u)
+else
+  files=$(git diff --name-only "$commit..$ref" -- "${exposed[@]}")
+fi
 changed=$(grep -c . <<<"$files" || true)
 
 if [ "$mode" = --task ]; then

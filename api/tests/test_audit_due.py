@@ -163,3 +163,23 @@ def test_a_commit_that_is_not_on_main_is_refused(repo):
     result = repo.run(main=on_main)
     assert result.returncode == 2
     assert f"commit {gone} of {day(1)} is not on origin/main" in result.stderr
+
+
+def test_an_uncommitted_edit_makes_a_task_audit_due_again(repo, tmp_path):
+    commit, log, due = repo
+    audited = commit("deploy/Caddyfile")
+    log((day(1), "component", audited, "production server, T-9.2"))
+    assert "audit for T-9.2: recorded" in due("--task", "T-9.2")
+    (tmp_path / "r" / "deploy" / "Caddyfile").write_text("new path\n", encoding="utf-8")
+    (tmp_path / "r" / "deploy" / "new.conf").write_text("port\n", encoding="utf-8")
+    out = due("--task", "T-9.2")
+    assert "  deploy/Caddyfile\n  deploy/new.conf\n" in out
+    assert "due again" in out
+
+
+def test_a_long_row_naming_many_commits_reads_the_commit_column(repo):
+    commit, log, due = repo
+    base = commit("api/core/a.py")
+    many = " ".join(f"`{n:07x}`" for n in range(300))
+    log((day(1), "full", base, f"all, see {many}"))
+    assert f"baseline: {day(1)} {base}" in due()
