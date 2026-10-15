@@ -1322,11 +1322,19 @@ def sole_item_number(
     # die 24") or a marker ("Nummer und 24") comes before it, it connects
     # something in this sentence that is missing. And never before a tens
     # word: "und zwanzig" is the second half of "drei und zwanzig", the
-    # recognition only cut it off (review PR #147). Only "und": an "oder" or
-    # "nein" up front refers to something this sentence does not name and
-    # stays a follow-up question.
+    # recognition only cut it off (review PR #147). Words that are no number
+    # between the two do not change that: "und äh zwanzig", "und bitte
+    # zwanzig" (Codex PR #147). The skip stops at any number word, so "und
+    # ein und zwanzig" still opens the 21. Only "und": an "oder" or "nein" up
+    # front refers to something this sentence does not name and stays a
+    # follow-up question.
     def _opens(k: int) -> bool:
-        if tokens[k] != "und" or (k + 1 < len(tokens) and tokens[k + 1] in TENS):
+        if tokens[k] != "und":
+            return False
+        j = k + 1
+        while j < len(tokens) and tokens[j] != "und" and _word_value(tokens[j]) is None:
+            j += 1
+        if j < len(tokens) and tokens[j] in TENS:
             return False
         return all(
             t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
