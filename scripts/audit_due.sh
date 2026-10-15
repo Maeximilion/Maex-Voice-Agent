@@ -13,7 +13,8 @@ log=docs/09_OPERATIONS_LEGAL.md
 # The exposed areas: what faces the outside or decides whether a call reaches the team.
 # All of api/ (only its tests left out): the tools, the GUI and the agent reach almost
 # every package, so a list of single packages kept missing one (schemas, domain, models).
-exposed=(api/ printbridge/ deploy/ n8n/ db/migrations/ docker-compose.yml
+# prompts/: the system prompt goes into the live model's context.
+exposed=(api/ prompts/ printbridge/ deploy/ n8n/ db/migrations/ docker-compose.yml
   docker-compose.override.yml .github/workflows/ scripts/backup.sh scripts/restore.sh
   scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh ':!*.md' ':!api/tests/')
 
@@ -24,12 +25,13 @@ if [ "$mode" = --tasks ]; then
   awk -F'|' -v note='Security audit before go-live (docs/09 §5)' 'index($0, note) {
     s = $(NF - 1); sub(/^ +/, "", s)
     if (s ~ /^(open|offen|in progress|in Arbeit)/) { id = $2; gsub(/ /, "", id); print id }
-  }' docs/07_WORKPACKAGES.md | while read -r id; do bash "$0" --task "$id"; done
+  }' docs/07_WORKPACKAGES.md | while read -r id; do AUDIT_REF=origin/main bash "$0" --task "$id"; done
   exit 0
 fi
 ref=origin/main
-# A gate and a go-live step judge what is checked out; /start judges main.
-case "$mode" in --gate | --task) ref=HEAD ;; esac
+# A gate and a go-live step judge what is checked out; /start judges main, also when
+# it checks the tasks (--tasks sets AUDIT_REF), from a worktree that may be behind.
+case "$mode" in --gate | --task) ref=${AUDIT_REF:-HEAD} ;; esac
 
 if [ "$mode" = --task ]; then
   task=${2:?task ID missing}

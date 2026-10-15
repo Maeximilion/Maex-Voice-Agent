@@ -202,3 +202,18 @@ def test_tasks_checks_only_open_rows_with_the_note(repo, tmp_path):
     assert "audit for T-10.1: due, none recorded" in out
     assert "T-10.12" not in out
     assert "T-3.1" not in out
+
+
+def test_tasks_judges_main_from_a_worktree_that_is_behind(repo, tmp_path):
+    commit, log, _ = repo
+    audited = commit("api/core/a.py")
+    note = "Security audit before go-live (docs/09 §5)"
+    rows = f"| T-9.2 | - | server. {note} | 13 | - | open |\n"
+    newer = commit("api/tools/b.py")
+    repo.git("checkout", "-q", audited)
+    log((day(1), "component", audited, "T-9.2"))
+    (tmp_path / "r" / "docs" / "07_WORKPACKAGES.md").write_text(rows, encoding="utf-8")
+    assert "audit for T-9.2: recorded" in repo.run("--task", "T-9.2", main=newer).stdout
+    out = repo.run("--tasks", main=newer).stdout
+    assert "audit for T-9.2: due again" in out
+    assert "  api/tools/b.py\n" in out
