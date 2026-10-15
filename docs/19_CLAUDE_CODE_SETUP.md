@@ -28,7 +28,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
-| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read without a changing verb to Haiku 4.5, checked first so its subject does not count; no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_CODE_EFFORT_LEVEL` or `CLAUDE_EFFORT`; an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, or right after a wrapper tag (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) | 
+| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read without a changing verb to Haiku 4.5, checked first so its subject does not count; no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_CODE_EFFORT_LEVEL` or `CLAUDE_EFFORT`; an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, or right after a wrapper tag (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (`SessionStart` may omit it), it does not stop the thread: it carries on and reports that the setting could not be checked. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
@@ -348,7 +348,7 @@ jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", a
 
 ### claude-rc (Ubuntu only)
 
-Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` at every start, and runtime state (daemon, sessions, caches) stays apart. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
+Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` and without an API key (Remote Control takes only the claude.ai login) at every start, and runtime state (daemon, sessions, caches) stays apart. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
 
 ```bash
 #!/usr/bin/env bash
@@ -357,7 +357,7 @@ Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `
 # (Headroom on 127.0.0.1:8787) that a shell variable cannot override. This launcher runs
 # Claude with its own config folder ~/.claude-rc: login, hooks, plugins, skills, memory and
 # history are links into ~/.claude, and settings.json is rebuilt from ~/.claude/settings.json
-# without ANTHROPIC_BASE_URL at every start. Runtime state (daemon, sessions, caches) stays
+# without ANTHROPIC_BASE_URL and API keys at every start. Runtime state (daemon, sessions, caches) stays
 # separate, so a Headroom session and this one never share a process.
 # Usage, inside the checkout (cd ~/Maex-Voice-Agent):
 #   claude-rc           interactive session, linked to claude.ai through Remote Control
@@ -380,10 +380,13 @@ done
 if [ -L "$dst/.claude.json" ] || [ ! -e "$dst/.claude.json" ]; then
   ln -sfn "$HOME/.claude.json" "$dst/.claude.json"
 fi
-jq 'del(.env.ANTHROPIC_BASE_URL)' "$src/settings.json" > "$dst/settings.json.new"
-mv "$dst/settings.json.new" "$dst/settings.json"
+# Remote Control takes only the claude.ai login, no API key. A file of its own per start,
+# so two launches at once never move each other's file.
+tmp=$(mktemp "$dst/settings.json.XXXXXX")
+jq 'del(.env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN)' "$src/settings.json" > "$tmp"
+mv "$tmp" "$dst/settings.json"
 
-unset ANTHROPIC_BASE_URL
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
 export CLAUDE_CONFIG_DIR="$dst"
 if [ "${1-}" = server ]; then
   shift
@@ -443,7 +446,7 @@ tmp="$(mktemp ~/.claude/settings.json.new.XXXXXX)" \
 
 Delete the backups once the check passed.
 
-`claude-rc`, same console: save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`.
+`claude-rc`, same console: `mkdir -p ~/.local/bin`, save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`. Ubuntu's `~/.profile` puts `~/.local/bin` on `PATH` at the next login once the folder exists; until then call it as `~/.local/bin/claude-rc`.
 
 ### Ubuntu threads for projects and claude.ai
 

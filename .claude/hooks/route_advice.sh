@@ -9,10 +9,11 @@
 #     otherwise -> classify the prompt by keyword and compare with the table
 # The user-level model-router.sh stays out of this repo (it yields to CLAUDE.md), so this
 # is the only router here. The keyword lists are a heuristic: tune them below.
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|fallback|\bdraft\b'
-opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\bhooks?\b|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|\bdraft\b|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+# Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
+opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
-sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing (code|tests?)|review comments?|(address|fix) (the )?(review|codex|feedback)'
+sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
 # prompt are the topic of the text, not code that decides.
 # ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
@@ -20,7 +21,7 @@ docpath='\.md\b|\bdocs/|readme'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please )?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
-change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|ändere|baue|schreibe|behebe|füge|lösche|erstelle)\b'
+change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|verschiebe)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
 
@@ -68,14 +69,16 @@ else
     "/task"*|"/start"*|"<"*) exit 0 ;;
     /*) [[ "$lower" == *" "* ]] || exit 0 ;;
   esac
+  # One line without paste wrappers, so ^ and $ below mean the start and end of the prompt.
+  lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
   if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
     want=claude-haiku-4-5 effort=none
-  # Docs-only: no code path and no implementation area (domain, agent/, code, logic, ...);
-  # a mixed docs and code task takes the higher setting below.
+  # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
+  # matching, ...); a mixed docs and code task takes the higher setting below.
   elif grep -qiE "$docpath" <<<"$lower" \
-    && ! grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic)\b" <<<"$lower"; then
+    && ! grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b" <<<"$lower"; then
     want=claude-sonnet-5-5 effort=medium
   elif grep -qiE "$xhigh" <<<"$lower"; then want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
@@ -98,7 +101,14 @@ if [ -z "$model" ]; then
     | jq -r 'select(.type == "assistant" and (.isSidechain | not)) | .message.model
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
 fi
-[ -n "$model" ] || model="unknown"
+# No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
+if [ -z "$model" ]; then
+  [ -n "$route" ] || exit 0
+  msg="routing check: the brief asks for $want at effort ${effort:-any}, but this session's model is not known to the hook yet, so the setting of this thread cannot be checked."
+  jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
+    additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
+  exit 0
+fi
 # CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable; CLAUDE_EFFORT is what this
 # machine's sessions carry (CLAUDE.md, /task).
 have_effort=${CLAUDE_CODE_EFFORT_LEVEL:-${CLAUDE_EFFORT:-$(jq -r '.effort // empty' <<<"$input")}}
@@ -117,8 +127,9 @@ if [ -n "$route" ]; then
   # First time: stop before any work, so the starting session can switch this thread
   # (set_session_model / set_session_effort work on a thread it started, never on itself)
   # and send the brief again. Same mismatch after that resend: the switch did not take
-  # (fork, cloud), so carry on and report it. After that: silent, never a loop.
-  hash=$(cksum <<<"$msg")
+  # (fork, cloud) or only half took, so carry on and report it. After that: silent, never
+  # a loop. Counted per requested route, whatever setting the thread is on now.
+  hash=$(cksum <<<"$want ${effort:-any}")
   seen=$(grep -cx "$hash" "$state/$sid.seen" 2>/dev/null)
   echo "$hash" >> "$state/$sid.seen"
   case "${seen:-0}" in
@@ -135,7 +146,7 @@ else
 fi
 # The same advice once per session and state: a person who keeps the setting is not nagged.
 hash=$(cksum <<<"$msg")
-[ "$(cat "$state/$sid.advised" 2>/dev/null)" != "$hash" ] || exit 0
-echo "$hash" > "$state/$sid.advised"
+grep -qxF "$hash" "$state/$sid.advised" 2>/dev/null && exit 0
+echo "$hash" >> "$state/$sid.advised"
 jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
   additionalContext: ("Open your reply with this one line, then carry on with the work (the user may switch, do not wait): " + $m)}}'

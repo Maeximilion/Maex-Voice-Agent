@@ -236,3 +236,61 @@ def test_a_malformed_route_line_is_reported(run, brief):
     out = run(brief, "claude-opus-5-5", "high")
     assert "Route line is not" in message(out)
     assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix the delivery fee calculation",
+        "Fix the reservation conflict check",
+        "This failure survived two fix attempts; debug it now",
+        "Update README and fix the allergen matching",
+        "Find every migration and correct its downgrade",
+        "ok\nFix migration downgrade",
+    ],
+)
+def test_hard_rule_work_reaches_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix the fallback font in the GUI template",
+        "Fix the React hooks in the GUI",
+    ],
+)
+def test_gui_words_that_look_like_hard_rules_stay_on_sonnet(run, prompt):
+    assert run(prompt) is None
+
+
+def test_existing_code_without_tests_is_not_sonnet_work(run):
+    out = run("Refactor the existing code to fix authentication failures")
+    assert "claude-opus-5-5 at effort high" in message(out)
+
+
+def test_a_pasted_search_stays_a_search(run):
+    search = "Search the repository for every menu_item_id reference"
+    prompt = f"<pasted_content id=1>{search}</pasted_content>"
+    assert "claude-haiku-4-5 at effort none" in message(run(prompt))
+
+
+def test_unknown_model_never_stops_a_routed_thread(run):
+    out = run(BRIEF, model="")
+    assert "not known" in message(out)
+    assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]
+    assert run(HOOKS_PROMPT, model="", sid="plain") is None
+
+
+def test_a_half_applied_switch_carries_on(run):
+    first = run(BRIEF, "claude-opus-5-5", "xhigh")
+    assert "do not start" in first["hookSpecificOutput"]["additionalContext"]
+    second = run(BRIEF, "claude-sonnet-5-5", "xhigh")
+    assert "carry on" in second["hookSpecificOutput"]["additionalContext"]
+
+
+def test_every_advice_is_given_once_per_session(run):
+    high, xhigh = HOOKS_PROMPT, "Fix the migration downgrade"
+    assert run(high) is not None
+    assert run(xhigh) is not None
+    assert run(high) is None
