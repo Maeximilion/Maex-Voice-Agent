@@ -183,3 +183,22 @@ def test_a_long_row_naming_many_commits_reads_the_commit_column(repo):
     many = " ".join(f"`{n:07x}`" for n in range(300))
     log((day(1), "full", base, f"all, see {many}"))
     assert f"baseline: {day(1)} {base}" in due()
+
+
+def test_tasks_checks_only_open_rows_with_the_note(repo, tmp_path):
+    commit, log, due = repo
+    base = commit("api/core/a.py")
+    log((day(1), "component", base, "T-9.2"))
+    note = "Security audit before go-live (docs/09 §5)"
+    (tmp_path / "r" / "docs" / "07_WORKPACKAGES.md").write_text(
+        f"| T-9.2 | - | server. {note} | 13 | - | open |\n"
+        f"| T-10.1 | - | router. {note} | 20 | - | in progress, step 1 done |\n"
+        f"| T-10.12 | - | trunk. {note} | 20 | - | deferred |\n"
+        "| T-3.1 | - | GUI | 06 | - | open |\n",
+        encoding="utf-8",
+    )
+    out = due("--tasks")
+    assert "audit for T-9.2: recorded" in out
+    assert "audit for T-10.1: due, none recorded" in out
+    assert "T-10.12" not in out
+    assert "T-3.1" not in out

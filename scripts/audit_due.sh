@@ -6,12 +6,15 @@
 #   bash scripts/audit_due.sh           /start: scoped audit due after 30 days with changes
 #   bash scripts/audit_due.sh --gate    /gate:  due as soon as anything changed
 #   bash scripts/audit_due.sh --task T  /task:  is the last audit naming task T still current
+#   bash scripts/audit_due.sh --tasks   /start: --task for every open row with the go-live note
 set -euo pipefail
 cd "$(dirname "$0")/.."
 log=docs/09_OPERATIONS_LEGAL.md
 # The exposed areas: what faces the outside or decides whether a call reaches the team.
+# api/domain/ and api/models/ whole: the GUI and the tools render what their queries
+# return, so a lost tenant filter there leaks guest data.
 exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ api/events/
-  api/domain/calls/ api/domain/callbacks/ api/main.py api/config.py api/db.py api/Dockerfile
+  api/domain/ api/models/ api/main.py api/config.py api/db.py api/Dockerfile
   api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt
   deploy/ n8n/ docker-compose.yml docker-compose.override.yml .github/workflows/
   db/migrations/ scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh
@@ -19,6 +22,14 @@ exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ ap
 
 rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
 mode=${1-}
+if [ "$mode" = --tasks ]; then
+  # Rows that carry the note and are open or in progress (the last column is the status).
+  awk -F'|' -v note='Security audit before go-live (docs/09 §5)' 'index($0, note) {
+    s = $(NF - 1); sub(/^ +/, "", s)
+    if (s ~ /^(open|offen|in progress|in Arbeit)/) { id = $2; gsub(/ /, "", id); print id }
+  }' docs/07_WORKPACKAGES.md | while read -r id; do bash "$0" --task "$id"; done
+  exit 0
+fi
 ref=origin/main
 # A gate and a go-live step judge what is checked out; /start judges main.
 case "$mode" in --gate | --task) ref=HEAD ;; esac
