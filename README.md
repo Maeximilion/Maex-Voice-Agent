@@ -40,12 +40,14 @@ There is no hosted voice platform: Asterisk, our own exchange, takes the call fr
 
 ## Status
 
+<!-- readme:status -->
 | | |
 |---|---|
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
-| Next Gate | G0: budget, legal, voice path and stage order settled; open until the telephony path is measured |
-| As of | 2026-10-14 |
+| Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
+| As of | 2026-10-15 |
+<!-- /readme:status -->
 
 <p align="center">
   <img src=".github/assets/progress.svg" width="100%" alt="Build progress: tasks done of all tasks, one bar per block of docs/07_WORKPACKAGES.md split into done, in progress, blocked and open, and the gates P and G0 to G5 on a line from plan to live operation.">
@@ -67,8 +69,9 @@ The images below are drawn from the measurement files in [`docs/metrics/`](docs/
   <img src=".github/assets/voice-bench.svg" width="100%" alt="Measurements of the own voice layer with date, value, limit and verdict go, at limit or no-go: the telephony spike, silent wrong numbers of the speech recognition, dishes heard right in spoken orders and the outage drills. Numbers in docs/metrics/voice_history.csv.">
 </p>
 
-How the images stay current: `make eval-record` records the newest eval run on a real model, `add-voice` a voice measurement, and `render` redraws every image from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
+How the images stay current: a full eval run on a real model records itself (`make eval` and `make eval-targets` on a branch), the voice kits record their own measurements, and every record redraws the images from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
 
+<!-- readme:capabilities -->
 **What works:**
 
 - `make up` builds the API image and starts Postgres, API, dispatcher, n8n and the push server for team notifications; `/health` responds, token auth works
@@ -96,6 +99,7 @@ How the images stay current: `make eval-record` records the newest eval run on a
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). The first full runs on a local model (`qwen3.6-35b-a3b`, 13./14.10.2026) pass 26 of 41 regular cases and 2 of 27 target cases, far from the target of 99 % ("Measured state" above)
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
+<!-- /readme:capabilities -->
 
 <p align="center"><img src=".github/assets/divider.svg" width="100%" alt=""></p>
 

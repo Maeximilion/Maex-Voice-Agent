@@ -39,6 +39,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      # First, and without PROJECT_TOKEN: the images on main and the social preview
+      # reach the decision issue even when the board steps below fail. It only
+      # reports; the fix is a PR (docs/15_README_STRATEGY.md, "Keeping them current").
+      - name: README images
+        id: images
+        # A crash here must not stop the board: decision_issue.py treats the missing
+        # file as a partial run.
+        continue-on-error: true
+        # Only on main: a run started by hand on another branch would report that
+        # branch's images as main's. Skipped, the decision step keeps the section.
+        if: github.ref == 'refs/heads/main'
+        run: python scripts/readme_assets.py findings "$RUNNER_TEMP/images.json"
+
       - name: Zugang pruefen
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
@@ -67,9 +80,14 @@ jobs:
       - name: Entscheidungs-Issue pflegen
         # Was die Pflege nicht selbst entscheiden kann, landet in genau einem Issue.
         # Erwaehnt wird nur bei neuen Punkten; ist nichts mehr offen, schliesst es sich.
+        # Also after a failed board step: a missing findings file makes the run
+        # partial, which keeps the board's sections and never closes the issue.
+        if: ${{ !cancelled() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
+        run: >-
+          python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
+          --also "README images=$RUNNER_TEMP/images.json"
 
       - name: Assignee und Label der Pull Requests ergaenzen
         # Zuletzt, damit ein Fehler hier Board und Entscheidungs-Issue nicht aufhaelt.
@@ -77,3 +95,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/pr_metadata.py
+
+      - name: Image check failed
+        # continue-on-error turns a crash of the image check green; the run must
+        # not, or the check could stop without anybody noticing (Codex on 2bff6f5).
+        if: ${{ !cancelled() && steps.images.outcome == 'failure' }}
+        run: |
+          echo "::error::readme_assets.py findings failed; the decision issue kept its README images section"
+          exit 1

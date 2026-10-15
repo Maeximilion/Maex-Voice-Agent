@@ -11,3 +11,4 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-14,,,qwen3.6-35b-a3b,targets,27,2,,,,,,0.30,,,status-note,T-2.4 part 4 head
 2026-10-14,,,scripted-stand-in,cases,41,41,,,,,,,,,status-note,reference
 2026-10-14,,,scripted-stand-in,targets,27,1,,,,,,,,,status-note,reference
+2026-10-15,2026-10-14T22:36:27+00:00,eval_20261014_223627_373401.json,qwen3.6-35b-a3b,cases,41,20,0,0,0,0,1,0.1515,11,21714,report,
