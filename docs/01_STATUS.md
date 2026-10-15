@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.25
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.26
 
 ---
 
@@ -345,6 +345,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| A partial run of the decision issue keeps every old key (`scripts/decision_issue.py`, `plan_partial`) | Codex on `2bff6f5` (PR #307, P2), 15.10.2026: while one source fails over several days, a finding the other source clears and later reports again is not mentioned again, because the marker keeps all old keys; the section itself is cleared correctly. Fixing it means keys per section in the marker. Noted under the rule for P2 after a finished review round | When a source fails for more than a day, or with the next change to `decision_issue.py` |
 | `telephony/router.py` and `app.py` know Asterisk's media channel (`MediaLine`, `call_of`, MEDIA_START) | Codex on `661b936` (PR #297, P2), 14.10.2026: AGENTS.md wants a provider name only under `api/telephony/adapters/`. The spec placed the WebSocket endpoint at `telephony/router.py` and the process at `telephony/app.py` (docs/20 §2, docs/11), and both are about one telephone system only. Keeping them where the spec puts them; moving the endpoint into `adapters/` (an `asterisk_router.py`, with `app.py` taking the router from there) is a small refactor without a change of behaviour, for when a second access other than Asterisk is in sight, or for Maxi to ask | With a second telephone system, or Maxi's word |
 | A call the team does not pick up ends without a callback (`deploy/asterisk/conf/extensions.conf`, extension `team`) | Codex on `21b2791` (PR #297, P1), 14.10.2026: after 30 s of ringing the dialplan hangs up, the caller hears nothing more and no callback card is made. That is the row "The team does not pick up" of docs/20 §5 and the whole of T-10.8 (the result of the transfer instead of the guess from the opening hours, a callback card, a sentence that nobody is reachable; `domain/callbacks/`, `agent/`, `xhigh`), which waits for T-1.11. Not built in T-1.11 for that reason. Until then the core transfers only when the opening hours say somebody is there, and no real customer calls the AI telephone (test number, docs/20 §3) | T-10.8, before the first call from a real customer |
 | A speech engine that hangs keeps its model busy after the call went to the team (`telephony/adapters/stt_whisper.py`) | Codex on `61a2df2` (PR #292, P2), 14.10.2026: the session's deadline sends the caller to the team and closes the ear, but an inference that never returns stays inside the ear's thread, and the model is shared by every call of the process, so later calls can stall behind it. A thread in Python cannot be cancelled; bounding it takes the engine in a process of its own that can be ended, or a watchdog that restarts the service `voice`. The caller is safe either way (rule 5: the session's deadline rings the team) | T-1.11 part 2, with the engines in the service `voice` and its health check (part 1 runs only the drill engines) |
@@ -542,6 +543,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.26 · 15.10.2026:** Codex round 2 on PR #307: a crash of the image check fails the maintenance run; one P2 noted
 - **v2.2.25 · 15.10.2026:** T-0.11: the maintenance run reports stale README images and the social preview in the decision issue
 - **v2.2.24 · 15.10.2026:** T-0.10: README status and capabilities written from data, a test for every component on the call path
 - **v2.2.23 · 15.10.2026:** T-0.9: measurements record themselves: make eval and the voice kits record on a branch, on main a pending entry that /done records

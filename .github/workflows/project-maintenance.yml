@@ -43,6 +43,7 @@ jobs:
       # reach the decision issue even when the board steps below fail. It only
       # reports; the fix is a PR (docs/15_README_STRATEGY.md, "Keeping them current").
       - name: README images
+        id: images
         # A crash here must not stop the board: decision_issue.py treats the missing
         # file as a partial run.
         continue-on-error: true
@@ -94,3 +95,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/pr_metadata.py
+
+      - name: Image check failed
+        # continue-on-error turns a crash of the image check green; the run must
+        # not, or the check could stop without anybody noticing (Codex on 2bff6f5).
+        if: ${{ !cancelled() && steps.images.outcome == 'failure' }}
+        run: |
+          echo "::error::readme_assets.py findings failed; the decision issue kept its README images section"
+          exit 1
