@@ -92,14 +92,14 @@ A deliberate read of the code and configuration that face the outside, done at f
 |---|---|---|
 | Before the first call that comes in from outside the workbench (T-10.1 step 2 against the pilot's router, at the latest before G1) | component, on that path | `/task` step 0c, `/start` step 5c |
 | Before every gate from G1 on, when exposed files changed since the baseline | scoped if the baseline is younger than 30 days, else full | `/gate` step 1b |
-| Before a component becomes reachable from outside the host: the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | component, on that component | `/task` step 0c, `/start` step 5c |
+| Before a component becomes reachable from outside the host: the production server with Caddy (T-9.2), the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | component, on that component | `/task` step 0c, `/start` step 5c |
 | 30 days or more since the baseline, and exposed files changed since its commit | scoped | `/start` step 5c |
 
 Nothing else triggers an audit, and an audit never starts by itself: `/start` and `/gate` recommend it in one line and Maxi decides. A trigger that is not taken stays due and is named again at the next `/start`. A gate does not pass while an audit finding of severity P1 is open.
 
 A task whose step makes a component reachable from outside carries the note `Security audit before go-live (docs/09 §5)` in its row in `docs/07_WORKPACKAGES.md`; its audit is recorded with the task ID in the Scope column, and holds only while no exposed file changed since its commit; a later change makes it due again, scoped to the files changed.
 
-`bash scripts/audit_due.sh` does the arithmetic: it holds the exposed areas (everything that faces the outside or decides whether a call reaches the team: `api/core/`, `api/agent/`, `api/telephony/`, `api/tools/`, `api/kitchen/`, `api/gui/`, `api/events/`, `api/domain/calls/`, `api/domain/callbacks/`, `deploy/`, `n8n/`, Compose, the Dockerfile and requirements, CI workflows, the backup scripts; Markdown and tests left out), reads the baseline from the log below and prints the files changed since, each by name, and the verdict. `--gate` for `/gate`, `--task <ID>` for a task with the note.
+`bash scripts/audit_due.sh` does the arithmetic: it holds the exposed areas (everything that faces the outside or decides whether a call reaches the team: `api/core/`, `api/agent/`, `api/telephony/`, `api/tools/`, `api/kitchen/`, `api/gui/`, `api/events/`, `api/domain/calls/`, `api/domain/callbacks/`, `deploy/`, `n8n/`, Compose, the Dockerfile and requirements, CI workflows, the backup, migration and database-role scripts; Markdown and tests left out), reads the baseline from the log below and prints the files changed since, each by name, and the verdict. `--gate` for `/gate`, `--task <ID>` for a task with the note.
 
 Kinds of audit: **full** covers every exposed area and **scoped** every exposed file changed since the baseline; both move the baseline. **component** covers one path or component and does not move it, so a change elsewhere is never dropped from the next scoped audit.
 

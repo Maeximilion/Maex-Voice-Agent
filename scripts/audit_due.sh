@@ -14,7 +14,8 @@ exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ ap
   api/domain/calls/ api/domain/callbacks/ api/main.py api/config.py api/db.py api/Dockerfile
   api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt
   deploy/ n8n/ docker-compose.yml docker-compose.override.yml .github/workflows/
-  scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh ':!*.md' ':!api/tests/')
+  scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh scripts/db_role.sh scripts/migrate.sh
+  ':!*.md' ':!api/tests/')
 
 rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
 mode=${1-}
