@@ -152,3 +152,9 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 - **17.09.2026 – Betriebsansicht gebaut (T-3.1, T-3.3):** `api/gui/templates/betrieb/index.html` mit Kopfzeile und drei Spalten, `fragments/heute.html` als HTMX-Fragment der Spalte "Heute", `api/gui/sse.py` als Ereignisstrom. Noch offen: Knoepfe der Kopfzeile (T-3.2), Spalte "Rueckrufe" (T-3.4), Spalte "Neue Bestellungen" (T-4.7).
 - **25.09.2026 – Spalte "Neue Bestellungen" gebaut (T-4.7):** Karten, Passt, Nochmal senden, Korrektur-Kasten; im Browser durchgeklickt (Tauschen mit Hinweis, Speichern, Passt). Kopfzeile (T-3.2) und Rueckrufe (T-3.4) sind seit 18.09.2026 fertig.
 - **16.09.2026 – Betriebsansicht:** als Bild im Chat abgenommen. Änderungen gegenüber der ersten Spec: dritter Kopfzeilen-Zustand (Überlauf), Fehlerkarte als eigener Kartenzustand, Abholcode groß, „Wartezeit" als Wort auf den Knöpfen, Kartennummer vor jedem Gerichtnamen.
+
+---
+
+## 8. Operating test (T-3.5)
+
+The target in the header of this file is checked once, on the real tablet, by a team member who has never seen the view. The protocol is `docs/vorlagen/bedientest_protokoll.md`: eleven spoken tasks that cover each rule of section 1 (new order, Passt, Korrigieren, Nochmal senden, callback, Gericht aus, Wartezeit, pause and resume, reservations), a list of stumbles with severity, four questions and a verdict (PASS, PASS WITH CHANGES, FAIL). The test itself is run by Maxi with a team member; this file only holds the method. The result and the changes it causes go to `docs/01_STATUS.md`. Two questions are open until then: whether the tablet needs a "Ton an" hint (browser autoplay, status assumption of 18.09.2026) and whether an option line needs its own "Ändern" (status open point, T-4.7).
