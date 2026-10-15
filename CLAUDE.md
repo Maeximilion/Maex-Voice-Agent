@@ -170,6 +170,7 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1.
+- Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.

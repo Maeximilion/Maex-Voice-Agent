@@ -79,3 +79,49 @@ Jede Umschaltung braucht einen Rückweg, der ohne Nachdenken funktioniert.
 | Migration | `alembic downgrade -1`, vorher Backup |
 
 **Regel:** Kein Schritt vorwärts ohne getesteten Rückweg. Der Rückweg wird einmal wirklich geprobt, nicht nur aufgeschrieben.
+
+---
+
+## 5. Security audit
+
+A deliberate read of the code and configuration that face the outside, done at fixed occasions and not on every change, so it does not eat the usage quota (Maxi, 15.10.2026). The cheap checks run anyway: CodeQL and a Codex review on every pull request, Dependabot and the dependency review, `/security-review` in `/done` when a diff touches auth in `core/`, `telephony/`, `deploy/` or the agent token path, and `/start` reports open alerts. The audit covers what they cannot see: how the parts fit together, configuration outside Python (Asterisk, Caddy, Compose), and points that need a decision.
+
+### When an audit is due
+
+| Trigger | Kind | Noticed by |
+|---|---|---|
+| Before the first call that comes in from outside the workbench (T-10.1 step 2 against the pilot's router, at the latest before G1) | full | `/start` step 5c |
+| Before every gate from G1 on | full; scoped (the diff since the last audit) if the last full audit is younger than 30 days | `/gate` step 1b |
+| Before a component becomes reachable from outside the host: the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | full, on that component | `/start` step 5c, when such a task is ready |
+| 30 days or more since the last audit, and files of the exposed areas (below) changed since its commit | scoped | `/start` step 5c |
+
+Nothing else triggers an audit, and an audit never starts by itself: `/start` and `/gate` recommend it in one line and Maxi decides. A trigger that is not taken stays due and is named again at the next `/start`. A gate does not pass while an audit finding of severity P1 is open.
+
+Exposed areas, as a git pathspec (`/start` uses it as it stands):
+
+```text
+api/core/ api/telephony/ api/tools/ api/gui/ api/events/ api/main.py api/config.py api/Dockerfile api/requirements.in api/requirements.txt deploy/ docker-compose.yml docker-compose.override.yml .github/workflows/ scripts/backup.sh scripts/restore.sh :!*.md :!api/tests/
+```
+
+### How it runs
+
+- Model Opus 5.5 at `xhigh`: the audit judges the fate of a call and the outage path (`CLAUDE.md`, "Model Routing"). Read-only subagents may split the scope; every finding is checked in the code by the main session before it is recorded.
+- Scoped: only the files of `git diff --name-only <commit of the last row>..origin/main -- <exposed areas>`, plus what they call. Full: the whole checklist on the named components.
+- Findings go to the open hardening issue (#252, or its successor) as one comment: severity, file and line, scenario, proposed fix. Severity: P1 reachable from outside the host, or able to lose or misroute a call, cost money or leak secrets or personal data; P2 needs another weakness first; P3 a note. A P1 becomes its own task before the trigger that called for the audit is passed.
+- One row per audit in the log below. `/start` reads its last row.
+
+### Checklist
+
+- SIP and Asterisk: no guest or anonymous calls; the context inbound calls land in cannot dial out (toll fraud); transfer targets are fixed, never caller-controlled; ARI, AMI and HTTP bound to loopback or the internal network, credentials from the environment; RTP range no wider than needed; TLS and SRTP on the trunk.
+- Untrusted input: the caller ID is never a trust decision; limits per call (duration, turn deadline, concurrency) hold; no crafted input and no failure keeps a call from the team telephone.
+- Authentication: the agent token is compared in constant time and never empty; no secret in logs, URLs or error answers; GUI and operations view only behind the proxy's authentication; state-changing requests protected against cross-site requests.
+- Exposure: in production only Caddy publishes ports; Postgres, n8n and the voice service stay internal; security headers and request size limits are set.
+- Data: the application's database role is not the owner; backups are encrypted; personal data in logs, outbox and call rows is minimal and deleted on schedule.
+- Supply chain: requirements installed with hashes; images pinned where intended; CI workflows with least privilege, no untrusted pull request code with secrets.
+- Containers: non-root users, no extra capabilities, writable mounts only where needed.
+
+### Audit log
+
+| Date | Kind | Commit | Scope | Result |
+|---|---|---|---|---|
+| 12.10.2026 | full, by hand | `141d412` | whole repository | hardening list in issue #252 |
