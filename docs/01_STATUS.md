@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.24
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.26
 
 ---
 
 ## Summary
+
+**The daily maintenance run reports stale README images and a changed social preview in the one decision issue (T-0.11, 15.10.2026); the self-updating README is complete.** Two PRs merged one after the other can each be green and still leave `main` stale, and GitHub has no API for the social preview: the run now checks the images on `main` first, without `PROJECT_TOKEN`, and compares the social preview with the digest recorded by `python scripts/readme_assets.py mark-uploaded`. Both land in the decision issue under "README images", keyed by asset and digest, mentioned once, closed when nothing is open; when the board step fails, the issue keeps its board sections and does not close. The bot reports and never commits (no new token, no new write right; why and the upgrade path: docs/15). **Open for Maxi:** the repository has no custom social preview yet: upload `.github/assets/social-preview.png` in Settings, then `mark-uploaded` in the next PR.
 
 **The README's status and its lists "What works" and "Not yet working" are written from data, and a new component on the call path cannot be forgotten (T-0.10, 15.10.2026).** `render` writes the status table (stage and next gate from this file, "As of" from the last finished task in docs/07; the version stays manual for `/gate`) and both lists from `docs/metrics/capabilities.toml`, where a capability moves to "What works" by itself once all its tasks are done; one that waits for something outside the task list (C1, a setup step) says so in `waits_for` and stays until that line goes. A test fails when a tool of `agent/dispatch.TOOLS`, a Compose service or a telephony adapter has neither a node in the call flow nor a reason in `NOT_DRAWN`. Next: T-0.11.
 
@@ -343,6 +345,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| A partial run of the decision issue keeps every old key (`scripts/decision_issue.py`, `plan_partial`) | Codex on `2bff6f5` (PR #307, P2), 15.10.2026: while one source fails over several days, a finding the other source clears and later reports again is not mentioned again, because the marker keeps all old keys; the section itself is cleared correctly. Fixing it means keys per section in the marker. Noted under the rule for P2 after a finished review round | When a source fails for more than a day, or with the next change to `decision_issue.py` |
 | `telephony/router.py` and `app.py` know Asterisk's media channel (`MediaLine`, `call_of`, MEDIA_START) | Codex on `661b936` (PR #297, P2), 14.10.2026: AGENTS.md wants a provider name only under `api/telephony/adapters/`. The spec placed the WebSocket endpoint at `telephony/router.py` and the process at `telephony/app.py` (docs/20 §2, docs/11), and both are about one telephone system only. Keeping them where the spec puts them; moving the endpoint into `adapters/` (an `asterisk_router.py`, with `app.py` taking the router from there) is a small refactor without a change of behaviour, for when a second access other than Asterisk is in sight, or for Maxi to ask | With a second telephone system, or Maxi's word |
 | A call the team does not pick up ends without a callback (`deploy/asterisk/conf/extensions.conf`, extension `team`) | Codex on `21b2791` (PR #297, P1), 14.10.2026: after 30 s of ringing the dialplan hangs up, the caller hears nothing more and no callback card is made. That is the row "The team does not pick up" of docs/20 §5 and the whole of T-10.8 (the result of the transfer instead of the guess from the opening hours, a callback card, a sentence that nobody is reachable; `domain/callbacks/`, `agent/`, `xhigh`), which waits for T-1.11. Not built in T-1.11 for that reason. Until then the core transfers only when the opening hours say somebody is there, and no real customer calls the AI telephone (test number, docs/20 §3) | T-10.8, before the first call from a real customer |
 | A speech engine that hangs keeps its model busy after the call went to the team (`telephony/adapters/stt_whisper.py`) | Codex on `61a2df2` (PR #292, P2), 14.10.2026: the session's deadline sends the caller to the team and closes the ear, but an inference that never returns stays inside the ear's thread, and the model is shared by every call of the process, so later calls can stall behind it. A thread in Python cannot be cancelled; bounding it takes the engine in a process of its own that can be ended, or a watchdog that restarts the service `voice`. The caller is safe either way (rule 5: the session's deadline rings the team) | T-1.11 part 2, with the engines in the service `voice` and its health check (part 1 runs only the drill engines) |
@@ -540,6 +543,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.26 · 15.10.2026:** Codex round 2 on PR #307: a crash of the image check fails the maintenance run; one P2 noted
+- **v2.2.25 · 15.10.2026:** T-0.11: the maintenance run reports stale README images and the social preview in the decision issue
 - **v2.2.24 · 15.10.2026:** T-0.10: README status and capabilities written from data, a test for every component on the call path
 - **v2.2.23 · 15.10.2026:** T-0.9: measurements record themselves: make eval and the voice kits record on a branch, on main a pending entry that /done records
 - **v2.2.22 · 15.10.2026:** docs: work packages T-0.9 to T-0.11, the self-updating README (measurements record themselves, README text from data, the maintenance bot reports stale images)

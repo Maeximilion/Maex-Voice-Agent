@@ -107,6 +107,8 @@ Die Job-Zusammenfassung liest niemand von selbst. Darum sammelt der Lauf alles, 
 - **Aktualisieren** jeden Tag, ohne erneute Erwaehnung. Eine Erwaehnung gibt es nur, wenn ein neuer Punkt dazukommt, und dann nur fuer diesen.
 - **Schliessen**, sobald nichts mehr offen ist - und beim naechsten offenen Punkt **wieder oeffnen**, mit Erwaehnung. Es entsteht nie ein zweites Issue.
 
+Since T-0.11 (15.10.2026) the same issue also carries the section "README images": the run checks the images on `main` and the uploaded social preview first, without `PROJECT_TOKEN`, and hands its findings to `decision_issue.py --also`. When a findings file is missing because its step failed, the run is partial: it rewrites only the sections of the files it has and never closes the issue (`docs/15_README_STRATEGY.md`, "Keeping them current").
+
 Das Issue schreibt der eingebaute `GITHUB_TOKEN`, nicht der `PROJECT_TOKEN`. Der Grund ist eine Eigenheit von GitHub: eine Erwaehnung, die vom eigenen Konto kommt, loest keine Benachrichtigung aus. Kommt sie von `github-actions`, schon.
 
 ### Einrichtung
