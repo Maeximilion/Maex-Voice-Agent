@@ -172,6 +172,8 @@ Spec: `docs/20_VOICE_LAYER.md`. The three spikes come first and each ends with g
 | T-9.4 | #74 | Uptime-Check auf `/health` mit Benachrichtigung | 13 §5 | T-9.2 | offen |
 | T-9.5 | #75 | `jobs/holidays.py`: Feiertage des Bundeslandes (konfigurierbar) als Vorschlag in `special_days` | 11 §jobs | T-1.2 | offen |
 | T-9.6 | - | Print bridge as one program file with autostart for the machine it runs on (Windows: the register PC, decided 06.10.2026), replacing the manual Python 3.12 setup; `--test` and the settings of `printbridge/README.md` stay | 13 §0a, printbridge/README | T-4.6 | proposal 05.10.2026, no issue yet; Maxi decides |
+| T-9.7 | - | Operations view only through Caddy: Caddy sends `GUI_PROXY_SECRET` as `X-Maex-Proxy-Secret`, every route of `/gui` checks it outside dev and test (security audit of 15.10.2026, #252 finding 6, Maxi's decision of 15.10.2026) | 13 §3 | - | done 15.10.2026: `require_gui_proxy` in `api/core/auth.py` on the router of the view, `deploy/Caddyfile` `header_up`, the secret blanked for dispatcher and `voice`, `.env.example`; tests `test_gui_proxy_secret.py`, `test_deploy_exposure.py` |
+| T-9.8 | - | Separate Docker networks: Asterisk reaches only `voice`; database, API and dispatcher on an internal network; Caddy only on the edge. Protects every service, not only the view, and closes #252 finding 2 inside the network. Needs the outage drill on the workbench. Environment: Ubuntu (WSL) on the workbench | 13 §3, 20 §5 | - | deferred (Maxi, 15.10.2026: the header first, the networks maybe later) |
 
 ## Block 6 – Stufe 5/6: Betrieb  ·  Sammel-Issue #13
 
