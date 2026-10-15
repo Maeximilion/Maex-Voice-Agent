@@ -5,47 +5,66 @@
 # dropped. Prints the baseline, the exposed files changed since, and the verdict.
 #   bash scripts/audit_due.sh           /start: scoped audit due after 30 days with changes
 #   bash scripts/audit_due.sh --gate    /gate:  due as soon as anything changed
-#   bash scripts/audit_due.sh --task T  /task:  has the log a row whose scope names task T
+#   bash scripts/audit_due.sh --task T  /task:  is the last audit naming task T still current
 set -euo pipefail
 cd "$(dirname "$0")/.."
 log=docs/09_OPERATIONS_LEGAL.md
 # The exposed areas: what faces the outside or decides whether a call reaches the team.
-exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/gui/ api/events/
-  api/domain/calls/ api/domain/callbacks/ api/main.py api/config.py api/Dockerfile
-  api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt deploy/ n8n/
-  docker-compose.yml docker-compose.override.yml .github/workflows/
+exposed=(api/core/ api/agent/ api/telephony/ api/tools/ api/kitchen/ api/gui/ api/events/
+  api/domain/calls/ api/domain/callbacks/ api/main.py api/config.py api/db.py api/Dockerfile
+  api/requirements.in api/requirements.txt api/requirements-voice.in api/requirements-voice.txt
+  deploy/ n8n/ docker-compose.yml docker-compose.override.yml .github/workflows/
   scripts/backup.sh scripts/restore.sh scripts/lib_pg.sh ':!*.md' ':!api/tests/')
 
 rows=$(sed -n '/^### Audit log/,/^## /p' "$log" | grep -E '^\| [0-9]{2}\.[0-9]{2}\.[0-9]{4} \|' || true)
+mode=${1-}
+ref=origin/main
+# A gate and a go-live step judge what is checked out; /start judges main.
+case "$mode" in --gate | --task) ref=HEAD ;; esac
 
-if [ "${1-}" = --task ]; then
+if [ "$mode" = --task ]; then
   task=${2:?task ID missing}
-  if grep -qE "\| [^|]*\b${task//./\\.}\b[^|]*\|[^|]*\|$" <<<"$rows"; then
-    echo "audit for $task: recorded"
-  else
-    echo "audit for $task: due before the step that makes it reachable from outside"
+  # The task ID in the Scope column, the one before Result.
+  row=$(grep -E "\| [^|]*\b${task//./\\.}\b[^|]*\|[^|]*\|$" <<<"$rows" | tail -n 1 || true)
+else
+  row=$(grep -E '^\| [^|]+ \| (full|scoped)' <<<"$rows" | tail -n 1 || true)
+fi
+if [ -z "$row" ]; then
+  if [ "$mode" = --task ]; then
+    echo "audit for $task: due, none recorded; before the step that makes it reachable from outside"
+    exit 0
   fi
-  exit 0
+  echo "audit log: no full or scoped audit in $log" >&2
+  exit 2
 fi
 
-row=$(grep -E '^\| [^|]+ \| (full|scoped)' <<<"$rows" | tail -n 1)
-[ -n "$row" ] || { echo "audit log: no full or scoped audit in $log" >&2; exit 2; }
 date=$(cut -d'|' -f2 <<<"$row" | tr -d ' ')
 commit=$(grep -oE '`[0-9a-f]{7,40}`' <<<"$row" | head -n 1 | tr -d '`')
+# The log records commits on main: a feature-branch commit is gone after a squash merge.
+if ! git merge-base --is-ancestor "$commit" "$ref" 2>/dev/null; then
+  echo "audit log: commit $commit of $date is not on $ref; record the main commit the audit read" >&2
+  exit 2
+fi
 age=$(( ($(date +%s) - $(date -d "${date:6:4}-${date:3:2}-${date:0:2}" +%s)) / 86400 ))
-ref=origin/main
-[ "${1-}" = --gate ] && ref=HEAD
 files=$(git diff --name-only "$commit..$ref" -- "${exposed[@]}")
 changed=$(grep -c . <<<"$files" || true)
 
-echo "baseline: $date $commit, $age days ago"
-echo "exposed files changed since: $changed"
-if [ "${1-}" = --gate ]; then
-  if [ "$changed" -eq 0 ]; then echo "audit due: no"
-  elif [ "$age" -lt 30 ]; then echo "audit due: yes, scoped"
-  else echo "audit due: yes, full"; fi
-elif [ "$age" -ge 30 ] && [ "$changed" -gt 0 ]; then
-  echo "audit due: yes, scoped"
+if [ "$mode" = --task ]; then
+  echo "last audit for $task: $date $commit, $age days ago"
+  verdict="audit for $task: recorded"
+  [ "$changed" -eq 0 ] || verdict="audit for $task: due again, scoped to the files below; before the step that makes it reachable from outside"
 else
-  echo "audit due: no"
+  echo "baseline: $date $commit, $age days ago"
+  if [ "$mode" = --gate ]; then
+    if [ "$changed" -eq 0 ]; then verdict="audit due: no"
+    elif [ "$age" -lt 30 ]; then verdict="audit due: yes, scoped"
+    else verdict="audit due: yes, full"; fi
+  elif [ "$age" -ge 30 ] && [ "$changed" -gt 0 ]; then
+    verdict="audit due: yes, scoped"
+  else
+    verdict="audit due: no"
+  fi
 fi
+echo "exposed files changed since: $changed"
+[ "$changed" -eq 0 ] || sed 's/^/  /' <<<"$files"
+echo "$verdict"

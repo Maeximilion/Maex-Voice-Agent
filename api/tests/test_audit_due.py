@@ -19,6 +19,10 @@ SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "audit_due.sh"
 HEADER = "## 5. Security audit\n\n### Audit log\n\n| Date | Kind | Commit | Scope | Result |\n|---|---|---|---|---|\n"
 
 
+class Repo(tuple):
+    """commit, log, due to unpack; git and run as attributes."""
+
+
 def day(days_ago: int) -> str:
     return (dt.datetime.now(dt.UTC).date() - dt.timedelta(days=days_ago)).strftime(
         "%d.%m.%Y"
@@ -72,18 +76,24 @@ def repo(tmp_path):
         )
         (root / "docs" / "09_OPERATIONS_LEGAL.md").write_text(text, encoding="utf-8")
 
-    def due(*args):
-        git("update-ref", "refs/remotes/origin/main", "HEAD")
+    def run(*args, main="HEAD"):
+        git("update-ref", "refs/remotes/origin/main", main)
         return subprocess.run(
             [BASH, str(root / "scripts" / "audit_due.sh"), *args],
             env=env,
-            check=True,
             capture_output=True,
             text=True,
-        ).stdout
+        )
+
+    def due(*args):
+        result = run(*args)
+        assert result.returncode == 0, result.stderr
+        return result.stdout
 
     git("init", "-q")
-    return commit, log, due
+    handles = Repo((commit, log, due))
+    handles.git, handles.run = git, run
+    return handles
 
 
 def test_a_component_audit_keeps_the_baseline(repo):
@@ -95,6 +105,8 @@ def test_a_component_audit_keeps_the_baseline(repo):
     out = due()
     assert f"baseline: {day(40)} {full}" in out
     assert "exposed files changed since: 2" in out
+    # The files are named, so a scoped audit knows its scope.
+    assert "  api/tools/b.py\n  deploy/asterisk/c.conf\n" in out
     assert "audit due: yes, scoped" in out
 
 
@@ -129,3 +141,25 @@ def test_task_audit_matches_the_exact_task_id(repo):
     log((day(1), "component", base, "SIP fixes of T-10.13"))
     assert "T-10.13: recorded" in due("--task", "T-10.13")
     assert "T-10.1: due" in due("--task", "T-10.1")
+
+
+def test_a_task_audit_is_due_again_after_a_change(repo):
+    commit, log, due = repo
+    audited = commit("deploy/asterisk/extensions.conf")
+    log((day(2), "component", audited, "first outside call, T-10.1"))
+    assert "audit for T-10.1: recorded" in due("--task", "T-10.1")
+    commit("deploy/asterisk/extensions.conf")
+    out = due("--task", "T-10.1")
+    assert "audit for T-10.1: due again" in out
+    assert "  deploy/asterisk/extensions.conf\n" in out
+
+
+def test_a_commit_that_is_not_on_main_is_refused(repo):
+    commit, log, _ = repo
+    on_main = commit("api/core/a.py")
+    repo.git("checkout", "-qb", "feature")
+    gone = commit("api/core/b.py")
+    log((day(1), "full", gone, "all"))
+    result = repo.run(main=on_main)
+    assert result.returncode == 2
+    assert f"commit {gone} of {day(1)} is not on origin/main" in result.stderr

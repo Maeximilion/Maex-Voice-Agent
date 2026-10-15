@@ -97,9 +97,9 @@ A deliberate read of the code and configuration that face the outside, done at f
 
 Nothing else triggers an audit, and an audit never starts by itself: `/start` and `/gate` recommend it in one line and Maxi decides. A trigger that is not taken stays due and is named again at the next `/start`. A gate does not pass while an audit finding of severity P1 is open.
 
-A task whose step makes a component reachable from outside carries the note `Security audit before go-live (docs/09 §5)` in its row in `docs/07_WORKPACKAGES.md`; its audit is recorded with the task ID in the Scope column.
+A task whose step makes a component reachable from outside carries the note `Security audit before go-live (docs/09 §5)` in its row in `docs/07_WORKPACKAGES.md`; its audit is recorded with the task ID in the Scope column, and holds only while no exposed file changed since its commit; a later change makes it due again, scoped to the files changed.
 
-`bash scripts/audit_due.sh` does the arithmetic: it holds the exposed areas (everything that faces the outside or decides whether a call reaches the team: `api/core/`, `api/agent/`, `api/telephony/`, `api/tools/`, `api/gui/`, `api/events/`, `api/domain/calls/`, `api/domain/callbacks/`, `deploy/`, `n8n/`, Compose, the Dockerfile and requirements, CI workflows, the backup scripts; Markdown and tests left out), reads the baseline from the log below and prints the files changed since and the verdict. `--gate` for `/gate`, `--task <ID>` for a task with the note.
+`bash scripts/audit_due.sh` does the arithmetic: it holds the exposed areas (everything that faces the outside or decides whether a call reaches the team: `api/core/`, `api/agent/`, `api/telephony/`, `api/tools/`, `api/kitchen/`, `api/gui/`, `api/events/`, `api/domain/calls/`, `api/domain/callbacks/`, `deploy/`, `n8n/`, Compose, the Dockerfile and requirements, CI workflows, the backup scripts; Markdown and tests left out), reads the baseline from the log below and prints the files changed since, each by name, and the verdict. `--gate` for `/gate`, `--task <ID>` for a task with the note.
 
 Kinds of audit: **full** covers every exposed area and **scoped** every exposed file changed since the baseline; both move the baseline. **component** covers one path or component and does not move it, so a change elsewhere is never dropped from the next scoped audit.
 
@@ -108,7 +108,7 @@ Kinds of audit: **full** covers every exposed area and **scoped** every exposed 
 - Model Opus 5.5 at `xhigh`: the audit judges the fate of a call and the outage path (`CLAUDE.md`, "Model Routing"). Read-only subagents may split the scope; every finding is checked in the code by the main session before it is recorded.
 - Scoped: the files `bash scripts/audit_due.sh` lists as changed since the baseline, plus what they call. Full and component: the whole checklist on the areas or the component named.
 - Findings go to the open hardening issue (#252, or its successor) as one comment: severity, file and line, scenario, proposed fix. Severity: P1 reachable from outside the host, or able to lose or misroute a call, cost money or leak secrets or personal data; P2 needs another weakness first; P3 a note. A P1 becomes its own task before the trigger that called for the audit is passed.
-- One row per audit in the log below, with its kind. The baseline is the last row of kind full or scoped.
+- One row per audit in the log below, with its kind. The baseline is the last row of kind full or scoped. The Commit column holds the commit on `main` the audit read, never a feature-branch commit: a squash merge removes that one, and the script refuses a commit that is not on `main`.
 
 ### Checklist
 
