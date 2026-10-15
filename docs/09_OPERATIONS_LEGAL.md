@@ -90,25 +90,25 @@ A deliberate read of the code and configuration that face the outside, done at f
 
 | Trigger | Kind | Noticed by |
 |---|---|---|
-| Before the first call that comes in from outside the workbench (T-10.1 step 2 against the pilot's router, at the latest before G1) | full | `/start` step 5c |
-| Before every gate from G1 on | full; scoped (the diff since the last audit) if the last full audit is younger than 30 days | `/gate` step 1b |
-| Before a component becomes reachable from outside the host: the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | full, on that component | `/start` step 5c, when such a task is ready |
-| 30 days or more since the last audit, and files of the exposed areas (below) changed since its commit | scoped | `/start` step 5c |
+| Before the first call that comes in from outside the workbench (T-10.1 step 2 against the pilot's router, at the latest before G1) | component, on that path | `/task` step 0c, `/start` step 5c |
+| Before every gate from G1 on, when exposed files changed since the baseline | scoped if the baseline is younger than 30 days, else full | `/gate` step 1b |
+| Before a component becomes reachable from outside the host: the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | component, on that component | `/task` step 0c, `/start` step 5c |
+| 30 days or more since the baseline, and exposed files changed since its commit | scoped | `/start` step 5c |
 
 Nothing else triggers an audit, and an audit never starts by itself: `/start` and `/gate` recommend it in one line and Maxi decides. A trigger that is not taken stays due and is named again at the next `/start`. A gate does not pass while an audit finding of severity P1 is open.
 
-Exposed areas, as a git pathspec (`/start` uses it as it stands):
+A task whose step makes a component reachable from outside carries the note `Security audit before go-live (docs/09 §5)` in its row in `docs/07_WORKPACKAGES.md`; its audit is recorded with the task ID in the Scope column.
 
-```text
-api/core/ api/telephony/ api/tools/ api/gui/ api/events/ api/main.py api/config.py api/Dockerfile api/requirements.in api/requirements.txt deploy/ docker-compose.yml docker-compose.override.yml .github/workflows/ scripts/backup.sh scripts/restore.sh :!*.md :!api/tests/
-```
+`bash scripts/audit_due.sh` does the arithmetic: it holds the exposed areas (everything that faces the outside or decides whether a call reaches the team: `api/core/`, `api/agent/`, `api/telephony/`, `api/tools/`, `api/gui/`, `api/events/`, `api/domain/calls/`, `api/domain/callbacks/`, `deploy/`, `n8n/`, Compose, the Dockerfile and requirements, CI workflows, the backup scripts; Markdown and tests left out), reads the baseline from the log below and prints the files changed since and the verdict. `--gate` for `/gate`, `--task <ID>` for a task with the note.
+
+Kinds of audit: **full** covers every exposed area and **scoped** every exposed file changed since the baseline; both move the baseline. **component** covers one path or component and does not move it, so a change elsewhere is never dropped from the next scoped audit.
 
 ### How it runs
 
 - Model Opus 5.5 at `xhigh`: the audit judges the fate of a call and the outage path (`CLAUDE.md`, "Model Routing"). Read-only subagents may split the scope; every finding is checked in the code by the main session before it is recorded.
-- Scoped: only the files of `git diff --name-only <commit of the last row>..origin/main -- <exposed areas>`, plus what they call. Full: the whole checklist on the named components.
+- Scoped: the files `bash scripts/audit_due.sh` lists as changed since the baseline, plus what they call. Full and component: the whole checklist on the areas or the component named.
 - Findings go to the open hardening issue (#252, or its successor) as one comment: severity, file and line, scenario, proposed fix. Severity: P1 reachable from outside the host, or able to lose or misroute a call, cost money or leak secrets or personal data; P2 needs another weakness first; P3 a note. A P1 becomes its own task before the trigger that called for the audit is passed.
-- One row per audit in the log below. `/start` reads its last row.
+- One row per audit in the log below, with its kind. The baseline is the last row of kind full or scoped.
 
 ### Checklist
 
@@ -125,4 +125,4 @@ api/core/ api/telephony/ api/tools/ api/gui/ api/events/ api/main.py api/config.
 | Date | Kind | Commit | Scope | Result |
 |---|---|---|---|---|
 | 12.10.2026 | full, by hand | `141d412` | whole repository | hardening list in issue #252 |
-| 15.10.2026 | full | `a717ccc` | voice layer (`api/telephony/`, Asterisk), deployment (Compose, Caddy, backups, CI), agent and kitchen token paths, GUI auth, n8n | 1 P1, 6 P2, 6 P3 ([#252, comment of 15.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6188330460)); the P1 and the SIP points are T-10.13 |
+| 15.10.2026 | component | `a717ccc` | voice layer (`api/telephony/`, Asterisk), deployment (Compose, Caddy, backups, CI), agent and kitchen token paths, GUI auth, n8n | 1 P1, 6 P2, 6 P3 ([#252, comment of 15.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6188330460)); the P1 and the SIP points are T-10.13 |
