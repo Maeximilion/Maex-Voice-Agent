@@ -1,7 +1,7 @@
 """telephony/: port, provider-neutral call handler and the fake adapter (T-1.13).
 
 A call file is played through the fake adapter into the handler, which drives the
-same agent core as `sim/` and the evals. Checked are what the platform would be
+same agent core as `sim/` and the evals. Checked are what the line would be
 told to do (say, transfer, hang up) and what lands in the database, never the
 wording of the model (docs/08 §3) - except the sentences the caller must hear:
 the AI disclosure at the start and the outage sentence before a transfer.
@@ -349,7 +349,7 @@ def test_repeated_start_event_greets_once_and_logs_one_call(session, tenant):
     port.open("s-1", caller_id="+497215551234")
 
     handler.on_call_started("s-1")
-    handler.on_call_started("s-1")  # platform retry
+    handler.on_call_started("s-1")  # repeated start event
 
     assert len(port.says("s-1")) == 1
     assert (
@@ -386,7 +386,7 @@ def test_turn_after_the_agent_hung_up_is_ignored(session, tenant):
     assert port.hangups("s-1")
     said = len(port.says("s-1"))
 
-    handler.on_user_turn("s-1", "Ach, noch was.")  # late webhook
+    handler.on_user_turn("s-1", "Ach, noch was.")  # late event
     handler.on_call_ended("s-1")
     handler.on_call_ended("s-1")  # repeated end event
 
@@ -395,15 +395,15 @@ def test_turn_after_the_agent_hung_up_is_ignored(session, tenant):
     assert the_call(session, "s-1").outcome == "completed"
 
 
-def test_failed_transfer_is_raised_to_the_adapter(session, tenant):
-    """If the platform refuses the transfer, the handler cannot reach the team
-    itself. It raises, so the adapter answers the webhook with an error and the
-    platform's own fallback (docs/02 §5) takes the call."""
+def test_failed_transfer_is_raised_to_the_call_session(session, tenant):
+    """If the line refuses the transfer, the handler cannot reach the team
+    itself. It raises, so the call session ends as failed and the dialplan rings
+    the team (docs/20 §5)."""
 
     class RefusingTransfer(FakeTelephony):
         def transfer(self, session_id: str, target: str) -> None:
             super().transfer(session_id, target)
-            raise ConnectionError("platform refused the transfer")
+            raise ConnectionError("the line refused the transfer")
 
     set_mode(session, tenant.id, "paused")
     port = RefusingTransfer()
