@@ -1263,6 +1263,8 @@ def test_a_new_social_preview_is_reported_until_it_is_marked_uploaded(
 
 def test_mark_uploaded_needs_the_png(assets: Path) -> None:
     (assets / "social-preview.png").unlink()
+    # The copy carries the committed record of the upload; it must not be left.
+    (assets / ra.UPLOADED).unlink(missing_ok=True)
     assert ra.mark_uploaded() == 1
     assert not (assets / ra.UPLOADED).exists()
 
