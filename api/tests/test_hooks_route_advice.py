@@ -294,3 +294,21 @@ def test_every_advice_is_given_once_per_session(run):
     assert run(high) is not None
     assert run(xhigh) is not None
     assert run(high) is None
+
+
+def test_a_draft_in_the_gui_is_not_the_confirm_step(run):
+    assert run("Fix the draft badge color in the GUI") is None
+    out = run("Change how a draft order expires", "claude-opus-5-5", "high", sid="x")
+    assert "effort xhigh" in message(out)
+
+
+def test_a_search_asked_as_a_question_goes_to_haiku(run):
+    out = run("Can you search the repository for every menu_item_id reference?")
+    assert "claude-haiku-4-5 at effort none" in message(out)
+
+
+def test_fable_asked_for_by_name_is_kept(run):
+    prompt = "Perform the G1 gate review on Fable as requested"
+    assert run(prompt, "claude-fable-5-1", "high") is None
+    out = run(prompt, "claude-opus-5-5", "high", sid="opus")
+    assert "claude-fable-5-1 at effort high" in message(out)

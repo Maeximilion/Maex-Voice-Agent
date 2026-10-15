@@ -9,7 +9,7 @@
 #     otherwise -> classify the prompt by keyword and compare with the table
 # The user-level model-router.sh stays out of this repo (it yields to CLAUDE.md), so this
 # is the only router here. The keyword lists are a heuristic: tune them below.
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|\bdraft\b|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|draft (orders?|status|state|bookings?|reservations?|transactions?)|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
@@ -20,7 +20,7 @@ sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|im
 docpath='\.md\b|\bdocs/|readme'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
-search='^(please )?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
+search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
 change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|verschiebe)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
@@ -72,8 +72,11 @@ else
   # One line without paste wrappers, so ^ and $ below mean the start and end of the prompt.
   lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
+  # Fable only when asked for by name (gate review, stalled debugging): the table never picks it.
+  if grep -qiE '\bfable\b' <<<"$lower"; then
+    want=claude-fable-5-1 effort=high
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
-  if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
+  elif grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
     want=claude-haiku-4-5 effort=none
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.

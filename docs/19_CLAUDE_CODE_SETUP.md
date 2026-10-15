@@ -453,7 +453,7 @@ Delete the backups once the check passed.
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
 
 ```bash
-cd ~/Maex-Voice-Agent && claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench
+cd ~/Maex-Voice-Agent && ~/.local/bin/claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench
 ```
 
 The first start asks `Enable Remote Control? (y/n)` once; answer `y`. Each session it starts gets its own git worktree, so two sessions never write in the main folder. The server runs as long as the terminal stays open and the PC is on; `Ctrl+C` stops it. A plain interactive session that can also be followed from claude.ai is `claude-rc` without `server`.
@@ -481,7 +481,7 @@ A project in the desktop app is one coordinating chat that starts threads. Wheth
 
 If step 1 shows nothing although a plain local session on `main` does, the project chat does not load hooks: say so here, and the coordinating chat has to apply the table on its own (`CLAUDE.md` section 6, "Threads").
 
-| 5 | Ubuntu terminal: `cd ~/Maex-Voice-Agent && claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench`. Project chat: `Start a thread in Ubuntu (ubuntu-workbench) on Sonnet 5.5 at effort medium: run only uname -a and printenv CLAUDE_EFFORT and report.` | The thread runs in a worktree under `~/Maex-Voice-Agent`, reports `Linux ... microsoft-standard-WSL2`, Sonnet 5.5 and `medium`, and no routing line appears |
+| 5 | Ubuntu terminal: `cd ~/Maex-Voice-Agent && ~/.local/bin/claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench`. Project chat: `Start a thread in Ubuntu (ubuntu-workbench) on Sonnet 5.5 at effort medium: run only uname -a and printenv CLAUDE_EFFORT and report.` | The thread runs in a worktree under `~/Maex-Voice-Agent`, reports `Linux ... microsoft-standard-WSL2`, Sonnet 5.5 and `medium`, and no routing line appears |
 
 Results:
 
