@@ -361,7 +361,7 @@ their model files are the speech kit's, mounted read-only from `deploy/speech/ru
 worktree hard-links them from the main checkout, `docker-compose.yml`). Whisper asks for the
 graphics card; a host without one needs `deploy: !reset {}` for `voice` and
 `VOICE_EAR_DEVICE=cpu`, as `deploy/docker-compose.prod.yml` has for the EU server, where ear and
-mouth are services (§6); `!reset` needs Docker Compose 2.24 or later. `voice` does not start with
+mouth are services (§6); `!reset` needs Docker Compose 2.24.4 or later. `voice` does not start with
 an engine it cannot load or run: each loader runs its engine once at start (the ear 0.4 s, then
 0.1 s a run, 15.10.2026; on the processor only the detector, the ear's run would add 4.5 s to
 every start). A watchdog ends the process when one engine call works longer than 30 s (exit 70),
