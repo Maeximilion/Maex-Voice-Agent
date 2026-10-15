@@ -10,7 +10,7 @@
 - [ ] Tablet is the real device, held the way it hangs in the kitchen or at the counter, logged in, sound on, brightness as in operation
 - [ ] Operations view reachable from the tablet through Caddy (docs/13); the header shows the green dot "KI nimmt an"
 - [ ] Test data only, invented customers: at least two new orders (one pickup, one delivery), one with an option, one with a note; one red card ("Zettel nicht gedruckt"); one complaint callback; one reservation today
-- [ ] A second device or a text phone (`sim.cli`) ready to create a new order while the test runs
+- [ ] A second device or a text phone (`sim.cli`) ready to create a new order and a new callback while the test runs; these are the live arrivals of section 2a
 - [ ] A clock or the phone's stopwatch; this sheet; a pen
 
 | Field | Entry |
@@ -37,11 +37,11 @@
 
 Give them one by one, as a sentence a team member would say, never with the button name. Start the clock at the first task. Mark each: **OK** (done alone, first try) · **SLOW** (more than 20 s or two tries) · **HINT** (needed a hint) · **FAIL** (not done, or wrong thing done).
 
-| # | Task, as spoken | What counts as done | Taps allowed | Time (s) | Result | Stumble (what, where) |
+| # | Task, as spoken | What counts as done | Taps expected | Time (s) | Result | Stumble (what, where) |
 |---|---|---|---|---|---|---|
 | 1 | "A new order came in. Tell me what it is and when it is ready." | Reads pickup code, items and ready time aloud | 0 | | | |
 | 2 | "That order is fine, send it on." | Taps "Passt" on the right card | 1 | | | |
-| 3 | "The customer wanted a different dish, fix it." | Opens "Korrigieren", swaps the dish, picks the reason | 2 to 4 | | | |
+| 3 | "The customer wanted a different dish, fix it." | Opens "Korrigieren", taps "Tauschen", taps the number field, types the number, "Übernehmen", picks the reason | 5 plus the digits (rule 1 of section 1 does not cover this flow; the count is for the notes, not a fail) | | | |
 | 4 | "The slip did not print, send it again." | Finds the red card, taps "Nochmal senden" | 1 | | | |
 | 5 | "There is a complaint. Call the person back and mark it done." | Taps "Anrufen", then "Erledigt" | 2 | | | |
 | 6 | "Today we are out of dish 23." | Opens "Gericht aus", finds 23, switches it off | 2 to 3 | | | |
@@ -51,15 +51,24 @@ Give them one by one, as a sentence a team member would say, never with the butt
 | 10 | "Switch it back on." | Taps the button and confirms | 2 | | | |
 | 11 | "Which reservation is next today?" | Finds it in the column "Heute" | 0 | | | |
 
+### 2a. Live arrival (scored, section 1 rule 5)
+
+Before the tester's first tap, with the tablet untouched since loading, create one new order from the second device; later, while the tester is busy with task 6 or 7, create one new callback. Record:
+
+| Event | Sound played by itself (yes/no) | Tester noticed within 10 s (yes/no) | Notes |
+|---|---|---|---|
+| New order, before the first tap | | | |
+| New callback, during a task | | | |
+
+The first row answers the "Ton an" question of the status assumption of 18.09.2026: no sound before the first tap means the hint is needed.
+
 Free observation during the tasks (tick if seen):
 
-- [ ] A new card arrived by itself while the tester was busy; did they notice it? (sound, blink)
 - [ ] Tester tried to tap something that is not a button
 - [ ] Tester looked for a menu, a search or a back button
 - [ ] Tester asked "what does ... mean?" (note the word)
 - [ ] Tester could not read something from 2 m (code, time, dot)
 - [ ] A button was missed with a greasy or wet finger (note which)
-- [ ] The first tap on the page was needed before the callback tone played (docs/01_STATUS.md, assumption of 18.09.2026): was a "Ton an" hint missing?
 
 ---
 
@@ -95,14 +104,15 @@ Answers (short):
 | Tasks that needed a hint | at most 1 | |
 | Severity A stumbles | 0 | |
 | Total time of the tasks | within the 5 minutes | min |
+| Live arrivals noticed within 10 s (section 2a) | both | / 2 |
 
 **Verdict:** PASS · PASS WITH CHANGES · FAIL
 
 - **PASS:** all measures met, no A stumble.
-- **PASS WITH CHANGES:** all measures met but B stumbles that Maxi wants fixed before G1, or one A stumble fixed and retested by a second team member.
+- **PASS WITH CHANGES:** all measures met but B stumbles that Maxi wants fixed before G1.
 - **FAIL:** a measure missed. Fix the A stumbles, repeat the test with a different team member who has not seen the view.
 
-The thresholds and the two-tester rule are assumptions of this template (nothing was measured so far); Maxi changes them before the first test if he wants them harder.
+The thresholds and the two-tester rule (T-3.5 closes after two passing testers) are assumptions of this template (nothing was measured so far); Maxi changes them before the first test if he wants them harder.
 
 Next step (changes to make, who repeats the test):
 
@@ -112,5 +122,5 @@ Next step (changes to make, who repeats the test):
 
 1. Put the verdict and the list of changes in `docs/01_STATUS.md` (one row in the changelog, the open points of "Operating view" that the test settled, "Ton an" hint and "Ändern" on an option line included).
 2. Each A or B stumble becomes a task or an issue with the label `bug` or `enhancement` as fits; do not keep it only on this sheet.
-3. Repeat the test with a second team member after the fixes; a passing test needs two different testers.
+3. T-3.5 closes only after two different team members have each passed (PASS or PASS WITH CHANGES after the fixes); a first PASS still needs the second run.
 4. Do not keep the filled sheet in the repository; shred it or keep it in the team's own folder.
