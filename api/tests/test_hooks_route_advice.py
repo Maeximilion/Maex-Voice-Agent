@@ -76,6 +76,37 @@ def test_gui_and_docs_work_gets_sonnet_medium(run):
         effort="high",
     )
     assert "Sonnet 5.5 at effort medium" in out["systemMessage"]
+    # A stronger session is pointed at a thread, not told to switch up.
+    assert "fresh thread" in out["systemMessage"]
+
+
+BRIEF = (
+    "Route: claude-sonnet-5-5 medium\nUpdate docs/06_GUI.md for the migration screen."
+)
+
+
+def test_route_line_that_matches_the_thread_is_silent(run):
+    # The brief names "migration", which alone would ask for xhigh.
+    assert run(BRIEF, model="claude-sonnet-5-5", effort="medium") is None
+
+
+def test_route_line_that_the_thread_did_not_get_is_reported(run):
+    out = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
+    assert (
+        "the brief asks for claude-sonnet-5-5 at effort medium" in out["systemMessage"]
+    )
+    assert "session is on claude-opus-5-5, effort xhigh" in out["systemMessage"]
+
+
+def test_route_line_is_read_inside_a_tagged_brief(run):
+    out = run(f"<brief>\n{BRIEF}\n</brief>", model="claude-opus-5-5", effort="high")
+    assert "routing check" in out["systemMessage"]
+
+
+def test_route_line_without_effort_compares_the_model_only(run):
+    brief = "Route: claude-haiku-4-5 none\nFind every caller of confirm."
+    assert run(brief, model="claude-haiku-4-5", effort="") is None
+    assert "routing check" in run(brief, model="claude-sonnet-5-5")["systemMessage"]
 
 
 @pytest.mark.parametrize(
