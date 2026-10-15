@@ -4,7 +4,7 @@
 # reply with the same line (additionalContext). A hook cannot switch the model itself.
 #   SessionStart, PostModelSwitch -> remember the session's model
 #   UserPromptSubmit              -> two modes:
-#     a line "Route: <model-id> <effort>" in the prompt (the brief a coordinating session
+#     a brief whose first line is "Route: <model-id> <effort>" (what a coordinating session
 #       gives a thread) -> check the running model and effort against that line
 #     otherwise -> classify the prompt by keyword and compare with the table
 # The user-level model-router.sh stays out of this repo (it yields to CLAUDE.md), so this
@@ -12,6 +12,16 @@
 xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|\bconfirm|bestätig|escalat|eskal|transfer|outage|fallback|\bdraft\b'
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\bhooks?\b|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|\bimport|status update|templates?\b|\bjinja|htmx'
+# Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
+# prompt are the topic of the text, not code that decides.
+# ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
+docpath='\.md\b|\bdocs/|readme'
+codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
+# Pure lookups go to Haiku: a search verb and no verb that changes anything.
+search='^(please )?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
+change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|ändere|baue|schreibe|behebe|füge|lösche|erstelle)\b'
+# Answers that carry no task.
+ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
 
 input=$(cat)
 sid=$(jq -r '.session_id // empty' <<<"$input")
@@ -25,26 +35,46 @@ case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
 esac
 
 [ -z "$(jq -r '.agent_id // empty' <<<"$input")" ] || exit 0
-prompt=$(jq -r '.prompt // ""' <<<"$input")
+prompt=$(jq -r '.prompt // ""' <<<"$input" | tr -d '\r')
 
 family() { case "$1" in *haiku*) echo 1 ;; *sonnet*) echo 2 ;; *opus*) echo 3 ;; *fable*) echo 4 ;; *) echo 0 ;; esac; }
 level() { case "$1" in low) echo 1 ;; medium) echo 2 ;; high) echo 3 ;; xhigh) echo 4 ;; max) echo 5 ;; *) echo 0 ;; esac; }
 
-# A Route line wins over every filter below: a brief may arrive wrapped in a tag.
-route=$(grep -oiE '^Route: *claude-[a-z0-9.-]+( +(low|medium|high|xhigh|max|none))?' <<<"$prompt" | head -n 1)
+# The Route line counts only as the brief's first non-empty line, or right after a
+# wrapper tag (<brief>...), so a Route line quoted or pasted further down is just text.
+first=$(awk 'NF { print; exit }' <<<"$prompt")
+case "$first" in
+  "<pasted_content"*|"<!--"*) head= ;;
+  "<"*) head=${first#*>}; [ -n "${head// }" ] || head=$(awk 'NF { n++ } n == 2 { print; exit }' <<<"$prompt") ;;
+  *) head=$first ;;
+esac
+route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+( +(low|medium|high|xhigh|max|none))?' <<<"$head")
 if [ -n "$route" ]; then
-  read -r _ name effort <<<"${route,,}"
-  [ "$effort" = none ] && effort=
+  read -r _ want effort <<<"${route,,}"
 else
-  # Slash commands check the table themselves; machine-delivered prompts have nobody to
-  # switch; one-word answers ("ja", "weiter") carry no task.
-  case "$prompt" in "<pasted_content"*|"<!--"*) ;; "<"*|"/"*) exit 0 ;; esac
-  [ "${#prompt}" -ge 40 ] || exit 0
-  if grep -qiE "$xhigh" <<<"$prompt"; then name="Opus 5.5" effort=xhigh
-  elif grep -qiE "$opus" <<<"$prompt"; then name="Opus 5.5" effort=high
-  elif grep -qiE "$sonnet" <<<"$prompt"; then name="Sonnet 5.5" effort=medium
-  else name="Opus 5.5" effort=high; fi
+  lower=${prompt,,}
+  # /task and /start check the table themselves; a bare command carries no task of its own;
+  # machine-delivered prompts have nobody to switch.
+  case "$lower" in
+    "<pasted_content"*|"<!--"*) ;;
+    "/task"*|"/start"*|"<"*) exit 0 ;;
+    /*) [[ "$lower" == *" "* ]] || exit 0 ;;
+  esac
+  grep -qiE "$ack" <<<"$lower" && exit 0
+  if grep -qiE "$docpath" <<<"$lower" && ! grep -qiE "$codepath|alembic|migrations/" <<<"$lower"; then
+    want=claude-sonnet-5-5 effort=medium
+  elif grep -qiE "$xhigh" <<<"$lower"; then want=claude-opus-5-5 effort=xhigh
+  elif grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then want=claude-haiku-4-5 effort=none
+  elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
+  elif grep -qiE "$sonnet" <<<"$lower"; then want=claude-sonnet-5-5 effort=medium
+  else
+    # No keyword: the table's default, but not for a short line that names no work.
+    [ "$(wc -w <<<"$lower")" -ge 4 ] || exit 0
+    want=claude-opus-5-5 effort=high
+  fi
 fi
+# Haiku takes no effort setting: "none" means effort is not compared.
+[ "$effort" = none ] && effort=
 
 model=$(jq -r '.model // empty' <<<"$input")
 [ -n "$model" ] || model=$(cat "$state/$sid.model" 2>/dev/null)
@@ -56,16 +86,21 @@ if [ -z "$model" ]; then
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
 fi
 [ -n "$model" ] || model="unknown"
-have_effort=${CLAUDE_EFFORT:-$(jq -r '.effort // empty' <<<"$input")}
+# CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable; CLAUDE_EFFORT is what this
+# machine's sessions carry (CLAUDE.md, /task).
+have_effort=${CLAUDE_CODE_EFFORT_LEVEL:-${CLAUDE_EFFORT:-$(jq -r '.effort // empty' <<<"$input")}}
 
-want_f=$(family "${name,,}") have_f=$(family "$model")
-# Same model family and same effort: nothing to say. An effort that is unknown on either
-# side is not compared, so a missing variable does not nag on every prompt.
-[ "$want_f" = "$have_f" ] && { [ -z "$have_effort" ] || [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; } && exit 0
+want_f=$(family "$want") have_f=$(family "$model")
+# The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
+# match except where xhigh is wanted: that one is asked about once.
+if [[ "$model" == "$want"* ]]; then
+  if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then exit 0; fi
+  [ -n "$have_effort" ] || [ "$effort" = xhigh ] || exit 0
+fi
 
 now="session is on $model, effort ${have_effort:-unknown}"
 if [ -n "$route" ]; then
-  msg="routing check: the brief asks for $name at effort ${effort:-any}, but this $now."
+  msg="routing check: the brief asks for $want at effort ${effort:-any}, but this $now."
   # First time: stop before any work, so the starting session can switch this thread
   # (set_session_model / set_session_effort work on a thread it started, never on itself)
   # and send the brief again. Same mismatch after that resend: the switch did not take
@@ -74,16 +109,16 @@ if [ -n "$route" ]; then
   seen=$(grep -cx "$hash" "$state/$sid.seen" 2>/dev/null)
   echo "$hash" >> "$state/$sid.seen"
   case "${seen:-0}" in
-    0) ctx="Routing mismatch: do not start the task and use no tools. Reply with exactly this one line, then end your turn: ROUTE-MISMATCH want=$name ${effort:-any} have=$model ${have_effort:-unknown}. The session that started you switches your model and effort and sends the brief again." ;;
+    0) ctx="Routing mismatch: do not start the task and use no tools. Reply with exactly this one line, then end your turn: ROUTE-MISMATCH want=$want ${effort:-any} have=$model ${have_effort:-unknown}. The session that started you switches your model and effort and sends the brief again." ;;
     1) ctx="The brief was sent again but this thread still runs on the wrong setting: carry on with the task and name the mismatch in your report. $msg" ;;
     *) exit 0 ;;
   esac
   jq -n --arg m "$msg" --arg c "$ctx" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
   exit 0
-elif [ "$have_f" -lt "$want_f" ] || { [ "$have_f" = "$want_f" ] && [ "$(level "$have_effort")" -lt "$(level "$effort")" ]; }; then
-  msg="routing advice: this prompt fits $name at effort $effort (CLAUDE.md Model Routing); $now. Switch up in the model menu if you want, no need to resend."
+elif [ "$have_f" -lt "$want_f" ] || { [ "$have_f" = "$want_f" ] && { [[ "$model" != "$want"* ]] || [ "$(level "$have_effort")" -lt "$(level "$effort")" ]; }; }; then
+  msg="routing advice: this prompt fits $want at effort ${effort:-none} (CLAUDE.md Model Routing); $now. Switch in the model menu if you want, no need to resend."
 else
-  msg="routing advice: this prompt fits $name at effort $effort (CLAUDE.md Model Routing); $now. A coordinating session hands it to a fresh thread with that model and effort and a Route line; otherwise switching down saves tokens."
+  msg="routing advice: this prompt fits $want at effort ${effort:-none} (CLAUDE.md Model Routing); $now. A coordinating session hands it to a fresh thread with that model and effort and a Route line; otherwise switching down saves tokens."
 fi
 # The same advice once per session and state: a person who keeps the setting is not nagged.
 hash=$(cksum <<<"$msg")

@@ -16,7 +16,7 @@ import pytest
 from api.tests.test_scripts_backup import BASH
 
 HOOK = Path(__file__).resolve().parents[2] / ".claude" / "hooks" / "route_advice.sh"
-LONG = " bitte zuegig erledigen, danke"
+HOOKS_PROMPT = "Check the hooks and the settings of this project, please"
 
 
 @pytest.fixture
@@ -27,7 +27,14 @@ def run(tmp_path, request):
             pytest.fail(f"route advice tests need {missing}")
         pytest.skip(f"route advice tests need {missing}")
 
-    def _run(prompt, model="claude-sonnet-5-5", effort="medium", sid=None, **extra):
+    def _run(
+        prompt,
+        model="claude-sonnet-5-5",
+        effort="medium",
+        sid=None,
+        level=None,
+        **extra,
+    ):
         payload = {
             "session_id": sid or request.node.name,
             "hook_event_name": "UserPromptSubmit",
@@ -36,11 +43,15 @@ def run(tmp_path, request):
             **extra,
         }
         env = {
-            **os.environ,
-            "HOME": str(tmp_path),
-            "CLAUDE_EFFORT": effort,
-            "MSYS_NO_PATHCONV": "1",
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("CLAUDE_EFFORT", "CLAUDE_CODE_EFFORT_LEVEL")
         }
+        env |= {"HOME": str(tmp_path), "MSYS_NO_PATHCONV": "1"}
+        if effort:
+            env["CLAUDE_EFFORT"] = effort
+        if level:
+            env["CLAUDE_CODE_EFFORT_LEVEL"] = level
         out = subprocess.run(
             [BASH, str(HOOK)],
             input=json.dumps(payload),
@@ -54,87 +65,118 @@ def run(tmp_path, request):
     return _run
 
 
+def message(out):
+    return out["systemMessage"]
+
+
 def test_default_work_gets_opus_high(run):
-    out = run("Pruefe die Hooks und die Einstellungen im Projekt" + LONG)
-    assert "Opus 5.5 at effort high" in out["systemMessage"]
+    out = run(HOOKS_PROMPT)
+    assert "claude-opus-5-5 at effort high" in message(out)
     assert "decision" not in out
 
 
 def test_trigger_words_raise_effort_to_xhigh(run):
-    out = run(
-        "Aendere die Migration fuer die Lieferzone",
-        model="claude-opus-5-5",
-        effort="high",
-    )
-    assert "effort xhigh" in out["systemMessage"]
+    out = run("Fix the migration for the delivery zone", "claude-opus-5-5", "high")
+    assert "effort xhigh" in message(out)
 
 
-def test_gui_and_docs_work_gets_sonnet_medium(run):
-    out = run(
-        "Passe das GUI Template und die Docs an" + LONG,
-        model="claude-opus-5-5",
-        effort="high",
-    )
-    assert "Sonnet 5.5 at effort medium" in out["systemMessage"]
-    # A stronger session is pointed at a thread, not told to switch up.
-    assert "fresh thread" in out["systemMessage"]
+def test_gui_work_gets_sonnet_medium_and_a_stronger_session_a_thread(run):
+    out = run("Adjust the GUI template for the order list", "claude-opus-5-5", "high")
+    assert "claude-sonnet-5-5 at effort medium" in message(out)
+    assert "fresh thread" in message(out)
 
 
-BRIEF = (
-    "Route: claude-sonnet-5-5 medium\nUpdate docs/06_GUI.md for the migration screen."
-)
+def test_docs_only_prompt_stays_on_sonnet_despite_hard_rule_words(run):
+    prompt = "Update docs/03_DATA_MODEL.md to correct a typo in the migration section"
+    assert run(prompt) is None
+    out = run(prompt + " and in db/migrations/007.py", sid="code")
+    assert "effort xhigh" in message(out)
+
+
+def test_pure_search_goes_to_haiku(run):
+    out = run("Search the repository for every reference to route_advice")
+    assert "claude-haiku-4-5 at effort none" in message(out)
+    assert run("Find and fix every caller of the hook", sid="fix") is not None
+
+
+def test_short_task_is_routed_and_answers_are_not(run):
+    assert "effort xhigh" in message(run("Fix migration downgrade"))
+    assert run("ok, weiter") is None
+
+
+def test_slash_commands_without_their_own_check_are_routed(run):
+    out = run('/bug "Migration fails while upgrading the schema"')
+    assert "effort xhigh" in message(out)
+
+
+def test_full_model_id_is_compared(run):
+    out = run(HOOKS_PROMPT, model="claude-opus-4-6", effort="high")
+    assert "claude-opus-5-5 at effort high" in message(out)
+    assert run(HOOKS_PROMPT, "claude-opus-5-5[1m]", "high", sid="suffix") is None
+
+
+def test_claude_code_effort_variable_is_read(run):
+    out = run("Fix the migration downgrade", "claude-opus-5-5", effort="", level="high")
+    assert "effort high" in message(out)
+
+
+def test_unknown_effort_is_asked_about_only_for_xhigh(run):
+    assert run(HOOKS_PROMPT, "claude-opus-5-5", effort="") is None
+    out = run("Fix the migration downgrade", "claude-opus-5-5", "", sid="x")
+    assert "effort unknown" in message(out)
+
+
+BRIEF = "Route: claude-sonnet-5-5 medium\nUpdate the GUI screen for the migration."
 
 
 def test_route_line_that_matches_the_thread_is_silent(run):
     # The brief names "migration", which alone would ask for xhigh.
-    assert run(BRIEF, model="claude-sonnet-5-5", effort="medium") is None
-
-
-def test_route_line_that_the_thread_did_not_get_is_reported(run):
-    out = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
-    assert (
-        "the brief asks for claude-sonnet-5-5 at effort medium" in out["systemMessage"]
-    )
-    assert "session is on claude-opus-5-5, effort xhigh" in out["systemMessage"]
+    assert run(BRIEF, "claude-sonnet-5-5", "medium") is None
 
 
 def test_mismatch_stops_once_then_carries_on_then_is_silent(run):
-    first = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
+    first = run(BRIEF, "claude-opus-5-5", "xhigh")
+    assert "the brief asks for claude-sonnet-5-5 at effort medium" in message(first)
     context = first["hookSpecificOutput"]["additionalContext"]
     assert "do not start the task" in context
-    assert (
-        "ROUTE-MISMATCH want=claude-sonnet-5-5 medium have=claude-opus-5-5 xhigh"
-        in context
-    )
+    assert "ROUTE-MISMATCH want=claude-sonnet-5-5 medium" in context
+    assert "have=claude-opus-5-5 xhigh" in context
     # The resend still on the wrong setting: no second stop, no loop.
-    second = run(BRIEF, model="claude-opus-5-5", effort="xhigh")
+    second = run(BRIEF, "claude-opus-5-5", "xhigh")
     assert "carry on" in second["hookSpecificOutput"]["additionalContext"]
-    assert run(BRIEF, model="claude-opus-5-5", effort="xhigh") is None
+    assert run(BRIEF, "claude-opus-5-5", "xhigh") is None
 
 
 def test_switched_thread_gets_the_resent_brief_without_a_note(run):
-    assert run(BRIEF, model="claude-opus-5-5", effort="xhigh") is not None
-    assert run(BRIEF, model="claude-sonnet-5-5", effort="medium") is None
+    assert run(BRIEF, "claude-opus-5-5", "xhigh") is not None
+    assert run(BRIEF, "claude-sonnet-5-5", "medium") is None
 
 
-def test_route_line_is_read_inside_a_tagged_brief(run):
-    out = run(f"<brief>\n{BRIEF}\n</brief>", model="claude-opus-5-5", effort="high")
-    assert "routing check" in out["systemMessage"]
+def test_route_line_is_read_after_a_wrapper_tag(run):
+    out = run(f"<brief>\n{BRIEF}\n</brief>", "claude-opus-5-5", "high")
+    assert "routing check" in message(out)
+
+
+def test_route_line_further_down_is_only_text(run):
+    prompt = f"Update this hook, the fixture reads:\nRoute: claude-haiku-4-5 none\n{HOOKS_PROMPT}"
+    out = run(prompt, "claude-haiku-4-5", effort="")
+    assert "routing advice: this prompt fits claude-opus-5-5" in message(out)
 
 
 def test_route_line_without_effort_compares_the_model_only(run):
     brief = "Route: claude-haiku-4-5 none\nFind every caller of confirm."
-    assert run(brief, model="claude-haiku-4-5", effort="") is None
-    assert "routing check" in run(brief, model="claude-sonnet-5-5")["systemMessage"]
+    assert run(brief, "claude-haiku-4-5", effort="") is None
+    assert "routing check" in message(run(brief, "claude-sonnet-5-5", sid="other"))
 
 
 @pytest.mark.parametrize(
     "prompt, extra",
     [
-        ("ja weiter", {}),
-        ("/task T-1.2 bitte jetzt sofort starten" + LONG, {}),
-        ("<task-notification>done</task-notification>" + LONG, {}),
-        ("Pruefe die Hooks im Projekt" + LONG, {"agent_id": "sub1"}),
+        ("ja", {}),
+        ("/task T-1.2 start it now without further questions", {}),
+        ("/done", {}),
+        ("<task-notification>done</task-notification> " + HOOKS_PROMPT, {}),
+        (HOOKS_PROMPT, {"agent_id": "sub1"}),
     ],
 )
 def test_prompts_without_a_task_are_left_alone(run, prompt, extra):
@@ -142,7 +184,6 @@ def test_prompts_without_a_task_are_left_alone(run, prompt, extra):
 
 
 def test_matching_session_is_silent_and_advice_is_given_once(run):
-    prompt = "Pruefe die Hooks und die Einstellungen im Projekt" + LONG
-    assert run(prompt, model="claude-opus-5-5", effort="high") is None
-    assert run(prompt, sid="again") is not None
-    assert run(prompt, sid="again") is None
+    assert run(HOOKS_PROMPT, "claude-opus-5-5", "high") is None
+    assert run(HOOKS_PROMPT, sid="again") is not None
+    assert run(HOOKS_PROMPT, sid="again") is None
