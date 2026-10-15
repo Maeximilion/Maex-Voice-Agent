@@ -34,7 +34,12 @@
         request_body {
             max_size 256KB
         }
-        reverse_proxy api:8000
+        # The view answers only requests that carry this secret, so a container
+        # on the Docker network cannot reach it around the Basic-Auth above
+        # (api/core/auth.py). Set here, it replaces a header a client sent.
+        reverse_proxy api:8000 {
+            header_up X-Maex-Proxy-Secret "{env.GUI_PROXY_SECRET}"
+        }
     }
     handle {
         respond 404

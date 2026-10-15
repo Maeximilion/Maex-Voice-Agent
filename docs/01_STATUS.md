@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.1
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.2
 
 ---
 
 ## Summary
+
+**The operations view answers only requests that came through Caddy (T-9.7, 15.10.2026).** Since Asterisk, a service that takes outside input, shares the Docker network with the API, Caddy's Basic-Auth alone was not enough (security audit, #252 finding 6). Maxi chose the smaller of two fixes: Caddy sends a secret header, `GUI_PROXY_SECRET`, and every route of `/gui` checks it outside dev and test. A server without the secret locks the tablet out, so a deploy checks the tablet. Separate Docker networks, which would protect the database, n8n and Asterisk as well, are noted as T-9.8 for later.
 
 **The workbench's model setup runs the Ollama installer only when its checksum matches (#252, 15.10.2026).** `scripts/setup_local_llm.sh` fetched `ollama.com/install.sh` and ran whatever came back. It now fetches `install.sh` of the Ollama 0.35.1 release on GitHub, the version the numbers in docs/18 §5 were measured with, checks it against the SHA-256 in the script head and stops with exit code 1 before running it on a mismatch; `OLLAMA_VERSION=0.35.1` makes the installer fetch the archive of the same release. Run in an Ubuntu 24.04 container with the installer run stubbed: matching checksum runs it with the version, a changed checksum stops with the message, `--dry-run` prints the check; `api/tests/test_scripts_setup_local_llm.py` holds the same three cases with a stubbed download (Codex, PR #314). **Left open:** the installer itself downloads the program archive from ollama.com without a checksum of its own (pinned by version, not by digest); closing that means installing the archive without the official installer. Workbench only, invented data only.
 
@@ -549,6 +551,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.2 · 15.10.2026:** T-9.7: the operations view answers only requests with Caddy's secret header (#252 finding 6); separate networks noted as T-9.8
 - **v2.3.1 · 15.10.2026:** #252: Ollama installer pinned to 0.35.1 and checked by SHA-256 in setup_local_llm.sh
 - **v2.3.0 · 15.10.2026:** Security audit at fixed triggers (docs/09 §5, /start 5c, /gate 1b); audit of 15.10.2026: one P1 in the dialplan and two SIP points as T-10.13, six P2/P3 in #252
 - **v2.2.29 · 15.10.2026:** Social preview uploaded by Maxi and recorded with mark-uploaded (Codex on 7ebf1d0: the older status note no longer calls it open)

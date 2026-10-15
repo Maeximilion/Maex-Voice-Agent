@@ -209,3 +209,15 @@ def test_mount_helpers_read_both_spellings():
     assert _is_bind("./api:/app/api") and not _is_bind("pgdata:/var/lib/postgresql")
     long_form = {"type": "bind", "source": ".", "target": "/x", "read_only": True}
     assert _target(long_form) == "/x" and _read_only(long_form) and _is_bind(long_form)
+
+
+def test_the_gui_proxy_secret_reaches_only_caddy_and_the_api():
+    """The secret that opens the view (#252 finding 6) is for Caddy, which sends
+    it, and the API, which checks it; the API gets it with `.env`."""
+    base, production = _services(_load(BASE)), _services(_load(PROD))
+    assert "GUI_PROXY_SECRET" not in (base["api"].get("environment") or {})
+    for service in ("dispatcher", "voice"):
+        assert base[service]["environment"]["GUI_PROXY_SECRET"] == ""
+    assert production["caddy"]["environment"]["GUI_PROXY_SECRET"] == (
+        "${GUI_PROXY_SECRET:-}"
+    )

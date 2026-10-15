@@ -92,7 +92,10 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
-    environment: *without_the_owner
+    environment:
+      <<: *without_the_owner
+      # The view's proxy secret is for the API and Caddy only.
+      GUI_PROXY_SECRET: ""
     command: python -m api.jobs.cold_path
     depends_on:
       db:
@@ -119,6 +122,8 @@ services:
       <<: *without_the_owner
       # Its own secret, from .env by interpolation.
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
+      # The view's proxy secret is for the API and Caddy only.
+      GUI_PROXY_SECRET: ""
     # Not root, from the start (docs/01 open points): it reads its mounts and
     # writes nothing there.
     user: "10001:10001"

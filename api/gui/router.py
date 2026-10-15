@@ -20,6 +20,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
 from api.core.time import to_local
@@ -39,7 +40,10 @@ TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES))
-router = APIRouter(prefix="/gui", tags=["gui"])
+# Every page, fragment and the event stream: only what came through Caddy (outside dev).
+router = APIRouter(
+    prefix="/gui", tags=["gui"], dependencies=[Depends(require_gui_proxy)]
+)
 logger = get_logger("api.gui.router")
 
 NO_TENANT = "Keine Betriebsdaten gefunden. Bitte das Team benachrichtigen."
