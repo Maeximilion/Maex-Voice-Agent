@@ -125,3 +125,4 @@ api/core/ api/telephony/ api/tools/ api/gui/ api/events/ api/main.py api/config.
 | Date | Kind | Commit | Scope | Result |
 |---|---|---|---|---|
 | 12.10.2026 | full, by hand | `141d412` | whole repository | hardening list in issue #252 |
+| 15.10.2026 | full | `a717ccc` | voice layer (`api/telephony/`, Asterisk), deployment (Compose, Caddy, backups, CI), agent and kitchen token paths, GUI auth, n8n | 1 P1, 6 P2, 6 P3 ([#252, comment of 15.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6188330460)); the P1 and the SIP points are T-10.13 |
