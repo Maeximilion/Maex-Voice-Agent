@@ -1,4 +1,4 @@
-"""Provider-neutral call handler: platform events in, agent core and call log behind.
+"""Provider-neutral call handler: events from the line in, agent core and call log behind.
 
 Every adapter feeds this one handler, so what happens on a call does not depend on
 the provider (docs/11 §telephony). The code, not the model, says the AI disclosure
@@ -82,7 +82,7 @@ _GOODBYE = re.compile(
 
 # Keys other than digits (`*`, `#`) only end an entry on the keypad.
 _DIGIT = re.compile(r"[0-9]")
-# Closed calls are remembered so a late webhook is ignored instead of being read
+# Closed calls are remembered so a late event is ignored instead of being read
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
 
@@ -144,12 +144,12 @@ class CallHandler:
         self._ended_while_starting: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
 
-    # -- events from the platform ------------------------------------------------
+    # -- events from the line ----------------------------------------------------
 
     def on_call_started(self, session_id: str) -> None:
         with self._lock:
             if self._known(session_id):
-                return  # platform retry: one call row, one greeting
+                return  # repeated start event: one call row, one greeting
             self._starting.add(session_id)
 
         session: Session | None = None
@@ -356,8 +356,9 @@ class CallHandler:
 
     def _fail(self, session_id: str, live: _LiveCall | None) -> None:
         """Outage sentence, then the team. The sentence is best effort, the
-        transfer is not: if the platform refuses it, the call is logged as an
-        error at once and the error goes to the adapter."""
+        transfer is not: if the line refuses it, the call is logged as an
+        error at once and the error is raised to the call session, which ends as
+        failed so the dialplan rings the team (docs/20 §5)."""
         with self._lock:
             self._live.pop(session_id, None)
             self._ending.pop(session_id, None)
@@ -380,7 +381,7 @@ class CallHandler:
             self._port.transfer(session_id, target)
         except Exception:
             logger.exception(
-                "transfer to the team failed, the platform fallback has to take the call",
+                "transfer to the team failed, the dialplan has to ring the team",
                 extra={"extra": {"session_id": session_id}},
             )
             # No end of the leg will be reported for a transfer that never began.

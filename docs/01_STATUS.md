@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.27
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.28
 
 ---
 
@@ -545,6 +545,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.28 · 15.10.2026:** telephony: comments, docstrings and the failed-transfer log line in handler.py, port.py and __init__.py no longer describe a hosted platform with its own fallback; the call session ends as failed and the dialplan rings the team (docs/20 §5). No behaviour change.
 - **v2.2.27 · 15.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions; the final log write unbounded, hang-up during the start, model cost on phone calls (#207)
 - **v2.2.26 · 15.10.2026:** Codex round 2 on PR #307: a crash of the image check fails the maintenance run; one P2 noted
 - **v2.2.25 · 15.10.2026:** T-0.11: the maintenance run reports stale README images and the social preview in the decision issue
