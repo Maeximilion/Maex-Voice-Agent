@@ -360,14 +360,21 @@ Built with T-1.11 part 2: the engines' packages are in the target `voice` of `ap
 their model files are the speech kit's, mounted read-only from `deploy/speech/run/models` (a
 worktree hard-links them from the main checkout, `docker-compose.yml`). Whisper asks for the
 graphics card; a host without one needs `deploy: !reset {}` for `voice` and
-`VOICE_EAR_DEVICE=cpu`. `voice` does not start with an engine it cannot load. A watchdog ends
-the process when one engine call takes longer than 30 s (exit 70), and Compose starts it again:
+`VOICE_EAR_DEVICE=cpu`, as `deploy/docker-compose.prod.yml` has for the EU server, where ear and
+mouth are services (§6). `voice` does not start with an engine it cannot load or run: each loader
+runs its engine once at start (the ear 0.4 s, then 0.1 s a run, 15.10.2026). A watchdog ends
+the process when one engine call works longer than 30 s (exit 70), and Compose starts it again:
 a thread cannot be cancelled, and a hung inference would hold the model every later call needs.
+Each engine takes one call at a time, and the wait for it does not count. With the ear on the
+processor the limit is 600 s: it takes about its audio's length for a sentence there, and up to
+six passes when it is unsure.
 The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
 that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the
-goodbye was played, and as `error` when the line fails on it. That last write is not bounded:
-nobody waits on it, and a lock held for a moment must not leave the call without an end. A call
+goodbye was played, and as `error` when the line fails on it; a hangup the line fails to carry
+out after the goodbye is still a hangup. That last write waits up to 30 s on a lock instead of
+the 2 s of a turn: nobody waits on it, and a lock held for a moment must not leave the call
+without an end; a lock past that leaves it open, as a crash does (docs/01, open points). A call
 whose leg ends while it is still being opened is closed once it is open, with no greeting. The
 call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 

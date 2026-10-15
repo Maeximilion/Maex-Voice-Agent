@@ -9,6 +9,7 @@ dialplan does when our leg is gone. No network, no Asterisk.
 import asyncio
 import base64
 import json
+import threading
 import time
 
 import pytest
@@ -490,6 +491,9 @@ def startable(monkeypatch):
         "env": "test",
     }.items():
         monkeypatch.setattr(settings, name, value)
+    # No watchdog thread is left behind: it would end the test process with
+    # `os._exit` once a watched call took long.
+    monkeypatch.setattr(voice_app.Watchdog, "start", lambda self: None)
     return monkeypatch
 
 
@@ -533,15 +537,18 @@ def test_the_service_does_not_start_without_a_model(startable):
 def its_database(startable, migrated_db_url, tenant):  # noqa: F811
     startable.setattr(settings, "tenant_name", tenant.name)
     startable.setattr(settings, "team_phone", "+4972215550999")
-    startable.setattr(
-        voice_app, "SessionLocal", sessionmaker(bind=create_engine(migrated_db_url))
-    )
-    startable.setattr(
-        voice_app,
-        "bounded_sessions",
-        lambda ms: bounded_sessions(ms, url=migrated_db_url),
-    )
-    return startable
+    engines = [create_engine(migrated_db_url)]
+    startable.setattr(voice_app, "SessionLocal", sessionmaker(bind=engines[0]))
+
+    def bounded(ms: int) -> sessionmaker:
+        sessions = bounded_sessions(ms, url=migrated_db_url)
+        engines.append(sessions.kw["bind"])
+        return sessions
+
+    startable.setattr(voice_app, "bounded_sessions", bounded)
+    yield startable
+    for engine in engines:
+        engine.dispose()
 
 
 def test_the_service_starts_for_its_tenant(its_database):
@@ -630,8 +637,9 @@ def test_the_mouth_is_watched_while_it_speaks():
 def test_ear_and_mouth_that_cannot_be_loaded_keep_the_service_down(
     its_database, tmp_path
 ):
-    """Without the engines' packages (the API's image) or without their model
-    files: refused at start, and the dialplan rings the team meanwhile."""
+    """Without the engines' packages, as here in the API's image: refused at
+    start, and the dialplan rings the team meanwhile. Without their model files
+    in the image of `voice`: test_telephony_engine_loading.py."""
     its_database.setattr(voice_app, "MODELS", tmp_path)
     its_database.setattr(settings, "voice_ear", "whisper")
     with pytest.raises(RuntimeError, match="could not be loaded"):
@@ -648,3 +656,161 @@ def test_the_phone_line_waits_on_the_database_no_longer_than_its_bound(its_datab
         assert db.scalar(text("show statement_timeout")) == (
             f"{voice_app.DB_TIMEOUT_MS // 1000}s"
         )
+
+
+def test_a_call_that_waits_for_the_engine_is_not_taken_for_a_hang():
+    """One model serves every call of the process. A call queued behind
+    another is not stuck: only the time the engine works on it counts (ultra
+    review on PR #298)."""
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    runs = [(threading.Event(), threading.Event()) for _ in range(2)]
+
+    def engine(running: threading.Event, done: threading.Event) -> str:
+        running.set()
+        done.wait(5)
+        return ""
+
+    transcribe = watchdog.watched("ear", engine)
+    first = threading.Thread(target=transcribe, args=runs[0])
+    first.start()
+    assert runs[0][0].wait(5)
+    clock[0] += 1.0
+    second = threading.Thread(target=transcribe, args=runs[1])
+    second.start()
+    time.sleep(0.2)  # the second call is in line now
+    clock[0] += 28.0  # the first worked 29 s
+    runs[0][1].set()
+    assert runs[1][0].wait(5)
+    clock[0] += 3.0  # the second waited 28 s and worked 3
+    watchdog.check()
+    runs[1][1].set()
+    first.join(5)
+    second.join(5)
+    assert end.codes == []
+
+
+def test_the_mouth_counts_only_the_time_it_speaks():
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    speaking = {text: threading.Event() for text in ("Eins.", "Zwei.")}
+    done = {text: threading.Event() for text in ("Eins.", "Zwei.")}
+
+    class Mouth:
+        def speak(self, text):
+            speaking[text].set()
+            done[text].wait(5)
+            yield b"\x01\x00"
+
+    mouth = voice_app.WatchedMouth(Mouth(), watchdog)
+    calls = [
+        threading.Thread(target=lambda text=text: b"".join(mouth.speak(text)))
+        for text in ("Eins.", "Zwei.")
+    ]
+    calls[0].start()
+    assert speaking["Eins."].wait(5)
+    calls[1].start()
+    time.sleep(0.2)  # the second sentence is in line now
+    clock[0] += 29.0
+    done["Eins."].set()
+    assert speaking["Zwei."].wait(5)
+    clock[0] += 29.0  # the second sentence waited 29 s and is spoken for 29
+    watchdog.check()
+    done["Zwei."].set()
+    for call in calls:
+        call.join(5)
+    assert end.codes == []
+
+
+@pytest.mark.parametrize(
+    ("device", "limit"),
+    [
+        ("cuda", voice_app.ENGINE_HANG_SECONDS),
+        ("cpu", voice_app.ENGINE_HANG_SECONDS_ON_CPU),
+    ],
+)
+def test_on_the_processor_the_watchdog_allows_the_ear_its_minutes(
+    its_database, device, limit
+):
+    """On the processor the ear takes about its audio's length for a
+    sentence, and more passes when it is unsure: a slow run there is no hang."""
+    limits = []
+
+    class Recording(voice_app.Watchdog):
+        def __init__(self, **kwargs):
+            limits.append(kwargs.get("limit"))
+            super().__init__(**kwargs)
+
+    its_database.setattr(voice_app, "Watchdog", Recording)
+    its_database.setattr(settings, "voice_ear_device", device)
+    voice_from_settings()
+    assert limits == [limit]
+
+
+@pytest.fixture
+def stand_in_engines(monkeypatch):
+    """The engines' classes stand in for the packages, which only the image of
+    `voice` has; what the loaders do with them is checked here."""
+    from api.telephony.adapters import stt_whisper, tts_piper
+
+    runs: list[tuple[str, object]] = []
+
+    class Engine:
+        def __init__(self, model, models, **kwargs):
+            pass
+
+        def transcribe(self, pcm: bytes, terms: list[str]) -> str:
+            runs.append(("ear", len(pcm)))
+            return ""
+
+    class Mouth:
+        def speak(self, text: str):
+            runs.append(("mouth", text))
+            yield b"\x01\x00"
+
+    def piper(voice):
+        runs.append(("voice", voice.name))
+        return Mouth()
+
+    monkeypatch.setattr(stt_whisper, "Whisper", Engine)
+    monkeypatch.setattr(stt_whisper, "silero", lambda: lambda window: 0.0)
+    monkeypatch.setattr(tts_piper, "piper", piper)
+    return runs
+
+
+def test_each_engine_has_run_once_before_the_service_answers(stand_in_engines):
+    """An engine that loads may still fail on its first run, when the
+    graphics card's libraries are set up: at start, where the service is
+    refused, not in a caller's first sentence (ultra review on PR #298)."""
+    watchdog = voice_app.Watchdog()
+    voice_app._whisper(watchdog)
+    voice_app._piper(watchdog)
+    assert [kind for kind, _ in stand_in_engines] == ["ear", "voice", "mouth"]
+    assert stand_in_engines[0][1] > 0  # audio, not an empty buffer
+
+
+def test_the_mouth_speaks_the_engines_own_voice_unless_one_is_set(
+    stand_in_engines, monkeypatch
+):
+    from api.telephony.adapters import tts_piper
+
+    monkeypatch.setattr(settings, "voice_mouth_voice", "")
+    voice_app._piper(voice_app.Watchdog())
+    monkeypatch.setattr(settings, "voice_mouth_voice", "de_DE-other-high")
+    voice_app._piper(voice_app.Watchdog())
+    voices = [name for kind, name in stand_in_engines if kind == "voice"]
+    assert voices == [f"{tts_piper.VOICE}.onnx", "de_DE-other-high.onnx"]
+
+
+def test_an_engine_that_loads_but_cannot_run_keeps_the_service_down(
+    its_database, stand_in_engines, monkeypatch
+):
+    from api.telephony.adapters import stt_whisper
+
+    def cannot_run(self, pcm, terms):
+        raise RuntimeError("Unable to load libcudnn_ops.so")
+
+    monkeypatch.setattr(stt_whisper.Whisper, "transcribe", cannot_run)
+    its_database.setattr(settings, "voice_ear", "whisper")
+    with pytest.raises(RuntimeError, match="could not be loaded"):
+        voice_from_settings()

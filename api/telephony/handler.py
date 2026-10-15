@@ -85,6 +85,12 @@ _DIGIT = re.compile(r"[0-9]")
 # Closed calls are remembered so a late event is ignored instead of being read
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
+# How long the log of a call that is over waits on a lock. Longer than the
+# line's bound for a turn (`telephony/app.py`, `DB_TIMEOUT_MS`): nobody waits
+# on it, and a lock held for a moment must not cost the call its end (Codex on
+# PR #298). Not for ever: the call's thread and its connection are given back
+# when a lock is not coming free.
+END_CALL_TIMEOUT_MS = 30_000
 
 logger = get_logger(__name__)
 
@@ -105,6 +111,8 @@ class _LiveCall:
     llm: LLMClient | None = None
     # Silences in a row that the code has answered with a question.
     silences: int = 0
+    # Its log is written, or being written (`_finish`).
+    finished: bool = False
 
 
 class CallHandler:
@@ -365,7 +373,9 @@ class CallHandler:
             self._starting.discard(session_id)
             self._ended_while_starting.discard(session_id)
             self._remember_closed(session_id)
-            if live is not None:
+            # Not for a call whose end was handled already: an adapter on
+            # more than one thread can report it in the meantime.
+            if live is not None and not live.finished:
                 self._ending[session_id] = (live, "error")
         if live is not None:
             try:
@@ -394,17 +404,25 @@ class CallHandler:
     def _finish(self, live: _LiveCall, outcome: Outcome | None = None) -> None:
         """Write the call log and release the session. Never raises: the call has
         already gone to the team or ended, and a failure here must not send it
-        through the outage path a second time."""
+        through the outage path a second time. Once per call: the end of the
+        leg and a failure may both come to it."""
+        with self._lock:
+            if live.finished:
+                return
+            live.finished = True
         derived, intent = call_outcome(live.state)
         try:
             usage = call_usage(live.llm)
             log_usage(logger, live.call_id, usage)
-            # The line may bound its statements (`db.bounded_sessions`). A
-            # guest waits on a turn, nobody waits on the log of a call that is
-            # over: a lock held for a moment must not cost the call its end
-            # and outcome (Codex on PR #298). Unbounded for this transaction
-            # only; the commit of `end_call` ends it.
-            live.session.execute(text("set local statement_timeout = 0"))
+            # A statement that failed and was caught leaves the transaction
+            # aborted, and nothing more would run in it.
+            live.session.rollback()
+            # The line bounds its statements (`db.bounded_sessions`); this
+            # write waits longer, in this transaction only, which the commit
+            # of `end_call` ends.
+            live.session.execute(
+                text(f"set local statement_timeout = {END_CALL_TIMEOUT_MS}")
+            )
             end_call(
                 live.session,
                 EndCallRequest(

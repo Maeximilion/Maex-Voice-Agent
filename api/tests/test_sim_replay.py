@@ -349,6 +349,33 @@ def test_finishing_a_call_twice_logs_its_usage_once(session, tenant, caplog):
     assert len(usage_lines(caplog)) == 1
 
 
+def test_a_finish_that_failed_before_the_model_ran_still_logs_its_usage_later(
+    session, tenant, monkeypatch, caplog
+):
+    """A `finish` before the first request logs nothing; if its call log could
+    not be written, a later one after a request logs the usage (ultra review on
+    PR #298)."""
+    import sim.session as sim_session
+
+    llm = model_answering(
+        '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
+    )
+    call = SimCall(session, tenant, llm=llm, now=NOW)
+    real = sim_session.end_call
+
+    def blip(*args, **kwargs):
+        monkeypatch.setattr(sim_session, "end_call", real)
+        raise RuntimeError("database blip")
+
+    monkeypatch.setattr(sim_session, "end_call", blip)
+    with caplog.at_level(logging.INFO, logger="sim.session"):
+        with pytest.raises(RuntimeError):
+            call.finish()
+        call.say("Hallo")
+        call.finish()
+    assert len(usage_lines(caplog)) == 1
+
+
 def test_call_with_an_unmetered_answer_logs_no_cost(
     session, tenant, monkeypatch, caplog
 ):

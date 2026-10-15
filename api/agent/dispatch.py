@@ -462,6 +462,11 @@ def _log_call(
     try:
         append_tool_call(session, str(call_id), str(tenant_id), entry)
     except Exception:  # noqa: BLE001 - logging must never break the answer
+        # The failed statement leaves the transaction aborted, and the next
+        # one of the turn would fail too, after a booking that stands (ultra
+        # review on PR #298). Nothing more is lost by it: what was not
+        # committed went with the failed statement.
+        session.rollback()
         log(
             logger,
             logging.WARNING,

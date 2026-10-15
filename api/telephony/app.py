@@ -22,7 +22,6 @@ an ear or mouth it cannot load. An engine that hangs later ends the process
 import base64
 import binascii
 import hmac
-import itertools
 import os
 import threading
 import time
@@ -61,11 +60,16 @@ ENDINGS_KEPT = 1000
 # the team (`db.bounded_sessions`). Its tools answer in milliseconds (budget
 # 300 ms, docs/04 §1), so a wait this long is a lock that is not coming free.
 DB_TIMEOUT_MS = 2000
-# An engine call that takes longer hangs. The session's own deadlines
+# An engine call that works longer hangs. The session's own deadlines
 # (`session.SPEAK_SECONDS`, `session.UTTERANCE_SECONDS`) have sent its call to
 # the team by then, and a sentence of a minute takes the ear about a second
 # on the graphics card.
 ENGINE_HANG_SECONDS = 30.0
+# The same with the ear on the processor (`VOICE_EAR_DEVICE=cpu`): it takes
+# about the length of its audio for a sentence (3.9 s, docs/20 §11), up to six
+# passes when it is unsure of the words, and an utterance may last a minute
+# (`session.UTTERANCE_LIMIT_SECONDS`). A healthy run takes minutes there.
+ENGINE_HANG_SECONDS_ON_CPU = 600.0
 # The exit code of a process its watchdog ended (EX_SOFTWARE).
 EXIT_ENGINE_HUNG = 70
 
@@ -99,12 +103,11 @@ class Watchdog:
         self._clock = clock
         self._end = end
         self._lock = threading.Lock()
-        self._running: dict[int, tuple[str, float]] = {}
-        self._keys = itertools.count()
+        self._running: dict[object, tuple[str, float]] = {}
 
     @contextmanager
     def watch(self, what: str) -> Iterator[None]:
-        key = next(self._keys)
+        key = object()
         with self._lock:
             self._running[key] = (what, self._clock())
         try:
@@ -114,8 +117,13 @@ class Watchdog:
                 del self._running[key]
 
     def watched(self, what: str, call: Callable[..., _T]) -> Callable[..., _T]:
+        """`call`, one run at a time and watched while it runs. One model
+        serves every call of the process: a call that waits for it is in line,
+        not stuck, and its wait does not count (ultra review on PR #298)."""
+        turn = threading.Lock()
+
         def watched_call(*args: object) -> _T:
-            with self.watch(what):
+            with turn, self.watch(what):
                 return call(*args)
 
         return watched_call
@@ -147,25 +155,37 @@ class Watchdog:
 
 
 class WatchedMouth:
-    """A mouth whose sentences the watchdog watches until the last piece."""
+    """A mouth whose sentences the watchdog watches until the last piece, one
+    sentence at a time: as with `Watchdog.watched`, a sentence in line is not
+    one that hangs."""
 
     def __init__(self, mouth: Mouth, watchdog: Watchdog) -> None:
         self._mouth = mouth
         self._watchdog = watchdog
+        self._turn = threading.Lock()
 
     def speak(self, text: str) -> Iterable[bytes]:
-        with self._watchdog.watch("mouth"):
+        with self._turn, self._watchdog.watch("mouth"):
             yield from self._mouth.speak(text)
 
 
 # Ear and mouth by their name in the settings. Each loads its engine once per
-# process and returns what makes the ear or mouth of one call. The engines'
-# packages are imported here: they are in the image of `voice` only
-# (api/Dockerfile, target `voice`).
+# process, runs it once, and returns what makes the ear or mouth of one call.
+# An engine that loads may still fail on its first run, when the graphics
+# card's libraries are set up: refused at start then, not in a caller's first
+# sentence. The first run also takes longer (the ear 0.4 s instead of 0.1 on
+# the workbench, 15.10.2026). Ultra review on PR #298.
+# The engines' packages are imported here: they are in the image of `voice`
+# only (api/Dockerfile, target `voice`).
 
 
 def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
-    from api.telephony.adapters.stt_whisper import SegmentingEar, Whisper, silero
+    from api.telephony.adapters.stt_whisper import (
+        SAMPLE_RATE,
+        SegmentingEar,
+        Whisper,
+        silero,
+    )
 
     gpu = settings.voice_ear_device == "cuda"
     whisper = Whisper(
@@ -175,15 +195,16 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
         compute_type="float16" if gpu else "int8",
     )
     transcribe = watchdog.watched("ear", whisper.transcribe)
+    transcribe(bytes(2 * SAMPLE_RATE), [])  # a second of silence
     return lambda: SegmentingEar(transcribe, watchdog.watched("detector", silero()))
 
 
 def _piper(watchdog: Watchdog) -> Callable[[], Mouth]:
-    from api.telephony.adapters.tts_piper import piper
+    from api.telephony.adapters.tts_piper import VOICE, piper
 
-    mouth = WatchedMouth(
-        piper(MODELS / "piper" / f"{settings.voice_mouth_voice}.onnx"), watchdog
-    )
+    voice = settings.voice_mouth_voice or VOICE
+    mouth = WatchedMouth(piper(MODELS / "piper" / f"{voice}.onnx"), watchdog)
+    b"".join(mouth.speak("Guten Tag."))
     # One for every call: it keeps nothing from one sentence to the next.
     return lambda: mouth
 
@@ -305,7 +326,11 @@ def voice_from_settings() -> Voice:
     if settings.voice_number in {team_phone, settings.team_phone}:
         _refuse("the team number is the AI telephone's own number")
     # Last: loading takes seconds, and on the graphics card its memory.
-    watchdog = Watchdog()
+    watchdog = Watchdog(
+        limit=ENGINE_HANG_SECONDS
+        if settings.voice_ear_device == "cuda"
+        else ENGINE_HANG_SECONDS_ON_CPU
+    )
     try:
         make_ear, make_mouth = ear(watchdog), mouth(watchdog)
     except Exception as exc:

@@ -83,18 +83,19 @@ class Settings(BaseSettings):
     # Seconds of silence after a sentence before the code asks "Sind Sie noch
     # da?" (docs/20 §4). An assumption until real calls say otherwise.
     voice_silence_seconds: float = Field(default=8.0, gt=0)
-    # Ear and mouth (`telephony/app.py`): `whisper` and `piper`, the local
-    # engines of the test phase (docs/20 §6). `fake` is the drill pair of the
-    # workbench, an ear that hears nothing and a mouth of noise, and is refused
-    # outside dev and test.
+    # Ear and mouth by the names of their engines in `telephony/app.py`
+    # (`EARS`, `MOUTHS`), the local engines of the test phase (docs/20 §6).
+    # `fake` is the drill pair of the workbench, an ear that hears nothing and
+    # a mouth of noise, and is refused outside dev and test.
     voice_ear: str = ""
     voice_mouth: str = ""
-    # Whisper on the graphics card, or on the processor, where it takes
-    # seconds for a sentence (docs/20 §11).
+    # Where the ear's engine runs: on the graphics card, or on the processor,
+    # where it takes seconds for a sentence (docs/20 §11).
     voice_ear_device: Literal["cuda", "cpu"] = "cuda"
-    # The Piper voice, by the name of its file among the model files. Which
-    # one is Maxi's to hear (D4).
-    voice_mouth_voice: str = "de_DE-thorsten-medium"
+    # The mouth's voice, by the name of its file among the model files; empty
+    # for the engine's own (`telephony/adapters/`). Which one is Maxi's to
+    # hear (D4).
+    voice_mouth_voice: str = ""
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45

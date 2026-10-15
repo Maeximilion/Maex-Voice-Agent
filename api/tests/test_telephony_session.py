@@ -229,6 +229,26 @@ def test_a_transfer_or_hangup_waits_for_the_end_of_the_last_sentence(
     assert call.line.actions[-1] == action and call.s.outcome == outcome
 
 
+def test_a_hangup_the_line_fails_to_carry_out_ends_the_call_as_hung_up(call):
+    """The goodbye was played. What the line did not carry out of the hangup
+    is the dialplan's: it acts on what the line recorded, and without that it
+    rings the team. No voice failure: the core would log a finished call as an
+    error (ultra review on PR #298)."""
+
+    def gone() -> None:
+        raise RuntimeError("the connection is gone")
+
+    call.line.hangup = gone
+    call.core.replies["Tschüss"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.said("Tschüss", after=1.0)
+    call.played(after=1.0)
+    assert call.s.outcome == "hangup"
+    assert call.core.count("voice_failure") == 0
+    assert call.core.count("ended") == 1
+
+
 def test_nothing_is_said_behind_a_transfer_or_hangup(call):
     call.core.replies["Tschüss"] = [
         ("say", "Auf Wiederhören."),

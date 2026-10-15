@@ -54,6 +54,10 @@ services:
     volumes:
       - ./api:/app/api:ro
       - ./prompts:/app/prompts:ro
+    # No graphics card on the EU server: there ear and mouth are services
+    # (docs/20 §6), and a reservation would keep the container from being
+    # created at all.
+    deploy: !reset {}
 
   asterisk:
     restart: always

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.28
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.2.29
 
 ---
 
@@ -347,6 +347,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| A call whose process dies while its goodbye or transfer is still playing stays open (`telephony/handler.py`, `_ending`) | Ultra review on PR #298, 15.10.2026: since PR #298 the call log is written when the line reports the end of the leg, not when the core asks for the hangup or transfer. A process that ends in between (watchdog, deploy, out of memory) leaves the `calls` row without `ended_at`, outcome and cost, and its drafts count against capacity until they expire; the same holds for a call in progress, as before. So does a final write that waits on a lock past 30 s. Fix: a job in `jobs/` that closes calls open longer than `max_call_seconds` as `error`. | Before the first test call with real guests (T-10.7) |
 | A tool's wait on a lock is bounded at 2 s, not by what is left of the turn (`telephony/app.py` `DB_TIMEOUT_MS`, `db.bounded_sessions`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: with 9.5 s of a 10 s turn spent on the model, a tool that waits on a row lock keeps the guest up to 2 s past the deadline; with `turn_deadline_seconds=1` more directly. Fix: `set local statement_timeout` from `ConversationLoop._left_in_turn` before each tool, capped by the bound. Touches the fate of a call (`xhigh`). | Before the first test call with real guests (T-10.7) |
 | `telephony/app.py` builds Whisper and Piper itself (`_whisper`, `_piper`) | Codex on `879f51e` (PR #298, P2), 15.10.2026: AGENTS.md wants a provider only under `api/telephony/adapters/`; the loaders should move behind an adapter-owned factory, so `app.py` only picks an `Ear` and a `Mouth` by name. Same kind as the row on `MediaLine` above. | With that row |
 | A partial run of the decision issue keeps every old key (`scripts/decision_issue.py`, `plan_partial`) | Codex on `2bff6f5` (PR #307, P2), 15.10.2026: while one source fails over several days, a finding the other source clears and later reports again is not mentioned again, because the marker keeps all old keys; the section itself is cleared correctly. Fixing it means keys per section in the marker. Noted under the rule for P2 after a finished review round | When a source fails for more than a day, or with the next change to `decision_issue.py` |
@@ -438,6 +439,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 15.10.2026 | **Ultra review of PR #298, fixed in a follow-up PR:** the watchdog counts only the time an engine works on a call (one call at a time, the wait in line does not count) and allows the ear on the processor 600 s; each engine runs once at start, so one that loads but cannot run keeps `voice` down; the final call-log write waits at most 30 s on a lock and runs after a rollback; a hangup the line fails to carry out after the goodbye is no voice failure; a failed `calls.tool_calls` write rolls back; a failure and the end of the leg on two threads log the call once; the production Compose file reserves no graphics card for `voice`; CI builds the image of `voice` and checks that an engine without its model files is refused; the voice settings name no engine. One finding left open (above). |
 | 14.10.2026 | **T-1.11 part 2: the engines inside `voice`** (summary above): Whisper and Piper by `VOICE_EAR` and `VOICE_MOUTH`, the image target `voice`, the watchdog, the call log closed on the end of the leg, the phone line's database sessions bounded at 2 s. Three open points of the reviews closed (PR #286, #287, #292). On 15.10.2026 in the same PR (#298): the final call-log write runs unbounded (Codex), and two findings of the daily review (#207): a hang-up while the call opens closes its log, and a phone call logs its model and cost like the text phone. |
 | 14.10.2026 | **T-1.11 part 1: the AI telephone on the workbench** (summary above): `MediaLine` against frames recorded for it, the service `voice` (`router.py`, `app.py`), the Asterisk configuration and its Compose services, outage drills 15 of 15. Full suite 4,564 passed, 93 skipped before the merge of T-10.5; evals identical to `main`. Part 2 open |
 | 14.10.2026 | **Production refuses an agent token with whitespace** (ported from Codex's PR #272 of 12.10.2026, which went stale and is closed as superseded; follow-up of #252): outside dev and test the API and the dispatcher no longer start on a token that contains whitespace anywhere, so the public placeholder padded to 32 characters is refused like the placeholder itself; whitespace is refused, never trimmed. Request authentication applies the same rule even where the settings check was bypassed. The dated audit record of #272 (docs/13 §8) was not carried over: it describes the revision of 12.10 |
@@ -545,6 +547,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.2.29 · 15.10.2026:** Ultra review of PR #298: watchdog counts only working time, engines run once at start, bounded final log write, prod reserves no graphics card, voice image built in CI
 - **v2.2.28 · 15.10.2026:** telephony: comments, docstrings and the failed-transfer log line in handler.py, port.py and __init__.py no longer describe a hosted platform with its own fallback; the call session ends as failed and the dialplan rings the team (docs/20 §5). No behaviour change.
 - **v2.2.27 · 15.10.2026:** T-1.11 part 2 done: speech engines in voice, watchdog, call log on the end of the leg, bounded database sessions; the final log write unbounded, hang-up during the start, model cost on phone calls (#207)
 - **v2.2.26 · 15.10.2026:** Codex round 2 on PR #307: a crash of the image check fails the maintenance run; one P2 noted

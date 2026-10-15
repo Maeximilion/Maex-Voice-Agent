@@ -10,6 +10,7 @@ the AI disclosure at the start and the outage sentence before a transfer.
 import json
 import logging
 import threading
+import time
 import uuid
 from dataclasses import asdict
 from datetime import datetime
@@ -19,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select, text, update
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMTurn, Usage
@@ -29,6 +30,7 @@ from api.domain.callbacks.create import SAY_NOTED
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
 from api.models import Call, Callback, MenuItem, Reservation, ServiceConfig
+from api.telephony import handler as handler_module
 from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import (
     FAREWELL,
@@ -1226,16 +1228,23 @@ def test_a_question_into_the_silence_takes_the_key_terms_of_the_question(
     assert port.terms[-1] == []
 
 
+@pytest.fixture
+def bounded(migrated_db_url):
+    """The phone line's sessions (`db.bounded_sessions`) at 300 ms."""
+    from api.db import bounded_sessions
+
+    sessions = bounded_sessions(300, url=migrated_db_url)
+    yield sessions
+    sessions.kw["bind"].dispose()
+
+
 def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
-    session, tenant, migrated_db_url
+    session, tenant, migrated_db_url, bounded
 ):
     """The phone line's sessions end a statement at their bound (`voice` uses
     `db.bounded_sessions`): a tool that waits on a lock sends the guest to the
     team instead of keeping them on the line (Codex on PR #287)."""
-    from api.db import bounded_sessions
-
     port = FakeTelephony()
-    bounded = bounded_sessions(300, url=migrated_db_url)
     handler = handler_for(session, tenant, port, session_factory=bounded)
     port.open("s-1", caller_id="+497215551234")
     handler.on_call_started("s-1")
@@ -1253,16 +1262,10 @@ def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
     assert _logged(session, "s-1").outcome == "error"
 
 
-def test_the_end_of_the_call_waits_out_a_lock_longer_than_the_bound(
-    session, tenant, migrated_db_url
-):
-    """The bound is for a guest waiting on a turn. The log of a call that is
-    over is written past it, or a lock held for a moment would leave the call
-    without an end and an outcome for good (Codex on PR #298)."""
-    from api.db import bounded_sessions
-
+def _ended_under_a_lock(session, tenant, migrated_db_url, bounded, seconds: float):
+    """A call on the phone line's sessions whose leg ends while another
+    transaction holds its row for `seconds`. How long the end took."""
     port = FakeTelephony()
-    bounded = bounded_sessions(300, url=migrated_db_url)
     handler = handler_for(session, tenant, port, session_factory=bounded)
     port.open("s-1", caller_id="+497215551234")
     handler.on_call_started("s-1")
@@ -1273,16 +1276,96 @@ def test_the_end_of_the_call_waits_out_a_lock_longer_than_the_bound(
     holder = create_engine(migrated_db_url)
     conn = holder.connect()
     conn.execute(text("select 1 from calls where id = :id for update"), {"id": call_id})
-    release = threading.Timer(1.0, conn.rollback)  # longer than the bound
+    release = threading.Timer(seconds, conn.rollback)
     release.start()
+    started = time.monotonic()
     handler.on_call_ended("s-1")
+    took = time.monotonic() - started
     release.join()
     conn.close()
     holder.dispose()
+    return took
+
+
+def test_the_end_of_the_call_waits_out_a_lock_longer_than_the_bound(
+    session, tenant, migrated_db_url, bounded
+):
+    """The bound is for a guest waiting on a turn. The log of a call that is
+    over is written past it, or a lock held for a moment would leave the call
+    without an end and an outcome for good (Codex on PR #298)."""
+    _ended_under_a_lock(session, tenant, migrated_db_url, bounded, 1.0)
 
     call = _logged(session, "s-1")
     assert call.ended_at is not None
     assert call.outcome == "abandoned"
+
+
+def test_the_end_of_the_call_waits_on_a_lock_no_longer_than_its_own_bound(
+    session, tenant, migrated_db_url, bounded, monkeypatch
+):
+    """Past it, the call's thread and its connection are given back: a lock
+    that is not coming free must not hold them for ever (ultra review on PR
+    #298). The call stays without an end then, as after a crash."""
+    monkeypatch.setattr(handler_module, "END_CALL_TIMEOUT_MS", 300)
+
+    took = _ended_under_a_lock(session, tenant, migrated_db_url, bounded, 3.0)
+
+    assert took < 2.0
+    assert _logged(session, "s-1").ended_at is None
+
+
+def test_a_session_in_a_failed_transaction_still_closes_the_call_log(session, tenant):
+    """A statement that failed and was caught leaves the transaction aborted;
+    the call log is written all the same (ultra review on PR #298)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    with pytest.raises(DBAPIError):
+        session.execute(text("select 1 / 0"))
+
+    handler.on_call_ended("s-1")
+
+    call = _logged(session, "s-1")
+    assert call.ended_at is not None
+    assert call.outcome == "abandoned"
+
+
+def test_a_failure_reported_while_the_call_ends_closes_its_log_once(
+    session, tenant, monkeypatch, caplog
+):
+    """An adapter may report events on more than one thread: the end of the
+    leg is handled while a failure of the same call is still on its way. The
+    call is logged once, and nothing of it stays behind (ultra review on PR
+    #298)."""
+    usage = Usage(model="test-model", requests=1, prompt_tokens=10, completion_tokens=1)
+
+    def metered(s):
+        llm = scripted(session, tenant)(s)
+        llm.usage = usage
+        return llm
+
+    class Gone(FakeTelephony):
+        def transfer(self, session_id, target):
+            raise RuntimeError("the leg is gone")
+
+    port = Gone()
+    handler = handler_for(session, tenant, port, llm_factory=metered)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    live = handler._live["s-1"]
+
+    with caplog.at_level(logging.INFO, logger="api.telephony.handler"):
+        handler.on_call_ended("s-1")
+        # The failure, on the other thread, with the call it had looked up.
+        with pytest.raises(RuntimeError, match="the leg is gone"):
+            handler._fail("s-1", live)
+
+    assert "s-1" not in handler._ending
+    assert len([r for r in caplog.records if r.getMessage() == "model usage"]) == 1
+    assert _logged(session, "s-1").outcome == "abandoned"
 
 
 def _ending_during_start(monkeypatch, handler, *, fail: bool = False):

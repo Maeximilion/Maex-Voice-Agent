@@ -270,3 +270,13 @@ def test_host_ip_of_a_port_entry():
     assert _host_ip("5432:5432") is None
     assert _host_ip(8000) is None
     assert _host_ip({"target": 80, "published": "80"}) is None
+
+
+def test_production_reserves_no_graphics_card_for_voice():
+    """The operation's ear and mouth are services (docs/20 §6), and the EU
+    server has no graphics card: a reservation would keep `voice` from being
+    created there (ultra review on PR #298). The workbench asks for one."""
+    base, prod = _production()
+    assert "devices" in str(_services(base)["voice"]["deploy"])
+    deploy = _services(prod)["voice"].get("deploy")
+    assert isinstance(deploy, _Tagged) and deploy.tag == "!reset"

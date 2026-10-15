@@ -19,6 +19,9 @@ with warnings.catch_warnings():
     import audioop
 
 SAMPLE_RATE = 16000
+# The voice when the settings name none (`VOICE_MOUTH_VOICE`), by the name of
+# its file among the model files.
+VOICE = "de_DE-thorsten-medium"
 
 
 class PiperMouth:

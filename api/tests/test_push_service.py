@@ -9,10 +9,9 @@ running server answers was tried by hand, see `n8n/README.md`.
 import re
 from urllib.parse import urlparse
 
-import yaml
-
 from api.config import Settings
 from api.tests.test_commands import REPO_ROOT
+from api.tests.test_compose_ports import _load
 from api.tests.test_n8n_workflow import _channel
 
 COMPOSE = REPO_ROOT / "docker-compose.yml"
@@ -32,7 +31,9 @@ HASH_RE = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
 
 
 def _service(path=COMPOSE) -> dict:
-    return yaml.safe_load(path.read_text(encoding="utf-8"))["services"][SERVICE]
+    # Compose's loader: the production file resets keys with `!reset`, which
+    # `yaml.safe_load` rejects.
+    return _load(path)["services"][SERVICE]
 
 
 def _environment(path=COMPOSE) -> dict[str, str | None]:
@@ -137,7 +138,7 @@ def test_proxy_routes_to_the_service_in_production() -> None:
     route = rf"^\s*reverse_proxy {SERVICE}:80\s*$"
     assert re.search(route, CADDYFILE.read_text(encoding="utf-8"), re.MULTILINE)
     assert _environment(PROD)["NTFY_BEHIND_PROXY"] == "true"
-    prod = yaml.safe_load(PROD.read_text(encoding="utf-8"))["services"]
+    prod = _load(PROD)["services"]
     assert SERVICE in prod["caddy"]["depends_on"]
 
 
