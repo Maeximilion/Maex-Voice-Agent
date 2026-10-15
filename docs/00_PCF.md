@@ -143,6 +143,8 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 | 5 Overflow operation | AI only when no one picks up | G5 | M |
 | 6 Primary operation & ongoing | AI first, ongoing maintenance | Monthly review | Ongoing |
 
+**Security audit at every gate from G1 on** (Maxi, 15.10.2026): a gate also needs an audit per `docs/09_OPERATIONS_LEGAL.md` section 5 that covers the current code of the exposed areas, with no open P1 finding. The first call from outside the workbench and every component that becomes reachable from outside the host wait for one as well. The audit runs at these occasions only, not continuously.
+
 ### Stage 0 – Foundation
 **Goal:** Clarify facts, legal framework, budget, and vendors before code begins.
 - **C1** Current state capture: register and interface, receipt printer, phone provider and router, call volume and peak times, missed calls, call mix, menu format, reservation workflow, team workflows

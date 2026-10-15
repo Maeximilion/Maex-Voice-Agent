@@ -35,6 +35,10 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+psycopg://maex:change_me@db:5432/maex_agent"
     agent_api_token: str = TOKEN_PLACEHOLDER
+    # Shared by Caddy and the API: outside dev and test the operations view
+    # answers only requests that carry it, i.e. came through Caddy and its
+    # Basic-Auth (api/core/auth.py, docs/13 §3). Empty closes the view there.
+    gui_proxy_secret: str = ""
 
     tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"
