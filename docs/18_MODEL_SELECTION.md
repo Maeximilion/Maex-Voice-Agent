@@ -105,7 +105,7 @@ decided by `make eval` once T-2.4 part 3 lands, the same way as in §3.
 `scripts/setup_local_llm.sh` does everything that can be automated:
 
 1. detects WSL or native Ubuntu, the NVIDIA GPU and its memory, the RAM;
-2. installs `zstd` and then Ollama with the official installer if Ollama is missing (asks for the sudo password);
+2. installs `zstd` and then Ollama with the official installer if Ollama is missing (asks for the sudo password). The installer is pinned to Ollama 0.35.1, the release measured below: it comes from that GitHub release and runs only when its SHA-256 matches the one in the script, and `OLLAMA_VERSION` makes it fetch the same release's archive. Moving to a newer release means changing both values in the script head;
 3. starts the Ollama server on loopback at `OLLAMA_URL`: the systemd service for the default address, otherwise in the background; every `ollama` command uses the same address;
 4. pulls the main and the comparison model of the tier;
 5. sends an invented German reservation sentence to `/v1/chat/completions`, the same API the core uses, checks the answer with the same contract as the core (`parse_turn` in `api/agent/llm.py`: one JSON object, field types, exactly one of `say` and `tool`), and prints tokens, cold and warm latency and whether the model runs on the GPU;

@@ -28,7 +28,13 @@
 set -euo pipefail
 
 OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
-INSTALLER_URL="https://ollama.com/install.sh"
+# The installer is pinned to one Ollama release and checked against its SHA-256 before
+# it runs (#252). OLLAMA_VERSION makes it fetch the same release's archive. To move
+# on: change both lines, take the new digest of install.sh from the release page
+# (github.com/ollama/ollama/releases) and check it against the downloaded file.
+OLLAMA_VERSION="0.35.1"
+INSTALLER_URL="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/install.sh"
+INSTALLER_SHA256="25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f"
 WARM_RUNS=3
 SLOW_WARM_SECONDS=2
 
@@ -197,7 +203,13 @@ else
     installer_dir=$(mktemp -d)
     trap 'rm -rf "$installer_dir"' EXIT
     run curl -fsSL "$INSTALLER_URL" -o "${installer_dir}/install.sh"
-    run sh "${installer_dir}/install.sh"
+    if [ "$dry_run" -eq 1 ]; then
+        say "   [dry-run] check SHA-256 ${INSTALLER_SHA256}"
+    else
+        printf '%s  %s\n' "$INSTALLER_SHA256" "${installer_dir}/install.sh" | sha256sum -c --quiet - ||
+            die 1 "the installer does not match the SHA-256 in this script, not running it"
+    fi
+    run env OLLAMA_VERSION="$OLLAMA_VERSION" sh "${installer_dir}/install.sh"
 fi
 
 if [ -n "${OLLAMA_HOST:-}" ] && [[ "${OLLAMA_HOST}" == 0.0.0.0* ]]; then

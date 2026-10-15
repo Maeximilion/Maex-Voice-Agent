@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.0
+> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.1
 
 ---
 
 ## Summary
+
+**The workbench's model setup runs the Ollama installer only when its checksum matches (#252, 15.10.2026).** `scripts/setup_local_llm.sh` fetched `ollama.com/install.sh` and ran whatever came back. It now fetches `install.sh` of the Ollama 0.35.1 release on GitHub, the version the numbers in docs/18 §5 were measured with, checks it against the SHA-256 in the script head and stops with exit code 1 before running it on a mismatch; `OLLAMA_VERSION=0.35.1` makes the installer fetch the archive of the same release. Run in an Ubuntu 24.04 container with the installer run stubbed: matching checksum runs it with the version, a changed checksum stops with the message, `--dry-run` prints the check. **Left open:** the installer itself downloads the program archive from ollama.com without a checksum of its own (pinned by version, not by digest); closing that means installing the archive without the official installer. Workbench only, invented data only.
 
 **The security audit runs at fixed triggers, and the first one under those rules found one P1 in the dialplan (15.10.2026).** Maxi did not want the audit to run all the time and eat the usage quota: `docs/09_OPERATIONS_LEGAL.md` §5 now names when it is due (before the first call from outside the workbench, at every gate from G1 on, before a component becomes reachable from outside, or 30 days plus changes in the exposed areas), `/start` step 5c and `/gate` step 1b recommend it, Maxi decides, and an audit log records date, commit and scope. The audit of 15.10.2026 (voice layer, deployment, token paths; findings on #252) found: a team leg that is not answered ends the call without trying `TEAM_PHONE` (P1), the SIP endpoint takes calls identified by the From user alone, and the dialplan dials any number `voice` names. All three go into T-10.13, which T-10.1 step 2 now waits for. Six more P2 and P3 points (kitchen token strength, one flat Docker network with Asterisk in it, secrets in `env_file`, container hardening, headers, backups off the host) stay in #252; the flat network needs Maxi's decision between separate networks and a secret header from Caddy. The #252 point about a lock per call no longer holds.
 
@@ -547,6 +549,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.1 · 15.10.2026:** #252: Ollama installer pinned to 0.35.1 and checked by SHA-256 in setup_local_llm.sh
 - **v2.3.0 · 15.10.2026:** Security audit at fixed triggers (docs/09 §5, /start 5c, /gate 1b); audit of 15.10.2026: one P1 in the dialplan and two SIP points as T-10.13, six P2/P3 in #252
 - **v2.2.29 · 15.10.2026:** Social preview uploaded by Maxi and recorded with mark-uploaded (Codex on 7ebf1d0: the older status note no longer calls it open)
 - **v2.2.28 · 15.10.2026:** telephony: comments, docstrings and the failed-transfer log line in handler.py, port.py and __init__.py no longer describe a hosted platform with its own fallback; the call session ends as failed and the dialplan rings the team (docs/20 §5). No behaviour change.
