@@ -64,6 +64,17 @@ CASES = [
         lambda text: classify_wish(text, []),
         "ich habe eine allergie " + "a" * LENGTH,
     ),
+    # wishes.py, the ingredient between "gegen" and "allergisch" (issue #252)
+    (
+        "classify_wish, spaces after gegen",
+        lambda text: classify_wish(text, []),
+        "ich bin allergisch, gegen" + " " * LENGTH + "x",
+    ),
+    (
+        "classify_wish, gegen inside words",
+        lambda text: classify_wish(text, []),
+        "allergie " + "gegen x" * (LENGTH // 7),
+    ),
     # wishes.py, _split_addition (alert 11) and _split_removal (alert 12)
     (
         "classify_wish, tabs before an addition",
@@ -100,6 +111,15 @@ _OLD_COMPOUND = re.compile(
     r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
     re.IGNORECASE,
 )
+
+
+_OLD_AGAINST = re.compile(
+    r"gegen\s+((?:(?!\bgegen\b)[^.;!?])+?)\s+allergisch", re.IGNORECASE
+)
+
+
+def _old_against(text):
+    return [(found.start(1), found.group(1)) for found in _OLD_AGAINST.finditer(text)]
 
 
 def _old_pieces(text):
@@ -186,6 +206,24 @@ REFERENCE = {
             "oder",
         ],
     ),
+    "ingredient between gegen and allergisch": (
+        _old_against,
+        lambda text: list(wishes._against_allergic(text)),
+        [
+            "gegen",
+            "Gegen ",
+            "gegen ",
+            "entgegen ",
+            " allergisch",
+            "Allergisch",
+            "allergisch ",
+            "   ",
+            "Nuss",
+            "gegen x allergisch",
+            ".",
+            "?",
+        ],
+    ),
 }
 _FILLER = [" ", " ", " ", "\t", "\n", ",", ",", ".", "!", "-", "a", "ä", "x"]
 SENTENCES_PER_OPERATION = 4000
@@ -206,3 +244,33 @@ def test_result_is_the_same_as_before(name):
         with_an_effect += expected not in (text, *nothing, ([text.strip()], []))
     # The comparison means nothing if the sentences never trigger the operation.
     assert with_an_effect >= SENTENCES_WITH_AN_EFFECT_AT_LEAST
+
+
+# Inputs the random sentences rarely build: a run of three or more spaces in
+# front of "allergisch" (the old pattern matched one of them as the
+# ingredient), several phrases in a row, and "gegen" inside a word.
+AGAINST_EDGES = [
+    "gegen allergisch",
+    "gegen  allergisch",
+    "gegen   allergisch",
+    "gegen \t\n allergisch",
+    "gegen    allergisch gegen x allergisch",
+    "gegen   allergisch   allergisch",
+    "gegen x  allergisch",
+    "gegen x allergisch gegen y allergisch",
+    "gegen gegen x allergisch",
+    "gegen x gegen y allergisch",
+    "entgegen x allergisch",
+    "gegenx gegen y allergisch",
+    "gegen x. allergisch",
+    "gegen x, y allergisch",
+    "GEGEN Nüsse ALLERGISCH",
+    "gegen ıx allergiſch",
+    "ich bin gegen Nüsse und gegen Sesam allergisch",
+    "ich bin nicht gegen Erdnüsse, sondern gegen Sesam allergisch",
+]
+
+
+@pytest.mark.parametrize("text", AGAINST_EDGES)
+def test_against_allergic_matches_the_old_pattern(text):
+    assert list(wishes._against_allergic(text)) == _old_against(text)

@@ -233,6 +233,25 @@ def test_allergie_kommt_als_hinweis_ohne_zusage(session, tenant_id):
     assert "frei" in result.say
 
 
+def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
+    result = suche(session, tenant_id, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie")
+    assert [h.number for h in result.results] == ["13"]
+    assert (result.wish.kind, result.wish.text) == (
+        "allergy",
+        "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie",
+    )
+    assert "Küche" in result.say
+
+
+@pytest.mark.parametrize(
+    "said", ["Pho Bo, ich habe keine Erdnussallergie", "die 13, ich habe keine Allergie"]
+)
+def test_search_with_a_denied_allergy_has_no_wish(session, tenant_id, said):
+    result = suche(session, tenant_id, said)
+    assert [h.number for h in result.results] == ["13"]
+    assert result.wish is None and result.say is None
+
+
 def test_ohne_wunsch_bleibt_alles_wie_bisher(session, tenant_id):
     result = suche(session, tenant_id, "die 23")
     assert result.wish is None and result.say is None
@@ -779,6 +798,125 @@ def test_allgemeine_allergie_fragt_nach(gesagt):
     bleibt offen, statt "Keine Nahrungsmittel" an die Kueche zu geben."""
     wish = classify_wish(gesagt, [])
     assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+# --- Allergy clause next to a wish, denied allergy (issue #252) ----------------------
+
+
+@pytest.mark.parametrize(
+    ("said", "note", "ingredient"),
+    [
+        (
+            "ohne Zwiebeln, ich habe eine Erdnussallergie",
+            "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "Erdnuss",
+        ),
+        (
+            "ohne Zwiebeln ich habe eine Erdnussallergie",
+            "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "Erdnuss",
+        ),
+        (
+            "ohne Zwiebeln und ich bin allergisch gegen Sesam",
+            "ohne Zwiebeln. WICHTIG: Keine Sesam. Grund: Allergie",
+            "Sesam",
+        ),
+        (
+            "keine Zwiebeln, ich vertrage keine Erdnüsse",
+            "keine Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie",
+            "Erdnüsse",
+        ),
+        (
+            "ohne Zwiebeln, weil ich eine Erdnussallergie habe",
+            "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "Erdnuss",
+        ),
+        # The removal that comes with an addition stays too; the addition
+        # itself is not taken next to an allergy (docs/01_STATUS.md, open point).
+        (
+            "ohne Zwiebeln, dafür mit Nudeln, ich habe eine Erdnussallergie",
+            "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "Erdnuss",
+        ),
+    ],
+)
+def test_removal_before_the_allergy_is_kept(said, note, ingredient):
+    """Codex PR #139 (P2): "ohne Zwiebeln, ich habe eine Erdnussallergie" gave
+    only the allergy note, the removal was dropped. The kitchen note now names
+    both, the removal first as the guest said it, the allergy in the fixed
+    wording of E14."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text, wish.ingredient, wish.note) == (
+        "allergy",
+        note,
+        ingredient,
+        None,
+    )
+
+
+def test_removal_before_an_allergy_without_ingredient_waits_in_note():
+    """Without an ingredient the agent asks "Wogegen?" first; the removal waits
+    in `note` and goes in front of the note made from the answer."""
+    wish = classify_wish("ohne Zwiebeln, ich habe eine Allergie", BEILAGE)
+    assert (wish.kind, wish.ingredient, wish.note) == (
+        "allergy",
+        None,
+        "ohne Zwiebeln",
+    )
+    assert wish.text == "ich habe eine Allergie"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich habe keine Erdnussallergie",
+        "ich bin nicht gegen Erdnüsse allergisch",
+        "ich bin nicht allergisch gegen Erdnüsse",
+        "ich habe keine Allergie",
+        "ich habe keinerlei Allergien",
+        "ich bin kein Allergiker",
+        "ich habe keine Laktoseintoleranz",
+    ],
+)
+def test_denied_allergy_is_no_wish(said):
+    """Codex PR #139 (P2): "ich habe keine Erdnussallergie" gave the note
+    "WICHTIG: Keine Erdnuss", and "ich habe keine Allergie" the question
+    "Wogegen?". A negation right in front of the allergy denies it: nothing to
+    note."""
+    assert classify_wish(said, BEILAGE) is None
+
+
+@pytest.mark.parametrize(
+    ("said", "kind", "text"),
+    [
+        ("ohne Zwiebeln, ich habe keine Allergie", "note", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, keine Allergie", "note", "ohne Zwiebeln"),
+        ("mit Nudeln, ich bin nicht allergisch", "option", "mit Nudeln"),
+    ],
+)
+def test_denied_allergy_keeps_the_wish_before_it(said, kind, text):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text) == (kind, text)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # "nicht nur" does not deny.
+        ("ich bin nicht nur gegen Erdnüsse allergisch", "Erdnüsse"),
+        # One allergy denied, another named: the allergy stays (the safe side,
+        # the note is read back and can be corrected).
+        ("ich habe keine Erdnussallergie, aber eine Sesamallergie", "Sesam"),
+        # The negation that names the allergy itself.
+        ("ich vertrage keine Erdnüsse", "Erdnüsse"),
+        # Not right in front: unsure, so the allergy stays.
+        ("ich habe nicht eine Erdnussallergie", "Erdnuss"),
+    ],
+)
+def test_negation_that_does_not_deny_keeps_the_allergy(said, ingredient):
+    wish = classify_wish(said, BEILAGE)
+    assert wish.kind == "allergy"
+    assert ingredient in wish.ingredient
 
 
 def test_vertrage_alles_ist_keine_allergie():

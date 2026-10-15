@@ -998,6 +998,57 @@ def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
 
 
+def test_removal_and_allergy_in_one_sentence_reach_the_order(session, tenant):
+    """Codex PR #139 (P2), issue #252: the removal before the allergy clause
+    was dropped; now both are in the kitchen note, the allergy in the fixed
+    wording (E14)."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie."
+    )
+    [order] = orders(session)
+    note = "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie"
+    assert _notes(session, order) == [note]
+    assert note in said(turns)
+
+
+def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Allergie.", "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "ohne Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie"
+    ]
+
+
+@pytest.mark.parametrize(
+    "zeile", ["Pho Bo, ich habe keine Erdnussallergie.", "Pho Bo, ich habe keine Allergie."]
+)
+def test_denied_allergy_gives_no_note(session, tenant, zeile):
+    """Codex PR #139 (P2), issue #252: a denied allergy gave "WICHTIG: Keine
+    Erdnuss" or the question "Wogegen?"."""
+    _, turns = _bestellung(session, tenant, zeile)
+    assert "Wogegen" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [None]
+
+
+def test_allergy_withdrawn_on_the_question_gives_no_note(session, tenant):
+    """ "Wogegen?" - "Ich habe doch keine Allergie.": the question is closed,
+    nothing goes to the kitchen."""
+    _bestellung(
+        session,
+        tenant,
+        "Pho Bo, ich habe eine Allergie.",
+        "Ich habe doch keine Allergie.",
+    )
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [None]
+
+
 @pytest.mark.parametrize("antwort", ["Weiß ich nicht.", "Nein."])
 def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
     """Codex PR #139, P1: auf "Wogegen?" keine Zutat - die Frage bleibt offen,
