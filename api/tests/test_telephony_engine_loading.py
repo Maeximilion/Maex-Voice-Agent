@@ -24,7 +24,6 @@ def no_model_files(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("load", [voice_app._whisper, voice_app._piper])
 def test_an_engine_without_its_model_files_is_not_loaded(no_model_files, load):
-    with pytest.raises(Exception) as refused:
+    # For the files: a broken loader (a renamed keyword) raises otherwise.
+    with pytest.raises(FileNotFoundError):
         load(voice_app.Watchdog())
-    # Refused by the engine for its files, not for a missing package.
-    assert not isinstance(refused.value, ImportError)

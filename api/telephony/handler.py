@@ -85,11 +85,11 @@ _DIGIT = re.compile(r"[0-9]")
 # Closed calls are remembered so a late event is ignored instead of being read
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
-# How long the log of a call that is over waits on a lock. Longer than the
-# line's bound for a turn (`telephony/app.py`, `DB_TIMEOUT_MS`): nobody waits
-# on it, and a lock held for a moment must not cost the call its end (Codex on
-# PR #298). Not for ever: the call's thread and its connection are given back
-# when a lock is not coming free.
+# How long the log of a call that ended as it should waits on a lock. Longer
+# than the line's bound for a turn (`telephony/app.py`, `DB_TIMEOUT_MS`): after
+# our hangup or transfer nobody waits on it, and a lock held for a moment must
+# not cost the call its end (Codex on PR #298). Not for ever: the call's thread
+# and its connection are given back when a lock is not coming free.
 END_CALL_TIMEOUT_MS = 30_000
 
 logger = get_logger(__name__)
@@ -111,7 +111,8 @@ class _LiveCall:
     llm: LLMClient | None = None
     # Silences in a row that the code has answered with a question.
     silences: int = 0
-    # Its log is written, or being written (`_finish`).
+    # Its log is written, or being written: taken under the lock by the one
+    # caller of `_finish` (`_claim`).
     finished: bool = False
 
 
@@ -213,6 +214,7 @@ class CallHandler:
             self._ended_while_starting.discard(session_id)
             if hung_up:
                 self._remember_closed(session_id)
+                self._claim(live)
             else:
                 self._live[session_id] = live
         if hung_up:
@@ -261,7 +263,7 @@ class CallHandler:
             live, outcome = self._live.pop(session_id, None), None
             if live is None:
                 live, outcome = self._ending.pop(session_id, (None, None))
-            if live is None:
+            if live is None or not self._claim(live):
                 return  # closed already, or never known
             self._remember_closed(session_id)
         self._finish(live, outcome)
@@ -374,10 +376,12 @@ class CallHandler:
             self._ended_while_starting.discard(session_id)
             self._remember_closed(session_id)
             # Not for a call whose end was handled already: an adapter on
-            # more than one thread can report it in the meantime.
-            if live is not None and not live.finished:
+            # more than one thread can report it in the meantime, and its
+            # session is the other thread's then.
+            still_open = live is not None and not live.finished
+            if live is not None and still_open:
                 self._ending[session_id] = (live, "error")
-        if live is not None:
+        if live is not None and still_open:
             try:
                 live.session.rollback()
             except Exception:
@@ -397,19 +401,16 @@ class CallHandler:
             # No end of the leg will be reported for a transfer that never began.
             with self._lock:
                 self._ending.pop(session_id, None)
-            if live is not None:
+                claimed = live is not None and self._claim(live)
+            if live is not None and claimed:
                 self._finish(live, outcome="error")
             raise
 
     def _finish(self, live: _LiveCall, outcome: Outcome | None = None) -> None:
         """Write the call log and release the session. Never raises: the call has
         already gone to the team or ended, and a failure here must not send it
-        through the outage path a second time. Once per call: the end of the
-        leg and a failure may both come to it."""
-        with self._lock:
-            if live.finished:
-                return
-            live.finished = True
+        through the outage path a second time. Called once per call, by
+        whoever claimed it (`_claim`)."""
         derived, intent = call_outcome(live.state)
         try:
             usage = call_usage(live.llm)
@@ -419,10 +420,14 @@ class CallHandler:
             live.session.rollback()
             # The line bounds its statements (`db.bounded_sessions`); this
             # write waits longer, in this transaction only, which the commit
-            # of `end_call` ends.
-            live.session.execute(
-                text(f"set local statement_timeout = {END_CALL_TIMEOUT_MS}")
-            )
+            # of `end_call` ends. Not after a failure: no hangup went out
+            # then, and the dialplan rings the team only once the session has
+            # ended and its connection is closed, after this write (ultra
+            # review on PR #310). The caller does not wait on the log.
+            if outcome != "error":
+                live.session.execute(
+                    text(f"set local statement_timeout = {END_CALL_TIMEOUT_MS}")
+                )
             end_call(
                 live.session,
                 EndCallRequest(
@@ -473,6 +478,15 @@ class CallHandler:
             self._live.pop(live.session_id, None)
             self._ending[live.session_id] = (live, None)
             self._remember_closed(live.session_id)
+
+    def _claim(self, live: _LiveCall) -> bool:
+        """Under `_lock`: True for the one caller that writes the call's log.
+        The end of the leg and a failure may both come to it, on two threads,
+        and a claim taken later than the event would leave a gap between."""
+        if live.finished:
+            return False
+        live.finished = True
+        return True
 
     def _remember_closed(self, session_id: str) -> None:
         self._closed[session_id] = None

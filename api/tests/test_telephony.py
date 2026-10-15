@@ -1229,13 +1229,9 @@ def test_a_question_into_the_silence_takes_the_key_terms_of_the_question(
 
 
 @pytest.fixture
-def bounded(migrated_db_url):
+def bounded(bounded_db):
     """The phone line's sessions (`db.bounded_sessions`) at 300 ms."""
-    from api.db import bounded_sessions
-
-    sessions = bounded_sessions(300, url=migrated_db_url)
-    yield sessions
-    sessions.kw["bind"].dispose()
+    return bounded_db(300)
 
 
 def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
@@ -1458,3 +1454,59 @@ def test_a_phone_call_on_the_stand_in_logs_no_model(session, tenant, caplog):
     assert call.model is None
     assert call.cost_cents is None
     assert not [r for r in caplog.records if r.getMessage() == "model usage"]
+
+
+def test_a_failure_in_the_gap_before_the_log_is_written_leaves_nothing_behind(
+    session, tenant, monkeypatch
+):
+    """The end of the leg takes the call; a failure of the same call, on
+    another thread, comes before its log is written. The call is not parked
+    again for an end of the leg that was already used up (ultra review on PR
+    #310)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    finish = handler._finish
+
+    def failure_in_the_gap(live, outcome=None):
+        handler._fail("s-1", live)  # the other thread
+        finish(live, outcome)
+
+    monkeypatch.setattr(handler, "_finish", failure_in_the_gap)
+    handler.on_call_ended("s-1")
+
+    assert "s-1" not in handler._ending
+    assert _logged(session, "s-1").outcome == "abandoned"
+
+
+def test_after_a_failure_the_log_does_not_keep_the_caller_from_the_team(
+    session, tenant, migrated_db_url, bounded, monkeypatch
+):
+    """No hangup went out: the dialplan rings the team once the session has
+    ended, after the log is written. Then the log waits no longer than the
+    line's bound for a turn (ultra review on PR #310)."""
+    monkeypatch.setattr(handler_module, "END_CALL_TIMEOUT_MS", 5000)
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, session_factory=bounded)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", WISH)
+    handler.on_voice_failure("s-1")
+    call_id = the_call(session, "s-1").id
+    session.rollback()
+
+    holder = create_engine(migrated_db_url)
+    conn = holder.connect()
+    conn.execute(text("select 1 from calls where id = :id for update"), {"id": call_id})
+    release = threading.Timer(3.0, conn.rollback)
+    release.start()
+    started = time.monotonic()
+    handler.on_call_ended("s-1")
+    took = time.monotonic() - started
+    release.join()
+    conn.close()
+    holder.dispose()
+
+    assert took < 2.0

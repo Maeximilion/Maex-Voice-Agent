@@ -78,14 +78,8 @@ def test_engine_faehrt_read_committed():
 
 
 @pytest.fixture
-def bounded(migrated_db_url):
-    """Sessions of `db.bounded_sessions` at 200 ms; their engine is disposed
-    after the test."""
-    from api.db import bounded_sessions
-
-    sessions = bounded_sessions(200, url=migrated_db_url)
-    yield sessions
-    sessions.kw["bind"].dispose()
+def bounded(bounded_db):
+    return bounded_db(200)
 
 
 def test_a_bounded_session_gives_up_on_a_row_lock(migrated_db_url, bounded):
