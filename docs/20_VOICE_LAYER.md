@@ -372,8 +372,8 @@ it is unsure; the mouth and the detector keep their 30 s.
 The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
 that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the
-goodbye was played, and as `error` when the line fails on it; a hangup the line fails to carry
-out after the goodbye is still a hangup. That last write waits up to 30 s on a lock instead of
+goodbye was played, and as `error` when the line fails on it; once the line has recorded our
+ending, a `HANGUP` it can no longer send (the server stopping) leaves that ending standing. That last write waits up to 30 s on a lock instead of
 the 2 s of a turn: nobody waits on it, and a lock held for a moment must not leave the call
 without an end; a lock past that leaves it open, as a crash does (docs/01, open points). A call
 whose leg ends while it is still being opened is closed once it is open, with no greeting. The

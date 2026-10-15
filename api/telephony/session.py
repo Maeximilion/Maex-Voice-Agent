@@ -602,17 +602,7 @@ class CallSession:
             self.transfer_target = target
             self._end("transfer")
         else:
-            try:
-                self._line.hangup()
-            except Exception:
-                # The goodbye was played and the core is done with the call.
-                # The dialplan acts on what the line recorded and rings the
-                # team without it; ended as failed, the core would log a call
-                # that went as it should as an error (ultra review on PR #298).
-                logger.exception(
-                    "the line did not carry out the hangup",
-                    extra={"extra": {"session_id": self.session_id}},
-                )
+            self._line.hangup()
             self._end("hangup")
 
     def _end(self, outcome: Outcome) -> None:

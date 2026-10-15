@@ -229,23 +229,23 @@ def test_a_transfer_or_hangup_waits_for_the_end_of_the_last_sentence(
     assert call.line.actions[-1] == action and call.s.outcome == outcome
 
 
-def test_a_hangup_the_line_fails_to_carry_out_ends_the_call_as_hung_up(call):
-    """The goodbye was played. What the line did not carry out of the hangup
-    is the dialplan's: it acts on what the line recorded, and without that it
-    rings the team. No voice failure: the core would log a finished call as an
-    error (ultra review on PR #298)."""
+def test_a_hangup_the_line_refuses_ends_the_session_as_failed(call):
+    """A line that raises did not carry the hangup out, and nothing says what
+    the dialplan will do: the session fails and the dialplan rings the team
+    (Codex on PR #310). A line that recorded the ending does not raise
+    (`MediaLine`, test_telephony_asterisk.py)."""
 
-    def gone() -> None:
-        raise RuntimeError("the connection is gone")
+    def refused() -> None:
+        raise RuntimeError("the telephone system refused the hangup")
 
-    call.line.hangup = gone
+    call.line.hangup = refused
     call.core.replies["Tschüss"] = [("say", "Auf Wiederhören."), ("hangup",)]
     call.start(GREETING)
     call.played()
     call.said("Tschüss", after=1.0)
     call.played(after=1.0)
-    assert call.s.outcome == "hangup"
-    assert call.core.count("voice_failure") == 0
+    assert call.s.outcome == "failed"
+    assert call.core.count("voice_failure") == 1
     assert call.core.count("ended") == 1
 
 
