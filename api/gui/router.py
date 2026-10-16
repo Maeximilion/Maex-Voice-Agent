@@ -8,6 +8,7 @@ VPN, docs/13 §Caddy), nicht die Anwendung. Deshalb hängt hier bewusst keine
 Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 """
 
+import secrets
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -128,16 +129,21 @@ def _header(session: Session, tenant: Tenant) -> dict:
     return {**base, "mode_tone": tone, "mode_label": label, "config": config}
 
 
-def _require_htmx(hx_request: str | None = Header(default=None)) -> None:
-    """Schreibende Taps nur von der eigenen Seite.
+def _require_htmx(
+    request: Request,
+    hx_request: str | None = Header(default=None),
+    x_csrf_token: str | None = Header(default=None),
+) -> None:
+    """Schreibende Taps nur von der eigenen Seite mit CSRF-Schutz.
 
-    Der Proxy schuetzt /gui/* mit Basic-Auth, und die schickt der Browser auch bei
-    einem Formular von einer fremden Seite mit. Einen eigenen Kopf wie HX-Request
-    darf eine fremde Seite ohne CORS-Freigabe nicht setzen - das genuegt hier als
-    Schutz gegen untergeschobene Klicks, ohne Token im Formular.
+    Prüft HX-Request und erzwingt einen gültigen CSRF-Token (Double Submit Cookie).
     """
     if hx_request != "true":
         raise HTTPException(status_code=403, detail="Nur aus der Betriebsansicht")
+
+    csrf_cookie = request.cookies.get("csrf_token")
+    if not csrf_cookie or not x_csrf_token or not secrets.compare_digest(csrf_cookie, x_csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF-Token ungültig")
 
 
 def _switch(
@@ -146,9 +152,14 @@ def _switch(
     """Einen Schalter umlegen und die neue Kopfzeile zurueckgeben."""
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "fragments/kopfzeile.html", {"header_problem": NO_TENANT}, 503
+        context = {"header_problem": NO_TENANT}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "fragments/kopfzeile.html", context, status_code=503
         )
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
     status = 200
     problem = None
     try:
@@ -157,12 +168,17 @@ def _switch(
         session.rollback()
         logger.warning("Kopfzeile nicht umgeschaltet: %s", exc.message)
         status, problem = 409, SWITCH_FAILED
-    return templates.TemplateResponse(
+    context = {**_header(session, tenant), "header_problem": problem}
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
         request,
         "fragments/kopfzeile.html",
-        {**_header(session, tenant), "header_problem": problem},
-        status,
+        context,
+        status_code=status,
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.get("", response_class=HTMLResponse, include_in_schema=False)
@@ -171,19 +187,29 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
     """Betriebsansicht fürs Tablet."""
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "betrieb/index.html", {"problem": NO_TENANT, "today": []}, 503
+        context = {"problem": NO_TENANT, "today": []}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "betrieb/index.html", context, status_code=503
         )
-    return templates.TemplateResponse(
-        request,
-        "betrieb/index.html",
-        {
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
+    context = {
             "tenant": tenant,
             "today": _today_rows(session, tenant),
             "callbacks": _callback_rows(session, tenant),
             **_header(session, tenant),
-        },
+        }
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
+        request,
+        "betrieb/index.html",
+        context,
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/fragments/heute", response_class=HTMLResponse, include_in_schema=False)
@@ -193,12 +219,22 @@ def heute_fragment(
     """Nur die Liste der Spalte "Heute". Holt die Seite nach jedem Ereignis."""
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "fragments/heute.html", {"problem": NO_TENANT, "today": []}, 503
+        context = {"problem": NO_TENANT, "today": []}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "fragments/heute.html", context, status_code=503
         )
-    return templates.TemplateResponse(
-        request, "fragments/heute.html", {"today": _today_rows(session, tenant)}
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
+    context = {"today": _today_rows(session, tenant)}
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
+        request, "fragments/heute.html", context
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.get(
@@ -210,12 +246,22 @@ def kopfzeile_fragment(
     """Nur die Kopfzeile. Holt die Seite nach jedem Ereignis "header"."""
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "fragments/kopfzeile.html", {"header_problem": NO_TENANT}, 503
+        context = {"header_problem": NO_TENANT}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "fragments/kopfzeile.html", context, status_code=503
         )
-    return templates.TemplateResponse(
-        request, "fragments/kopfzeile.html", _header(session, tenant)
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
+    context = _header(session, tenant)
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
+        request, "fragments/kopfzeile.html", context
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.post(
@@ -282,14 +328,24 @@ def rueckrufe_fragment(
     """Nur die Liste der Spalte "Rückrufe". Holt die Seite nach jedem Ereignis."""
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "fragments/rueckrufe.html", {"problem": NO_TENANT}, 503
+        context = {"problem": NO_TENANT}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "fragments/rueckrufe.html", context, status_code=503
         )
-    return templates.TemplateResponse(
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
+    context = {"callbacks": _callback_rows(session, tenant)}
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
         request,
         "fragments/rueckrufe.html",
-        {"callbacks": _callback_rows(session, tenant)},
+        context,
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.post(
@@ -309,19 +365,29 @@ def rueckruf_erledigt(
     """
     tenant = _tenant(session)
     if tenant is None:
-        return templates.TemplateResponse(
-            request, "fragments/rueckrufe.html", {"problem": NO_TENANT}, 503
+        context = {"problem": NO_TENANT}
+        token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+        context["csrf_token"] = token
+        response = templates.TemplateResponse(
+            request, "fragments/rueckrufe.html", context, status_code=503
         )
+        response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+        return response
     try:
         mark_done(session, tenant.id, callback_id)
     except AppError as exc:
         session.rollback()
         logger.info("Rueckruf nicht erledigt: %s", exc.message)
-    return templates.TemplateResponse(
+    context = {"callbacks": _callback_rows(session, tenant)}
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
         request,
         "fragments/rueckrufe.html",
-        {"callbacks": _callback_rows(session, tenant)},
+        context,
     )
+    response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
+    return response
 
 
 @router.get("/events", include_in_schema=False)

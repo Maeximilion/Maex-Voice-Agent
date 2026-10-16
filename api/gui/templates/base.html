@@ -6,6 +6,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="csrf-token" content="{{ csrf_token }}">
 <title>{% block title %}{{ tenant.name if tenant else "Maex Voice-Agent" }}{% endblock %}</title>
 <link rel="stylesheet" href="/gui/static/app.css">
 <script src="/gui/static/htmx.min.js" defer></script>

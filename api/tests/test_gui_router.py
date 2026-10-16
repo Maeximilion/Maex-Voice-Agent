@@ -66,7 +66,9 @@ def client(engine):
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        yield TestClient(app)
+        c = TestClient(app)
+        c.cookies.set("csrf_token", "testtoken")
+        yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -190,7 +192,7 @@ def test_caddy_schuetzt_die_gui():
 
 # --- Kopfzeile: Knoepfe (T-3.2) ---------------------------------------------
 
-HX = {"HX-Request": "true"}
+HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 
 
 def config_von(engine, tenant_id) -> ServiceConfig:
@@ -472,3 +474,17 @@ def test_tablet_schrift_mindestens_18px():
         "button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}"
         in css
     )
+
+def test_schalten_ohne_csrf_token_verboten(client, engine, tenant_id):
+    """CSRF-Schutz: POST braucht den passenden Token-Header."""
+    # Ohne Token-Header
+    headers = {"HX-Request": "true"}
+    response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
+    assert response.status_code == 403
+    assert "CSRF" in response.text
+
+    # Mit falschem Token-Header
+    headers = {"HX-Request": "true", "X-CSRF-Token": "falscher_token"}
+    response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
+    assert response.status_code == 403
+    assert "CSRF" in response.text
