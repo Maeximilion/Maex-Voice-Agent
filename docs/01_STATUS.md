@@ -8,10 +8,10 @@
 ## Summary
 
 **The operations controls require a CSRF token (PR #316, 16.10.2026).** The page
-sets an HttpOnly cookie and exposes its token to HTMX through a meta tag; writes
+and dev-only simulator console set an HttpOnly cookie and expose its token to HTMX through a meta tag; writes
 require the matching header. HTTPS marks the cookie Secure. Invalid non-ASCII
 input returns 403. The Jules branch was based on an older GUI: it is reconciled
-with current order controls and proxy authentication, and the order/sold-out test
+with current order controls and proxy authentication, and the order/sold-out/console test
 clients send the new token. The initial CI failure was Ruff formatting; later
 local checks also caught eight type errors and outdated test fixtures. Next:
 complete CI and obtain a review of the final head before Maxi merges. No linked

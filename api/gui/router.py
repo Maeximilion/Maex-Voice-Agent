@@ -170,6 +170,25 @@ def _header(session: Session, tenant: Tenant) -> dict:
     }
 
 
+def _page_response(
+    request: Request, template: str, context: dict, status_code: int = 200
+) -> HTMLResponse:
+    """Issue the same CSRF token to the cookie and the full page's meta tag."""
+    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    context["csrf_token"] = token
+    response = templates.TemplateResponse(
+        request, template, context, status_code=status_code
+    )
+    response.set_cookie(
+        "csrf_token",
+        token,
+        httponly=True,
+        samesite="lax",
+        secure=request.url.scheme == "https",
+    )
+    return response
+
+
 def _require_htmx(
     request: Request,
     hx_request: str | None = Header(default=None),
@@ -228,19 +247,9 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "orders": _order_rows(session, tenant),
             **_header(session, tenant),
         }
-    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
-    context["csrf_token"] = token
-    response = templates.TemplateResponse(
+    return _page_response(
         request, "betrieb/index.html", context, status_code=200 if tenant else 503
     )
-    response.set_cookie(
-        "csrf_token",
-        token,
-        httponly=True,
-        samesite="lax",
-        secure=request.url.scheme == "https",
-    )
-    return response
 
 
 @router.get("/fragments/heute", response_class=HTMLResponse, include_in_schema=False)
