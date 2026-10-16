@@ -1,0 +1,20 @@
+{
+  "id": "eskalation_0001",
+  "name": "Beschwerde im ersten Satz geht sofort an das Team",
+  "tags": [
+    "eskalation",
+    "beschwerde",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich moechte mich beschweren, die letzte Lieferung war kalt."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

@@ -1,11 +1,22 @@
 version: 2
 
 updates:
+  # /api holds a pip-compile pair: requirements.in (ranges, the file edited by hand) and
+  # requirements.txt (compiled from it by `make lock`: exact versions with hashes, never
+  # edited by hand). This is the layout of Dependabot's pip-compile support: it reads the
+  # command from the header of the .txt and recompiles it. A pull request that changes
+  # only the .in is incomplete; run `make lock` on it.
   - package-ecosystem: pip
     directory: /api
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    # One PR for all minor and patch bumps instead of one PR per package.
+    groups:
+      python-minor-patch:
+        update-types:
+          - minor
+          - patch
     commit-message:
       prefix: chore
       include: scope
@@ -19,7 +30,9 @@ updates:
       include: scope
 
   - package-ecosystem: docker
-    directory: /api
+    directories:
+      - /api
+      - /deploy/speech
     schedule:
       interval: monthly
     commit-message:
@@ -28,11 +41,32 @@ updates:
     ignore:
       # Die Python-Version des Containers wandert nicht allein: sie steht auch in der
       # CI, in pyproject.toml (target-version), im README und in der Doku. Ein PR, der
-      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen
-      # und wird von der CI nicht geprueft, weil sie das Image nicht baut. Der Sprung
-      # kommt als eigenes Arbeitspaket, wenn es einen Grund gibt.
+      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen.
+      # The CI job docker-smoke builds the image, but the tests run on the Python of
+      # setup-python, not inside it. Der Sprung kommt als eigenes Arbeitspaket, wenn
+      # es einen Grund gibt.
       # Bei Python-Tags ist 3.12 auf 3.14 ein Minor-Schritt, deshalb steht der hier mit.
       - dependency-name: python
         update-types:
           - version-update:semver-major
           - version-update:semver-minor
+
+  # Postgres, n8n, ntfy and caddy images live in the compose files, not in a Dockerfile.
+  # /deploy/asterisk is the test PBX of the voice spike, a third-party image.
+  - package-ecosystem: docker-compose
+    directories:
+      - /
+      - /deploy
+      - /deploy/asterisk
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: chore
+      include: scope
+    ignore:
+      # PostgreSQL stays on 16 (CLAUDE.md). A major bump is not an image tag change: a
+      # volume initialised by 16 does not start under 18, it needs a dump and restore
+      # (take a backup first). Minor and patch bumps still arrive.
+      - dependency-name: postgres
+        update-types:
+          - version-update:semver-major

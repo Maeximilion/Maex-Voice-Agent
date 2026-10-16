@@ -144,6 +144,7 @@ def test_ohne_token_401(client):
     assert r.status_code == 401
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     """Gemessen wird der Schreibpfad: je Aufruf ein frischer Entwurf, vorher angelegt.
 

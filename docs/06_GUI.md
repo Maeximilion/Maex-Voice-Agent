@@ -29,6 +29,8 @@
 
 **Verworfen:** React + Vite. Bleibt der Weg, falls spaeter komplexe Interaktionen dazukommen (Drag-and-Drop im Tourenplan, Kartenansicht fuer Zonen); fuer Listen und grosse Knoepfe auf einem Tablet kostet es einen zweiten Container ohne Gegenwert.
 
+**Future option, recorded at Maxi's request (12.10.2026):** Reassess TypeScript for the browser UI if concrete features require substantially more client-side state or interaction than Jinja2 and HTMX can maintain clearly, such as the route planner or zone map above. Evaluate it for the affected interface, with build and maintenance costs included. This is a review trigger, not an approved migration: D6 remains in force and the backend stays Python.
+
 **Endgeräte:** Tablet im Querformat (Betrieb), PC im Büro (Admin). Kein Handy-Layout in Stufe 1.
 
 ---
@@ -38,13 +40,15 @@
 ### Kopfzeile, immer sichtbar
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│  ● KI nimmt an      Lieferung an      Wartezeit 25 / 50 Min      │
-│  [ KI pausieren ]  [ Lieferung aus ]  [ Wartezeit +15 ] [ +30 ]  │
+│  ● KI nimmt an      Lieferung an                                 │
+│  [ KI pausieren ]  [ Lieferung aus ]                             │
+│  Wartezeit Abholung  25 Min  [ -15 ] [ +15 ]                     │
+│  Wartezeit Lieferung 50 Min  [ -15 ] [ +15 ]                     │
 └──────────────────────────────────────────────────────────────────┘
 ```
 - **Der Punkt hat drei Zustände:** grün „KI nimmt an" (Modus `primary`) · gelb „KI springt ein" (Modus `overflow`, nimmt nur ab, wenn niemand abnimmt) · rot „KI ist aus" (`paused`). Der Text steht immer daneben, Farbe allein reicht nicht.
 - **KI pausieren** ist der Not-Aus. Ein Tap, sofortige Wirkung, alle Anrufe gehen ans Team. Wieder einschalten braucht eine Bestätigung.
-- **Wartezeit +15 / +30** erhöhen die Wartezeit. Immer mit dem Wort „Wartezeit", sonst ist unklar, was der Knopf erhöht. Die neue Zeit gilt für jeden folgenden Anruf.
+- **Wartezeit Abholung und Wartezeit Lieferung getrennt, jede senkbar und erhöhbar** (Anforderung Maxi 26.09.2026 aus der Demo, gebaut in T-3.6). Immer mit dem Wort „Wartezeit" und dem Service, sonst ist unklar, was der Knopf ändert; `aria-label` sagt es auch dem Vorleser. Schritt 15 Minuten, Grenzen 10 und 180 Minuten (`domain/status/config.py`, Annahme). An der Grenze ist der Knopf aus. Die Grenze gilt nur in Tipp-Richtung: ein Wert, der schon darunter liegt, wird durch „-15" nicht erhöht. Die neue Zeit gilt für jeden folgenden Anruf, jede Änderung steht in `audit_log` (`service_config.wait_changed`).
 
 ### Drei Spalten
 
@@ -64,9 +68,18 @@
 - Neue Karte → Ton plus kurzes Blinken
 - **Abholcode** („A17") groß und farbig hinterlegt: Der Kunde sagt ihn am Tresen, das Team muss ihn aus zwei Metern lesen.
 - Positionen zeigen die Kartennummer grau vor dem Namen. Die Küche arbeitet mit Nummern.
-- **Passt** → ab in die Küche (in Stufe 5 ist das die Freigabe)
+- **Passt** → Zettel an die Kasse (in Stufe 5 ist das die Freigabe). Seit D2 druckt die Brücke einen Eingabezettel „NICHT IN KASSE“ am Haupt-Bondrucker; den Küchenbon druckt erst die Kasse, wenn jemand die Bestellung eingetippt hat (docs/02 §2a, T-4.6)
 - **Korrigieren** → Positionen ändern, Grund wählen (falsches Gericht · falsche Menge · falsche Adresse · Sonstiges). Jede Korrektur wird gezählt und ist der Rohstoff für die Genauigkeits-KPI.
-- **Rote Karte = Übergabe fehlgeschlagen.** Eigener Zustand einer Bestellkarte (`handover_state = failed`), kein Fehlerbanner: Die Bestellung ist gebucht und bestätigt, nur der Bon fehlt. Roter Rahmen, Zeile „Küche nicht erreicht", ein Knopf „Nochmal senden". Bleibt oben in Spalte 1, bis die Übergabe gelingt.
+- **Rote Karte = Übergabe fehlgeschlagen.** Eigener Zustand einer Bestellkarte (`handover_state = failed`), kein Fehlerbanner: Die Bestellung ist gebucht und bestätigt, nur der Bon fehlt. Roter Rahmen, Zeile „Zettel nicht gedruckt" (bis T-4.6: „Küche nicht erreicht"), ein Knopf „Nochmal senden". Bleibt oben in Spalte 1, bis die Übergabe gelingt. Rot wird sie, sobald die Küche den Bon nicht hat: Druckfehler oder 60 s ohne Abholung durch die Druckbrücke (T-4.6); druckt die Brücke den Bon doch noch, wird sie von selbst wieder normal.
+
+**Gebaut (T-4.7, 25.09.2026)** - `domain/ordering/board.py`, `correction.py`, `ticket.py`, `gui/orders_view.py`, `fragments/bestellungen.html`, `fragments/korrektur.html`:
+- In der Spalte steht, was das Team noch tun muss: bestätigte Bestellungen des Betriebstags, die noch niemand abgehakt hat; jede, die noch auf die Freigabe wartet, und jede rote Karte - beide auch über 05:00 hinaus, die rote auch nach „Passt". Rote Karten oben, danach die älteste. Zähler in der Überschrift, neue Karte mit eigenem Ton, Blinken und Rollen ins Bild.
+- **Passt je Modus:** Außerhalb von `primary` wartet die Bestellung ohne Bon („Noch nicht an der Kasse", gelber Rand, Knopf „Passt, Zettel an die Kasse"); Passt setzt `approved` und schickt den Zettel. In `primary` ist der Zettel schon unterwegs („Zettel wird gedruckt", dann „Zettel liegt an der Kasse"); Passt hakt nur ab. One exception since #252 (13.10.2026): an order above the restaurant's limit (`service_config.order_approval_above_cents`) waits in `primary` exactly like an order outside it, same card, same button, until somebody taps Passt. Texte seit T-4.6 (26.09.2026), vorher „Küche“. Eine rote Karte hat kein Passt, sondern „Nochmal senden".
+- **A waiting order turns red (#252, 13.10.2026):** an order that needs Passt and has waited longer than `service_config.order_approval_overdue_minutes` (5 unless the restaurant sets another number) since the guest's yes gets a red edge instead of the yellow one and the text „Wartet seit 18:42 auf Freigabe" (the clock time of the yes, not a count of minutes: the card is only redrawn when something changes). The button stays „Passt, Zettel an die Kasse". Such cards sort below the red „Zettel nicht gedruckt" cards and above everything else. When a card turns red while the view is open, the tablet plays the alarm of a complaint once and scrolls to it: nobody tapped Passt, so nobody is looking. The full red frame stays what it was, a slip that did not print.
+- **Korrigieren** öffnet einen eigenen Kasten über den Spalten, damit die Spalte live bleibt und nichts überschreibt, was das Team gerade tippt. Menge −/+, Tauschen (Gericht per Kartennummer ersetzen, Menge und Hinweis bleiben), Gericht per Nummer dazu, Auswahl je Gruppe als große Knöpfe (Pflicht wird nie vorbelegt). Jeder Tap rechnet am Server neu; gespeichert wird mit einem Tap auf den Grund. Die Knöpfe sind gesperrt, solange nichts geändert ist, eine Pflichtauswahl fehlt oder kein Gericht bliebe - der Grund steht als Text darüber. „Falsche Adresse" nur bei Lieferungen. Nach 90 Sekunden ohne Tap schließt der Kasten.
+- **Hinweise gehen nie still verloren:** Eine Position mit Hinweis (z. B. „WICHTIG: Keine Erdnüsse. Grund: Allergie") fällt mit Minus nicht weg; „Entfernen" fragt nach und nennt den Hinweis. Für „falsches Gericht" ist Tauschen der Weg.
+- Ein Gericht, das heute aus ist, darf das Team nehmen; es steht „heute aus" daneben.
+- Jede Korrektur steht als `order.corrected` im `audit_log` mit Grund und vorher/nachher (ohne Name, Telefon, Hinweistext) - Rohstoff für die Genauigkeit (T-8.4).
 
 **Spalte 2 – Heute**
 - Reservierungen des Tages nach Uhrzeit, mit Personenzahl und Notiz
@@ -84,8 +97,12 @@
 ```
 Beschwerden stehen immer oben und haben einen eigenen Ton.
 
+A number the call did not come from is marked under the number (#252, 12.10.2026): "Andere Nummer als der Anruf" with the line "Anruf kam von …" when the guest named a number other than the caller ID, "Anruf ohne Rufnummer" when the caller's number was withheld. The guest's own number carries no mark. "Anrufen" always dials the number the guest named; the mark only tells the team that the line does not back it. Where the number comes from is decided in `domain/callbacks/board.py` (`number_origin`), the words in `gui/router.py`.
+
 ### Der Knopf „Gericht aus"
 Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap = ausverkauft bis Betriebsschluss. Der Agent bietet das Gericht ab sofort nicht mehr an und nennt eine Alternative.
+
+Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Gerichte, die heute aus sind („2 heute aus"). Er öffnet einen eigenen Kasten über den Spalten wie die Korrektur; die Spalten bleiben live. Suchfeld für Nummer ("7" findet 07) oder Namensteil, darunter alle aktiven Gerichte in Kartenreihenfolge. „Heute aus" stellt das Gericht bis zum Ende des Betriebstags (05:00 Ortszeit) auf ausverkauft, am nächsten Morgen ist es von selbst wieder da. Ein zweiter Tap („Wieder da") nimmt es zurück - für den Irrtum und die Nachlieferung. Keine Rückfrage (§1 Regel 6). Jeder Tap schreibt `audit_log` mit Wert davor und danach. Ein anderes Tablet sieht die Änderung über das Ereignis `dishes` im Strom. „Fertig" schließt den Kasten.
 
 ---
 
@@ -133,4 +150,5 @@ Eigene Kachel, führt zu einer Liste mit Suchfeld und großen Schaltern. Ein Tap
 - **16.09.2026 – Adminansicht als klickbare Desktop-Seite:** `gui/mockups/admin-desktop.html`, alle sieben Bereiche mit Beispieldaten, abgenommen. Ergänzungen: Zähler an Reitern, Filter „Mit Hinweis"/„Ohne Alias", Feiertags-Vorschläge mit Ansagetext je Sondertag, „Abgelehnte Adressen" unter Lieferung, Kunden-Löschwunsch unter Daten. Mockup ist Vorlage für die Templates.
 - **16.09.2026 – Adminansicht (Menü):** als Bild abgenommen. Änderungen: Kennzahlen-Leiste in jedem Bereich, Preisabweichung als Badge am Gericht, Alias-Vorschläge mit Zähler „nicht erkannt", Reiter statt Seitenleiste, Liste statt Kacheln.
 - **17.09.2026 – Betriebsansicht gebaut (T-3.1, T-3.3):** `api/gui/templates/betrieb/index.html` mit Kopfzeile und drei Spalten, `fragments/heute.html` als HTMX-Fragment der Spalte "Heute", `api/gui/sse.py` als Ereignisstrom. Noch offen: Knoepfe der Kopfzeile (T-3.2), Spalte "Rueckrufe" (T-3.4), Spalte "Neue Bestellungen" (T-4.7).
+- **25.09.2026 – Spalte "Neue Bestellungen" gebaut (T-4.7):** Karten, Passt, Nochmal senden, Korrektur-Kasten; im Browser durchgeklickt (Tauschen mit Hinweis, Speichern, Passt). Kopfzeile (T-3.2) und Rueckrufe (T-3.4) sind seit 18.09.2026 fertig.
 - **16.09.2026 – Betriebsansicht:** als Bild im Chat abgenommen. Änderungen gegenüber der ersten Spec: dritter Kopfzeilen-Zustand (Überlauf), Fehlerkarte als eigener Kartenzustand, Abholcode groß, „Wartezeit" als Wort auf den Knöpfen, Kartennummer vor jedem Gerichtnamen.

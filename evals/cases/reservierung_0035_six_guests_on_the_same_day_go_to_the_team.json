@@ -1,0 +1,29 @@
+{
+  "id": "reservierung_0035",
+  "name": "Six guests for tonight: on the same day the smaller limit counts, the team calls back (#252)",
+  "tags": [
+    "reservierung",
+    "gruppe",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer sechs Personen heute um 20 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": false,
+    "escalated": true
+  }
+}

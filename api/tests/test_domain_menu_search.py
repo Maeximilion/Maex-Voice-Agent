@@ -1,0 +1,1331 @@
+"""search_menu: Nummer, Alias, unscharf, Nachfrage, nie raten (T-4.3, docs/04 §search_menu)."""
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, update
+from sqlalchemy.orm import Session
+
+from api.config import settings
+from api.core.errors import Ambiguous, NotFound
+from api.db import get_db
+from api.domain.menu import has_item_number_marker
+from api.domain.menu.importer import (
+    ALIASES_FILE,
+    ALLERGENS_FILE,
+    MENU_FILE,
+    OPTIONS_FILE,
+    apply,
+    parse,
+)
+from api.domain.menu.normalize import normalize_query
+from api.domain.menu.search import (
+    SAY_IN_TURN,
+    SAY_WHICH_NUMBER,
+    position_parts,
+    search_menu,
+)
+from api.main import app
+from api.models import MenuItem
+from api.tests.conftest import p95_ms
+from scripts.seed import seed
+
+NOW = datetime(2026, 9, 18, 16, 0, tzinfo=UTC)
+AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
+
+KARTE = {
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "23;Frühlingsrollen (4 Stück);Vorspeisen;6,90;;ja\n"
+        "24;Sommerrollen mit Garnelen;Vorspeisen;7,50;;ja\n"
+        "12;Wan-Tan-Suppe;Suppen;5,00;;ja\n"
+        "13;Pho Bo;Suppen;11,90;;ja\n"
+        "47;Ente knusprig;Hauptgerichte;15,50;;ja\n"
+        "48;Ente süß-sauer;Hauptgerichte;14,90;;ja\n"
+        "50;Altes Gericht;Hauptgerichte;9,00;;nein\n"
+    ),
+    OPTIONS_FILE: (
+        "number;group_name;option_name;price_delta_eur;is_default;required\n"
+        "47;Fleisch;Ente;0,00;ja;ja\n"
+        "47;Fleisch;Huhn;-1,00;nein;ja\n"
+        "47;Sauce;Erdnuss;0,50;nein;nein\n"
+    ),
+    ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
+    ALIASES_FILE: (
+        "number;alias\n"
+        "23;Frühlingsrollen\n"
+        "23;die knusprigen Rollen\n"
+        "24;Sommerrollen\n"
+        "12;Suppe\n"
+        "13;Suppe\n"
+        "13;Pho\n"
+        "47;die knusprige Ente\n"
+        "48;süßsaure Ente\n"
+        "50;alt\n"
+    ),
+}
+
+
+# --- ohne Datenbank ----------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "rest"),
+    [
+        ("Ich hätte gern zweimal die knusprige Ente, bitte", "knusprige ente"),
+        ("zwei Frühlingsrollen", "frühlingsrollen"),
+        ("einmal die Nummer dreiundzwanzig", ""),
+        ("die 23", ""),
+        ("2 x Pho Bo", "pho bo"),
+        ("Wan-Tan-Suppe", "wan-tan-suppe"),
+        # Kompakte Mengen wie in numberwords (Codex PR #117, P2)
+        ("2x Pho", "pho"),
+        ("2 Stück Pho", "pho"),
+        # Suffix g like a (T-4.12)
+        ("die 25 g", ""),
+        ("die 25g bitte", ""),
+        ("2 stk Pho", "pho"),
+        ("2 st Pho", "pho"),
+        ("Frühlingsrollen (4 Stück)", "frühlingsrollen"),
+        # Erkennung ohne Umlaut: "haette" darf nicht als Name stehen bleiben,
+        # sonst trifft der exakte Alias "pho" nicht mehr (Codex PR #117, P2).
+        ("ich haette gern Pho", "pho"),
+        ("ich moechte Pho", "pho"),
+        ("aeh Pho", "pho"),
+        # Dieselben Fuellwoerter wie im Nummernsatz, sonst sucht der Name nach
+        # "wuerde pho" (Review PR #147).
+        ("ich würde gern Pho", "pho"),
+        ("ich wuerde gern Pho", "pho"),
+        ("Hallo, die knusprige Ente", "knusprige ente"),
+        ("dazu Pho", "pho"),
+        ("Guten Abend, ich würd gern Pho bestellen", "pho"),
+        # Der Gerichtname selbst wird nie umgeschrieben.
+        ("Frühlingsrollen", "frühlingsrollen"),
+    ],
+)
+def test_normalize_query(gesagt, rest):
+    assert normalize_query(gesagt) == rest
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "marker"),
+    [
+        ("Nummer 23", True),
+        ("die Nr. 23", True),
+        ("die 23", False),
+        ("zwei Rollen", False),
+    ],
+)
+def test_nummer_marker(gesagt, marker):
+    assert has_item_number_marker(gesagt) is marker
+
+
+# --- mit Datenbank -----------------------------------------------------------------
+
+
+@pytest.fixture
+def engine(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    yield engine
+    engine.dispose()
+
+
+@pytest.fixture
+def session(engine):
+    with Session(engine) as s:
+        yield s
+
+
+@pytest.fixture
+def tenant_id(session) -> uuid.UUID:
+    tid = uuid.UUID(
+        seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+    return tid
+
+
+def suche(session, tenant_id, text, **kw):
+    return search_menu(session, tenant_id, text, now=NOW, **kw)
+
+
+def nummern(result) -> list[str]:
+    return [hit.number for hit in result.results]
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["einmal die Nummer dreiundzwanzig", "die 23", "Nummer 23", "dreiundzwanzig"],
+)
+def test_nummer_trifft_exakt(session, tenant_id, gesagt):
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
+    hit = result.results[0]
+    assert hit.price_cents == 690 and hit.sold_out is False and result.say is None
+
+
+def test_unbekannte_nummer_raet_nicht(session, tenant_id):
+    """Nummer 99 gibt es nicht: kein Ausweichen auf einen aehnlichen Namen."""
+    with pytest.raises(NotFound) as err:
+        suche(session, tenant_id, "Nummer 99")
+    assert "Nummer 99" in err.value.say
+
+
+def test_menge_ist_keine_nummer(session, tenant_id):
+    """ "zwei Frühlingsrollen" ist nicht Gericht 2, sondern zweimal die 23."""
+    result = suche(session, tenant_id, "zwei Frühlingsrollen")
+
+    assert result.match_type == "alias" and nummern(result) == ["23"]
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [
+        ("die knusprigen Rollen", "23"),
+        ("Die knusprigen Rollen, bitte", "23"),
+        ("Sommerrollen", "24"),
+        ("Pho", "13"),
+        # Fuellwoerter auf beiden Seiten egal: Alias "die knusprige ente".
+        ("knusprige Ente bitte", "47"),
+        ("2x Pho", "13"),
+        ("zwei Stück Sommerrollen", "24"),
+    ],
+)
+def test_alias_exakt(session, tenant_id, gesagt, nummer):
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "alias" and nummern(result) == [nummer]
+
+
+def test_alias_an_zwei_gerichten_fragt_nach(session, tenant_id):
+    result = suche(session, tenant_id, "eine Suppe bitte")
+
+    assert result.match_type == "ambiguous"
+    assert nummern(result) == ["12", "13"]
+    assert result.say.startswith("Meinen Sie Nummer 12")
+
+
+def test_zwei_starke_treffer_fragen_nach(session, tenant_id):
+    """ "Ente" passt auf zwei Gerichte gleich gut: nachfragen, nicht waehlen."""
+    result = suche(session, tenant_id, "Ente")
+
+    assert result.match_type == "ambiguous"
+    assert set(nummern(result)) == {"47", "48"}
+    assert " oder " in result.say
+
+
+def test_eindeutig_unscharf(session, tenant_id):
+    """Kein Alias passt ("Ente knusprig" steht so nur als Name da): Trigram entscheidet."""
+    result = suche(session, tenant_id, "Ente knusprig, bitte")
+
+    assert result.match_type == "fuzzy_single" and nummern(result) == ["47"]
+
+
+def test_tippfehler_der_erkennung_findet_das_gericht(session, tenant_id):
+    result = suche(session, tenant_id, "Frülingsrolle")
+
+    assert result.match_type in {"fuzzy_single", "ambiguous"}
+    assert nummern(result)[0] == "23"
+
+
+@pytest.mark.parametrize("gesagt", ["Pizza Hawaii", "bitte", "ähm"])
+def test_nichts_gefunden(session, tenant_id, gesagt):
+    with pytest.raises(NotFound) as err:
+        suche(session, tenant_id, gesagt)
+    assert "Nummer sagen" in err.value.say
+
+
+@pytest.mark.parametrize("gesagt", ["Altes Gericht", "Nummer 50", "alt"])
+def test_inaktives_gericht_wird_nie_gefunden(session, tenant_id, gesagt):
+    with pytest.raises(NotFound):
+        suche(session, tenant_id, gesagt)
+
+
+def test_ausverkauft_mit_satz(session, tenant_id):
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "47")
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.commit()
+
+    result = suche(session, tenant_id, "Nummer 47")
+
+    assert result.results[0].sold_out is True
+    # Mit Alternative aus derselben Kategorie (T-4.8, docs/06 §3).
+    assert result.say == (
+        "Ente knusprig ist heute leider aus. "
+        "Stattdessen hätte ich Nummer 48 Ente süß-sauer."
+    )
+
+
+def test_ausverkauft_abgelaufen_ist_wieder_da(session, tenant_id):
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "47")
+        .values(sold_out_until=NOW - timedelta(minutes=1))
+    )
+    session.commit()
+
+    assert suche(session, tenant_id, "Nummer 47").results[0].sold_out is False
+
+
+def test_optionen_nach_gruppe_default_zuerst(session, tenant_id):
+    hit = suche(session, tenant_id, "Nummer 47").results[0]
+
+    gruppen = {g.group: g for g in hit.option_groups}
+    assert set(gruppen) == {"Fleisch", "Sauce"}
+    fleisch = gruppen["Fleisch"]
+    assert fleisch.required is True
+    assert [(o.name, o.default) for o in fleisch.options] == [
+        ("Ente", True),
+        ("Huhn", False),
+    ]
+    assert fleisch.options[1].price_delta_cents == -100
+
+
+def test_max_results_begrenzt_vorschlaege(session, tenant_id):
+    result = suche(session, tenant_id, "eine Suppe bitte", max_results=1)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["12"]
+
+
+def test_fremder_mandant_sieht_die_karte_nicht(session, tenant_id):
+    anderer = uuid.UUID(
+        seed(session, tenant_name="Zweitbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+    with pytest.raises(NotFound):
+        suche(session, anderer, "Nummer 23")
+
+
+# --- HTTP-Huelle ---------------------------------------------------------------
+
+
+@pytest.fixture
+def client(engine, tenant_id):
+    def override_get_db():
+        with Session(engine) as s:
+            yield s
+
+    app.dependency_overrides[get_db] = override_get_db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.clear()
+
+
+def post(client, tenant_id, query, **extra):
+    body = {
+        "call_id": str(uuid.uuid4()),
+        "tenant_id": str(tenant_id),
+        "query": query,
+        **extra,
+    }
+    return client.post("/v1/tools/search_menu", json=body, headers=AUTH)
+
+
+def test_tool_folgt_der_huelle(client, tenant_id):
+    response = post(client, tenant_id, "einmal die Nummer dreiundzwanzig")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True and body["say"] is None
+    assert body["data"]["match_type"] == "exact_number"
+    hit = body["data"]["results"][0]
+    assert set(hit) == {
+        "menu_item_id",
+        "number",
+        "name",
+        "price_cents",
+        "sold_out",
+        "option_groups",
+    }
+    assert hit["number"] == "23" and hit["price_cents"] == 690
+
+
+def test_tool_nicht_gefunden_als_fehler_mit_satz(client, tenant_id):
+    body = post(client, tenant_id, "Pizza Hawaii").json()
+
+    assert body["ok"] is False and body["error"]["code"] == "not_found"
+    assert "Nummer sagen" in body["say"]
+
+
+def test_tool_braucht_token(client, tenant_id):
+    body = {"call_id": str(uuid.uuid4()), "tenant_id": str(tenant_id), "query": "23"}
+    assert client.post("/v1/tools/search_menu", json=body).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "extra", [{"query": ""}, {"max_results": 0}, {"max_results": 9}]
+)
+def test_tool_prueft_eingaben(client, tenant_id, extra):
+    body = {"call_id": str(uuid.uuid4()), "tenant_id": str(tenant_id), "query": "Ente"}
+    body.update(extra)
+    response = client.post("/v1/tools/search_menu", json=body, headers=AUTH)
+
+    assert response.json()["error"]["code"] == "invalid_input"
+
+
+@pytest.mark.latency
+def test_tool_bleibt_schnell_mit_grosser_karte(client, session, tenant_id):
+    """Latenzbudget 300 ms p95 (docs/04), auch mit 200 Gerichten und unscharfer Suche."""
+    zeilen = "".join(
+        f"{100 + i};Testgericht Nummer {i} mit Reis;Test;9,90;;ja\n" for i in range(200)
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + zeilen, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "Frülingsrolle")) < 300
+
+
+# --- Kartennummern als Text (Befund Codex PR #116, P1) ---------------------------
+
+
+@pytest.fixture
+def buchstaben(session, tenant_id):
+    """Karte mit 23 und 23a, 31a ohne 31, 7 und 08 (fuehrende Null)."""
+    zeilen = (
+        "23a;Frühlingsrollen vegan;Vorspeisen;6,90;;ja\n"
+        "31a;Glasnudelsalat;Vorspeisen;7,90;;ja\n"
+        "7;Misosuppe;Suppen;4,50;;ja\n"
+        "08;Edamame;Vorspeisen;4,90;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + zeilen, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [
+        ("Nummer 23a", "23a"),
+        ("Nummer 23 a", "23a"),
+        ("die 23A bitte", "23a"),
+        ("Nummer 23", "23"),
+        ("Nummer 31a", "31a"),
+        ("Nummer 07", "7"),
+        ("Nummer 7", "7"),
+        ("Nummer acht", "08"),
+        ("Nummer 08", "08"),
+    ],
+)
+def test_nummer_als_text(session, buchstaben, gesagt, nummer):
+    result = suche(session, buchstaben, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == [nummer]
+
+
+def test_zahl_ohne_buchstabe_trifft_nicht_die_variante(session, buchstaben):
+    """Es gibt 31a, aber keine 31: "Nummer 31" ist nicht gefunden, nicht 31a."""
+    with pytest.raises(NotFound) as err:
+        suche(session, buchstaben, "Nummer 31")
+    assert "Nummer 31 " in err.value.say
+
+
+def test_unbekannte_buchstabennummer(session, buchstaben):
+    with pytest.raises(NotFound) as err:
+        suche(session, buchstaben, "Nummer 23c")
+    assert "Nummer 23c" in err.value.say
+
+
+# --- Eine Fundstelle fuer Nummer, Buchstabe und Marker (Codex PR #117, P1) --------
+
+
+def test_marker_ohne_zahl_dahinter_macht_menge_nicht_zur_nummer(session, tenant_id):
+    """ "Nummer weiß ich nicht": das Wort Nummer gehoert nicht zur zwei."""
+    result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
+
+    assert result.match_type != "exact_number"
+    assert nummern(result)[0] == "23"
+
+
+@pytest.mark.parametrize("gesagt", ["Nummer 23g", "Nummer 23ab", "Nummer 23 g"])
+def test_ungueltiger_buchstabe_wird_nicht_abgeschnitten(session, tenant_id, gesagt):
+    """Befund Codex PR #117: "23g" ist nicht die 23 - nicht gefunden statt still 23."""
+    with pytest.raises(NotFound) as err:
+        suche(session, tenant_id, gesagt)
+    assert "Nummer 23" in err.value.say and err.value.say != ""
+    assert "23 habe" not in err.value.say
+
+
+def test_zwei_x_bleibt_eine_menge(session, tenant_id):
+    assert nummern(suche(session, tenant_id, "2x Pho")) == ["13"]
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "nummer"),
+    [("drei Portionen von der 23", "23"), ("die 23 a", "23a")],
+)
+def test_verbindungswoerter_und_abgesetzter_buchstabe(
+    session, buchstaben, gesagt, nummer
+):
+    """Codex PR #117: "von" und ein abgesetztes "a" sind kein Gerichtname."""
+    result = suche(session, buchstaben, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == [nummer]
+
+
+def test_nummer_ist_23(session, tenant_id):
+    result = suche(session, tenant_id, "die Nummer ist 23")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
+
+
+def test_unmarkierte_ungueltige_nummer_liefert_nie_die_23(session, tenant_id):
+    """ "die 23g" ohne Marker: nicht gefunden, aber nie still Gericht 23."""
+    with pytest.raises(NotFound):
+        suche(session, tenant_id, "die 23g")
+
+
+def test_alias_mit_ziffer_vorn(session, tenant_id):
+    """Codex PR #117: ein Alias wie "7up" darf nicht als Kartennummer verschwinden."""
+    getraenk = "90;Seven Up;Getränke;2,50;;ja"
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE] + getraenk + "\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE] + "90;7up" + "\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    for gesagt in ("7up", "ein 7up bitte"):
+        assert nummern(suche(session, tenant_id, gesagt)) == ["90"], gesagt
+
+
+# --- Regel A: Nummer nur direkt, wenn der Satz eindeutig ist ----------------------
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "Nummer 23",
+        "die 23",
+        "dreiundzwanzig",
+        "einmal die Nummer dreiundzwanzig",
+        "drei Portionen von der 23",
+        "die Nummer ist 23",
+        "Nummer 23 zweimal",
+        "zwei Nummer 23",
+        "2x die 23",
+        "Nummer 23 bitte",
+        "Nummer 23, äh, bitte",
+    ],
+)
+def test_eindeutiger_nummernsatz_trifft(session, tenant_id, gesagt):
+    result = suche(session, tenant_id, gesagt)
+
+    assert result.match_type == "exact_number" and nummern(result) == ["23"]
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    [
+        "Nummer 23 oder 24",
+        "Nummer 23, nein 24",
+        "Nummer 23 oder Nummer 24",
+        "Nummer 23, äh, 24",
+        "Nummer 23 und 24",
+        "Nummer 47, die Ente",
+        "Nummer 23 mit 2 Soßen",
+        "Nummer 1000 und 23",
+        "23a, nein, Nummer 23",
+        "23 und 24",
+        "Nummer 07 oder Nummer 7",
+        # Ohne Marker: sonst suchte die Namenssuche nach "oder" (Codex PR #117).
+        "23 oder 24",
+        "Nummer A12 oder 24",
+        # Der Marker ueberlebt Fuellwort und Zoegerlaut (Codex PR #117, P1).
+        "Nummer bitte 23, Pho",
+        # Zurueckgenommen oder nicht zu Ende gesprochen (Codex PR #117, P1).
+        "Nummer 23, nein",
+        "Nummer 23 oder",
+    ],
+)
+def test_nummer_mit_mehr_im_satz_fragt_nach(session, tenant_id, gesagt):
+    """Regel A: eine zweite Zahl oder Text neben der Nummer - nie selbst waehlen."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, gesagt)
+    assert "Welche Nummer" in err.value.say
+
+
+def test_ohne_nummer_im_satz_bleibt_die_namenssuche(session, tenant_id):
+    """ "Nummer weiß ich nicht" ist kein Nummernsatz: die Namenssuche entscheidet."""
+    result = suche(session, tenant_id, "zwei Frühlingsrollen, Nummer weiß ich nicht")
+
+    assert nummern(result)[0] == "23" and result.match_type != "exact_number"
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "teile"),
+    [
+        ("die 23 und einmal Pho Bo", "die 23 | einmal Pho Bo"),
+        (
+            "einmal die 23 und zweimal Sommerrollen",
+            "einmal die 23 | zweimal Sommerrollen",
+        ),
+    ],
+)
+def test_mehrere_positionen_ohne_marker_fragen_nach(session, tenant_id, gesagt, teile):
+    """Vorher fiel die 23 still weg: ohne "Nummer" ist der Satz kein Nummernsatz
+    (Regel A), und die Namenssuche fand nur Pho Bo (Open Point 21.09.2026).
+
+    Jetzt erkennt search_menu mit `split_positions`, dass mehr als eine Position
+    im Satz steht, und fragt nach, statt eine zu verschlucken (Codex PR #124,
+    P1). Zerlegt wird hier nichts: die Teile stehen in `message`, der Aufrufer
+    fragt je Teil erneut.
+    """
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, gesagt)
+    assert teile in err.value.message
+    assert err.value.say == SAY_IN_TURN
+
+
+def test_zweites_gericht_ohne_menge_fragt_auch_ueber_http_nach(session, tenant_id):
+    """ "die 23 und Pho Bo": der Satz allein trennt nicht, die Karte schon - jedes
+    Stueck trifft ein anderes Gericht. Dann fragt search_menu nach, statt ueber
+    den ganzen Satz nur Pho Bo zu finden (Codex PR #127, P1)."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, "die 23 und Pho Bo")
+    assert "die 23 | Pho Bo" in err.value.message
+    assert err.value.say == SAY_IN_TURN
+
+
+def test_name_mit_und_bleibt_eine_suche(session, tenant_id):
+    """Trifft ein Stueck nichts, gehoert das "und" zum Namen: normale Suche."""
+    result = suche(session, tenant_id, "die knusprige Ente und so")
+    assert nummern(result)[0] == "47"
+
+
+KARTE_ZUSAMMEN = {
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "60;Fisch und Chips;Hauptgerichte;12,50;;ja\n"
+        "61;Fisch;Hauptgerichte;10,00;;ja\n"
+        "62;Chips;Beilagen;3,00;;ja\n"
+        "13;Pho Bo;Suppen;11,90;;ja\n"
+        "23;Frühlingsrollen;Vorspeisen;6,90;;ja\n"
+        "63;Reis;Beilagen;2,50;;ja\n"
+    ),
+    OPTIONS_FILE: "number;group_name;option_name;price_delta_eur;is_default;required\n",
+    ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n",
+    # "Fisch" und "Chips" treffen je fuer sich eindeutig (Alias), wie im Befund.
+    # "mit Reis" als Alias der Beilage: ein Hinweis, der selbst ein Gericht trifft.
+    # "Backfisch mit Pommes": dasselbe Gericht wie "Fisch und Chips", andere Worte.
+    ALIASES_FILE: (
+        "number;alias\n61;Fisch\n62;Chips\n62;Pommes\n63;mit Reis\n"
+        "60;Backfisch mit Pommes\n"
+    ),
+}
+
+
+@pytest.fixture
+def zusammen_tenant(session) -> uuid.UUID:
+    tid = uuid.UUID(
+        seed(session, tenant_name="Zusammen", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE_ZUSAMMEN)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+    return tid
+
+
+def test_gericht_mit_und_im_namen_wird_nicht_zerlegt(session, zusammen_tenant):
+    """Codex PR #127, P1: "Fisch und Chips" steht selbst auf der Karte. Dass
+    "Fisch" und "Chips" es auch tun, macht daraus keine zwei Positionen."""
+    result = suche(session, zusammen_tenant, "Fisch und Chips")
+    assert nummern(result) == ["60"]
+
+
+def test_zwei_gerichte_bleiben_zwei_auch_neben_einem_zusammengesetzten(
+    session, zusammen_tenant
+):
+    """Pommes (Alias von Chips) und Pho Bo: kein ganzes Gericht, also zwei."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, zusammen_tenant, "Pommes und Pho Bo")
+    assert "Pommes | Pho Bo" in err.value.message
+
+
+@pytest.mark.parametrize(
+    "gesagt",
+    ["einmal Fisch und Chips", "Fisch und Chips bitte", "zweimal Fisch und Chips"],
+)
+def test_ganzes_gericht_mit_menge_oder_fuellwort(session, zusammen_tenant, gesagt):
+    """Codex PR #127, P1: Menge und Fuellwort gehoeren nicht zum Namen. Der
+    Vergleich mit dem Gericht laeuft deshalb in der Form der Suche selbst."""
+    result = suche(session, zusammen_tenant, gesagt)
+    assert nummern(result) == ["60"]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23, mit Reis", "Pho Bo, extra Reis"])
+def test_hinweis_nach_dem_komma_bleibt_an_der_position(
+    session, zusammen_tenant, gesagt
+):
+    """Codex PR #127, P1: "mit Reis" trifft selbst die Beilage, ist hier aber
+    ein Hinweis zur Position davor, keine zweite. Wie split_positions haengt
+    ein Stueck mit "mit", "ohne", "extra" vorn an dem davor."""
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]
+
+
+@pytest.mark.parametrize("gesagt", ["die 23 und Pho", "Pho und die 23"])
+def test_alias_im_rest_ist_kein_ganzes_gericht(session, tenant_id, gesagt):
+    """Codex PR #127, P1: ohne Nummer bleibt von "die 23 und Pho" nur "pho",
+    und das ist ein Alias. Ein Alias zaehlt nur fuer den ganzen Satz, wenn kein
+    Stueck dabei leer wird - sonst fiele die 23 still weg."""
+    assert len(position_parts(session, tenant_id, gesagt, now=NOW)) == 2
+
+
+def test_eigene_menge_je_teil_sind_zwei_positionen(session, zusammen_tenant):
+    """Nennt der Gast je Teil eine Menge, eroeffnet jeder Teil eine Position:
+    "zweimal Fisch und zweimal Chips" sind zwei, nicht zweimal Fisch und Chips.
+    Wer "Fisch und Chips" meint, hoert es beim Vorlesen und korrigiert."""
+    assert position_parts(
+        session, zusammen_tenant, "zweimal Fisch und zweimal Chips", now=NOW
+    ) == ["zweimal Fisch", "zweimal Chips"]
+
+
+def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
+    session, zusammen_tenant
+):
+    """Codex PR #127, P1: "Pho Bo und Pho Bo" sind zwei Portionen. Als ganzer
+    Satz faende die Suche ein Pho Bo, die zweite Portion fiele still weg."""
+    assert position_parts(session, zusammen_tenant, "Pho Bo und Pho Bo", now=NOW) == [
+        "Pho Bo",
+        "Pho Bo",
+    ]
+
+
+def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
+    """ "Pho und Pho Bo" trifft zweimal die 13, aber mit anderen Worten: das kann
+    ein Gericht sein, das der Gast praezisiert. Ganz lassen, nicht verdoppeln."""
+    assert position_parts(session, tenant_id, "Pho und Pho Bo", now=NOW) == [
+        "Pho und Pho Bo"
+    ]
+
+
+KARTE_DOPPELALIAS = {
+    **KARTE_ZUSAMMEN,
+    MENU_FILE: (
+        "number;name;category;price_eur;description;active\n"
+        "60;Backfisch mit Pommes;Hauptgerichte;12,50;;ja\n"
+        "61;Fisch;Hauptgerichte;10,00;;ja\n"
+        "62;Chips;Beilagen;3,00;;ja\n"
+        "64;Seelachs mit Kartoffeln;Hauptgerichte;13,50;;ja\n"
+    ),
+    ALIASES_FILE: (
+        "number;alias\n61;Fisch\n62;Chips\n60;Fisch und Chips\n64;Fisch und Chips\n"
+    ),
+}
+
+
+def test_doppelter_alias_fuer_den_ganzen_satz_fragt_nach(session):
+    """Codex PR #127, P2: "Fisch und Chips" haengt an zwei Gerichten. Dass
+    "Fisch" und "Chips" einzeln treffen, macht daraus keine zwei Positionen -
+    die Suche fragt, welches der beiden gemeint ist."""
+    tid = uuid.UUID(
+        seed(session, tenant_name="Doppelalias", timezone="Europe/Berlin").tenant_id
+    )
+    plan = parse(KARTE_DOPPELALIAS)
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+
+    assert position_parts(session, tid, "Fisch und Chips", now=NOW) == [
+        "Fisch und Chips"
+    ]
+    result = suche(session, tid, "Fisch und Chips")
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["60", "64"]
+
+
+@pytest.mark.parametrize(
+    ("gesagt", "teile"),
+    [
+        ("Fisch und Chips und Pho Bo", ["Fisch und Chips", "Pho Bo"]),
+        ("Pho Bo und Fisch und Chips", ["Pho Bo", "Fisch und Chips"]),
+        ("einmal Fisch und Chips und Pho Bo", ["einmal Fisch und Chips", "Pho Bo"]),
+    ],
+)
+def test_zusammengesetztes_gericht_in_einer_aufzaehlung(
+    session, zusammen_tenant, gesagt, teile
+):
+    """Codex PR #127, P1: steht "Fisch und Chips" neben einem weiteren Gericht,
+    ist der ganze Satz kein Gericht, die Stuecke "Fisch" und "Chips" aber schon.
+    Benachbarte Stuecke werden deshalb zuerst gemeinsam gegen die Karte
+    geprueft, das laengste zuerst."""
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == teile
+
+
+@pytest.mark.latency
+def test_aufzaehlung_ohne_mengen_bleibt_im_latenzbudget(session, zusammen_tenant):
+    """Das Zusammenfassen benachbarter Stuecke sucht je Spanne einmal. Fuenf
+    Gerichte ohne Menge sind der teure Fall; das Budget von 300 ms gilt auch hier."""
+    gesagt = "Pho Bo und Fisch und Chips und Frühlingsrollen und Pommes und Pho Bo"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [
+        "Pho Bo",
+        "Fisch und Chips",
+        "Frühlingsrollen",
+        "Pommes",
+        "Pho Bo",
+    ]
+    assert (
+        p95_ms(lambda: position_parts(session, zusammen_tenant, gesagt, now=NOW)) < 300
+    )
+
+
+def test_mehrere_positionen_ueber_http_ohne_bitte_um_wiederholung(session, tenant_id):
+    """Maxi, PR #127: der Gast darf mehreres hintereinander nennen. Die Antwort
+    bittet ihn nicht, es eins nach dem anderen zu wiederholen - der Aufrufer
+    fragt je Teil, der Gast wartet."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, "die 23 und einmal Pho Bo")
+    assert "eins nach dem anderen" not in err.value.say
+    assert "Reihe nach" in err.value.say
+
+
+def test_zusammengesetztes_gericht_zweimal_mit_anderen_worten_bleibt_ganz(
+    session, zusammen_tenant
+):
+    """Codex PR #127, P1: "Fisch und Chips" und "Backfisch mit Pommes" sind
+    dasselbe Gericht (Name und Alias). Mit anderen Worten zweimal genannt kann
+    das eine Praezisierung sein - wie bei einzelnen Stuecken bleibt der Satz
+    ganz, statt die Bestellung zu verdoppeln."""
+    gesagt = "Fisch und Chips und Backfisch mit Pommes"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [gesagt]
+
+
+def test_zusammengesetztes_gericht_zweimal_gleich_sind_zwei(session, zusammen_tenant):
+    gesagt = "Fisch und Chips und Fisch und Chips"
+    assert position_parts(session, zusammen_tenant, gesagt, now=NOW) == [
+        "Fisch und Chips",
+        "Fisch und Chips",
+    ]
+
+
+FRUECHTE = [
+    "Apfel",
+    "Birne",
+    "Kirsche",
+    "Dattel",
+    "Feige",
+    "Guave",
+    "Honigmelone",
+    "Ingwer",
+    "Johannisbeere",
+    "Kiwi",
+    "Limette",
+    "Mango",
+    "Nektarine",
+    "Orange",
+    "Papaya",
+    "Quitte",
+    "Rhabarber",
+    "Stachelbeere",
+    "Traube",
+    "Zitrone",
+]
+
+
+@pytest.mark.latency
+def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
+    session, monkeypatch
+):
+    """Codex PR #127, P2: ohne Grenze prueft das Zusammenfassen jede Spanne,
+    bei 20 Gerichten rund 190 Suchen. Laenger als der laengste Name oder Alias
+    der Karte (in Stuecken an den Trennern) kann keine Spanne ein Gericht sein:
+    hier hat die Karte "Fisch und Chips", also hoechstens zwei Stuecke."""
+    tid = uuid.UUID(
+        seed(session, tenant_name="Obst", timezone="Europe/Berlin").tenant_id
+    )
+    zeilen = "".join(
+        f"{70 + i};{name};Test;3,00;;ja\n" for i, name in enumerate(FRUECHTE)
+    )
+    plan = parse(
+        {
+            **KARTE_ZUSAMMEN,
+            MENU_FILE: KARTE_ZUSAMMEN[MENU_FILE] + zeilen,
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tid, plan, now=NOW)
+
+    import api.domain.menu.search as search_module
+
+    calls = []
+    original = search_module._whole_dish
+    monkeypatch.setattr(
+        search_module,
+        "_whole_dish",
+        lambda *a, **kw: calls.append(a[3]) or original(*a, **kw),
+    )
+    gesagt = " und ".join(FRUECHTE)
+    assert position_parts(session, tid, gesagt, now=NOW) == FRUECHTE
+    # Je Startstueck hoechstens eine Spanne aus zwei Stuecken.
+    assert len(calls) <= len(FRUECHTE) - 1
+    assert p95_ms(lambda: position_parts(session, tid, gesagt, now=NOW)) < 300
+
+
+# --- Prefix from the menu and suffix g (T-4.12) ------------------------------------
+
+
+@pytest.fixture
+def sushi(session, tenant_id):
+    """A menu like the register: S and SM in the group Sushi, 25 and 25g, plus
+    the 12 (Wan-Tan-Suppe) and 13 (Pho Bo) without a prefix."""
+    rows = (
+        "S1;Lachs Nigiri;Sushi;4,50;;ja\n"
+        "S07;Gurken Maki;Sushi;3,90;;ja\n"
+        "S12;Thunfisch Maki;Sushi;5,90;;ja\n"
+        "SM1;Sushi-Menü klein;Sushi;16,90;;ja\n"
+        "25;Chop Suey;Hauptgerichte;12,50;;ja\n"
+        "25G;Soße Chop Suey;Hauptgerichte;2,00;;ja\n"
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("S12", "s12"),
+        ("Nummer S12", "s12"),
+        ("S 12", "s12"),
+        ("S zwölf", "s12"),
+        ("Es zwölf", "s12"),
+        ("die S zwölf bitte", "s12"),
+        ("Sushi zwölf", "s12"),
+        ("SM eins", "sm1"),
+        ("Es Em eins", "sm1"),
+        ("SM1", "sm1"),
+        ("S7", "s07"),
+        ("S sieben", "s07"),
+        ("fünfundzwanzig G", "25g"),
+        ("25 g", "25g"),
+        ("25G", "25g"),
+        ("Nummer 25", "25"),
+        ("die 12", "12"),
+    ],
+)
+def test_prefix_and_suffix_g_match_exactly(session, sushi, said, number):
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "exact_number" and nummern(result) == [number]
+
+
+def test_category_word_with_two_hits_asks_back(session, sushi):
+    """ "Sushi eins" is S1 or SM1: both are on the menu, so ask back."""
+    result = suche(session, sushi, "Sushi eins")
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s1", "sm1"]
+    assert "Nummer s1" in result.say and "Nummer sm1" in result.say
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ist zwölf.",
+        "Zweimal ist zwölf.",
+        "Die ist zwölf, bitte.",
+        "Nummer ist 12",
+        "Ich nehme ist zwölf",
+    ],
+)
+def test_s12_heard_as_ist_zwoelf_asks_which_dish(session, sushi, said):
+    """Eval abholung_0077: the ear writes "S zwölf" as "ist zwölf". The menu has
+    the 12 and the S12, so the guest is asked by name instead of getting the
+    soup (rule 2)."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["12", "s12"]
+    assert "Nummer 12, Wan-Tan-Suppe" in result.say
+    assert "Nummer s12, Thunfisch Maki" in result.say
+
+
+@pytest.mark.parametrize("said", ["Ist sieben.", "Das ist sieben.", "Nummer ist 7"])
+def test_ist_number_with_only_the_s_dish_on_the_menu_asks_whether_it_is_meant(
+    session, sushi, said
+):
+    """Codex PR #257: the menu has S7 and no 7. "Das ist sieben" may be plain
+    German for a dish that does not exist, so S7 is offered, never taken."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["s07"]
+    assert result.say == "Meinen Sie Nummer s07, Gurken Maki?"
+
+
+@pytest.mark.parametrize(
+    ("said", "offer"),
+    [
+        ("Ist dreizehn.", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("Ich nehme ist dreizehn", "Meinen Sie Nummer 13, Pho Bo?"),
+        ("die Nummer ist 23", "Meinen Sie Nummer 23, Frühlingsrollen"),
+    ],
+)
+def test_ist_number_with_only_the_plain_dish_on_the_menu_offers_it(
+    session, sushi, said, offer
+):
+    """Codex PR #257: the guest may have said "S dreizehn", which this menu does
+    not have. The 13 that it has is offered, never taken in its place."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous" and len(result.results) == 1
+    assert result.say.startswith(offer)
+
+
+def test_a_prefix_that_was_said_is_taken_without_a_question(session, sushi):
+    result = suche(session, sushi, "S sieben")
+
+    assert result.match_type == "exact_number" and nummern(result) == ["s07"]
+
+
+def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Ist neunundneunzig.")
+    assert "99 oder s99" in err.value.say
+
+
+@pytest.mark.parametrize("said", ["S 13", "S dreizehn", "Sushi 99", "Nummer 23g"])
+def test_missing_prefixed_number_is_never_the_bare_number(session, sushi, said):
+    """Rule 2: "S 13" is not Pho Bo (13), "Nummer 23g" is not the 23."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, said)
+    assert "Nummer 13 " not in err.value.say and "Nummer 23 " not in err.value.say
+
+
+def test_without_prefix_on_the_menu_s12_is_not_12(session, tenant_id):
+    """The prefix comes from the menu: without S numbers there is no S12, and
+    it never silently becomes the 12 (rule 2)."""
+    try:
+        result = suche(session, tenant_id, "S zwölf")
+    except (Ambiguous, NotFound):
+        return
+    assert result.match_type != "exact_number"
+
+
+def test_prefixed_number_next_to_name_asks_back(session, sushi):
+    """Review PR #155: a prefixed number is never a quantity. Directly next to a
+    name the search asks for the one number instead of guessing via the name."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 Lachs")
+    assert err.value.say == SAY_WHICH_NUMBER
+
+
+def test_prefixed_number_and_name_are_two_positions(session, sushi):
+    """Code review PR #155: separated by "und" these are two positions as with
+    "die 23 und Pho Bo", not the question for the one number."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "S12 und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        # A Sushi number without a quantity, behind two other dishes.
+        (
+            "Die 25, zweimal die 12 und die S12",
+            ["Die 25", "zweimal die 12", "die S12"],
+        ),
+        (
+            "Einmal die 13, die S12 und zweimal die 25",
+            ["Einmal die 13", "die S12", "zweimal die 25"],
+        ),
+        ("Die S1, die S12 und einmal die 25g", ["Die S1", "die S12", "einmal die 25g"]),
+        # A name without a quantity, behind two other dishes.
+        (
+            "Einmal die 23, zweimal die 12 und Pho Bo",
+            ["Einmal die 23", "zweimal die 12", "Pho Bo"],
+        ),
+        # Four dishes, two of them without a quantity.
+        (
+            "Zweimal die 23, die S12, einmal die 25 und die SM1",
+            ["Zweimal die 23", "die S12", "einmal die 25", "die SM1"],
+        ),
+    ],
+)
+def test_a_dish_without_a_quantity_later_in_a_list_is_a_position_of_its_own(
+    session, sushi, said, parts
+):
+    """Eval abholung_0081: the sentence alone cuts "Die 25, zweimal die 12 und
+    die S12" in two, because "die S12" opens no position without the menu, and
+    the second part was a question about two numbers. Each part is now checked
+    with the menu like a sentence of its own."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+    for part in parts:
+        assert suche(session, sushi, part).match_type == "exact_number" or "Pho" in part
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        # A name with an "und" in it stays one dish.
+        (
+            "Einmal die 23, zweimal Ente süß und sauer",
+            ["Einmal die 23", "zweimal Ente süß und sauer"],
+        ),
+        # A hint for the dish before it is no dish.
+        (
+            "Die 25, zweimal die 12 und ohne Zwiebeln",
+            ["Die 25", "zweimal die 12 und ohne Zwiebeln"],
+        ),
+    ],
+)
+def test_a_part_that_is_no_clear_list_stays_whole(session, sushi, said, parts):
+    """The menu decides: a piece that is no dish of its own keeps its part
+    whole, as it keeps a sentence whole (rule 2)."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        ("Zweimal die 99 und Pho Bo", ["Zweimal die 99", "Pho Bo"]),
+        ("die 99 und Pho Bo", ["die 99", "Pho Bo"]),
+        ("S99 und Pho Bo", ["S99", "Pho Bo"]),
+        ("Die 25, zweimal die 99 und Pho Bo", ["Die 25", "zweimal die 99", "Pho Bo"]),
+        ("Die 25, zweimal die 12 und die S99", ["Die 25", "zweimal die 12", "die S99"]),
+    ],
+)
+def test_a_card_number_the_menu_does_not_have_is_a_position_of_its_own(
+    session, sushi, said, parts
+):
+    """Eval abholung_0082: "Zweimal die 99 und Pho Bo" stayed whole because the
+    99 hit nothing, the name search over the sentence found Pho Bo alone, and
+    the guest got Pho Bo twice without a word about the 99. A piece that is one
+    card number is a position whether the menu has it or not; its search then
+    says that the number does not exist (rule 2)."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, next(p for p in parts if "99" in p))
+    assert "99" in err.value.say
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # No card number, and no dish either: the "und" belongs to a name.
+        "Ente süß und sauer",
+        "Fisch und Chips",
+        # A number next to a word is no card number said alone.
+        "7 Kostbarkeiten und Reis",
+        "um 12 und Pho Bo",
+    ],
+)
+def test_a_piece_that_is_no_card_number_and_no_dish_keeps_the_sentence_whole(
+    session, sushi, said
+):
+    assert position_parts(session, sushi, said, now=NOW) == [said]
+
+
+def test_heard_number_and_name_are_two_positions(session, sushi):
+    """Codex PR #257: "S zwölf und Pho Bo" arrives as "Ist zwölf und Pho Bo".
+    The number that needs a question is a position of its own, as the S12 that
+    was said clearly; kept whole, the sentence found Pho Bo alone and the first
+    dish dropped out without a word."""
+    assert position_parts(session, sushi, "Ist zwölf und Pho Bo", now=NOW) == [
+        "Ist zwölf",
+        "Pho Bo",
+    ]
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, "Ist zwölf und Pho Bo")
+    assert err.value.say == SAY_IN_TURN
+    # Each part then gets its own answer: the question, and the dish.
+    assert suche(session, sushi, "Ist zwölf").match_type == "ambiguous"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Nummer fünfundzwanzig die.",
+        "Nummer fünfundzwanzig, die?",
+        "Zweimal die 25 die",
+        "Die 25 die bitte",
+        "Und die 25 die noch",
+    ],
+)
+def test_25g_heard_as_25_die_asks_which_dish(session, sushi, said):
+    """Eval abholung_0080: the ear writes the trailing letter as a word, "25g"
+    as "fünfundzwanzig die". The menu has the 25 and the 25g, so the guest is
+    asked by name instead of getting the 25 (rule 2)."""
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["25", "25g"]
+    assert "Nummer 25, Chop Suey" in result.say
+    assert "Nummer 25g, Soße Chop Suey" in result.say
+
+
+def test_heard_suffix_with_only_the_lettered_dish_on_the_menu_offers_it(session, sushi):
+    """The menu has 35a and no 35: "35 ja" may be the 35 that does not exist
+    and a yes, so 35a is offered, never taken."""
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE] + "35a;Bun Bo Nam Bo;Hauptgerichte;12,90;;ja\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE],
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, sushi, plan, now=NOW)
+    result = suche(session, sushi, "Nummer fünfunddreißig ja.")
+
+    assert result.match_type == "ambiguous" and nummern(result) == ["35a"]
+    assert result.say == "Meinen Sie Nummer 35a, Bun Bo Nam Bo?"
+
+
+@pytest.mark.parametrize("said", ["Nummer S sieben ja", "S7 ja.", "Sushi sieben ja"])
+def test_heard_suffix_behind_a_prefixed_number_asks_which_dish(session, sushi, said):
+    """Codex PR #282: the menu has S7 and S7a. "S sieben ja" may be either, so
+    the guest is asked by name instead of getting the S7."""
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE]
+            + "S07;Gurken Maki;Sushi;3,90;;ja\n"
+            + "S07a;Avocado Maki;Sushi;4,20;;ja\n",
+            ALIASES_FILE: KARTE[ALIASES_FILE],
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, sushi, plan, now=NOW)
+    result = suche(session, sushi, said)
+
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["s07", "s07a"]
+    assert "Nummer s07, Gurken Maki" in result.say
+    assert "Nummer s07a, Avocado Maki" in result.say
+
+
+@pytest.mark.parametrize(
+    "said", ["Nummer 25 der", "Die 25 bitte", "Nummer 13 die", "Die 25. Die, bitte."]
+)
+def test_word_behind_the_number_asks_nothing_without_that_dish(session, sushi, said):
+    """No 25d and no 13g on the menu: the plain number, without a question."""
+    assert suche(session, sushi, said).match_type == "exact_number"
+
+
+def test_number_with_heard_suffix_and_name_are_two_positions(session, sushi):
+    """As with the heard prefix (Codex PR #257): the number that needs a
+    question is a position of its own and does not drop out next to a name."""
+    assert position_parts(session, sushi, "25 die und Pho Bo", now=NOW) == [
+        "25 die",
+        "Pho Bo",
+    ]
+
+
+def test_category_word_without_hit_names_card_numbers(session, sushi):
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, "Sushi 99")
+    assert "s99 oder sm99" in err.value.say
+
+
+def test_by_number_rejects_a_bare_str(session, sushi):
+    """Review PR #155: a str would be looked up character by character."""
+    from api.domain.menu.search import _by_number
+
+    with pytest.raises(TypeError):
+        _by_number(session, sushi, "023")
+
+
+def test_card_format_read_once_per_search(session, sushi, monkeypatch):
+    """Review PR #155: position_parts searches recursively, the menu is still
+    read only once."""
+    import api.domain.menu.search as search_mod
+
+    calls = []
+    real = search_mod.card_format
+    monkeypatch.setattr(
+        search_mod, "card_format", lambda *a: calls.append(1) or real(*a)
+    )
+    with pytest.raises(Ambiguous):
+        suche(session, sushi, "die 23 und Pho Bo und die 24")
+    assert len(calls) == 1
+
+
+@pytest.mark.latency
+def test_prefix_search_stays_within_latency_budget(client, session, tenant_id):
+    """300 ms p95 (docs/04) with a menu the size of the register, prefixes included."""
+    rows = "".join(
+        f"S{i};Sushi Nummer {i};Sushi;4,90;;ja\n" for i in range(1, 54)
+    ) + "".join(
+        f"{100 + i};Testgericht Nummer {i} mit Reis;Test;9,90;;ja\n" for i in range(200)
+    )
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+
+    assert p95_ms(lambda: post(client, tenant_id, "Es zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "Sushi zwölf")) < 300
+    assert p95_ms(lambda: post(client, tenant_id, "knusprige Ente bitte")) < 300
+
+
+@pytest.mark.parametrize("said", ["Nummer Z12", "Nummer Z 12", "Nummer H zwölf"])
+def test_unknown_prefix_after_marker_is_not_found(session, sushi, said):
+    """Codex PR #155, P2: the import allows every prefix; one the menu does not
+    have is a named number that does not exist - no follow-up question and
+    never the bare number."""
+    with pytest.raises(NotFound) as err:
+        suche(session, sushi, said)
+    assert "Nummer 12 " not in err.value.say
+
+
+def test_weight_stays_in_the_name():
+    """Code review PR #155: in a name "250g" is a weight, not a card number -
+    otherwise "Rumpsteak 200g" and "Rumpsteak 300g" cannot be told apart."""
+    from api.domain.menu.normalize import normalize_query
+
+    assert normalize_query("Rumpsteak 250g") == "rumpsteak 250g"
+    assert normalize_query("Rumpsteak 250 g") == "rumpsteak g"
+
+
+# --- The judge of spoken orders splits a sentence as the conversation does --------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Einmal die 25 und die S12.",
+        "Die S12 und die 25g",
+        "Die 25, zweimal die 12 und die S12.",
+        "Zweimal die 13, die 25g und einmal die S12.",
+        "Die 13, die 12 und die 25",
+        "Einmal die 13 und die 99.",
+        "Zweimal die 99 und die S12",
+        "Die 25, zweimal die 12, die S99 und die S1",
+        "Die 13 und Nummer 23h",
+        "Die 13 und ist zwölf",
+        "Die 13 und die 25 die",
+        "Zweimal die 13 die 25 einmal die S12",
+        "Die 13 und Sushi eins",
+        "Die 13.",
+    ],
+)
+def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(
+    session, sushi, said
+):
+    """`evals.heard.positions` has no database and no name search: for sentences
+    of card numbers it must cut where `position_parts` cuts, or the speech kit
+    would judge another conversation than the one guests get (T-10.3)."""
+    from api.domain.menu.items import active_numbers
+    from evals.heard import Menu, positions
+
+    menu = Menu.from_rows(active_numbers(session, sushi))
+    real = [p.strip(" .!?;:") for p in position_parts(session, sushi, said, now=NOW)]
+    assert positions(said, menu) == real

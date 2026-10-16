@@ -1,0 +1,72 @@
+{
+  "id": "lieferung_0008",
+  "name": "House number corrected, four dishes",
+  "tags": [
+    "lieferung",
+    "korrektur",
+    "mehrere_positionen",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte was liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 32 mit Huhn, einmal die 40 und, aeh, eine Wan-Tan-Suppe."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "12345 Musterdorf, Gartenweg 14, nein, 41."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lange."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "32",
+        "quantity": 2,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "40",
+        "quantity": 1
+      },
+      {
+        "number": "12",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Lange",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Gartenweg",
+      "house_number": "41",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

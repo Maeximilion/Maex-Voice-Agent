@@ -1,0 +1,105 @@
+name: projektpflege
+
+# Das Board wird einmal taeglich gepflegt, nicht bei jedem Commit. Waehrend der Arbeit
+# fasst es niemand an: Status bewegen die eingebauten Project-Workflows beim Merge.
+# Was ihnen durchrutscht - abgeschlossen, aber nicht auf Done -, setzt dieser Lauf
+# nach; alles andere meldet er nur. Begruendung: docs/16_GITHUB_PROJECT.md
+on:
+  schedule:
+    # 03:00 UTC, also 05:00 im Sommer und 04:00 im Winter. Die Stunde ist egal,
+    # solange sie taeglich dieselbe ist; Cron kennt keine Zeitzonen.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      archive:
+        description: "Zusaetzlich Done-Eintraege nach 14 Tagen archivieren (blendet sie aus der Roadmap aus)"
+        type: boolean
+        default: false
+
+# Das Board schreibt der PAT. Der GITHUB_TOKEN schreibt nur das Entscheidungs-Issue -
+# bewusst er und nicht der PAT: eine Erwaehnung vom eigenen Konto benachrichtigt nicht.
+permissions:
+  contents: read
+  issues: write
+  # Assignee und Label an Pull Requests; die laufen ueber die Issue-Schnittstelle,
+  # GitHub verlangt fuer Pull Requests aber zusaetzlich dieses Recht.
+  pull-requests: write
+
+concurrency:
+  group: projektpflege
+  cancel-in-progress: false
+
+jobs:
+  pflege:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      # First, and without PROJECT_TOKEN: the images on main and the social preview
+      # reach the decision issue even when the board steps below fail. It only
+      # reports; the fix is a PR (docs/15_README_STRATEGY.md, "Keeping them current").
+      - name: README images
+        id: images
+        # A crash here must not stop the board: decision_issue.py treats the missing
+        # file as a partial run.
+        continue-on-error: true
+        # Only on main: a run started by hand on another branch would report that
+        # branch's images as main's. Skipped, the decision step keeps the section.
+        if: github.ref == 'refs/heads/main'
+        run: python scripts/readme_assets.py findings "$RUNNER_TEMP/images.json"
+
+      - name: Zugang pruefen
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: |
+          if [ -z "$PROJECT_TOKEN" ] || [ -z "$PROJECT_NUMBER" ]; then
+            echo "::error::Secret PROJECT_TOKEN oder Variable PROJECT_NUMBER fehlt. Einrichtung: docs/16_GITHUB_PROJECT.md"
+            exit 1
+          fi
+
+      - name: Korrigieren und berichten
+        # Ausdruecklich bash: nur so setzt GitHub pipefail. Ohne das gewinnt der
+        # Exit-Code von tee, und ein gescheiterter Lauf stuende gruen im Verlauf.
+        shell: bash
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_OWNER: ${{ github.repository_owner }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: |
+          # Der Bericht landet in der Job-Zusammenfassung, nicht als Kommentar an jedem
+          # Eintrag. Ein Ort zum Nachsehen statt Rauschen auf dem Board.
+          python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
+            --findings-json "$RUNNER_TEMP/befunde.json" \
+            | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Entscheidungs-Issue pflegen
+        # Was die Pflege nicht selbst entscheiden kann, landet in genau einem Issue.
+        # Erwaehnt wird nur bei neuen Punkten; ist nichts mehr offen, schliesst es sich.
+        # Also after a failed board step: a missing findings file makes the run
+        # partial, which keeps the board's sections and never closes the issue.
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
+          --also "README images=$RUNNER_TEMP/images.json"
+
+      - name: Assignee und Label der Pull Requests ergaenzen
+        # Zuletzt, damit ein Fehler hier Board und Entscheidungs-Issue nicht aufhaelt.
+        # Setzt nur, was fehlt: Assignee = Eigentuemer, Label aus dem Titel.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/pr_metadata.py
+
+      - name: Image check failed
+        # continue-on-error turns a crash of the image check green; the run must
+        # not, or the check could stop without anybody noticing (Codex on 2bff6f5).
+        if: ${{ !cancelled() && steps.images.outcome == 'failure' }}
+        run: |
+          echo "::error::readme_assets.py findings failed; the decision issue kept its README images section"
+          exit 1

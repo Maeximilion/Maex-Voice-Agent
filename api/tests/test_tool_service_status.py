@@ -91,6 +91,7 @@ def test_unbekannter_mandant_ist_not_found_in_der_huelle(client):
     assert r.json()["error"]["code"] == "not_found"
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     http, tenant_id = client
     p95 = p95_ms(lambda: _call(http, tenant_id), n=20)

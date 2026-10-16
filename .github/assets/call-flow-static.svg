@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="t d">
+<title id="t">How a call flows</title>
+<desc id="d">One call as the code runs it. The caller reaches the access, router or SIP trunk, and Asterisk, our own exchange, which hands the audio to the service voice. Its ear turns speech into text for the conversation core. The core asks the language model, which answers with one sentence or one tool call; the core checks the call and runs the tool, get_service_status, search_menu or draft_order, against Postgres, and hands the result back to the model, one tool per hop. The model never reads the database. The read-back goes out through the mouth. Only after the caller's yes does the core run confirm, and the model tells the caller; at the same time the order shows on the tablet; the slip prints at the register once the team approves it, in primary mode under the amount limit at once. When the AI is unsure, hears a complaint or the model fails, the call goes to the team phone; after opening hours, when the caller's number is known, it leaves a callback on the tablet; when the service voice itself fails, the exchange rings the team phone. Built: Asterisk our exchange, Ear speech to text, Mouth text to speech, Conversation core, guards, Open now? get_service_status, Menu search_menu, Order draft draft_order, Confirm confirm, Postgres the facts, Order slip print bridge, Tablet approval, Push outbox, n8n, Team phone. Not finished: Access router, SIP, LLM understands.</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}.still{display:none}@media (prefers-reduced-motion:reduce){.dot,.pulse,.caption{display:none}.still{display:inline}}</style>
+<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="680"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="680"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<rect width="1200" height="680" rx="24" fill="#0D0819"/>
+<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="680" rx="24" fill="url(#dots)" opacity="0.8"/>
+<text x="40" y="48" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">HOW A CALL FLOWS</text>
+<rect x="560" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="590" y="49" font-size="14" fill="#A89CCB">built</text>
+<rect x="652" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="682" y="49" font-size="14" fill="#A89CCB">in progress</text>
+<rect x="792" y="36" width="22" height="16" rx="5" fill="#21183D" stroke="#76699F" stroke-width="2" stroke-dasharray="4 3"/>
+<text x="822" y="49" font-size="14" fill="#A89CCB">planned</text>
+<circle cx="906" cy="44" r="5" fill="#E8FF2E"/>
+<text x="918" y="49" font-size="14" fill="#A89CCB">words, order</text>
+<circle cx="1034" cy="44" r="5" fill="#9D7BFF"/>
+<text x="1046" y="49" font-size="14" fill="#A89CCB">reply</text>
+<text x="40" y="84" font-size="16" fill="#E8FF2E">Words in (yellow), reply out (violet). One tool per hop. Confirm only after a yes.</text>
+<rect x="100" y="102" width="245" height="548" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="222.5" y="640" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">TELEPHONE</text>
+<rect x="352" y="102" width="143" height="548" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="423.5" y="640" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">SERVICE VOICE</text>
+<rect x="503" y="102" width="150" height="548" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="578" y="640" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">AI UNDERSTANDS</text>
+<rect x="661" y="102" width="299" height="548" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="810.5" y="640" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">CODE DECIDES</text>
+<rect x="968" y="102" width="224" height="548" rx="16" fill="#17102B" opacity="0.45"/>
+<text x="1080" y="640" font-size="13" fill="#A89CCB" text-anchor="middle" letter-spacing="2">TEAM</text>
+<path d="M530 336 L530 546 Q530 560 544 560 L940 560 Q954 560 954 546 L954 506 Q954 492 968 492 L993 492" fill="none" stroke="#9D7BFF" stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>
+<text x="546" y="534" font-size="13" fill="#9D7BFF">unsure, complaint or model failure: team phone,</text>
+<text x="546" y="552" font-size="13" fill="#9D7BFF">after hours, number known: a callback on the tablet</text>
+<path d="M236 332 L236 586 Q236 600 250 600 L962 600 Q976 600 976 586 L976 518.5 Q976 510 984.5 510 L993 510" fill="none" stroke="#FF5277" stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>
+<text x="252" y="592" font-size="13" fill="#FF5277">the service voice fails: the exchange rings the team phone</text>
+<path d="M82 292 L108 292" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M212 292 L231 292" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M339 292 L344.5 292 Q350 292 350 286.5 L350 212.5 Q350 207 355.5 207 L361 207" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M489 207 L494.5 207 Q500 207 500 212.5 L500 286.5 Q500 292 505.5 292 L511 292" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M511 308 L505.5 308 Q500 308 500 313.5 L500 387.5 Q500 393 494.5 393 L489 393" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M361 393 L355.5 393 Q350 393 350 387.5 L350 313.5 Q350 308 344.5 308 L339 308" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M231 308 L212 308" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M108 308 L82 308" fill="none" stroke="#3B2E66" stroke-width="2"/>
+<path d="M575 264 L575 180" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M639 300 L648 300 Q657 300 657 291 L657 179 Q657 170 666 170 L675 170" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M639 300 L648 300 Q657 300 657 291 L657 259 Q657 250 666 250 L675 250" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M639 300 L648 300 Q657 300 657 309 L657 321 Q657 330 666 330 L675 330" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M639 300 L648 300 Q657 300 657 309 L657 401 Q657 410 666 410 L675 410" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M825 170 L832.2 170 Q839.5 170 839.5 177.2 L839.5 282.8 Q839.5 290 846.8 290 L854 290" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M825 250 L832.2 250 Q839.5 250 839.5 257.2 L839.5 282.8 Q839.5 290 846.8 290 L854 290" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M825 330 L832.2 330 Q839.5 330 839.5 322.8 L839.5 297.2 Q839.5 290 846.8 290 L854 290" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M825 410 L832.2 410 Q839.5 410 839.5 402.8 L839.5 297.2 Q839.5 290 846.8 290 L854 290" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M946 290 L957.8 290 Q969.5 290 969.5 278.2 L969.5 186.8 Q969.5 175 981.2 175 L993 175" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M946 290 L962 290 Q969.5 290 969.5 282.5 L969.5 282.5 Q969.5 275 977 275 L993 275" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M946 290 L957.8 290 Q969.5 290 969.5 301.8 L969.5 363.2 Q969.5 375 981.2 375 L993 375" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M1103 175 L1110.5 175 Q1118 175 1118 182.5 L1118 322.5 Q1118 330 1125.5 330 L1133 330" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M1103 275 L1110.5 275 Q1118 275 1118 282.5 L1118 322.5 Q1118 330 1125.5 330 L1133 330" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M1103 375 L1110.5 375 Q1118 375 1118 367.5 L1118 337.5 Q1118 330 1125.5 330 L1133 330" fill="none" stroke="#2B2148" stroke-width="2"/>
+<path d="M1103 500 L1110.5 500 Q1118 500 1118 492.5 L1118 337.5 Q1118 330 1125.5 330 L1133 330" fill="none" stroke="#2B2148" stroke-width="2"/>
+<circle cx="52" cy="300" r="30" fill="#17102B" stroke="#2B2148" stroke-width="2"/>
+<circle cx="52" cy="290" r="10" fill="none" stroke="#F1ECFF" stroke-width="3"/><path d="M34 321 Q34 303 52 303 Q70 303 70 321" fill="none" stroke="#F1ECFF" stroke-width="3" stroke-linecap="round"/>
+<text x="52" y="352" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">Caller</text>
+<rect x="108" y="268" width="104" height="64" rx="12" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="160" y="296" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Access</text>
+<text x="160" y="314" font-size="13" fill="#F1ECFF" text-anchor="middle">router, SIP</text>
+<text x="160" y="347" font-size="13" fill="#A89CCB" text-anchor="middle">in progress</text>
+<rect x="231" y="268" width="108" height="64" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="285" y="296" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Asterisk</text>
+<text x="285" y="314" font-size="13" fill="#F1ECFF" text-anchor="middle">our exchange</text>
+<text x="285" y="347" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="361" y="185" width="128" height="60" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="425" y="211" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Ear</text>
+<text x="425" y="229" font-size="13" fill="#F1ECFF" text-anchor="middle">speech to text</text>
+<text x="425" y="260" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="361" y="355" width="128" height="60" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="425" y="381" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Mouth</text>
+<text x="425" y="399" font-size="13" fill="#F1ECFF" text-anchor="middle">text to speech</text>
+<text x="425" y="430" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="511" y="264" width="128" height="72" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="575" y="296" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Conversation</text>
+<text x="575" y="314" font-size="13" fill="#F1ECFF" text-anchor="middle">core, guards</text>
+<text x="575" y="351" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="511" y="120" width="128" height="60" rx="12" fill="#21183D" stroke="#9D7BFF" stroke-width="2"/>
+<text x="575" y="146" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">LLM</text>
+<text x="575" y="164" font-size="13" fill="#F1ECFF" text-anchor="middle">understands</text>
+<text x="575" y="195" font-size="13" fill="#A89CCB" text-anchor="middle">in progress</text>
+<rect x="675" y="142" width="150" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="750" y="166" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Open now?</text>
+<text x="750" y="184" font-size="13" fill="#E8FF2E" text-anchor="middle">get_service_status</text>
+<text x="750" y="213" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="675" y="222" width="150" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="750" y="246" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Menu</text>
+<text x="750" y="264" font-size="13" fill="#E8FF2E" text-anchor="middle">search_menu</text>
+<text x="750" y="293" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="675" y="302" width="150" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="750" y="326" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Order draft</text>
+<text x="750" y="344" font-size="13" fill="#E8FF2E" text-anchor="middle">draft_order</text>
+<text x="750" y="373" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="675" y="382" width="150" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="750" y="406" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Confirm</text>
+<text x="750" y="424" font-size="13" fill="#E8FF2E" text-anchor="middle">confirm</text>
+<text x="750" y="453" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<path d="M854 244 V336 A46 10 0 0 0 946 336 V244" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/><ellipse cx="900" cy="244" rx="46" ry="10" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="900" y="292" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Postgres</text>
+<text x="900" y="310" font-size="13" fill="#F1ECFF" text-anchor="middle">the facts</text>
+<text x="900" y="361" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="993" y="147" width="110" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1048" y="171" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Order slip</text>
+<text x="1048" y="189" font-size="13" fill="#F1ECFF" text-anchor="middle">print bridge</text>
+<text x="1048" y="218" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="993" y="247" width="110" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1048" y="271" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Tablet</text>
+<text x="1048" y="289" font-size="13" fill="#F1ECFF" text-anchor="middle">approval</text>
+<text x="1048" y="318" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="993" y="347" width="110" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1048" y="371" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Push</text>
+<text x="1048" y="389" font-size="13" fill="#F1ECFF" text-anchor="middle">outbox, n8n</text>
+<text x="1048" y="418" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<rect x="993" y="472" width="110" height="56" rx="12" fill="#21183D" stroke="#E8FF2E" stroke-width="2"/>
+<text x="1048" y="505" font-size="14" fill="#F1ECFF" text-anchor="middle" font-weight="700">Team phone</text>
+<text x="1048" y="543" font-size="13" fill="#A89CCB" text-anchor="middle">built</text>
+<circle cx="1163" cy="330" r="30" fill="#17102B" stroke="#2B2148" stroke-width="2"/>
+<circle cx="1163" cy="320" r="10" fill="none" stroke="#F1ECFF" stroke-width="3"/><path d="M1145 351 Q1145 333 1163 333 Q1181 333 1181 351" fill="none" stroke="#F1ECFF" stroke-width="3" stroke-linecap="round"/>
+<text x="1163" y="382" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">Team</text>
+</svg>

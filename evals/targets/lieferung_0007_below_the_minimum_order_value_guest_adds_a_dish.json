@@ -1,0 +1,79 @@
+{
+  "id": "lieferung_0007",
+  "name": "Below the minimum order value, guest adds a dish",
+  "tags": [
+    "lieferung",
+    "mindestbestellwert",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die Miso-Suppe."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Lindenstrasse 4, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Roth."
+    },
+    {
+      "role": "customer",
+      "text": "Ach so, dann noch die 31 mit Rind."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ja."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "10",
+        "quantity": 1
+      },
+      {
+        "number": "31",
+        "quantity": 1,
+        "options": [
+          "Rind"
+        ]
+      }
+    ],
+    "customer_name": "Roth",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "4",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery",
+      {
+        "tool": "draft_order",
+        "error": "below_minimum"
+      }
+    ],
+    "order_type": "delivery"
+  }
+}

@@ -17,6 +17,13 @@
       <span class="badge {{ c.tone }}">{{ c.label }}</span>
     </div>
     <div class="phone">{{ c.phone }}</div>
+    {# The guest named this number; the line does not back it (#252). #}
+    {% if c.number_note %}
+    <div class="cb-note">
+      <span class="badge warn">{{ c.number_note }}</span>
+      {% if c.caller_id %}<span class="muted">Anruf kam von {{ c.caller_id }}</span>{% endif %}
+    </div>
+    {% endif %}
     <p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>
     <div class="cb-actions">
       <a class="button" href="tel:{{ c.phone }}">Anrufen</a>

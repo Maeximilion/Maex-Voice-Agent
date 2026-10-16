@@ -17,3 +17,8 @@ ALL = (
     ORDER_HANDOVER_FAILED,
     DAILY_REPORT,
 )
+
+# Diese Ereignisse holt die Druckbruecke im Restaurant ab (T-4.6), nicht der
+# Dispatcher: der Server im Rechenzentrum erreicht den Drucker im Lokal nicht,
+# die Bruecke den Server schon (docs/02 §Kuechenbon).
+KITCHEN = (ORDER_CONFIRMED,)

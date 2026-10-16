@@ -37,7 +37,41 @@ class Tenant(UUIDPrimaryKey, Timestamps, Base):
 
 class ServiceConfig(Timestamps, Base):
     __tablename__ = "service_config"
-    __table_args__ = (_in("call_mode", CALL_MODES, "ck_service_config_call_mode"),)
+    __table_args__ = (
+        _in("call_mode", CALL_MODES, "ck_service_config_call_mode"),
+        CheckConstraint(
+            "reservation_lead_minutes >= 0",
+            name="ck_service_config_reservation_lead_minutes",
+        ),
+        CheckConstraint(
+            "reservation_last_start_minutes >= 0",
+            name="ck_service_config_reservation_last_start_minutes",
+        ),
+        CheckConstraint(
+            "reservation_max_days_ahead >= 0",
+            name="ck_service_config_reservation_max_days_ahead",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size >= 0",
+            name="ck_service_config_reservation_max_party_size",
+        ),
+        CheckConstraint(
+            "reservation_max_party_size_same_day >= 0",
+            name="ck_service_config_reservation_max_party_size_same_day",
+        ),
+        CheckConstraint(
+            "order_approval_above_cents >= 0",
+            name="ck_service_config_order_approval_above_cents",
+        ),
+        CheckConstraint(
+            "turn_deadline_seconds >= 1",
+            name="ck_service_config_turn_deadline_seconds",
+        ),
+        CheckConstraint(
+            "order_approval_overdue_minutes >= 1",
+            name="ck_service_config_order_approval_overdue_minutes",
+        ),
+    )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("tenants.id", ondelete="RESTRICT"), primary_key=True
@@ -57,6 +91,42 @@ class ServiceConfig(Timestamps, Base):
     team_phone: Mapped[str] = mapped_column(Text, nullable=False)
     max_call_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="420"
+    )
+    # Reservierungsbeginn je Service-Fenster: frühestens so viele Minuten nach
+    # Öffnung, spätestens so viele vor Schluss (T-1.14, D12). Nur Reservierungen.
+    reservation_lead_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="15"
+    )
+    reservation_last_start_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="30"
+    )
+    # Limits for a reservation by phone (#252, migration 007): how many days
+    # ahead, and up to which party size the agent books itself. Above it, and
+    # on the same day above the smaller limit, the team calls back.
+    reservation_max_days_ahead: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="90"
+    )
+    reservation_max_party_size: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="8"
+    )
+    reservation_max_party_size_same_day: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
+    )
+    # The two other limits of #252, in the same migration. An order above this
+    # amount waits for the team's approval before a slip prints
+    # (domain/ordering/confirm.py). A guest waits this long in silence for the
+    # answer to one sentence before the call goes to the team (the phone line:
+    # domain/calls/routing.py, agent/loop.py).
+    order_approval_above_cents: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="15000"
+    )
+    turn_deadline_seconds: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="10"
+    )
+    # An order that waits for "Passt" on the tablet longer than this is overdue:
+    # its card turns red (#252, migration 008, domain/ordering/board.py).
+    order_approval_overdue_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="5"
     )
 
 
@@ -89,6 +159,10 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     __tablename__ = "capacity"
     __table_args__ = (
         CheckConstraint("weekday BETWEEN 0 AND 6", name="ck_capacity_weekday"),
+        # A grid of zero minutes never ends (`CapacityWindow.grid`); zero guests
+        # closes a window for reservations and is a setting (migration 006).
+        CheckConstraint("slot_minutes > 0", name="ck_capacity_slot_minutes"),
+        CheckConstraint("max_guests >= 0", name="ck_capacity_max_guests"),
     )
 
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)

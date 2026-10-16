@@ -8,6 +8,9 @@ from api.tools import (
     confirm,
     create_callback,
     create_reservation,
+    draft_order,
+    get_item_details,
+    search_menu,
     service_status,
     transfer_to_team,
 )
@@ -19,3 +22,6 @@ router.include_router(create_reservation.router)
 router.include_router(confirm.router)
 router.include_router(create_callback.router)
 router.include_router(transfer_to_team.router)
+router.include_router(search_menu.router)
+router.include_router(get_item_details.router)
+router.include_router(draft_order.router)

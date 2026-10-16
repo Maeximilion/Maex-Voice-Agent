@@ -15,6 +15,8 @@ make test                   # Run suite against real database
 
 Requirements: Docker with Compose, Python 3.12 for runs outside containers.
 
+Adding or bumping a Python dependency: edit `api/requirements.in` (version ranges), run `make lock` and commit it together with the regenerated `api/requirements.txt`. That file holds the exact versions with hashes that the image and CI install; it is never edited by hand. `make lock ARGS="--upgrade-package <name>"` moves one pin inside its range, `make lock ARGS=--upgrade` all of them; Dependabot proposes the routine bumps. Two branches that both changed the dependencies: the one that merges second runs `make lock` again after taking `main`. The lock is for Linux and Python 3.12; on a Windows host install `api/requirements.in` instead (README, Quick Start).
+
 ## Workflow for a Change
 
 1. Choose a task from `docs/07_WORKPACKAGES.md` whose dependencies are done. Each task has an issue (column "Issue").
@@ -39,11 +41,11 @@ Types used: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`. Scope in bracket
 
 ## Pull Requests
 
-- One PR covers one topic. No catch-all PRs across multiple tasks.
+- One PR covers one coherent, reviewable behavior, however large the diff. No line-count rule. Status notes, version pins, and CI chores ride in the next feature PR instead of getting their own.
 - Title in Conventional Commits format, since squash-merge makes it the commit message on `main`.
 - Description per template in `.github/PULL_REQUEST_TEMPLATE.md`: what changed, why, how tested, which issue closes.
 - `main` always stays runnable. Never push directly to `main`.
-- Before merge: `ruff check`, `ruff format --check`, and test suite run in CI. For dialog changes, also evals (`docs/08_EVALS.md`).
+- Before merge: `ruff check`, `ruff format --check`, `mypy`, and test suite run in CI. For dialog changes, also evals (`docs/08_EVALS.md`).
 - Which lint rules apply is in `pyproject.toml` under `[tool.ruff.lint]`, not the default set of the ruff version. A new rule is intentionally added, an unsuitable one intentionally excluded; a version update alone doesn't change the rule set.
 
 ## Labels
@@ -60,7 +62,7 @@ Each issue carries exactly one type label. Priority and status only when they ac
 ## Code Style
 
 - `ruff` decides on format and linting, config in repository.
-- English identifiers, German comments and error messages.
+- Everything is English: identifiers, comments, error messages, docs, commits and PR text. German only for what the agent says to callers, for caller sentences in `evals/`, and for caller sentences used as test input for code that parses German speech (`CLAUDE.md` §8).
 - Comments explain the why, not the what. No emojis in code, docs, commits, or UI.
 - Money always as integer cents, phone numbers in E.164, times stored UTC and displayed in local time.
 - Domain logic belongs in `api/domain/`, never in `api/tools/` or `api/gui/`. Dependency direction is in `docs/11_MODULE.md`.

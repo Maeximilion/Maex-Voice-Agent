@@ -1,0 +1,67 @@
+{
+  "id": "lieferung_0004",
+  "name": "One dish with meat, address in one sentence",
+  "tags": [
+    "lieferung",
+    "pflichtoption",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die 30 mit Huhn und zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "12345 Musterdorf, Lindenstrasse 12."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Braun."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "23",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Braun",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "12",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

@@ -35,3 +35,30 @@ extend-immutable-calls = [
     "fastapi.Path",
     "fastapi.Header",
 ]
+
+[tool.mypy]
+# Non-strict (CLAUDE.md section 3): bodies of unannotated functions are not checked.
+# Plain `mypy` checks these paths, in CI and in `make lint`.
+python_version = "3.12"
+files = ["api", "sim", "scripts", "evals", "printbridge", "db"]
+# No package build and not every folder has an __init__.py: module names come from
+# the repository root, as they do at runtime.
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+# Optional packages of the speech spike (api/telephony/speech_bench.py). They are not
+# in api/requirements.txt and so are missing in CI. Named one by one: a missing
+# import anywhere else stays an error.
+module = [
+    "numpy",
+    "numpy.*",
+    "faster_whisper",
+    "faster_whisper.*",
+    "onnx_asr",
+    "onnx_asr.*",
+    "piper",
+    "piper.*",
+    "huggingface_hub",
+    "huggingface_hub.*",
+]
+ignore_missing_imports = true

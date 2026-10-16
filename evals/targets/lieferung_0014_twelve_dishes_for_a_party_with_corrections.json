@@ -1,0 +1,107 @@
+{
+  "id": "lieferung_0014",
+  "name": "Twelve dishes for a party with corrections",
+  "tags": [
+    "lieferung",
+    "mehrere_positionen",
+    "mengenaenderung",
+    "wunsch",
+    "level-5"
+  ],
+  "source": "handcrafted",
+  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, wir feiern heute und wollen eine grosse Bestellung liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Drei Portionen Fruehlingsrollen, zweimal Gyoza, dreimal die 32, zwei mit Huhn, eine mit Tofu, und die 40 ohne Zwiebeln."
+    },
+    {
+      "role": "customer",
+      "text": "Dann noch zweimal Pad Thai mit Garnelen, ach nee, einmal, und die 47 mit Huhn."
+    },
+    {
+      "role": "customer",
+      "text": "Ach, und die Gyoza doch dreimal."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, jetzt ist alles."
+    },
+    {
+      "role": "customer",
+      "text": "Festplatz 1, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Hahn."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "23",
+        "quantity": 3
+      },
+      {
+        "number": "22",
+        "quantity": 3
+      },
+      {
+        "number": "32",
+        "quantity": 2,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Tofu"
+        ]
+      },
+      {
+        "number": "40",
+        "quantity": 1,
+        "note": "ohne Zwiebeln"
+      },
+      {
+        "number": "34",
+        "quantity": 1,
+        "options": [
+          "Garnelen"
+        ]
+      },
+      {
+        "number": "47",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      }
+    ],
+    "customer_name": "Hahn",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Festplatz",
+      "house_number": "1",
+      "city": "Musterdorf",
+      "postal_code": "12345"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

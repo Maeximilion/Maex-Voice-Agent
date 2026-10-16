@@ -36,7 +36,15 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | pickup_wait_minutes | INT | aktuelle Wartezeit Abholung |
 | delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
 | team_phone | TEXT | Durchwahl für `transfer_to_team` |
-| max_call_seconds | INT | Kostenbremse, Default 420 |
+| max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call, the text phone, the dev phone and the evals when their session starts, and each ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`, `sim/session.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
+| reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
+| reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
+| reservation_max_days_ahead | INT ≥ 0 | how many days ahead a table can be booked by phone, counted in calendar days of the restaurant, default 90 (#252, migration 007). 0: today only |
+| reservation_max_party_size | INT ≥ 0 | largest party the agent books itself, default 8 (#252, migration 007). Above it `check_slot` answers `team_callback` and the team calls back. 0: the team confirms every table |
+| reservation_max_party_size_same_day | INT ≥ 0 | the same limit for a table on the same day, default 5 (#252, migration 007). The smaller of the two counts on that day |
+| order_approval_above_cents | INT ≥ 0 | an order whose total is above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000, 0 holds every order (#252, migration 007). Read by `confirm` since 13.10.2026 (`domain/ordering/confirm.py`, docs/04 §confirm) |
+| turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
+| order_approval_overdue_minutes | INT ≥ 1 | how long an order may wait for "Passt" on the tablet before its card turns red; default 5 (#252, migration 008). Counted from the guest's yes, the audit entry `order.confirmed`. Read by the order board (`domain/ordering/board.py`); a changed value shows within the next poll of the tablet |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -71,8 +79,8 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | tenant_id | UUID FK | |
 | weekday | SMALLINT | |
 | slot_start / slot_end | TIME | z. B. 18:00–20:00 |
-| max_guests | INT | Gäste gesamt im Fenster |
-| slot_minutes | INT | Raster, Default 30 |
+| max_guests | INT | Gäste gesamt im Fenster, `>= 0` (0 closes the window for reservations; migration 006) |
+| slot_minutes | INT | Raster, Default 30, `> 0` (migration 006: a grid of zero minutes never ends) |
 
 ### `reservations`
 | Feld | Typ | Bemerkung |
@@ -83,7 +91,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | status | TEXT | `draft` / `confirmed` / `cancelled` |
 | guest_name | TEXT | |
 | phone | TEXT | E.164 |
-| party_size | INT | |
+| party_size | INT | `> 0` (migration 006) |
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
@@ -102,7 +110,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | intent | TEXT | `reservation` / `pickup` / `delivery` / `info` / `complaint` / `unknown` |
 | outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error` |
 | transfer_reason | TEXT NULL | |
-| cost_cents | INT NULL | von der Plattform, sobald verfügbar |
+| cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
 | tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
 | delete_after | DATE | Löschfrist |
@@ -123,7 +131,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
-| id | UUID PK | dient n8n als Idempotenz-Schlüssel |
+| id | UUID PK | dient n8n als Idempotenz-Schlüssel; `order.confirmed` holt die Druckbrücke ab, nicht der Dispatcher (T-4.6) |
 | tenant_id | UUID FK | |
 | event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` |
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
@@ -160,6 +168,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | active | BOOL | |
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
+| pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
 
@@ -175,6 +184,7 @@ Varianten und Extras mit Preisdifferenz.
 | price_delta_cents | INT | kann negativ sein |
 | is_default | BOOL | |
 | required | BOOL | Gruppe muss gewählt werden |
+| price_reason | TEXT NULL | warum die Option mehr kostet („zweite Station in der Küche"). Der Agent nennt nur diesen Satz, nie eine eigene Begründung. Leer: der Preis steht so in der Karte (Migration 003, T-4.10) |
 
 ### `item_allergens`
 | Feld | Typ | Bemerkung |
@@ -204,7 +214,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | tenant_id / call_id | UUID FK | |
 | type | TEXT | `pickup` / `delivery` |
 | status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
-| customer_id | UUID NULL FK | Fremdschlüssel erst mit 003 (`customers`), bis dahin nur das Feld |
+| customer_id | UUID NULL FK | Fremdschlüssel erst mit 004 (`customers`), bis dahin nur das Feld |
 | phone | TEXT | |
 | customer_name | TEXT | |
 | address_id | UUID NULL FK | nur bei Lieferung |
@@ -215,11 +225,13 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | note | TEXT | |
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
-| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf |
+| handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
-`approved` existiert nur im Überlauf-Betrieb (Stufe 5): Das Team gibt frei, bevor die Küche loslegt.
+`approved` heißt: das Team hat die Bestellung im Tablet mit „Passt" abgehakt (T-4.7). Außerhalb von `primary` ist das zugleich die Freigabe an die Küche - vorher gibt es keinen Bon (docs/04 §confirm). Im Überlauf-Betrieb (Stufe 5) ist genau das der Freigabe-Schritt; T-8.2 macht ihn abschaltbar.
+
+Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`-Zeilen ist die Revision des Bons.
 
 ### `order_items`
 | Feld | Typ | Bemerkung |
@@ -231,7 +243,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | quantity | INT | |
 | unit_price_cents | INT | Preis zum Bestellzeitpunkt, eingefroren |
 | options | JSONB | gewählte Optionen mit Preisdifferenz |
-| note | TEXT | „ohne Zwiebeln" |
+| note | TEXT | „ohne Zwiebeln", „WICHTIG: Keine Erdnüsse. Grund: Allergie" (E14) |
 
 ---
 
@@ -309,6 +321,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | Daten | Frist | Umsetzung |
 |---|---|---|
 | Anrufaufnahmen | 30 Tage (Vorschlag) | täglicher Job, harte Löschung |
+| Anrufprotokoll ohne Ton (`imports/anrufprotokoll.csv`, docs/17) | 90 Tage (entschieden 24.09.2026, D10) | wöchentlich `scripts/call_log.py --frist-tage 90 --loeschen`; Papierbögen nach dem Abtippen vernichten |
 | Transkripte | 90 Tage (Vorschlag) | täglicher Job |
 | `calls` ohne personenbezogene Felder | 24 Monate | Statistik bleibt, `caller_id` wird genullt |
 | Kunden ohne Bestellung | 24 Monate (Vorschlag) | `delete_after`, täglicher Job |
@@ -324,5 +337,11 @@ Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_L
 |---|---|
 | 001 | `tenants`, `service_config`, `opening_hours`, `special_days`, `capacity`, `reservations`, `calls`, `callbacks`, `outbox`, `audit_log` |
 | 002 | Extension `pg_trgm` · `menu_items`, `item_options`, `item_allergens`, `item_aliases` (Trigram-Index auf `name` und `alias`), `orders`, `order_items` |
-| 003 | `customers`, `addresses`, `delivery_zones`, `orders.address_id` |
-| 004 | `eval_cases`, `eval_runs` |
+| 003 | `item_options.price_reason`: warum eine Option mehr kostet (T-4.10) |
+| 004 | `menu_items.pos_code`: Artikelnummer genau wie in der Kasse (T-4.11) |
+| 005 | `service_config.reservation_lead_minutes`, `reservation_last_start_minutes`: Reservierungsbeginn je Service (T-1.14, D12) |
+| 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
+| 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
+| 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
+| planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
+| planned, next free number | `eval_cases`, `eval_runs` |

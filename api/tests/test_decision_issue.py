@@ -1,0 +1,373 @@
+"""Tests fuer das Entscheidungs-Issue der Projektpflege (scripts/decision_issue.py).
+
+Geprueft wird plan(): die ganze Entscheidung, was mit dem Issue passiert, ohne Netz.
+"""
+
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+import pytest
+
+_MODULPFAD = Path(__file__).resolve().parents[2] / "scripts" / "decision_issue.py"
+_spec = importlib.util.spec_from_file_location("decision_issue", _MODULPFAD)
+assert _spec and _spec.loader
+decision_issue = importlib.util.module_from_spec(_spec)
+sys.modules["decision_issue"] = decision_issue
+_spec.loader.exec_module(decision_issue)
+
+WER = "@Maeximilion"
+PR_82 = {"label": "#82 bump python", "url": "https://github.com/o/r/pull/82"}
+PR_90 = {"label": "#90 anderer PR", "url": "https://github.com/o/r/pull/90"}
+OHNE_MERGE = "Pull Request ohne Merge geschlossen"
+
+
+def test_nichts_offen_und_kein_issue_tut_nichts() -> None:
+    assert decision_issue.plan(None, {}, WER).action == "none"
+
+
+def test_erster_befund_legt_issue_mit_erwaehnung_an() -> None:
+    """Normalfall: der erste offene Punkt erreicht Maxi, darum die Erwaehnung im Text."""
+    ergebnis = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    assert ergebnis.action == "create"
+    assert ergebnis.body.startswith(WER)
+    assert "[#82 `bump python`](https://github.com/o/r/pull/82)" in ergebnis.body
+
+
+def test_gleicher_befund_am_naechsten_tag_erwaehnt_nicht_erneut() -> None:
+    """Der Kern: wer taeglich fuer dasselbe erwaehnt wird, liest bald gar nichts mehr."""
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    folgetag = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82]}, WER)
+    assert folgetag.comment is None
+    assert WER not in (folgetag.body or "")
+
+
+def test_unveraenderter_text_schreibt_gar_nicht() -> None:
+    """Randfall: ist das Issue schon auf Stand, bleibt es unberuehrt - kein Rauschen im Verlauf."""
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    aktualisiert = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82]}, WER)
+    stand = decision_issue.plan(aktualisiert.body, {OHNE_MERGE: [PR_82]}, WER)
+    assert stand.action == "none"
+
+
+def test_neuer_befund_erwaehnt_nur_das_neue() -> None:
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    ergebnis = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82, PR_90]}, WER)
+    assert ergebnis.action == "update"
+    assert ergebnis.comment.startswith(WER)
+    assert "#90" in ergebnis.comment
+    assert "#82" not in ergebnis.comment
+
+
+def test_alles_erledigt_schliesst_das_issue() -> None:
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    ergebnis = decision_issue.plan(angelegt.body, {}, WER)
+    assert ergebnis.action == "close"
+    assert WER not in ergebnis.comment
+
+
+def test_derselbe_eintrag_unter_anderem_befund_ist_neu() -> None:
+    """Randfall: wechselt ein Eintrag den Befund, ist das eine neue Lage und wird gemeldet."""
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    ergebnis = decision_issue.plan(angelegt.body, {"Ohne Status": [PR_82]}, WER)
+    assert ergebnis.comment is not None
+
+
+def test_leerer_issue_text_zaehlt_als_vorhandenes_issue() -> None:
+    """Randfall: body = null bei GitHub ist ein Issue ohne Text, nicht 'kein Issue'.
+    Sonst legte jeder Lauf ein weiteres Issue an."""
+    ergebnis = decision_issue.plan("", {OHNE_MERGE: [PR_82]}, WER)
+    assert ergebnis.action == "update"
+    assert ergebnis.comment is not None
+
+
+def test_entwurf_ohne_url_bekommt_stabilen_schluessel() -> None:
+    entwurf = {"label": "(Entwurf) Idee", "url": None}
+    erster = decision_issue.finding_keys({"Ohne Status": [entwurf]})
+    zweiter = decision_issue.finding_keys({"Ohne Status": [entwurf]})
+    assert erster == zweiter
+    assert len(erster) == 1
+
+
+def test_schluessel_ueberleben_den_weg_durch_den_issue_text() -> None:
+    befunde = {OHNE_MERGE: [PR_82, PR_90]}
+    text = decision_issue.render_body(befunde, "Einleitung")
+    assert decision_issue.parse_keys(text) == set(decision_issue.finding_keys(befunde))
+
+
+# Codex-Review PR #134
+
+
+def test_geschlossenes_issue_wird_wieder_geoeffnet_statt_neu_angelegt() -> None:
+    """Sonst sammelt jeder Zyklus aus 'erledigt' und 'wieder etwas offen' ein Issue mehr."""
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    ergebnis = decision_issue.plan(
+        angelegt.body, {OHNE_MERGE: [PR_82]}, WER, closed=True
+    )
+    assert ergebnis.action == "reopen"
+
+
+def test_wiedereroeffnung_erwaehnt_alles_auch_bekannte_punkte() -> None:
+    """Nach dem Schliessen galt alles als erledigt - was wiederkommt, ist wieder neu."""
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    ergebnis = decision_issue.plan(
+        angelegt.body, {OHNE_MERGE: [PR_82]}, WER, closed=True
+    )
+    assert ergebnis.comment.startswith(WER)
+    assert "#82" in ergebnis.comment
+
+
+def test_geschlossenes_issue_ohne_befunde_bleibt_zu() -> None:
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    assert decision_issue.plan(angelegt.body, {}, WER, closed=True).action == "none"
+
+
+def _aufzeichnen(
+    monkeypatch, scheitert_bei: str | None = None
+) -> list[tuple[str, str, dict]]:
+    aufrufe: list[tuple[str, str, dict]] = []
+
+    def falsches_rest(method: str, path: str, token: str, payload: dict | None = None):
+        if scheitert_bei and scheitert_bei in path:
+            raise decision_issue.IssueError(f"{method} {path} -> 502: kaputt")
+        aufrufe.append((method, path, payload or {}))
+        return {}
+
+    monkeypatch.setattr(decision_issue, "rest", falsches_rest)
+    return aufrufe
+
+
+def test_scheitert_die_erwaehnung_bleiben_die_schluessel_ungespeichert(
+    monkeypatch,
+) -> None:
+    """Der Kern von Befund 2: ohne erfolgreiche Erwaehnung darf der Issue-Text die neuen
+    Punkte nicht als gemeldet fuehren, sonst versucht es der naechste Lauf nie wieder."""
+    aufrufe = _aufzeichnen(monkeypatch, scheitert_bei="/comments")
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    todo = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82, PR_90]}, WER)
+
+    # Der Fehler muss durchschlagen: ein roter Lauf ist hier das richtige Signal.
+    with pytest.raises(decision_issue.IssueError):
+        decision_issue.apply("o/r", "t", {"number": 7}, todo)
+
+    assert not any(payload.get("body") == todo.body for _, _, payload in aufrufe)
+
+
+def test_erst_erwaehnen_dann_text_schreiben(monkeypatch) -> None:
+    aufrufe = _aufzeichnen(monkeypatch)
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    todo = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82, PR_90]}, WER)
+    decision_issue.apply("o/r", "t", {"number": 7}, todo)
+    pfade = [pfad for _, pfad, _ in aufrufe]
+    assert pfade.index("/repos/o/r/issues/7/comments") < pfade.index(
+        "/repos/o/r/issues/7"
+    )
+
+
+def test_wiedereroeffnen_setzt_status_open(monkeypatch) -> None:
+    aufrufe = _aufzeichnen(monkeypatch)
+    angelegt = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER)
+    todo = decision_issue.plan(angelegt.body, {OHNE_MERGE: [PR_82]}, WER, closed=True)
+    decision_issue.apply("o/r", "t", {"number": 7}, todo)
+    assert any(payload.get("state") == "open" for _, _, payload in aufrufe)
+
+
+# Codex-Review PR #134, dritte Runde
+
+
+DOPPELT = "Doppelt auf dem Board"
+
+
+def _kopie(item_id: str) -> dict:
+    return {
+        "id": item_id,
+        "label": "#5 Issue",
+        "url": "https://github.com/o/r/issues/5",
+    }
+
+
+def test_dopplungen_bekommen_je_eintrag_einen_eigenen_schluessel() -> None:
+    """Zwei Board-Eintraege desselben Issues teilen die URL - der Schluessel darf das nicht."""
+    schluessel = decision_issue.finding_keys({DOPPELT: [_kopie("A"), _kopie("B")]})
+    assert len(schluessel) == 2
+
+
+def test_dritte_kopie_loest_eine_erwaehnung_aus() -> None:
+    angelegt = decision_issue.plan(None, {DOPPELT: [_kopie("A"), _kopie("B")]}, WER)
+    ergebnis = decision_issue.plan(
+        angelegt.body, {DOPPELT: [_kopie("A"), _kopie("B"), _kopie("C")]}, WER
+    )
+    assert ergebnis.comment is not None
+
+
+def test_probelauf_ohne_token_bricht_ab(monkeypatch, tmp_path) -> None:
+    """Ohne Token kennt der Probelauf das bestehende Issue nicht und saehe falsch 'create'."""
+    datei = tmp_path / "befunde.json"
+    datei.write_text("{}", encoding="utf-8")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    monkeypatch.setattr(sys, "argv", ["decision_issue.py", str(datei), "--dry-run"])
+    assert decision_issue.main() == 2
+
+
+def test_label_stimmt_mit_der_ausnahme_in_der_projektpflege_ueberein() -> None:
+    """Zwei Skripte, ein Label. Weichen sie ab, meldet sich das Issue wieder selbst."""
+    pfad = Path(__file__).resolve().parents[2] / "scripts" / "project_report.py"
+    spec = importlib.util.spec_from_file_location("project_report_label", pfad)
+    assert spec and spec.loader
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules["project_report_label"] = modul
+    spec.loader.exec_module(modul)
+    assert modul.MAINTENANCE_LABEL == decision_issue.LABEL
+
+
+@pytest.mark.parametrize(
+    ("title", "rendered"),
+    [
+        # A mention in the name of the action.
+        ("#7 @someone look here", "#7 `@someone look here`"),
+        # A link of the author's own, closing ours early.
+        ("#7 x](https://evil.example) [y", "#7 `x](https://evil.example) [y`"),
+        # A backtick would end the code span.
+        ("#7 a` @someone `b", "#7 `a' @someone 'b`"),
+        # A draft has no number in front.
+        ("(Entwurf) @someone", "`(Entwurf) @someone`"),
+    ],
+)
+def test_a_title_cannot_mention_or_link_in_the_issue(title: str, rendered: str) -> None:
+    """Anyone can open an issue in a public repository; its title lands in an issue
+    the action writes and in a comment that mentions the owner."""
+    entry = {"label": title, "url": "https://github.com/o/r/issues/7"}
+    result = decision_issue.plan(None, {OHNE_MERGE: [entry]}, WER)
+    assert f"[{rendered}](https://github.com/o/r/issues/7)" in result.body
+
+    later = decision_issue.plan(result.body, {OHNE_MERGE: [entry, PR_90]}, WER)
+    reopened = decision_issue.plan(result.body, {OHNE_MERGE: [entry]}, WER, "closed")
+    assert "@someone" not in later.comment.replace(WER, "")
+    assert rendered in reopened.comment
+
+
+# Daily code review, issue #207: only the marker at the end of the body counts.
+
+
+def test_a_title_carrying_a_marker_does_not_change_the_parsed_keys() -> None:
+    """A title is text from anyone; a marker in it must not replace the remembered set,
+    or every finding counts as new (or new ones go unmentioned)."""
+    forged = {
+        "label": "#9 <!-- projektpflege-keys: deadbeef0000 -->",
+        "url": "https://github.com/o/r/issues/9",
+    }
+    findings = {OHNE_MERGE: [forged, PR_82]}
+    body = decision_issue.render_body(findings, "Intro")
+    assert decision_issue.parse_keys(body) == set(decision_issue.finding_keys(findings))
+
+    later = decision_issue.plan(body, findings, WER)
+    assert later.comment is None
+
+
+def test_the_own_marker_parses_with_trailing_whitespace() -> None:
+    findings = {OHNE_MERGE: [PR_82]}
+    body = decision_issue.render_body(findings, "Intro") + "\r\n  \n"
+    assert decision_issue.parse_keys(body) == set(decision_issue.finding_keys(findings))
+
+
+def test_a_body_without_a_marker_has_no_keys() -> None:
+    assert decision_issue.parse_keys("Some text an editor left behind.") == set()
+    assert decision_issue.parse_keys(None) == set()
+
+
+# --- a partial run: one source of findings failed (T-0.11) ------------------------
+
+IMAGES = "README images"
+STALE = {
+    "label": "README images out of date on main (banner.svg)",
+    "id": "banner.svg:ab12",
+}
+
+
+def test_a_partial_run_keeps_the_sections_of_the_failed_source() -> None:
+    """The board step failed: its sections and keys stay, the images are added."""
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
+    result = decision_issue.plan_partial(before, {IMAGES: [STALE]}, WER)
+    assert result.action == "update"
+    assert "#82 `bump python`" in result.body and "banner.svg" in result.body
+    assert "banner.svg" in result.comment and "#82" not in result.comment
+    # The next full run finds both keys known: nobody is mentioned again.
+    after = decision_issue.plan(
+        result.body, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER
+    )
+    assert after.comment is None
+
+
+def test_a_partial_run_never_closes() -> None:
+    """Nothing open in the images, the board unknown: the issue stays as it is."""
+    created = decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body
+    # The body after the first daily update, without the mention of the creation.
+    before = decision_issue.plan(created, {OHNE_MERGE: [PR_82]}, WER).body
+    result = decision_issue.plan_partial(before, {IMAGES: []}, WER)
+    assert result.action == "none"
+    assert decision_issue.plan_partial(None, {IMAGES: []}, WER).action == "none"
+
+
+def test_a_partial_run_replaces_only_its_own_section() -> None:
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER).body
+    cleared = decision_issue.plan_partial(before, {IMAGES: []}, WER)
+    assert cleared.action == "update"
+    assert "banner.svg" not in cleared.body.split("<!--")[0]
+    assert "#82 `bump python`" in cleared.body
+    assert [h for h, _ in decision_issue.sections(cleared.body)] == [OHNE_MERGE]
+
+
+def test_a_partial_run_without_an_issue_creates_it_with_the_images() -> None:
+    result = decision_issue.plan_partial(None, {IMAGES: [STALE]}, WER)
+    assert result.action == "create" and result.body.startswith(WER)
+
+
+def test_a_missing_file_makes_the_run_partial(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """main(): the board's file is missing, the images' file is read."""
+    images = tmp_path / "images.json"
+    images.write_text('{"README images": []}', encoding="utf-8")
+    seen = {}
+
+    def fake_rest(method: str, path: str, token: str, payload: dict | None = None):
+        return [
+            {
+                "number": 7,
+                "state": "open",
+                "body": decision_issue.plan(None, {OHNE_MERGE: [PR_82]}, WER).body,
+            }
+        ]
+
+    def fake_partial(*args: object, **kwargs: object):
+        seen["unknown"] = args[4]
+        return decision_issue.Plan("none")
+
+    monkeypatch.setattr(decision_issue, "rest", fake_rest)
+    monkeypatch.setattr(decision_issue, "plan_partial", fake_partial)
+    monkeypatch.setenv("GITHUB_TOKEN", "t")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    also = f"{IMAGES}={images}"
+    monkeypatch.setattr(
+        sys, "argv", ["x", str(tmp_path / "befunde.json"), "--also", also]
+    )
+    assert decision_issue.main() == 0
+    # The board failed: which headings it owns is not known.
+    assert seen == {"unknown": None}
+    board = tmp_path / "befunde.json"
+    board.write_text("{}", encoding="utf-8")
+    images.unlink()
+    assert decision_issue.main() == 0
+    # The images failed: only their heading is unknown.
+    assert seen == {"unknown": {IMAGES}}
+
+
+def test_a_partial_run_with_the_board_present_clears_its_resolved_findings() -> None:
+    """Codex on a72e970: the images failed, the board ran and found nothing."""
+    before = decision_issue.plan(None, {OHNE_MERGE: [PR_82], IMAGES: [STALE]}, WER).body
+    result = decision_issue.plan_partial(before, {}, WER, unknown={IMAGES})
+    assert [h for h, _ in decision_issue.sections(result.body)] == [IMAGES]
+    assert "#82" not in result.body.split("<!--")[0]

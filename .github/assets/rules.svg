@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="t d">
+<title id="t">Six hard rules</title>
+<desc id="d">The six hard rules: AI understands, code decides: Prices, zones, hours, availability, allergens: from the database only.; Never guess: No item enters an order without a definite menu_item_id.; Nothing without confirmation: Only the caller's explicit yes turns a draft into an order.; Errors are measured: Evals run before every merge. No gate without numbers.; Every outage ends with the team: If anything breaks, the team phone rings. No call is lost.; Token-efficient by design: Smallest context, smallest model that passes the evals.</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
+<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="420"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="420"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<rect width="1200" height="420" rx="24" fill="#0D0819"/>
+<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="420" rx="24" fill="url(#dots)" opacity="0.8"/>
+<text x="40" y="48" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">SIX HARD RULES</text>
+<rect x="40" y="72" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="64" y="116" font-size="24" fill="#E8FF2E" font-weight="700">01</text>
+<text x="64" y="148" font-size="16" fill="#F1ECFF" font-weight="700">AI understands, code decides</text>
+<text x="64" y="178" font-size="15" fill="#A89CCB">Prices, zones, hours, availability,</text>
+<text x="64" y="200" font-size="15" fill="#A89CCB">allergens: from the database only.</text>
+<rect x="420" y="72" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="444" y="116" font-size="24" fill="#E8FF2E" font-weight="700">02</text>
+<text x="444" y="148" font-size="16" fill="#F1ECFF" font-weight="700">Never guess</text>
+<text x="444" y="178" font-size="15" fill="#A89CCB">No item enters an order without</text>
+<text x="444" y="200" font-size="15" fill="#A89CCB">a definite menu_item_id.</text>
+<rect x="800" y="72" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="824" y="116" font-size="24" fill="#E8FF2E" font-weight="700">03</text>
+<text x="824" y="148" font-size="16" fill="#F1ECFF" font-weight="700">Nothing without confirmation</text>
+<text x="824" y="178" font-size="15" fill="#A89CCB">Only the caller's explicit yes</text>
+<text x="824" y="200" font-size="15" fill="#A89CCB">turns a draft into an order.</text>
+<rect x="40" y="240" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="64" y="284" font-size="24" fill="#E8FF2E" font-weight="700">04</text>
+<text x="64" y="316" font-size="16" fill="#F1ECFF" font-weight="700">Errors are measured</text>
+<text x="64" y="346" font-size="15" fill="#A89CCB">Evals run before every merge.</text>
+<text x="64" y="368" font-size="15" fill="#A89CCB">No gate without numbers.</text>
+<rect x="420" y="240" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="444" y="284" font-size="24" fill="#E8FF2E" font-weight="700">05</text>
+<text x="444" y="316" font-size="16" fill="#F1ECFF" font-weight="700">Every outage ends with the team</text>
+<text x="444" y="346" font-size="15" fill="#A89CCB">If anything breaks, the team</text>
+<text x="444" y="368" font-size="15" fill="#A89CCB">phone rings. No call is lost.</text>
+<rect x="800" y="240" width="360" height="148" rx="14" fill="#17102B" stroke="#2B2148"/>
+<text x="824" y="284" font-size="24" fill="#E8FF2E" font-weight="700">06</text>
+<text x="824" y="316" font-size="16" fill="#F1ECFF" font-weight="700">Token-efficient by design</text>
+<text x="824" y="346" font-size="15" fill="#A89CCB">Smallest context, smallest model</text>
+<text x="824" y="368" font-size="15" fill="#A89CCB">that passes the evals.</text>
+</svg>

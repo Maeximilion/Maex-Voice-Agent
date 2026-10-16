@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import dispatch
-from api.models import Call
+from api.models import Call, Reservation
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -83,6 +83,64 @@ def test_check_slot_frei(session, tenant_id, call_id):
 
     assert result.ok
     assert result.data["available"] is True
+
+
+@pytest.mark.parametrize(
+    "tool",
+    ["get_service_status", "check_slot"],
+)
+def test_call_and_tenant_named_by_the_model_are_ignored(
+    session, tenant_id, call_id, tool
+):
+    """Seen in the first run on a real model: it passes `call_id` and
+    `tenant_id` because the tool reference lists them. The code decides both,
+    never the model: an invented value must neither crash the call nor point
+    a tool at another call or tenant."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        tool,
+        {
+            "call_id": "call_123",
+            "tenant_id": "tenant_456",
+            "reserved_for": berlin(DIENSTAG, 18, 30),
+            "party_size": 4,
+        }
+        if tool == "check_slot"
+        else {"call_id": "call_123", "tenant_id": "tenant_456"},
+        now=NOW,
+    )
+
+    assert result.ok
+
+
+def test_invalid_arguments_tell_the_model_which_field_is_wrong(
+    session, tenant_id, call_id
+):
+    """Seen in the first run on a real model: `create_reservation` without the
+    phone number came back as a bare `invalid_input`, and the model sent the
+    same call five times instead of asking the guest. The hint names the
+    field and the problem, never the value."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "party_size": "viele",
+            "reserved_for": berlin(DIENSTAG, 18, 30),
+        },
+        now=NOW,
+    )
+
+    assert result.ok is False
+    assert result.error_code == "invalid_input"
+    assert "phone" in result.hint
+    assert "party_size" in result.hint
+    assert "viele" not in result.hint
+    assert "Müller" not in result.hint
 
 
 def test_create_reservation_erzeugt_eigenen_idempotency_key(
@@ -210,3 +268,210 @@ def test_domain_fehler_wird_geloggt_und_sitzung_bleibt_nutzbar(
     assert entries[0]["ok"] is False
     assert entries[0]["error_code"] == "invalid_input"
     assert entries[1]["ok"] is True
+
+
+def test_geaenderte_notiz_ist_ein_neuer_entwurf(session, tenant_id, call_id):
+    """Offener Punkt aus PR #127 (T-4.10): aendert der Gast nach dem Vorlesen nur
+    die Notiz ("mit Hochstuhl"), entsteht ein neuer Entwurf mit neuem readback -
+    sonst kaeme der alte ohne Notiz zurueck."""
+    args = {
+        "guest_name": "Müller",
+        "phone": "+4972215551234",
+        "party_size": 4,
+        "reserved_for": berlin(DIENSTAG, 18, 30),
+    }
+    first = dispatch(
+        session, call_id, tenant_id, "create_reservation", dict(args), now=NOW
+    )
+    second = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {**args, "note": "mit Hochstuhl"},
+        now=NOW,
+    )
+    assert second.ok
+    assert second.data["reservation_id"] != first.data["reservation_id"]
+    assert second.data["note"] == "mit Hochstuhl"
+
+
+def test_schluessel_gleich_bei_anderer_schreibweise(session, tenant_id, call_id):
+    """Review PR #139: dieselbe Reservierung mit anders geschriebener Nummer und
+    anderer Zeitzone im Zeitstempel ist kein zweiter Entwurf."""
+    from datetime import UTC
+
+    wann = berlin(DIENSTAG, 18, 30)
+    args = {"guest_name": "Müller", "party_size": 4}
+    first = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {**args, "phone": "+4972215551234", "reserved_for": wann.isoformat()},
+        now=NOW,
+    )
+    second = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            **args,
+            "phone": "07221 5551234",
+            "reserved_for": wann.astimezone(UTC).isoformat(),
+        },
+        now=NOW,
+    )
+    assert second.data["reservation_id"] == first.data["reservation_id"]
+
+
+OFF_THE_CALENDAR = [
+    "0001-01-01T00:00:00+14:00",
+    "9999-12-31T23:59:00-12:00",
+    # In range itself, but the window of the next day is not.
+    "9999-12-31T12:00:00+00:00",
+]
+
+
+@pytest.mark.parametrize("tool", ["check_slot", "create_reservation"])
+@pytest.mark.parametrize("when", OFF_THE_CALENDAR)
+def test_a_date_no_calendar_holds_is_invalid_input(
+    session, tenant_id, call_id, tool, when
+):
+    """A model that returns the year 9999 (invented, or the guest said so) must
+    get a failed call it can act on. The date arithmetic of the slot check
+    overflowed on it, the error was none the core knows, and the call ended as
+    an outage with the team (#252)."""
+    args = {"reserved_for": when, "party_size": 2}
+    if tool == "create_reservation":
+        args |= {"guest_name": "Müller", "phone": "+4972215551234"}
+
+    result = dispatch(session, call_id, tenant_id, tool, args, now=NOW)
+
+    assert result.ok is False
+    assert result.error_code == "invalid_input"
+    assert "reserved_for" in result.hint
+
+
+@pytest.mark.parametrize(
+    "when", ["9999-12-30T00:00:00+00:00", "0001-01-03T00:00:00+00:00"]
+)
+def test_the_last_days_that_do_work_are_not_refused_as_off_the_calendar(
+    session, tenant_id, call_id, when
+):
+    """No booking horizon by the back door: a moment the arithmetic can handle
+    gets the answer of the slot check, whatever that is (Codex, PR #262)."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_slot",
+        {"reserved_for": when, "party_size": 2},
+        now=NOW,
+    )
+
+    assert "reserved_for" not in (result.hint or "")
+
+
+def test_a_table_for_the_team_carries_the_signal(session, tenant_id, call_id):
+    """`team_callback` is what the conversation loop hands the wish over on
+    (#252)."""
+    wish = {"reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
+    team = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 6}, now=NOW
+    )
+    assert team.ok and team.data["team_callback"] is True
+    assert team.say and "sechs Personen noch heute" in team.say
+
+    free = dispatch(
+        session, call_id, tenant_id, "check_slot", {**wish, "party_size": 5}, now=NOW
+    )
+    assert free.data["available"] is True and free.data["team_callback"] is False
+
+
+def test_a_table_for_the_team_cannot_be_drafted(session, tenant_id, call_id):
+    """A model that skips `check_slot` gets no draft either."""
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 6,
+            "reserved_for": berlin(DIENSTAG, 18, 30).isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.say and "nicht selbst zusagen" in result.say
+    # The same signal as on `check_slot`: the core hands the wish to the team.
+    assert result.data == {"team_callback": True}
+
+
+def test_a_full_evening_is_a_conflict_without_the_signal(session, tenant_id, call_id):
+    monday = berlin(DIENSTAG + timedelta(days=6), 18, 30)
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": "+4972215551234",
+            "party_size": 2,
+            "reserved_for": monday.isoformat(),
+        },
+        now=NOW,
+    )
+    assert not result.ok and result.error_code == "conflict"
+    assert result.data == {} and result.hint is None
+
+
+def test_check_slot_leaves_out_the_drafts_of_its_own_call(session, tenant_id, call_id):
+    """#207: after a draft the guest moves the time. The draft of this call
+    must not fill the evening for the same guest (35 + 5 + 5 > 40)."""
+    other = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-2",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(other)
+    session.flush()
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=other.id,
+            status="confirmed",
+            guest_name="Schmidt",
+            phone="+4900000000",
+            party_size=35,
+            reserved_for=berlin(DIENSTAG, 18),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+    wish = {"party_size": 5, "reserved_for": berlin(DIENSTAG, 18, 30).isoformat()}
+    draft = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "create_reservation",
+        {"guest_name": "Müller", "phone": "+4972215551234", **wish},
+        now=NOW,
+    )
+    assert draft.ok
+
+    moved = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_slot",
+        {**wish, "reserved_for": berlin(DIENSTAG, 19, 30).isoformat()},
+        now=NOW,
+    )
+
+    assert moved.data["available"] is True

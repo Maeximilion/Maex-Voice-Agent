@@ -1,0 +1,368 @@
+# shellcheck shell=bash
+# Shared by backup.sh and restore.sh (T-9.3): which database, which Postgres client,
+# how a dump is encrypted. Sourced, never run.
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+die() { # die <exit code> <message>
+    local code="$1"
+    shift
+    echo "error: $*" >&2
+    exit "$code"
+}
+
+# Take KEY from the env file when the caller did not set it. The file is read line by
+# line, not sourced: TENANT_NAME=<Firmenname> is a redirect to a shell.
+env_default() {
+    local key="$1" file="${BACKUP_ENV_FILE:-$REPO_ROOT/.env}" line value
+    [ -z "${!key+set}" ] || return 0
+    [ -f "$file" ] || return 0
+    line="$(grep -E "^${key}=" "$file" | tail -n 1 || true)"
+    [ -n "$line" ] || return 0
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    case "$value" in
+        \"*\") value="${value#\"}" value="${value%\"}" ;;
+        \'*\') value="${value#\'}" value="${value%\'}" ;;
+    esac
+    printf -v "$key" '%s' "$value"
+    export "${key?}"
+}
+
+urldecode() {
+    local escaped="${1//\\/\\\\}"
+    printf '%b' "${escaped//%/\\x}"
+}
+
+# Connection parameters behind the "?" of the URL, as the variables libpq reads. The
+# application connects with them (TLS mode, certificates), so a dump must not go
+# without them: a parameter that cannot be passed on stops the script instead of
+# being dropped. Messages name the key only, a value may be a secret.
+pg_params_from_query() {
+    local pairs pair key var
+    IFS='&' read -ra pairs <<<"$1"
+    for pair in ${pairs[@]+"${pairs[@]}"}; do
+        key="${pair%%=*}"
+        case "$key" in
+            sslmode) var=PGSSLMODE ;;
+            sslrootcert) var=PGSSLROOTCERT ;;
+            sslcert) var=PGSSLCERT ;;
+            sslkey) var=PGSSLKEY ;;
+            sslcrl) var=PGSSLCRL ;;
+            connect_timeout) var=PGCONNECT_TIMEOUT ;;
+            application_name) var=PGAPPNAME ;;
+            options) var=PGOPTIONS ;;
+            channel_binding) var=PGCHANNELBINDING ;;
+            gssencmode) var=PGGSSENCMODE ;;
+            target_session_attrs) var=PGTARGETSESSIONATTRS ;;
+            *) die 2 "DATABASE_URL carries the connection parameter '$key', which backup and restore cannot pass on" ;;
+        esac
+        printf -v "$var" '%s' "$(urldecode "${pair#*=}")"
+        export "${var?}"
+        case "$key" in
+            sslrootcert | sslcert | sslkey | sslcrl) PG_FILE_PARAMS+=("$key") ;;
+        esac
+    done
+}
+
+# Certificate files of the URL exist on this machine, not in the client container.
+pg_refuse_files_in_container() {
+    [ "$PG_CLIENT" = docker ] || return 0
+    [ ${#PG_FILE_PARAMS[@]} -eq 0 ] ||
+        die 2 "DATABASE_URL names certificate files (${PG_FILE_PARAMS[*]}); they need a local Postgres client of the server's version, not the client container"
+}
+
+# Split a SQLAlchemy or libpq URL into the PG* variables every Postgres client reads.
+# The URL holds the password, so no message here repeats it.
+pg_target_from_url() {
+    local url="$1" rest userinfo="" hostport
+    case "$url" in
+        postgresql://* | postgres://* | postgresql+*://*) ;;
+        *) die 2 "DATABASE_URL is not a postgresql:// URL" ;;
+    esac
+    rest="${url#*://}"
+    PG_FILE_PARAMS=()
+    if [[ "$rest" == *\?* ]]; then pg_params_from_query "${rest#*\?}"; fi
+    rest="${rest%%\?*}"
+    case "$rest" in
+        */?*) ;;
+        *) die 2 "DATABASE_URL names no database" ;;
+    esac
+    PGDATABASE="$(urldecode "${rest#*/}")"
+    rest="${rest%%/*}"
+    hostport="$rest"
+    if [[ "$rest" == *@* ]]; then
+        userinfo="${rest%@*}"
+        hostport="${rest##*@}"
+    fi
+    PGPORT=5432
+    if [[ "$hostport" == \[*\]* ]]; then
+        # IPv6 literal: [::1]:5432
+        PGHOST="${hostport#\[}"
+        PGHOST="${PGHOST%%\]*}"
+        hostport="${hostport##*\]}"
+    else
+        PGHOST="${hostport%%:*}"
+    fi
+    if [[ "$hostport" == *:* ]]; then PGPORT="${hostport##*:}"; fi
+    [ -n "$PGHOST" ] || die 2 "DATABASE_URL names no host"
+    # User and password of the URL win; where the URL names none, what the caller
+    # exported (PGUSER, PGPASSWORD) stays.
+    if [ -n "${userinfo%%:*}" ]; then
+        PGUSER="$(urldecode "${userinfo%%:*}")"
+        export PGUSER
+    fi
+    if [[ "$userinfo" == *:* ]]; then
+        PGPASSWORD="$(urldecode "${userinfo#*:}")"
+        export PGPASSWORD
+    fi
+    export PGHOST PGPORT PGDATABASE
+}
+
+# One part of a database URL, decoded, without touching the PG* variables of this
+# shell: url_part <url> <PGUSER|PGPASSWORD|PGDATABASE>.
+url_part() {
+    (
+        unset PGUSER PGPASSWORD
+        pg_target_from_url "$1"
+        printf '%s' "${!2:-}"
+    )
+}
+
+# The owner's URL is a second user for the application's database, never a way to
+# another one. A typo in it would otherwise dump some other database every night,
+# let --replace swap one whose name happens to match, or migrate it. Needs
+# DATABASE_URL and OWNER_DATABASE_URL resolved (env_default); without an owner's
+# URL there is nothing to compare.
+owner_url_must_match_the_application() {
+    [ -n "${OWNER_DATABASE_URL:-}" ] || return 0
+    [ -n "${DATABASE_URL:-}" ] ||
+        die 2 "OWNER_DATABASE_URL is set without DATABASE_URL, which names the application's database"
+    local part
+    for part in PGHOST PGPORT PGDATABASE; do
+        [ "$(url_part "$DATABASE_URL" "$part")" = "$(url_part "$OWNER_DATABASE_URL" "$part")" ] ||
+            die 2 "DATABASE_URL and OWNER_DATABASE_URL must name the same host, port and database; they differ in ${part#PG}"
+    done
+}
+
+# The same variable the application and the import read decides what is dumped and
+# what is replaced (lesson from PR #169: a backup of some other stack is no backup).
+# Where the application has a role of its own (#252), DATABASE_URL names that role
+# and OWNER_DATABASE_URL the owner of the schema, who dumps, restores and migrates.
+pg_resolve_target() {
+    env_default BACKUP_DATABASE_URL
+    env_default OWNER_DATABASE_URL
+    env_default DATABASE_URL
+    local url="${BACKUP_DATABASE_URL:-${OWNER_DATABASE_URL:-${DATABASE_URL:-}}}"
+    [ -n "$url" ] || die 2 "DATABASE_URL is not set, in the environment or in .env"
+    # BACKUP_DATABASE_URL is the override that may differ on purpose.
+    [ -n "${BACKUP_DATABASE_URL:-}" ] || owner_url_must_match_the_application
+    pg_target_from_url "$url"
+    # Database names are quoted into SQL below; anything else would need escaping.
+    [[ "$PGDATABASE" =~ ^[A-Za-z0-9_]+$ ]] ||
+        die 2 "database name may only hold letters, digits and underscores"
+    export PGCONNECT_TIMEOUT="${PGCONNECT_TIMEOUT:-10}"
+    TARGET_LABEL="${PGUSER:-default user}@${PGHOST}:${PGPORT}/${PGDATABASE}"
+}
+
+# Client tools from PATH, or from the Postgres image when the host has none. A dump
+# needs a client at least as new as the server, and the image is the server's own.
+pg_resolve_client() {
+    env_default BACKUP_PG_CLIENT
+    env_default BACKUP_PG_IMAGE
+    env_default BACKUP_DOCKER_NETWORK
+    PG_CLIENT="${BACKUP_PG_CLIENT:-auto}"
+    PG_IMAGE="${BACKUP_PG_IMAGE:-postgres:16-alpine}"
+    if [ "$PG_CLIENT" = auto ]; then
+        PG_CLIENT=docker
+        # A client on the host cannot resolve names of the Compose network.
+        if [ -z "${BACKUP_DOCKER_NETWORK:-}" ] && command -v pg_dump >/dev/null &&
+            command -v pg_restore >/dev/null && command -v psql >/dev/null; then
+            PG_CLIENT=local
+            PG_CLIENT_MAY_SWITCH=1
+        fi
+    fi
+    case "$PG_CLIENT" in
+        local)
+            command -v pg_dump >/dev/null || die 2 "BACKUP_PG_CLIENT=local, but pg_dump is not on PATH"
+            ;;
+        docker)
+            command -v docker >/dev/null || die 2 "neither a Postgres client nor docker on PATH"
+            ;;
+        *) die 2 "BACKUP_PG_CLIENT must be auto, local or docker" ;;
+    esac
+    DOCKER_ARGS=()
+    CONTAINER_PGHOST="$PGHOST"
+    if [ -n "${BACKUP_DOCKER_NETWORK:-}" ]; then
+        # Production: Postgres has no published port, only the Compose network reaches it.
+        DOCKER_ARGS=(--network "$BACKUP_DOCKER_NETWORK")
+    elif [ "$PGHOST" = localhost ] || [ "$PGHOST" = 127.0.0.1 ]; then
+        # The host's localhost, seen from inside the client container.
+        CONTAINER_PGHOST=host.docker.internal
+        DOCKER_ARGS=(--add-host host.docker.internal:host-gateway)
+    fi
+    pg_refuse_files_in_container
+}
+
+pg_major() { # first number of a version line: "pg_dump (PostgreSQL) 16.4" -> 16
+    sed -E 's/^[^0-9]*([0-9]+).*/\1/'
+}
+
+# pg_dump refuses a newer server, and a newer pg_dump writes what an older server
+# cannot restore. A local client of another major version is replaced by the image
+# when the choice was automatic, and refused when it was asked for.
+pg_match_server_version() { # <database to ask>
+    [ "$PG_CLIENT" = local ] || return 0
+    local server client
+    server="$(pg_sql "$1" "show server_version_num")"
+    server=$((server / 10000))
+    client="$(pg_dump --version | pg_major)"
+    [ "$server" != "$client" ] || return 0
+    if [ "${PG_CLIENT_MAY_SWITCH:-0}" = 1 ] && command -v docker >/dev/null; then
+        echo "local Postgres client is version $client, the server $server: using $PG_IMAGE"
+        PG_CLIENT=docker
+        pg_refuse_files_in_container
+        return 0
+    fi
+    die 2 "local Postgres client is version $client, the server $server: set BACKUP_PG_CLIENT=docker"
+}
+
+pg() { # pg <tool> [arguments]; stdin goes through to the tool
+    if [ "$PG_CLIENT" = local ]; then
+        "$@"
+        return
+    fi
+    # Variables named without a value are taken from this environment, so the
+    # password never shows up in a process list.
+    MSYS_NO_PATHCONV=1 docker run --rm -i ${DOCKER_ARGS[@]+"${DOCKER_ARGS[@]}"} \
+        -e PGHOST="$CONTAINER_PGHOST" -e PGPORT -e PGUSER -e PGPASSWORD \
+        -e PGDATABASE -e PGCONNECT_TIMEOUT -e PGSSLMODE -e PGAPPNAME -e PGOPTIONS \
+        -e PGCHANNELBINDING -e PGGSSENCMODE -e PGTARGETSESSIONATTRS "$PG_IMAGE" "$@"
+}
+
+pg_sql() { # pg_sql <database> <sql>; prints bare values
+    pg psql --no-psqlrc --quiet --tuples-only --no-align --set ON_ERROR_STOP=1 \
+        --dbname "$1" --command "$2" </dev/null | tr -d '\r'
+}
+
+pg_script() { # pg_script <database>; statements on stdin, all of them or none
+    pg psql --no-psqlrc --quiet --set ON_ERROR_STOP=1 --single-transaction \
+        --dbname "$1" --file - >/dev/null
+}
+
+# The application's own role is the user of DATABASE_URL (#252). Sets APP_ROLE and
+# APP_ROLE_PASSWORD; both stay empty where DATABASE_URL names the user this
+# connection runs as, the layout with a single database user.
+pg_resolve_app_role() { # pg_resolve_app_role <user of this connection>
+    APP_ROLE=""
+    APP_ROLE_PASSWORD=""
+    env_default DATABASE_URL
+    [ -n "${DATABASE_URL:-}" ] || return 0
+    local user
+    user="$(url_part "$DATABASE_URL" PGUSER)"
+    if [ -z "$user" ] || [ "$user" = "$1" ]; then return 0; fi
+    # The name is quoted into SQL below; anything else would need escaping.
+    [[ "$user" =~ ^[a-z_][a-z0-9_]{0,62}$ ]] ||
+        die 2 "the user of DATABASE_URL may only hold lower-case letters, digits and underscores"
+    APP_ROLE="$user"
+    APP_ROLE_PASSWORD="$(url_part "$DATABASE_URL" PGPASSWORD)"
+}
+
+# What the application may do in a database: read and write rows, nothing else, also
+# in tables the owner creates later (migrations run as the owner). Stored in the
+# database, so a restored one needs the same statements again: a dump is restored
+# without privileges. Database and role are checked for their characters before.
+#
+# Everything the role was granted before is taken away first, so a role that
+# existed with more (TRUNCATE on a table, CREATE on the database or the schema)
+# ends with the same rights as a new one. What reaches it through PUBLIC or another
+# grantor is not revoked here; db_role.sh sees it in its check and fails.
+app_grants_sql() { # app_grants_sql <database> <role>
+    cat <<SQL
+revoke create on schema public from public;
+revoke all on database "$1" from "$2";
+revoke all on schema public from "$2";
+revoke all on all tables in schema public from "$2";
+revoke all on all sequences in schema public from "$2";
+alter default privileges in schema public revoke all on tables from "$2";
+alter default privileges in schema public revoke all on sequences from "$2";
+grant connect on database "$1" to "$2";
+grant usage on schema public to "$2";
+grant select, insert, update, delete on all tables in schema public to "$2";
+grant usage, select on all sequences in schema public to "$2";
+alter default privileges in schema public grant select, insert, update, delete on tables to "$2";
+alter default privileges in schema public grant usage, select on sequences to "$2";
+SQL
+}
+
+CONNECT_HINT="check DATABASE_URL; a host like 'db' only resolves inside the Compose network, and on Linux a client container does not reach the loopback port of the dev stack (BACKUP_DOCKER_NETWORK for both)"
+
+require_passphrase() {
+    env_default BACKUP_PASSPHRASE_FILE
+    [ -n "${BACKUP_PASSPHRASE_FILE:-}" ] ||
+        die 2 "BACKUP_PASSPHRASE_FILE is not set: the dump holds customer data and is only written encrypted"
+    [ -s "$BACKUP_PASSPHRASE_FILE" ] || die 2 "BACKUP_PASSPHRASE_FILE is missing or empty"
+    command -v gpg >/dev/null || die 2 "gpg is not on PATH"
+    # gpg creates a missing home directory without a lock: of two runs that start
+    # together on a fresh machine (the nightly cron and a backup by hand), one dies
+    # with "can't create directory ... File exists". mkdir -p has no loser. gpgconf
+    # names the directory gpg will use: GNUPGHOME reads differently to gpg than to
+    # a shell (cron hands over "~/x" as written, and gpg expands it). The mode comes
+    # from the umask: `mkdir -m 700` creates the directory in Git Bash and then
+    # fails with "cannot change permissions".
+    local gpg_home
+    gpg_home="$(gpgconf --list-dirs homedir)" ||
+        die 2 "gpgconf, which comes with gpg, does not name the gpg home directory"
+    (umask 077 && mkdir -p "$gpg_home") ||
+        die 2 "cannot create the gpg home directory $gpg_home"
+}
+
+# The passphrase is the first line of the file without its line ending: gpg itself
+# would take a carriage return as part of it, and a file saved on Windows would
+# write dumps nobody can open with the passphrase from the password manager.
+# --no-symkey-cache: without it gpg-agent remembers a passphrase and a restore with
+# the wrong one would pass on the machine that wrote the backup.
+gpg_quiet() {
+    gpg --batch --quiet --no-symkey-cache --pinentry-mode loopback \
+        --passphrase-fd 3 "$@" 3< <(head -n 1 "$BACKUP_PASSPHRASE_FILE" | tr -d '\r\n')
+}
+
+encrypt_stream() { # stdin -> stdout; the custom format is compressed already
+    gpg_quiet --symmetric --cipher-algo AES256 --compress-algo none --output -
+}
+
+read_dump() { # plain dump bytes of <file> on stdout
+    case "$1" in
+        *.gpg) gpg_quiet --decrypt "$1" ;;
+        *) cat "$1" ;;
+    esac
+}
+
+# pg_restore <arguments> fed with the plain bytes of <file>. pg_restore stops at the end
+# marker without reading what follows (padding, a gpg trailer), so the writer of the
+# pipe is cut off by SIGPIPE and `pipefail` calls a good dump unreadable, depending on
+# timing. After a successful pg_restore the rest is drained; gpg still checks to the end.
+pg_restore_from() { # pg_restore_from <file> [pg_restore arguments]
+    local file="$1"
+    shift
+    # A real subshell, not a brace group: with `lastpipe` a group runs in the script
+    # itself and its `exit` would end the script. The rest is drained only after a
+    # success; a failed pg_restore fails the pipeline anyway and must not make a
+    # large (encrypted) dump read to its end first.
+    read_dump "$file" | (
+        pg pg_restore "$@" || exit "$?"
+        cat >/dev/null
+    )
+}
+
+# Read the whole dump, not only its table of contents: decrypts to the last byte
+# (gpg checks integrity there) and lets pg_restore unpack every table. Errors show.
+verify_dump() {
+    pg_restore_from "$1" --file=/dev/null
+}
+
+# How many tables a dump holds (pg_dump lists empty ones too). Only the table of
+# contents is read, so the writer of the pipe is cut off: its status says nothing.
+dump_table_count() {
+    read_dump "$1" 2>/dev/null | pg pg_restore --list 2>/dev/null | grep -c 'TABLE DATA' || true
+}
