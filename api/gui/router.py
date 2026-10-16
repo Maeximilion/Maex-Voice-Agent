@@ -142,7 +142,11 @@ def _require_htmx(
         raise HTTPException(status_code=403, detail="Nur aus der Betriebsansicht")
 
     csrf_cookie = request.cookies.get("csrf_token")
-    if not csrf_cookie or not x_csrf_token or not secrets.compare_digest(csrf_cookie, x_csrf_token):
+    if (
+        not csrf_cookie
+        or not x_csrf_token
+        or not secrets.compare_digest(csrf_cookie, x_csrf_token)
+    ):
         raise HTTPException(status_code=403, detail="CSRF-Token ungültig")
 
 
@@ -196,11 +200,11 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
         response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
         return response
     context = {
-            "tenant": tenant,
-            "today": _today_rows(session, tenant),
-            "callbacks": _callback_rows(session, tenant),
-            **_header(session, tenant),
-        }
+        "tenant": tenant,
+        "today": _today_rows(session, tenant),
+        "callbacks": _callback_rows(session, tenant),
+        **_header(session, tenant),
+    }
     token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
     context["csrf_token"] = token
     response = templates.TemplateResponse(
@@ -230,9 +234,7 @@ def heute_fragment(
     context = {"today": _today_rows(session, tenant)}
     token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
     context["csrf_token"] = token
-    response = templates.TemplateResponse(
-        request, "fragments/heute.html", context
-    )
+    response = templates.TemplateResponse(request, "fragments/heute.html", context)
     response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
     return response
 
@@ -257,9 +259,7 @@ def kopfzeile_fragment(
     context = _header(session, tenant)
     token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
     context["csrf_token"] = token
-    response = templates.TemplateResponse(
-        request, "fragments/kopfzeile.html", context
-    )
+    response = templates.TemplateResponse(request, "fragments/kopfzeile.html", context)
     response.set_cookie("csrf_token", token, httponly=True, samesite="lax")
     return response
 

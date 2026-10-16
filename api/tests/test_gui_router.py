@@ -475,6 +475,7 @@ def test_tablet_schrift_mindestens_18px():
         in css
     )
 
+
 def test_schalten_ohne_csrf_token_verboten(client, engine, tenant_id):
     """CSRF-Schutz: POST braucht den passenden Token-Header."""
     # Ohne Token-Header
