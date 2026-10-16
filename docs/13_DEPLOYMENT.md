@@ -224,6 +224,56 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/24583491" --input .github/rulesets/
 
 A job renamed in `ci.yml` has to be renamed there too, otherwise the old name never reports and every pull request waits.
 
+### CodeQL coverage for dependency updates
+
+GitHub's default setup intentionally does not scan Dependabot-triggered pull requests
+([upstream explanation](https://github.com/github/codeql-action/issues/2858)). Its
+`CodeQL` result can therefore be neutral with "3 configurations not found" even though
+the scans on `main` are healthy. An empty maintainer commit triggers a scan once; it
+does not fix the next dependency update.
+
+`.github/workflows/codeql.yml` scans Python, JavaScript/TypeScript, and Actions on every
+pull request targeting `main`, pushes to `main`, a weekly schedule, and manual dispatch.
+There are no actor or path exclusions. PRs use `pull_request`, GitHub-hosted runners,
+no repository secrets, and no project build or dependency installation. The token has
+only repository read and security-result upload permissions. Dependabot uploads are
+supported on this event even with a restricted token
+([GitHub documentation](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/resource-not-accessible)).
+
+**Rollout is staged, not yet activated.** Until the repository variable
+`CODEQL_ADVANCED_SETUP` is exactly `true`, the jobs are named `CodeQL validation` and
+run the full analysis without uploading results. A successful validation proves that
+analysis ran, not that it found no alerts. Default setup remains responsible for
+published security results. This avoids conflicting uploads while the replacement is
+reviewed. Do not disable default setup before the workflow is merged to `main`.
+
+After Maxi merges the workflow, switch during a period with no merges in progress.
+Run these commands from Bash with the repository owner's authenticated GitHub CLI:
+
+```bash
+backup_dir=$(mktemp -d)
+gh api repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup > "$backup_dir/codeql-default-setup.json"
+gh api --method PATCH repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup -f state=not-configured
+gh variable set CODEQL_ADVANCED_SETUP --body true --repo Maeximilion/Maex-Voice-Agent
+gh workflow run codeql.yml --ref main --repo Maeximilion/Maex-Voice-Agent
+gh run list --workflow codeql.yml --repo Maeximilion/Maex-Voice-Agent
+```
+
+Keep the backup path. Verify all three language jobs and their uploaded results on
+`main`, then rerun the `codeql` workflow for open PRs. A fresh Dependabot PR must show
+all three `CodeQL scan` jobs and a successful CodeQL results check. Existing default
+setup analysis configurations may remain in tool status; mark them inactive only
+after the replacement has published its baseline, without deleting alert history.
+Keep the existing required checks and security thresholds unchanged. A cancelled run
+on an older commit is expected when a newer PR commit supersedes it; assess the latest
+head, not historical commit badges.
+
+If activation fails, stop merges, set `CODEQL_ADVANCED_SETUP` to `false`, and restore
+default setup with the languages, query suite, threat model, and runner settings in
+the saved snapshot. Confirm a successful default scan before resuming merges. The
+explicit workflow will return to clearly labelled validation mode. Never report
+the staged migration as active coverage for Dependabot until the upload check passes.
+
 ---
 
 ## 7. Umgebungen
