@@ -14,7 +14,7 @@ from api.models import MenuItem
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_draft_order import NOW, _tenant, item
 
-HX = {"HX-Request": "true"}
+HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,9 @@ def client(engine):
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        yield TestClient(app)
+        client = TestClient(app)
+        client.cookies.set("csrf_token", "testtoken")
+        yield client
     finally:
         app.dependency_overrides.pop(get_db, None)
 

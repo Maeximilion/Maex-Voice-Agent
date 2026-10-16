@@ -8,10 +8,10 @@
 
   var stoerung = document.getElementById("stoerung");
 
-
-  // Add CSRF token to HTMX requests
+  // Add the page token to HTMX requests.
   document.body.addEventListener('htmx:configRequest', function (e) {
-    var token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var token = meta && meta.getAttribute("content");
     if (token) {
       e.detail.headers['X-CSRF-Token'] = token;
     }

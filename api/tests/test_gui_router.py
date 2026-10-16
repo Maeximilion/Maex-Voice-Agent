@@ -509,16 +509,51 @@ def test_tablet_schrift_mindestens_18px():
     )
 
 
-def test_schalten_ohne_csrf_token_verboten(client, engine, tenant_id):
-    """CSRF-Schutz: POST braucht den passenden Token-Header."""
-    # Ohne Token-Header
+@pytest.mark.parametrize(
+    "cookie, header",
+    [
+        (None, "testtoken"),
+        ("testtoken", None),
+        ("testtoken", "wrong-token"),
+        ("", "testtoken"),
+        ("caf\u00e9", "testtoken"),
+    ],
+)
+def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
+    client.cookies.clear()
     headers = {"HX-Request": "true"}
+    if cookie is not None:
+        headers["Cookie"] = f'csrf_token="{cookie}"'.encode("latin-1")
+    if header is not None:
+        headers["X-CSRF-Token"] = header
+    before = config_von(engine, tenant_id).call_mode
     response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
     assert response.status_code == 403
-    assert "CSRF" in response.text
+    assert config_von(engine, tenant_id).call_mode == before
 
-    # Mit falschem Token-Header
-    headers = {"HX-Request": "true", "X-CSRF-Token": "falscher_token"}
-    response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
-    assert response.status_code == 403
-    assert "CSRF" in response.text
+
+def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("/gui/")
+    token = client.cookies.get("csrf_token")
+    assert token and len(token) >= 32
+    assert f'<meta name="csrf-token" content="{token}">' in response.text
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=lax" in response.headers["set-cookie"]
+    assert (
+        client.post(
+            "/gui/kopfzeile/ki-pausieren",
+            headers={
+                "HX-Request": "true",
+                "X-CSRF-Token": token,
+            },
+        ).status_code
+        == 200
+    )
+    assert client.get("/gui/").cookies.get("csrf_token") == token
+
+
+def test_https_page_marks_csrf_cookie_secure(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("https://testserver/gui/")
+    assert "Secure" in response.headers["set-cookie"]
