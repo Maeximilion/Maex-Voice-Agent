@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.2
+> Status: 16.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.3
 
 ---
 
 ## Summary
+
+**CodeQL coverage for dependency updates is prepared, pending activation (16.10.2026, PR #304).** GitHub's default setup intentionally skips Dependabot-triggered PRs, leaving a neutral result with missing configurations. The explicit `codeql` workflow analyzes Python, JavaScript/TypeScript, and Actions for every PR to `main`, without actor or path exclusions, on hosted runners without project builds or dependency installation. While default setup remains active, the new jobs validate analysis without uploading conflicting results. After merge, switch to advanced uploads and verify the new baseline and PR results as described in docs/13. Older cancelled CI runs remain historical; only the current head determines readiness. The same PR updates Ruff to 0.17.0.
 
 **The operations view answers only requests that came through Caddy (T-9.7, 15.10.2026).** Since Asterisk, a service that takes outside input, shares the Docker network with the API, Caddy's Basic-Auth alone was not enough (security audit, #252 finding 6). Maxi chose the smaller of two fixes: Caddy sends a secret header, `GUI_PROXY_SECRET`, and every route of `/gui` checks it outside dev and test. A server without the secret locks the tablet out, so a deploy checks the tablet. Separate Docker networks, which would protect the database, n8n and Asterisk as well, are noted as T-9.8 for later.
 
@@ -551,6 +553,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.3 · 16.10.2026:** Prepare explicit CodeQL coverage for dependency PRs; activation waits for the workflow on main.
 - **v2.3.2 · 15.10.2026:** T-9.7: the operations view answers only requests with Caddy's secret header (#252 finding 6); separate networks noted as T-9.8
 - **v2.3.1 · 15.10.2026:** #252: Ollama installer pinned to 0.35.1 and checked by SHA-256 in setup_local_llm.sh
 - **v2.3.0 · 15.10.2026:** Security audit at fixed triggers (docs/09 §5, /start 5c, /gate 1b); audit of 15.10.2026: one P1 in the dialplan and two SIP points as T-10.13, six P2/P3 in #252
