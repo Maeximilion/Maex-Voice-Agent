@@ -1,11 +1,21 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.2
+> Status: 16.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.3
 
 ---
 
 ## Summary
+
+**The operations controls require a CSRF token (PR #316, 16.10.2026).** The page
+and dev-only simulator console set an HttpOnly cookie and expose its token to HTMX through a meta tag; writes
+require the matching header. The cookie is Secure outside dev/test, including behind Caddy, and on local HTTPS. Invalid non-ASCII
+input returns 403. The Jules branch was based on an older GUI: it is reconciled
+with current order controls and proxy authentication, and the order/sold-out/console test
+clients send the new token. The initial CI failure was Ruff formatting; later
+local checks also caught eight type errors and outdated test fixtures. Next:
+complete CI and obtain a review of the final head before Maxi merges. No linked
+closing issue was supplied for this PR.
 
 **The operations view answers only requests that came through Caddy (T-9.7, 15.10.2026).** Since Asterisk, a service that takes outside input, shares the Docker network with the API, Caddy's Basic-Auth alone was not enough (security audit, #252 finding 6). Maxi chose the smaller of two fixes: Caddy sends a secret header, `GUI_PROXY_SECRET`, and every route of `/gui` checks it outside dev and test. A server without the secret locks the tablet out, so a deploy checks the tablet. Separate Docker networks, which would protect the database, n8n and Asterisk as well, are noted as T-9.8 for later.
 
@@ -551,6 +561,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.3 · 16.10.2026:** Require CSRF tokens on operations controls and repair Jules PR #316
 - **v2.3.2 · 15.10.2026:** T-9.7: the operations view answers only requests with Caddy's secret header (#252 finding 6); separate networks noted as T-9.8
 - **v2.3.1 · 15.10.2026:** #252: Ollama installer pinned to 0.35.1 and checked by SHA-256 in setup_local_llm.sh
 - **v2.3.0 · 15.10.2026:** Security audit at fixed triggers (docs/09 §5, /start 5c, /gate 1b); audit of 15.10.2026: one P1 in the dialplan and two SIP points as T-10.13, six P2/P3 in #252

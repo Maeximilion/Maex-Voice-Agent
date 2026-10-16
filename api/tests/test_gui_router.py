@@ -6,13 +6,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
 from api.domain.status import config as switches
+from api.gui.router import _page_response
 from api.main import app
 from api.models import Call, Reservation, ServiceConfig
 from api.tests.conftest import p95_ms
@@ -67,7 +70,9 @@ def client(engine):
 
     app.dependency_overrides[get_db] = override_get_db
     try:
-        yield TestClient(app)
+        c = TestClient(app)
+        c.cookies.set("csrf_token", "testtoken")
+        yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -192,7 +197,7 @@ def test_caddy_schuetzt_die_gui():
 
 # --- Kopfzeile: Knoepfe (T-3.2) ---------------------------------------------
 
-HX = {"HX-Request": "true"}
+HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 
 
 def config_von(engine, tenant_id) -> ServiceConfig:
@@ -505,3 +510,69 @@ def test_tablet_schrift_mindestens_18px():
         "button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}"
         in css
     )
+
+
+@pytest.mark.parametrize(
+    "cookie, header",
+    [
+        (None, "testtoken"),
+        ("testtoken", None),
+        ("testtoken", "wrong-token"),
+        ("", "testtoken"),
+        ("caf\u00e9", "testtoken"),
+    ],
+)
+def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
+    client.cookies.clear()
+    headers = {"HX-Request": "true"}
+    if cookie is not None:
+        headers["Cookie"] = f'csrf_token="{cookie}"'.encode("latin-1")
+    if header is not None:
+        headers["X-CSRF-Token"] = header
+    before = config_von(engine, tenant_id).call_mode
+    response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
+    assert response.status_code == 403
+    assert config_von(engine, tenant_id).call_mode == before
+
+
+def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("/gui/")
+    token = client.cookies.get("csrf_token")
+    assert token and len(token) >= 32
+    assert f'<meta name="csrf-token" content="{token}">' in response.text
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=lax" in response.headers["set-cookie"]
+    assert (
+        client.post(
+            "/gui/kopfzeile/ki-pausieren",
+            headers={
+                "HX-Request": "true",
+                "X-CSRF-Token": token,
+            },
+        ).status_code
+        == 200
+    )
+    assert client.get("/gui/").cookies.get("csrf_token") == token
+
+
+def test_https_page_marks_csrf_cookie_secure(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("https://testserver/gui/")
+    assert "Secure" in response.headers["set-cookie"]
+
+
+def test_production_csrf_cookie_is_secure_behind_http_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "env", "production")
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/gui/dev/console",
+            "scheme": "http",
+            "server": ("api", 8000),
+            "headers": [],
+        }
+    )
+    response = _page_response(request, "dev/console.html", {})
+    assert "Secure" in response.headers["set-cookie"]

@@ -17,7 +17,7 @@ from api.models import Call, Tenant
 from api.tests.test_domain_draft_order import _tenant
 from sim.session import Turn
 
-HX = {"HX-Request": "true"}
+HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 BASE = "/gui/dev/console"
 
 
@@ -49,7 +49,9 @@ def client(engine, monkeypatch):
     mount_gui(app)
     app.dependency_overrides[get_db] = override_get_db
     try:
-        yield TestClient(app)
+        client = TestClient(app)
+        client.cookies.set("csrf_token", "testtoken")
+        yield client
     finally:
         for entry in dev.OPEN_CALLS.values():
             entry.session.close()
@@ -355,3 +357,27 @@ def test_console_is_absent_outside_dev(monkeypatch):
     mount_gui(prod)
 
     assert TestClient(prod).get(BASE).status_code == 404
+
+
+def test_console_page_issues_csrf_token(client, tenant_id):
+    client.cookies.clear()
+    page = client.get(BASE)
+    token = client.cookies.get("csrf_token")
+    assert token and len(token) >= 32
+    assert f'<meta name="csrf-token" content="{token}">' in page.text
+    assert (
+        client.post(
+            f"{BASE}/call",
+            headers={
+                "HX-Request": "true",
+                "X-CSRF-Token": token,
+            },
+        ).status_code
+        == 200
+    )
+
+
+def test_console_rejects_missing_csrf_token(client, db, tenant_id):
+    response = client.post(f"{BASE}/call", headers={"HX-Request": "true"})
+    assert response.status_code == 403
+    assert db.scalar(select(func.count()).select_from(Call)) == 0
