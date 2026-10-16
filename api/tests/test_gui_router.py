@@ -6,13 +6,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
 from api.domain.status import config as switches
+from api.gui.router import _page_response
 from api.main import app
 from api.models import Call, Reservation, ServiceConfig
 from api.tests.conftest import p95_ms
@@ -556,4 +559,20 @@ def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
 def test_https_page_marks_csrf_cookie_secure(client, tenant_id):
     client.cookies.clear()
     response = client.get("https://testserver/gui/")
+    assert "Secure" in response.headers["set-cookie"]
+
+
+def test_production_csrf_cookie_is_secure_behind_http_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "env", "production")
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/gui/dev/console",
+            "scheme": "http",
+            "server": ("api", 8000),
+            "headers": [],
+        }
+    )
+    response = _page_response(request, "dev/console.html", {})
     assert "Secure" in response.headers["set-cookie"]

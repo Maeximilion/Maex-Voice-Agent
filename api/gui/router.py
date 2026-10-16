@@ -21,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.config import LOCAL_ENVS, settings
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
@@ -184,7 +185,7 @@ def _page_response(
         token,
         httponly=True,
         samesite="lax",
-        secure=request.url.scheme == "https",
+        secure=settings.env not in LOCAL_ENVS or request.url.scheme == "https",
     )
     return response
 

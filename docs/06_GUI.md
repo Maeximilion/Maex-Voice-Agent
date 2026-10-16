@@ -157,7 +157,7 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 ## 8. Request protection
 
 The operations page and the dev-only simulator console issue a random `csrf_token` cookie (HttpOnly, SameSite=Lax,
-Secure over HTTPS) and includes the same token in its CSRF meta tag. HTMX sends
+Secure outside dev/test or over HTTPS) and includes the same token in its CSRF meta tag. HTMX sends
 it as `X-CSRF-Token`. Every state-changing operations route requires both
 `HX-Request: true` and a matching cookie/header pair; missing, malformed or
 mismatched tokens return 403 before any change. Page reloads reuse the cookie so

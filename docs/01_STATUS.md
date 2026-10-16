@@ -9,7 +9,7 @@
 
 **The operations controls require a CSRF token (PR #316, 16.10.2026).** The page
 and dev-only simulator console set an HttpOnly cookie and expose its token to HTMX through a meta tag; writes
-require the matching header. HTTPS marks the cookie Secure. Invalid non-ASCII
+require the matching header. The cookie is Secure outside dev/test, including behind Caddy, and on local HTTPS. Invalid non-ASCII
 input returns 403. The Jules branch was based on an older GUI: it is reconciled
 with current order controls and proxy authentication, and the order/sold-out/console test
 clients send the new token. The initial CI failure was Ruff formatting; later
