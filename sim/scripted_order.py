@@ -43,10 +43,10 @@ from api.schemas.menu import MenuHit, OptionGroup, Wish
 from api.schemas.orders import NOTE_MAX
 
 SAY_WHAT = "Was möchten Sie bestellen?"
-# "gegen" or "auf" in front of an ingredient in an answer to "Wogegen?", at
-# the start or after "und": "Erdnuesse und gegen Sesam" names both. Any other
-# still ends the list ("Erdnuesse, auf jeden Fall").
-_AGAINST = re.compile(r"(^\s*|\bund\s+)(?:gegen|auf)\s+", re.IGNORECASE)
+# Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
+# start, "gegen" after a comma or "und" ("Ohne Zwiebeln und gegen
+# Erdnuesse"). Another "auf" still ends the list ("Erdnuesse, auf jeden Fall").
+_AGAINST = re.compile(r"^\s*(?:gegen|auf)\b|(?:,|\bund\b)\s*gegen\b", re.IGNORECASE)
 # An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
 # nichts." ("Nein." stays a question: no to what is unclear).
 _NOTHING = frozenset(
@@ -604,10 +604,7 @@ class PickupScript:
                 # A removal said with it is noted. An addition is not taken:
                 # the answer is read without the dish's options (stand-in
                 # only, docs/01_STATUS.md).
-                removal = removal_with(wish)
-                if removal and removal.lower() not in (item.note or "").lower():
-                    note = ", ".join(n for n in (item.note, removal) if n)
-                    item.note = note if len(note) <= NOTE_MAX else item.note
+                item.note = _with_removal(item.note, removal_with(wish))
             if not self._allergy_for:
                 self._allergy_named = False
             return self._next(slots, patch, lead=self._take_deferred())
@@ -621,18 +618,12 @@ class PickupScript:
             )
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
-            # A removal said again in front is no ingredient ("Ohne Zwiebeln
-            # und gegen Erdnuesse"), nor is the "gegen" in front of one (#252).
-            bare = text
-            removal = self._allergy_for[0].note
-            if removal and bare.lower().startswith(removal.lower()):
-                bare = bare[len(removal) :].lstrip(" ,")
-            bare = re.sub(
-                r"^\s*(?:und\s+)?(?:keine[nm]?\s+|kein\s+)?",
-                "",
-                _AGAINST.sub(r"\1", bare),
-                flags=re.IGNORECASE,
-            )
+            # A removal said with it is no ingredient ("Ohne Zwiebeln und
+            # gegen Erdnuesse"), nor is the "gegen" in front of one (#252).
+            bare, removal = _ingredient_answer(text)
+            if removal:
+                item = self._allergy_for[0]
+                item.note = _with_removal(item.note, removal)
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if wish is None or not wish.ingredient:
             return LLMTurn(
@@ -1032,3 +1023,25 @@ def _withdraws(text: str) -> bool:
     """ "Keine.", "Gar keine.", "Gegen nichts.": no allergy after all."""
     words = set(_words(text))
     return bool(words & _NOTHING) and words <= _NOTHING | _NOTHING_FILL
+
+
+def _ingredient_answer(text: str) -> tuple[str, str | None]:
+    """An answer to "Wogegen?" in its parts: the ingredient, and a removal
+    said with it. "Ohne Zwiebeln und gegen Erdnuesse" -> ("Erdnuesse", "Ohne
+    Zwiebeln"); "Erdnuesse und gegen Sesam" -> ("Erdnuesse und Sesam", None);
+    "Keine Erdnuesse" -> ("Erdnuesse", None)."""
+    parts = [part.strip(" ,.") for part in _AGAINST.split(text)]
+    parts = [part for part in parts if part]
+    removals = [p for p in parts if len(parts) > 1 and _words(p)[:1] == ["ohne"]]
+    bare = " und ".join(p for p in parts if p not in removals)
+    bare = re.sub(r"^\s*(?:keine[nm]?|kein)\s+", "", bare, flags=re.IGNORECASE)
+    return bare, ", ".join(removals) or None
+
+
+def _with_removal(note: str | None, removal: str | None) -> str | None:
+    """The note with a removal added, each removal once, within an order line."""
+    said = [n for n in (note or "").split(", ") if n]
+    if not removal or removal.lower() in (n.lower() for n in said):
+        return note
+    joined = ", ".join([*said, removal])
+    return joined if len(joined) <= NOTE_MAX else note

@@ -32,6 +32,7 @@ from api.domain.menu.wishes import (
     classify_wish,
     denies_allergy,
     kitchen_note,
+    open_wish,
     removal_with,
     wish_candidates,
 )
@@ -946,6 +947,7 @@ def test_kitchen_note_names_the_removal_once(removal, allergy, note):
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
         "ich habe keine Allergie, danke",
+        "ich habe keine Allergie, das wars",
     ],
 )
 def test_denied_allergy_is_no_wish(said):
@@ -970,6 +972,7 @@ def test_denied_allergy_is_no_wish(said):
             "ohne Zwiebeln für meine Frau",
         ),
         ("ich habe keine Allergie, ohne Zwiebeln, sonst nichts", "note", None),
+        ("ich habe keine Allergie, nur ohne Zwiebeln", "note", "ohne Zwiebeln"),
         # A full stop the words do not show (own review).
         ("ich habe keine Allergie. Ohne Koriander bitte.", "note", "Ohne Koriander"),
         ("mit Nudeln, ich bin nicht allergisch", "option", "mit Nudeln"),
@@ -1051,6 +1054,32 @@ def test_negation_that_does_not_deny_keeps_the_allergy(said, ingredient):
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
+def test_removal_next_to_a_denial_that_asks_stays():
+    """Own review, round 5: when the denial falls through to "Wogegen?", the
+    removal said with it stays."""
+    wish = classify_wish(
+        "ich habe keine Allergie, aber ohne Koriander, dafür mit Pommes", BEILAGE
+    )
+    assert (wish.kind, wish.ingredient, wish.note) == (
+        "allergy",
+        None,
+        "ohne Koriander",
+    )
+
+
+def test_denial_next_to_an_addition_waits_for_the_dish():
+    """Own review, round 5: with several hits the options are not known yet,
+    so the addition is decided after the choice, not asked about."""
+    wish = open_wish("mit Nudeln, ich habe keine Allergie")
+    assert wish.kind == "open"
+    assert classify_wish(wish.text, BEILAGE).kind == "option"
+
+
+def test_removal_without_a_tab():
+    wish = classify_wish("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
+    assert wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+
+
 def test_negation_before_the_phrase_keeps_its_ingredient():
     """Own review: a "nicht auf" in the wish before the allergy cancelled the
     ingredient the guest said clearly; only the phrase itself is read then."""
@@ -1089,6 +1118,8 @@ def test_dish_ends_where_the_allergy_phrase_begins(said):
         # Only the clause, as the stand-in asks (round 4): "nichts" in front.
         ("ich habe keine Allergie", True),
         ("sonst nichts, ich habe keine Allergie", False),
+        # Round 5: the same answer as classify_wish.
+        ("ich habe keine Allergie, aber mit Erdnüssen habe ich Probleme", False),
         ("ich habe eine Erdnussallergie", False),
         ("ich habe keine Allergie gegen Erdnüsse, aber gegen Sesam", False),
         ("allergiefrei?", False),

@@ -429,7 +429,10 @@ _PHRASE_LEAD = _ARTICLES | _KEIN | _DENIAL_LEAD | {"nicht", "hat", "ist", "noch"
 # What opens an allergy clause together with "ich": "weil ich", "und ich".
 _OPENING = _PHRASE_LEAD | _CLAUSE_OPENERS
 # Between a denial and the wish after it: "keine Allergie, danke. Ohne ...".
-_AFTER_DENIAL = frozenset({",", "danke", "dankeschoen"})
+_AFTER_DENIAL = frozenset(
+    {",", "danke", "dankeschoen", "nur", "das", "wars", "ist", "alles", "sonst"}
+    | {"nichts"}
+)
 # Words around a denial that may carry an allergen of their own.
 _MAY_NAME = _PREPOSITIONS | {"nichts"}
 # No ingredient in a denied list: "gegen Erdnuesse und Sesam", not "gegen
@@ -546,7 +549,16 @@ def _but_sonst_nichts(words: list[str]) -> set[str]:
 
 def denies_allergy(text: str) -> bool:
     """Does the guest only deny an allergy of their own ("ich habe keine
-    Allergie", "nicht allergisch")? Wishes around it may still follow."""
+    Allergie", "nicht allergisch")? As `classify_wish` decides without the
+    dish's options: the allergy words give no allergy."""
+    if not _allergy_words(_tokens(_clean(text))[1]):
+        return False
+    wish = classify_wish(text, [])
+    return wish is None or wish.kind != "allergy"
+
+
+def _denial_phrase(text: str) -> bool:
+    """Is the allergy phrase of `text` a denial, whatever is said around it?"""
     _, words = _tokens(_clean(text))
     named = _allergy_words(words)
     return bool(named) and (
@@ -743,7 +755,7 @@ def _with_allergy(
     Koriander"), None without one; a negation in the phrase mixed with more
     gives an allergy without an ingredient."""
     start = _clause_start(words, named[0], nearest=True)
-    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
+    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]).strip())
     after = _denial(words, named, start)
     if after is not None:
         tail = text[tokens[after].start() :] if after < len(tokens) else ""
@@ -752,10 +764,13 @@ def _with_allergy(
             return None
         around = _classify(said, groups)
         # A wish the menu does not know may hide an intolerance ("aber mit
-        # Gluten habe ich Probleme"): then it is not a plain denial.
+        # Gluten habe ich Probleme"): then it is not a plain denial, but the
+        # removal said with it stays.
         if around.kind in ("note", "option", "open"):
             return around
-    removal = removal_with(_classify(head, groups)) if head else None
+        removal = removal_with(around)
+    else:
+        removal = removal_with(_classify(head, groups)) if head else None
     # A negation in front of the phrase ("die Sosse nicht auf den Reis") may
     # name a denied ingredient: then only the phrase is read.
     ingredient = None
@@ -884,7 +899,11 @@ def open_wish(text: str) -> Wish | None:
     Option erst, wenn der Gast das Gericht gewaehlt hat. None: a denied
     allergy and nothing else, no wish."""
     wish = classify_wish(text, [])
-    if wish is None or wish.kind in ("note", "allergy"):
+    if wish is None or wish.kind == "note":
+        return wish
+    # A denial next to an addition is decided with the options of the dish
+    # ("mit Nudeln, ich habe keine Allergie"): until then it is open.
+    if wish.kind == "allergy" and not _denial_phrase(text):
         return wish
     return Wish(text=_clean(text), kind="open")
 

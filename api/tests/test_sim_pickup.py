@@ -1098,6 +1098,35 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
     assert _notes(session, order) == ["ohne Zwiebeln"]
 
 
+@pytest.mark.parametrize(
+    ("first", "answers", "note"),
+    [
+        # Round 5: another removal with the ingredient.
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            ["Ohne Knoblauch, gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Knoblauch",
+        ),
+        # Round 5: a denial that may hide an intolerance asks again.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Keine Allergie, aber mit Erdnüssen habe ich Probleme.", "Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        # Round 5: a short removal next to a longer one that begins like it.
+        (
+            "Pho Bo ohne Eisbergsalat, ich habe eine Allergie.",
+            ["Ich habe keine Allergie, aber ohne Ei."],
+            "ohne Eisbergsalat, ohne Ei",
+        ),
+    ],
+)
+def test_answer_to_the_allergy_question(session, tenant, first, answers, note):
+    _bestellung(session, tenant, first, *answers)
+    [order] = orders(session)
+    assert _notes(session, order) == [note]
+
+
 def test_removal_said_again_with_the_ingredient(session, tenant):
     """Own review: the repeated removal became the ingredient, the peanuts
     were lost."""
