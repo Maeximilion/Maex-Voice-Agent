@@ -727,6 +727,14 @@ def test_an_unclear_number_piece_stays_a_position(session, tenant_id, said, uncl
         suche(session, tenant_id, unclear)
 
 
+def test_an_unclear_piece_with_a_name_keeps_the_sentence_whole(session, tenant_id):
+    """Only a piece that is nothing but a number becomes a position: "sauer"
+    alone would find 48 Ente süß-sauer next to the question about the 48 and
+    order the dish twice."""
+    said = "die Nummer 48 Ente süß und sauer"
+    assert position_parts(session, tenant_id, said, now=NOW) == [said]
+
+
 def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
     """ "Pho und Pho Bo" trifft zweimal die 13, aber mit anderen Worten: das kann
     ein Gericht sein, das der Gast praezisiert. Ganz lassen, nicht verdoppeln."""
@@ -1335,6 +1343,8 @@ def test_weight_stays_in_the_name():
         "Zweimal die 13 die 25 einmal die S12",
         "Die 13 und Sushi eins",
         "Die 13.",
+        "Die 13, und 30",
+        "Zweimal die drei und äh zwanzig und die 13",
     ],
 )
 def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(

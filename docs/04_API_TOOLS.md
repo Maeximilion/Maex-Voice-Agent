@@ -178,7 +178,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    setzt die Bestellung fort („Und noch die 24"). Steht davor schon eine Menge
    („zweimal und die 24") oder ein Marker („Nummer und 24"), folgt ein Zehner
    („und zwanzig", abgeschnitten aus „drei und zwanzig") oder steht es zwischen
-   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig.
+   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig. The tens count
+   in digits as well („und 20", „und 20 mal die 13") and across a pause, which
+   is punctuation, a hesitation or „bitte" („und äh zwanzig", „und... 20");
+   an article, opening word, marker or prefix keeps the continuation („und
+   noch die zwanzig" is the 20, Codex PR #147).
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
    Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")
@@ -219,7 +223,13 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    it or not (eval `abholung_0082`): „zweimal die 99 und Pho Bo" is the 99,
    answered with `not_found`, and Pho Bo once. Kept whole, the name search found
    Pho Bo alone and took it twice. Any other piece that hits nothing still makes
-   the „und" part of a name.
+   the „und" part of a name. A piece that is nothing but an unclear number is a
+   position as well (Codex PR #147): „einmal Pho Bo, und 30" is Pho Bo and a
+   question about „und 30"; kept whole, the name search dropped the 30. With a
+   word of a name in it („die Nummer 48 Ente süß und sauer") the sentence stays
+   whole. A pause at the „und" of a spoken number keeps it one piece when
+   nothing else follows („die drei und äh zwanzig" asks instead of taking the 3
+   and the 20).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

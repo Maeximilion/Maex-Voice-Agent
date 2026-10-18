@@ -378,11 +378,13 @@ def _position_parts(
             try:
                 found = search(piece)
             except Ambiguous:
-                # "einmal Pho Bo, und 30": a piece whose number is unclear is a
-                # position whose question the guest must hear. Kept whole, the
-                # name search drops the numbers and takes Pho Bo alone (Codex
-                # PR #147). A piece unclear as a name stays part of one.
-                if not sole_item_number(piece, piece_card)[1]:
+                # "einmal Pho Bo, und 30": a piece that is nothing but an
+                # unclear number is a position whose question the guest must
+                # hear. Kept whole, the name search drops the numbers and takes
+                # Pho Bo alone (Codex PR #147). With a word of a name in it
+                # ("die Nummer 48 Ente süß und sauer") the sentence stays whole,
+                # or the rest of the name would be a dish of its own.
+                if normalize_query(piece):
                     return [query]
                 positions.append(piece)
                 i += 1
