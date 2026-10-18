@@ -100,7 +100,7 @@ else
     want=claude-sonnet-5-5 effort=medium
   # A file or data transfer is not a call transfer, and how a price looks is not what it is.
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
-      s/\b(prices?|fees?|totals?|allergens?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g' \
+      s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g' \
       <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high

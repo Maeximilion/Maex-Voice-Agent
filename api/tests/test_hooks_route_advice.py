@@ -415,6 +415,18 @@ def test_the_live_effort_wins_over_the_start_variable(run):
             None,
         ),
         (
+            "Fix the availability badge color in the GUI",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        (
+            "Align the opening hours label in the GUI",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        (
             "Fix when an unanswered call should be ended",
             "claude-opus-5-5",
             "high",

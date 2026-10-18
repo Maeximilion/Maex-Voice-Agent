@@ -384,10 +384,11 @@ fi
 # so two launches at once never move each other's file.
 tmp=$(mktemp "$dst/settings.json.XXXXXX")
 jq 'del(.apiKeyHelper, .env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN,
-        .env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, .env.DISABLE_GROWTHBOOK)' "$src/settings.json" > "$tmp"
+        .env.CLAUDE_CODE_OAUTH_TOKEN, .env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC,
+        .env.DISABLE_GROWTHBOOK)' "$src/settings.json" > "$tmp"
 mv "$tmp" "$dst/settings.json"
 
-unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN \
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK
 export CLAUDE_CONFIG_DIR="$dst"
 if [ "${1-}" = server ]; then
