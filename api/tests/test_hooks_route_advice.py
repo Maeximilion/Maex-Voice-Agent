@@ -173,7 +173,25 @@ def test_route_line_further_down_is_only_text(run):
 def test_route_line_without_effort_compares_the_model_only(run):
     brief = "Route: claude-haiku-4-5 none\nFind every caller of confirm."
     assert run(brief, "claude-haiku-4-5", effort="") is None
-    assert "routing check" in message(run(brief, "claude-sonnet-5-5", sid="other"))
+    out = run(brief, "claude-sonnet-5-5", sid="other")
+    assert "routing check" in message(out)
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert "ROUTE-MISMATCH want=claude-haiku-4-5 none" in context
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Change whether a booking should be accepted",
+        "Fix how reservations are cancelled",
+    ],
+)
+def test_booking_decisions_are_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
+def test_running_tests_is_not_a_lookup(run):
+    assert run("Find and run the existing tests for the GUI") is None
 
 
 @pytest.mark.parametrize(
