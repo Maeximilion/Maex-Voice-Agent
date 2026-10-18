@@ -33,6 +33,8 @@ def run(tmp_path, request):
         effort="medium",
         sid=None,
         level=None,
+        lang=None,
+        effort_in=None,
         **extra,
     ):
         payload = {
@@ -42,6 +44,8 @@ def run(tmp_path, request):
             "model": model,
             **extra,
         }
+        if effort_in:
+            payload["effort"] = effort_in
         env = {
             k: v
             for k, v in os.environ.items()
@@ -52,6 +56,9 @@ def run(tmp_path, request):
             env["CLAUDE_EFFORT"] = effort
         if level:
             env["CLAUDE_CODE_EFFORT_LEVEL"] = level
+        if lang is not None:
+            env = {k: v for k, v in env.items() if not k.startswith("LC_")}
+            env["LANG"] = lang
         out = subprocess.run(
             [BASH, str(HOOK)],
             input=json.dumps(payload),
@@ -312,3 +319,46 @@ def test_fable_asked_for_by_name_is_kept(run):
     assert run(prompt, "claude-fable-5-1", "high") is None
     out = run(prompt, "claude-opus-5-5", "high", sid="opus")
     assert "claude-fable-5-1 at effort high" in message(out)
+
+
+def test_a_route_line_without_a_space_after_the_colon_is_read(run):
+    brief = "Route:claude-sonnet-5-5 medium\nUpdate the GUI screen."
+    assert run(brief, "claude-sonnet-5-5", "medium") is None
+
+
+def test_a_wrapper_closed_on_the_route_line_is_still_a_route(run):
+    brief = "<brief>Route: claude-sonnet-5-5 medium</brief>\nUpdate the GUI."
+    out = run(brief, "claude-opus-5-5", "high")
+    assert "the brief asks for claude-sonnet-5-5" in message(out)
+
+
+def test_umlauts_fold_without_a_locale(run):
+    # German prompt input: the keyword lists match Maxi's German prompts.
+    out = run(
+        "Öffnungszeiten für Montag im Code korrigieren bitte",
+        "claude-opus-5-5",
+        "high",
+        lang="",
+    )
+    assert "effort xhigh" in message(out)
+
+
+def test_an_unknown_effort_on_the_right_model_never_stops_a_thread(run):
+    brief = "Route: claude-opus-5-5 xhigh\nFix the migration downgrade."
+    out = run(brief, "claude-opus-5-5", effort="")
+    assert "not known" in message(out)
+    assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]
+
+
+def test_the_live_effort_wins_over_the_start_variable(run):
+    assert run(BRIEF, "claude-sonnet-5-5", "high", effort_in="medium") is None
+
+
+def test_a_model_switch_without_a_model_keeps_the_known_one(run):
+    run("", hook_event_name="SessionStart", model="claude-sonnet-5-5", sid="s")
+    run("", hook_event_name="PostModelSwitch", model="", sid="s")
+    assert run(BRIEF, model="", sid="s") is None
+
+
+def test_a_docs_file_named_after_an_opus_area_stays_on_sonnet(run):
+    assert run("Update docs/13_DEPLOYMENT.md to fix a typo please") is None

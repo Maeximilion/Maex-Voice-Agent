@@ -9,9 +9,11 @@
 #     otherwise -> classify the prompt by keyword and compare with the table
 # The user-level model-router.sh stays out of this repo (it yields to CLAUDE.md), so this
 # is the only router here. The keyword lists are a heuristic: tune them below.
+# Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
+export LC_ALL=C.UTF-8
 xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|draft (orders?|status|state|bookings?|reservations?|transactions?)|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
-opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
+opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|\bdeploy(/|\b)|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice (layer|service)\b|\bvoice/|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
 sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
@@ -33,7 +35,7 @@ mkdir -p "$state"
 
 case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
   SessionStart)    m=$(jq -r '.model // empty' <<<"$input"); [ -n "$m" ] && echo "$m" > "$state/$sid.model"; exit 0 ;;
-  PostModelSwitch) jq -r '.to_model // empty' <<<"$input" > "$state/$sid.model"; exit 0 ;;
+  PostModelSwitch) m=$(jq -r '.to_model // empty' <<<"$input"); [ -n "$m" ] && echo "$m" > "$state/$sid.model"; exit 0 ;;
 esac
 
 [ -z "$(jq -r '.agent_id // empty' <<<"$input")" ] || exit 0
@@ -50,6 +52,8 @@ case "$first" in
   "<"*) head=${first#*>}; [ -n "${head// }" ] || head=$(awk 'NF { n++ } n == 2 { print; exit }' <<<"$prompt") ;;
   *) head=$first ;;
 esac
+# A wrapper closed on the same line (<brief>Route: ...</brief>) leaves its closing tag.
+head=${head%%</*}
 # Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
 route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
@@ -59,7 +63,9 @@ if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
   exit 0
 fi
 if [ -n "$route" ]; then
-  read -r _ want effort <<<"${route,,}"
+  # After the colon: "Route:claude-..." without a space is the same line.
+  route=${route,,}
+  read -r want effort <<<"${route#*:}"
 else
   lower=${prompt,,}
   # /task and /start check the table themselves; a bare command carries no task of its own;
@@ -103,6 +109,8 @@ if [ -z "$model" ]; then
   [ -f "$transcript" ] && model=$(tac "$transcript" 2>/dev/null \
     | jq -r 'select(.type == "assistant" and (.isSidechain | not)) | .message.model
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
+  # Read the transcript once per session, not on every prompt.
+  [ -z "$model" ] || echo "$model" > "$state/$sid.model"
 fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
 if [ -z "$model" ]; then
@@ -112,15 +120,24 @@ if [ -z "$model" ]; then
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
 fi
-# CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable; CLAUDE_EFFORT is what this
-# machine's sessions carry (CLAUDE.md, /task).
-have_effort=${CLAUDE_CODE_EFFORT_LEVEL:-${CLAUDE_EFFORT:-$(jq -r '.effort // empty' <<<"$input")}}
+# The live effort from the hook input first: the variables are fixed at session start and
+# miss a later switch. CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable;
+# CLAUDE_EFFORT is what this machine's sessions carry (CLAUDE.md, /task).
+have_effort=$(jq -r '.effort // empty' <<<"$input")
+have_effort=${have_effort:-${CLAUDE_CODE_EFFORT_LEVEL:-$CLAUDE_EFFORT}}
 
 want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
 # match except where xhigh is wanted: that one is asked about once.
 if [[ "$model" == "$want"* ]]; then
   if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then exit 0; fi
+  # Right model, effort unknown: a switch cannot make it known, so a thread works on.
+  if [ -n "$route" ] && [ -z "$have_effort" ]; then
+    msg="routing check: the brief asks for $want at effort $effort; this session is on $model, but its effort is not known to the hook, so the effort of this thread cannot be checked."
+    jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
+      additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
+    exit 0
+  fi
   [ -n "$have_effort" ] || [ "$effort" = xhigh ] || exit 0
 fi
 
