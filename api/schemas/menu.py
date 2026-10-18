@@ -68,7 +68,7 @@ class Wish(_WithoutEmpty):
     # Weglassen, das zu einer Zugabe gehoert ("ohne Zwiebeln, dafür mit
     # Nudeln"): geht als Hinweis mit, die Zugabe ist `option` oder `unknown`.
     # With an allergy whose ingredient is still asked for, the removal said
-    # before it; it goes in front of the note made from the answer (#252).
+    # before it; it goes after the note made from the answer (#252).
     note: str | None = None
     # Bei `open` nach einem Gericht: die Gruppen, in denen die Option steht
     # (Reis als Beilage und als Extra) - der Agent fragt, welche.

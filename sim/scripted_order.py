@@ -590,8 +590,12 @@ class PickupScript:
             # question is closed, nothing goes to the kitchen; a removal said
             # with it is noted (issue #252).
             item = self._allergy_for.pop(0)
-            if wish is not None and wish.kind == "note" and not nothing:
-                item.note = ", ".join(n for n in (item.note, wish.text) if n)
+            if wish is not None and not nothing:
+                # A removal said with it is noted. An addition is not taken:
+                # the answer is read without the dish's options (stand-in
+                # only, docs/01_STATUS.md).
+                removal = wish.text if wish.kind == "note" else wish.note
+                item.note = ", ".join(n for n in (item.note, removal) if n)
             if not self._allergy_for:
                 self._allergy_named = False
             return self._next(slots, patch, lead=self._take_deferred())
@@ -605,10 +609,19 @@ class PickupScript:
             )
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
-            # After "gegen" only what follows it: "Ohne Zwiebeln und gegen
-            # Erdnuesse" repeats the removal, the ingredient is behind (#252).
-            bare = _AGAINST.split(text, maxsplit=1)[-1]
-            bare = re.sub(r"^\s*(?:keine[nm]?|kein)\s+", "", bare, flags=re.IGNORECASE)
+            # A removal said again in front is no ingredient ("Ohne Zwiebeln
+            # und gegen Erdnuesse"), and every "gegen" goes: "Erdnuesse und
+            # gegen Sesam" names both (#252).
+            bare = text
+            removal = self._allergy_for[0].note
+            if removal and bare.lower().startswith(removal.lower()):
+                bare = bare[len(removal) :].lstrip(" ,")
+            bare = re.sub(
+                r"^\s*(?:und\s+)?(?:keine[nm]?\s+|kein\s+)?",
+                "",
+                _AGAINST.sub("", bare),
+                flags=re.IGNORECASE,
+            )
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if wish is None or not wish.ingredient:
             return LLMTurn(
@@ -618,7 +631,7 @@ class PickupScript:
             )
         item = self._allergy_for.pop(0)
         # A removal said together with the allergy is in the note already and
-        # stays in front of it (issue #252).
+        # follows it (issue #252).
         item.note = kitchen_note(item.note, wish.text)
         lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:

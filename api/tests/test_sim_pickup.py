@@ -1006,7 +1006,7 @@ def test_removal_and_allergy_in_one_sentence_reach_the_order(session, tenant):
         session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie."
     )
     [order] = orders(session)
-    note = "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie"
+    note = "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
     assert _notes(session, order) == [note]
     assert note in said(turns)
 
@@ -1018,7 +1018,7 @@ def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
     assert "Wogegen" in " ".join(turns[1].say)
     [order] = orders(session)
     assert _notes(session, order) == [
-        "ohne Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie"
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
     ]
 
 
@@ -1067,6 +1067,23 @@ def test_allergy_withdrawn_with_a_removal_notes_the_removal(session, tenant):
     assert _notes(session, order) == ["ohne Koriander"]
 
 
+@pytest.mark.parametrize(
+    ("answer", "note"),
+    [
+        (
+            "Erdnüsse und gegen Sesam.",
+            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+        ),
+        ("Gegen Erdnüsse.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+    ],
+)
+def test_every_ingredient_of_the_answer_is_noted(session, tenant, answer, note):
+    """Own review: only what followed the first "gegen" was kept."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
+    [order] = orders(session)
+    assert _notes(session, order) == [note]
+
+
 def test_removal_said_again_with_the_ingredient(session, tenant):
     """Own review: the repeated removal became the ingredient, the peanuts
     were lost."""
@@ -1080,7 +1097,7 @@ def test_removal_said_again_with_the_ingredient(session, tenant):
     assert "Pho Bo, ohne Zwiebeln" in " ".join(turns[1].say)
     [order] = orders(session)
     assert _notes(session, order) == [
-        "ohne Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie"
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
     ]
 
 
