@@ -260,7 +260,9 @@ gh run list --workflow codeql.yml --repo Maeximilion/Maex-Voice-Agent
 ```
 
 Keep the backup path. Verify all three language jobs and their uploaded results on
-`main`, then rerun the `codeql` workflow for open PRs. A fresh Dependabot PR must show
+`main`, then retrigger the `pull_request` event of each open PR (push a commit or
+close and reopen it); `workflow_dispatch` on its branch is not a PR-associated
+analysis and does not count as coverage. A fresh Dependabot PR must show
 all three `CodeQL scan` jobs and a successful CodeQL results check. Existing default
 setup analysis configurations may remain in tool status; mark them inactive only
 after the replacement has published its baseline, without deleting alert history.
