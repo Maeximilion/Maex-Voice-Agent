@@ -10,7 +10,9 @@
 - [ ] Tablet is the real device, held the way it hangs in the kitchen or at the counter, logged in, sound on, brightness as in operation
 - [ ] Operations view reachable from the tablet through Caddy (docs/13); the header shows the green dot "KI nimmt an"
 - [ ] Test data only, invented customers: at least two new orders (one pickup, one delivery), one with an option, one with a note; one red card ("Zettel nicht gedruckt"); one complaint callback; one reservation today
-- [ ] A second device or a text phone (`sim.cli`) ready to create a new order and a new callback while the test runs; these are the live arrivals of section 2a
+- [ ] A second device or a text phone (`sim.cli`) ready to create a new order (a **pickup**, with a pickup code, so task 1 can be done on it) and a new callback while the test runs; these are the live arrivals of section 2a
+- [ ] Operating conditions of the goal above: a phone nearby rings during the test (ring it from another phone every 60 s, ringtone at working volume), and the tester's fingers are damp or lightly oiled (a drop of cooking oil rubbed in, or wet hands dried once); note in the table below if this was not done
+- [ ] **Reset before every tester** (the second tester sees the same start as the first): the AI is on (green dot), pickup and delivery waiting times at their normal values, dish 23 available ("Wieder da" not shown for it), the test orders and the callback reopened or created again, the red card present again, the reservation present; reload the tablet so nothing is left from the first run
 - [ ] A clock or the phone's stopwatch; this sheet; a pen
 
 | Field | Entry |
@@ -21,6 +23,7 @@
 | Device and browser | |
 | Build (git commit or release) | |
 | Was the tablet used before in the view? | yes / no (must be no) |
+| Phone rang during the test; fingers damp or oiled | yes / no; yes / no |
 
 ---
 
@@ -41,7 +44,7 @@ Give them one by one, as a sentence a team member would say, never with the butt
 |---|---|---|---|---|---|---|
 | 1 | "A new order came in. Tell me what it is and when it is ready." | Reads pickup code, items and ready time aloud | 0 | | | |
 | 2 | "That order is fine, send it on." | Taps "Passt" on the right card | 1 | | | |
-| 3 | "The customer wanted a different dish, fix it." | Opens "Korrigieren", taps "Tauschen", taps the number field, types the number, "Übernehmen", picks the reason | 5 plus the digits (rule 1 of section 1 does not cover this flow; the count is for the notes, not a fail) | | | |
+| 3 | "The customer wants dish 47 instead of the first dish on this order, fix it." | Opens "Korrigieren", taps "Tauschen", taps the number field, types the number, "Übernehmen", picks the reason | 5 plus the digits (rule 1 of section 1 does not cover this flow; the count is for the notes, not a fail) | | | |
 | 4 | "The slip did not print, send it again." | Finds the red card, taps "Nochmal senden" | 1 | | | |
 | 5 | "There is a complaint. Call the person back and mark it done." | Taps "Anrufen", then "Erledigt" | 2 | | | |
 | 6 | "Today we are out of dish 23." | Opens "Gericht aus", finds 23, switches it off | 2 to 3 | | | |
@@ -50,6 +53,7 @@ Give them one by one, as a sentence a team member would say, never with the butt
 | 9 | "Stop the AI, we take every call ourselves." | Taps "KI pausieren"; dot turns red, text "KI ist aus" | 1 | | | |
 | 10 | "Switch it back on." | Taps the button and confirms | 2 | | | |
 | 11 | "Which reservation is next today?" | Finds it in the column "Heute" | 0 | | | |
+| 12 | "On the order with the sauce, the customer wants a different sauce." | Opens "Korrigieren" on the order with an option and changes the option (today: "Tauschen" with the same number re-picks the options); note how many taps and whether the tester looked for an "Ändern" on the option line | open, note it | | | |
 
 ### 2a. Live arrival (scored, section 1 rule 5)
 
@@ -99,12 +103,13 @@ Answers (short):
 
 | Measure | Pass when | Result |
 |---|---|---|
-| Tasks done alone, first try (OK) | at least 9 of 11 | / 11 |
+| Tasks done alone, first try (OK) | at least 10 of 12 | / 12 |
 | Tasks FAIL | 0 | |
 | Tasks that needed a hint | at most 1 | |
 | Severity A stumbles | 0 | |
 | Total time of the tasks | within the 5 minutes | min |
 | Live arrivals noticed within 10 s (section 2a) | both | / 2 |
+| New-order tone played by itself before the first tap (section 2a, row 1) | yes; if no, the verdict is at best PASS WITH CHANGES and the change is the "Ton an" hint (docs/01_STATUS.md) | |
 
 **Verdict:** PASS · PASS WITH CHANGES · FAIL
 
