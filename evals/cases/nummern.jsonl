@@ -111,7 +111,9 @@
 {"say": "und bitte zwanzig", "expect": "?", "why": "the same with a filler word between und and the tens word (Codex PR #147)"}
 {"say": "und, äh, dreißig", "expect": "?", "why": "punctuation and a hesitation between und and the tens word"}
 {"say": "und äh ein und zwanzig", "expect": "21", "why": "the skip stops at ein: it opens the number, the whole number is 21"}
-{"say": "und noch die zwanzig", "expect": "?", "why": "limit: every word between the leading und and a bare tens word keeps the question, the cut-off tail of drei und zwanzig sounds the same"}
+{"say": "und noch die zwanzig", "expect": "20", "why": "only a pause, a hesitation or bitte sits inside a split number; noch die opens the order, so it is item 20"}
+{"say": "und S zwanzig", "expect": "s20", "why": "a card prefix never sits inside drei und zwanzig: a continuation with the prefixed card"}
+{"say": "und Nummer zwanzig", "expect": "20", "why": "nor does a marker: a continuation naming item 20"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}
 {"say": "Nummer hallo 23", "expect": "?", "why": "Begruessung ist kein Fuellwort zwischen Marker und Zahl (Review PR #147)"}
 {"say": "Nummer dazu 23", "expect": "?", "why": "dazu ist kein Fuellwort zwischen Marker und Zahl"}

@@ -1146,6 +1146,11 @@ _LEAD_FILLER = frozenset(
 # How a sentence continues the order from the previous one: "Und noch die 24",
 # "Und dann dazu die 24".
 _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
+# What can sit inside a number split by a pause: "drei und, äh, zwanzig",
+# "drei und bitte zwanzig" (Codex PR #147). An article, opening word, marker,
+# quantity or card prefix cannot, so after a leading "und" they mark a
+# continuation, not the cut-off half of a number.
+_INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
 
 
 def _too_large(token: str) -> bool:
@@ -1322,17 +1327,17 @@ def sole_item_number(
     # die 24") or a marker ("Nummer und 24") comes before it, it connects
     # something in this sentence that is missing. And never before a tens
     # word: "und zwanzig" is the second half of "drei und zwanzig", the
-    # recognition only cut it off (review PR #147). Words that are no number
-    # between the two do not change that: "und äh zwanzig", "und bitte
-    # zwanzig" (Codex PR #147). The skip stops at any number word, so "und
-    # ein und zwanzig" still opens the 21. Only "und": an "oder" or "nein" up
-    # front refers to something this sentence does not name and stays a
-    # follow-up question.
+    # recognition only cut it off (review PR #147), also with a pause between
+    # the two: "und äh zwanzig", "und bitte zwanzig" (`_INSIDE_SPLIT`, Codex
+    # PR #147). "und die zwanzig", "und S zwanzig", "und Nummer zwanzig" and
+    # "und ein und zwanzig" stay continuations. Only "und": an "oder" or
+    # "nein" up front refers to something this sentence does not name and
+    # stays a follow-up question.
     def _opens(k: int) -> bool:
         if tokens[k] != "und":
             return False
         j = k + 1
-        while j < len(tokens) and tokens[j] != "und" and _word_value(tokens[j]) is None:
+        while j < len(tokens) and tokens[j] in _INSIDE_SPLIT:
             j += 1
         if j < len(tokens) and tokens[j] in TENS:
             return False
