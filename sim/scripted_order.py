@@ -33,10 +33,16 @@ from api.domain.menu.search import (
     say_for_wish,
     say_understood,
 )
-from api.domain.menu.wishes import classify_wish, kitchen_note
+from api.domain.menu.wishes import classify_wish, denies_allergy, kitchen_note
 from api.schemas.menu import MenuHit, OptionGroup, Wish
 
 SAY_WHAT = "Was möchten Sie bestellen?"
+# "gegen" or "auf" in an answer to "Wogegen?": the ingredient follows it.
+_AGAINST = re.compile(r"\b(?:gegen|auf)\b", re.IGNORECASE)
+# An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
+# nichts." ("Nein." stays a question: no to what is unclear).
+_NOTHING = frozenset({"kein", "keine", "keinen", "keiner", "keinerlei", "nichts"})
+_NOTHING_FILL = frozenset({"gar", "gegen", "auf", "doch", "ueberhaupt"})
 SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
@@ -578,10 +584,14 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
-        if wish is None:
-            # "Ich habe doch keine Allergie": the question is closed, nothing
-            # goes to the kitchen (issue #252).
-            self._allergy_for.pop(0)
+        nothing = _withdraws(text)
+        if wish is None or nothing or denies_allergy(text):
+            # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
+            # question is closed, nothing goes to the kitchen; a removal said
+            # with it is noted (issue #252).
+            item = self._allergy_for.pop(0)
+            if wish is not None and wish.kind == "note" and not nothing:
+                item.note = ", ".join(n for n in (item.note, wish.text) if n)
             if not self._allergy_for:
                 self._allergy_named = False
             return self._next(slots, patch, lead=self._take_deferred())
@@ -595,9 +605,10 @@ class PickupScript:
             )
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
-            bare = re.sub(
-                r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
-            )
+            # After "gegen" only what follows it: "Ohne Zwiebeln und gegen
+            # Erdnuesse" repeats the removal, the ingredient is behind (#252).
+            bare = _AGAINST.split(text, maxsplit=1)[-1]
+            bare = re.sub(r"^\s*(?:keine[nm]?|kein)\s+", "", bare, flags=re.IGNORECASE)
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if wish is None or not wish.ingredient:
             return LLMTurn(
@@ -991,3 +1002,9 @@ def _is_done(text: str) -> bool:
 
 def _join(*parts: str | None) -> str:
     return " ".join(p for p in parts if p)
+
+
+def _withdraws(text: str) -> bool:
+    """ "Keine.", "Gar keine.", "Gegen nichts.": no allergy after all."""
+    words = set(_words(text))
+    return bool(words & _NOTHING) and words <= _NOTHING | _NOTHING_FILL

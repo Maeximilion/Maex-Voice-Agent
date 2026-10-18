@@ -26,6 +26,7 @@ from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
+from api.domain.menu.wishes import denies_allergy
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -176,19 +177,24 @@ class ScriptedLLM:
             return self._after_readback(state, text, slots, patch)
 
         wants_pickup = self._pickup is None and _wants_pickup(text)
+        # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
+        denied = ALLERGY_STEM in text.lower() and denies_allergy(text)
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
         # checked on the search result (`_after_tool`).
         own_allergy = (
             wants_pickup
             and ALLERGY_STEM in text.lower()
+            and not denied
             and "?" not in text
             and _opening_dish(text) is not None
         )
         stems: tuple[str, ...] = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
         if wants_pickup:
             stems = OUT_OF_SCOPE_IN_ORDER + tuple(
-                s for s in OUT_OF_SCOPE if not (own_allergy and s == ALLERGY_STEM)
+                s
+                for s in OUT_OF_SCOPE
+                if not ((own_allergy or denied) and s == ALLERGY_STEM)
             )
         if _mentions_stem(text, stems) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.

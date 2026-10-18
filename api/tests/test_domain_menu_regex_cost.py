@@ -81,6 +81,11 @@ CASES = [
         lambda text: classify_wish(text, []),
         "nicht gegen x " + "allergisch " * (LENGTH // 11),
     ),
+    (
+        "classify_wish, a chain of allergy phrases",
+        lambda text: classify_wish(text, []),
+        "gegen x allergisch " * (LENGTH // 19),
+    ),
     # wishes.py, _split_addition (alert 11) and _split_removal (alert 12)
     (
         "classify_wish, tabs before an addition",

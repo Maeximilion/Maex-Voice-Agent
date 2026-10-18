@@ -55,6 +55,7 @@ from api.domain.menu.wishes import (
     names_it,
     open_wish,
     opens_with_allergy,
+    removal_with,
     wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
@@ -228,7 +229,11 @@ def say_understood(
 def _with_wish(item: str, wish: Wish | None) -> str:
     # Unknown has its own sentence, open is not decided yet, and the allergy is
     # in the sentence after it (SAY_ALLERGY_NOTE) - here only the dish.
-    if wish is None or wish.kind in ("unknown", "open", "allergy"):
+    if wish is not None and wish.kind == "allergy":
+        # A removal said with the allergy is repeated, the allergy follows.
+        removal = removal_with(wish)
+        return f"{item}, {removal}" if removal else item
+    if wish is None or wish.kind in ("unknown", "open"):
         return item
     if wish.kind != "option":
         return f"{item}, {wish.text}"

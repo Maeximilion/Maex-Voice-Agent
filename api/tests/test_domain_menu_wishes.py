@@ -28,7 +28,12 @@ from api.domain.menu.importer import (
     parse,
 )
 from api.domain.menu.search import position_parts, search_menu
-from api.domain.menu.wishes import classify_wish, kitchen_note, wish_candidates
+from api.domain.menu.wishes import (
+    classify_wish,
+    kitchen_note,
+    removal_with,
+    wish_candidates,
+)
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
 from api.tests.conftest import p95_ms
@@ -902,6 +907,14 @@ def test_removal_before_an_allergy_without_ingredient_waits_in_note():
             "Ohne Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie",
             "Ohne Zwiebeln. WICHTIG: Keine Erdnüsse. Grund: Allergie",
         ),
+        # Only the whole removal counts as said again.
+        ("ohne Ei", "Ohne Eisbergsalat. WICHTIG: Keine Ei. Grund: Allergie", None),
+        # Too long for an order line: the allergy stays, the removal goes.
+        (
+            "ohne " + "Zwiebeln, " * 20 + "Koriander",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie",
+        ),
     ],
 )
 def test_kitchen_note_names_the_removal_once(removal, allergy, note):
@@ -944,6 +957,7 @@ def test_denied_allergy_is_no_wish(said):
         ("ohne Zwiebeln, keine Allergie", "note", "ohne Zwiebeln"),
         ("ohne Zwiebeln keine Erdnussallergie", "note", "ohne Zwiebeln"),
         ("ohne Zwiebeln, aber keine Allergie", "note", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, weil ich keine Allergie habe", "note", "ohne Zwiebeln"),
         ("mit Nudeln, ich bin nicht allergisch", "option", "mit Nudeln"),
         # A wish after the denial (own review).
         (
@@ -1003,6 +1017,36 @@ def test_negation_mixed_with_more_asks_for_the_ingredient(said):
 def test_negation_that_does_not_deny_keeps_the_allergy(said, ingredient):
     wish = classify_wish(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+def test_negation_before_the_phrase_keeps_its_ingredient():
+    """Own review: a "nicht auf" in the wish before the allergy cancelled the
+    ingredient the guest said clearly; only the phrase itself is read then."""
+    wish = classify_wish(
+        "die Soße nicht auf den Reis, ich habe eine Erdnussallergie", []
+    )
+    assert (wish.kind, wish.ingredient) == ("allergy", "Erdnuss")
+
+
+@pytest.mark.parametrize(
+    ("said", "removal"),
+    [
+        ("ohne Zwiebeln, ich habe eine Erdnussallergie", "ohne Zwiebeln"),
+        ("ohne Zwiebeln, ich habe eine Allergie", "ohne Zwiebeln"),
+        ("ich habe eine Erdnussallergie", None),
+        ("ich habe eine Allergie", None),
+    ],
+)
+def test_removal_with_an_allergy_is_repeated(said, removal):
+    assert removal_with(classify_wish(said, [])) == removal
+
+
+@pytest.mark.parametrize(
+    "said", ["Pho Bo bin allergisch gegen Nüsse", "Pho Bo hab eine Erdnussallergie"]
+)
+def test_dish_ends_where_the_allergy_phrase_begins(said):
+    """Own review: the search got "Pho Bo bin" and "Pho Bo hab eine"."""
+    assert first_split(said)[0] == "Pho Bo"
 
 
 def test_vertrage_alles_ist_keine_allergie():
