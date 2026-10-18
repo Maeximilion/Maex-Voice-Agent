@@ -701,15 +701,15 @@ def run_from_report(report: dict, suite: str) -> dict[str, str]:
 
 
 def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
-    new = not path.exists()
+    # An empty file is one whose writer was killed before the header.
+    new = not path.exists() or path.stat().st_size == 0
     path.parent.mkdir(parents=True, exist_ok=True)
     cut = False
     if not new:
         # A line a killed writer cut off stays a line of its own.
         with path.open("rb") as fh:
-            if fh.seek(0, os.SEEK_END):
-                fh.seek(-1, os.SEEK_END)
-                cut = fh.read(1) != b"\n"
+            fh.seek(-1, os.SEEK_END)
+            cut = fh.read(1) != b"\n"
     with path.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         if new:
@@ -2586,7 +2586,14 @@ def pending(
 
 def merged_voice(root: Path = ROOT) -> set[object]:
     """The voice rows `main` holds on GitHub, as of the last fetch."""
-    return voice_identities(git("show", f"origin/main:{VOICE_PATH}", root=root))
+    text = git("show", f"origin/main:{VOICE_PATH}", root=root)
+    if text is None:
+        print(
+            f"readme_assets: no origin/main:{VOICE_PATH} to compare with, "
+            "waiting voice rows not pruned",
+            file=sys.stderr,
+        )
+    return voice_identities(text)
 
 
 def prune_pending(path: Path, merged: set[object]) -> None:
@@ -2616,9 +2623,10 @@ def prune_pending(path: Path, merged: set[object]) -> None:
         with fresh.open("w", encoding="utf-8", newline="") as fh:
             csv.writer(fh, lineterminator="\n").writerows([header, *keep])
         os.replace(fresh, path)
-    except PermissionError:
-        # Windows: a `pending` listing in another session has the file open. The
-        # rows stay; the next recording prunes them.
+    except OSError as exc:
+        # On Windows, a `pending` listing in another session that holds the file
+        # open. Pruning is housekeeping: the rows stay for the next recording.
+        print(f"readme_assets: {shown(path)} not pruned: {exc}", file=sys.stderr)
         fresh.unlink(missing_ok=True)
 
 

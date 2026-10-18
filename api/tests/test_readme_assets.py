@@ -782,6 +782,16 @@ def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
     assert kept == drill_row() and edited == hand_edit
 
 
+def test_a_kit_writing_to_an_empty_pending_file_writes_the_header(
+    tmp_path: Path,
+) -> None:
+    waiting = tmp_path / ra.VOICE_PENDING
+    waiting.touch()  # the kit before was killed ahead of its header
+    ra.append_row(waiting, ra.VOICE_FIELDS, drill_row())
+    _, rows = ra.pending([tmp_path], tmp_path / "e.csv", tmp_path / "v.csv")
+    assert rows == [drill_row()]
+
+
 def test_a_pending_file_another_session_holds_open_is_pruned_later(
     recording: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -813,7 +823,7 @@ def test_main_s_voice_rows_come_from_origin_main(
 
     history = tmp_path / ra.VOICE_PATH
     history.parent.mkdir(parents=True)
-    row = {**drill_row(), "metric": "Notfallprüfung"}  # read as UTF-8 on Windows too
+    row = {**drill_row(), "metric": "Outage drill café"}  # read as UTF-8 on Windows
     ra.append_row(history, ra.VOICE_FIELDS, row)
     assert ra.merged_voice(tmp_path) == set()  # no git, no pruning
     git("init", "-q")
