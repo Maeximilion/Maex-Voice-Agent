@@ -1343,8 +1343,11 @@ def sole_item_number(
         j = k + 1
         while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
             j += 1
-        if j < len(tokens) and _word_value(tokens[j]) in TENS.values():
-            return False
+        if j < len(tokens):
+            # "und zwanzigmal die 13" is the same half as "und zwanzig mal".
+            times = _QUANTITY_SUFFIX.match(tokens[j])
+            if _word_value(times.group(1) if times else tokens[j]) in TENS.values():
+                return False
         return all(
             t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
         )

@@ -50,9 +50,16 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
-# The hesitations and "bitte" come from numberwords, so both read a pause alike.
-_EMPTY_WORDS = INSIDE_SPLIT | frozenset(
+_EMPTY_WORDS = frozenset(
     {
+        "aeh",
+        "aehm",
+        "aehh",
+        "hm",
+        "hmm",
+        "ehm",
+        "oehm",
+        "bitte",
         "dann",
         "noch",
         "auch",

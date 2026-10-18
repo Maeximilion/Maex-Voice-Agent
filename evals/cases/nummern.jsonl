@@ -119,6 +119,8 @@
 {"say": "Und. Zwanzig.", "expect": "?", "why": "the ear writes a pause as a stray full stop as well; asking is the safe answer"}
 {"say": "und... zwanzig", "expect": "?", "why": "an ellipsis is a pause inside drei und zwanzig"}
 {"say": "und 20 mal die 13", "expect": "?", "why": "the cut-off half can be a quantity: drei und zwanzig mal die 13 is 23 portions; und zwanzig mal die 13 asks on main as well"}
+{"say": "und zwanzigmal die 13", "expect": "?", "why": "the same quantity written as one word"}
+{"say": "und 20a", "expect": "?", "why": "digits with a card letter: drei und 20a can be 23a"}
 {"say": "und äh vierzig sieben", "expect": "?", "why": "the pause changes nothing: und vierzig sieben asks back as well, it can be the tail of drei und vierzig"}
 {"say": "die drei und äh zwanzig", "expect": "?", "why": "a hesitation inside drei und zwanzig: the 3 and the 20 are not taken apart, the guest is asked"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}

@@ -46,6 +46,7 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
         ("drei und bitte zwanzig", ["drei und bitte zwanzig"]),
         ("die drei äh und zwanzig", ["die drei äh und zwanzig"]),
+        # As on main: joined, the name search would drop the 3; asking is #328.
         (
             "die drei und bitte zwanzig Frühlingsrollen",
             ["die drei", "bitte zwanzig Frühlingsrollen"],
@@ -124,6 +125,8 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         ("die 23, zweimal ohne Koriander", ["die 23, zweimal ohne Koriander"]),
         ("Pho Bo, dazu extra scharf", ["Pho Bo, dazu extra scharf"]),
         ("die 23 und Pho Bo", ["die 23", "Pho Bo"]),
+        # The menu check sees the paused number whole as well (Codex PR #147).
+        ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
     ],
 )
 def test_raw_pieces_haengt_hinweise_an(gesagt, stuecke):
