@@ -9,7 +9,7 @@
 
 - [ ] Tablet is the real device, held the way it hangs in the kitchen or at the counter, logged in, sound on, brightness as in operation
 - [ ] Operations view reachable from the tablet through Caddy (docs/13); the header shows the green dot "KI nimmt an"
-- [ ] Test data only, invented customers: at least two new orders (one pickup, one delivery), one with an option, one with a note; one red card ("Zettel nicht gedruckt"); one complaint callback; one reservation today
+- [ ] Test data only, invented customers: **three open orders on the board** - order A: the live arrival of section 2a (a pickup, created during the test); order B: a pickup used for tasks 2 and 3 (task 3 runs on order C, so Passt on B does not remove it); order C: a pickup with a dish that has a required choice and a note, used for task 3; order D: a dish with two alternative choices of the same group (for example two sauces), used for task 12. Write the concrete numbers here before the test: replacement dish ____ with choice ____ (task 3); dish ____ with choice ____ changed to choice ____ (task 12); one red card ("Zettel nicht gedruckt"); one complaint callback; one reservation today
 - [ ] A second device or a text phone (`sim.cli`) ready to create a new order (a **pickup**, with a pickup code, so task 1 can be done on it) and a new callback while the test runs; these are the live arrivals of section 2a
 - [ ] Operating conditions of the goal above: a phone nearby rings during the test (ring it from another phone every 60 s, ringtone at working volume), and the tester's fingers are damp or lightly oiled (a drop of cooking oil rubbed in, or wet hands dried once); note in the table below if this was not done
 - [ ] **Reset before every tester** (the second tester sees the same start as the first): the AI is on (green dot), pickup and delivery waiting times at their normal values, dish 23 available ("Wieder da" not shown for it), the test orders and the callback reopened or created again, the red card present again, the reservation present; reload the tablet so nothing is left from the first run
@@ -38,13 +38,13 @@
 
 ## 2. Tasks
 
-Give them one by one, as a sentence a team member would say, never with the button name. Start the clock at the first task. Mark each: **OK** (done alone, first try) · **SLOW** (more than 20 s or two tries) · **HINT** (needed a hint) · **FAIL** (not done, or wrong thing done).
+Give them one by one, as a sentence a team member would say, never with the button name. Start the clock at the first task. Mark each: **OK** (done alone, first try, within 20 s) · **SLOW** (done alone, but more than 20 s or a second try after a wrong action that was corrected by the tester) · **HINT** (needed a hint, even if done afterwards) · **FAIL** (not done, or the wrong thing stays done). One result per task, highest wins: FAIL, then HINT, then SLOW, then OK.
 
 | # | Task, as spoken | What counts as done | Taps expected | Time (s) | Result | Stumble (what, where) |
 |---|---|---|---|---|---|---|
-| 1 | "A new order came in. Tell me what it is and when it is ready." | Reads pickup code, items and ready time aloud | 0 | | | |
-| 2 | "That order is fine, send it on." | Taps "Passt" on the right card | 1 | | | |
-| 3 | "The customer wants dish 47 instead of the first dish on this order, fix it." | Opens "Korrigieren", taps "Tauschen", taps the number field, types the number, "Übernehmen", picks the reason | 5 plus the digits (rule 1 of section 1 does not cover this flow; the count is for the notes, not a fail) | | | |
+| 1 | "A new order came in. Tell me what it is and when it is ready." | On order A, reads pickup code, items and ready time aloud | 0 | | | |
+| 2 | "That order is fine, send it on." | Taps "Passt" on order B (not on C or D) | 1 | | | |
+| 3 | "On the order with the note, the customer wants dish [number from section 0] with [choice] instead of the first dish, fix it." | On order C: opens "Korrigieren", taps "Tauschen", taps the number field, types the number, "Übernehmen", picks the required choice, picks the reason | 5 plus the digits (rule 1 of section 1 does not cover this flow; the count is for the notes, not a fail) | | | |
 | 4 | "The slip did not print, send it again." | Finds the red card, taps "Nochmal senden" | 1 | | | |
 | 5 | "There is a complaint. Call the person back and mark it done." | Taps "Anrufen", then "Erledigt" | 2 | | | |
 | 6 | "Today we are out of dish 23." | Opens "Gericht aus", finds 23, switches it off | 2 to 3 | | | |
@@ -53,18 +53,18 @@ Give them one by one, as a sentence a team member would say, never with the butt
 | 9 | "Stop the AI, we take every call ourselves." | Taps "KI pausieren"; dot turns red, text "KI ist aus" | 1 | | | |
 | 10 | "Switch it back on." | Taps the button and confirms | 2 | | | |
 | 11 | "Which reservation is next today?" | Finds it in the column "Heute" | 0 | | | |
-| 12 | "On the order with the sauce, the customer wants a different sauce." | Opens "Korrigieren" on the order with an option and changes the option (today: "Tauschen" with the same number re-picks the options); note how many taps and whether the tester looked for an "Ändern" on the option line | open, note it | | | |
+| 12 | "On the order with [dish] the customer wants [new choice] instead of [old choice]." | On order D: opens "Korrigieren" and changes the choice and changes the option (today: "Tauschen" with the same number re-picks the options); note how many taps and whether the tester looked for an "Ändern" on the option line | open, note it | | | |
 
 ### 2a. Live arrival (scored, section 1 rule 5)
 
-Before the tester's first tap, with the tablet untouched since loading, create one new order from the second device; later, while the tester is busy with task 6 or 7, create one new callback. Record:
+Before the tester's first tap, with the tablet untouched since loading, create order A from the second device. Later, after the tester has tapped the page, while the tester is busy with task 6 or 7, create one new callback. Record:
 
 | Event | Sound played by itself (yes/no) | Tester noticed within 10 s (yes/no) | Notes |
 |---|---|---|---|
-| New order, before the first tap | | | |
-| New callback, during a task | | | |
+| New order A, before the first tap | | | |
+| New callback, after the first tap, during a task | | | |
 
-The first row answers the "Ton an" question of the status assumption of 18.09.2026: no sound before the first tap means the hint is needed.
+The first row is an observation, not a pass measure: the browser plays no tone before the first tap today (`app.js`), so "no" is the expected result and means the "Ton an" hint of the status assumption of 18.09.2026 is needed; do not tap the page before this row is recorded. The second row is scored: after one tap the tone must play.
 
 Free observation during the tasks (tick if seen):
 
@@ -109,7 +109,8 @@ Answers (short):
 | Severity A stumbles | 0 | |
 | Total time of the tasks | within the 5 minutes | min |
 | Live arrivals noticed within 10 s (section 2a) | both | / 2 |
-| New-order tone played by itself before the first tap (section 2a, row 1) | yes; if no, the verdict is at best PASS WITH CHANGES and the change is the "Ton an" hint (docs/01_STATUS.md) | |
+| Callback tone played by itself after the first tap (section 2a, row 2) | yes | |
+| Tone before the first tap (section 2a, row 1, observation) | not scored; "no" puts the "Ton an" hint (docs/01_STATUS.md) on the list of changes and the verdict is at best PASS WITH CHANGES until it is built | |
 
 **Verdict:** PASS · PASS WITH CHANGES · FAIL
 
