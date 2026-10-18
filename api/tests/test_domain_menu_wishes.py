@@ -234,7 +234,9 @@ def test_allergie_kommt_als_hinweis_ohne_zusage(session, tenant_id):
 
 
 def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
-    result = suche(session, tenant_id, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie")
+    result = suche(
+        session, tenant_id, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie"
+    )
     assert [h.number for h in result.results] == ["13"]
     assert (result.wish.kind, result.wish.text) == (
         "allergy",
@@ -244,7 +246,8 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
 
 
 @pytest.mark.parametrize(
-    "said", ["Pho Bo, ich habe keine Erdnussallergie", "die 13, ich habe keine Allergie"]
+    "said",
+    ["Pho Bo, ich habe keine Erdnussallergie", "die 13, ich habe keine Allergie"],
 )
 def test_search_with_a_denied_allergy_has_no_wish(session, tenant_id, said):
     result = suche(session, tenant_id, said)

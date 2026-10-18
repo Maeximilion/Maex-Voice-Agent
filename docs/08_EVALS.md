@@ -102,6 +102,8 @@ Danach:
 
 **T-4.12 (04.10.2026):** five cases for prefixed card numbers and the suffix g joined `cases/` (`abholung_0070` to `0074`, level 1 and 2, tag `praefix`): `cases/` now holds 26 (pickup 13), 26 of 26 green with the scripted model. The eval menu has 31 active dishes; S1, S12, SM1 (group Sushi), 45 and 45g were added.
 
+**#252 follow-up (18.10.2026):** `allergie_0006` (a removal before the allergy clause stays in the kitchen note, "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie") and `allergie_0007` (a denied allergy gives no note) joined `cases/`, both level 2.
+
 **Suite v1 (T-5.2, 26.09.2026):** 107 Fälle in `evals/cases/` (Abholung, Reservierung, Eskalation, Allergie, Lieferung), jede Zeile aus §6 hat mindestens einen. Ein Lauf dauert etwa 12 s. Stand mit dem Skript-Modell: 101 von 107 grün (99 bei T-5.2, zwei Lücken durch die Nummernregel für „Und noch die 24“ und „ich würde die 13“ geschlossen), harte Metriken 0, falsche Eskalation 4,5 %.
 - `"sold_out": ["48"]` setzt „heute aus" nur für diesen Fall (die Evalkarte im Importformat kennt keinen Tagesstand). Eine Nummer, die nicht auf der Evalkarte steht, lässt den Fall abstürzen.
 - `"pending": "T-6.5: …"` markiert eine **bekannte Lücke**: der Fall beschreibt das Ziel, das der heutige Stand noch nicht kann, mit der Aufgabe, die ihn grün macht. Er zählt in der Genauigkeit mit und steht im Report unter „Bekannte Lücken". CI verlangt, dass jeder Fall ohne `pending` grün und jeder mit `pending` rot ist, wie ein striktes xfail: wird eine Lücke grün, fällt CI auf, und das Feld kommt weg. Höchstens jeder zehnte Fall darf eine Lücke sein.

@@ -606,6 +606,9 @@ def _search_with_wish(
         if names_it(hit.name, segment):
             continue
         classified = classify_wish(wish, hit.option_groups)
+        if classified is None:
+            # A denied allergy and nothing else ("ich habe keine Allergie").
+            return found
         say = found.say or say_for_wish(hit, classified)
         return found.model_copy(update={"wish": classified, "say": say})
     return found

@@ -139,6 +139,11 @@ Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
    → Hinweis an Position oder Vorgang, Wortlaut fest (E14):
      "WICHTIG: Keine <Zutat>. Grund: Allergie"
    → beim Vorlesen wiederholen, nie zusagen, das Gericht sei frei davon
+   → a removal said before it stays in front of it (#252):
+     "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie"
+
+Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
+   → no note (#252)
 ```
 
 ---

@@ -265,7 +265,8 @@ AGAINST_EDGES = [
     "gegen x. allergisch",
     "gegen x, y allergisch",
     "GEGEN Nüsse ALLERGISCH",
-    "gegen ıx allergiſch",
+    # Dotless i and long s: equal to i and s under IGNORECASE.
+    "gegen \u0131x allergi\u017fch",
     "ich bin gegen Nüsse und gegen Sesam allergisch",
     "ich bin nicht gegen Erdnüsse, sondern gegen Sesam allergisch",
 ]

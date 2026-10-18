@@ -1023,7 +1023,8 @@ def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
 
 
 @pytest.mark.parametrize(
-    "zeile", ["Pho Bo, ich habe keine Erdnussallergie.", "Pho Bo, ich habe keine Allergie."]
+    "zeile",
+    ["Pho Bo, ich habe keine Erdnussallergie.", "Pho Bo, ich habe keine Allergie."],
 )
 def test_denied_allergy_gives_no_note(session, tenant, zeile):
     """Codex PR #139 (P2), issue #252: a denied allergy gave "WICHTIG: Keine

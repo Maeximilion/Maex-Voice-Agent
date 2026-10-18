@@ -33,7 +33,7 @@ from api.domain.menu.search import (
     say_for_wish,
     say_understood,
 )
-from api.domain.menu.wishes import classify_wish
+from api.domain.menu.wishes import classify_wish, kitchen_note
 from api.schemas.menu import MenuHit, OptionGroup, Wish
 
 SAY_WHAT = "Was möchten Sie bestellen?"
@@ -504,7 +504,10 @@ class PickupScript:
             groups = [
                 OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
             ]
-            wish = classify_wish(wish["text"], groups).model_dump()
+            classified = classify_wish(wish["text"], groups)
+            if classified is None:
+                return None
+            wish = classified.model_dump()
         if wish.get("note"):
             # Leaving out in addition to an extra ("ohne Zwiebeln, dafür mit Huhn").
             item.note = wish["note"]
@@ -575,6 +578,13 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
+        if wish is None:
+            # "Ich habe doch keine Allergie": the question is closed, nothing
+            # goes to the kitchen (issue #252).
+            self._allergy_for.pop(0)
+            if not self._allergy_for:
+                self._allergy_named = False
+            return self._next(slots, patch, lead=self._take_deferred())
         if wish.kind != "allergy" and _orders_something(text, self._numbers()):
             # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
             # stays open instead of noting "Keine Eine Cola" (review PR #139).
@@ -589,14 +599,16 @@ class PickupScript:
                 r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
             )
             wish = classify_wish(f"allergisch gegen {bare}", [])
-        if not wish.ingredient:
+        if wish is None or not wish.ingredient:
             return LLMTurn(
                 say=self._allergy_question(),
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
         item = self._allergy_for.pop(0)
-        item.note = wish.text
+        # A removal said together with the allergy is in the note already and
+        # stays in front of it (issue #252).
+        item.note = kitchen_note(item.note, wish.text)
         lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:
             self._allergy_named = False

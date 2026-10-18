@@ -25,6 +25,7 @@ Reine Funktionen ohne Datenbank.
 """
 
 import re
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator
 
 from api.domain.menu.numberwords import fold, parse_cardinal
@@ -39,7 +40,11 @@ _LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
 _GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
 _ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 # Womit ein Satzteil zur eigenen Allergie beginnt, auch ohne Komma davor.
-_CLAUSE_OPENERS = frozenset({"ich", "wir", "mein", "meine", "meinem", "meiner"})
+# "weil", "wegen", "denn": the reason in front of the allergy belongs to its
+# clause, not to the wish before it ("ohne Zwiebeln, weil ich ...", #252).
+_CLAUSE_OPENERS = frozenset(
+    {"ich", "wir", "mein", "meine", "meinem", "meiner", "weil", "wegen", "denn"}
+)
 
 _WORD = re.compile(r"[^\W_]+")
 _TOKEN = re.compile(r"[^\W_]+|,")
@@ -69,10 +74,8 @@ ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
 # Der Rest steht im Lookahead: so findet die Suche auch die naechste Wendung
 # ("allergisch gegen X und allergisch gegen Y", Codex PR #139, P1).
 _REST = r"(?=(.+)$)"
+# "ich bin gegen Nuesse allergisch" is read by `_against_allergic`.
 _INGREDIENT = (
-    # "ich bin gegen Nuesse allergisch" - ohne ein zweites "gegen" darin, sonst
-    # verschluckte die erste Wendung die zweite.
-    re.compile(r"gegen\s+((?:(?!\bgegen\b)[^.;!?])+?)\s+allergisch", re.IGNORECASE),
     # "allergisch gegen Sesam", "Allergie gegen Sellerie"
     re.compile(
         r"(?:allergisch|allergie|unvertr(?:ä|ae)glichkeit|intoleran\w*)\s+"
@@ -154,6 +157,8 @@ def _ingredient(text: str) -> str | None:
     for pattern in _INGREDIENT:
         for match in pattern.finditer(text):
             found.append((match.start(1), _until_new_clause(match.group(1))))
+    for start, rest in _against_allergic(text):
+        found.append((start, _until_new_clause(rest)))
     for start, stem, at_noun in _compound_stems(text):
         if fold(stem) in _GENERIC_STEMS:
             continue
@@ -172,6 +177,59 @@ def _ingredient(text: str) -> str | None:
     if len(pieces) == 1:
         return pieces[0]
     return ", ".join(pieces[:-1]) + " und " + pieces[-1]
+
+
+_GEGEN = re.compile(r"gegen", re.IGNORECASE)
+_GEGEN_WORD = re.compile(r"\bgegen\b", re.IGNORECASE)
+_ALLERGISCH = re.compile(r"allergisch", re.IGNORECASE)
+_SPACES = re.compile(r"\s+")
+_SENTENCE_END = re.compile(r"[.;!?]")
+
+
+def _against_allergic(text: str) -> Iterator[tuple[int, str]]:
+    """ "ich bin gegen Nuesse allergisch": where each ingredient between "gegen"
+    and "allergisch" begins, and the ingredient. It holds no second "gegen",
+    or the first phrase would swallow the second, and ends at ".;!?".
+
+    The same matches, in the same order, as the pattern
+    `gegen\\s+((?:(?!\\bgegen\\b)[^.;!?])+?)\\s+allergisch` (IGNORECASE),
+    which read a long run of spaces again from every character of it (issue
+    #252, CodeQL py/polynomial-redos); test_domain_menu_regex_cost.py compares
+    the two. Here each run of spaces is read once: the ingredient may end at
+    any space of a run that "allergisch" follows, and must end before the
+    first stop after "gegen"."""
+    # Runs of spaces that "allergisch" follows: start, end, end of "allergisch".
+    runs = [
+        (run.start(), run.end(), word.end())
+        for run in _SPACES.finditer(text)
+        if (word := _ALLERGISCH.match(text, run.end()))
+    ]
+    ends = [end for _, end, _ in runs]
+    stops = sorted(
+        [found.start() for found in _GEGEN_WORD.finditer(text)]
+        + [found.start() for found in _SENTENCE_END.finditer(text)]
+    )
+    pos = 0
+    while (gegen := _GEGEN.search(text, pos)) is not None:
+        pos = gegen.start() + 1
+        space = _SPACES.match(text, gegen.end())
+        if space is None:
+            continue
+        first = space.end()
+        at = bisect_left(stops, first)
+        stop = stops[at] if at < len(stops) else len(text)
+        # The ingredient takes at least one character, then ends at the first
+        # space of a run that "allergisch" follows, at the latest at the stop.
+        run = bisect_right(ends, first + 1)
+        end = max(runs[run][0], first + 1) if run < len(runs) else stop + 1
+        if end <= stop:
+            yield first, text[first:end]
+            pos = runs[run][2]
+        elif first - space.start() >= 3 and (word := _ALLERGISCH.match(text, first)):
+            # "gegen   allergisch": the pattern backed off into the spaces and
+            # took one of them as the ingredient (it reads as none).
+            yield first - 2, text[first - 2 : first - 1]
+            pos = word.end()
 
 
 def _compound_stems(text: str) -> Iterator[tuple[int, str, bool]]:
@@ -305,15 +363,59 @@ def _starts(words: list[str]) -> list[int]:
         elif word in _INSTEAD and i > 0 and words[i - 1] != ",":
             starts.append(i - 1)
         elif _mentions_allergy(words, i):
-            comma = max((j for j in range(i) if words[j] == ","), default=-1)
-            opener = next(
-                (j for j in range(comma + 1, i) if words[j] in _CLAUSE_OPENERS), None
-            )
-            starts.append(
-                opener if opener is not None else comma + 1 if comma >= 0 else i
-            )
+            starts.append(_clause_start(words, i))
             break
     return sorted(set(starts))
+
+
+def _clause_start(words: list[str], i: int) -> int:
+    """Where the clause of the allergy word at `i` begins (`words` with
+    commas): at "ich", "wir", "mein", "weil" after the last comma before it,
+    else right after that comma, else at the allergy word itself."""
+    comma = max((j for j in range(i) if words[j] == ","), default=-1)
+    opener = next((j for j in range(comma + 1, i) if words[j] in _CLAUSE_OPENERS), None)
+    return opener if opener is not None else comma + 1 if comma >= 0 else i
+
+
+# A negation right in front of the allergy word denies it: "keine
+# Erdnussallergie", "nicht allergisch", "kein Allergiker" (issue #252).
+_DENIALS = frozenset(
+    {"kein", "keine", "keinen", "keinem", "keiner", "keinerlei", "nicht"}
+)
+# Behind a denied allergy these words may name one after all: "keine Allergie
+# gegen Erdnuesse, aber gegen Sesam", "nicht allergisch, nur gegen Sesam".
+# After fold() (ß -> ss).
+_CONTRASTS = frozenset(
+    {"aber", "sondern", "jedoch", "doch", "nur", "ausser", "allerdings", "bloss"}
+    | {"ausgenommen", "ausnahme"}
+)
+
+
+def _denied(words: list[str], i: int) -> bool:
+    """Does a negation deny the allergy word at `i` (`words` with commas)?
+    Only one right in front counts, before the word or before the "gegen" of
+    "nicht gegen Erdnuesse allergisch"; a comma in between does not ("keine,
+    aeh, Erdnussallergie"). Anything else keeps the allergy: the safe side,
+    the note is read back and can be corrected."""
+    word = words[i]
+    if word.startswith(("vertrag", "vertraeg")):
+        # "ich vertrage keine Erdnuesse": the negation names the allergy.
+        return False
+    if i and words[i - 1] in _DENIALS:
+        return True
+    if not word.startswith("allergisch"):
+        return False
+    gegen = next((j for j in range(i - 1, -1, -1) if words[j] == "gegen"), 0)
+    return gegen > 0 and words[gegen - 1] in _DENIALS
+
+
+def _allergy_words(words: list[str]) -> list[int]:
+    """Where the guest names an allergy of their own, as indices into `words`
+    (with commas). Judged on the words alone, as `classify_wish` always did:
+    "vertrage" looks past a comma for its negation."""
+    at = [i for i, word in enumerate(words) if word != ","]
+    plain = [words[i] for i in at]
+    return [at[n] for n in range(len(plain)) if _mentions_allergy(plain, n)]
 
 
 def wish_candidates(text: str) -> list[tuple[str, str, str]]:
@@ -401,19 +503,69 @@ def _drop_quantity(text: str) -> str:
     return _without(_TIMES, text, lambda found: _is_quantity(found.group(1)))
 
 
-def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
-    """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen."""
+def classify_wish(text: str, groups: list[OptionGroup]) -> Wish | None:
+    """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen. None:
+    nothing to note, the guest denied an allergy ("ich habe keine Allergie")."""
     text = _clean(text)
-    words = _words(text)
-    if any(_mentions_allergy(words, i) for i in range(len(words))):
-        ingredient = _ingredient(text)
-        if ingredient is None:
+    tokens = list(_TOKEN.finditer(text))
+    words = [fold(token.group()) for token in tokens]
+    named = _allergy_words(words)
+    if named:
+        return _with_allergy(text, tokens, words, named, groups)
+    return _classify(text, groups)
+
+
+def kitchen_note(removal: str | None, allergy: str) -> str:
+    """The kitchen note for an allergy, with the removal the guest said before
+    it in front: "ohne Zwiebeln. WICHTIG: Keine Erdnuss. Grund: Allergie"."""
+    return f"{removal}. {allergy}" if removal else allergy
+
+
+def _with_allergy(
+    text: str,
+    tokens: list[re.Match[str]],
+    words: list[str],
+    named: list[int],
+    groups: list[OptionGroup],
+) -> Wish | None:
+    """The guest's own allergy, and the wish said before it (issue #252).
+
+    The clause of the allergy runs to the end of the text; what comes before it
+    is classified on its own. Next to an allergy only a removal from it stays:
+    at the front of the kitchen note, or in `note` while the agent still asks
+    what the allergy is against. An addition next to an allergy is not taken
+    yet (docs/01_STATUS.md). The ingredient is read from the whole text, so a
+    list that begins before the clause keeps all of it ("Milch, Ei und
+    Nussallergie").
+
+    When a negation right in front denies every allergy word and nothing
+    behind the first one may name an allergy after all, there is none: only
+    the wish before it counts, None without one."""
+    start = _clause_start(words, named[0])
+    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
+    wish = _classify(head, groups) if head else None
+    if all(_denied(words, i) for i in named) and not (
+        _CONTRASTS & set(words[named[0] + 1 :])
+    ):
+        return wish
+    removal = None
+    if wish is not None:
+        removal = wish.text if wish.kind == "note" else wish.note
+    ingredient = _ingredient(text)
+    if ingredient is None:
+        if removal is None:
             return Wish(text=text, kind="allergy")
-        return Wish(
-            text=ALLERGY_NOTE.format(ingredient=ingredient),
-            kind="allergy",
-            ingredient=ingredient,
-        )
+        return Wish(text=text[tokens[start].start() :], kind="allergy", note=removal)
+    return Wish(
+        text=kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient)),
+        kind="allergy",
+        ingredient=ingredient,
+    )
+
+
+def _classify(text: str, groups: list[OptionGroup]) -> Wish:
+    """A wish without an allergy in it, `text` already cleaned."""
+    words = _words(text)
     lead = next((w for w in words if w not in _LEAD_FILLER), None)
     if lead in _REMOVE:
         left_out, added = _split_addition(text)
@@ -425,12 +577,12 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish:
             # be the same text again (endless recursion). Not understood, and
             # never a free note.
             return Wish(text=text, kind="unknown")
-        return classify_wish(added, groups).model_copy(update={"note": left_out})
+        return _classify(_clean(added), groups).model_copy(update={"note": left_out})
     addition, removal = _split_removal(text)
     if removal is not None:
         # "mit Nudeln ohne Zwiebeln": die Option und der Hinweis, wie umgekehrt
         # (Codex PR #139). Nur eine sichere Option nimmt den Hinweis mit.
-        wish = classify_wish(addition, groups)
+        wish = _classify(_clean(addition), groups)
         if wish.kind != "option" or wish.note:
             # Die Zugabe wird abgelehnt, das Weglassen bleibt - wie in "ohne
             # Zwiebeln, dafuer mit Pommes" (Review PR #139).
@@ -518,11 +670,12 @@ def _names(option: str, group: str, wanted: set[str]) -> set[str]:
     return {compound} if compound in wanted else set()
 
 
-def open_wish(text: str) -> Wish:
+def open_wish(text: str) -> Wish | None:
     """Bei mehreren Treffern: Weglassen und Allergie stehen schon fest, eine
-    Option erst, wenn der Gast das Gericht gewaehlt hat."""
+    Option erst, wenn der Gast das Gericht gewaehlt hat. None: a denied
+    allergy and nothing else, no wish."""
     wish = classify_wish(text, [])
-    if wish.kind in ("note", "allergy"):
+    if wish is None or wish.kind in ("note", "allergy"):
         return wish
     return Wish(text=_clean(text), kind="open")
 
