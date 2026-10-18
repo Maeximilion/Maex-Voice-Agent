@@ -321,6 +321,22 @@ def test_fable_asked_for_by_name_is_kept(run):
     prompt = "Fix the price rounding in domain/ordering, do not switch to Fable"
     out = run(prompt, "claude-opus-5-5", "high", sid="opus")
     assert "claude-opus-5-5 at effort xhigh" in message(out)
+    # Withdrawn: the table decides again.
+    out = run(
+        "Move this GUI task off Fable and onto Sonnet",
+        "claude-fable-5-1",
+        "high",
+        sid="off",
+    )
+    assert "claude-sonnet-5-5 at effort medium" in message(out)
+
+
+def test_transfer_counts_only_for_a_call(run):
+    assert run("Fix file transfer progress in the GUI") is None
+    out = run(
+        "Fix the call transfer to the team phone", "claude-opus-5-5", "high", sid="c"
+    )
+    assert "effort xhigh" in message(out)
 
 
 def test_a_route_line_without_a_space_after_the_colon_is_read(run):

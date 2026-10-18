@@ -11,7 +11,7 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|(call|phone|line) transfer|transfer(ring)? (the |a )?(call|caller)|transfer_call|weiterleit|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
@@ -80,7 +80,10 @@ else
   lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
   # Fable runs only when Maxi asks for it by name; the hook never recommends it (below).
-  grep -qiE '\bfable\b' <<<"$lower" && fable_named=1
+  # Asked for ("on Fable", "use Fable"), not withdrawn ("off Fable", "not on Fable").
+  grep -qiE '\b(on|use|using|with|via|switch(ed)? to) fable\b' <<<"$lower" \
+    && ! grep -qiE '\b(off|not|no|without|leave|don.?t|nicht|ohne)\b[^.,;]{0,20}\bfable\b' <<<"$lower" \
+    && fable_named=1
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
   if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
     want=claude-haiku-4-5 effort=none

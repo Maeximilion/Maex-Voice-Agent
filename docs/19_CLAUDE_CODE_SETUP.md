@@ -383,7 +383,7 @@ fi
 # Remote Control takes only the claude.ai login, no API key. A file of its own per start,
 # so two launches at once never move each other's file.
 tmp=$(mktemp "$dst/settings.json.XXXXXX")
-jq 'del(.env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN)' "$src/settings.json" > "$tmp"
+jq 'del(.apiKeyHelper, .env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN)' "$src/settings.json" > "$tmp"
 mv "$tmp" "$dst/settings.json"
 
 unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN
