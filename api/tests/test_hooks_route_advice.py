@@ -422,6 +422,24 @@ def test_the_live_effort_wins_over_the_start_variable(run):
         ),
         ("Import the menu prices from CSV", "claude-sonnet-5-5", "medium", None),
         (
+            "Import the menu from CSV and fix the allergen matching",
+            "claude-opus-5-5",
+            "high",
+            "effort xhigh",
+        ),
+        (
+            "Update the GUI template and refactor api/core/auth.py",
+            "claude-opus-5-5",
+            "high",
+            None,
+        ),
+        (
+            "Fix the GUI template api/gui/templates/orders.html",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        (
             "Inspect the logs for yesterday's failed call",
             "claude-sonnet-5-5",
             "medium",

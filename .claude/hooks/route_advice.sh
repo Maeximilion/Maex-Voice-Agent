@@ -100,7 +100,8 @@ else
       | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b"; then
     want=claude-sonnet-5-5 effort=medium
   # A menu or data import is import work, also when it carries prices or allergens.
-  elif grep -qiE "$dataimport" <<<"$lower" && ! grep -qiE "$codepath|$opus" <<<"$lower"; then
+  elif grep -qiE "$dataimport" <<<"$lower" \
+    && ! grep -qiE "$codepath|$opus|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b" <<<"$lower"; then
     want=claude-sonnet-5-5 effort=medium
   # A file or data transfer is not a call transfer, and how a price looks is not what it is,
   # whichever comes first ("price badge", "badge color for the price").
@@ -110,7 +111,10 @@ else
       <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
-  elif grep -qiE "$sonnet" <<<"$lower"; then want=claude-sonnet-5-5 effort=medium
+  # Sonnet work only when no other code path is named (api/gui/ and templates are Sonnet's own).
+  elif grep -qiE "$sonnet" <<<"$lower" \
+    && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g' <<<"$lower" | grep -qiE "$codepath"; then
+    want=claude-sonnet-5-5 effort=medium
   else
     # No keyword: the table's default, but not for a short line that names no work.
     [ "$(wc -w <<<"$lower")" -ge 4 ] || grep -qiE "$change" <<<"$lower" || exit 0
