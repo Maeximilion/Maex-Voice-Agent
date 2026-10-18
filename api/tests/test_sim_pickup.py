@@ -1023,28 +1023,31 @@ def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
 
 
 @pytest.mark.parametrize(
-    "zeile",
+    "line",
     ["Pho Bo, ich habe keine Erdnussallergie.", "Pho Bo, ich habe keine Allergie."],
 )
-def test_denied_allergy_gives_no_note(session, tenant, zeile):
+def test_denied_allergy_gives_no_note(session, tenant, line):
     """Codex PR #139 (P2), issue #252: a denied allergy gave "WICHTIG: Keine
     Erdnuss" or the question "Wogegen?"."""
-    _, turns = _bestellung(session, tenant, zeile)
+    _, turns = _bestellung(session, tenant, line)
     assert "Wogegen" not in said(turns)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == [None]
 
 
-def test_allergy_withdrawn_on_the_question_gives_no_note(session, tenant):
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Ich habe doch keine Allergie.",
+        "Doch, keine Allergie.",
+        "Nein, ich habe keine Allergie.",
+    ],
+)
+def test_allergy_withdrawn_on_the_question_gives_no_note(session, tenant, answer):
     """ "Wogegen?" - "Ich habe doch keine Allergie.": the question is closed,
     nothing goes to the kitchen."""
-    _bestellung(
-        session,
-        tenant,
-        "Pho Bo, ich habe eine Allergie.",
-        "Ich habe doch keine Allergie.",
-    )
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == [None]

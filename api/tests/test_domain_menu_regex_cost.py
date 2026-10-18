@@ -75,6 +75,12 @@ CASES = [
         lambda text: classify_wish(text, []),
         "allergie " + "gegen x" * (LENGTH // 7),
     ),
+    # wishes.py, the polarity of many allergy words (own review, issue #252)
+    (
+        "classify_wish, many allergy words after a denial",
+        lambda text: classify_wish(text, []),
+        "nicht gegen x " + "allergisch " * (LENGTH // 11),
+    ),
     # wishes.py, _split_addition (alert 11) and _split_removal (alert 12)
     (
         "classify_wish, tabs before an addition",
