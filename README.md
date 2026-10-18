@@ -107,7 +107,7 @@ How the images stay current: a full eval run on a real model records itself (`ma
 
 For development and for the server. A restaurant that uses the product needs a browser, not this repository (`docs/13_DEPLOYMENT.md` §0a).
 
-- Docker and Docker Compose
+- Docker and Docker Compose 2.24.4 or later
 - Git
 - For development without Docker: Python 3.12
 

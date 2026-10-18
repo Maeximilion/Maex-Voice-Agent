@@ -51,9 +51,16 @@ services:
     restart: always
     environment:
       ENV: prod
+      # No graphics card on the EU server (below): a local ear runs on the
+      # processor, whatever .env says (Codex on PR #310).
+      VOICE_EAR_DEVICE: cpu
     volumes:
       - ./api:/app/api:ro
       - ./prompts:/app/prompts:ro
+    # No graphics card on the EU server: there ear and mouth are services
+    # (docs/20 §6), and a reservation would keep the container from being
+    # created at all.
+    deploy: !reset {}
 
   asterisk:
     restart: always
