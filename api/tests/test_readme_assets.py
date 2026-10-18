@@ -761,12 +761,13 @@ def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A line cut off when a kit was killed neither blocks `pending` nor is pruned."""
+    """A line cut off when a kit was killed neither blocks `pending` nor is pruned,
+    and the next kit's row starts a line of its own."""
     folder = recording["reports"]
     merged_row = {**drill_row("14"), "run_at": "2026-10-15T18:00:00+00:00"}
     ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, merged_row)
     with (folder / ra.VOICE_PENDING).open("a", encoding="utf-8") as fh:
-        fh.write("2026-10-15,T-1.11,Outage drills\n")
+        fh.write("2026-10-15,T-1.11,Outage drills,1")  # the "5" of 15 never written
     ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
     monkeypatch.setattr(ra, "merged_voice", lambda: {ra._voice_identity(merged_row)})
     assert ra.record_pending([folder]) == 0
@@ -775,8 +776,26 @@ def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
         assert [r["value"] for r in ra.csv.DictReader(fh)] == ["15"]
     with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
         cut, kept = ra.csv.DictReader(fh)
-    assert cut["date"] == "2026-10-15" and cut["value"] == ""
+    assert cut["value"] == "1" and cut["unit"] is None
     assert kept == drill_row()
+
+
+@pytest.mark.skipif(ra.shutil.which("git") is None, reason="needs git")
+def test_main_s_voice_rows_come_from_origin_main(tmp_path: Path) -> None:
+    def git(*args: str) -> None:
+        ra.subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    history = tmp_path / ra.VOICE_PATH
+    history.parent.mkdir(parents=True)
+    row = {**drill_row(), "metric": "Notfallprüfung"}  # read as UTF-8 on Windows too
+    ra.append_row(history, ra.VOICE_FIELDS, row)
+    assert ra.merged_voice(tmp_path) == set()  # no git, no pruning
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "m")
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    history.unlink()  # the checkout's own file plays no part
+    assert ra.merged_voice(tmp_path) == {ra._voice_identity(row)}
 
 
 def test_pending_refuses_to_record_on_main(
