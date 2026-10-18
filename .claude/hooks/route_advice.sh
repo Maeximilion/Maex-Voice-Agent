@@ -15,14 +15,15 @@ xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
-sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|update (the )?([a-z]+ )?status\b|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
+dataimport='import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import'
+sonnet="\\bgui\\b|\\bdocs?\\b|readme|\\bseeds?\\b|$dataimport|"'status update|update (the )?(project |task |gate )?status\b|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
 # prompt are the topic of the text, not code that decides.
 # ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
 docpath='\.md\b|\bdocs/|readme'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
-search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
+search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
 change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
@@ -98,9 +99,14 @@ else
     && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g' <<<"$lower" \
       | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b"; then
     want=claude-sonnet-5-5 effort=medium
-  # A file or data transfer is not a call transfer, and how a price looks is not what it is.
+  # A menu or data import is import work, also when it carries prices or allergens.
+  elif grep -qiE "$dataimport" <<<"$lower" && ! grep -qiE "$codepath|$opus" <<<"$lower"; then
+    want=claude-sonnet-5-5 effort=medium
+  # A file or data transfer is not a call transfer, and how a price looks is not what it is,
+  # whichever comes first ("price badge", "badge color for the price").
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
-      s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g' \
+      s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g
+      s/\b(typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)( [a-z]+){0,2} (for|of) (the |an? )?(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?)\b//g' \
       <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high

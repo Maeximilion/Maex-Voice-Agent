@@ -415,6 +415,25 @@ def test_the_live_effort_wins_over_the_start_variable(run):
             None,
         ),
         (
+            "Fix the GUI badge color for allergen status",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        ("Import the menu prices from CSV", "claude-sonnet-5-5", "medium", None),
+        (
+            "Inspect the logs for yesterday's failed call",
+            "claude-sonnet-5-5",
+            "medium",
+            "haiku",
+        ),
+        (
+            "Update the reservation status transition handler",
+            "claude-opus-5-5",
+            "high",
+            None,
+        ),
+        (
             "Fix the availability badge color in the GUI",
             "claude-sonnet-5-5",
             "medium",
