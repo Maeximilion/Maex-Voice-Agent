@@ -50,6 +50,8 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
+# A "bitte" before the "und" closes the position: "die 4 bitte und 20" is two.
+_PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
 _EMPTY_WORDS = frozenset(
     {
         "aeh",
@@ -133,7 +135,7 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         # nothing else follows: "die drei und bitte zwanzig Fruehlingsrollen"
         # stays two positions (Codex PR #147).
         a = len(left)
-        while a and left[a - 1] in INSIDE_SPLIT:
+        while a and left[a - 1] in _PAUSE_BEFORE_UND:
             a -= 1
         b = 0
         while b < len(right) and right[b] in INSIDE_SPLIT:

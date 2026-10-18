@@ -378,7 +378,15 @@ def _position_parts(
             try:
                 found = search(piece)
             except Ambiguous:
-                return [query]
+                # "einmal Pho Bo, und 30": a piece whose number is unclear is a
+                # position whose question the guest must hear. Kept whole, the
+                # name search drops the numbers and takes Pho Bo alone (Codex
+                # PR #147). A piece unclear as a name stays part of one.
+                if not sole_item_number(piece, piece_card)[1]:
+                    return [query]
+                positions.append(piece)
+                i += 1
+                continue
             except NotFound:
                 # "Zweimal die 99 und Pho Bo": a piece that is one card number
                 # is a position whether the menu has it or not, and its search

@@ -707,6 +707,26 @@ def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
     ]
 
 
+@pytest.mark.parametrize(
+    ("said", "unclear"),
+    [
+        ("einmal Pho Bo, und 30", "und 30"),
+        (
+            "zweimal die drei und äh zwanzig und Pho Bo",
+            "zweimal die drei und äh zwanzig",
+        ),
+    ],
+)
+def test_an_unclear_number_piece_stays_a_position(session, tenant_id, said, unclear):
+    """Codex PR #147: a piece whose number needs a question stays a position
+    of its own, so the guest is asked. Kept whole, the name search dropped the
+    numbers and took Pho Bo alone."""
+    parts = position_parts(session, tenant_id, said, now=NOW)
+    assert unclear in parts and len(parts) == 2
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, unclear)
+
+
 def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
     """ "Pho und Pho Bo" trifft zweimal die 13, aber mit anderen Worten: das kann
     ein Gericht sein, das der Gast praezisiert. Ganz lassen, nicht verdoppeln."""

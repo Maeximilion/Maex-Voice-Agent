@@ -52,6 +52,7 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             ["die drei", "bitte zwanzig Frühlingsrollen"],
         ),
         ("die 23 und äh die 13", ["die 23", "äh die 13"]),
+        ("die 4 bitte und 20", ["die 4 bitte", "20"]),
         # Korrektur und Alternative: im Zweifel ganz lassen
         ("Nummer 23, nein, 24", ["Nummer 23, nein, 24"]),
         ("die 23 oder die 24", ["die 23 oder die 24"]),
