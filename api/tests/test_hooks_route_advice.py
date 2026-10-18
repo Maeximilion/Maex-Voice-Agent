@@ -399,7 +399,30 @@ def test_an_unknown_effort_stops_an_xhigh_thread_once_only(run):
 
 
 def test_the_live_effort_wins_over_the_start_variable(run):
-    assert run(BRIEF, "claude-sonnet-5-5", "high", effort_in="medium") is None
+    assert run(BRIEF, "claude-sonnet-5-5", "medium", level="high") is None
+    out = run(BRIEF, "claude-sonnet-5-5", "", level="high", effort_in="medium", sid="o")
+    assert out is None
+
+
+@pytest.mark.parametrize(
+    "prompt, model, effort, expected",
+    [
+        ("Find where we write menu_item_id", "claude-sonnet-5-5", "medium", "haiku"),
+        ("Fix the price typography in the GUI", "claude-sonnet-5-5", "medium", None),
+        (
+            "Refactor authentication",
+            "claude-sonnet-5-5",
+            "medium",
+            "opus-5-5 at effort high",
+        ),
+    ],
+)
+def test_lookups_looks_and_short_tasks(run, prompt, model, effort, expected):
+    out = run(prompt, model, effort)
+    if expected is None:
+        assert out is None
+    else:
+        assert expected in message(out)
 
 
 def test_a_model_switch_without_a_model_forgets_the_old_one(run):

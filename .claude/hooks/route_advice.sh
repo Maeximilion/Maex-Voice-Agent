@@ -85,7 +85,10 @@ else
     && ! grep -qiE '\b(off|away from|without|not (on|with|use|using)|ohne|nicht (mit|auf)|weg von) fable\b' <<<"$lower" \
     && fable_named=1
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
-  if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
+  # A verb inside what is looked for ("find where we write X") changes nothing.
+  if grep -qiE "$search" <<<"$lower" \
+    && ! sed -E 's/\b(where|which|that|wherever) ([a-z_]+ ){1,3}(write|update|change|add|create|edit|remove|delete|build)s?\b//g' <<<"$lower" \
+      | grep -qiE "$change"; then
     want=claude-haiku-4-5 effort=none
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.
@@ -93,14 +96,16 @@ else
     && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g' <<<"$lower" \
       | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b"; then
     want=claude-sonnet-5-5 effort=medium
-  # A file or data transfer is not a call transfer.
-  elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g' <<<"$lower" | grep -qiE "$xhigh"; then
+  # A file or data transfer is not a call transfer, and how a price looks is not what it is.
+  elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
+      s/\b(prices?|fees?|totals?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badge|column|text)\b//g' \
+      <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
   elif grep -qiE "$sonnet" <<<"$lower"; then want=claude-sonnet-5-5 effort=medium
   else
     # No keyword: the table's default, but not for a short line that names no work.
-    [ "$(wc -w <<<"$lower")" -ge 4 ] || exit 0
+    [ "$(wc -w <<<"$lower")" -ge 4 ] || grep -qiE "$change" <<<"$lower" || exit 0
     want=claude-opus-5-5 effort=high
   fi
 fi
@@ -125,11 +130,10 @@ if [ -z "$model" ]; then
   exit 0
 fi
 [ -z "${fable_named-}" ] || [ "$(family "$model")" != 4 ] || exit 0
-# The live effort from the hook input first: the variables are fixed at session start and
-# miss a later switch. CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable;
-# CLAUDE_EFFORT is what this machine's sessions carry (CLAUDE.md, /task).
-have_effort=$(jq -r '.effort // empty' <<<"$input")
-have_effort=${have_effort:-${CLAUDE_CODE_EFFORT_LEVEL:-$CLAUDE_EFFORT}}
+# The live effort first: Claude Code hands the effective level to hooks as CLAUDE_EFFORT,
+# and some events carry an effort object; CLAUDE_CODE_EFFORT_LEVEL is the launch value.
+have_effort=${CLAUDE_EFFORT:-$(jq -r '(.effort | objects | .level) // (.effort | strings) // empty' <<<"$input")}
+have_effort=${have_effort:-$CLAUDE_CODE_EFFORT_LEVEL}
 
 want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
