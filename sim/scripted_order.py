@@ -33,15 +33,25 @@ from api.domain.menu.search import (
     say_for_wish,
     say_understood,
 )
-from api.domain.menu.wishes import classify_wish, denies_allergy, kitchen_note
+from api.domain.menu.wishes import (
+    classify_wish,
+    denies_allergy,
+    kitchen_note,
+    removal_with,
+)
 from api.schemas.menu import MenuHit, OptionGroup, Wish
+from api.schemas.orders import NOTE_MAX
 
 SAY_WHAT = "Was möchten Sie bestellen?"
-# "gegen" or "auf" in an answer to "Wogegen?": the ingredient follows it.
-_AGAINST = re.compile(r"\b(?:gegen|auf)\b", re.IGNORECASE)
+# "gegen" or "auf" in front of an ingredient in an answer to "Wogegen?", at
+# the start or after "und": "Erdnuesse und gegen Sesam" names both. Any other
+# still ends the list ("Erdnuesse, auf jeden Fall").
+_AGAINST = re.compile(r"(^\s*|\bund\s+)(?:gegen|auf)\s+", re.IGNORECASE)
 # An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
 # nichts." ("Nein." stays a question: no to what is unclear).
-_NOTHING = frozenset({"kein", "keine", "keinen", "keiner", "keinerlei", "nichts"})
+_NOTHING = frozenset(
+    {"kein", "keine", "keinen", "keinem", "keiner", "keinerlei", "nichts"}
+)
 _NOTHING_FILL = frozenset({"gar", "gegen", "auf", "doch", "ueberhaupt"})
 SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
@@ -594,8 +604,10 @@ class PickupScript:
                 # A removal said with it is noted. An addition is not taken:
                 # the answer is read without the dish's options (stand-in
                 # only, docs/01_STATUS.md).
-                removal = wish.text if wish.kind == "note" else wish.note
-                item.note = ", ".join(n for n in (item.note, removal) if n)
+                removal = removal_with(wish)
+                if removal and removal.lower() not in (item.note or "").lower():
+                    note = ", ".join(n for n in (item.note, removal) if n)
+                    item.note = note if len(note) <= NOTE_MAX else item.note
             if not self._allergy_for:
                 self._allergy_named = False
             return self._next(slots, patch, lead=self._take_deferred())
@@ -610,8 +622,7 @@ class PickupScript:
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
             # A removal said again in front is no ingredient ("Ohne Zwiebeln
-            # und gegen Erdnuesse"), and every "gegen" goes: "Erdnuesse und
-            # gegen Sesam" names both (#252).
+            # und gegen Erdnuesse"), nor is the "gegen" in front of one (#252).
             bare = text
             removal = self._allergy_for[0].note
             if removal and bare.lower().startswith(removal.lower()):
@@ -619,7 +630,7 @@ class PickupScript:
             bare = re.sub(
                 r"^\s*(?:und\s+)?(?:keine[nm]?\s+|kein\s+)?",
                 "",
-                _AGAINST.sub("", bare),
+                _AGAINST.sub(r"\1", bare),
                 flags=re.IGNORECASE,
             )
             wish = classify_wish(f"allergisch gegen {bare}", [])

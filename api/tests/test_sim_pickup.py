@@ -1075,6 +1075,8 @@ def test_allergy_withdrawn_with_a_removal_notes_the_removal(session, tenant):
             "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
         ),
         ("Gegen Erdnüsse.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        # Round 4: an "auf" further on still ends the list.
+        ("Erdnüsse, auf jeden Fall.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
     ],
 )
 def test_every_ingredient_of_the_answer_is_noted(session, tenant, answer, note):
@@ -1082,6 +1084,18 @@ def test_every_ingredient_of_the_answer_is_noted(session, tenant, answer, note):
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
     [order] = orders(session)
     assert _notes(session, order) == [note]
+
+
+def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
+    """Own review, round 4: "ohne Zwiebeln, Ohne Zwiebeln" on the ticket."""
+    _bestellung(
+        session,
+        tenant,
+        "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+        "Ohne Zwiebeln, aber ich habe doch keine Allergie.",
+    )
+    [order] = orders(session)
+    assert _notes(session, order) == ["ohne Zwiebeln"]
 
 
 def test_removal_said_again_with_the_ingredient(session, tenant):

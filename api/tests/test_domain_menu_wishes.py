@@ -969,6 +969,7 @@ def test_denied_allergy_is_no_wish(said):
             "note",
             "ohne Zwiebeln für meine Frau",
         ),
+        ("ich habe keine Allergie, ohne Zwiebeln, sonst nichts", "note", None),
         # A full stop the words do not show (own review).
         ("ich habe keine Allergie. Ohne Koriander bitte.", "note", "Ohne Koriander"),
         ("mit Nudeln, ich bin nicht allergisch", "option", "mit Nudeln"),
@@ -987,7 +988,18 @@ def test_denied_allergy_is_no_wish(said):
 )
 def test_denied_allergy_keeps_the_wishes_around_it(said, kind, text):
     wish = classify_wish(said, BEILAGE)
-    assert (wish.kind, wish.text) == (kind, text)
+    assert (wish.kind, wish.text if text else None) == (kind, text)
+
+
+def test_denied_allergy_keeps_an_option_in_two_groups():
+    """Own review: the option to ask about turned into "Wogegen?"."""
+    reis = OptionOut(name="Reis", price_delta_cents=0, default=False)
+    groups = [
+        OptionGroup(group="Beilage", required=False, options=[reis]),
+        OptionGroup(group="Extra", required=False, options=[reis]),
+    ]
+    wish = classify_wish("mit Reis, ich habe keine Allergie", groups)
+    assert (wish.kind, wish.groups) == ("open", ["Beilage", "Extra"])
 
 
 @pytest.mark.parametrize(
@@ -1010,6 +1022,9 @@ def test_denied_allergy_keeps_the_wishes_around_it(said, kind, text):
         "gegen Sesam schon, aber keine Allergie gegen Nüsse",
         "keine Allergie, aber mit Gluten habe ich Probleme",
         "ich bin nicht allergisch, ohne Erdnüsse, weil ich die nicht vertrage",
+        # Round 4: an intolerance before the denial.
+        "Laktose vertrage ich überhaupt nicht, ich bin aber nicht allergisch",
+        "Gluten verträgt mein Magen nicht, ich habe keine Allergie",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):
@@ -1071,6 +1086,9 @@ def test_dish_ends_where_the_allergy_phrase_begins(said):
     [
         ("Ich moechte Pho Bo zum Abholen ich habe keine Allergie", True),
         ("Ich moechte Pho Bo zum Abholen, ich habe keine Allergie", True),
+        # Only the clause, as the stand-in asks (round 4): "nichts" in front.
+        ("ich habe keine Allergie", True),
+        ("sonst nichts, ich habe keine Allergie", False),
         ("ich habe eine Erdnussallergie", False),
         ("ich habe keine Allergie gegen Erdnüsse, aber gegen Sesam", False),
         ("allergiefrei?", False),

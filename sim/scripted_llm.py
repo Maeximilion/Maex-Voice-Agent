@@ -26,7 +26,7 @@ from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from api.domain.menu.wishes import denies_allergy
+from api.domain.menu.wishes import denies_allergy, wish_candidates
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -178,7 +178,10 @@ class ScriptedLLM:
 
         wants_pickup = self._pickup is None and _wants_pickup(text)
         # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
-        denied = ALLERGY_STEM in text.lower() and denies_allergy(text)
+        # Judged on the clause the search classifies, not with the dish in
+        # front ("Ente auf Thai Art").
+        clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
+        denied = bool(clauses) and denies_allergy(clauses[-1][1])
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
         # checked on the search result (`_after_tool`).
