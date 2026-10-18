@@ -331,6 +331,31 @@ def test_fable_asked_for_by_name_is_kept(run):
     assert "claude-sonnet-5-5 at effort medium" in message(out)
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Leave it on Fable and fix the price rounding",
+        "Fix the price rounding with no shortcuts on Fable",
+        "Use claude-fable-5-1 for the G1 gate review",
+        # German prompt input: the hook reads Maxi's German prompts.
+        "Bitte mit Fable das Gate G1 pruefen",
+    ],
+)
+def test_a_fable_request_in_other_words_is_kept(run, prompt):
+    assert run(prompt, "claude-fable-5-1", "high") is None
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix transfer_to_team when the team is busy",
+        "Calls are not transferred to the team anymore, fix it",
+    ],
+)
+def test_call_transfer_wording_stays_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
 def test_transfer_counts_only_for_a_call(run):
     assert run("Fix file transfer progress in the GUI") is None
     out = run(
