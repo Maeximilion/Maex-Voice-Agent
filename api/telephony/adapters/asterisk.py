@@ -290,4 +290,12 @@ class MediaLine:
 
     def _end(self, ending: str) -> None:
         self._ended(ending)
-        self._send(command("HANGUP"))
+        # Recorded: the dialplan does what it says once our leg is gone, and
+        # the router closes the connection when the session ends. A HANGUP
+        # that no longer goes out (the server is stopping) changes nothing
+        # of that, and raised, it would end a call that went as it should as
+        # failed, logged as an error (ultra review and Codex on PR #310).
+        try:
+            self._send(command("HANGUP"))
+        except Exception:
+            logger.exception("HANGUP could not be sent, the ending stands")

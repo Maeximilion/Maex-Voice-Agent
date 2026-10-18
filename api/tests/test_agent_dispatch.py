@@ -475,3 +475,48 @@ def test_check_slot_leaves_out_the_drafts_of_its_own_call(session, tenant_id, ca
     )
 
     assert moved.data["available"] is True
+
+
+def test_a_tool_log_that_fails_leaves_the_session_usable(
+    session, tenant_id, call_id, monkeypatch
+):
+    """The entry in `calls.tool_calls` is best effort. When its statement fails
+    (on the phone line: a lock past the line's bound), the transaction is
+    rolled back, or the next statement of the turn would fail and send a guest
+    whose booking stands to the team (ultra review on PR #298)."""
+    import sys
+
+    from sqlalchemy import text
+
+    # The module, not the function of the same name that `api.agent` exports.
+    dispatch_module = sys.modules["api.agent.dispatch"]
+
+    def failing(session, call_id, tenant_id, entry):
+        session.execute(text("select 1 / 0"))
+
+    monkeypatch.setattr(dispatch_module, "append_tool_call", failing)
+    result = dispatch(session, call_id, tenant_id, "get_service_status", {}, now=NOW)
+
+    assert result.ok
+    assert session.execute(text("select 1")).scalar_one() == 1
+
+
+def test_a_tool_log_whose_rollback_fails_too_still_answers(
+    session, tenant_id, call_id, monkeypatch
+):
+    """A lost connection fails the rollback as well; the tool's answer still
+    goes out (Codex on PR #310)."""
+    import sys
+
+    from sqlalchemy.exc import OperationalError
+
+    dispatch_module = sys.modules["api.agent.dispatch"]
+
+    def lost(*args, **kwargs):
+        raise OperationalError("UPDATE", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(dispatch_module, "append_tool_call", lost)
+    monkeypatch.setattr(session, "rollback", lost)
+    result = dispatch(session, call_id, tenant_id, "get_service_status", {}, now=NOW)
+
+    assert result.ok

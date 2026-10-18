@@ -126,6 +126,23 @@ def migrated_template_url():
 
 
 @pytest.fixture
+def bounded_db(migrated_db_url):
+    """`db.bounded_sessions` on the test's database, by bound in ms; every
+    engine it made is disposed after the test."""
+    from api.db import bounded_sessions
+
+    made = []
+
+    def at(ms: int):
+        made.append(bounded_sessions(ms, url=migrated_db_url))
+        return made[-1]
+
+    yield at
+    for sessions in made:
+        sessions.kw["bind"].dispose()
+
+
+@pytest.fixture
 def migrated_db_url(migrated_template_url):
     """Frische Datenbank auf dem aktuellen Schema, je Test eine eigene."""
     url = create_scratch_db(template=migrated_template_url)
