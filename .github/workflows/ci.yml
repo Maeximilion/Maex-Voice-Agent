@@ -152,3 +152,21 @@ jobs:
       - name: Container entfernen
         if: always()
         run: docker rm --force maex-api-smoke || true
+
+  # The image of `voice` with the speech engines (api/Dockerfile, target voice):
+  # its pinned packages install, and an ear or mouth without its model files is
+  # refused. The test job runs in the API's image, which has no engines.
+  voice-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the image of voice
+        run: docker build --target voice --tag maex-voice:ci ./api
+      # The import first: without the packages the test file would skip
+      # itself and pass (Codex on PR #310).
+      - name: Engines without their model files are refused
+        run: |
+          docker run --rm --network none -v "$PWD:/app" -w /app maex-voice:ci \
+            sh -c 'python -c "import faster_whisper, piper" &&
+              python -m pytest -q -p no:cacheprovider api/tests/test_telephony_engine_loading.py'
