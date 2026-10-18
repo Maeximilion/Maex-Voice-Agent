@@ -579,15 +579,26 @@ def _voice_identity(row: dict[str, str]) -> object:
 
 
 def _voice_key(row: dict[str, str]) -> object | None:
-    """The identity of a row, None for one that does not parse: a line cut off when
-    a kit was killed (too few fields, or too many where the next row was appended to
-    it), or a hand edit."""
-    if None in row or None in row.values():
-        return None
+    """The identity of a history row, None for one that does not parse."""
     try:
         return _voice_identity(row)
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _waiting_key(row: dict[str, str]) -> object | None:
+    """The identity of a waiting row, None for one that is not whole: a line cut off
+    when a kit was killed (too few fields, or too many where the next row was
+    appended to it), or a hand edit with a date `render` cannot read.
+    ponytail: a line cut inside its last field still has every field; one write
+    of one short line makes that rare, so no end-of-line marker for it."""
+    if None in row or None in row.values():
+        return None
+    try:
+        date.fromisoformat(row["date"])
+    except (KeyError, ValueError):
+        return None
+    return _voice_key(row)
 
 
 def voice_identities(text: str | None) -> set[object]:
@@ -692,8 +703,13 @@ def run_from_report(report: dict, suite: str) -> dict[str, str]:
 def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
     new = not path.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
-    # A line a killed writer cut off stays a line of its own.
-    cut = not new and path.read_bytes()[-1:] not in (b"", b"\n")
+    cut = False
+    if not new:
+        # A line a killed writer cut off stays a line of its own.
+        with path.open("rb") as fh:
+            if fh.seek(0, os.SEEK_END):
+                fh.seek(-1, os.SEEK_END)
+                cut = fh.read(1) != b"\n"
     with path.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         if new:
@@ -2556,7 +2572,7 @@ def pending(
         if waiting.exists():
             with waiting.open(encoding="utf-8", newline="") as fh:
                 for row in csv.DictReader(fh):
-                    if (key := _voice_key(row)) is None:
+                    if (key := _waiting_key(row)) is None:
                         print(
                             f"readme_assets: {shown(waiting)} has a row that does not "
                             f"parse, skipped: {row}",
@@ -2587,18 +2603,23 @@ def prune_pending(path: Path, merged: set[object]) -> None:
     keep = [
         line
         for line in lines
-        if _voice_key(dict(itertools.zip_longest(header, line))) not in merged
+        if _waiting_key(dict(itertools.zip_longest(header, line))) not in merged
     ]
     if len(keep) == len(lines):
         return
-    if not keep:
-        path.unlink()
-        return
     # A new file swapped in whole: a kill halfway through loses no waiting row.
     fresh = path.with_name(path.name + ".tmp")
-    with fresh.open("w", encoding="utf-8", newline="") as fh:
-        csv.writer(fh, lineterminator="\n").writerows([header, *keep])
-    os.replace(fresh, path)
+    try:
+        if not keep:
+            path.unlink()
+            return
+        with fresh.open("w", encoding="utf-8", newline="") as fh:
+            csv.writer(fh, lineterminator="\n").writerows([header, *keep])
+        os.replace(fresh, path)
+    except PermissionError:
+        # Windows: a `pending` listing in another session has the file open. The
+        # rows stay; the next recording prunes them.
+        fresh.unlink(missing_ok=True)
 
 
 @under_history_lock

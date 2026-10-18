@@ -768,22 +768,48 @@ def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
     ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, merged_row)
     with (folder / ra.VOICE_PENDING).open("a", encoding="utf-8") as fh:
         fh.write("2026-10-15,T-1.11,Outage drills,1")  # the "5" of 15 never written
-    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    hand_edit = {**drill_row("13"), "date": "16.10.2026"}
+    for row in (drill_row(), hand_edit):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
     monkeypatch.setattr(ra, "merged_voice", lambda: {ra._voice_identity(merged_row)})
     assert ra.record_pending([folder]) == 0
-    assert "does not parse" in capsys.readouterr().err
+    assert capsys.readouterr().err.count("does not parse") == 2
     with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
         assert [r["value"] for r in ra.csv.DictReader(fh)] == ["15"]
     with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
-        cut, kept = ra.csv.DictReader(fh)
+        cut, kept, edited = ra.csv.DictReader(fh)
     assert cut["value"] == "1" and cut["unit"] is None
-    assert kept == drill_row()
+    assert kept == drill_row() and edited == hand_edit
+
+
+def test_a_pending_file_another_session_holds_open_is_pruned_later(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    for row in (drill_row(), {**drill_row("14"), "run_at": "2026-10-15T20:00:00Z"}):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
+    before = (folder / ra.VOICE_PENDING).read_text(encoding="utf-8")
+
+    def held_open(src: object, dst: object) -> None:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(ra.os, "replace", held_open)
+    ra.prune_pending(folder / ra.VOICE_PENDING, {ra._voice_identity(drill_row())})
+    assert (folder / ra.VOICE_PENDING).read_text(encoding="utf-8") == before
+    assert [p.name for p in folder.iterdir()] == [ra.VOICE_PENDING]
 
 
 @pytest.mark.skipif(ra.shutil.which("git") is None, reason="needs git")
-def test_main_s_voice_rows_come_from_origin_main(tmp_path: Path) -> None:
+def test_main_s_voice_rows_come_from_origin_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+
     def git(*args: str) -> None:
-        ra.subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+        isolated = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath="]
+        ra.subprocess.run(
+            ["git", *isolated, *args], cwd=tmp_path, check=True, capture_output=True
+        )
 
     history = tmp_path / ra.VOICE_PATH
     history.parent.mkdir(parents=True)
