@@ -11,9 +11,9 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|draft (orders?|status|state|bookings?|reservations?|transactions?)|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
-opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|\bdeploy(/|\b)|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice (layer|service)\b|\bvoice/|\bllm\b|settings\.json|docker-compose'
+opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
 sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
@@ -23,7 +23,7 @@ docpath='\.md\b|\bdocs/|readme'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|suche|finde|wo (ist|sind|wird))\b'
-change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|verschiebe)\b'
+change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
 
@@ -35,7 +35,8 @@ mkdir -p "$state"
 
 case "$(jq -r '.hook_event_name // empty' <<<"$input")" in
   SessionStart)    m=$(jq -r '.model // empty' <<<"$input"); [ -n "$m" ] && echo "$m" > "$state/$sid.model"; exit 0 ;;
-  PostModelSwitch) m=$(jq -r '.to_model // empty' <<<"$input"); [ -n "$m" ] && echo "$m" > "$state/$sid.model"; exit 0 ;;
+  PostModelSwitch) m=$(jq -r '.to_model // empty' <<<"$input")
+                   if [ -n "$m" ]; then echo "$m" > "$state/$sid.model"; else rm -f "$state/$sid.model"; fi; exit 0 ;;
 esac
 
 [ -z "$(jq -r '.agent_id // empty' <<<"$input")" ] || exit 0
@@ -78,16 +79,16 @@ else
   # One line without paste wrappers, so ^ and $ below mean the start and end of the prompt.
   lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
-  # Fable only when asked for by name (gate review, stalled debugging): the table never picks it.
-  if grep -qiE '\bfable\b' <<<"$lower"; then
-    want=claude-fable-5-1 effort=high
+  # Fable runs only when Maxi asks for it by name; the hook never recommends it (below).
+  grep -qiE '\bfable\b' <<<"$lower" && fable_named=1
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
-  elif grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
+  if grep -qiE "$search" <<<"$lower" && ! grep -qiE "$change" <<<"$lower"; then
     want=claude-haiku-4-5 effort=none
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.
   elif grep -qiE "$docpath" <<<"$lower" \
-    && ! grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b" <<<"$lower"; then
+    && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g' <<<"$lower" \
+      | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b"; then
     want=claude-sonnet-5-5 effort=medium
   elif grep -qiE "$xhigh" <<<"$lower"; then want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
@@ -109,8 +110,6 @@ if [ -z "$model" ]; then
   [ -f "$transcript" ] && model=$(tac "$transcript" 2>/dev/null \
     | jq -r 'select(.type == "assistant" and (.isSidechain | not)) | .message.model
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
-  # Read the transcript once per session, not on every prompt.
-  [ -z "$model" ] || echo "$model" > "$state/$sid.model"
 fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
 if [ -z "$model" ]; then
@@ -120,6 +119,7 @@ if [ -z "$model" ]; then
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
 fi
+[ -z "${fable_named-}" ] || [ "$(family "$model")" != 4 ] || exit 0
 # The live effort from the hook input first: the variables are fixed at session start and
 # miss a later switch. CLAUDE_CODE_EFFORT_LEVEL is Claude Code's own variable;
 # CLAUDE_EFFORT is what this machine's sessions carry (CLAUDE.md, /task).
@@ -131,13 +131,6 @@ want_f=$(family "$want") have_f=$(family "$model")
 # match except where xhigh is wanted: that one is asked about once.
 if [[ "$model" == "$want"* ]]; then
   if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then exit 0; fi
-  # Right model, effort unknown: a switch cannot make it known, so a thread works on.
-  if [ -n "$route" ] && [ -z "$have_effort" ]; then
-    msg="routing check: the brief asks for $want at effort $effort; this session is on $model, but its effort is not known to the hook, so the effort of this thread cannot be checked."
-    jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
-      additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
-    exit 0
-  fi
   [ -n "$have_effort" ] || [ "$effort" = xhigh ] || exit 0
 fi
 

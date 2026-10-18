@@ -317,8 +317,10 @@ def test_a_search_asked_as_a_question_goes_to_haiku(run):
 def test_fable_asked_for_by_name_is_kept(run):
     prompt = "Perform the G1 gate review on Fable as requested"
     assert run(prompt, "claude-fable-5-1", "high") is None
+    # Named but not asked for: the table decides, Fable is never recommended.
+    prompt = "Fix the price rounding in domain/ordering, do not switch to Fable"
     out = run(prompt, "claude-opus-5-5", "high", sid="opus")
-    assert "claude-fable-5-1 at effort high" in message(out)
+    assert "claude-opus-5-5 at effort xhigh" in message(out)
 
 
 def test_a_route_line_without_a_space_after_the_colon_is_read(run):
@@ -343,22 +345,45 @@ def test_umlauts_fold_without_a_locale(run):
     assert "effort xhigh" in message(out)
 
 
-def test_an_unknown_effort_on_the_right_model_never_stops_a_thread(run):
+def test_an_unknown_effort_stops_an_xhigh_thread_once_only(run):
     brief = "Route: claude-opus-5-5 xhigh\nFix the migration downgrade."
-    out = run(brief, "claude-opus-5-5", effort="")
-    assert "not known" in message(out)
-    assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]
+    first = run(brief, "claude-opus-5-5", effort="")
+    assert "do not start" in first["hookSpecificOutput"]["additionalContext"]
+    second = run(brief, "claude-opus-5-5", effort="")
+    assert "carry on" in second["hookSpecificOutput"]["additionalContext"]
+    assert (
+        run("Route: claude-opus-5-5 high\nFix it.", "claude-opus-5-5", "", sid="h")
+        is None
+    )
 
 
 def test_the_live_effort_wins_over_the_start_variable(run):
     assert run(BRIEF, "claude-sonnet-5-5", "high", effort_in="medium") is None
 
 
-def test_a_model_switch_without_a_model_keeps_the_known_one(run):
-    run("", hook_event_name="SessionStart", model="claude-sonnet-5-5", sid="s")
+def test_a_model_switch_without_a_model_forgets_the_old_one(run):
+    run("", hook_event_name="SessionStart", model="claude-opus-5-5", sid="s")
     run("", hook_event_name="PostModelSwitch", model="", sid="s")
-    assert run(BRIEF, model="", sid="s") is None
+    assert "not known" in message(run(BRIEF, model="", sid="s"))
 
 
 def test_a_docs_file_named_after_an_opus_area_stays_on_sonnet(run):
     assert run("Update docs/13_DEPLOYMENT.md to fix a typo please") is None
+    out = run("Fix the voice greeting template so callers hear it", sid="v")
+    assert "claude-opus-5-5 at effort high" in message(out)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Change how drafts expire after fifteen minutes",
+        "Check the draft -> confirmed step",
+    ],
+)
+def test_the_draft_lifecycle_is_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
+def test_a_debugging_question_is_not_a_lookup(run):
+    out = run("Could you find out why the confirm step double-books a reservation?")
+    assert "effort xhigh" in message(out)
