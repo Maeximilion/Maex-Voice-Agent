@@ -165,11 +165,10 @@ class SimCall:
         usage = self.usage
         # Once per call: a repeated `finish` writes nothing (`end_call` is
         # idempotent), and a second line would double the tokens of this call
-        # for whoever adds the lines up (Codex PR #211, P2).
-        if usage.model is not None and not self._usage_logged:
-            self._usage_logged = True
-            log_usage(logger, self.call_id, usage)
-        return end_call(
+        # for whoever adds the lines up (Codex PR #211, P2). After the write: a
+        # `finish` that fails leaves the call going on, and the line of the one
+        # that succeeds holds all of its tokens (own review on PR #310).
+        ended = end_call(
             self._session,
             EndCallRequest(
                 call_id=self.call_id,
@@ -181,6 +180,10 @@ class SimCall:
             ),
             now=self._fixed_now or utcnow(),
         )
+        if usage.model is not None and not self._usage_logged:
+            self._usage_logged = True
+            log_usage(logger, self.call_id, usage)
+        return ended
 
     @property
     def usage(self) -> Usage:

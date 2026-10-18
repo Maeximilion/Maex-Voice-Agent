@@ -367,19 +367,25 @@ an engine it cannot load or run: each loader runs its engine once at start (the 
 every start). A watchdog ends the process when one engine call works longer than 30 s (exit 70),
 and Compose starts it again: a thread cannot be cancelled, and a hung inference would hold the
 model every later call needs. It runs before the engines load, and a load gets 120 s, the
-`start_period` of Compose, so one that hangs at start ends the process too. The ear takes one call
-at a time and the wait for it does not count; the mouth makes the sentences of several calls side
-by side, in line they waited past the session's 10 s. The same 30 s on the processor: a run there
-took 4 to 5 s for 25 s of audio, and one past the session's deadlines is lost to its call anyway.
-The phone line's database sessions end a statement after 2 s (`db.bounded_sessions`), so a tool
-that waits on a lock sends the call to the team instead of keeping the guest waiting. The call
+`start_period` of Compose, so one that hangs at start ends the process too; so does the ear's first
+run on the graphics card, which loads its libraries. The ear takes one call at a time and the wait
+for it does not count; the mouth makes the sentences of several calls side by side, in line they
+waited past the session's 10 s. On the processor the ear's limit is the 120 s of a load: a run
+there took 4 to 5 s for 25 s of audio, but an utterance may last a minute and the engine runs it up
+to six times when it is unsure, and ending the process drops every call and keeps the line down
+for a restart, which only pays for a run that would last longer. The phone line's database
+sessions end a statement after 2 s (`db.bounded_sessions`), so a tool that waits on a lock sends
+the call to the team instead of keeping the guest waiting; their connections also give up on a
+database that stops answering at the network level (connect timeout, unacknowledged data,
+keepalives), which no statement timeout reaches. The call
 log is closed when the line reports the end of the leg, with the session's outcome: after the
 goodbye was played, and as `error` when the line fails on it; once the line has recorded our
 ending, a `HANGUP` it can no longer send (the server stopping) leaves that ending standing. After
 our hangup or transfer that last write waits up to 30 s on a lock instead of the 2 s of a turn:
 nobody waits on it, and a lock held for a moment must not leave the call without an end; a lock
-past that leaves it open, as a crash does (docs/01, open points). After a failure it keeps the
-2 s: no hangup went out, and the dialplan rings the team only once the write is done. A call
+past that leaves it open, as a crash does (docs/01, open points). An outage transfer that went out
+is such a transfer. Only when the transfer to the team failed does the write keep the 2 s: no
+hangup went out, and the dialplan rings the team only once the write is done. A call
 whose leg ends while it is still being opened is closed once it is open, with no greeting. The
 call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 

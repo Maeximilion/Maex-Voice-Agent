@@ -63,13 +63,17 @@ DB_TIMEOUT_MS = 2000
 # An engine call that works longer hangs. The session's own deadlines
 # (`session.SPEAK_SECONDS`, `session.UTTERANCE_SECONDS`) have sent its call to
 # the team by then, and a sentence of a minute takes the ear about a second
-# on the graphics card. The same on the processor: a run there took 4 to 5 s
-# for 25 s of audio (ultra review on PR #310), and one past the session's
-# deadlines is lost to its call anyway while the next calls wait behind it.
+# on the graphics card.
 ENGINE_HANG_SECONDS = 30.0
 # Loading an engine: as long as Compose gives the service to start
 # (`start_period`, docker-compose.yml). A load that hangs, a graphics card in
-# a bad state, would otherwise keep the process from ever listening.
+# a bad state, would otherwise keep the process from ever listening. Also the
+# ear's limit on the processor: a run there took 4 to 5 s for 25 s of audio
+# (ultra review on PR #310), but an utterance may last a minute and the engine
+# runs it up to six times when it is unsure of the words. Ending the process
+# drops every call on it and keeps the line down for a restart, which takes up
+# to this long: it only pays for a run that would last longer (own review on
+# PR #310).
 ENGINE_LOAD_SECONDS = 120.0
 # The exit code of a process its watchdog ended (EX_SOFTWARE).
 EXIT_ENGINE_HUNG = 70
@@ -112,21 +116,27 @@ class Watchdog:
         watchdog's own."""
         key = object()
         with self._lock:
-            self._running[key] = (what, self._clock(), limit or self._limit)
+            self._running[key] = (
+                what,
+                self._clock(),
+                self._limit if limit is None else limit,
+            )
         try:
             yield
         finally:
             with self._lock:
                 del self._running[key]
 
-    def watched(self, what: str, call: Callable[..., _T]) -> Callable[..., _T]:
+    def watched(
+        self, what: str, call: Callable[..., _T], limit: float | None = None
+    ) -> Callable[..., _T]:
         """`call`, one run at a time and watched while it runs. One model
         serves every call of the process: a call that waits for it is in line,
         not stuck, and its wait does not count (ultra review on PR #298)."""
         turn = threading.Lock()
 
         def watched_call(*args: object) -> _T:
-            with turn, self.watch(what):
+            with turn, self.watch(what, limit):
                 return call(*args)
 
         return watched_call
@@ -201,11 +211,16 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
             device=settings.voice_ear_device,
             compute_type="float16" if gpu else "int8",
         )
-    transcribe = watchdog.watched("ear", whisper.transcribe)
     if gpu:
-        # On the processor there are no graphics card libraries to set up,
-        # and the run takes 4.5 s of every start (ultra review on PR #310).
-        transcribe(bytes(2 * SAMPLE_RATE), [])  # a second of silence
+        # The first run loads the graphics card's libraries from disk, which
+        # takes longer than a run: watched as a load (own review on PR #310). On the
+        # processor there are none, and the run takes 4.5 s of every start
+        # (ultra review on PR #310).
+        with watchdog.watch("ear", ENGINE_LOAD_SECONDS):
+            whisper.transcribe(bytes(2 * SAMPLE_RATE), [])  # a second of silence
+    transcribe = watchdog.watched(
+        "ear", whisper.transcribe, None if gpu else ENGINE_LOAD_SECONDS
+    )
     # The detector too, on one of its own: its model is loaded here, not in
     # the first call, and watched like the engines' loads. Each call gets a
     # fresh one, it keeps state from window to window (Codex on PR #310).

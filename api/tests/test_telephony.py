@@ -12,6 +12,7 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
@@ -1258,10 +1259,20 @@ def test_a_turn_that_waits_on_a_lock_goes_to_the_team_at_the_bound(
     assert _logged(session, "s-1").outcome == "error"
 
 
-def _ended_under_a_lock(session, tenant, migrated_db_url, bounded, seconds: float):
-    """A call on the phone line's sessions whose leg ends while another
-    transaction holds its row for `seconds`. How long the end took."""
-    port = FakeTelephony()
+def _ended_under_a_lock(
+    session,
+    tenant,
+    migrated_db_url,
+    bounded,
+    seconds: float,
+    *,
+    port: FakeTelephony | None = None,
+    end: Callable[[CallHandler], None] = lambda handler: handler.on_call_ended("s-1"),
+):
+    """A call on the phone line's sessions that ends, by default with the end
+    of its leg, while another transaction holds its row for `seconds`. How
+    long the end took."""
+    port = port or FakeTelephony()
     handler = handler_for(session, tenant, port, session_factory=bounded)
     port.open("s-1", caller_id="+497215551234")
     handler.on_call_started("s-1")
@@ -1275,7 +1286,7 @@ def _ended_under_a_lock(session, tenant, migrated_db_url, bounded, seconds: floa
     release = threading.Timer(seconds, conn.rollback)
     release.start()
     started = time.monotonic()
-    handler.on_call_ended("s-1")
+    end(handler)
     took = time.monotonic() - started
     release.join()
     conn.close()
@@ -1481,32 +1492,41 @@ def test_a_failure_in_the_gap_before_the_log_is_written_leaves_nothing_behind(
     assert _logged(session, "s-1").outcome == "abandoned"
 
 
-def test_after_a_failure_the_log_does_not_keep_the_caller_from_the_team(
+def test_after_a_failed_transfer_the_log_does_not_keep_the_caller_from_the_team(
     session, tenant, migrated_db_url, bounded, monkeypatch
 ):
     """No hangup went out: the dialplan rings the team once the session has
     ended, after the log is written. Then the log waits no longer than the
     line's bound for a turn (ultra review on PR #310)."""
     monkeypatch.setattr(handler_module, "END_CALL_TIMEOUT_MS", 5000)
-    port = FakeTelephony()
-    handler = handler_for(session, tenant, port, session_factory=bounded)
-    port.open("s-1", caller_id="+497215551234")
-    handler.on_call_started("s-1")
-    handler.on_user_turn("s-1", WISH)
-    handler.on_voice_failure("s-1")
-    call_id = the_call(session, "s-1").id
-    session.rollback()
 
-    holder = create_engine(migrated_db_url)
-    conn = holder.connect()
-    conn.execute(text("select 1 from calls where id = :id for update"), {"id": call_id})
-    release = threading.Timer(3.0, conn.rollback)
-    release.start()
-    started = time.monotonic()
-    handler.on_call_ended("s-1")
-    took = time.monotonic() - started
-    release.join()
-    conn.close()
-    holder.dispose()
+    class Gone(FakeTelephony):
+        def transfer(self, session_id, target):
+            raise RuntimeError("the leg is gone")
+
+    def failure(handler: CallHandler) -> None:
+        with pytest.raises(RuntimeError, match="the leg is gone"):
+            handler.on_voice_failure("s-1")
+
+    took = _ended_under_a_lock(
+        session, tenant, migrated_db_url, bounded, 3.0, port=Gone(), end=failure
+    )
 
     assert took < 2.0
+
+
+def test_after_an_outage_transfer_the_log_waits_out_a_lock_like_any_end(
+    session, tenant, migrated_db_url, bounded
+):
+    """The transfer went out, as a hangup to the line: nobody waits on the log,
+    and an error call is the one the team reviews (own review on PR #310)."""
+
+    def outage(handler: CallHandler) -> None:
+        handler.on_voice_failure("s-1")
+        handler.on_call_ended("s-1")
+
+    _ended_under_a_lock(session, tenant, migrated_db_url, bounded, 1.0, end=outage)
+
+    call = _logged(session, "s-1")
+    assert call.ended_at is not None
+    assert call.outcome == "error"

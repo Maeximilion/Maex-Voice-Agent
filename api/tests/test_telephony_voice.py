@@ -862,6 +862,49 @@ def test_an_engine_that_hangs_while_it_loads_ends_the_process(
     assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
 
 
+@pytest.mark.parametrize("device", ["cpu", "cuda"])
+def test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit(
+    stand_in_engines, monkeypatch, device
+):
+    """On the graphics card 30 s is a hang. On the processor a minute of
+    unsure speech may take longer, and ending the process costs every call a
+    restart: a hang there only past the time of a restart. The first run on
+    the graphics card loads its libraries and is watched as a load (own
+    review on PR #310)."""
+    from api.telephony.adapters import stt_whisper
+
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    takes = [31.0]
+
+    def slow(self, pcm, terms):
+        clock[0] += takes[0]
+        watchdog.check()
+        return ""
+
+    monkeypatch.setattr(settings, "voice_ear_device", device)
+    monkeypatch.setattr(stt_whisper.Whisper, "transcribe", slow)
+    transcribe = voice_app._whisper(watchdog)()._transcribe
+    assert end.codes == []
+    transcribe(b"\x00\x00", [])
+    if device == "cuda":
+        assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+        return
+    assert end.codes == []
+    takes[0] = voice_app.ENGINE_LOAD_SECONDS + 1
+    transcribe(b"\x00\x00", [])
+    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+
+
+def test_a_limit_of_zero_is_no_default():
+    clock = [100.0]
+    watchdog, end = watchdog_at(clock)
+    with watchdog.watch("ear", 0.0):
+        clock[0] += 0.5
+        watchdog.check()
+    assert end.codes == [voice_app.EXIT_ENGINE_HUNG]
+
+
 def test_on_the_processor_the_ear_is_not_run_at_start(stand_in_engines, monkeypatch):
     """No graphics card libraries to set up there, and the run took 4.5 s of
     every start (ultra review on PR #310). The detector still runs."""

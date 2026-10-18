@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.3
+> Status: 18.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.4
 
 ---
 
@@ -555,6 +555,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.4 · 18.10.2026:** Own review of PR #310: the ear on the processor and the first run on the graphics card get the load limit, the phone line's connections give up on a silent network, an outage transfer's log waits out a lock, sim logs usage after the write
 - **v2.3.3 · 16.10.2026:** Ultra review of PR #298: watchdog counts only working time, engines run once at start, bounded final log write, prod reserves no graphics card, voice image built in CI
 - **v2.3.2 · 15.10.2026:** T-9.7: the operations view answers only requests with Caddy's secret header (#252 finding 6); separate networks noted as T-9.8
 - **v2.3.1 · 15.10.2026:** #252: Ollama installer pinned to 0.35.1 and checked by SHA-256 in setup_local_llm.sh

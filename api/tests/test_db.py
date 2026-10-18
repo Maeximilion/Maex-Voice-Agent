@@ -123,3 +123,17 @@ def test_the_bound_holds_on_every_connection_after_a_rollback(bounded):
             db.commit()
     with SessionLocal() as db:
         assert db.scalar(text("show statement_timeout")) == "0"
+
+
+@pytest.mark.parametrize(("ms", "seconds"), [(200, "2"), (2000, "2"), (2500, "3")])
+def test_a_bounded_session_gives_up_on_a_silent_network(bounded_db, ms, seconds):
+    """A database that stops answering at the network level never reaches its
+    statement timeout: the client's connection gives up then too, so the
+    guest on the line still reaches the team (own review on PR #310)."""
+    with bounded_db(ms)() as db:
+        dbapi = db.connection().connection.dbapi_connection
+        params = dbapi.info.get_parameters()  # type: ignore[union-attr]
+    assert params["tcp_user_timeout"] == str(ms)
+    assert params["connect_timeout"] == seconds
+    assert params["keepalives"] == "1"
+    assert params["keepalives_count"] == seconds

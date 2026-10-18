@@ -403,10 +403,16 @@ class CallHandler:
                 self._ending.pop(session_id, None)
                 claimed = live is not None and self._claim(live)
             if live is not None and claimed:
-                self._finish(live, outcome="error")
+                self._finish(live, outcome="error", caller_waits=True)
             raise
 
-    def _finish(self, live: _LiveCall, outcome: Outcome | None = None) -> None:
+    def _finish(
+        self,
+        live: _LiveCall,
+        outcome: Outcome | None = None,
+        *,
+        caller_waits: bool = False,
+    ) -> None:
         """Write the call log and release the session. Never raises: the call has
         already gone to the team or ended, and a failure here must not send it
         through the outage path a second time. Called once per call, by
@@ -420,11 +426,13 @@ class CallHandler:
             live.session.rollback()
             # The line bounds its statements (`db.bounded_sessions`); this
             # write waits longer, in this transaction only, which the commit
-            # of `end_call` ends. Not after a failure: no hangup went out
-            # then, and the dialplan rings the team only once the session has
-            # ended and its connection is closed, after this write (ultra
-            # review on PR #310). The caller does not wait on the log.
-            if outcome != "error":
+            # of `end_call` ends. Not when the transfer to the team failed:
+            # no hangup went out then, and the dialplan rings the team only
+            # once the session has ended and its connection is closed, after
+            # this write (ultra review on PR #310). A transfer that went out
+            # was a hangup to the line: nobody waits on its log, an error or
+            # not (own review on PR #310).
+            if not caller_waits:
                 live.session.execute(
                     text(f"set local statement_timeout = {END_CALL_TIMEOUT_MS}")
                 )
