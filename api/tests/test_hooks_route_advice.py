@@ -237,6 +237,7 @@ def test_a_python_import_is_not_a_data_import(run):
         "Route: claude-opus-5-5 xhgh\nUpdate the domain code.",
         "Route: claude-opus-5-5\nUpdate the domain code.",
         "Route: claude-opus-5-5 high please\nUpdate the domain code.",
+        "Route: claude-opus-5-5 none\nUpdate the domain code.",
     ],
 )
 def test_a_malformed_route_line_is_reported(run, brief):
@@ -407,6 +408,30 @@ def test_the_live_effort_wins_over_the_start_variable(run):
 @pytest.mark.parametrize(
     "prompt, model, effort, expected",
     [
+        (
+            "Fix the allergen badge color in the GUI",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        (
+            "Fix when an unanswered call should be ended",
+            "claude-opus-5-5",
+            "high",
+            "effort xhigh",
+        ),
+        (
+            "Perform the G1 gate review on Fable as requested",
+            "claude-fable-5-1",
+            "medium",
+            "claude-fable-5-1 at effort high",
+        ),
+        (
+            "Update the project status after this task",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
         ("Find where we write menu_item_id", "claude-sonnet-5-5", "medium", "haiku"),
         ("Fix the price typography in the GUI", "claude-sonnet-5-5", "medium", None),
         (

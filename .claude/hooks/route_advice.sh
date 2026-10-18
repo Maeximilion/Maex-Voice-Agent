@@ -11,11 +11,11 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
-sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
+sonnet='\bgui\b|\bdocs?\b|readme|\bseeds?\b|import_menu|kasse_to_csv|imports/|import(ing)? (the |a )?(menu|csv|register|data)|(menu|csv|data) import|status update|update (the )?([a-z]+ )?status\b|templates?\b|\bjinja|htmx|tests? for (the )?existing|existing tests?|review comments?|(address|fix) (the )?(review|codex|feedback)'
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
 # prompt are the topic of the text, not code that decides.
 # ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
@@ -57,6 +57,8 @@ esac
 head=${head%%</*}
 # Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
 route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
+# "none" is Haiku's effort only; on another model it would switch the effort check off.
+[[ "${route,,}" == *" none"* && "${route,,}" != *haiku* ]] && route=
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
   msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" (effort low, medium, high, xhigh, max or none), so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
@@ -98,7 +100,7 @@ else
     want=claude-sonnet-5-5 effort=medium
   # A file or data transfer is not a call transfer, and how a price looks is not what it is.
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
-      s/\b(prices?|fees?|totals?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badge|column|text)\b//g' \
+      s/\b(prices?|fees?|totals?|allergens?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g' \
       <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
@@ -129,7 +131,8 @@ if [ -z "$model" ]; then
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
 fi
-[ -z "${fable_named-}" ] || [ "$(family "$model")" != 4 ] || exit 0
+# A Fable session asked for by name keeps Fable, at the table's effort for it.
+[ -n "${fable_named-}" ] && [ "$(family "$model")" = 4 ] && want=claude-fable-5-1 effort=high
 # The live effort first: Claude Code hands the effective level to hooks as CLAUDE_EFFORT,
 # and some events carry an effort object; CLAUDE_CODE_EFFORT_LEVEL is the launch value.
 have_effort=${CLAUDE_EFFORT:-$(jq -r '(.effort | objects | .level) // (.effort | strings) // empty' <<<"$input")}
