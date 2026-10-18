@@ -116,7 +116,9 @@
 {"say": "und Nummer zwanzig", "expect": "20", "why": "nor does a marker: a continuation naming item 20"}
 {"say": "und 20", "expect": "?", "why": "the same cut-off half in digits: the ear wrote Nummer 3 und 20 for a 23 (docs/20)"}
 {"say": "und äh 20", "expect": "?", "why": "digits with a hesitation between und and the tens"}
-{"say": "Und. Zwanzig.", "expect": "20", "why": "a full stop ends the sentence, it is no pause inside a number"}
+{"say": "Und. Zwanzig.", "expect": "?", "why": "the ear writes a pause as a stray full stop as well; asking is the safe answer"}
+{"say": "und... zwanzig", "expect": "?", "why": "an ellipsis is a pause inside drei und zwanzig"}
+{"say": "und 20 mal die 13", "expect": "?", "why": "the cut-off half can be a quantity: drei und zwanzig mal die 13 is 23 portions; und zwanzig mal die 13 asks on main as well"}
 {"say": "und äh vierzig sieben", "expect": "?", "why": "the pause changes nothing: und vierzig sieben asks back as well, it can be the tail of drei und vierzig"}
 {"say": "die drei und äh zwanzig", "expect": "?", "why": "a hesitation inside drei und zwanzig: the 3 and the 20 are not taken apart, the guest is asked"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}

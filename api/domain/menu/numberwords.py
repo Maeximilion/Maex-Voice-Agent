@@ -1147,11 +1147,13 @@ _LEAD_FILLER = frozenset(
 # "Und dann dazu die 24".
 _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 # What can sit inside a number split by a pause: "drei und, äh, zwanzig",
-# "drei und bitte zwanzig" (Codex PR #147). An article, opening word, marker,
-# quantity or card prefix cannot, and a full stop ends the sentence
-# (`_PAUSES`), so after "und" they mark a continuation, not the second half
-# of a number. Also read by `split._split`.
-INSIDE_SPLIT = _PAUSES | _HESITATIONS | {"bitte"}
+# "drei und bitte zwanzig" (Codex PR #147). All punctuation, also a full stop:
+# the ear writes a pause as "..." or a stray full stop ("und... zwanzig"), and
+# asking back is the safe answer (unlike `_PAUSES`, where a full stop only
+# keeps a word from being read as a letter). An article, opening word,
+# marker, quantity or card prefix cannot sit there, so after "und" they mark
+# a continuation, not the second half of a number. Also read by `split`.
+INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
 
 
 def _too_large(token: str) -> bool:

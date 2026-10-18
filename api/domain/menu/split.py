@@ -50,16 +50,9 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
-_EMPTY_WORDS = frozenset(
+# The hesitations and "bitte" come from numberwords, so both read a pause alike.
+_EMPTY_WORDS = INSIDE_SPLIT | frozenset(
     {
-        "aeh",
-        "aehm",
-        "aehh",
-        "hm",
-        "hmm",
-        "ehm",
-        "oehm",
-        "bitte",
         "dann",
         "noch",
         "auch",
@@ -127,18 +120,30 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     parts = [pieces[0]]
     for sep, piece in zip(separators, pieces[1:], strict=True):
         left = _WORD.findall(fold(parts[-1]))
-        # A pause inside the number ("drei und äh zwanzig") does not split it
-        # into the 3 and the 20 (Codex PR #147).
-        right = [w for w in _WORD.findall(fold(piece)) if w not in INSIDE_SPLIT]
+        right = _WORD.findall(fold(piece))
+        # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
+        # does not split the number into the 3 and the 20, but only when
+        # nothing else follows: "die drei und bitte zwanzig Fruehlingsrollen"
+        # stays two positions (Codex PR #147).
+        a = len(left)
+        while a and left[a - 1] in INSIDE_SPLIT:
+            a -= 1
+        b = 0
+        while b < len(right) and right[b] in INSIDE_SPLIT:
+            b += 1
+        paused = a < len(left) or b > 0
         number_joined = (
             sep.strip().casefold() == "und"
-            and left
-            and right
+            and a
+            and b < len(right)
             and (
                 # "hundert und eins": nur eine Zahl hängt an, keine neue
                 # Position ("die hundert und eine Cola", Codex PR #124).
-                (left[-1].endswith("hundert") and _only_number(piece))
-                or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
+                (left[a - 1].endswith("hundert") and _only_number(piece))
+                or (
+                    parse_cardinal(f"{left[a - 1]} und {right[b]}") is not None
+                    and (not paused or _only_number(piece))
+                )
             )
         )
         attached = not _opens_position(piece) if by_position else _modifies(piece)
