@@ -28,6 +28,7 @@ Position, die Sauce ist Option und kein zweites Gericht.
 import re
 
 from api.domain.menu.numberwords import (
+    INSIDE_SPLIT,
     find_quantity,
     fold,
     parse_cardinal,
@@ -126,7 +127,9 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     parts = [pieces[0]]
     for sep, piece in zip(separators, pieces[1:], strict=True):
         left = _WORD.findall(fold(parts[-1]))
-        right = _WORD.findall(fold(piece))
+        # A pause inside the number ("drei und äh zwanzig") does not split it
+        # into the 3 and the 20 (Codex PR #147).
+        right = [w for w in _WORD.findall(fold(piece)) if w not in INSIDE_SPLIT]
         number_joined = (
             sep.strip().casefold() == "und"
             and left

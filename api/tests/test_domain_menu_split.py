@@ -40,6 +40,11 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
             "zweimal die drei und zwanzig und die 13",
             ["zweimal die drei und zwanzig", "die 13"],
         ),
+        # A pause inside the number keeps it one, not the 3 and the 20 (Codex
+        # PR #147); a pause before a new position still splits.
+        ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
+        ("drei und bitte zwanzig", ["drei und bitte zwanzig"]),
+        ("die 23 und äh die 13", ["die 23", "äh die 13"]),
         # Korrektur und Alternative: im Zweifel ganz lassen
         ("Nummer 23, nein, 24", ["Nummer 23, nein, 24"]),
         ("die 23 oder die 24", ["die 23 oder die 24"]),
