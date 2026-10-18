@@ -47,9 +47,27 @@ def bounded_sessions(
     fails instead, its transaction rolls back, and the call goes to the team
     (CLAUDE.md §2 rule 5). Set when a connection is made, so a rollback of the
     pool does not undo it; the application's other sessions stay unbounded.
+
+    A database that stops answering at the network level never reaches its
+    `statement_timeout`: the client gives up then too, on a connection that
+    does not open, on data sent and never acknowledged, and on a peer that
+    answers no keepalive while a reply is awaited (own review on PR #310).
     """
-    bounded = create_engine(url, **_ENGINE_ARGS)
     ms = int(timeout_ms)
+    # Whole seconds, and libpq takes no connect timeout under 2.
+    seconds = max(2, -(-ms // 1000))
+    bounded = create_engine(
+        url,
+        **_ENGINE_ARGS,
+        connect_args={
+            "connect_timeout": seconds,
+            "tcp_user_timeout": ms,
+            "keepalives": 1,
+            "keepalives_idle": 1,
+            "keepalives_interval": 1,
+            "keepalives_count": seconds,
+        },
+    )
 
     @event.listens_for(bounded, "connect")
     def _bound(dbapi_connection, _record) -> None:  # type: ignore[no-untyped-def]

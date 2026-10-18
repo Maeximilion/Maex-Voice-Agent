@@ -364,6 +364,25 @@ def test_a_transfer_is_a_decision_for_the_dialplan_and_ends_our_leg():
     assert wire.commands() == [{"command": "HANGUP"}]
 
 
+@pytest.mark.parametrize("end", ["hangup", "transfer"])
+def test_an_ending_that_was_recorded_stands_when_hangup_cannot_go_out(end):
+    """The dialplan acts on the recorded ending once the connection closes. A
+    HANGUP the stopping server can no longer send does not turn a call that
+    went as it should into a failure (ultra review and Codex on PR #310)."""
+    wire = Wire().started()
+
+    def stopped(frame):
+        raise RuntimeError("Event loop is closed")
+
+    wire.line._send = stopped  # type: ignore[method-assign]
+    if end == "hangup":
+        wire.line.hangup()
+    else:
+        wire.line.transfer("+4972215550900")
+
+    assert len(wire.decisions) == 1 and wire.decisions[0].startswith(end)
+
+
 @pytest.mark.parametrize("target", ["", "team", "+49 7221 555", "1;Dial(PJSIP/x)"])
 def test_a_transfer_to_something_that_is_not_a_number_is_refused(target):
     wire = Wire().started()
