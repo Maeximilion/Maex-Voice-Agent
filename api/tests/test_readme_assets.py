@@ -717,19 +717,23 @@ def test_pending_records_on_a_branch_and_then_lists_nothing(recording: dict) -> 
 def test_rows_recorded_on_a_closed_branch_still_wait_for_main(
     recording: dict, tmp_path: Path
 ) -> None:
-    """#207: a branch that records and is then closed unmerged loses nothing."""
-    folder = recording["reports"]
-    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
-    assert ra.record_pending([folder]) == 0
+    """#207: a branch that records and is then closed unmerged loses nothing.
+
+    The rows wait in the main folder, the second report folder of a worktree."""
+    here, main_folder = recording["reports"], tmp_path / "main" / "reports"
+    main_folder.mkdir(parents=True)
+    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    assert ra.record_pending([here, main_folder]) == 0
     main_history = tmp_path / "main_voice.csv"
-    _, rows = ra.pending([folder], ra.EVAL_HISTORY, main_history)
+    _, rows = ra.pending([here, main_folder], ra.EVAL_HISTORY, main_history)
     assert rows == [drill_row()]
-    # A second recording on the same branch adds no row twice.
-    assert ra.record_pending([folder]) == 0
-    assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 1
+    # A second recording on the same branch writes no line twice.
+    assert ra.record_pending([here, main_folder]) == 0
+    with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
+        assert len(list(ra.csv.DictReader(fh))) == 1
     # A row a kit adds later is the only one still pending on that branch.
-    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
-    _, rows = ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
+    _, rows = ra.pending([here, main_folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
     assert rows == [drill_row("14")]
 
 
