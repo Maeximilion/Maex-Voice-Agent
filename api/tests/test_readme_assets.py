@@ -630,6 +630,7 @@ def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(ra, "EVAL_HISTORY", tmp_path / "eval.csv")
     monkeypatch.setattr(ra, "VOICE_HISTORY", tmp_path / "voice.csv")
     monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: "task/x")
+    monkeypatch.setattr(ra, "merged_voice", set)
 
     def render() -> int:
         state["renders"] += 1
@@ -731,10 +732,51 @@ def test_rows_recorded_on_a_closed_branch_still_wait_for_main(
     assert ra.record_pending([here, main_folder]) == 0
     with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
         assert len(list(ra.csv.DictReader(fh))) == 1
-    # A row a kit adds later is the only one still pending on that branch.
-    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row("14"))
+    # A later kit run is the only one still pending on that branch.
+    later = {**drill_row("14"), "run_at": "2026-10-15T20:00:00+00:00"}
+    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, later)
     _, rows = ra.pending([here, main_folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
-    assert rows == [drill_row("14")]
+    assert rows == [later]
+
+
+def test_recording_drops_the_waiting_rows_main_already_holds(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    later = {**drill_row("14"), "run_at": "2026-10-15T20:00:00+00:00"}
+    for row in (drill_row(), later):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
+    merged = {ra._voice_identity({**drill_row(), "value": "15.0"})}
+    monkeypatch.setattr(ra, "merged_voice", lambda: merged)
+    assert ra.record_pending([folder]) == 0
+    with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
+        assert list(ra.csv.DictReader(fh)) == [later]
+    merged.add(ra._voice_identity(later))
+    assert ra.record_pending([folder]) == 0
+    assert not (folder / ra.VOICE_PENDING).exists()
+
+
+def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
+    recording: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A line cut off when a kit was killed neither blocks `pending` nor is pruned."""
+    folder = recording["reports"]
+    merged_row = {**drill_row("14"), "run_at": "2026-10-15T18:00:00+00:00"}
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, merged_row)
+    with (folder / ra.VOICE_PENDING).open("a", encoding="utf-8") as fh:
+        fh.write("2026-10-15,T-1.11,Outage drills\n")
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    monkeypatch.setattr(ra, "merged_voice", lambda: {ra._voice_identity(merged_row)})
+    assert ra.record_pending([folder]) == 0
+    assert "does not parse" in capsys.readouterr().err
+    with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
+        assert [r["value"] for r in ra.csv.DictReader(fh)] == ["15"]
+    with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
+        cut, kept = ra.csv.DictReader(fh)
+    assert cut["date"] == "2026-10-15" and cut["value"] == ""
+    assert kept == drill_row()
 
 
 def test_pending_refuses_to_record_on_main(
