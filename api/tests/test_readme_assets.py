@@ -1348,7 +1348,7 @@ def test_nothing_open_still_names_the_heading(assets: Path) -> None:
     assert ra.image_findings() == {ra.IMAGES_HEADING: []}
 
 
-def test_a_stale_svg_waits_for_the_monday_update(assets: Path) -> None:
+def test_a_stale_svg_waits_for_the_weekly_update(assets: Path) -> None:
     ra.mark_uploaded()
     (assets / "progress.svg").write_text("<svg/>", encoding="utf-8")
     assert ra.image_findings() == {ra.IMAGES_HEADING: []}

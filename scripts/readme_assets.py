@@ -2879,7 +2879,7 @@ def image_findings() -> dict[str, list[dict[str, str]]]:
     """What the maintenance bot reports about the images on `main`, for the one
     decision issue (`scripts/decision_issue.py --also`). Keyed by asset and
     digest, so the same stale state is reported once and a new one again.
-    A stale SVG is not reported: the Monday README update redraws them
+    A stale SVG is not reported: the weekly README update redraws them
     (docs/15_README_STRATEGY.md, "Keeping them current"), only what needs Maxi is."""
     assets = build(gather())
     entries = [

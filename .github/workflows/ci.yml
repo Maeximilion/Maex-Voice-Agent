@@ -61,7 +61,7 @@ jobs:
           cache: pip
       # The README images are drawn from docs/metrics/, the task list and the status
       # (stdlib only, before the install). Advisory since 2026-10-19: a stale image
-      # shows here as a warning, the Monday README update redraws it
+      # shows here as a warning, the weekly README update redraws it
       # (docs/15_README_STRATEGY.md, "Keeping them current").
       - name: README images match their data (advisory)
         continue-on-error: true
