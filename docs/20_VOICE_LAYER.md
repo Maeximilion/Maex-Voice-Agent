@@ -179,7 +179,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | `voice` is down or refuses the media connection | the dialplan | the dialplan dials the team number |
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer` |
-| The team does not pick up | the dial status | callback card for the team, the caller hears that nobody is reachable (T-10.8) |
+| The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, the caller hears that nobody is reachable (T-10.8) |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
@@ -193,7 +193,8 @@ Everything in this table is the intended behaviour. T-10.2 turns each row into a
 **Built and drilled on the workbench (T-1.11, 14.10.2026).** The dialplan of
 `deploy/asterisk/conf/extensions.conf` dials `voice` with 10 s to answer and a backstop of 3600 s
 on the call; a `voice` it did not reach is not asked for an ending; the team is dialled at the
-number of the ending, else at `TEAM_PHONE` of `.env`. The loop guard is built in two of its three
+number of the ending when that is `TEAM_PHONE` or on `TRANSFER_TARGETS` (T-10.13, below), else at
+`TEAM_PHONE` of `.env`. The loop guard is built in two of its three
 parts: `voice` refuses to start when the team number (in the database or in `.env`) is
 `VOICE_NUMBER`, `asterisk` refuses to start when `TEAM_PHONE` is that number (else every call
 the dialplan sends to the team would come back and be dropped), and the dialplan refuses a call
@@ -216,6 +217,38 @@ crash) to the team telephone ringing, on the kit's monotonic clock, which polls 
 | A turn of the core with the model down | the core hands over: the team rings, or, outside the opening hours by its guess, a callback card and goodbye (T-10.8) |
 | A silent caller | answered, asked twice, goodbye and our hangup after 6.5 s (2 s silence in the drill); the team does not ring |
 | A call from our own number | refused, nobody answers, the team does not ring |
+
+**Hardened after the audit of 15.10.2026 (T-10.13, 19.10.2026, #252 findings 1 to 3).** Before,
+the dialplan dialled any number `voice` named, and a team leg nobody answered ended the call
+although `TEAM_PHONE` might have worked; and Asterisk took an INVITE from any address on the
+network whose From user was the endpoint's name, `access`, without a password (shown in the drill
+on the old configuration: `100 Trying`, `200 OK`). Now:
+
+- The dialplan dials only numbers on a list from the environment: `TEAM_PHONE` and the optional
+  `TRANSFER_TARGETS` (comma-separated, compared exactly as written, so `service_config.team_phone`
+  has to appear there in the same form). Any other number, from a database row somebody changed or
+  a `voice` that is no longer ours, is never dialled; the team rings at `TEAM_PHONE` instead, and
+  the log says "transfer to a number not on the list", without the number.
+- A leg at another number of the list that nobody answers (busy, unreachable, 30 s) is followed by
+  one at `TEAM_PHONE`. Unanswered at `TEAM_PHONE` the call still ends (T-10.8).
+- SIP only from the access: calls are identified by address alone
+  (`endpoint_identifier_order=ip`, `identify_by=ip`), and an ACL refuses every request from
+  another address before anything reads it. The ACL takes addresses, not names, so `render.sh`
+  looks up `ACCESS_HOST`'s IPv4 addresses once at the start, for `permit` and `match` alike; an
+  access that moves to another address needs a restart of `asterisk`.
+- `render.sh` refuses a `TRANSFER_TARGETS` entry that is not a number or is our own number in any
+  of its three forms, a value with a line break, and an `ACCESS_HOST` without an IPv4 address.
+
+| Drill (19.10.2026) | Result |
+|---|---|
+| `voice` hands the call to a number off the list | the team rang at `TEAM_PHONE` after 0.2 s; the number was never dialled |
+| `voice` hands the call to a listed number that is busy | that number rang first, then `TEAM_PHONE`, 0.2 s after the call was placed |
+| An INVITE from another address on the network, From user `access` | refused with `403`; on the old configuration `100`, then `200` |
+
+All 20 points of the drill passed on the branch. **Open for the access of T-10.1 step 2 and T-10.12:**
+the ACL and `match` hold the addresses of `ACCESS_HOST` only. A VPN that rewrites the router's
+address, or a trunk whose calls come from other addresses than its registrar's, needs those
+addresses too; the drill "stranger" shows whether a call from an address not on the list is refused.
 
 ---
 
@@ -390,7 +423,9 @@ whose leg ends while it is still being opened is closed once it is open, with no
 call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 
 For Asterisk only, never in Python: the registrar's host, user and password (`ACCESS_HOST`,
-`ACCESS_USER`, `ACCESS_PASSWORD`), and the public media address (not yet, it comes with the trunk).
+`ACCESS_USER`, `ACCESS_PASSWORD`), the numbers besides `TEAM_PHONE` a transfer may go to
+(`TRANSFER_TARGETS`, §5), and the public media address (not yet, it comes with the trunk).
+Asterisk takes SIP only from the IPv4 addresses of `ACCESS_HOST`, looked up when it starts (§5).
 The pilot's router and a later trunk provider are named in `.env`, never in the repository.
 `deploy/asterisk/render.sh` puts them, and the token, into the configuration on a tmpfs inside the
 container (a ";" escaped, which would start a comment there) and stops the start when one is
@@ -589,6 +624,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 14.10.2026 | T-1.11, which call a connection is | The capture endpoint on Asterisk 22.11.0: 10 rounds of ten calls set up by one `Dial` to ten legs, the call named by inherited variables; 10 rounds the same with `v()` parameters; then ten calls without `v()` | Inherited variables: 100 of 100 connections reported their own call (checked against Asterisk's own log of each call id). `v()`: 100 of 100 too in these rounds, but the ten later calls without `v()` all carried a query of an earlier `v()` call: the leak of Asterisk issue #2194 (open, no fix), on 22.11.0 as reported for 22.9.0. So the product names a call by variables, which the issue does not touch |
 | 14.10.2026 | T-10.5, the adapters on the workbench | `api/tests/test_telephony_speech_engines.py` and two timing scripts in the image of `deploy/speech/`, graphics card, the model files of the kit's run folder; Piper `thorsten-medium` speaks, the sentence goes through the modelled line (§10), the ear is Whisper large-v3-turbo behind `SegmentingEar`. A sentence fed in frames of 20 ms arrives as one utterance with partials before it, and its end is the window the detector finds over the whole recording, to the frame. "Ich hätte gern zweimal die Nummer 23." arrived word for word in 6 of 7 runs and once as "Nummer 3 und 20", which the number rule reads as 23 as well; the test speaks the voice without its noise ("Nummer 45"), so every run hears the same audio. with three duck names as key terms "Einmal die Ente süß-sauer, bitte." arrives word for word; a silent line reports nothing. Warm, 12 utterances: Whisper 0.28 s median, 2.2 s at most; the detector 0.08 ms per window of 32 ms; Piper 0.14 s to the first piece, a read-back of 12.5 s of audio 0.17 s to the first piece and 0.76 s whole. Of six sentences with a phone number the core reads four as said; Whisper writes the digits in its own groups ("0721 5.551.234", "01712345678", from words "0171 2345678"), "plus" as a word ("Plus 491712345678") and "01712.345.678 um 19 Uhr" are not read, and nothing wrong is taken. A spelled name arrives as "M-E-I-E-R". | **The pair runs as adapters.** Ear and mouth together are about 0.4 s of a turn on the card, plus the 0.7 s of silence that ends it. Synthetic voices only; what real callers, line noise and the echo of our own voice on the caller's leg do to the detector and to the numbers is T-10.7 |
 | 14.10.2026 | T-1.11 part 2, the engines inside `voice` | The image of the target `voice` on the workbench (graphics card, the kit's model files read-only); `api/tests/test_telephony_speech_engines.py` in it; `voice` started as Compose starts it (uid 10001) with `whisper` and `piper` against a throwaway database; `python3 -m scripts.voice_drill` twice on the branch | The engine tests 4 of 4, among them a whole call through `/media` on the engines as the service loads them: Piper greets, "Ich hätte gern zweimal die Nummer 45." goes in as frames of the media channel and reaches the core word for word, the goodbye is played and the line hung up; mouth to first audio 0.08 s, ear 0.48 s after the audio. `voice` healthy 4 s after its start, the models loaded (two warnings: Hugging Face cannot write its tree cache into the read-only folder, onnxruntime cannot keep a telemetry id). Drills: first run 10 of 11, in "voice frozen" the team rang after 4 s and hung up after 2 s, but the caller's leg on the stand-in router stayed open until the kit gave up after 60 s (§12); second run 15 of 15 (kill 0.4 s, `paused` 0.2 s, `voice` stopped 5.2 s, frozen 4.5 s, frozen mid-call 8.1 s, database stopped 8.4 s). Not measured: an engine that really hangs in the service (the watchdog is tested against a clock), real voices, the router |
+| 19.10.2026 | T-10.13, the dialplan and the access after the audit | `python3 -m scripts.voice_drill` on the workbench, first on the configuration of `main` with the three new drills (6 of 8 points, then stopped: the stranger's INVITE was taken with `100` and `200`, and a transfer to a number off the list was dialled while `TEAM_PHONE` never rang), then on the branch: 20 of 20. A number off the list: the team rang at `TEAM_PHONE` after 0.2 s, the number never dialled; a busy listed number: tried first, then `TEAM_PHONE`; the stranger's INVITE: `403`. The other drills as on 14.10.2026 (`voice` down 3.9 s, frozen 4.3 s, frozen mid-call 7.9 s, database down 3.9 s, crash 0.4 s) | go |
 
 ---
 
