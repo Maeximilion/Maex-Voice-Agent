@@ -7,6 +7,8 @@
 
 ## Summary
 
+**The README images and the README's generated parts move once a week, Sunday 23:00 (Maxi, 19.10.2026).** A Claude Code cloud routine, "Weekly README update" (Sonnet 5.5), redraws them from `main`, opens one PR and merges it after green CI and a clean Codex review, so the README is current on Monday morning. A task PR no longer has to redraw: the CI image check is advisory, and the daily maintenance run reports only stale PNGs and a social preview not yet uploaded. The routine's prompt is in `docs/15_README_STRATEGY.md`, "The weekly routine".
+
 **GitHub's default CodeQL setup stays (Maxi, 19.10.2026).** The explicit `codeql.yml` workflow from PR #333, which would also have scanned Dependabot pull requests, is removed again before it was ever switched on: a workflow file to maintain and merge commits for every Dependabot pull request outweigh a scan of Dependabot and fork pull requests before the merge; both gaps are accepted, `main` is scanned after every merge. Reasoning in docs/13 §6 "CodeQL and dependency updates".
 
 **The operations controls require a CSRF token (PR #316, 19.10.2026).** The page and the dev-only simulator console set a `csrf_token` cookie that a script in `base.html` copies into each HTMX request; every write needs the matching `X-CSRF-Token` header, otherwise 403 before any change. The cookie is Secure outside dev/test (also behind Caddy) and on local HTTPS; a page reload keeps it, so other tabs stay usable. The Jules branch was reconciled with current order controls and proxy authentication.
