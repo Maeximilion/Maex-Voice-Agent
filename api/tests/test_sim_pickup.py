@@ -998,6 +998,248 @@ def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
 
 
+def test_removal_and_allergy_in_one_sentence_reach_the_order(session, tenant):
+    """Codex PR #139 (P2), issue #252: the removal before the allergy clause
+    was dropped; now both are in the kitchen note, the allergy in the fixed
+    wording (E14)."""
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie."
+    )
+    [order] = orders(session)
+    note = "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+    assert _notes(session, order) == [note]
+    assert note in said(turns)
+
+
+def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Allergie.", "Erdnüsse."
+    )
+    assert "Wogegen" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
+    ]
+
+
+@pytest.mark.parametrize(
+    "line",
+    ["Pho Bo, ich habe keine Erdnussallergie.", "Pho Bo, ich habe keine Allergie."],
+)
+def test_denied_allergy_gives_no_note(session, tenant, line):
+    """Codex PR #139 (P2), issue #252: a denied allergy gave "WICHTIG: Keine
+    Erdnuss" or the question "Wogegen?"."""
+    _, turns = _bestellung(session, tenant, line)
+    assert "Wogegen" not in said(turns)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [None]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Ich habe doch keine Allergie.",
+        "Doch, keine Allergie.",
+        "Nein, ich habe keine Allergie.",
+        "Keine.",
+        "Gegen nichts.",
+    ],
+)
+def test_allergy_withdrawn_on_the_question_gives_no_note(session, tenant, answer):
+    """ "Wogegen?" - "Ich habe doch keine Allergie.": the question is closed,
+    nothing goes to the kitchen."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [None]
+
+
+def test_allergy_withdrawn_with_a_removal_notes_the_removal(session, tenant):
+    """Own review: "Wogegen?" was asked again and again."""
+    _bestellung(
+        session,
+        tenant,
+        "Pho Bo, ich habe eine Allergie.",
+        "Ich habe keine Allergie, aber bitte ohne Koriander.",
+    )
+    [order] = orders(session)
+    assert _notes(session, order) == ["ohne Koriander"]
+
+
+@pytest.mark.parametrize(
+    ("answer", "note"),
+    [
+        (
+            "Erdnüsse und gegen Sesam.",
+            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+        ),
+        ("Gegen Erdnüsse.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        # Round 4: an "auf" further on still ends the list.
+        ("Erdnüsse, auf jeden Fall.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        # Codex PR #330, round 7: "und auf".
+        (
+            "Erdnüsse und auf Sesam.",
+            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+        ),
+    ],
+)
+def test_every_ingredient_of_the_answer_is_noted(session, tenant, answer, note):
+    """Own review: only what followed the first "gegen" was kept."""
+    _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
+    [order] = orders(session)
+    assert _notes(session, order) == [note]
+
+
+def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
+    """Own review, round 4: "ohne Zwiebeln, Ohne Zwiebeln" on the ticket."""
+    _bestellung(
+        session,
+        tenant,
+        "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+        "Ohne Zwiebeln, aber ich habe doch keine Allergie.",
+    )
+    [order] = orders(session)
+    assert _notes(session, order) == ["ohne Zwiebeln"]
+
+
+@pytest.mark.parametrize(
+    ("first", "answers", "note"),
+    [
+        # Round 5: another removal with the ingredient.
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            ["Ohne Knoblauch, gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Knoblauch",
+        ),
+        # Round 5: a denial that may hide an intolerance asks again.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Keine Allergie, aber mit Erdnüssen habe ich Probleme.", "Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        # Round 6: a removal in an answer that names no ingredient yet.
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            [
+                "Ohne Koriander, ich habe eine Nahrungsmittelallergie.",
+                "Erdnüsse.",
+            ],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Koriander",
+        ),
+        # Round 6: a removal alone as the answer is the ingredient.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Ohne Zwiebeln."],
+            "WICHTIG: Keine Zwiebeln. Grund: Allergie",
+        ),
+        # Round 7: a removal behind the ingredient.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Erdnüsse, aber ohne Zwiebeln."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            ["Ohne Zwiebeln und auf Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        # Codex PR #330, round 8: "aber gegen", and a removal with nothing.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Ohne Zwiebeln, aber gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Keine, aber ohne Zwiebeln."],
+            "ohne Zwiebeln",
+        ),
+        # Codex PR #330, round 9.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Bitte ohne Zwiebeln, aber gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Bitte ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Erdnüsse, aber auf jeden Fall."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        # Round 7: an answer that names nothing.
+        ("Pho Bo, ich habe eine Allergie.", ["Nein, keine."], None),
+        # Round 5: a short removal next to a longer one that begins like it.
+        (
+            "Pho Bo ohne Eisbergsalat, ich habe eine Allergie.",
+            ["Ich habe keine Allergie, aber ohne Ei."],
+            "ohne Eisbergsalat, ohne Ei",
+        ),
+    ],
+)
+def test_answer_to_the_allergy_question(session, tenant, first, answers, note):
+    _bestellung(session, tenant, first, *answers)
+    [order] = orders(session)
+    assert _notes(session, order) == [note]
+
+
+def test_denial_with_another_dish_keeps_the_question(session, tenant):
+    """Own review, round 6: the dish named with the denial was dropped and the
+    question closed; it stays open, as before."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo, ich habe eine Allergie.",
+        "Die 23 noch, ich habe keine Allergie.",
+        "Erdnüsse.",
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+
+
+def test_removal_said_again_with_the_ingredient(session, tenant):
+    """Own review: the repeated removal became the ingredient, the peanuts
+    were lost."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+        "Ohne Zwiebeln und gegen Erdnüsse.",
+    )
+    # The removal is repeated at once, so the guest knows it was noted.
+    assert "Pho Bo, ohne Zwiebeln" in " ".join(turns[1].say)
+    [order] = orders(session)
+    assert _notes(session, order) == [
+        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
+    ]
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "Ich moechte Pho Bo zum Abholen, ich habe keine Erdnussallergie.",
+        "Ich moechte Pho Bo zum Abholen, ich habe keine Allergie.",
+        # Codex PR #330: the denial before the dish.
+        "Ich habe keine Allergie, ich moechte Pho Bo zum Abholen.",
+        "Ich habe keine Allergie und moechte Pho Bo zum Abholen.",
+    ],
+)
+def test_denied_allergy_in_the_opening_sentence_is_an_order(session, tenant, opening):
+    """Own review: the opening sentence with a denial went to the team as a
+    callback, no order was placed."""
+    replay(
+        session,
+        case(
+            opening, "Nein, das wars.", "Auf den Namen Mueller.", "0721 5551234", "Ja."
+        ),
+        tenant,
+        now=NOW,
+    )
+    session.expire_all()
+    assert list(session.scalars(select(Callback))) == []
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [None]
+
+
 @pytest.mark.parametrize("antwort", ["Weiß ich nicht.", "Nein."])
 def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
     """Codex PR #139, P1: auf "Wogegen?" keine Zutat - die Frage bleibt offen,
