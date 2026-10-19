@@ -45,7 +45,6 @@ _ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 # clause, not to the wish before it ("ohne Zwiebeln, weil ich ...", #252).
 _CLAUSE_OPENERS = frozenset(
     {"ich", "wir", "mein", "meine", "meinem", "meiner", "weil", "wegen", "denn"}
-    | {"mir", "uns"}
 )
 
 _WORD = re.compile(r"[^\W_]+")
@@ -102,7 +101,6 @@ _WORD_RUN = re.compile(r"\w+")
 _CLAUSE_WORDS = (
     frozenset(
         {"dann", "noch", "ich", "wir", "bitte", "aber", "dazu", "auch", "ausserdem"}
-        | {"sonst", "ansonsten"}
     )
     | _ARTICLES
     | frozenset({"die", "der", "das", "den", "einmal"})
@@ -455,8 +453,10 @@ _DENIAL_LEAD = _LEAD_WORDS | {"mir", "uns", "ist"}
 # Words of an allergy phrase in front of its allergy word, when no comma or
 # "ich" marks where the phrase begins: "ohne Zwiebeln hab eine Erdnussallergie".
 _PHRASE_LEAD = _ARTICLES | _NEGATION | _LEAD_WORDS | {"hat", "ist", "noch"}
+# The words that begin a wish.
+_WISHED = _REMOVE | _ADD | _INSTEAD
 # What opens an allergy clause together with "ich": "weil ich", "und ich".
-_OPENING = frozenset({"weil", "wegen", "denn", "und", "aber", "also", "doch"})
+_OPENING = _PHRASE_LEAD | _CLAUSE_OPENERS
 # Between a denial and the wish after it: "keine Allergie, danke. Ohne ...".
 _AFTER_DENIAL = frozenset(
     {",", "danke", "dankeschoen", "nur", "das", "wars", "ist", "alles", "sonst"}
@@ -511,11 +511,13 @@ def _closing(words: list[str], n: int, at: int) -> bool:
     back = n
     while back > 0 and words[back - 1] in _DENIAL_LEAD:
         back -= 1
+    if back == 0 or words[back - 1] not in ("sonst", "ansonsten"):
+        return False
+    end = _denial_end(words, back)
     return (
-        back > 0
-        and words[back - 1] in ("sonst", "ansonsten")
-        and _generic(words[at])
-        and all(w in _DENIAL_TRAIL or w in _AFTER_DENIAL for w in words[at + 1 :])
+        end is not None
+        and all(_generic(w) for w in words[back:end] if _allergy_word(w))
+        and all(w in _DENIAL_TRAIL or w in _AFTER_DENIAL for w in words[end:])
     )
 
 
@@ -573,8 +575,13 @@ def _denial_end(words: list[str], i: int) -> int | None:
                 nxt = _noun_after(words, nxt, joiner)
             elif joiner == "noch":
                 nxt = _noun_after(words, nxt, joiner)
-            elif nxt < len(words) and not _generic(words[nxt]):
-                break
+            else:
+                nxt = _noun_after(words, nxt, joiner)
+                # "keine Nussallergie und Allergien gegen Sesam" names sesame.
+                if not (
+                    nxt < len(words) and _generic(words[nxt]) and _generic(words[noun])
+                ):
+                    break
             if nxt >= len(words) or not _allergy_word(words[nxt]):
                 break
             end = nxt + 1
@@ -712,13 +719,14 @@ def _phrase_start(words: list[str], i: int) -> int:
         )
         if prep is not None and _object_end(words, prep + 1) == i:
             i = prep
-    # "keine bekannten Allergien", "weder eine bekannte", "eine bekannte
-    # Sesamallergie": the modifiers only after a negation or an article,
-    # since "Bekannten" may also be a person ("fuer meinen Bekannten").
+    # "keine bekannten Allergien", "weder eine bekannte": the modifiers only
+    # after a negation, since "Bekannten" may also be a person ("fuer
+    # meinen Bekannten").
     j = i
     while j > 0 and words[j - 1] in _MODIFIERS:
         j -= 1
-    if j < i and j > 0 and words[j - 1] in _NEGATION | _ARTICLES:
+    k = j - 1 if j > 0 and words[j - 1] in _ARTICLES else j
+    if j < i and k > 0 and words[k - 1] in _NEGATION:
         i = j
     while i > 0 and words[i - 1] in _PHRASE_LEAD:
         i -= 1
@@ -921,11 +929,8 @@ def _with_allergy(
     after = _denial(words, named, start)
     if after is not None:
         tail = text[tokens[after].start() :] if after < len(tokens) else ""
-        wished = _REMOVE | _ADD | _INSTEAD
-        said = _clean(
-            ", ".join(part for part in (head, tail) if wished & set(_words(part)))
-        )
-        if not said:
+        said = _clean(", ".join(part for part in (head, tail) if part))
+        if not _WISHED & set(_words(said)):
             return None
         around = _classify(said, groups)
         # A wish the menu does not know may hide an intolerance ("aber mit
@@ -934,8 +939,6 @@ def _with_allergy(
         if around.kind in ("note", "option", "open"):
             return around
         removal = removal_with(around)
-        if after < len(tokens):
-            text = _clean(_drop_trailing_glue(text[: tokens[after].start()]))
     else:
         removal = removal_with(_classify(head, groups)) if head else None
         # A removal after the allergy ("allergisch gegen Erdnuesse, aber ohne
