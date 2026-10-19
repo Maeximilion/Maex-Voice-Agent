@@ -50,45 +50,74 @@ fi
 # drop the call, and every caller would be lost (rule 5). `voice` refuses the
 # same; this is for the calls that reach the team without it.
 # In every form the dialplan's loop guard knows: +49..., 0049... and 0....
-own() {
-    [ "$1" = "$VOICE_NUMBER" ] || [ "$1" = "00${VOICE_NUMBER#+}" ] ||
-        [ "$1" = "0${VOICE_NUMBER#+49}" ]
+e164() {
+    case "$1" in
+        +*) printf '%s' "$1" ;;
+        00*) printf '+%s' "${1#00}" ;;
+        0*) printf '+49%s' "${1#0}" ;;
+        *) printf '%s' "$1" ;;
+    esac
 }
-if own "$TEAM_PHONE"; then
+same() { [ "$(e164 "$1")" = "$(e164 "$2")" ]; }
+if same "$TEAM_PHONE" "$VOICE_NUMBER"; then
     echo "asterisk does not start: TEAM_PHONE is the AI telephone's own number" >&2
     exit 1
 fi
 
 # The numbers a transfer may go to besides TEAM_PHONE, comma-separated; may be
 # empty. The dialplan dials no other (#252 finding 3), so each has to be one it
-# can dial, and none ours.
-TRANSFER_TARGETS="${TRANSFER_TARGETS:-}"
+# can dial, and none ours. Blanks and empty fields are dropped, and so is
+# TEAM_PHONE in any form: it is always on the list, and in another form the
+# dialplan would ring it a second time after an unanswered leg at it. The
+# dialplan reads the cleaned list from the environment this script hands on.
+targets=
 set -f
 old_ifs=$IFS
 IFS=,
-for target in $TRANSFER_TARGETS; do
+for target in $(printf '%s' "${TRANSFER_TARGETS:-}" | tr -d ' \t'); do
+    [ -n "$target" ] || continue
     if ! number "$target" "$dialable"; then
         echo "asterisk does not start: TRANSFER_TARGETS holds something that is not a number" >&2
         exit 1
     fi
-    if own "$target"; then
+    if same "$target" "$VOICE_NUMBER"; then
         echo "asterisk does not start: TRANSFER_TARGETS holds the AI telephone's own number" >&2
         exit 1
     fi
+    same "$target" "$TEAM_PHONE" || targets="$targets${targets:+,}$target"
 done
 IFS=$old_ifs
 set +f
+export TRANSFER_TARGETS="$targets"
+# The count, not the numbers: a team number can be somebody's own mobile.
+echo "asterisk: $(printf '%s\n' "$targets" | awk -F, '{ print NF }') more numbers for a transfer besides TEAM_PHONE"
 
 # Asterisk takes SIP only from the access's addresses (#252 finding 2). Its ACL
 # takes addresses, not names, so ACCESS_HOST is looked up here, once, as
 # Asterisk looks up a name in `match` once at the start; an access that moves
-# to another address needs a restart. IPv4 only, as the transport.
-ACCESS_ADDRESSES=$(getent ahostsv4 "$ACCESS_HOST" |
-    awk '!seen[$1]++ { printf "%s%s", sep, $1; sep = "," }')
+# to another address needs a restart. A name counts with its own addresses and
+# those of the servers its SIP SRV records name: Asterisk's registration follows
+# them, and a trunk's calls come from them (ultrareview of PR #340). IPv4 only,
+# as the transport.
+ipv4() { getent ahostsv4 "$1" | awk '{ print $1 }'; }
+srv_targets() {
+    case "$1" in *[!0-9.]*) ;; *) return 0 ;; esac
+    for service in _sip._udp _sip._tcp _sips._tcp; do
+        nslookup -type=SRV "$service.$1" 2>/dev/null |
+            awk '/service = / { sub(/\.$/, "", $NF); print $NF }'
+    done
+}
+ACCESS_ADDRESSES=$(
+    {
+        ipv4 "$ACCESS_HOST"
+        srv_targets "$ACCESS_HOST" | while read -r server; do ipv4 "$server"; done
+    } | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
+)
 if [ -z "$ACCESS_ADDRESSES" ]; then
     echo "asterisk does not start: ACCESS_HOST has no IPv4 address" >&2
     exit 1
 fi
+echo "asterisk: SIP only from $ACCESS_ADDRESSES"
 
 # ";" starts a comment in Asterisk's configuration: a password with one would be
 # cut short without a word. Escaped for the files only; the environment the

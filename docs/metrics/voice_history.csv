@@ -6,3 +6,4 @@ date,package,metric,value,unit,limit,verdict,note,run_at
 2026-10-14,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,Asterisk 22.11.0,
 2026-10-15,T-1.11,Outage drills end at the team phone,15,of 15 points,,go,,
 2026-10-19,T-1.11,Outage drills end at the team phone,20,of 20 points,,go,,2026-10-19T21:39:42.855722+00:00
+2026-10-20,T-1.11,Outage drills end at the team phone,20,of 20 points,,go,,2026-10-19T22:56:14.007537+00:00

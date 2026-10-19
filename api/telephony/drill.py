@@ -33,12 +33,12 @@ one call per drill:
   frozen mid-call `voice` is paused after it answered: the team rings
   database down   the database is stopped: the team rings
   off the list    `voice` hands the call to a number that is not on the
-                  dialplan's list: the team rings at TEAM_PHONE, the number is
-                  never dialled
+                  dialplan's list: the dialplan says so, the team rings at
+                  TEAM_PHONE, the number is never dialled
   listed, busy    `voice` hands the call to another number of the list, which
                   is busy: the team rings at TEAM_PHONE after it
   stranger        an INVITE from an address that is not the router, From user
-                  `access` (the endpoint's name), is refused
+                  `access` (the endpoint's name), is refused by the ACL (403)
 
 A team ring is timed on this machine's monotonic clock from the call being
 placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
@@ -178,7 +178,10 @@ class Drill:
             "DRILL_GID": str(os.getgid()),
             "VOICE_NUMBER": VOICE_NUMBER,
             "TEAM_PHONE": TEAM_PHONE,
-            "TRANSFER_TARGETS": LISTED_BUSY_NUMBER,
+            # Written loosely, with TEAM_PHONE in its national form: render.sh
+            # cleans it, and the busy drill fails if the clean list does not
+            # reach the dialplan.
+            "TRANSFER_TARGETS": f" {LISTED_BUSY_NUMBER}, ,0{TEAM_PHONE[3:]},",
             "ACCESS_HOST": "router",
             "ACCESS_USER": "ai",
         }
@@ -343,14 +346,7 @@ class Call:
         # Not by the caller's number: the team leg carries the user of our
         # registration (`from_user`). One call at a time, and only lines after
         # this one was placed count.
-        return rf"DRILL team rings at \{number}\b"
-
-    def first_line(self, pattern: str) -> int | None:
-        """Where `pattern` first shows in the router's log for this call."""
-        for i, line in enumerate(self.lines("router")):
-            if re.search(pattern, line):
-                return i
-        return None
+        return rf"DRILL team rings at {re.escape(number)}\b"
 
     @property
     def answered(self) -> str:
@@ -449,58 +445,62 @@ def drill_keys(drill: Drill) -> list[Check]:
     ]
 
 
-def drill_paused(drill: Drill) -> list[Check]:
-    drill.mode("paused")
+def handed_over(drill: Drill, n: int, name: str, number: str) -> tuple[Call, Check]:
+    """Call n in mode paused, the core hands it over before a word, while the
+    database names `number` as the team's (#252 findings 1, 3). Mode and
+    number are set back whatever fails, the number last."""
     try:
-        call = drill.place(103)
-        check = team_check("paused: the team rings", call, call.placed)
-        # Answered only when the team picked up: the AI never did.
-        unanswered = call.ending().startswith("NOANSWER")
+        drill.team_phone(number)
+        drill.mode("paused")
+        call = drill.place(n)
+        check = team_check(name, call, call.placed)
     finally:
-        drill.mode("primary")
+        try:
+            drill.mode("primary")
+        finally:
+            drill.team_phone(TEAM_PHONE)
     drill.quiet()
+    return call, check
+
+
+def drill_paused(drill: Drill) -> list[Check]:
+    call, check = handed_over(drill, 103, "paused: the team rings", TEAM_PHONE)
+    # Answered only when the team picked up: the AI never did.
     return [
         check,
         (
             "paused: the AI never answered the call",
-            unanswered and "[transfer]" in call.ending(),
+            call.ending().startswith("NOANSWER") and "[transfer]" in call.ending(),
             f"ending {call.ending()}",
         ),
     ]
 
 
-def transfer_to(drill: Drill, n: int, number: str) -> tuple[Call, Check]:
-    """Call n while the database names `number` as the team's and the mode is
-    paused: the core hands the call over before a word (#252 findings 1, 3)."""
-    drill.team_phone(number)
-    drill.mode("paused")
-    try:
-        call = drill.place(n)
-        check = team_check(f"handed to {number}: the team rings", call, call.placed)
-    finally:
-        drill.mode("primary")
-        drill.team_phone(TEAM_PHONE)
-    drill.quiet()
-    return call, check
-
-
 def drill_unlisted(drill: Drill) -> list[Check]:
-    call, check = transfer_to(drill, 109, UNLISTED_NUMBER)
+    call, check = handed_over(
+        drill, 109, "off the list: the team rings at TEAM_PHONE", UNLISTED_NUMBER
+    )
+    said = any("not on the list" in line for line in call.lines("asterisk"))
     dialled = call.router_says(call.rings_at(UNLISTED_NUMBER))
     return [
         check,
         (
-            "off the list: the number is never dialled",
-            not dialled,
-            f"dialled: {dialled}",
+            "off the list: the dialplan refuses the number, it is never dialled",
+            said and "[transfer]" in call.ending() and not dialled,
+            f"refused: {said}, ending {call.ending()}, dialled: {dialled}",
         ),
     ]
 
 
 def drill_listed_busy(drill: Drill) -> list[Check]:
-    call, check = transfer_to(drill, 110, LISTED_BUSY_NUMBER)
-    busy = call.first_line(call.rings_at(LISTED_BUSY_NUMBER))
-    team = call.first_line(call.team_rings)
+    call, check = handed_over(
+        drill, 110, "listed, busy: the team rings at TEAM_PHONE", LISTED_BUSY_NUMBER
+    )
+    lines = call.lines("router")
+    busy, team = (
+        next((i for i, line in enumerate(lines) if re.search(p, line)), None)
+        for p in (call.rings_at(LISTED_BUSY_NUMBER), call.team_rings)
+    )
     return [
         check,
         (
@@ -527,7 +527,7 @@ def drill_stranger(drill: Drill) -> list[Check]:
     drill.cli("asterisk", "channel request hangup all")
     return [
         (
-            "stranger: an INVITE from another address as `access` is refused",
+            "stranger: an INVITE from another address as `access` is refused by the ACL",
             refused(codes),
             f"answers: {' '.join(map(str, codes)) or 'none'}",
         )
@@ -535,8 +535,10 @@ def drill_stranger(drill: Drill) -> list[Check]:
 
 
 def refused(codes: list[int]) -> bool:
-    """A final error and nothing on the way that says the call went on."""
-    return bool(codes) and codes[-1] >= 400 and all(c == 100 or c >= 400 for c in codes)
+    """403, the ACL's answer, and nothing before it but Trying. A 401 is no
+    pass: it is what identification by address alone answers, with the ACL
+    gone or too wide (measured on 22.11.0, ultrareview of PR #340)."""
+    return codes[-1:] == [403] and all(c == 100 for c in codes[:-1])
 
 
 def stranger_invite(
