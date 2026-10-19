@@ -459,7 +459,7 @@ tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
   && jq '{hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null))' ~/.claude/settings.json > "$bak" \
   && jq -e . "$bak" > /dev/null \
   && tmp="$(mktemp ~/.claude/settings.json.new.XXXXXX)" \
-  && jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | .hooks |= (if . then map_values(map(.hooks |= map(select(.command | contains("usage_gate") | not))) | map(select(.hooks != []))) | with_entries(select(.value != [])) else . end) | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json > "$tmp" \
+  && jq --slurpfile win "$WIN_CLAUDE/settings.json" '. + ($win[0] | .hooks |= (if . then map_values(map(.hooks |= map(select(.command // "" | contains("usage_gate") | not))) | map(select(.hooks != []))) | with_entries(select(.value != [])) else . end) | {hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null)))' ~/.claude/settings.json > "$tmp" \
   && jq -e . "$tmp" > /dev/null \
   && chmod --reference="$HOME/.claude/settings.json" "$tmp" \
   && mv "$tmp" ~/.claude/settings.json \
