@@ -297,6 +297,41 @@ def test_round_13_wording(run, prompt, model, effort, expected):
         assert expected in message(out)
 
 
+@pytest.mark.parametrize(
+    "prompt, model, effort, expected",
+    [
+        ("Run pytest", "claude-sonnet-5-5", "medium", None),
+        (
+            "Change the availability page title in the GUI",
+            "claude-sonnet-5-5",
+            "medium",
+            None,
+        ),
+        (
+            "This is the 13th attempt to fix authentication",
+            "claude-opus-5-5",
+            "high",
+            "xhigh",
+        ),
+        ("Fix the tip calculation", "claude-opus-5-5", "high", "xhigh"),
+        ("Change how bookings are rescheduled", "claude-opus-5-5", "high", "xhigh"),
+        (
+            "Optimize authentication",
+            "claude-sonnet-5-5",
+            "medium",
+            "opus-5-5 at effort high",
+        ),
+        ("Go ahead with it", "claude-sonnet-5-5", "medium", None),
+    ],
+)
+def test_round_14_wording(run, prompt, model, effort, expected):
+    out = run(prompt, model, effort)
+    if expected is None:
+        assert out is None
+    else:
+        assert expected in message(out)
+
+
 def test_a_haiku_route_needs_effort_none(run):
     brief = "Route: claude-haiku-4-5 high\nFind every caller."
     assert "Route line is not" in message(run(brief, "claude-haiku-4-5", "high"))

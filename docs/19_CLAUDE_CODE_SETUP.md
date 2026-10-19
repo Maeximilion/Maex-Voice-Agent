@@ -395,6 +395,12 @@ umask "$old_umask"
 unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK \
       CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
+# Telemetry opt-outs stay as they are (a privacy choice), but where the organization requires
+# Trusted Devices they make Remote Control unavailable: say so instead of failing silently.
+if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
+  || jq -e '.env | has("DISABLE_TELEMETRY") or has("DO_NOT_TRACK")' "$dst/settings.json" > /dev/null 2>&1; then
+  echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
+fi
 export CLAUDE_CONFIG_DIR="$dst"
 if [ "${1-}" = server ]; then
   shift
