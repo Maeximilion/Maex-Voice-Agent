@@ -1473,3 +1473,127 @@ def test_alte_optionsdatei_behaelt_den_grund(session, tenant_id):
         select(ItemOption.price_reason).where(ItemOption.option_name == "Nudeln")
     )
     assert reason == GRUND
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich habe keine Allergie und allergisch auf Erdnüsse",
+        "ich bin nicht allergisch und intolerant gegen Laktose",
+        "keine Allergien und allergisch gegen Sesam",
+        "ohne Zwiebeln, ich habe keine Allergie und allergisch gegen Erdnüsse",
+        # "nicht" governs no noun.
+        "ich bin nicht allergisch und Unverträglichkeit gegen Laktose",
+    ],
+)
+def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
+    """Review of PR #330: the denial was carried over "und" to an allergy
+    adjective and took its "gegen X" as denied, so the allergy was dropped
+    without a question (None, or the removal alone). "keine" does not govern
+    an adjective: the agent asks."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "keine Allergien und Unverträglichkeiten",
+        "ich habe keine Allergien oder Unverträglichkeiten gegen Laktose",
+        "weder Allergie noch Unverträglichkeit gegen Laktose",
+        # Codex PR #338: the last allergy word is negated on its own.
+        "keine Allergien und Unverträglichkeiten und keine Intoleranz gegen Laktose",
+        # Codex PR #338: "keine" governs both nouns.
+        "ich habe keine Allergien und Unverträglichkeiten gegen Laktose",
+        "keine Allergie und Unverträglichkeit gegen Laktose",
+    ],
+)
+def test_a_denial_of_both_stays_a_denial(said):
+    assert classify_wish(said, BEILAGE) is None
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        ("ich bin allergisch gegen Erdnüsse und gegen Sesam", "Erdnüsse und Sesam"),
+        ("ich bin gegen Erdnüsse und gegen Sesam allergisch", "Erdnüsse und Sesam"),
+        (
+            "ich habe eine Allergie gegen Erdnüsse und auch gegen Sesam",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse, gegen Sesam und gegen Milch",
+            "Erdnüsse, Sesam und Milch",
+        ),
+        ("ich bin allergisch auf Erdnüsse und auf Sesam", "Erdnüsse und Sesam"),
+        # The ear wrote no comma.
+        ("ich bin gegen Erdnüsse gegen Sesam allergisch", "Erdnüsse und Sesam"),
+        # Codex PR #338: the clause after the list stays out of it.
+        (
+            "ich bin allergisch gegen Erdnüsse und gegen Sesam und möchte bestellen",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse und gegen Sesam. Danke",
+            "Erdnüsse und Sesam",
+        ),
+        # Two phrases across a full stop, each read on its own.
+        (
+            "ich bin allergisch gegen Erdnüsse. Gegen Sesam bin ich allergisch",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse. Und gegen Sesam bin ich allergisch",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ohne Zwiebeln, ich bin allergisch gegen Erdnüsse und gegen Sesam",
+            "Erdnüsse und Sesam",
+        ),
+    ],
+)
+def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
+    """Review of PR #330, older than it: the ingredient behind a second
+    "gegen" without its own allergy word was lost, only one reached the
+    kitchen."""
+    assert classify_wish(said, BEILAGE).ingredient == ingredient
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich bin allergisch gegen Erdnüsse und gegen 18 Uhr hole ich ab",
+        "ich bin allergisch gegen Erdnüsse, gegen halb sieben hole ich ab",
+        "ich bin allergisch gegen Erdnüsse und gegen Abend komme ich",
+        "ich bin allergisch gegen Erdnüsse und auf jeden Fall ohne Zwiebeln",
+        "Pho Bo und gegen Erdnüsse bin ich allergisch",
+        # Codex PR #338: a clause of its own, not a second allergen.
+        "ich bin allergisch gegen Erdnüsse und auf dem Weg zu euch",
+        "ich bin allergisch gegen Erdnüsse und auf Antibiotika angewiesen",
+        "ich bin allergisch gegen Erdnüsse, auf Wiedersehen",
+        # Codex PR #338: a list repeats its own preposition.
+        "ich bin allergisch gegen Erdnüsse und auf Diät",
+        "ich bin allergisch gegen Erdnüsse und auf Reisen",
+        # Codex PR #338: the order goes on after the list.
+        "ich bin allergisch gegen Erdnüsse und möchte bestellen",
+        "ich bin allergisch gegen Erdnüsse, und möchte zwei Pho Bo",
+    ],
+)
+def test_a_gegen_that_lists_nothing_stays_out(said):
+    """A time, "auf jeden Fall" or a clause of its own is no second
+    ingredient, and a "gegen" without one before it begins the list."""
+    assert classify_wish(said, BEILAGE).ingredient == "Erdnüsse"
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        ("ich bin allergisch gegen Erdnüsse und möchte keine Zwiebeln", "Zwiebeln"),
+        ("ich bin allergisch gegen Erdnüsse und möchte auch keinen Sesam", "Sesam"),
+        ("ich bin allergisch gegen Erdnüsse und kann keine Milch trinken", "Milch"),
+    ],
+)
+def test_a_clause_that_names_something_stays_in_the_note(said, kept):
+    """The list ends at an order verb only when nothing to leave out follows
+    it: the kitchen still reads "und möchte keine Zwiebeln" (Codex PR #338)."""
+    assert kept in classify_wish(said, BEILAGE).text
