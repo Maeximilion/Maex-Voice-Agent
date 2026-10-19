@@ -254,6 +254,54 @@ def test_the_model_is_read_from_a_transcript_attachment(run, tmp_path):
     assert out is None
 
 
+@pytest.mark.parametrize(
+    "prompt, model, effort, expected",
+    [
+        (
+            "This is the fifth attempt to fix authentication",
+            "claude-opus-5-5",
+            "high",
+            "xhigh",
+        ),
+        ("Fix the discount calculation", "claude-opus-5-5", "high", "xhigh"),
+        ("Run the unit test suite", "claude-sonnet-5-5", "medium", None),
+        (
+            "Import the menu CSV and refactor authentication",
+            "claude-opus-5-5",
+            "high",
+            None,
+        ),
+        (
+            "Update the GUI labels and fix authentication",
+            "claude-opus-5-5",
+            "high",
+            None,
+        ),
+        ("Read the application logs", "claude-sonnet-5-5", "medium", "haiku"),
+        ("Fix README", "claude-sonnet-5-5", "medium", None),
+        (
+            "Don't use Fable for this gate review",
+            "claude-fable-5-1",
+            "high",
+            "opus-5-5",
+        ),
+        ("Apply the requested review changes", "claude-sonnet-5-5", "medium", None),
+        ("Resolve the review findings", "claude-sonnet-5-5", "medium", None),
+    ],
+)
+def test_round_13_wording(run, prompt, model, effort, expected):
+    out = run(prompt, model, effort)
+    if expected is None:
+        assert out is None
+    else:
+        assert expected in message(out)
+
+
+def test_a_haiku_route_needs_effort_none(run):
+    brief = "Route: claude-haiku-4-5 high\nFind every caller."
+    assert "Route line is not" in message(run(brief, "claude-haiku-4-5", "high"))
+
+
 def test_an_outage_banner_is_gui_work(run):
     assert run("Fix the outage banner in the GUI") is None
 
