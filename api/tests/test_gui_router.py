@@ -556,6 +556,15 @@ def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
     assert client.get("/gui/").cookies.get("csrf_token") == token
 
 
+def test_page_replaces_a_csrf_cookie_it_could_never_accept(client, tenant_id):
+    client.cookies.clear()
+    response = client.get(
+        "/gui/", headers={"Cookie": 'csrf_token="caf\u00e9"'.encode("latin-1")}
+    )
+    token = response.cookies.get("csrf_token")
+    assert token and token.isascii() and len(token) >= 32
+
+
 def test_https_page_marks_csrf_cookie_secure(client, tenant_id):
     client.cookies.clear()
     response = client.get("https://testserver/gui/")

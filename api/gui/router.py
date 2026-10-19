@@ -175,7 +175,10 @@ def _page_response(
     request: Request, template: str, context: dict, status_code: int = 200
 ) -> HTMLResponse:
     """Issue the same CSRF token to the cookie and the full page's meta tag."""
-    token = request.cookies.get("csrf_token") or secrets.token_urlsafe(32)
+    token = request.cookies.get("csrf_token")
+    if not token or not token.isascii():
+        # A token _require_htmx can never accept would lock every tap out.
+        token = secrets.token_urlsafe(32)
     context["csrf_token"] = token
     response = templates.TemplateResponse(
         request, template, context, status_code=status_code
