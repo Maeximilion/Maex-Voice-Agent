@@ -11,7 +11,7 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|(speech|spoken|utterance|transcript)[- ]?to[- ]?(menu|item)|menu[- ]?item matching|match(ing|es)? (speech|what the caller says|a spoken)|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
@@ -24,7 +24,7 @@ docpath='\.md\b|\bdocs/|readme'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
-change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|run|execute|ausführen|starte|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
+change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|run|execute|deploy|release|ship|ausführen|starte|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on)?|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
 
@@ -84,7 +84,7 @@ else
   grep -qiE "$ack" <<<"$lower" && exit 0
   # Fable runs only when Maxi asks for it by name; the hook never recommends it (below).
   # Named and not withdrawn ("off Fable", "not on Fable", "ohne Fable").
-  grep -qiE '\bfable\b' <<<"$lower" \
+  grep -qiE '\b(on|use|using|with|mit|via|switch(ed)? to|run|keep) (claude-)?fable\b|\bfable\b.{0,40}\b(gate review|debug)|\b(gate review|debug)[a-z]*\b.{0,40}\bfable\b' <<<"$lower" \
     && ! grep -qiE '\b(off|away from|without|not (on|with|use|using)|ohne|nicht (mit|auf)|weg von) fable\b' <<<"$lower" \
     && fable_named=1
   # A pure lookup first: what it looks for (menu_item_id, a migration) is its subject, not its work.
@@ -97,7 +97,7 @@ else
   # matching, ...); a mixed docs and code task takes the higher setting below.
   elif grep -qiE "$docpath" <<<"$lower" \
     && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g' <<<"$lower" \
-      | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation)\b"; then
+      | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation|refactor|implement|debug|migrate|deploy)[a-z]*\b"; then
     want=claude-sonnet-5-5 effort=medium
   # A menu or data import is import work, also when it carries prices or allergens.
   elif grep -qiE "$dataimport" <<<"$lower" \
@@ -112,7 +112,8 @@ else
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
   # Sonnet work only when no other code path is named (api/gui/ and templates are Sonnet's own).
-  elif grep -qiE "$sonnet" <<<"$lower" \
+  # Docs-only prompts were taken above, so a docs mention left here sits next to other work.
+  elif sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#\b(readme|docs?)\b##g' <<<"$lower" | grep -qiE "$sonnet" \
     && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g' <<<"$lower" | grep -qiE "$codepath"; then
     want=claude-sonnet-5-5 effort=medium
   else

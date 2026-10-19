@@ -192,6 +192,26 @@ def test_booking_decisions_are_xhigh(run, prompt):
 
 def test_running_tests_is_not_a_lookup(run):
     assert run("Find and run the existing tests for the GUI") is None
+    out = run(
+        "Find the deployment config and deploy it", "claude-opus-5-5", "high", sid="d"
+    )
+    assert out is None
+
+
+def test_speech_to_menu_matching_is_xhigh(run):
+    out = run("Fix speech-to-menu item matching", "claude-opus-5-5", "high")
+    assert "effort xhigh" in message(out)
+
+
+def test_docs_next_to_unnamed_work_takes_the_default(run):
+    out = run("Update README and refactor authentication", "claude-opus-5-5", "high")
+    assert out is None
+    assert run("Update README with the new setup steps", sid="r") is None
+
+
+def test_a_mere_fable_mention_is_no_request(run):
+    out = run("Mention Fable in the README", "claude-fable-5-1", "high")
+    assert "claude-sonnet-5-5 at effort medium" in message(out)
 
 
 @pytest.mark.parametrize(
