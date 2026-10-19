@@ -61,9 +61,12 @@ esac
 head=${head%%</*}
 # Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
 route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
-# "none" is Haiku's effort only; on another model it would switch the effort check off.
-[[ "${route,,}" == *" none"* && "${route,,}" != *haiku* ]] && route=
-[[ "${route,,}" == *haiku* && "${route,,}" != *" none"* ]] && route=
+# Only the efforts the table gives each model family: Haiku none, Sonnet medium, Opus high
+# or xhigh (max when Maxi asks), Fable high. low is never used.
+case "${route,,}" in
+  *haiku*" none"*|*sonnet*" medium"*|*opus*" high"*|*opus*" xhigh"*|*opus*" max"*|*fable*" high"*) ;;
+  *) route= ;;
+esac
 # Only a model ID the routing table in CLAUDE.md names can be switched to; a typo is malformed.
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 if [ -n "$route" ] && [ -f "$root/CLAUDE.md" ]; then
@@ -71,7 +74,7 @@ if [ -n "$route" ] && [ -f "$root/CLAUDE.md" ]; then
   grep -qF "\`$id\`" "$root/CLAUDE.md" || route=
 fi
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
-  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" (effort low, medium, high, xhigh, max or none), so the setting of this thread cannot be checked."
+  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" with a model and effort from the CLAUDE.md routing table (Haiku none, Sonnet medium, Opus high, xhigh or max, Fable high), so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0

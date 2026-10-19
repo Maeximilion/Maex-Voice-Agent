@@ -457,6 +457,8 @@ def test_a_python_import_is_not_a_data_import(run):
         "Route: claude-opus-5-5\nUpdate the domain code.",
         "Route: claude-opus-5-5 high please\nUpdate the domain code.",
         "Route: claude-opus-5-5 none\nUpdate the domain code.",
+        "Route: claude-sonnet-5-5 low\nUpdate the GUI.",
+        "Route: claude-sonnet-5-5 high\nUpdate the GUI.",
     ],
 )
 def test_a_malformed_route_line_is_reported(run, brief):
