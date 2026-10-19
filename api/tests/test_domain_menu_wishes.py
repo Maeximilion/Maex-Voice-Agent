@@ -1499,6 +1499,8 @@ def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
         "keine Allergien und Unverträglichkeiten",
         "ich habe keine Allergien oder Unverträglichkeiten gegen Laktose",
         "weder Allergie noch Unverträglichkeit gegen Laktose",
+        # Codex PR #338: the last allergy word is negated on its own.
+        "keine Allergien und Unverträglichkeiten und keine Intoleranz gegen Laktose",
     ],
 )
 def test_a_denial_of_both_stays_a_denial(said):

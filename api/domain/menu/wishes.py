@@ -715,8 +715,10 @@ def _denial_end(words: list[str], i: int) -> int | None:
     noun = _noun_after(words, i + 1, word)
     if word in _NEGATION and noun < len(words) and _allergy_word(words[noun]):
         end = noun + 1
-        # Reached a bare generic word over "und" ("keine Allergien und
-        # Unvertraeglichkeiten"): the negation may not reach it.
+        # The last allergy word was reached over a bare "und" ("keine
+        # Allergien und Unvertraeglichkeiten"): the negation may not reach
+        # it. Only the last counts: "... und keine Intoleranz gegen Laktose"
+        # negates its own (Codex PR #338).
         bare_und = False
         # The denial goes on only where the next allergy word is denied too:
         # "oder keine Unvertraeglichkeiten", "weder (eine) Allergie noch
@@ -726,6 +728,7 @@ def _denial_end(words: list[str], i: int) -> int | None:
         # Allergien": those name an allergy, and it is asked about.
         while end < len(words) and words[end] in ("und", "oder", "noch"):
             joiner, nxt = words[end], end + 1
+            bare = False
             if nxt < len(words) and words[nxt] in _KEIN:
                 joiner, nxt = words[nxt], nxt + 1
                 nxt = _noun_after(words, nxt, joiner)
@@ -738,10 +741,10 @@ def _denial_end(words: list[str], i: int) -> int | None:
                     nxt < len(words) and _generic(words[nxt]) and _generic(words[noun])
                 ):
                     break
-                bare_und = bare_und or joiner == "und"
+                bare = joiner == "und"
             if nxt >= len(words) or not _allergy_word(words[nxt]):
                 break
-            end = nxt + 1
+            end, bare_und = nxt + 1, bare
         if end < len(words) and words[end] in _PREPOSITIONS:
             if bare_und:
                 # "keine Allergie und allergisch gegen Erdnuesse": an
