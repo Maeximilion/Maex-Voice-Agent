@@ -1220,6 +1220,12 @@ def test_removal_said_again_with_the_ingredient(session, tenant):
         # Codex PR #330: the denial before the dish.
         "Ich habe keine Allergie, ich moechte Pho Bo zum Abholen.",
         "Ich habe keine Allergie und moechte Pho Bo zum Abholen.",
+        # Codex PR #338 and issue #331: one denial over two nouns, split at
+        # its "und".
+        "Ich habe keine Allergien und Unverträglichkeiten gegen Laktose und möchte "
+        "Pho Bo zum Abholen.",
+        "Ich habe keine Allergien und Unverträglichkeiten und möchte Pho Bo zum "
+        "Abholen.",
     ],
 )
 def test_denied_allergy_in_the_opening_sentence_is_an_order(session, tenant, opening):

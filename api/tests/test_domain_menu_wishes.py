@@ -1528,6 +1528,11 @@ def test_a_denial_of_both_stays_a_denial(said):
         ("ich bin allergisch auf Erdnüsse und auf Sesam", "Erdnüsse und Sesam"),
         # The ear wrote no comma.
         ("ich bin gegen Erdnüsse gegen Sesam allergisch", "Erdnüsse und Sesam"),
+        # Codex PR #338: the clause after the list stays out of it.
+        (
+            "ich bin allergisch gegen Erdnüsse und gegen Sesam und möchte bestellen",
+            "Erdnüsse und Sesam",
+        ),
         (
             "ich bin allergisch gegen Erdnüsse und gegen Sesam. Danke",
             "Erdnüsse und Sesam",
@@ -1569,9 +1574,26 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
         # Codex PR #338: a list repeats its own preposition.
         "ich bin allergisch gegen Erdnüsse und auf Diät",
         "ich bin allergisch gegen Erdnüsse und auf Reisen",
+        # Codex PR #338: the order goes on after the list.
+        "ich bin allergisch gegen Erdnüsse und möchte bestellen",
+        "ich bin allergisch gegen Erdnüsse, und möchte zwei Pho Bo",
     ],
 )
 def test_a_gegen_that_lists_nothing_stays_out(said):
     """A time, "auf jeden Fall" or a clause of its own is no second
     ingredient, and a "gegen" without one before it begins the list."""
     assert classify_wish(said, BEILAGE).ingredient == "Erdnüsse"
+
+
+@pytest.mark.parametrize(
+    ("said", "kept"),
+    [
+        ("ich bin allergisch gegen Erdnüsse und möchte keine Zwiebeln", "Zwiebeln"),
+        ("ich bin allergisch gegen Erdnüsse und möchte auch keinen Sesam", "Sesam"),
+        ("ich bin allergisch gegen Erdnüsse und kann keine Milch trinken", "Milch"),
+    ],
+)
+def test_a_clause_that_names_something_stays_in_the_note(said, kept):
+    """The list ends at an order verb only when nothing to leave out follows
+    it: the kitchen still reads "und möchte keine Zwiebeln" (Codex PR #338)."""
+    assert kept in classify_wish(said, BEILAGE).text

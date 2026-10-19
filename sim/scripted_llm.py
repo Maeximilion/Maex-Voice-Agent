@@ -191,16 +191,28 @@ class ScriptedLLM:
         # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
         # moechte Pho Bo zum Abholen" (Codex PR #330).
         parts = _PARTS.split(text)
-        named = [part for part in parts[::2] if mentions_allergy(part)]
+        # Neighbouring parts with allergy words are one clause, judged whole:
+        # split at its "und", "keine Allergien und Unvertraeglichkeiten gegen
+        # Laktose" would leave a second part that reads as an intolerance
+        # (Codex PR #338).
+        runs: list[tuple[int, int]] = []
+        for n in range(0, len(parts), 2):
+            if mentions_allergy(parts[n]):
+                if runs and runs[-1][1] == n - 2:
+                    runs[-1] = (runs[-1][0], n)
+                else:
+                    runs.append((n, n))
+        named = {run: "".join(parts[run[0] : run[1] + 1]) for run in runs}
+        denying = [run for run, said in named.items() if denies_allergy(said)]
         denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
-            bool(named) and all(denies_allergy(part) for part in named)
+            bool(named) and len(denying) == len(named)
         )
         # The dish is searched without a denial said in a part of its own,
         # and without the separator in front of it (or behind it, first):
         # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
         # "und" (Codex PR #330).
-        dropped = {n for n in range(0, len(parts), 2) if denies_allergy(parts[n])}
-        dropped |= {n - 1 if n else n + 1 for n in set(dropped)}
+        dropped = {n for first, last in denying for n in range(first, last + 1)}
+        dropped |= {first - 1 if first else last + 1 for first, last in denying}
         dish_text = "".join(p for n, p in enumerate(parts) if n not in dropped)
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is

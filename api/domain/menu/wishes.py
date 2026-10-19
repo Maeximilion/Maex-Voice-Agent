@@ -455,11 +455,20 @@ def _until_new_clause(rest: str) -> str:
                 nxt = after
             if _ends_list(nxt):
                 break
+            # "und moechte bestellen" goes on with the order; "und moechte
+            # (auch) keine Zwiebeln" stays in, so the kitchen still reads it.
+            at = i + 3 if i + 1 in skip else i + 2
+            follows = [word_at(k) for k in range(at, at + 3)]
+            if nxt in _ORDER_VERBS and not any(
+                w in _REMOVE or w in _NEGATION for w in follows
+            ):
+                break
         kept.append(piece)
     text = ""
     for piece in kept:
         text += piece if piece == "," else f" {piece}"
-    return text.strip()
+    # No comma left at the end: "gegen Erdnuesse, und moechte ...".
+    return text.strip().rstrip(",")
 
 
 def _adds(words: list[str], i: int) -> bool:
@@ -529,6 +538,14 @@ _MODIFIERS = frozenset(
 _PREPOSITIONS = frozenset({"gegen", "auf"})
 # The verb behind a denial in a clause: "weil ich keine Allergie habe".
 _DENIAL_VERBS = frozenset({"habe", "hab", "haben", "bin", "sind"})
+# Verbs that go on with the order after an allergy, without "ich": "und
+# moechte bestellen", "und haette gern die 13" (Codex PR #338). No allergen is
+# called so. Not "kann" or "mag": "und kann keine Milch trinken" names one.
+_ORDER_VERBS = frozenset(
+    {"moechte", "moechten", "haette", "haetten", "will", "wollen", "wuerde"}
+    | {"wuerden", "nehme", "nehmen", "bestelle", "bestellen", "hole", "holen"}
+    | {"komme", "kommen"}
+)
 # "Keine Allergien sind mir bekannt"
 _DENIAL_TRAIL = _DENIAL_VERBS | {"ich", "wir", "mir", "uns", "bekannt", "ist"}
 # Who has the allergy, in "habe ich nicht".
