@@ -378,6 +378,14 @@ if [ -L "$dst" ] || { [ -d "$dst" ] && [ "$(cd "$dst" && pwd -P)" = "$(cd "$src"
 fi
 mkdir -p "$dst"
 chmod 700 "$dst"
+# A login refresh replaces the linked .credentials.json with a file of its own. Hand a newer
+# login back to ~/.claude and link again, so the normal launcher never keeps a stale token.
+# ponytail: only at the next claude-rc start; while both run, a refresh in one stays there until then.
+c=.credentials.json
+if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
+  if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
+  rm -f "$dst/$c"
+fi
 shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
         history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
 for name in "${shared[@]}"; do

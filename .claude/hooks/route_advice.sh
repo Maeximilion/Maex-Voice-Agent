@@ -165,6 +165,9 @@ if [ -n "$route" ] && [ -z "$(jq -r '.model // empty' <<<"$input")" ] \
     [[ "$model" == "$want"* ]] && break
     sleep 0.5
   done
+  # A write that lands during the last wait still counts.
+  m=$(cat "$state/$sid.model" 2>/dev/null)
+  [ -z "$m" ] || model=$m
 fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
 if [ -z "$model" ]; then
