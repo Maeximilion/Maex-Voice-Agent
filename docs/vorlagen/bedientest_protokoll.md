@@ -61,14 +61,15 @@ Give them one by one, as a sentence a team member would say, never with the butt
 
 ### 2a. Live arrival (scored, section 1 rule 5)
 
-Before the tester's first tap, with the tablet untouched since loading, create order A from the second device and watch the tester for 10 seconds without any cue, before task 1 is spoken (the "noticed within 10 s" cell is filled from this silent watch). Later, after the tester has tapped the page, while the tester is busy with task 6 or 7, create one new callback. Record:
+Before the tester's first tap, with the tablet untouched since loading, create order A from the second device and watch the tester for 10 seconds without any cue, before task 1 is spoken (the "noticed within 10 s" cell is filled from this silent watch). Later, after the tester has tapped the page, create a second pickup order E during task 5 and one new callback during task 6 or 7. Record:
 
 | Event | Sound played by itself (yes/no) | Tester noticed within 10 s (yes/no) | Notes |
 |---|---|---|---|
 | New order A, before the first tap | | | |
+| New order E, after the first tap, during task 5 (a second pickup created from the second device) | | | |
 | New callback, after the first tap, during a task | | | |
 
-The first row is an observation, not a pass measure: the browser plays no tone before the first tap today (`app.js`), so "no" is the expected result and means the "Ton an" hint of the status assumption of 18.09.2026 is needed; do not tap the page before this row is recorded. The second row is scored: after one tap the tone must play.
+The first row is an observation, not a pass measure: the browser plays no tone before the first tap today (`app.js`), so "no" is the expected result and means the "Ton an" hint of the status assumption of 18.09.2026 is needed; do not tap the page before this row is recorded. Rows 2 and 3 are scored: after one tap each tone must play. 
 
 Free observation during the tasks (tick if seen):
 
@@ -112,8 +113,8 @@ Answers (short):
 | Tasks that needed a hint | 0 (a hinted task means the view was not operated without explanation) | |
 | Severity A stumbles | 0 | |
 | Total time of the tasks | within the 5 minutes | min |
-| Callback arrival noticed within 10 s (section 2a, row 2); the first arrival is recorded and not scored | yes | |
-| Callback tone played by itself after the first tap (section 2a, row 2) | yes | |
+| New order E and callback noticed within 10 s (section 2a, rows 2 and 3); the first arrival is recorded and not scored | yes | |
+| New-order tone (row 2) and callback tone (row 3) played by themselves after the first tap | yes, both | |
 | Tone before the first tap (section 2a, row 1, observation) | not scored; "no" puts the "Ton an" hint (docs/01_STATUS.md) on the list of changes and the verdict is at best PASS WITH CHANGES until it is built | |
 
 **Verdict:** PASS · PASS WITH CHANGES · FAIL
