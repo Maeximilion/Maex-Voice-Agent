@@ -332,6 +332,20 @@ def test_round_14_wording(run, prompt, model, effort, expected):
         assert expected in message(out)
 
 
+def test_a_resend_reads_the_model_the_switch_stored(run):
+    run("", hook_event_name="SessionStart", model="claude-opus-5-5", sid="r")
+    first = run(BRIEF, model="", effort="medium", sid="r")
+    assert "do not start" in first["hookSpecificOutput"]["additionalContext"]
+    run(
+        "",
+        hook_event_name="PostModelSwitch",
+        model="",
+        to_model="claude-sonnet-5-5",
+        sid="r",
+    )
+    assert run(BRIEF, model="", effort="medium", sid="r") is None
+
+
 def test_a_haiku_route_needs_effort_none(run):
     brief = "Route: claude-haiku-4-5 high\nFind every caller."
     assert "Route line is not" in message(run(brief, "claude-haiku-4-5", "high"))

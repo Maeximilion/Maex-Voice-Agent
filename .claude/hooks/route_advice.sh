@@ -150,6 +150,14 @@ if [ -z "$model" ]; then
              (select(.type == "attachment" and .attachment.type == "model") | .attachment.identity.modelId)
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
 fi
+# A brief resent after a mismatch usually follows a switch, and PostModelSwitch runs
+# asynchronously: give it a moment, then read the stored model again.
+# ponytail: a fixed 1 s wait on resends only; a switch slower than that still reports a mismatch.
+if [ -n "$route" ] && grep -qx "$(cksum <<<"$want ${effort:-any}")" "$state/$sid.seen" 2>/dev/null; then
+  sleep 1
+  m=$(cat "$state/$sid.model" 2>/dev/null)
+  [ -z "$m" ] || model=$m
+fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
 if [ -z "$model" ]; then
   [ -n "$route" ] || exit 0
