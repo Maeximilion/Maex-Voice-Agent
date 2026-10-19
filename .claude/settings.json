@@ -1,4 +1,7 @@
 {
+  "permissions": {
+    "ask": ["Read(/**/.env)"]
+  },
   "hooks": {
     "SessionStart": [
       {
