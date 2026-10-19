@@ -327,13 +327,19 @@ def _position_parts(
     if len(parts) > 1:
         # Read the menu once for all parts.
         card = card if card is not None else card_format(session, tenant_id)
-        return [
-            position
-            for part in parts
-            for position in _position_parts(
-                session, tenant_id, part, now, high, low, card
-            )
-        ]
+        cut: list[str] = []
+        for part in parts:
+            try:
+                cut += _position_parts(session, tenant_id, part, now, high, low, card)
+            except Ambiguous:
+                # "die 13 und die 24, und 30": only this part asks for its
+                # number, the 13 is still taken (Codex PR #147). A part that
+                # would not ask on its own ("Pho Bo, und zwanzig" reads as a
+                # name with a quantity) makes the whole sentence ask instead.
+                if not sole_item_number(part, card)[1]:
+                    raise
+                cut.append(part)
+        return cut
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]
@@ -375,10 +381,13 @@ def _position_parts(
                 break
         else:
             piece = pieces[i]
+            # A piece with an unclear number ("einmal Pho Bo, und 30") raises
+            # Ambiguous, and the whole sentence asks for the number. Kept
+            # whole, the name search strips the numbers and takes Pho Bo alone;
+            # as a position of its own, the half before a cut ("die drei, und
+            # zwanzig") would be taken as a dish (Codex PR #147, ultra review).
             try:
                 found = search(piece)
-            except Ambiguous:
-                return [query]
             except NotFound:
                 # "Zweimal die 99 und Pho Bo": a piece that is one card number
                 # is a position whether the menu has it or not, and its search
@@ -570,6 +579,10 @@ def _search_with_wish(
     review PR #139).
     """
     dish = candidates[0][0]
+    # An unclear number in the dish part ("und 30 mit Reis") raises Ambiguous
+    # and the sentence asks. Handed to the search over the whole sentence, the
+    # wish words were a name, and "mit Reis" found another dish (Codex PR
+    # #147, ultra review).
     try:
         found = search_menu(
             session,
@@ -582,7 +595,7 @@ def _search_with_wish(
             split_check=False,
             card=card,
         )
-    except (Ambiguous, NotFound):
+    except NotFound:
         return None
     if not found.results:
         return None
