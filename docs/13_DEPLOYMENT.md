@@ -240,21 +240,30 @@ only repository read and security-result upload permissions. Dependabot uploads 
 supported on this event even with a restricted token
 ([GitHub documentation](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/resource-not-accessible)).
 
-**Rollout is staged, not yet activated.** Until the repository variable
-`CODEQL_ADVANCED_SETUP` is exactly `true`, the jobs are named `CodeQL validation` and
-run the full analysis without uploading results. A successful validation proves that
+**Rollout is staged, not yet activated.** Until `env.CODEQL_PUBLISH` in the workflow file is `"true"`, the jobs run the full
+analysis without uploading results. The switch is a file value, not a repository
+variable, because Dependabot and fork PRs see no `vars`. A successful validation proves that
 analysis ran, not that it found no alerts. Default setup remains responsible for
 published security results. This avoids conflicting uploads while the replacement is
 reviewed. Do not disable default setup before the workflow is merged to `main`.
 
 After Maxi merges the workflow, switch during a period with no merges in progress.
-Run these commands from Bash with the repository owner's authenticated GitHub CLI:
+Step 1 and step 3 run from Bash with the repository owner's authenticated GitHub CLI;
+step 2 is a reviewed PR that sets `CODEQL_PUBLISH: "true"` in the workflow file.
+
+Step 1, turn default setup off:
 
 ```bash
 backup_dir=$(mktemp -d)
 gh api repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup > "$backup_dir/codeql-default-setup.json"
 gh api --method PATCH repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup -f state=not-configured
-gh variable set CODEQL_ADVANCED_SETUP --body true --repo Maeximilion/Maex-Voice-Agent
+```
+
+Step 2, merge the one-line PR that flips `CODEQL_PUBLISH` to `"true"`.
+
+Step 3, enable and run the workflow:
+
+```bash
 gh workflow enable codeql.yml --repo Maeximilion/Maex-Voice-Agent
 gh workflow run codeql.yml --ref main --repo Maeximilion/Maex-Voice-Agent
 gh run list --workflow codeql.yml --repo Maeximilion/Maex-Voice-Agent
@@ -272,7 +281,7 @@ Keep the existing required checks and security thresholds unchanged. A cancelled
 on an older commit is expected when a newer PR commit supersedes it; assess the latest
 head, not historical commit badges.
 
-If activation fails, stop merges, set `CODEQL_ADVANCED_SETUP` to `false`, and restore
+If activation fails, stop merges, set `CODEQL_PUBLISH` back to `"false"` in a commit, and restore
 default setup with the languages, query suite, threat model, and runner settings in
 the saved snapshot. Confirm a successful default scan before resuming merges. The
 explicit workflow will return to clearly labelled validation mode. Never report

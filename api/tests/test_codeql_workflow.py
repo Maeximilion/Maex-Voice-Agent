@@ -68,9 +68,10 @@ class CodeQLWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             analyze["with"]["upload"],
-            "${{ vars.CODEQL_ADVANCED_SETUP == 'true' && 'always' || 'never' }}",
+            "${{ env.CODEQL_PUBLISH == 'true' && 'always' || 'never' }}",
         )
-        self.assertIn("validation", self.workflow["jobs"]["analyze"]["name"])
+        self.assertEqual(self.workflow["env"], {"CODEQL_PUBLISH": "false"})
+        self.assertNotIn("vars.", self.text)
         self.assertIn("GITHUB_STEP_SUMMARY", self.text)
         self.assertIn("not published", self.text)
 
