@@ -262,11 +262,6 @@ def test_check_reports_a_stale_asset(
     assert ra.render(check=True) == 1
 
 
-def test_committed_assets_match_their_data() -> None:
-    """The same check CI runs; a failure here means `make readme-assets`."""
-    assert ra.render(check=True) == 0
-
-
 # --- recording guards (Codex on 73a0005) -----------------------------------------
 
 
