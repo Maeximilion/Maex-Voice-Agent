@@ -1059,7 +1059,9 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
 def _with_removal(note: str | None, removal: str | None) -> str | None:
     """The note with a removal added, each removal once, within an order line."""
     said = [n for n in (note or "").split(", ") if n]
-    if not removal or removal.lower() in (n.lower() for n in said):
+    known = {n.lower() for n in said}
+    new = [r for r in (removal or "").split(", ") if r and r.lower() not in known]
+    if not new:
         return note
-    joined = ", ".join([*said, removal])
+    joined = ", ".join([*said, *new])
     return joined if len(joined) <= NOTE_MAX else note
