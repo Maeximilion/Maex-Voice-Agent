@@ -1522,6 +1522,19 @@ def test_a_denial_of_both_stays_a_denial(said):
         # The ear wrote no comma.
         ("ich bin gegen Erdnüsse gegen Sesam allergisch", "Erdnüsse und Sesam"),
         (
+            "ich bin allergisch gegen Erdnüsse und gegen Sesam. Danke",
+            "Erdnüsse und Sesam",
+        ),
+        # Two phrases across a full stop, each read on its own.
+        (
+            "ich bin allergisch gegen Erdnüsse. Gegen Sesam bin ich allergisch",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse. Und gegen Sesam bin ich allergisch",
+            "Erdnüsse und Sesam",
+        ),
+        (
             "ohne Zwiebeln, ich bin allergisch gegen Erdnüsse und gegen Sesam",
             "Erdnüsse und Sesam",
         ),
@@ -1542,9 +1555,13 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
         "ich bin allergisch gegen Erdnüsse und gegen Abend komme ich",
         "ich bin allergisch gegen Erdnüsse und auf jeden Fall ohne Zwiebeln",
         "Pho Bo und gegen Erdnüsse bin ich allergisch",
+        # Codex PR #338: a clause of its own, not a second allergen.
+        "ich bin allergisch gegen Erdnüsse und auf dem Weg zu euch",
+        "ich bin allergisch gegen Erdnüsse und auf Antibiotika angewiesen",
+        "ich bin allergisch gegen Erdnüsse, auf Wiedersehen",
     ],
 )
 def test_a_gegen_that_lists_nothing_stays_out(said):
-    """A time or "auf jeden Fall" is no second ingredient, and a "gegen"
-    without one before it begins the list."""
+    """A time, "auf jeden Fall" or a clause of its own is no second
+    ingredient, and a "gegen" without one before it begins the list."""
     assert classify_wish(said, BEILAGE).ingredient == "Erdnüsse"

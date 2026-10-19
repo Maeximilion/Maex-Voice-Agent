@@ -190,9 +190,11 @@ def _ingredient(text: str) -> str | None:
 
 
 # What follows a "gegen" or "auf" that carries on no list of ingredients: a
-# time ("und gegen halb sieben", "gegen Abend") or "auf jeden Fall".
+# time ("und gegen halb sieben", "gegen Abend"), "auf jeden Fall", "auf
+# Wiedersehen".
 _NOT_LISTED = frozenset(
     {"halb", "viertel", "abend", "mittag", "jeden", "keinen", "alle"}
+    | {"wiedersehen", "wiederhoeren"}
 )
 _LIST_JOINERS = frozenset({",", "und", "sowie", "oder"})
 
@@ -203,7 +205,10 @@ def _without_second_preposition(text: str) -> str:
     ingredient is read with the others; before, only the first reached the
     kitchen (review of PR #330). Only behind a list that the rules of
     `_until_new_clause` would read on, never before a time ("und gegen 18
-    Uhr"). Also "gegen Erdnuesse gegen Sesam", where the ear wrote no comma."""
+    Uhr"). Also "gegen Erdnuesse gegen Sesam", where the ear wrote no comma.
+    The second one names one word, and the list ends or goes on right after
+    it: "und auf dem Weg zu euch" or "und auf Antibiotika angewiesen" is a
+    clause of its own, not an allergen (Codex PR #338)."""
     tokens, words = _tokens(text)
     kept: list[str] = []
     last = 0
@@ -215,6 +220,7 @@ def _without_second_preposition(text: str) -> str:
             or follows in _NO_INGREDIENT
             or follows in _NEGATION
             or _ends_list(follows)
+            or not _item_ends(text, tokens, words, i + 1)
         ):
             continue
         j = i - 1
@@ -224,6 +230,12 @@ def _without_second_preposition(text: str) -> str:
             (p for p in range(j - 1, -1, -1) if words[p] in _PREPOSITIONS), None
         )
         listed = [] if first is None else words[first + 1 : j]
+        # Not across a full stop: "gegen Erdnuesse. Gegen Sesam bin ich
+        # allergisch" is two phrases, each read on its own.
+        if first is None or _SENTENCE_END.search(
+            text, tokens[first].end(), tokens[i].start()
+        ):
+            continue
         joiner = ""
         if words[j] not in _LIST_JOINERS:
             # No joiner at all: only one word between the two, as said.
@@ -238,6 +250,22 @@ def _without_second_preposition(text: str) -> str:
         last = tokens[i + 1].start()
     kept.append(text[last:])
     return "".join(kept)
+
+
+def _item_ends(
+    text: str, tokens: list[re.Match[str]], words: list[str], k: int
+) -> bool:
+    """Does the list item of one word at `k` end there: at the end, before a
+    joiner, a full stop, a word that ends a list, or "danke"?"""
+    k += 1
+    return (
+        k >= len(words)
+        or words[k] in _LIST_JOINERS
+        or words[k] in _AFTER_DENIAL
+        or _ends_list(words[k])
+        or _SENTENCE_END.search(text, tokens[k - 1].end(), tokens[k].start())
+        is not None
+    )
 
 
 _GEGEN = re.compile(r"gegen", re.IGNORECASE)
