@@ -737,6 +737,8 @@ def _phrase_start(words: list[str], i: int) -> int:
 _CONNECTORS = frozenset(
     {",", "aber", "und", "also", "deshalb", "daher", "dann", "bitte", "dafuer"}
 )
+# What joins a removal to what follows it.
+_JOINERS = frozenset({",", "und", "oder", "sowie", "aber"})
 # What begins after a removal: a new dish ("und die Sommerrollen", "und zwei
 # Pho") or the next allergy ("und eine Sesamallergie", "und gegen Sesam").
 _AFTER_REMOVAL = _ARTICLES | _PREPOSITIONS | {"die", "der", "das", "den", "noch"}
@@ -754,10 +756,19 @@ def _removal_inside(words: list[str], named: list[int]) -> tuple[int, int, int] 
     begin = at
     while begin > named[0] + 1 and words[begin - 1] in _CONNECTORS:
         begin -= 1
+    # It ends before the phrase of any later allergy word, whatever joins it
+    # ("sowie eine Sesamallergie", ". Ich habe auch eine ...", Codex PR #330).
+    limit = next((j for j in range(at + 1, len(words)) if _is_allergy(words[j])), None)
+    if limit is not None:
+        limit = max(_phrase_start(words, limit), at + 1)
+        while limit > at + 1 and words[limit - 1] in _JOINERS:
+            limit -= 1
+    else:
+        limit = len(words)
     end = at + 1
-    while end < len(words):
+    while end < limit:
         follows = words[end + 1] if end + 1 < len(words) else ""
-        if words[end] in (",", "und") and (
+        if words[end] in _JOINERS and (
             follows in _AFTER_REMOVAL
             or _is_allergy(follows)
             or follows.isdigit()

@@ -1160,6 +1160,22 @@ def test_removal_without_a_tab():
             "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
             None,
         ),
+        # Codex PR #330, round 3: before every later allergy.
+        (
+            "ich habe eine Erdnussallergie, aber ohne Zwiebeln sowie eine Sesamallergie",
+            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Erdnussallergie, ohne Zwiebeln oder gegen Sesam bin ich auch allergisch",
+            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Erdnussallergie, ohne Zwiebeln. Ich habe auch eine Sesamallergie",
+            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            None,
+        ),
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln, und die Sommerrollen",
             "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
