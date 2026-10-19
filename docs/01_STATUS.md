@@ -1,13 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.9
+> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.10
 
 ---
 
 ## Summary
 
-**CodeQL coverage for dependency updates is prepared, pending activation (16.10.2026, PR #333).** GitHub's default setup intentionally skips Dependabot-triggered PRs, leaving a neutral result with missing configurations. The explicit `codeql` workflow analyzes Python, JavaScript/TypeScript, and Actions for every PR to `main`, without actor or path exclusions, on hosted runners without project builds or dependency installation. While default setup remains active, the new jobs validate analysis without uploading conflicting results. After merge, switch to advanced uploads and verify the new baseline and PR results as described in docs/13. Older cancelled CI runs remain historical; only the current head determines readiness.
+**GitHub's default CodeQL setup stays (Maxi, 19.10.2026).** The explicit `codeql.yml` workflow from PR #333, which would also have scanned Dependabot pull requests, is removed again before it was ever switched on: a workflow file to maintain and merge commits for every Dependabot pull request outweigh a scan of Dependabot and fork pull requests before the merge; both gaps are accepted, `main` is scanned after every merge. Reasoning in docs/13 §6 "CodeQL and dependency updates".
 
 **The operations controls require a CSRF token (PR #316, 19.10.2026).** The page and the dev-only simulator console set a `csrf_token` cookie that a script in `base.html` copies into each HTMX request; every write needs the matching `X-CSRF-Token` header, otherwise 403 before any change. The cookie is Secure outside dev/test (also behind Caddy) and on local HTTPS; a page reload keeps it, so other tabs stay usable. The Jules branch was reconciled with current order controls and proxy authentication.
 
@@ -570,6 +570,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.10 · 19.10.2026:** Maxi keeps GitHub's default CodeQL setup; the explicit codeql.yml workflow from PR #333 is removed
 - **v2.3.9 · 19.10.2026:** PR #333: prepare explicit CodeQL coverage for dependency PRs; activation waits for the workflow on main
 - **v2.3.8 · 19.10.2026:** PR #316: CSRF token required on operations controls (Jules branch reconciled with main)
 - **v2.3.7 · 19.10.2026:** #252 follow-up: removal before an allergy kept, denied allergy gives no note, gegen-allergisch pattern linear
