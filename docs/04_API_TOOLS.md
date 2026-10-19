@@ -178,7 +178,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    setzt die Bestellung fort („Und noch die 24"). Steht davor schon eine Menge
    („zweimal und die 24") oder ein Marker („Nummer und 24"), folgt ein Zehner
    („und zwanzig", abgeschnitten aus „drei und zwanzig") oder steht es zwischen
-   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig.
+   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig. The tens count
+   in digits as well („und 20", „und 20 mal die 13") and across a pause, which
+   is punctuation, a hesitation or „bitte" („und äh zwanzig", „und... 20");
+   an article, opening word, marker or prefix keeps the continuation („und
+   noch die zwanzig" is the 20, Codex PR #147).
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
    Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")
@@ -219,7 +223,17 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    it or not (eval `abholung_0082`): „zweimal die 99 und Pho Bo" is the 99,
    answered with `not_found`, and Pho Bo once. Kept whole, the name search found
    Pho Bo alone and took it twice. Any other piece that hits nothing still makes
-   the „und" part of a name.
+   the „und" part of a name. A piece with an unclear number makes the whole
+   sentence `ambiguous` with the question for the number (Codex PR #147): before,
+   the sentence went whole to the name search, which strips the numbers, so
+   „einmal Pho Bo, und 30" was Pho Bo alone. The same holds for the dish part in
+   front of a wish („und 30 mit Reis" asks; before, „mit Reis" was searched as a
+   name). A pause at the „und" of a spoken number („die drei und äh zwanzig",
+   „die drei äh und zwanzig") keeps it one piece, and the sentence asks whether
+   it is 23 or the 3 and the 20, also next to a prefix, a letter or a name. A
+   comma at the „und" („die drei, und zwanzig Frühlingsrollen") is still cut
+   first (#328). In a sentence of several parts only the part with the unclear
+   number asks („die 13 und die 24, und 30": the 13 is taken).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
