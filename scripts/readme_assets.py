@@ -15,7 +15,7 @@ repository, so the start page cannot claim more than the docs do:
 
 Usage:
     python scripts/readme_assets.py render            write all SVG assets
-    python scripts/readme_assets.py render --check    fail if a committed asset is stale
+    python scripts/readme_assets.py render --check    fail if a committed asset is stale (advisory in CI)
     python scripts/readme_assets.py render --png      also the PNGs (needs Chromium)
     python scripts/readme_assets.py add <report.json> [--suite cases|targets]
     python scripts/readme_assets.py add-voice <date> <package> <metric> <value> ...
@@ -2878,18 +2878,11 @@ IMAGES_HEADING = "README images"
 def image_findings() -> dict[str, list[dict[str, str]]]:
     """What the maintenance bot reports about the images on `main`, for the one
     decision issue (`scripts/decision_issue.py --also`). Keyed by asset and
-    digest, so the same stale state is reported once and a new one again."""
-    facts = gather()
-    assets = build(facts)
+    digest, so the same stale state is reported once and a new one again.
+    A stale SVG is not reported: the Monday README update redraws them
+    (docs/15_README_STRATEGY.md, "Keeping them current"), only what needs Maxi is."""
+    assets = build(gather())
     entries = [
-        {
-            "label": f"README images out of date on main ({target.name}): "
-            "run make readme-assets in the next PR",
-            "id": f"{target.name}:{svg_digest(content)}",
-        }
-        for target, content in outdated(facts, assets).items()
-    ]
-    entries += [
         {
             "label": f"README images out of date on main ({name}): run python "
             "scripts/readme_assets.py render --png in the next PR",
