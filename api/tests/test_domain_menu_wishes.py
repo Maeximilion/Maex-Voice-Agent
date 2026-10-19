@@ -944,6 +944,8 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "Keine Allergie habe ich",
         "ich bin gegen gar nichts allergisch",
         "ich habe keine Allergie oder so",
+        # Codex PR #330.
+        "ich habe weder Allergien noch Unverträglichkeiten",
         # Answers to "Wogegen?" that take the allergy back (own review).
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
@@ -1081,6 +1083,38 @@ def test_denial_next_to_an_addition_waits_for_the_dish():
 def test_removal_without_a_tab():
     wish = classify_wish("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
     assert wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+
+
+@pytest.mark.parametrize(
+    ("said", "text", "note"),
+    [
+        (
+            "ich bin allergisch gegen Erdnüsse, aber ohne Zwiebeln",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Erdnussallergie, ohne Zwiebeln bitte",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            None,
+        ),
+        (
+            "ohne Koriander, ich habe eine Erdnussallergie, ohne Zwiebeln",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Koriander, ohne Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Allergie, ohne Zwiebeln",
+            "ich habe eine Allergie",
+            "ohne Zwiebeln",
+        ),
+    ],
+)
+def test_removal_after_the_allergy_is_kept(said, text, note):
+    """Codex PR #330: "allergisch gegen Erdnuesse, aber ohne Zwiebeln" lost the
+    removal behind the allergy."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == ("allergy", text, note)
 
 
 def test_addition_after_the_ingredient_is_no_ingredient():

@@ -472,7 +472,7 @@ def _negated(words: list[str]) -> bool:
     "keine Erdnussallergie", "nicht allergisch", "nicht gegen", "gegen
     nichts"?"""
     return any(
-        ((word in _KEIN or word == "nicht") and _allergy_word(after))
+        ((word in _KEIN or word in ("nicht", "weder")) and _allergy_word(after))
         or (word == "nicht" and after in _PREPOSITIONS)
         or (word in _PREPOSITIONS and (after in ("nichts", "gar") or after in _KEIN))
         for word, after in pairwise(words)
@@ -517,10 +517,11 @@ def _denial_end(words: list[str], i: int) -> int | None:
         i += 1
     word, after = [*words[i : i + 2], "", ""][:2]
     end: int | None = None
-    if (word in _KEIN or word == "nicht") and _allergy_word(after):
+    if (word in _KEIN or word in ("nicht", "weder")) and _allergy_word(after):
         end = i + 2
-        # "keine Allergien oder (keine) Unvertraeglichkeiten"
-        while end < len(words) and words[end] in ("und", "oder"):
+        # "keine Allergien oder (keine) Unvertraeglichkeiten", "weder
+        # Allergien noch Unvertraeglichkeiten" (Codex PR #330)
+        while end < len(words) and words[end] in ("und", "oder", "noch"):
             nxt = (
                 end + 2 if end + 1 < len(words) and words[end + 1] in _KEIN else end + 1
             )
@@ -723,8 +724,8 @@ def _drop_quantity(text: str) -> str:
 
 
 def classify_wish(text: str, groups: list[OptionGroup]) -> Wish | None:
-    """Der Wunsch zu einem feststehenden Gericht, gegen dessen Optionen. None:
-    nothing to note, the guest denied an allergy ("ich habe keine Allergie")."""
+    """The wish for one dish, judged against its options. None: nothing to
+    note, the guest denied an allergy ("ich habe keine Allergie")."""
     text = _clean(text)
     tokens, words = _tokens(text)
     named = _allergy_words(words)
@@ -800,6 +801,22 @@ def _with_allergy(
         removal = removal_with(around)
     else:
         removal = removal_with(_classify(head, groups)) if head else None
+        # A removal after the allergy ("allergisch gegen Erdnuesse, aber ohne
+        # Zwiebeln", Codex PR #330) joins the one before it; the allergy is
+        # read without it. Only "ohne": a "keine" there may still belong to
+        # the allergy ("ich vertrage keine Erdnuesse, keine Mandeln").
+        later = next(
+            (j for j in range(named[-1] + 1, len(words)) if words[j] == "ohne"), None
+        )
+        if later is not None:
+            behind = _clean(text[tokens[later].start() :])
+            removal = (
+                ", ".join(
+                    r for r in (removal, removal_with(_classify(behind, groups))) if r
+                )
+                or None
+            )
+            text = _clean(_drop_trailing_glue(text[: tokens[later].start()]))
     # A negation in front of the phrase ("die Sosse nicht auf den Reis") may
     # name a denied ingredient: then only the phrase is read. A "vertrage"
     # whose ingredient comes before it ("Sesam vertrage ich nicht") is not
@@ -931,9 +948,9 @@ def _names(option: str, group: str, wanted: set[str]) -> set[str]:
 
 
 def open_wish(text: str) -> Wish | None:
-    """Bei mehreren Treffern: Weglassen und Allergie stehen schon fest, eine
-    Option erst, wenn der Gast das Gericht gewaehlt hat. None: a denied
-    allergy and nothing else, no wish."""
+    """With several hits: a removal and an allergy are settled already, an
+    option only once the guest has chosen the dish. None: a denied allergy and
+    nothing else, no wish."""
     wish = classify_wish(text, [])
     if wish is None or wish.kind == "note":
         return wish
