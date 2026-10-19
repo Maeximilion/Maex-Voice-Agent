@@ -8,6 +8,7 @@ VPN, docs/13 §Caddy), nicht die Anwendung. Deshalb hängt hier bewusst keine
 Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 """
 
+import secrets
 import uuid
 from collections.abc import Callable
 from datetime import datetime
@@ -20,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.config import LOCAL_ENVS, settings
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
@@ -169,16 +171,46 @@ def _header(session: Session, tenant: Tenant) -> dict:
     }
 
 
-def _require_htmx(hx_request: str | None = Header(default=None)) -> None:
-    """Schreibende Taps nur von der eigenen Seite.
+def _page_response(
+    request: Request, template: str, context: dict, status_code: int = 200
+) -> HTMLResponse:
+    """Render a full page and issue the CSRF cookie base.html sends back as a header."""
+    token = request.cookies.get("csrf_token")
+    if not token or not token.isascii():
+        # A token _require_htmx can never accept would lock every tap out.
+        token = secrets.token_urlsafe(32)
+    response = templates.TemplateResponse(
+        request, template, context, status_code=status_code
+    )
+    response.set_cookie(
+        "csrf_token",
+        token,
+        # Readable on purpose: base.html copies it into X-CSRF-Token at send
+        # time, so every tab uses the cookie the browser holds right now.
+        httponly=False,
+        samesite="lax",
+        secure=settings.env not in LOCAL_ENVS or request.url.scheme == "https",
+    )
+    return response
 
-    Der Proxy schuetzt /gui/* mit Basic-Auth, und die schickt der Browser auch bei
-    einem Formular von einer fremden Seite mit. Einen eigenen Kopf wie HX-Request
-    darf eine fremde Seite ohne CORS-Freigabe nicht setzen - das genuegt hier als
-    Schutz gegen untergeschobene Klicks, ohne Token im Formular.
-    """
+
+def _require_htmx(
+    request: Request,
+    hx_request: str | None = Header(default=None),
+    x_csrf_token: str | None = Header(default=None),
+) -> None:
+    """Require the page's CSRF token for state-changing HTMX requests."""
     if hx_request != "true":
-        raise HTTPException(status_code=403, detail="Nur aus der Betriebsansicht")
+        raise HTTPException(status_code=403, detail="Only from the operations view")
+    csrf_cookie = request.cookies.get("csrf_token")
+    if (
+        not csrf_cookie
+        or not x_csrf_token
+        or not csrf_cookie.isascii()
+        or not x_csrf_token.isascii()
+        or not secrets.compare_digest(csrf_cookie, x_csrf_token)
+    ):
+        raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
 def _switch(
@@ -211,20 +243,17 @@ def _switch(
 def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Betriebsansicht fürs Tablet."""
     tenant = _tenant(session)
-    if tenant is None:
-        return templates.TemplateResponse(
-            request, "betrieb/index.html", {"problem": NO_TENANT, "today": []}, 503
-        )
-    return templates.TemplateResponse(
-        request,
-        "betrieb/index.html",
-        {
+    context: dict = {"problem": NO_TENANT, "today": []}
+    if tenant is not None:
+        context = {
             "tenant": tenant,
             "today": _today_rows(session, tenant),
             "callbacks": _callback_rows(session, tenant),
             "orders": _order_rows(session, tenant),
             **_header(session, tenant),
-        },
+        }
+    return _page_response(
+        request, "betrieb/index.html", context, status_code=200 if tenant else 503
     )
 
 

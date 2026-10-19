@@ -178,7 +178,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    setzt die Bestellung fort („Und noch die 24"). Steht davor schon eine Menge
    („zweimal und die 24") oder ein Marker („Nummer und 24"), folgt ein Zehner
    („und zwanzig", abgeschnitten aus „drei und zwanzig") oder steht es zwischen
-   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig.
+   zwei Zahlen („die 23 und die 24"), ist der Satz mehrdeutig. The tens count
+   in digits as well („und 20", „und 20 mal die 13") and across a pause, which
+   is punctuation, a hesitation or „bitte" („und äh zwanzig", „und... 20");
+   an article, opening word, marker or prefix keeps the continuation („und
+   noch die zwanzig" is the 20, Codex PR #147).
    Steht **Inhalt** daneben, trennen sich zwei Fälle: mit Marker („die Nummer 23
    und einmal Pho Bo") ist es `ambiguous` mit der Frage nach der einen Nummer.
    Ein Wunsch daneben („Nummer 23 mit Erdnusssauce", „die 23 ohne Karotten")
@@ -219,7 +223,17 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    it or not (eval `abholung_0082`): „zweimal die 99 und Pho Bo" is the 99,
    answered with `not_found`, and Pho Bo once. Kept whole, the name search found
    Pho Bo alone and took it twice. Any other piece that hits nothing still makes
-   the „und" part of a name.
+   the „und" part of a name. A piece with an unclear number makes the whole
+   sentence `ambiguous` with the question for the number (Codex PR #147): before,
+   the sentence went whole to the name search, which strips the numbers, so
+   „einmal Pho Bo, und 30" was Pho Bo alone. The same holds for the dish part in
+   front of a wish („und 30 mit Reis" asks; before, „mit Reis" was searched as a
+   name). A pause at the „und" of a spoken number („die drei und äh zwanzig",
+   „die drei äh und zwanzig") keeps it one piece, and the sentence asks whether
+   it is 23 or the 3 and the 20, also next to a prefix, a letter or a name. A
+   comma at the „und" („die drei, und zwanzig Frühlingsrollen") is still cut
+   first (#328). In a sentence of several parts only the part with the unclear
+   number asks („die 13 und die 24, und 30": the 13 is taken).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
@@ -279,7 +293,7 @@ kommt als `wish` mit:
 |---|---|---|
 | `note` | Weglassen („ohne", „kein") | als `note` der Position in `draft_order`, ohne Preis |
 | `option` | steht als Option des Gerichts auf der Karte; `group`, `option`, `price_delta_cents` und `reason` aus `item_options` | in `options` von `draft_order`; der Aufpreis wird sofort mit wiederholt |
-| `allergy` | eine eigene Allergie oder Unverträglichkeit („ich vertrage keine Erdnüsse", „Erdnussallergie", „Nuss- und Sesamallergie", „Laktoseintoleranz"); jede genannte Zutat kommt in den Hinweis | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen; „weiß ich nicht" oder „nein" ist keine Zutat, die Frage bleibt offen. Mehrere Gerichte ohne Zutat in einem Satz: `say` fragt nach dem ersten und nennt es („Wogegen sind Sie bei Pho Bo allergisch?"), die anderen folgen einzeln |
+| `allergy` | eine eigene Allergie oder Unverträglichkeit („ich vertrage keine Erdnüsse", „Erdnussallergie", „Nuss- und Sesamallergie", „Laktoseintoleranz"); jede genannte Zutat kommt in den Hinweis | `text` ist der Küchenhinweis im festen Wortlaut „WICHTIG: Keine <Zutat>. Grund: Allergie" (E14), `ingredient` die Zutat; als `note` in `draft_order`, im `readback` wiederholt; `say` ohne Zusage, dass das Gericht frei davon ist. Ohne erkennbare Zutat fragt `say`, wogegen; „weiß ich nicht" oder „nein" ist keine Zutat, die Frage bleibt offen. Mehrere Gerichte ohne Zutat in einem Satz: `say` fragt nach dem ersten und nennt es („Wogegen sind Sie bei Pho Bo allergisch?"), die anderen folgen einzeln. A removal said before the allergy, or after it with „ohne", stays (#252): `text` ends with it („WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"); while the ingredient is still asked for, it waits in `wish.note` and goes after the note made from the answer. An addition next to an allergy is not taken yet (docs/01 open point). A phrase that only denies an allergy („ich habe keine Erdnussallergie", „ich bin nicht gegen Erdnüsse allergisch", „gegen nichts allergisch") is no allergy: only the wishes around it count („ich habe keine Allergie, aber bitte ohne Koriander"), without one there is no `wish`. A negation mixed with more („keine Allergie gegen Erdnüsse, aber gegen Sesam") gives an allergy without `ingredient`: `say` asks what it is against, the ingredient is never read from such words. Only a closing „sonst keine (weiteren) Allergien" after a named allergy does not count as such a negation. The ingredient is read from the whole sentence, so a removal said right before the allergy may also be listed as an allergy, the safe side |
 | `unknown` | steht nicht auf der Karte | nicht anbieten: `say` („Den Wunsch … kann ich leider nicht anbieten"), das Gericht bleibt wie auf der Karte |
 | `open` | bei mehreren Treffern, oder die Option steht in zwei Gruppen (`groups`, „Reis" als Beilage und als Extra) | nachfragen: erst das Gericht wählen lassen, bzw. `say` fragt nach der Gruppe |
 

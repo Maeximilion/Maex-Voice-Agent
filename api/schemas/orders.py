@@ -14,6 +14,10 @@ MAX_QUANTITY = 30
 MAX_ITEMS = 30
 
 
+# The longest kitchen note on an order line.
+NOTE_MAX = 200
+
+
 class ChosenOption(BaseModel):
     group: str = Field(min_length=1, max_length=100)
     name: str = Field(min_length=1, max_length=100)
@@ -23,7 +27,7 @@ class OrderItemIn(BaseModel):
     menu_item_id: uuid.UUID
     quantity: int = Field(ge=1, le=MAX_QUANTITY)
     options: list[ChosenOption] = Field(default_factory=list, max_length=10)
-    note: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=NOTE_MAX)
 
 
 class OrderCustomer(BaseModel):

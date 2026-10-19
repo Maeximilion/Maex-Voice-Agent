@@ -152,3 +152,23 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 - **17.09.2026 – Betriebsansicht gebaut (T-3.1, T-3.3):** `api/gui/templates/betrieb/index.html` mit Kopfzeile und drei Spalten, `fragments/heute.html` als HTMX-Fragment der Spalte "Heute", `api/gui/sse.py` als Ereignisstrom. Noch offen: Knoepfe der Kopfzeile (T-3.2), Spalte "Rueckrufe" (T-3.4), Spalte "Neue Bestellungen" (T-4.7).
 - **25.09.2026 – Spalte "Neue Bestellungen" gebaut (T-4.7):** Karten, Passt, Nochmal senden, Korrektur-Kasten; im Browser durchgeklickt (Tauschen mit Hinweis, Speichern, Passt). Kopfzeile (T-3.2) und Rueckrufe (T-3.4) sind seit 18.09.2026 fertig.
 - **16.09.2026 – Betriebsansicht:** als Bild im Chat abgenommen. Änderungen gegenüber der ersten Spec: dritter Kopfzeilen-Zustand (Überlauf), Fehlerkarte als eigener Kartenzustand, Abholcode groß, „Wartezeit" als Wort auf den Knöpfen, Kartennummer vor jedem Gerichtnamen.
+
+---
+
+## 8. Operating test (T-3.5)
+
+The target in the header of this file is checked on the real tablet by two different team members who have never seen the view, one after the other (both passes on the same build: if the view changes after a pass, that pass no longer counts). The protocol is `docs/vorlagen/bedientest_protokoll.md`: twelve spoken tasks that cover the operating rules of section 1 except rule 6 for deletion and cancellation, which the protocol does not exercise, and rule 1 for the correction flow and for the search step of "Gericht aus", whose extra taps are known and only recorded, not scored (new order, Passt, Korrigieren, Nochmal senden, callback, Gericht aus, Wartezeit, pause and resume, reservations, changing an option), a scored check of live arrivals (sound and card, before the first tap), a list of stumbles with severity, four questions and a verdict (PASS, PASS WITH CHANGES, FAIL). The test itself is run by Maxi with the team members; this file only holds the method. T-3.5 closes only after two testers have passed on the same build. The result and the changes it causes go to `docs/01_STATUS.md`. Two questions are open until then: whether the tablet needs a "Ton an" hint (browser autoplay, status assumption of 18.09.2026) and whether an option line needs its own "Ändern" (status open point, T-4.7).
+
+---
+
+## 9. Request protection
+
+The operations page and the dev-only simulator console issue a random `csrf_token` cookie (SameSite=Lax,
+Secure outside dev/test or over HTTPS). A script in `base.html` reads the cookie when HTMX sends a request
+and copies it into `X-CSRF-Token`, so every tab sends the cookie the browser holds at that moment
+(two tabs opened at once cannot end up with different tokens). The cookie is not HttpOnly on purpose:
+a script on the page could read a token in the page just the same. Every state-changing operations route requires both
+`HX-Request: true` and a matching cookie/header pair; missing, malformed or
+mismatched tokens return 403 before any change. Page reloads reuse the cookie so
+other open tabs remain usable. Fragments do not issue cookies. Caddy authentication
+and the application's `GUI_PROXY_SECRET` check remain required outside dev/test.
