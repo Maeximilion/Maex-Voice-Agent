@@ -9,6 +9,7 @@
 
 - [ ] Tablet is the real device, held the way it hangs in the kitchen or at the counter, logged in, sound on, brightness as in operation
 - [ ] Operations view reachable from the tablet through Caddy (docs/13); the header shows the green dot "KI nimmt an"
+- [ ] **Isolated stack**: run on a throwaway stack (workbench or local Compose, invented data) with the print bridge off, never on the working stack of the restaurant; test orders in `primary` mode would queue real slips that cannot be retracted. Starting waiting times (only if this is not a throwaway stack): pickup ____ min, delivery ____ min, to restore afterwards
 - [ ] **Open day**: run the test on a day and time when pickup is open (opening hours), otherwise the text phone call that creates order A ends abandoned and task 1 has no card
 - [ ] **Language**: the spoken prompts below are English for the repository; prepare one translation in the tester's working language before the test and use the same wording for both testers
 - [ ] Test data only, invented customers: **B, C, D and the red-card order exist before the test; A does not (it is created during section 2a)** - order A: the live arrival of section 2a (a pickup, created during the test); order B: a pickup (write its pickup code here: ____) used for task 2 (Passt on B does not remove order C); order C: a pickup with a dish that has a required choice and a note (write its pickup code here: ____), used for task 3; order D: a dish with two alternative choices of the same group (for example two sauces), used for task 12; **its dish appears on no other card** (A, B, C, and the dish chosen in task 3, use other dishes), and write its pickup code here: ____ so task 12 names it. Write the concrete numbers here before the test: replacement dish ____ with choice ____ (task 3); dish ____ with choice ____ changed to choice ____ (task 12); one **separate** red card ("Zettel nicht gedruckt", a fifth order, not A to D, because task 3 saves a correction that turns a failed handover normal); one complaint callback; one reservation today **later than the planned test time** (otherwise task 11 has no correct answer)
@@ -25,7 +26,7 @@
 | Device and browser | |
 | Build (git commit or release) | |
 | Was the tablet used before in the view? | yes / no (must be no) |
-| Phone rang during the test; fingers damp or oiled | yes / no; yes / no |
+| Phone rang during the test; fingers damp or oiled | yes / no; yes / no (both must be yes, otherwise the run is invalid and does not count) |
 
 ---
 
@@ -110,7 +111,7 @@ Answers (short):
 | Tasks that needed a hint | at most 1 | |
 | Severity A stumbles | 0 | |
 | Total time of the tasks | within the 5 minutes | min |
-| Live arrivals noticed within 10 s (section 2a) | both | / 2 |
+| Callback arrival noticed within 10 s (section 2a, row 2); the first arrival is recorded and not scored | yes | |
 | Callback tone played by itself after the first tap (section 2a, row 2) | yes | |
 | Tone before the first tap (section 2a, row 1, observation) | not scored; "no" puts the "Ton an" hint (docs/01_STATUS.md) on the list of changes and the verdict is at best PASS WITH CHANGES until it is built | |
 
