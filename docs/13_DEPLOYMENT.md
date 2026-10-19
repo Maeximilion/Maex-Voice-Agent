@@ -255,6 +255,7 @@ backup_dir=$(mktemp -d)
 gh api repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup > "$backup_dir/codeql-default-setup.json"
 gh api --method PATCH repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup -f state=not-configured
 gh variable set CODEQL_ADVANCED_SETUP --body true --repo Maeximilion/Maex-Voice-Agent
+gh workflow enable codeql.yml --repo Maeximilion/Maex-Voice-Agent
 gh workflow run codeql.yml --ref main --repo Maeximilion/Maex-Voice-Agent
 gh run list --workflow codeql.yml --repo Maeximilion/Maex-Voice-Agent
 ```
