@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import AppError
 from api.core.logging import get_logger
 from api.db import SessionLocal
-from api.gui.router import _form, _require_htmx, templates
+from api.gui.router import _form, _page_response, _require_htmx, templates
 from sim.session import SimCall, Turn, resolve_tenant
 
 router = APIRouter(prefix="/gui/dev", tags=["gui-dev"])
@@ -87,7 +87,7 @@ def _drop(call_id: str) -> None:
 
 @router.get("/console", response_class=HTMLResponse, include_in_schema=False)
 def console(request: Request) -> HTMLResponse:
-    return templates.TemplateResponse(request, "dev/console.html", {})
+    return _page_response(request, "dev/console.html", {})
 
 
 @router.post(

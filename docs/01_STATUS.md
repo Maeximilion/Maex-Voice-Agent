@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.7
+> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.8
 
 ---
 
 ## Summary
+
+**The operations controls require a CSRF token (PR #316, 19.10.2026).** The page and the dev-only simulator console set a `csrf_token` cookie that a script in `base.html` copies into each HTMX request; every write needs the matching `X-CSRF-Token` header, otherwise 403 before any change. The cookie is Secure outside dev/test (also behind Caddy) and on local HTTPS; a page reload keeps it, so other tabs stay usable. The Jules branch was reconciled with current order controls and proxy authentication.
 
 **A removal said before an allergy stays, a denied allergy gives no note (#252 follow-up, 18.10.2026).** "ohne Zwiebeln, ich habe eine Erdnussallergie" gave only "WICHTIG: Keine Erdnuss. Grund: Allergie"; the kitchen note is now "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln". "ich habe keine Erdnussallergie" gave that note too, and "ich habe keine Allergie" the question "Wogegen?". A phrase that only denies an allergy now gives no allergy, only the wishes around it; a negation mixed with more ("keine Allergie gegen Erdnuesse, aber gegen Sesam") gives an allergy whose ingredient the agent asks for, never one read from such words. Strict on purpose: what the denial grammar does not know keeps the allergy, so no allergy is lost. The pattern CodeQL flagged on guest text (`gegen ...` `allergisch`, 66 s at 4,000 characters of spaces) is a scanner with the same results, under a millisecond; the ingredient after "allergisch gegen" is read up to the end of its clause only (a chain of 76,000 characters: 10.7 s before, 0.09 s now). Evals `allergie_0006` and `allergie_0007`.
 
@@ -566,6 +568,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.8 · 19.10.2026:** PR #316: CSRF token required on operations controls (Jules branch reconciled with main)
 - **v2.3.7 · 19.10.2026:** #252 follow-up: removal before an allergy kept, denied allergy gives no note, gegen-allergisch pattern linear
 - **v2.3.6 · 19.10.2026:** T-3.5: operating test protocol template (docs/vorlagen/bedientest_protokoll.md) and method in docs/06 section 8; the test itself is Maxi's with two team members
 - **v2.3.5 · 19.10.2026:** Codex PR #147 open point: a pause or digits between a leading und and a tens word ask back, the splitter keeps such a number whole, a pause inside drei und zwanzig asks, an unclear number in a multi-dish sentence asks; #325, #327 and #328 noted
