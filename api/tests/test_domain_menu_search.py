@@ -708,31 +708,32 @@ def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
 
 
 @pytest.mark.parametrize(
-    ("said", "unclear"),
+    "said",
     [
-        ("einmal Pho Bo, und 30", "und 30"),
-        (
-            "zweimal die drei und äh zwanzig und Pho Bo",
-            "zweimal die drei und äh zwanzig",
-        ),
+        "einmal Pho Bo, und 30",
+        "einmal Pho Bo, und öhm 30",
+        "zweimal die drei und äh zwanzig und Pho Bo",
+        "die drei, und zwanzig",
+        "Pho Bo, und zwanzig und einer Sesamallergie",
+        "die Nummer 48 Ente süß und sauer",
     ],
 )
-def test_an_unclear_number_piece_stays_a_position(session, tenant_id, said, unclear):
-    """Codex PR #147: a piece whose number needs a question stays a position
-    of its own, so the guest is asked. Kept whole, the name search dropped the
-    numbers and took Pho Bo alone."""
-    parts = position_parts(session, tenant_id, said, now=NOW)
-    assert unclear in parts and len(parts) == 2
+def test_an_unclear_number_piece_makes_the_sentence_ask(session, tenant_id, said):
+    """Codex PR #147 and its ultra review: a piece with an unclear number makes
+    the whole sentence a question. Kept whole, the name search dropped the
+    numbers and took Pho Bo alone; as a position of its own, "die drei" before
+    the cut was taken as a dish, and an allergy hung on the wrong part."""
     with pytest.raises(Ambiguous):
-        suche(session, tenant_id, unclear)
+        position_parts(session, tenant_id, said, now=NOW)
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, said)
 
 
-def test_an_unclear_piece_with_a_name_keeps_the_sentence_whole(session, tenant_id):
-    """Only a piece that is nothing but a number becomes a position: "sauer"
-    alone would find 48 Ente süß-sauer next to the question about the 48 and
-    order the dish twice."""
-    said = "die Nummer 48 Ente süß und sauer"
-    assert position_parts(session, tenant_id, said, now=NOW) == [said]
+def test_an_unclear_number_before_a_wish_asks(session, tenant_id):
+    """ "und 30 mit Reis": handed to the search over the whole sentence, the
+    wish words were a name and found another dish (ultra review PR #329)."""
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, "und 30 mit Reis")
 
 
 def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
@@ -1343,7 +1344,6 @@ def test_weight_stays_in_the_name():
         "Zweimal die 13 die 25 einmal die S12",
         "Die 13 und Sushi eins",
         "Die 13.",
-        "Die 13, und 30",
         "Zweimal die drei und äh zwanzig und die 13",
     ],
 )

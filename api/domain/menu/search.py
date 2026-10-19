@@ -375,20 +375,13 @@ def _position_parts(
                 break
         else:
             piece = pieces[i]
+            # A piece with an unclear number ("einmal Pho Bo, und 30") raises
+            # Ambiguous, and the whole sentence asks for the number. Kept
+            # whole, the name search strips the numbers and takes Pho Bo alone;
+            # as a position of its own, the half before a cut ("die drei, und
+            # zwanzig") would be taken as a dish (Codex PR #147, ultra review).
             try:
                 found = search(piece)
-            except Ambiguous:
-                # "einmal Pho Bo, und 30": a piece that is nothing but an
-                # unclear number is a position whose question the guest must
-                # hear. Kept whole, the name search drops the numbers and takes
-                # Pho Bo alone (Codex PR #147). With a word of a name in it
-                # ("die Nummer 48 Ente süß und sauer") the sentence stays whole,
-                # or the rest of the name would be a dish of its own.
-                if normalize_query(piece):
-                    return [query]
-                positions.append(piece)
-                i += 1
-                continue
             except NotFound:
                 # "Zweimal die 99 und Pho Bo": a piece that is one card number
                 # is a position whether the menu has it or not, and its search
@@ -580,6 +573,10 @@ def _search_with_wish(
     review PR #139).
     """
     dish = candidates[0][0]
+    # An unclear number in the dish part ("und 30 mit Reis") raises Ambiguous
+    # and the sentence asks. Handed to the search over the whole sentence, the
+    # wish words were a name, and "mit Reis" found another dish (Codex PR
+    # #147, ultra review).
     try:
         found = search_menu(
             session,
@@ -592,7 +589,7 @@ def _search_with_wish(
             split_check=False,
             card=card,
         )
-    except (Ambiguous, NotFound):
+    except NotFound:
         return None
     if not found.results:
         return None

@@ -47,7 +47,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import CardFormat, canonical_card, find_quantity
 from api.domain.menu.split import raw_pieces, split_positions
 from evals.number_eval import CARD, MENU_ITEMS, resolve
@@ -122,10 +121,8 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
     position without the menu, and every piece at the separators is a position
     if each of them is one card number - one that leads to a dish, clearly or
     through a heard letter, or one the menu does not have, which the search
-    then says. A piece that is nothing but an unclear number ("und 30") is a
-    position of its own, and the search asks about it (Codex PR #147). Any
-    other piece that is no single card number keeps the sentence whole, and
-    the search asks. A piece that is a dish name is not looked up here:
+    then says. A piece that is no single card number keeps the sentence whole,
+    and the search asks. A piece that is a dish name is not looked up here:
     this judge has no name search, so such a sentence stays whole, which is
     the cautious verdict.
     """
@@ -137,8 +134,6 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
         return parts
     for piece in pieces:
         got = resolve(piece, menu.card)
-        if got == "?" and not normalize_query(piece):
-            continue
         several = len(dishes(got, menu)) > 1 and "?" not in got
         if got in ("?", "name") or several:
             return parts

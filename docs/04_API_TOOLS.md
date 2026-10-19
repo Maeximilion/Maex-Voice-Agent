@@ -223,13 +223,14 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    it or not (eval `abholung_0082`): „zweimal die 99 und Pho Bo" is the 99,
    answered with `not_found`, and Pho Bo once. Kept whole, the name search found
    Pho Bo alone and took it twice. Any other piece that hits nothing still makes
-   the „und" part of a name. A piece that is nothing but an unclear number is a
-   position as well (Codex PR #147): „einmal Pho Bo, und 30" is Pho Bo and a
-   question about „und 30"; kept whole, the name search dropped the 30. With a
-   word of a name in it („die Nummer 48 Ente süß und sauer") the sentence stays
-   whole. A pause at the „und" of a spoken number keeps it one piece when
-   nothing else follows („die drei und äh zwanzig" asks instead of taking the 3
-   and the 20).
+   the „und" part of a name. A piece with an unclear number makes the whole
+   sentence `ambiguous` with the question for the number (Codex PR #147): before,
+   the sentence went whole to the name search, which strips the numbers, so
+   „einmal Pho Bo, und 30" was Pho Bo alone. The same holds for the dish part in
+   front of a wish („und 30 mit Reis" asks; before, „mit Reis" was searched as a
+   name). A pause at the „und" of a spoken number keeps it one piece when both
+   sides are nothing but the number („die drei und äh zwanzig" asks instead of
+   taking the 3 and the 20).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in

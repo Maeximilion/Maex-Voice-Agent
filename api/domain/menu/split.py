@@ -27,6 +27,7 @@ Position, die Sauce ist Option und kein zweites Gericht.
 
 import re
 
+from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     INSIDE_SPLIT,
     find_quantity,
@@ -131,9 +132,10 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         left = _WORD.findall(fold(parts[-1]))
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
-        # does not split the number into the 3 and the 20, but only when
-        # nothing else follows: "die drei und bitte zwanzig Fruehlingsrollen"
-        # stays two positions (Codex PR #147).
+        # does not split the number into the 3 and the 20, but only when both
+        # sides are nothing but the number: joined next to a name ("die drei
+        # und bitte zwanzig Fruehlingsrollen", "Pho Bo drei äh und zwanzig"),
+        # the name search would drop both numbers (Codex PR #147).
         a = len(left)
         while a and left[a - 1] in _PAUSE_BEFORE_UND:
             a -= 1
@@ -151,7 +153,10 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 (left[a - 1].endswith("hundert") and _only_number(piece))
                 or (
                     parse_cardinal(f"{left[a - 1]} und {right[b]}") is not None
-                    and (not paused or _only_number(piece))
+                    and (
+                        not paused
+                        or (_only_number(piece) and not normalize_query(parts[-1]))
+                    )
                 )
             )
         )
