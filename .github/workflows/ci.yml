@@ -55,6 +55,15 @@ jobs:
             echo "::error::docs/07_WORKPACKAGES.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
             exit 1
           fi
+      # A tracked env file would publish its secrets in this public repository, and GitHub's
+      # secret scanning only knows provider patterns. Templates end in .example.
+      - name: No tracked env file
+        run: |
+          found=$(git ls-files | grep -E '(^|/)\.env(\.[^/]+)?$' | grep -vE '\.example$' || true)
+          if [ -n "$found" ]; then
+            echo "::error::Tracked env file, remove it with 'git rm --cached' and rotate its secrets: $found"
+            exit 1
+          fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"

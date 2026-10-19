@@ -10,6 +10,7 @@
 | Part | Where it lives | In the repository |
 |---|---|---|
 | Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, and its work in `origin/main`: its commits, or after a squash merge its changes, or a merged pull request with exactly its head commit, which needs `gh`; since 12.10.2026). Where another folder has `main` checked out, or `gh` had to be asked and could not answer, it warns instead of switching. A warning names the files that block the sync, or git's reason where a clean folder could not be fast-forwarded. Called with `--json`, as `.claude/settings.json` does, it goes out as a message the user sees (`systemMessage`) and as an instruction for Claude to raise it first (`additionalContext`); plain stdout of a SessionStart hook reaches Claude only (since 14.10.2026). Codex calls it without the flag and gets plain lines. `/done` runs it again after a merge | yes, versioned and tested |
+| Project permission rule `"ask": ["Read(/**/.env)"]` | `.claude/settings.json`. Claude asks before its Read tool opens a file named `.env` at any depth; `.env.example` stays open. It guards the Read tool only: tested headless on 19.10.2026, the Grep tool and `cat .env` still read the file. A `deny` rule would block Read, Grep and `cat` too, but also every edit of `.env` by Claude; Maxi keeps it for after the next gates (`docs/01_STATUS.md`, D23). Not a protection against intent: scripts and `docker compose config` read `.env` on their own | yes, versioned |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
 | Launcher `claude-rc` (Ubuntu only) | `~/.local/bin/claude-rc` | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
@@ -24,7 +25,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 
 | Script | Event | What it does |
 |---|---|---|
-| `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts, so here it yields to it: two fetches at the same moment race for the same ref locks, and one fails (19.10.2026: 18 of 20 test starts warned "git fetch failed"). |
+| `sync-main.sh --always` | SessionStart | Fetches and fast-forwards local `main`. Warns when `main` could not be fast-forwarded or has diverged. Wired as an async hook so no session start waits for a fetch; the price is that the session may begin before the update lands and that its warning may not be shown. In this repository the project hook `sync_main.sh` does the same sync before the session starts, so here it yields to it on startup and resume, the events the project hook is registered for: two fetches at the same moment race for the same ref locks, and one fails (19.10.2026: 18 of 20 test starts warned "git fetch failed"). On `/clear` and compaction it still syncs. |
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
@@ -174,8 +175,12 @@ fi
 
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
 # A repository with its own SessionStart sync runs it at the same moment, and two fetches
-# race for the same ref locks: one fails (19.10.2026, 18 of 20 starts warned). Yield to it.
-[ "$1" = "--always" ] && [ -f "$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/sync_main.sh" ] && exit 0
+# race for the same ref locks: one fails (19.10.2026, 18 of 20 starts warned). Yield to it,
+# but only on startup and resume: the project hook's matcher; on clear and compact it does not run.
+if [ "$1" = "--always" ] && [ -f "$(git rev-parse --show-toplevel 2>/dev/null)/.claude/hooks/sync_main.sh" ]; then
+  src=; [ -t 0 ] || src=$(jq -r '.source // empty' 2>/dev/null)
+  case "$src" in startup|resume) exit 0 ;; esac
+fi
 git fetch -q --prune origin 2>/dev/null || exit 0
 git fetch -q origin '+refs/heads/main:refs/remotes/origin/main' 2>/dev/null || exit 0
 
@@ -449,7 +454,7 @@ Ubuntu takes the scripts and the shared settings keys of section 3 from the Wind
 WIN_CLAUDE="$(wslpath "$(cmd.exe /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r')")/.claude"
 mkdir -p ~/.claude/hooks
 [ -f ~/.claude/settings.json ] || (umask 077; echo '{}' > ~/.claude/settings.json)
-for f in sync-main.sh model-router.sh session-title.sh; do t="$(mktemp ~/.claude/hooks/$f.new.XXXXXX)" && tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > "$t" && bash -n "$t" && chmod 755 "$t" && { [ ! -f ~/.claude/hooks/$f ] || cp -p ~/.claude/hooks/$f ~/.claude/hooks/$f.bak; } && mv "$t" ~/.claude/hooks/$f || { rm -f "$t"; echo "broken, kept the old copy: $f"; }; done
+for f in sync-main.sh model-router.sh session-title.sh; do t="$(mktemp ~/.claude/hooks/$f.new.XXXXXX)" && tr -d '\r' < "$WIN_CLAUDE/hooks/$f" > "$t" && bash -n "$t" && chmod 755 "$t" && { [ ! -f ~/.claude/hooks/$f ] || [ -f ~/.claude/hooks/$f.bak ] || cp -p ~/.claude/hooks/$f ~/.claude/hooks/$f.bak; } && mv "$t" ~/.claude/hooks/$f || { rm -f "$t"; echo "broken, kept the old copy: $f"; }; done
 tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
   && jq '{hooks, enabledPlugins, extraKnownMarketplaces, outputStyle} | with_entries(select(.value != null))' ~/.claude/settings.json > "$bak" \
   && jq -e . "$bak" > /dev/null \
@@ -462,7 +467,7 @@ tmp=; bak="$(mktemp ~/.claude/settings.json.bak.XXXXXX)" \
 jq -c '{env: has("env"), plugins: ((.enabledPlugins // {}) | keys), hooks: ((.hooks // {}) | keys)}' ~/.claude/settings.json
 ```
 
-The last line has to show the plugin, the four hook groups and no `broken` line before it, and `"env":true` on a machine that had an `env` block before. Each script is copied to a new file, checked for syntax and only then moved over the old one, so a damaged Windows copy never replaces a working hook; the replaced script stays as `<name>.bak`. Before it rewrites the settings, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. A settings file the block has to create is readable by its owner only. When any step of the settings part fails, that part stops, removes what it created and says that the settings are unchanged; a broken script only skips that script.
+The last line has to show the plugin, the four hook groups and no `broken` line before it, and `"env":true` on a machine that had an `env` block before. Each script is copied to a new file, checked for syntax and only then moved over the old one, so a damaged Windows copy never replaces a working hook; the script as it was before the first run stays as `<name>.bak`, and a later run keeps that copy instead of overwriting it. Before it rewrites the settings, every run saves the previous values of the four shared keys to a new, uniquely named `settings.json.bak.*` file and reads it back. The backup leaves out everything else, the `env` block included, so nothing sensitive is copied, and it never overwrites an older backup; the oldest holds the state before the first run. The new settings are written to an owner-only file next to the old one, read back, given the permissions of the old file and then moved over it in one step, so the settings file is never half written. A settings file the block has to create is readable by its owner only. When any step of the settings part fails, that part stops, removes what it created and says that the settings are unchanged; a broken script only skips that script.
 
 Undo, same console: put the values of the oldest backup back, written in one step like the restore. Keys that did not exist before the restore stay.
 
