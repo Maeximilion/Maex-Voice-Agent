@@ -33,7 +33,7 @@
 
 ## 1. Rules for the observer
 
-1. Say one sentence, nothing else: "Please run the view as if a call just came in; say out loud what you think." No tour, no hint on what a button does.
+1. Say one sentence, nothing else: "Please use the view and say out loud what you think." (no mention of a call or an arrival; the tablet stays untouched until the silent watch of section 2a is over) No tour, no hint on what a button does.
 2. Do not help. A stumble is data. Note it, wait 20 seconds, then give a hint and write down that you gave one.
 3. Stop at 5 minutes, even if tasks are open.
 4. No judgement of the tester. A stumble is always the view's fault.
@@ -61,7 +61,7 @@ Give them one by one, as a sentence a team member would say, never with the butt
 
 ### 2a. Live arrival (scored, section 1 rule 5)
 
-Before the tester's first tap, with the tablet untouched since loading, create order A from the second device and watch the tester for 10 seconds without any cue, before task 1 is spoken (the "noticed within 10 s" cell is filled from this silent watch). Later, after the tester has tapped the page, create a second pickup order E during task 6 and one new callback during task 7 or 8 (the tester is back in the view, not in a dialer prompt from task 5). Record:
+Before the tester's first tap, with the tablet untouched since loading, create order A from the second device and watch the tester for 10 seconds without any cue, before task 1 is spoken (the "noticed within 10 s" cell is filled from this silent watch). Later, after the tester has tapped the page, create a second pickup order E (a dish other than 23, known to be available) during task 6 and one new callback during task 7 or 8 (the tester is back in the view, not in a dialer prompt from task 5). Record:
 
 | Event | Sound played by itself (yes/no) | Tester noticed within 10 s (yes/no) | Notes |
 |---|---|---|---|
@@ -131,7 +131,7 @@ Next step (changes to make, who repeats the test):
 
 ## 6. After the test (the one who runs it)
 
-0. **Restore the stack after the last tester**: dish 23 available again ("Wieder da"), test orders, callbacks and the reservation removed or closed, waiting times back to the real values, the AI switched on. A test stack that is also the working stack must not keep sold-out dishes or test cards.
+0. **Restore the stack after the last tester**: dish 23 available again ("Wieder da"), test orders, callbacks and the reservation removed or closed, waiting times back to the real values, the AI switched on, the dispatcher service started again if it was stopped. A test stack that is also the working stack must not keep sold-out dishes or test cards.
 
 1. Put the verdict and the list of changes in `docs/01_STATUS.md` (one row in the changelog, the open points of "Operating view" that the test settled, "Ton an" hint and "Ändern" on an option line included).
 2. Each A or B stumble becomes a task or an issue with the label `bug` or `enhancement` as fits; do not keep it only on this sheet.
