@@ -952,6 +952,9 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         # Codex PR #330, round 2: a modifier before the noun.
         "ich habe keine bekannten Allergien",
         "keine bekannten Allergien oder Unverträglichkeiten",
+        "Mir sind keine Allergien bekannt",
+        "ich habe keine weiteren Allergien",
+        "weder bekannte Allergien noch Unverträglichkeiten",
         # Answers to "Wogegen?" that take the allergy back (own review).
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
@@ -1044,7 +1047,9 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "ich bin weder gegen Sesam allergisch noch gegen Soja, aber gegen Erdnüsse",
         "ich habe weder eine Erdnussallergie noch eine Sojaallergie, aber eine Sesamallergie",
         "ich vertrage weder Gluten noch Laktose",
-        "ich habe keine bekannten Allergien, aber eine Sesamallergie",
+        "ich habe keine Erdnussallergie und eine Sesamallergie",
+        "ich habe keine Erdnussallergie und eine bekannte Sesamallergie",
+        "ich bin kein Allergiker und laktoseintolerant",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):
@@ -1149,6 +1154,22 @@ def test_addition_after_the_ingredient_is_no_ingredient():
     """Own review, round 7: "mit Nudeln" went into the allergy note unpriced."""
     wish = classify_wish("ich bin allergisch gegen Erdnüsse, mit Nudeln", BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", "Erdnüsse")
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # A generic denial names no ingredient, so the one named is read.
+        ("ich habe eine Erdnussallergie, sonst keine bekannten Allergien", "Erdnuss"),
+        ("ich habe keine bekannten Allergien, aber eine Sesamallergie", "Sesam"),
+        ("ich habe keine Allergie und eine Laktoseintoleranz", "Laktose"),
+        # "richtige" is a hedge, not a denial (own review).
+        ("ich habe keine richtige Allergie gegen Nüsse", "Nüsse"),
+    ],
+)
+def test_generic_denial_next_to_a_named_allergy(said, ingredient):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
 def test_negation_before_the_phrase_keeps_its_ingredient():
