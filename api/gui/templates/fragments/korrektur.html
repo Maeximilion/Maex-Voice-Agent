@@ -1,0 +1,109 @@
+{# Korrektur einer Bestellung (docs/06 §3 "Korrigieren", T-4.7). Eigener Kasten
+   ueber den Spalten, nicht in der Liste: die Spalte laedt weiter neu, klingelt
+   bei neuen Bestellungen, und nichts ueberschreibt, was das Team gerade tippt.
+
+   Jeder Tap schickt den Stand (verstecktes Feld) an den Server, der rechnet neu
+   und schickt diesen Kasten zurueck - Geld wird nie im Browser gerechnet.
+   hx-sync verwirft einen zweiten Tap, solange der erste unterwegs ist, und
+   hx-disabled-elt graut die Knoepfe so lange sichtbar aus. #}
+{% macro tap(op, label, cls="", confirm=None, disabled=False) -%}
+<button type="button" class="{{ cls }}"
+        hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
+        hx-vals='{"op": {{ op|tojson }}}'
+        hx-sync="closest form:drop" hx-disabled-elt="closest fieldset"
+        {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
+        {% if disabled %}disabled{% endif %}>{{ label }}</button>
+{%- endmacro %}
+{% macro line_view(l) -%}
+<li class="edit-line {{ l.kind }}">
+  <div class="edit-head">
+    <span>{{ l.quantity }}&times; <span class="nr">{{ l.number }}</span> {{ l.name }}</span>
+    {% if l.kind == "removed" %}<span class="badge danger">wird entfernt</span>
+    {% elif l.kind == "swapped" %}<span class="badge accent">getauscht</span>
+    {% elif l.kind == "added" %}<span class="badge accent">neu</span>
+    {% elif l.kind == "changed" %}<span class="badge accent">Menge geändert</span>{% endif %}
+    {% if l.sold_out %}<span class="badge warn">heute aus</span>{% endif %}
+    {% if l.price %}<b class="price">{{ l.price }}</b>{% endif %}
+  </div>
+  {% for opt in l.options %}<div class="opt">&boxur; {{ opt }}</div>{% endfor %}
+  {% if l.note %}<div class="note">Hinweis: {{ l.note }}</div>{% endif %}
+  {% for g in l.groups %}
+  {% set gi = loop.index0 %}
+  <div class="choice">
+    <span class="choice-name">{{ g.name }}{% if g.required %} <span class="muted">(Pflicht)</span>{% endif %}</span>
+    {% for o in g.options %}
+    {{ tap("opt:" ~ l.where ~ ":" ~ l.index ~ ":" ~ gi ~ ":" ~ loop.index0,
+           ("Gewählt: " if o.picked else "") ~ o.name ~ (" " ~ o.delta if o.delta else ""),
+           "picked" if o.picked else "") }}
+    {% endfor %}
+  </div>
+  {% endfor %}
+  {% if l.missing %}<p class="blocker">Fehlt noch: {{ l.missing|join(", ") }}</p>{% endif %}
+  <div class="edit-actions">
+    {% if l.kind == "removed" %}
+    {{ tap("restore:" ~ l.index, "Zurück") }}
+    {% else %}
+    {{ tap("minus:" ~ l.where ~ ":" ~ l.index, "−", "qty") }}
+    {{ tap("plus:" ~ l.where ~ ":" ~ l.index, "+", "qty") }}
+    {% if l.where == "r" %}
+    {% if l.note %}
+    {# Ein Hinweis kann eine Allergie sein (E14): Entfernen nur mit Rueckfrage,
+       Tauschen behaelt ihn. #}
+    {{ tap("remove:" ~ l.index, "Entfernen", "", "Der Hinweis fällt mit weg: " ~ l.note ~ " - Wirklich entfernen?") }}
+    {% endif %}
+    {% if swapping == l.index %}
+    {{ tap("unswap", "Nicht tauschen") }}
+    {% else %}
+    {{ tap("swap:" ~ l.index, "Tauschen") }}
+    {% endif %}
+    {% if l.kind == "swapped" %}{{ tap("restore:" ~ l.index, "Zurück") }}{% endif %}
+    {% endif %}
+    {% endif %}
+  </div>
+  {% if l.where == "r" and swapping == l.index %}
+  <p class="hint">Neue Nummer unten eingeben. Menge und Hinweis bleiben.</p>
+  {% endif %}
+</li>
+{%- endmacro %}
+<section class="card korrektur" data-order="{{ order_id }}">
+  <div class="res-head">
+    <h2>Bestellung korrigieren</h2>
+    <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
+  </div>
+  {% if message %}<p class="banner warn">{{ message }}</p>{% endif %}
+  {% if state is defined %}
+  {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
+  <form hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
+        hx-target="#korrektur" hx-swap="innerHTML"
+        hx-vals='{"op": "number"}'
+        hx-sync="this:drop" hx-disabled-elt="find fieldset">
+    <fieldset>
+      <input type="hidden" name="state" value="{{ state }}">
+      <ul class="cards">
+        {% for l in rows %}{{ line_view(l) }}{% endfor %}
+        {% for l in added %}{{ line_view(l) }}{% endfor %}
+      </ul>
+      <div class="nummer">
+        <label for="number">{{ "Tauschen gegen Nummer" if swapping is not none else "Gericht dazu, Nummer" }}</label>
+        <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
+        <button type="submit">Übernehmen</button>
+      </div>
+      <div class="order-foot">
+        <b>Summe {{ total }}</b>
+        <span class="muted">vorher {{ before }}</span>
+      </div>
+      {% for b in blockers %}<p class="blocker">{{ b }}</p>{% endfor %}
+      <p class="muted">Grund antippen, dann ist gespeichert:</p>
+      <div class="reasons">
+        {% for key, label in reasons.items() %}
+        <button type="button" class="primary"
+                hx-post="/gui/bestellungen/{{ order_id }}/korrigieren"
+                hx-vals='{"reason": {{ key|tojson }}}'
+                hx-sync="closest form:drop" hx-disabled-elt="closest fieldset"
+                {% if blockers %}disabled{% endif %}>{{ label }}</button>
+        {% endfor %}
+      </div>
+    </fieldset>
+  </form>
+  {% endif %}
+</section>

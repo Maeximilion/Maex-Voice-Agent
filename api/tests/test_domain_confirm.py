@@ -2,7 +2,7 @@
 
 import threading
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,9 +12,10 @@ from sqlalchemy.orm import Session
 from api.core.errors import Conflict, NotFound
 from api.domain.confirm import confirm
 from api.domain.reservations import create_reservation
-from api.models import AuditLog, Call, OutboxEvent, Reservation
+from api.models import AuditLog, Call, OutboxEvent, Reservation, ServiceConfig
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
+from api.tests.conftest import lift_party_limits
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -54,7 +55,7 @@ def call_id(session, tenant_id) -> uuid.UUID:
     return call.id
 
 
-def make_draft(session, tenant_id, call_id, **overrides) -> uuid.UUID:
+def make_draft(session, tenant_id, call_id, at=None, **overrides) -> uuid.UUID:
     body = {
         "call_id": call_id,
         "tenant_id": tenant_id,
@@ -67,7 +68,7 @@ def make_draft(session, tenant_id, call_id, **overrides) -> uuid.UUID:
         **overrides,
     }
     return create_reservation(
-        session, CreateReservationRequest(**body), now=NOW
+        session, CreateReservationRequest(**body), now=at or NOW
     ).reservation_id
 
 
@@ -209,11 +210,121 @@ def test_unbekannter_mandant_ist_not_found(session, tenant_id, call_id):
         confirm(session, request(uuid.uuid4(), call_id, draft_id))
 
 
-def test_bestellung_ist_bis_stufe_2_not_found(session, tenant_id, call_id):
-    draft_id = make_draft(session, tenant_id, call_id)
-    with pytest.raises(NotFound) as exc:
-        confirm(session, request(tenant_id, call_id, draft_id, entity="order"))
-    assert exc.value.say is not None
+# --- A draft that lost its seats is not confirmed over someone else (#250) ------
+
+
+def _second_call(session, tenant_id) -> uuid.UUID:
+    call = Call(
+        tenant_id=tenant_id,
+        external_session_id="ext-2",
+        started_at=NOW,
+        delete_after=DIENSTAG,
+    )
+    session.add(call)
+    session.commit()
+    return call.id
+
+
+def _after_the_limit(session, tenant_id) -> datetime:
+    limit = session.get(ServiceConfig, tenant_id).max_call_seconds
+    return NOW + timedelta(seconds=limit + 1)
+
+
+def test_a_full_table_confirms_itself(session, tenant_id, call_id):
+    """The draft counts its own seats; confirming must not trip over them."""
+    lift_party_limits(session, tenant_id)
+    draft_id = make_draft(session, tenant_id, call_id, party_size=40)
+
+    result = confirm(session, request(tenant_id, call_id, draft_id), now=NOW)
+
+    assert result.status == "confirmed"
+
+
+def test_an_old_draft_is_confirmed_while_its_seats_are_free(
+    session, tenant_id, call_id
+):
+    """Past the limit the draft no longer holds the seats, but nobody took
+    them: a late yes is still a yes."""
+    lift_party_limits(session, tenant_id)
+    draft_id = make_draft(session, tenant_id, call_id, party_size=40)
+
+    late = _after_the_limit(session, tenant_id)
+    result = confirm(session, request(tenant_id, call_id, draft_id), now=late)
+
+    assert result.status == "confirmed"
+
+
+def test_a_draft_whose_seats_went_to_someone_else_is_refused(
+    session, tenant_id, call_id
+):
+    """The seats were given away once the draft stopped holding them. A yes
+    that comes after must not put two parties on the same seats."""
+    lift_party_limits(session, tenant_id)
+    old = make_draft(session, tenant_id, call_id, party_size=40)
+    late = _after_the_limit(session, tenant_id)
+    other_call = _second_call(session, tenant_id)
+    taken = make_draft(session, tenant_id, other_call, at=late, party_size=40)
+    confirm(session, request(tenant_id, other_call, taken), now=late)
+
+    with pytest.raises(Conflict) as refused:
+        confirm(session, request(tenant_id, call_id, old), now=late)
+    session.rollback()
+
+    assert "vergeben" in refused.value.say
+    assert session.get(Reservation, old).status == "draft"
+    confirmed = session.scalars(select(OutboxEvent)).all()
+    assert [e.payload["reservation_id"] for e in confirmed] == [str(taken)]
+
+
+def test_two_old_drafts_for_the_same_seats_confirm_only_once(migrated_db_url):
+    """Both drafts stopped holding the seats, both guests say yes at the same
+    moment. Without the day lock both checks would see the window empty."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        lift_party_limits(s, tenant)
+        limit = timedelta(seconds=s.get(ServiceConfig, tenant).max_call_seconds + 1)
+        calls = [_second_call(s, tenant), _second_call(s, tenant)]
+        # The second draft is only possible because the first one has expired.
+        first = make_draft(s, tenant, calls[0], party_size=40)
+        second = make_draft(s, tenant, calls[1], at=NOW + limit, party_size=40)
+    late = NOW + limit * 2
+
+    start = threading.Barrier(2)
+    results: list[object] = []
+    lock = threading.Lock()
+
+    def run(call_id: uuid.UUID, draft_id: uuid.UUID) -> None:
+        start.wait(timeout=10)
+        with Session(engine) as own:
+            try:
+                confirm(own, request(tenant, call_id, draft_id), now=late)
+                outcome: object = "ok"
+            except Conflict:
+                own.rollback()
+                outcome = "refused"
+            except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
+                outcome = exc
+        with lock:
+            results.append(outcome)
+
+    threads = [
+        threading.Thread(target=run, args=pair)
+        for pair in zip(calls, (first, second), strict=True)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    with Session(engine) as s:
+        statuses = sorted(s.get(Reservation, d).status for d in (first, second))
+    engine.dispose()
+
+    assert sorted(map(str, results)) == ["ok", "refused"], results
+    assert statuses == ["confirmed", "draft"]
 
 
 def test_parallele_bestaetigung_legt_nur_ein_ereignis_an(migrated_db_url):

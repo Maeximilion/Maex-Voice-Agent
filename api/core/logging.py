@@ -50,10 +50,10 @@ def configure_logging(level: str = "INFO") -> None:
     root.setLevel(level.upper())
     # Uvicorn bringt eigene Handler mit; die würden sonst zweimal und unformatiert loggen.
     for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
-        logging.getLogger(name).handlers[:] = []
-        logging.getLogger(name).propagate = True
-    # Die Middleware loggt jede Anfrage mit Dauer und request_id; das Access-Log wäre ein Duplikat ohne Kontext.
-    logging.getLogger("uvicorn.access").propagate = False
+        logger = logging.getLogger(name)
+        logger.handlers[:] = []
+        # Die Middleware loggt jede Anfrage mit Dauer und request_id; das Access-Log wäre ein Duplikat ohne Kontext.
+        logger.propagate = name != "uvicorn.access"
 
 
 def get_logger(name: str) -> logging.Logger:

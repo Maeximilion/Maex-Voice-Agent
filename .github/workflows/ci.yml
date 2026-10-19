@@ -1,13 +1,29 @@
 name: ci
 
+# Branches laufen ueber pull_request; ein zusaetzlicher push-Trigger fuer task/** und
+# dev/** liess jeden Push auf einen PR-Branch doppelt laufen (CI-Analyse 03.10.2026).
 on:
   push:
-    branches: [main, "task/**", "dev/**"]
+    branches: [main]
   pull_request:
+
+# Neuer Push auf denselben PR bricht den alten Lauf ab. Auf main bekommt jeder Lauf
+# eine eigene Gruppe (run_id): in einer gemeinsamen Gruppe haelt GitHub nur einen
+# wartenden Lauf und ersetzt ihn, ein Zwischen-Commit bliebe ungetestet (Codex PR #161).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege: the jobs only read the repository.
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    # A green run takes about three minutes; without a limit a hanging test holds
+    # the runner for GitHub's default of six hours.
+    timeout-minutes: 15
     services:
       db:
         image: postgres:16-alpine
@@ -24,7 +40,7 @@ jobs:
       AGENT_API_TOKEN: ci-token
       ENV: test
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
       - name: Status-Sync prüfen
@@ -39,20 +55,45 @@ jobs:
             echo "::error::docs/07_WORKPACKAGES.md geändert, aber docs/01_STATUS.md nicht mitgezogen. Status per 'python scripts/status_bump.py' aktualisieren."
             exit 1
           fi
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install -r api/requirements.txt
-      - run: ruff check api scripts evals
-      - run: ruff format --check api scripts evals
-      - run: pytest -q
+      # The README images are drawn from docs/metrics/, the task list and the status
+      # (stdlib only, before the install): a stale image fails here, the fix is
+      # `make readme-assets` (docs/15_README_STRATEGY.md, "Assets and design").
+      - name: README images match their data
+        run: python scripts/readme_assets.py render --check
+      # The compiled lock file: exact versions, every download checked against its hash.
+      - run: pip install --require-hashes -r api/requirements.txt
+      - run: ruff check api scripts evals printbridge sim db
+      - run: ruff format --check api scripts evals printbridge sim db
+      # Types, non-strict. Paths and settings: pyproject.toml, [tool.mypy].
+      - run: mypy
+      # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
+      # Latenztests nicht: unter parallelen Workern messen sie die Last, nicht den Code.
+      - run: pytest -q -n auto -m "not latency"
+      # Latenzbudget < 300 ms (CLAUDE.md §7) seriell auf dem ruhigen Runner.
+      - name: Latenztests seriell
+        run: pytest -q -m latency
+      # The telephone line of the speech kit needs numpy, which the production
+      # image must not carry: installed only here, after the full run, so that run
+      # stays as it was. The version is the one the speech image resolves
+      # (deploy/speech/Dockerfile pins no numpy itself); the hash is the cp312
+      # manylinux x86_64 wheel. A skip in this file fails the step (#207).
+      - name: Speech kit tests with numpy
+        shell: bash
+        run: |
+          echo "numpy==2.5.4 --hash=sha256:fbde6962867ee75b48b0ee29b2b9372ec5d617799dbaf38e82dc0596f2f7738a" > "$RUNNER_TEMP/numpy.txt"
+          pip install --require-hashes --no-deps -r "$RUNNER_TEMP/numpy.txt"
+          pytest -q -rs api/tests/test_telephony_speech_bench.py | tee "$RUNNER_TEMP/bench.txt"
+          ! grep -q skipped "$RUNNER_TEMP/bench.txt"
 
   docker-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: API-Image ohne lokales Zertifikat bauen
         run: |
           test ! -e api/ca-bundle.crt
@@ -111,3 +152,21 @@ jobs:
       - name: Container entfernen
         if: always()
         run: docker rm --force maex-api-smoke || true
+
+  # The image of `voice` with the speech engines (api/Dockerfile, target voice):
+  # its pinned packages install, and an ear or mouth without its model files is
+  # refused. The test job runs in the API's image, which has no engines.
+  voice-image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the image of voice
+        run: docker build --target voice --tag maex-voice:ci ./api
+      # The import first: without the packages the test file would skip
+      # itself and pass (Codex on PR #310).
+      - name: Engines without their model files are refused
+        run: |
+          docker run --rm --network none -v "$PWD:/app" -w /app maex-voice:ci \
+            sh -c 'python -c "import faster_whisper, piper" &&
+              python -m pytest -q -p no:cacheprovider api/tests/test_telephony_engine_loading.py'

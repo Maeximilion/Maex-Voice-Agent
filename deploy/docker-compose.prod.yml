@@ -1,29 +1,105 @@
 # Produktion: zusammen mit der Basis-Datei starten
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
+#
+# Only caddy publishes a host port. db, api, n8n and push stay inside the Docker
+# network because the base file gives them no port and this file adds none;
+# `ports: []` here would not remove one (Compose merges the lists). Naming the
+# files with -f also keeps docker-compose.override.yml, the dev ports, out.
+# Docker publishes past ufw: a port set here is open whatever the host firewall says.
 services:
   db:
-    ports: []                      # kein offener DB-Port nach außen
     restart: always
 
   api:
-    ports: []                      # nur über Caddy erreichbar
     restart: always
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ENV: prod
+    # Not root, and the checkout read-only. The base file mounts the source
+    # writable because development edits it and the tests write next to it. On
+    # the server nothing in the container writes there, and the host runs
+    # scripts/backup.sh from this very checkout every night (deploy/backup.cron):
+    # a process that could change the mounted files would run its own code on
+    # the host by the next morning. Compose merges volumes by their path in the
+    # container, so each line here replaces the writable one of the base file;
+    # a mount added there has to be repeated here (api/tests/test_deploy_exposure.py).
+    user: "10001:10001"
+    volumes:
+      - ./api:/app/api:ro
+      - ./gui:/app/gui:ro
+      - ./prompts:/app/prompts:ro
+      - ./scripts:/app/scripts:ro
+      - ./evals:/app/evals:ro
+      - ./db:/app/db:ro
+      - ./sim:/app/sim:ro
+      - ./printbridge:/app/printbridge:ro
+      - ./docs:/app/docs:ro
+
+  dispatcher:
+    environment:
+      # As for api: .env may still say ENV=dev, and the check of the token
+      # in api/config.py asks ENV.
+      ENV: prod
+    user: "10001:10001"
+    volumes:
+      - ./api:/app/api:ro
+      - ./scripts:/app/scripts:ro
+      - ./db:/app/db:ro
+
+  # The AI telephone, still behind the profile `voice` of the base file.
+  voice:
+    restart: always
+    environment:
+      ENV: prod
+      # No graphics card on the EU server (below): a local ear runs on the
+      # processor, whatever .env says (Codex on PR #310).
+      VOICE_EAR_DEVICE: cpu
+    volumes:
+      - ./api:/app/api:ro
+      - ./prompts:/app/prompts:ro
+    # No graphics card on the EU server: there ear and mouth are services
+    # (docs/20 §6), and a reservation would keep the container from being
+    # created at all.
+    deploy: !reset {}
+
+  asterisk:
+    restart: always
+    # No host port. The media range of rtp.conf is published with the trunk,
+    # together with the public media address Asterisk has to announce for it;
+    # published without that address it would carry nothing (docs/20 §3, §12).
 
   n8n:
-    ports: []
     restart: always
+    volumes:
+      # The workflow exports are read for the import, never written back here.
+      - ./n8n:/workflows:ro
+
+  push:
+    restart: always
+    environment:
+      # Caddy stands in front: take the visitor address from its header.
+      - NTFY_BEHIND_PROXY=true
 
   caddy:
-    image: caddy:2-alpine
+    # Pinned like n8n and ntfy: a floating tag changes the proxy on the next pull. Dependabot proposes updates.
+    image: caddy:2.11.7-alpine
     restart: always
     environment:
       # Zugang zur Betriebsansicht. Ohne diese Werte startet Caddy zwar,
       # lässt aber niemanden auf /gui/* durch - das ist die sichere Seite.
       GUI_BASIC_AUTH_USER: ${GUI_BASIC_AUTH_USER}
       GUI_BASIC_AUTH_HASH: ${GUI_BASIC_AUTH_HASH}
+      # Sent to the API with every request (deploy/Caddyfile). Empty: the API
+      # answers no request to the view, the safe side again.
+      GUI_PROXY_SECRET: ${GUI_PROXY_SECRET:-}
+      # Access to the n8n editor, its own user: the tablet's shared access must
+      # not open it. Empty closes the editor for everyone, like the view above.
+      N8N_EDITOR_AUTH_USER: ${N8N_EDITOR_AUTH_USER:-}
+      N8N_EDITOR_AUTH_HASH: ${N8N_EDITOR_AUTH_HASH:-}
+      # The names Caddy answers to and gets certificates for (deploy/Caddyfile).
+      AGENT_DOMAIN: ${AGENT_DOMAIN:-agent.example.com}
+      N8N_DOMAIN: ${N8N_DOMAIN:-n8n.example.com}
+      PUSH_DOMAIN: ${PUSH_DOMAIN:-push.example.com}
     ports:
       - "80:80"
       - "443:443"
@@ -31,7 +107,7 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api, n8n]
+    depends_on: [api, n8n, push]
 
 volumes:
   caddy_data:

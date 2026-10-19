@@ -4,8 +4,8 @@ Beträge in Cent, von Code berechnet, nie vom Modell (CLAUDE.md §2 Regel 1). Di
 Datenbank hält zusätzlich fest, dass die Summe stimmt - ein Rechenfehler im
 Code soll an der Tabelle scheitern, nicht auf dem Bon landen.
 
-`customer_id` ist bis Migration 003 ein Feld ohne Fremdschlüssel: `customers`
-gibt es erst in Stufe 3. `address_id` kommt mit 003 (docs/03
+`customer_id` ist bis Migration 004 ein Feld ohne Fremdschlüssel: `customers`
+gibt es erst in Stufe 3. `address_id` kommt mit 004 (docs/03
 §Migrationsreihenfolge).
 """
 

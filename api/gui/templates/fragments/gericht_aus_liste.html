@@ -1,0 +1,17 @@
+{# Liste der Schalter. Jeder Tap schickt das Suchfeld mit, damit die Liste
+   gefiltert bleibt. hx-sync verwirft einen zweiten Tap, solange der erste
+   unterwegs ist. Farbe nie allein: "heute aus" steht als Wort daneben (§1 Regel 4). #}
+{% if dish_problem %}<p class="banner warn">{{ dish_problem }}</p>{% endif %}
+<ul class="dishes" hx-sync="this:drop">
+  {% for d in dishes %}
+  <li class="dish{{ ' aus' if d.sold_out }}">
+    <span class="dish-name"><span class="nr">{{ d.number }}</span> {{ d.name }}</span>
+    {% if d.sold_out %}<span class="badge warn">heute aus</span>{% endif %}
+    <button type="button" class="{{ 'primary' if d.sold_out else 'stop' }}"
+            hx-post="/gui/gericht-aus/{{ d.menu_item_id }}/{{ 'wieder-da' if d.sold_out else 'aus' }}"
+            hx-include="#gericht-suche" hx-target="#gericht-liste">{{ "Wieder da" if d.sold_out else "Heute aus" }}</button>
+  </li>
+  {% else %}
+  <li class="empty">Kein Gericht gefunden.</li>
+  {% endfor %}
+</ul>

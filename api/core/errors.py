@@ -57,6 +57,13 @@ class Conflict(AppError):
     code = "conflict"
 
 
+class TeamDecides(Conflict):
+    """A table that is free, but larger than the agent books itself
+    (`service_config`, #252). No draft: the wish goes to the team as a
+    callback. A conflict for every client; the conversation core tells it
+    apart and creates that callback itself (`agent/loop.py`)."""
+
+
 class ServiceUnavailable(AppError):
     code = "service_unavailable"
 

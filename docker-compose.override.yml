@@ -1,0 +1,26 @@
+# Development only. `docker compose up` and `make up` load this file
+# automatically next to docker-compose.yml. The production command names its
+# files with -f and therefore never reads it (docs/13 §3).
+#
+# Host ports live here and not in the base file because Compose merges `ports`
+# lists across files: production could not take them away again. Loopback only,
+# so the dev database, n8n and the push server are not reachable from the local network.
+# Nothing but `ports` belongs in this file; api/tests/test_compose_ports.py
+# enforces both rules.
+services:
+  db:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  api:
+    ports:
+      - "127.0.0.1:8000:8000"
+
+  n8n:
+    ports:
+      - "127.0.0.1:5678:5678"
+
+  push:
+    # In production the team reaches it through Caddy.
+    ports:
+      - "127.0.0.1:8090:80"

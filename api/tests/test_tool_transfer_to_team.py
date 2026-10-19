@@ -122,6 +122,7 @@ def test_unbekannter_grund_ist_invalid_input(client):
     assert "reason" in r.json()["error"]["message"]
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     http, tenant_id, call_id = client
 

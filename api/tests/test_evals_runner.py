@@ -1,0 +1,1818 @@
+"""Eval-Runner (T-5.1, docs/08 §3): Fälle laufen, Datenbank entscheidet, harte Metriken greifen."""
+
+import json
+import shutil
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+
+from api.agent.llm import ChatCompletionsLLM, FakeLLM, LLMTurn, ToolCall, Usage
+from api.config import settings
+from api.domain.confirm import confirm
+from api.domain.ordering import draft_order
+from api.models import AuditLog, MenuItem, Tenant
+from api.schemas.confirm import ConfirmRequest
+from api.schemas.orders import DraftOrderRequest
+from evals import runner
+from evals.judge import (
+    CaseError,
+    Observed,
+    heard_readback,
+    judge,
+    observe,
+    offered_alternatives,
+)
+from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
+from evals.report import CaseResult, RunReport, previous_run, write
+from sim.session import SimCall, Turn
+
+CASES = Path(runner.__file__).parent / "cases"
+
+
+def fall(case_id: str, lines: list[str], expected: dict, **extra) -> dict:
+    return {
+        "id": case_id,
+        "name": case_id,
+        "tags": extra.pop("tags", ["test"]),
+        "transcript": [{"role": "customer", "text": t} for t in lines],
+        "expected": expected,
+        **extra,
+    }
+
+
+def write_cases(folder: Path, *cases: dict) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    for c in cases:
+        (folder / f"{c['id']}.json").write_text(json.dumps(c), encoding="utf-8")
+    return folder
+
+
+def run(migrated_db_url, cases_dir, report_dir, **kw) -> RunReport:
+    return runner.run(
+        cases_dir=cases_dir,
+        report_dir=report_dir,
+        db_url=migrated_db_url,
+        stamp=kw.pop("stamp", datetime.now(UTC)),
+        **kw,
+    )
+
+
+# --- Ganzer Lauf -------------------------------------------------------------------
+
+
+TARGETS = Path(runner.__file__).parent / "targets"
+
+
+def _tags(folder: Path) -> set[str]:
+    return {
+        tag
+        for path in folder.glob("*.json")
+        for tag in json.loads(path.read_text(encoding="utf-8"))["tags"]
+    }
+
+
+def test_mandatory_cases_only_in_targets_stay_red_until_they_move(
+    migrated_db_url, tmp_path
+):
+    """Review PR #162: CI does not play targets/. Mandatory cases that exist only
+    there (allergy with a value, quantity change, zone, minimum order value) run
+    here anyway, like a strict xfail: once one is green it belongs in cases/."""
+    from api.tests.test_evals_suite import _mandatory
+
+    only_targets = set(_mandatory().values()) - _tags(CASES)
+    assert only_targets, "no mandatory case left only in targets: simplify this test"
+    cases = tmp_path / "mandatory_targets"
+    cases.mkdir()
+    for path in TARGETS.glob("*.json"):
+        if only_targets & set(json.loads(path.read_text(encoding="utf-8"))["tags"]):
+            shutil.copy(path, cases / path.name)
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.total >= len(only_targets)
+    green = [c.id for c in report.cases if c.passed]
+    assert green == [], f"green now, move to evals/cases/: {green}"
+    assert not [c.id for c in report.cases if c.error], "a target case crashed"
+
+
+def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
+    cases = tmp_path / "cases"
+    shutil.copytree(CASES, cases, ignore=shutil.ignore_patterns("*.jsonl"))
+    report = run(migrated_db_url, cases, tmp_path / "reports")
+
+    assert report.total == len(list(CASES.glob("*.json")))
+    assert report.verdict == "bestanden", report.to_markdown()
+    # Jeder Fall ohne `pending` ist gruen. Eine bekannte Luecke muss rot sein wie
+    # ein striktes xfail: wird sie gruen, faellt das hier auf, und `pending`
+    # kommt weg, statt still weiter als Luecke zu gelten (docs/08 §3).
+    red = [c.id for c in report.cases if not c.passed and not c.pending]
+    assert red == [], report.to_markdown()
+    healed = [c.id for c in report.cases if c.passed and c.pending]
+    assert healed == [], f"pending entfernen: {healed}"
+    assert report.hard() == {
+        "guessed_items": 0,
+        "unconfirmed": 0,
+        "missed_escalations": 0,
+    }
+    [json_file] = (tmp_path / "reports").glob("*.json")
+    data = json.loads(json_file.read_text(encoding="utf-8"))
+    assert data["accuracy"] == report.accuracy and data["verdict"] == "bestanden"
+    assert list((tmp_path / "reports").glob("*.md"))
+
+
+def test_falsche_erwartung_ist_roter_fall_und_regression_faellt_durch(
+    migrated_db_url, tmp_path
+):
+    gut = fall(
+        "gut",
+        [
+            "Hallo, ich moechte etwas zum Abholen bestellen.",
+            "Einmal die 13.",
+            "Nein, das wars.",
+            "Auf den Namen Schmidt.",
+            "Ja, genau.",
+        ],
+        {
+            "intent": "pickup",
+            "confirmed": True,
+            "items": [{"number": "13", "quantity": 1}],
+        },
+        caller_id="+497215551234",
+    )
+    cases = write_cases(tmp_path / "c", gut)
+    reports = tmp_path / "r"
+    erster = run(
+        migrated_db_url, cases, reports, stamp=datetime(2026, 9, 25, 8, 0, tzinfo=UTC)
+    )
+    assert erster.accuracy == 1.0, erster.to_markdown()
+
+    # Dieselbe Bestellung, aber der Fall erwartet zwei Stück: der Code bucht eins.
+    falsch = dict(
+        gut, expected={**gut["expected"], "items": [{"number": "13", "quantity": 2}]}
+    )
+    write_cases(cases, falsch)
+    zweiter = run(
+        migrated_db_url, cases, reports, stamp=datetime(2026, 9, 25, 9, 0, tzinfo=UTC)
+    )
+
+    [case] = zweiter.cases
+    assert not case.passed
+    assert "items" in case.diffs[0]
+    assert zweiter.verdict == "durchgefallen"
+    assert any("Regression" in r and "gut" in r for r in zweiter.reasons)
+
+
+def test_verpasste_eskalation_ist_hart(migrated_db_url, tmp_path):
+    # Nichts im Transkript verlangt nach einem Menschen, der Fall erwartet es aber.
+    cases = write_cases(
+        tmp_path / "c",
+        fall("still", ["Einmal die 13 zum Abholen."], {"escalated": True}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.hard()["missed_escalations"] == 1
+    assert report.verdict == "durchgefallen"
+
+
+def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "a", ["Ich habe eine Beschwerde."], {"escalated": True}, tags=["eskalation"]
+        ),
+        fall("b", ["Einmal die 13."], {"confirmed": False}, tags=["abholung"]),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r", tags=["eskalation"])
+    assert [c.id for c in report.cases] == ["a"]
+    assert report.cases[0].passed, report.to_markdown()
+    with pytest.raises(CaseError):
+        run(migrated_db_url, cases, tmp_path / "r", tags=["gibtsnicht"])
+
+
+# --- Kaputte Fälle und Aufrufe ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "kaputt",
+    [
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"confimed": True},
+        },
+        {"id": "x", "transcript": [{"role": "customer", "text": "Hallo"}]},
+        {"id": "x", "transcript": [], "expected": {}},
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"items": [{"number": "13"}]},
+        },
+        {
+            "id": "x",
+            "now": "2026-09-15T18:00",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "sold_out": "48",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": "get_item_details"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "get_item_details", "nummer": "23"}]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": "2026-09-21T19:30"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["not-a-date"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-09-21T19:30:00+02:00"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-9-21T19:30"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"alternatives": ["2026-02-30T19:30"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {
+                "alternatives": [
+                    "2026-09-21T19:00",
+                    "2026-09-21T19:30",
+                    "2026-09-21T20:00",
+                ]
+            },
+        },
+        {
+            "id": "x",
+            "repeat_confirm": "ja",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "pending": " ",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"reserved_for": "Freitag 19:30"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"address": {"strasse": "Gartenweg"}},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {
+                "tools": [{"tool": "check_delivery", "number": "1", "error": "x"}]
+            },
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"tools": [{"tool": "check_delivery", "error": " "}]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"order_type": "lieferung"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"phone": "0721 5551234"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": " "},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": ["Macht 25 Euro 70,"]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"readback": None},
+        },
+    ],
+)
+def test_kaputter_fall_bricht_ab_statt_gruen(tmp_path, kaputt):
+    folder = tmp_path / "c"
+    folder.mkdir()
+    (folder / "x.json").write_text(json.dumps(kaputt), encoding="utf-8")
+    with pytest.raises(CaseError):
+        runner.load_cases(folder, [])
+
+
+def test_doppelte_id_und_unbekanntes_modell(tmp_path):
+    folder = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}))
+    (folder / "a2.json").write_text(
+        json.dumps(fall("a", ["Hallo"], {})), encoding="utf-8"
+    )
+    with pytest.raises(CaseError):
+        runner.load_cases(folder, [])
+    assert runner.main(["--model", "gpt-irgendwas", "--cases", str(folder)]) == 2
+
+
+# --- Beobachter: geratene Position und confirm ohne Ja ------------------------------
+
+
+def _search_result(*ids: str) -> str:
+    hits = [{"menu_item_id": i, "number": "13"} for i in ids]
+    return json.dumps({"tool": "search_menu", "ok": True, "data": {"hits": hits}})
+
+
+def test_position_ohne_suchtreffer_gilt_als_geraten():
+    known, invented = str(uuid.uuid4()), str(uuid.uuid4())
+    draft = LLMTurn(
+        tool_call=ToolCall(
+            "draft_order",
+            {"items": [{"menu_item_id": known}, {"menu_item_id": invented}]},
+        )
+    )
+    rec = RecordingLLM(FakeLLM([LLMTurn(say="ok"), draft]))
+    rec.next_turn("", {}, "Einmal die 13 und die Ente.")
+    rec.next_turn("", {}, _search_result(known))
+    assert [g[0] for g in rec.recording.guessed] == [invented]
+
+
+READBACK = "Zur Abholung: einmal die 13, auf den Namen Müller. Passt das so?"
+
+
+def _draft_result() -> str:
+    return json.dumps(
+        {"tool": "draft_order", "ok": True, "data": {"readback": READBACK}}
+    )
+
+
+def test_confirm_nach_nein_gilt_als_unbestaetigt():
+    draft = LLMTurn(tool_call=ToolCall("draft_order", {"items": []}))
+    confirm_turn = LLMTurn(tool_call=ToolCall("confirm", {}))
+    rec = RecordingLLM(
+        FakeLLM([draft, LLMTurn(say=READBACK), confirm_turn, confirm_turn])
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Nein, das stimmt nicht.")
+    rec.next_turn("", {}, "Ja, passt so.")
+    assert rec.recording.unconfirmed == ["Nein, das stimmt nicht."]
+    assert rec.recording.confirms == 2
+
+
+# --- Hard is what went through, not what a model tried (Maxi, 07.10.2026) ---------
+
+
+def _result(tool: str, ok: bool) -> str:
+    """A tool result as the loop hands it to the model. A refusal by the core
+    (`agent/guards.py`) and a rejection by the tool look the same here."""
+    if ok:
+        data = {"readback": READBACK} if tool in DRAFT_TOOLS else {}
+        return json.dumps({"tool": tool, "ok": True, "data": data})
+    return json.dumps({"tool": tool, "ok": False, "error_code": "conflict"})
+
+
+def _talked_past_the_draft(confirm_result: str, said: str) -> RecordingLLM:
+    """A model that drafts, says `said` instead of the read-back, and returns
+    `confirm` on the guest's "Ja"."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say=said),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, confirm_result)
+    return rec
+
+
+NOT_THE_READ_BACK = [
+    "Darf es sonst noch etwas sein?",
+    "Zur Abholung: einmal die 13. Passt das so?",
+    f"{READBACK} Möchten Sie noch Stäbchen dazu?",
+]
+
+
+@pytest.mark.parametrize("said", NOT_THE_READ_BACK)
+def test_confirm_of_a_draft_nobody_heard_that_went_through_is_a_violation(said):
+    """The recorder measures with the core's rule (#251): a yes after a draft
+    that was never read out is no consent. A core without the guard, or a
+    booking around it, shows up as hard."""
+    rec = _talked_past_the_draft(_result("confirm", ok=True), said).recording
+
+    assert rec.unconfirmed == ["Ja"]
+    assert rec.refused_attempts == []
+
+
+@pytest.mark.parametrize("said", NOT_THE_READ_BACK)
+def test_confirm_of_a_draft_nobody_heard_that_the_core_refused_is_an_attempt(said):
+    """Refused, so nothing was booked; the number shows how often a model leans
+    on the guard (Codex, PR #258)."""
+    rec = _talked_past_the_draft(_result("confirm", ok=False), said).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == [("confirm", "Ja")]
+
+
+ITEM = "11111111-1111-1111-1111-111111111111"
+DRAFTED = [{"menu_item_id": ITEM, "quantity": 1}]
+
+
+def _read_back_with_a_cart(cart, *inputs: str, then=()) -> RecordingLLM:
+    """Drafts one dish, then reads the draft out with `cart` next to the
+    sentence, and returns `confirm` on the guest's "Ja". `then`: what the model
+    answers in between, to a refused `cart`."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": DRAFTED})),
+                LLMTurn(say=READBACK, cart=cart),
+                *then,
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    for text in inputs:
+        rec.next_turn("", {}, text)
+    return rec
+
+
+def test_a_changed_cart_next_to_the_read_back_drops_the_draft():
+    """The core takes a `cart` that differs from the draft as a correction and
+    drops the draft, whatever the sentence next to it says. The "Ja" after it
+    confirms nothing, and the recorder has to see it the same way, or the
+    attempt is missing from the report (Codex, PR #258)."""
+    changed = [{"menu_item_id": ITEM, "quantity": 2}]
+    rec = _read_back_with_a_cart(changed, "Ja", _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_a_refused_cart_next_to_the_read_back_drops_the_draft():
+    """A `cart` the core refuses stops the whole answer and drops the draft
+    (`guards.take_cart`). The model reads the sentence out once more, but there
+    is no draft left that a yes could confirm."""
+    refused_cart = json.dumps({"tool": "cart", "ok": False, "error_code": "conflict"})
+    rec = _read_back_with_a_cart(
+        DRAFTED,
+        refused_cart,
+        "Ja",
+        _result("confirm", ok=False),
+        then=[LLMTurn(say=READBACK)],
+    )
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_the_same_cart_next_to_the_read_back_changes_nothing():
+    """A model that repeats the order with its answer has corrected nothing."""
+    rec = _read_back_with_a_cart(DRAFTED, "Ja", _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == []
+    assert rec.recording.confirms == 1
+
+
+def test_a_draft_that_comes_with_its_cart_is_still_a_draft():
+    """`cart` and `draft_order` in one answer, as the format asks for when the
+    order changes. The cart is new, so it reads as a correction, but the draft
+    next to it is the new draft: the yes after its read-back is consent, not a
+    violation (Codex, PR #258)."""
+    order = [{"menu_item_id": ITEM, "quantity": 2}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(
+                    tool_call=ToolCall("draft_order", {"items": order}), cart=order
+                ),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Zweimal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == []
+    assert rec.recording.confirms == 1
+
+
+def test_a_malformed_cart_does_not_take_the_accepted_order_back():
+    """An order the core took, then a `cart` it cannot read and refuses: the
+    order stays the one it took. The recorder went back to the order before
+    that, so the same order next to a later read-back looked like a correction
+    and a valid yes like a violation (Codex, PR #258)."""
+    order = [{"menu_item_id": ITEM, "quantity": 1}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(say="Kommt in die Bestellung.", cart=order),
+                LLMTurn(say="Gern.", cart="kaputt"),
+                LLMTurn(say="Entschuldigung."),
+                LLMTurn(tool_call=ToolCall("create_reservation", {})),
+                LLMTurn(say=READBACK, cart=order),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Gern."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, "Und sonst?")
+    rec.next_turn("", {}, json.dumps({"tool": "cart", "ok": False}))
+    rec.next_turn("", {}, "Und einen Tisch für vier.")
+    rec.next_turn("", {}, _result("create_reservation", ok=True))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1
+
+
+def test_a_booked_draft_is_no_draft_a_second_yes_could_confirm():
+    """After the booking the model says the sentence once more in its closing
+    answer, the guest says "Ja", and the model returns `confirm` again. The
+    core refuses: nothing waits. The recorder took the repeated sentence for a
+    new read-back and the attempt was missing from the report (Codex, PR
+    #258)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": DRAFTED})),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Auf Wiederhören."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=True))
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+
+def test_confirm_after_the_read_back_and_a_yes_is_none_of_both():
+    rec = _talked_past_the_draft(_result("confirm", ok=True), READBACK).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == []
+    assert rec.confirms == 1
+
+
+def _confirm_after_a_no(result: str) -> RecordingLLM:
+    confirm_turn = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say=READBACK),
+                confirm_turn,
+                LLMTurn(say="Was soll ich ändern?"),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, "Nein, das stimmt nicht.")
+    rec.next_turn("", {}, result)
+    return rec
+
+
+def test_confirm_the_core_refused_is_an_attempt_not_a_violation():
+    """A real model that tries `confirm` on a "Nein" is stopped by the core and
+    nothing is booked. Counted as a hard violation it failed the whole run:
+    three pickup cases were right in the database and red only for that."""
+    rec = _confirm_after_a_no(_result("confirm", ok=False)).recording
+
+    assert rec.unconfirmed == []
+    assert rec.refused_attempts == [("confirm", "Nein, das stimmt nicht.")]
+    # Not a confirm that happened: the repeat of a case and the count of
+    # bookings without a confirm work on the ones that went through.
+    assert rec.confirms == 0
+    assert rec.last_confirm is None
+
+
+def test_confirm_without_a_yes_that_went_through_is_a_violation():
+    rec = _confirm_after_a_no(_result("confirm", ok=True)).recording
+
+    assert rec.unconfirmed == ["Nein, das stimmt nicht."]
+    assert rec.refused_attempts == []
+    assert rec.confirms == 1
+    assert rec.last_confirm == {"entity_id": "x"}
+
+
+@pytest.mark.parametrize("ok", [True, False])
+def test_guessed_item_counts_only_when_the_draft_went_through(ok):
+    invented = str(uuid.uuid4())
+    items = [{"menu_item_id": invented}, {"menu_item_id": str(uuid.uuid4())}]
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": items})),
+                LLMTurn(say="Welches Gericht darf es sein?"),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die Ente.")
+    rec.next_turn("", {}, _result("draft_order", ok=ok))
+
+    guessed = [entry[0] for entry in rec.recording.guessed]
+    assert guessed == ([invented, items[1]["menu_item_id"]] if ok else [])
+    # One attempt per call, however many dishes it invented.
+    assert rec.recording.refused_attempts == (
+        [] if ok else [("draft_order", "Einmal die Ente.")]
+    )
+
+
+def test_refused_draft_is_no_draft_a_later_yes_could_confirm():
+    """The readback a yes answers must come from a draft that exists."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Auf welchen Namen?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _result("draft_order", ok=False))
+    rec.next_turn("", {}, "Ja, passt so.")
+
+    assert rec.recording.unconfirmed == ["Ja, passt so."]
+
+
+def test_rejected_correction_leaves_no_draft_a_yes_could_confirm():
+    """A draft was read back, the correction of it is rejected, the guest says
+    yes and the model calls `confirm` (Codex PR #239, P2). The core refuses:
+    the failed correction took the readback away (`agent/state.py`
+    `_supersedes`). The recorder has to see it the same way, or the yes would
+    count as consent to the old draft and the refused confirm would not show
+    up as an attempt."""
+    draft = LLMTurn(tool_call=ToolCall("draft_order", {"items": []}))
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                draft,
+                LLMTurn(say=READBACK),
+                draft,
+                LLMTurn(say="Das ging nicht. Sonst noch etwas?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+                LLMTurn(say="Ich lese noch einmal vor."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _result("draft_order", ok=True))
+    rec.next_turn("", {}, "Doch zwei.")
+    rec.next_turn("", {}, _result("draft_order", ok=False))
+    rec.next_turn("", {}, "Ja, passt so.")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja, passt so.")]
+
+
+@pytest.mark.parametrize("tool", ["search_menu", "check_slot"])
+def test_new_search_after_the_readback_leaves_no_draft_a_yes_could_confirm(tool):
+    """The core drops a readback after any menu search or slot check, also a
+    successful one (`agent/state.py` `_supersedes`): the guest is correcting.
+    A yes to the question that follows is no yes to the old draft, and the
+    `confirm` the core then refuses is an attempt (Codex PR #239, P2)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say=READBACK),
+                LLMTurn(tool_call=ToolCall(tool, {})),
+                LLMTurn(say="Meinen Sie die 13?"),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+                LLMTurn(say="Ich lese noch einmal vor."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 12.")
+    rec.next_turn("", {}, _result("draft_order", ok=True))
+    rec.next_turn("", {}, "Doch die Suppe.")
+    rec.next_turn("", {}, _result(tool, ok=True))
+    rec.next_turn("", {}, "Ja.")
+    rec.next_turn("", {}, _result("confirm", ok=False))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja.")]
+
+
+def test_tool_rejection_without_a_violation_is_no_refused_attempt():
+    """A slot that is taken or a missing name is an ordinary no of a tool."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("check_slot", {"party_size": 4})),
+                LLMTurn(say="Da ist leider nichts frei."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einen Tisch für vier.")
+    rec.next_turn("", {}, _result("check_slot", ok=False))
+
+    assert rec.recording.refused_attempts == []
+
+
+def test_report_shows_refused_attempts_without_failing_the_run():
+    report = _report(
+        [
+            CaseResult(id="a", name="a", tags=[], passed=True, refused_attempts=2),
+            CaseResult(id="b", name="b", tags=[], passed=True),
+        ]
+    )
+
+    assert report.to_json()["refused_attempts"] == 2
+    assert report.verdict == "bestanden"
+    assert "| Refused attempts | 2 |" in report.to_markdown()
+
+
+@pytest.mark.parametrize(
+    ("text", "yes"),
+    [
+        ("Ja, passt so.", True),
+        ("Genau.", True),
+        ("Ja genau", True),
+        ("Nein, das wars.", False),
+        ("Nein, ja doch nicht", False),
+        ("Im Januar", False),
+        ("Müller", False),
+        ("Das stimmt nicht.", False),
+        ("Passt so nicht, ich wollte zwei.", False),
+        ("Richtig, aber keine Ente.", False),
+        ("Das ist nicht richtig.", False),
+        ("Ja, passt, kein Problem.", True),
+        ("Ja, nicht schlecht.", True),
+    ],
+)
+def test_ja_erkennung(text, yes):
+    assert is_yes(text) is yes
+
+
+# --- Datenbank statt Modelltext -----------------------------------------------------
+
+
+def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session:
+            tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
+            call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
+            item_id = session.scalar(
+                select(MenuItem.id).where(
+                    MenuItem.tenant_id == tenant.id, MenuItem.number == "13"
+                )
+            )
+            draft = draft_order(
+                session,
+                DraftOrderRequest(
+                    call_id=call.call_id,
+                    tenant_id=tenant.id,
+                    idempotency_key=uuid.uuid4().hex,
+                    type="pickup",
+                    customer={"name": "Schmidt", "phone": "0721 5551234"},
+                    items=[{"menu_item_id": item_id, "quantity": 1}],
+                ),
+                now=runner.DEFAULT_NOW,
+            )
+            # An der Regel vorbei bestaetigt: kein confirm vom Modell.
+            confirm(
+                session,
+                ConfirmRequest(
+                    call_id=call.call_id,
+                    tenant_id=tenant.id,
+                    entity="order",
+                    entity_id=draft.order_id,
+                    idempotency_key="k",
+                ),
+            )
+            seen = observe(session, call.call_id, confirms=0)
+            assert seen.confirmed and seen.confirmed_without_confirm == 1
+            assert judge({"items": [{"number": "13", "quantity": 1}]}, seen) == []
+    finally:
+        engine.dispose()
+
+
+def test_vergleich_nur_felder_aus_expected():
+    seen = Observed(
+        intent="pickup",
+        confirmed=True,
+        escalated=False,
+        items=[{"number": "47", "quantity": 1, "options": ["Huhn"]}],
+        customer_name="Müller",
+        party_size=None,
+    )
+    assert judge({"items": [{"number": "47", "quantity": 1}]}, seen) == []
+    assert judge({"customer_name": "müller"}, seen) == []
+    diffs = judge(
+        {"items": [{"number": "47", "quantity": 1, "options": ["Ente"]}]}, seen
+    )
+    assert diffs and "items" in diffs[0]
+
+
+def _reservation_seen(**extra) -> Observed:
+    return Observed(
+        intent="reservation",
+        confirmed=True,
+        escalated=False,
+        items=[],
+        customer_name="Meyer",
+        party_size=7,
+        **extra,
+    )
+
+
+def test_corrected_slot_has_to_be_in_the_result():
+    # Codex PR #162: Saturday 20:00 -> Friday 19:30 must not go unchecked.
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, seen) == []
+    diffs = judge({"reserved_for": "2026-09-19T20:00"}, seen)
+    assert diffs and diffs[0].startswith("reserved_for")
+    assert judge({"reserved_for": "2026-09-18T19:30"}, _reservation_seen())
+
+
+def test_address_is_never_silently_green_before_t61():
+    want = {"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    assert judge({"address": want}, _reservation_seen())  # address still None
+    seen = _reservation_seen(
+        address={"street": "Gartenweg", "house_number": "41", "city": "Musterdorf"}
+    )
+    assert judge({"address": want}, seen) == []
+    # House number 14 instead of the corrected 41 is red; ss and ß count as equal.
+    wrong = _reservation_seen(address={**want, "house_number": "14"})
+    assert judge({"address": want}, wrong)
+    eszett = _reservation_seen(address={"street": "Lindenstraße", "house_number": "4"})
+    assert (
+        judge({"address": {"street": "Lindenstrasse", "house_number": "4"}}, eszett)
+        == []
+    )
+
+
+def test_second_confirmed_reservation_is_always_red():
+    seen = _reservation_seen(reserved_for="2026-09-18T19:30", extra_reservations=1)
+    diffs = judge({"reserved_for": "2026-09-18T19:30"}, seen)
+    assert diffs == ["mehr als eine Reservierung bestaetigt: 1 zusaetzlich"]
+
+
+def test_address_ignores_spaces_and_abbreviation():
+    seen = _reservation_seen(
+        address={"street": "Lindenstr.", "house_number": "7 b", "city": "Musterdorf"}
+    )
+    want = {"street": "Lindenstraße", "house_number": "7b"}
+    assert judge({"address": want}, seen) == []
+    assert judge({"address": {**want, "house_number": "7c"}}, seen)
+
+
+def test_order_type_and_rejected_wish_without_note():
+    """Codex PR #162: pickup instead of delivery has to arrive as a pickup, and a
+    rejected wish ("extra scharf") must not end up as a kitchen note."""
+    seen = Observed(
+        intent="delivery",
+        confirmed=True,
+        escalated=False,
+        items=[{"number": "34", "quantity": 1, "options": [], "note": "extra scharf"}],
+        customer_name="Peters",
+        party_size=None,
+        order_type="delivery",
+    )
+    assert judge({"order_type": "pickup"}, seen) == [
+        "order_type: erwartet 'pickup', gebucht 'delivery'"
+    ]
+    want = {"number": "34", "quantity": 1, "note": None}
+    assert judge({"items": [want]}, seen)
+    clean = Observed(**{**seen.__dict__, "items": [{**seen.items[0], "note": None}]})
+    assert judge({"items": [want]}, clean) == []
+
+
+def test_spoken_phone_number_and_bell_note_are_checked():
+    """Codex PR #162: another valid number or a dropped bell note must not be
+    green."""
+    seen = _reservation_seen(
+        phone="+497215559876",
+        address={
+            "street": "Industriestrasse",
+            "house_number": "20",
+            "floor_note": "3. OG, klingeln bei Firma Nord, dritter Stock",
+        },
+    )
+    assert judge({"phone": "+497215559876"}, seen) == []
+    assert judge({"phone": "+497215551234"}, seen) == [
+        "phone: erwartet '+497215551234', gebucht '+497215559876'"
+    ]
+    note = {"floor_note": "Firma Nord dritter Stock"}
+    assert judge({"address": note}, seen) == []
+    assert judge({"address": {"floor_note": "Firma Sued"}}, seen)
+    without = _reservation_seen(address={"street": "Industriestrasse"})
+    assert judge({"address": note}, without)
+    # Codex PR #162: punctuation joins words in a stored note; it must separate
+    # them, otherwise "Nord,dritter" becomes one token and a matching note is red.
+    for stored in ("Firma Nord,dritter Stock", "Firma-Nord: dritter/Stock"):
+        joined = _reservation_seen(address={"floor_note": stored})
+        assert judge({"address": note}, joined) == [], stored
+
+
+def test_run_picks_the_report_folder_per_case_folder(
+    migrated_db_url, monkeypatch, tmp_path
+):
+    """Review PR #162: run() without report_dir separates the baselines too, not
+    only the command line."""
+    monkeypatch.setattr(runner, "REPORTS", tmp_path / "reports")
+    cases = write_cases(
+        tmp_path / "targets",
+        fall("one", ["Ich will mit einem Menschen sprechen."], {"escalated": True}),
+    )
+    runner.run(cases_dir=cases, db_url=migrated_db_url, stamp=datetime.now(UTC))
+    assert list(runner.default_report_dir(cases).glob("eval_*.json"))
+    assert runner.default_report_dir(cases).parent == tmp_path / "reports"
+    assert not list((tmp_path / "reports").glob("eval_*.json"))
+
+
+def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):
+    def rep(tags, acc_cases):
+        r = RunReport(run_at="t", model="scripted", tags=tags, cases=acc_cases)
+        r.decide()
+        return r
+
+    ok = CaseResult(id="a", name="", tags=[], passed=True)
+    write(rep(["menu"], [ok]), tmp_path, datetime(2026, 9, 25, 8, tzinfo=UTC))
+    assert previous_run(tmp_path, "scripted", []) is None
+    assert previous_run(tmp_path, "scripted", ["menu"])["accuracy"] == 1.0
+
+
+# --- Befunde aus dem Review von PR #142 ----------------------------------------------
+
+
+def _report(cases, previous=None):
+    r = RunReport(run_at="t", model="scripted", tags=[], cases=cases, previous=previous)
+    r.decide()
+    return r
+
+
+def test_neuer_roter_fall_ist_keine_regression():
+    before = {"file": "alt.json", "accuracy": 1.0, "passed_ids": ["a", "b"]}
+    neu_rot = [
+        CaseResult(id="a", name="", tags=[], passed=True),
+        CaseResult(id="b", name="", tags=[], passed=True),
+        CaseResult(id="bug", name="", tags=[], passed=False),
+    ]
+    assert _report(neu_rot, before).verdict == "bestanden"
+    kaputt = [
+        CaseResult(id="a", name="", tags=[], passed=False),
+        CaseResult(id="b", name="", tags=[], passed=True),
+        CaseResult(id="neu", name="", tags=[], passed=True),
+    ]
+    assert _report(kaputt, before).verdict == "durchgefallen"
+
+
+def test_durchgefallener_lauf_ist_kein_massstab(tmp_path):
+    gruen = _report([CaseResult(id="a", name="", tags=[], passed=True)])
+    write(gruen, tmp_path, datetime(2026, 9, 25, 8, tzinfo=UTC))
+    rot = _report(
+        [CaseResult(id="a", name="", tags=[], passed=False)],
+        previous_run(tmp_path, "scripted", []),
+    )
+    assert rot.verdict == "durchgefallen"
+    write(rot, tmp_path, datetime(2026, 9, 25, 9, tzinfo=UTC))
+    # Der zweite Aufruf ohne Fix vergleicht weiter mit dem gruenen Lauf.
+    again = previous_run(tmp_path, "scripted", [])
+    assert again["passed_ids"] == ["a"]
+
+
+def test_optionen_nur_an_der_position_die_sie_nennt():
+    seen = Observed(
+        intent="pickup",
+        confirmed=True,
+        escalated=False,
+        items=[
+            {"number": "23", "quantity": 2, "options": ["Erdnuss"]},
+            {"number": "47", "quantity": 1, "options": ["Huhn"]},
+        ],
+        customer_name=None,
+        party_size=None,
+    )
+    want = [
+        {"number": "23", "quantity": 2},
+        {"number": "47", "quantity": 1, "options": ["Huhn"]},
+    ]
+    assert judge({"items": want}, seen) == []
+    assert judge({"items": [{"number": "23", "quantity": 2}]}, seen)  # 47 zu viel
+
+
+def test_faelle_teilen_keinen_mandanten(migrated_db_url, tmp_path):
+    # Derselbe Tisch zweimal: mit geteiltem Mandanten naehme der erste dem
+    # zweiten die Kapazitaet nicht, hier aber zaehlt jeder Fall fuer sich.
+    zeilen = [
+        "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("t1", zeilen, {"confirmed": True}),
+        fall("t2", zeilen, {"confirmed": True}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert report.accuracy == 1.0, report.to_markdown()
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session:
+            names = sorted(session.scalars(select(Tenant.name)))
+    finally:
+        engine.dispose()
+    assert names == ["Evalbetrieb t1", "Evalbetrieb t2"]
+
+
+def test_abgestuerzter_fall_laesst_den_lauf_durchfallen():
+    crashed = CaseResult(
+        id="x", name="", tags=[], passed=False, error="TypeError: kaputt"
+    )
+    report = _report([crashed])
+    assert report.verdict == "durchgefallen"
+    assert any("Abgestürzt" in r for r in report.reasons)
+
+
+def test_doppelte_id_auch_mit_getrennten_tags(tmp_path):
+    folder = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}, tags=["x"]))
+    (folder / "a2.json").write_text(
+        json.dumps(fall("a", ["Hallo"], {}, tags=["y"])), encoding="utf-8"
+    )
+    with pytest.raises(CaseError):
+        runner.load_cases(folder, ["x"])
+
+
+def test_ja_vor_dem_entwurf_bestaetigt_nichts():
+    # "Ja" im ersten Satz, danach Entwurf und confirm im selben Zug, ohne
+    # Vorlesen: kein Ja zum Vorgang.
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(tool_call=ToolCall("confirm", {})),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Ja, guten Tag, einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    assert rec.recording.unconfirmed == ["Ja, guten Tag, einmal die 13."]
+
+
+# --- Eval-Suite v1 (T-5.2) -----------------------------------------------------------
+
+BESTELLUNG = [
+    "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+    "Die 48.",
+    "Dann die 13.",
+    "Nein, das wars.",
+    "Auf den Namen Mueller.",
+    "Meine Nummer ist 0721 5551234.",
+    "Ja, passt so.",
+]
+
+
+def test_ausverkauft_aus_dem_fall(migrated_db_url, tmp_path):
+    """`sold_out` setzt "heute aus" nur fuer diesen Fall: die 48 kommt nicht in
+    die Bestellung, im Fall daneben ist sie normal bestellbar."""
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "aus",
+            BESTELLUNG,
+            {"confirmed": True, "items": [{"number": "13", "quantity": 1}]},
+            sold_out=["48"],
+        ),
+        fall(
+            "da",
+            BESTELLUNG,
+            {
+                "confirmed": True,
+                "items": [
+                    {"number": "48", "quantity": 1},
+                    {"number": "13", "quantity": 1},
+                ],
+            },
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {"aus": True, "da": True}
+
+
+def test_ausverkauft_mit_unbekannter_nummer_stuerzt_ab(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c", fall("x", ["Hallo"], {"confirmed": False}, sold_out=["99"])
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert "sold_out" in result.error
+    assert report.verdict == "durchgefallen"
+
+
+def test_bekannte_luecke_im_report(migrated_db_url, tmp_path):
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "luecke",
+            ["Hallo, liefern Sie auch? Die 13 bitte.", "0721 5551234"],
+            {"escalated": False},
+            pending="T-6.5: Lieferung",
+        ),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    [result] = report.cases
+    assert result.pending == "T-6.5: Lieferung" and not result.passed
+    # Eine bekannte Luecke ist rot, aber keine Regression und kein Absturz.
+    assert report.verdict == "bestanden"
+    markdown = report.to_markdown()
+    assert "## Bekannte Lücken" in markdown and "T-6.5: Lieferung (rot)" in markdown
+    assert "## Rote Fälle" not in markdown
+
+
+def test_ausverkauft_bis_ende_des_betriebstags():
+    """Wie "Heute aus" im Tablet: bis 05:00 des Folgetags, nicht 24 Stunden."""
+    abend = datetime.fromisoformat("2026-09-15T23:30:00+02:00")
+    ende = runner._end_of_business_day(abend)
+    assert ende == datetime.fromisoformat("2026-09-16T05:00:00+02:00")
+    nacht = datetime.fromisoformat("2026-09-16T01:00:00+02:00")
+    assert runner._end_of_business_day(nacht) == ende
+
+
+def test_wiederholter_confirm_wird_wirklich_gesendet(migrated_db_url, tmp_path):
+    """Codex PR #145: das Replay endet mit der Bestaetigung, ein zweites Ja des
+    Gasts kaeme nie an. `repeat_confirm` schickt den letzten confirm des Modells
+    selbst ein zweites Mal - und ohne confirm ist der Fall rot, nicht still gruen."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 23.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("zweimal", zeilen, {"confirmed": True}, repeat_confirm=True),
+        fall("ohne", zeilen[:2], {"confirmed": False}, repeat_confirm=True),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["zweimal"].passed, result["zweimal"].diffs
+    assert not result["ohne"].passed
+    assert any("nie confirm" in d for d in result["ohne"].diffs)
+
+
+def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
+        call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
+        item = session.scalar(
+            select(MenuItem.id).where(
+                MenuItem.tenant_id == tenant.id, MenuItem.number == "23"
+            )
+        )
+        draft = draft_order(
+            session,
+            DraftOrderRequest(
+                call_id=call.call_id,
+                tenant_id=tenant.id,
+                idempotency_key="k1",
+                type="pickup",
+                customer={"name": "Mueller", "phone": "0721 5551234"},
+                items=[{"menu_item_id": item, "quantity": 1}],
+            ),
+            now=runner.DEFAULT_NOW,
+        )
+        req = ConfirmRequest(
+            call_id=call.call_id,
+            tenant_id=tenant.id,
+            entity="order",
+            entity_id=draft.order_id,
+            idempotency_key="c1",
+        )
+        confirm(session, req)
+        confirm(session, req)
+        assert observe(session, call.call_id, confirms=2).duplicate_confirms == 0
+        # Ein nicht idempotentes confirm schriebe einen zweiten Eintrag.
+        session.add(
+            AuditLog(
+                tenant_id=tenant.id,
+                actor="agent",
+                action="order.confirmed",
+                entity="order",
+                entity_id=draft.order_id,
+                payload={},
+            )
+        )
+        session.commit()
+        seen = observe(session, call.call_id, confirms=2)
+        assert seen.duplicate_confirms == 1
+        assert any("doppelt" in d for d in judge({}, seen))
+    engine.dispose()
+
+
+def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
+    """Codex PR #145: der Allergiehinweis zaehlt nur, wenn er gespeichert ist, und
+    eine Allergiefrage nur, wenn das Modell get_item_details gerufen hat."""
+    zeilen = [
+        "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+        "Die 13, ich habe eine Erdnussallergie.",
+        "Nein, das wars.",
+        "Auf den Namen Mueller.",
+        "Meine Nummer ist 0721 5551234.",
+        "Ja, passt so.",
+    ]
+    hinweis = "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    cases = write_cases(
+        tmp_path / "c",
+        fall(
+            "hinweis",
+            zeilen,
+            {"items": [{"number": "13", "quantity": 1, "note": hinweis}]},
+        ),
+        fall(
+            "falscher_hinweis",
+            zeilen,
+            {
+                "items": [
+                    {"number": "13", "quantity": 1, "note": "WICHTIG: Keine Karotte."}
+                ]
+            },
+        ),
+        fall("ohne_tool", zeilen, {"confirmed": True, "tools": ["get_item_details"]}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    result = {c.id: c for c in report.cases}
+    assert result["hinweis"].passed, result["hinweis"].diffs
+    assert not result["falscher_hinweis"].passed
+    assert result["ohne_tool"].diffs == [
+        "tools: kein erfolgreicher Aufruf ['get_item_details']"
+    ]
+
+
+def test_scripted_model_knows_the_menu_of_the_case(migrated_db_url, tmp_path):
+    """The runner hands the scripted model the card numbers of the case's
+    tenant, as the text phone does: on "Wogegen?" the answer "S12" (on the
+    eval menu) is an order and the question stays open, "B12" is the
+    ingredient (Codex PR #155, P2)."""
+
+    def lines(*answers: str) -> list[str]:
+        return [
+            "Guten Tag, ich moechte etwas zum Abholen bestellen.",
+            "Die 13, ich habe eine Allergie.",
+            *answers,
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "Meine Nummer ist 0721 5551234.",
+            "Ja, passt so.",
+        ]
+
+    def note(ingredient: str) -> dict:
+        text = f"WICHTIG: Keine {ingredient}. Grund: Allergie"
+        return {"items": [{"number": "13", "quantity": 1, "note": text}]}
+
+    cases = write_cases(
+        tmp_path / "c",
+        fall("card_number", lines("S12.", "Erdnüsse."), note("Erdnüsse")),
+        fall("ingredient", lines("B12."), note("B12")),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert [(c.id, c.diffs, c.error) for c in report.cases if not c.passed] == []
+
+
+def test_nur_erfolgreicher_aufruf_fuer_das_richtige_gericht_zaehlt():
+    """Codex PR #145: ein gescheiterter get_item_details oder einer fuer ein
+    anderes Gericht beantwortet keine Allergiefrage."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "get_item_details", "number": "23"}]
+    assert missing_tools(want, []) == want
+    assert missing_tools(want, [("get_item_details", {"number": "24"})]) == want
+    assert missing_tools(want, [("search_menu", {"number": "23"})]) == want
+    assert missing_tools(want, [("get_item_details", {"number": "23"})]) == []
+    assert missing_tools(["get_item_details"], [("get_item_details", {})]) == []
+
+
+def test_expected_rejection_needs_exactly_that_rejection():
+    """Codex PR #162: "nothing booked" alone does not prove a zone check."""
+    from evals.judge import missing_tools
+
+    want = [{"tool": "check_delivery", "error": "out_of_zone"}]
+    assert missing_tools(want, []) == want
+    # A successful check is the opposite of the expected rejection.
+    assert missing_tools(want, [("check_delivery", {"zone": "A"})]) == want
+    assert missing_tools(want, [], [("check_delivery", "invalid_input")]) == want
+    assert missing_tools(want, [], [("draft_order", "out_of_zone")]) == want
+    assert missing_tools(want, [], [("check_delivery", "out_of_zone")]) == []
+
+
+def test_zone_check_has_to_cover_the_final_address():
+    """Codex PR #162: checking Gartenweg 14 and then delivering to the corrected
+    Gartenweg 41 must not pass; the successful check has to be for that address."""
+    from evals.judge import unchecked_address
+
+    address = {
+        "street": "Gartenweg",
+        "house_number": "41",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus",
+    }
+    expected = {"address": address, "tools": ["check_delivery"]}
+    first = {**address, "house_number": "14"}
+    assert unchecked_address(expected, [("check_delivery", first)])
+    assert unchecked_address(expected, [("search_menu", address)])
+    assert unchecked_address(expected, [])
+    final = {"street": "Gartenweg", "house_number": "41", "postal_code": "12345"}
+    assert (
+        unchecked_address(
+            expected, [("check_delivery", {**final, "city": "Musterdorf"})]
+        )
+        is None
+    )
+    # floor_note is not an argument of check_delivery and does not have to match.
+    assert (
+        unchecked_address(
+            expected,
+            [
+                ("check_delivery", first),
+                ("check_delivery", {**final, "city": "musterdorf"}),
+            ],
+        )
+        is None
+    )
+    # Without an expected address or without an expected successful check: no rule.
+    assert unchecked_address({"tools": ["check_delivery"]}, []) is None
+    assert unchecked_address({"address": address}, []) is None
+
+
+def test_recorder_keeps_the_arguments_of_successful_calls():
+    args = {"street": "Gartenweg", "house_number": "41"}
+    llm = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall(name="check_delivery", args=args)),
+                LLMTurn(
+                    tool_call=ToolCall(name="check_delivery", args={"street": "x"})
+                ),
+                LLMTurn(say="done"),
+            ]
+        )
+    )
+    llm.next_turn("", {}, "Gartenweg 41")
+    llm.next_turn(
+        "", {}, json.dumps({"tool": "check_delivery", "ok": True, "data": {}})
+    )
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    assert llm.recording.ok_calls == [("check_delivery", args)]
+
+
+def test_recorder_keeps_rejected_results_with_their_code():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps(
+            {"tool": "check_delivery", "ok": False, "error_code": "out_of_zone"}
+        ),
+    )
+    llm.next_turn("", {}, json.dumps({"tool": "search_menu", "ok": False}))
+    assert llm.recording.error_results == [("check_delivery", "out_of_zone")]
+    assert llm.recording.ok_results == []
+
+
+def test_recorder_merkt_nur_erfolgreiche_ergebnisse():
+    llm = RecordingLLM(FakeLLM([LLMTurn(say="a"), LLMTurn(say="b")]))
+    llm.next_turn("", {}, json.dumps({"tool": "get_item_details", "ok": False}))
+    llm.next_turn(
+        "",
+        {},
+        json.dumps({"tool": "get_item_details", "ok": True, "data": {"number": "23"}}),
+    )
+    assert llm.recording.ok_results == [("get_item_details", {"number": "23"})]
+
+
+# --- The read-back sentence (expected.readback) --------------------------------
+
+
+def _turn(say: str, *tools: tuple[str, bool]) -> Turn:
+    return Turn(
+        customer="...",
+        say=[say],
+        tools=[{"name": name, "ok": ok} for name, ok in tools],
+    )
+
+
+def test_heard_readback_is_what_was_said_in_the_turn_of_the_last_draft():
+    turns = [
+        _turn("Einmal Nummer 13. Macht 11 Euro 90.", ("draft_order", True)),
+        _turn("Zweimal Nummer 13. Macht 23 Euro 80.", ("draft_order", True)),
+        _turn("Ist bestellt.", ("confirm", True)),
+    ]
+    assert heard_readback(turns) == "Zweimal Nummer 13. Macht 23 Euro 80."
+
+
+def test_heard_readback_is_the_agents_sentence_not_the_tools():
+    """Codex PR #248: the tool returned the right sentence, the model said its
+    own. The caller heard the model."""
+    turns = [_turn("Das macht dann 25,70 Euro.", ("draft_order", True))]
+    assert "Macht 25 Euro 70," not in heard_readback(turns)
+
+
+def test_without_a_draft_that_succeeded_nothing_was_read_back():
+    assert heard_readback([]) is None
+    assert heard_readback([_turn("Nummer 13 Pho Bo.", ("search_menu", True))]) is None
+    assert heard_readback([_turn("Wie ist Ihr Name?", ("draft_order", False))]) is None
+    # A reservation is read back the same way.
+    assert heard_readback([_turn("Ein Tisch.", ("create_reservation", True))])
+
+
+def test_readback_piece_is_checked_against_what_the_caller_heard(
+    migrated_db_url, tmp_path
+):
+    """A piece that was read out is green, another one is red, and a call that
+    never got to a draft is red instead of unchecked."""
+    order = [
+        "Hallo, ich moechte etwas zum Abholen bestellen.",
+        "Einmal die 13.",
+        "Nein, das wars.",
+        "Auf den Namen Schmidt.",
+        "Ja, genau.",
+    ]
+    caller = {"caller_id": "+497215551234"}
+    cases = write_cases(
+        tmp_path / "c",
+        fall("said", order, {"readback": "Einmal Nummer 13 Pho Bo."}, **caller),
+        fall("other", order, {"readback": "Einmal Nummer 14"}, **caller),
+        fall("none", ["Hallo."], {"readback": "Einmal Nummer 13"}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {
+        "said": True,
+        "other": False,
+        "none": False,
+    }, report.to_markdown()
+
+
+# --- Angebotene Alternativen (expected.alternatives) ---------------------------
+
+
+def test_alternativen_des_letzten_abgelehnten_check_slot_in_ortszeit():
+    results = [
+        ("check_slot", {"available": False, "alternatives": ["2026-09-20T19:30:00Z"]}),
+        ("search_menu", {"items": []}),
+        (
+            "check_slot",
+            {
+                "available": False,
+                "alternatives": ["2026-09-22T17:00:00Z", "2026-09-22T17:30:00Z"],
+            },
+        ),
+    ]
+    assert offered_alternatives(results, "Europe/Berlin") == [
+        "2026-09-22T19:00",
+        "2026-09-22T19:30",
+    ]
+
+
+def test_spaeteres_freies_check_slot_ueberdeckt_das_angebot_nicht():
+    """Review PR #152: Gast nimmt die Alternative, das Modell prueft sie nach."""
+    results = [
+        (
+            "check_slot",
+            {
+                "available": False,
+                "alternatives": ["2026-09-22T17:00:00Z", "2026-09-22T17:30:00Z"],
+            },
+        ),
+        ("check_slot", {"available": True, "alternatives": []}),
+    ]
+    assert offered_alternatives(results, "Europe/Berlin") == [
+        "2026-09-22T19:00",
+        "2026-09-22T19:30",
+    ]
+
+
+def test_ohne_abgelehnten_wunsch_ist_das_angebot_none_nicht_leer():
+    """Review PR #152: "nichts angeboten" und "Wunsch war frei" sind verschieden,
+    ein Fall mit alternatives: [] darf nicht gruen werden, nur weil frei war."""
+    assert offered_alternatives([], "Europe/Berlin") is None
+    frei = [("check_slot", {"available": True, "alternatives": []})]
+    assert offered_alternatives(frei, "Europe/Berlin") is None
+    voll = [("check_slot", {"available": False, "alternatives": []})]
+    assert offered_alternatives(voll, "Europe/Berlin") == []
+
+
+# --- A real model in the runner (T-2.4 part 3) ---------------------------------
+
+
+def test_model_name_other_than_scripted_builds_the_model_client(monkeypatch):
+    """`--model qwen3:14b`: the name goes to the server of `LLM_BASE_URL`."""
+    monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
+
+    llm = runner.model_factory("qwen3:14b")(datetime.now(UTC), lambda: None)
+
+    assert isinstance(llm, ChatCompletionsLLM)
+    assert llm.usage.model == "qwen3:14b"
+
+
+def test_model_without_a_server_stops_the_run_before_any_case(monkeypatch):
+    """No silent fall back to the script: a model comparison would compare the
+    script with itself."""
+    monkeypatch.setattr(settings, "llm_base_url", "")
+
+    with pytest.raises(runner.UsageError, match="LLM_BASE_URL"):
+        runner.model_factory("qwen3:14b")
+
+
+def test_recorder_passes_the_usage_of_the_model_on():
+    inner = FakeLLM([])
+    inner.usage = Usage(model="m", requests=2, prompt_tokens=10, completion_tokens=3)
+
+    assert RecordingLLM(inner).usage == inner.usage
+    # The scripted stand-in and the test double count nothing.
+    assert RecordingLLM(FakeLLM([])).usage is None
+
+
+def _counted(case_id, **usage) -> CaseResult:
+    return CaseResult(id=case_id, name=case_id, tags=[], passed=True, **usage)
+
+
+def test_report_shows_tokens_and_cost_per_case(monkeypatch):
+    monkeypatch.setattr(settings, "llm_model", "scripted")
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=9000, completion_tokens=400),
+            _counted("b", requests=1, prompt_tokens=3000, completion_tokens=200),
+        ]
+    )
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] == 6300
+    # The run: 12000 x 300 + 600 x 1500 = 4.5 million, 4.5 cents, up to 5; two
+    # cases, up again. Priced once for the run, not once per case.
+    assert data["cost_per_case"] == 3
+
+    # `--model` names another model than `LLM_MODEL`: its prices are not these.
+    monkeypatch.setattr(settings, "llm_model", "mistral-small")
+    assert report.to_json()["cost_per_case"] is None
+    assert "| Tokens je Fall | 6300 |" in report.to_markdown()
+
+
+def test_report_of_a_run_without_a_model_shows_no_tokens(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report([_counted("a"), _counted("b")])
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] is None
+    assert data["cost_per_case"] is None
+
+
+def test_report_with_an_unmetered_request_shows_tokens_and_no_cost(monkeypatch):
+    """One request without token numbers: the sum is a part, so no price."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=9000, completion_tokens=400),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    data = report.to_json()
+
+    assert data["tokens_per_case"] == 4700
+    assert data["cost_per_case"] is None
+
+
+def test_run_in_which_no_request_reached_the_model_fails_with_a_hint():
+    """A mistyped model name: every request fails, every case ends in the
+    handover. That is a usage error, not a model that fails every case (own
+    review of PR #235)."""
+    report = _report(
+        [
+            _counted("a", requests=2, unmetered=2),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    assert report.verdict == "durchgefallen"
+    assert any("no request" in reason for reason in report.reasons)
+
+
+def test_run_with_some_failed_requests_is_judged_by_its_cases():
+    report = _report(
+        [
+            _counted("a", requests=2, prompt_tokens=900, completion_tokens=40),
+            _counted("b", requests=1, unmetered=1),
+        ]
+    )
+
+    assert report.verdict == "bestanden"
+
+
+def test_crashed_case_keeps_the_tokens_it_used(migrated_db_url, tmp_path, monkeypatch):
+    """A case that crashes after the model was asked still used its tokens;
+    without them the average per case reads too low (own review of PR #235)."""
+
+    class Counting(FakeLLM):
+        usage = Usage(model="m", requests=1, prompt_tokens=120, completion_tokens=9)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("judge broke")
+
+    monkeypatch.setattr(runner, "judge", broken)
+    cases = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}))
+    make = lambda now, menu: Counting([LLMTurn(say="Guten Tag.")])  # noqa: E731
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        result = runner.run_case(
+            session, runner.load_cases(cases, [])[0], make, runner.menu_plan()
+        )
+    engine.dispose()
+
+    assert result.error
+    assert (result.requests, result.prompt_tokens) == (1, 120)
+
+
+def test_case_run_on_a_model_carries_its_token_count(migrated_db_url, tmp_path):
+    """Through the runner: the case result holds what its client counted."""
+
+    class Counting(FakeLLM):
+        usage = Usage(model="m", requests=1, prompt_tokens=120, completion_tokens=9)
+
+    cases = write_cases(tmp_path / "c", fall("a", ["Hallo"], {}))
+    make = lambda now, menu: Counting([LLMTurn(say="Guten Tag.")])  # noqa: E731
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as session:
+        result = runner.run_case(
+            session, runner.load_cases(cases, [])[0], make, runner.menu_plan()
+        )
+    engine.dispose()
+
+    assert (result.requests, result.prompt_tokens, result.completion_tokens) == (
+        1,
+        120,
+        9,
+    )
+
+
+# --- A `confirm` without a result, and the guest speaks again -------------------
+# The core refused a yes for a draft nobody heard last and read the draft out
+# itself, without asking the model again (`agent/loop.py`,
+# `guards.reread_on_yes`).
+
+
+def _reread_then_booked(first_confirm: LLMTurn, said_first: str = "Ja") -> RecordingLLM:
+    """A model that talks past the draft and returns `confirm` on the guest's
+    sentence. No result comes back for it: the guest speaks again, says "Ja",
+    and that `confirm` goes through."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(say="Darf es sonst noch etwas sein?"),
+                first_confirm,
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, _draft_result())
+    rec.next_turn("", {}, said_first)
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+    return rec
+
+
+def test_a_yes_the_core_answered_with_the_draft_is_no_violation():
+    """The first `confirm` was not carried out and the guest heard the draft:
+    the yes after it is a yes to the draft."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+
+    rec = _reread_then_booked(confirm)
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+    assert rec.recording.confirms == 1
+
+
+def test_a_cart_next_to_that_confirm_is_taken_back_in_the_recording():
+    """The core left the `cart` aside. The recorder saw it first and dropped
+    the draft for it; with the guest's next sentence the draft is back."""
+    other_order = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    confirm = LLMTurn(
+        tool_call=ToolCall("confirm", {"entity_id": "x"}), cart=other_order
+    )
+
+    rec = _reread_then_booked(confirm)
+
+    assert rec.recording.unconfirmed == []
+
+
+def test_a_confirm_without_a_result_on_another_sentence_keeps_its_entry():
+    """Only a yes for a draft that was not read out is answered with the
+    draft. Any other `confirm` whose result never came stays what the
+    recorder took it for, the careful side."""
+    confirm = LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"}))
+
+    rec = _reread_then_booked(confirm, said_first="Nein, lieber später.")
+
+    assert rec.recording.unconfirmed == ["Nein, lieber später.", "Ja"]
+
+
+def test_a_yes_before_the_draft_of_the_same_turn_is_no_violation_either():
+    """The guest says "Ja" to the agent's question, and the model drafts and
+    returns `confirm` in that one turn. The core reads the new draft out
+    instead of booking it and gives no result; the transcript may end there
+    (Codex PR #273)."""
+    rec = RecordingLLM(
+        FakeLLM(
+            [
+                LLMTurn(say="Soll ich das so aufnehmen?"),
+                LLMTurn(tool_call=ToolCall("draft_order", {"items": []})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(tool_call=ToolCall("confirm", {"entity_id": "x"})),
+                LLMTurn(say="Danke."),
+            ]
+        )
+    )
+    rec.next_turn("", {}, "Einmal die 13.")
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _draft_result())
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.refused_attempts == [("confirm", "Ja")]
+
+    rec.next_turn("", {}, "Ja")
+    rec.next_turn("", {}, _result("confirm", True))
+
+    assert rec.recording.unconfirmed == []
+    assert rec.recording.confirms == 1

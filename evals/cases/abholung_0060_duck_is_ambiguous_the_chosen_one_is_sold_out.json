@@ -1,0 +1,57 @@
+{
+  "id": "abholung_0060",
+  "name": "Duck is ambiguous, the chosen one is sold out",
+  "tags": [
+    "abholung",
+    "mehrdeutig",
+    "ausverkauft",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "sold_out": [
+    "48"
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal Ente."
+    },
+    {
+      "role": "customer",
+      "text": "Die suess-saure."
+    },
+    {
+      "role": "customer",
+      "text": "Dann die 49."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "49",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller",
+    "confirmed": true,
+    "escalated": false
+  }
+}

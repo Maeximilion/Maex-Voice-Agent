@@ -72,3 +72,68 @@ def test_engine_faehrt_read_committed():
     with engine.connect() as conn:
         stufe = conn.execute(text("SHOW transaction_isolation")).scalar_one()
     assert stufe == "read committed", f"erwartet read committed, bekam {stufe}"
+
+
+# -- sessions of the phone line: bounded waits (T-1.11 part 2) ----------------------
+
+
+@pytest.fixture
+def bounded(bounded_db):
+    return bounded_db(200)
+
+
+def test_a_bounded_session_gives_up_on_a_row_lock(migrated_db_url, bounded):
+    """A tool of the phone line that waits on a row lock fails after the
+    bound instead of keeping the guest on the line, and commits nothing
+    (Codex on PR #287)."""
+    from sqlalchemy.exc import OperationalError
+
+    holder = create_engine(migrated_db_url)
+    with holder.connect() as conn:
+        conn.execute(text("create table lock_probe (id int primary key)"))
+        conn.execute(text("insert into lock_probe values (1)"))
+        conn.commit()
+        conn.execute(text("select id from lock_probe where id = 1 for update"))
+        with (
+            bounded() as db,
+            pytest.raises(OperationalError, match="statement timeout"),
+        ):
+            db.execute(text("select id from lock_probe where id = 1 for update"))
+    holder.dispose()
+
+
+def test_a_bounded_session_ends_a_slow_statement(bounded):
+    from sqlalchemy.exc import OperationalError
+
+    with (
+        bounded() as db,
+        pytest.raises(OperationalError, match="statement timeout"),
+    ):
+        db.execute(text("select pg_sleep(2)"))
+
+
+def test_the_bound_holds_on_every_connection_after_a_rollback(bounded):
+    """Set when the connection is made, so it survives the pool's rollback
+    and a commit, and the application's own sessions stay unbounded."""
+    for _ in range(3):
+        with bounded() as db:
+            db.execute(text("select 1"))
+            db.rollback()
+            assert db.scalar(text("show statement_timeout")) == "200ms"
+            db.commit()
+    with SessionLocal() as db:
+        assert db.scalar(text("show statement_timeout")) == "0"
+
+
+@pytest.mark.parametrize(("ms", "seconds"), [(200, "2"), (2000, "2"), (2500, "3")])
+def test_a_bounded_session_gives_up_on_a_silent_network(bounded_db, ms, seconds):
+    """A database that stops answering at the network level never reaches its
+    statement timeout: the client's connection gives up then too, so the
+    guest on the line still reaches the team (own review on PR #310)."""
+    with bounded_db(ms)() as db:
+        dbapi = db.connection().connection.dbapi_connection
+        params = dbapi.info.get_parameters()  # type: ignore[union-attr]
+    assert params["tcp_user_timeout"] == str(ms)
+    assert params["connect_timeout"] == seconds
+    assert params["keepalives"] == "1"
+    assert params["keepalives_count"] == seconds

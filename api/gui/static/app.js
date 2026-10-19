@@ -8,10 +8,10 @@
 
   var stoerung = document.getElementById("stoerung");
 
-
-  // Add CSRF token to HTMX requests
+  // Add the page token to HTMX requests.
   document.body.addEventListener('htmx:configRequest', function (e) {
-    var token = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var token = meta && meta.getAttribute("content");
     if (token) {
       e.detail.headers['X-CSRF-Token'] = token;
     }
@@ -107,21 +107,69 @@
       osc.stop(t + i * 0.25 + 0.23);
     });
   }
-  function karten() {
+  function karten(liste) {
     var ids = {};
-    document.querySelectorAll("#rueckrufe-liste [data-id]").forEach(function (el) {
+    document.querySelectorAll("#" + liste + " [data-id]").forEach(function (el) {
       ids[el.getAttribute("data-id")] = el.getAttribute("data-reason");
     });
     return ids;
   }
+  // Orders that wait for "Passt" longer than the restaurant allows (data-overdue).
+  function overdueOrders() {
+    var ids = {};
+    document
+      .querySelectorAll("#bestellungen-liste [data-overdue]")
+      .forEach(function (el) {
+        ids[el.getAttribute("data-id")] = true;
+      });
+    return ids;
+  }
   // Was beim Laden schon da war, klingelt nicht.
-  var bekannt = karten();
-  document.body.addEventListener("htmx:afterSwap", function (e) {
-    if (!e.detail.target || e.detail.target.id !== "rueckrufe-liste") return;
-    var jetzt = karten();
-    var neu = Object.keys(jetzt).filter(function (id) {
-      return !(id in bekannt);
+  var bekannt = karten("rueckrufe-liste");
+  var knownOrders = karten("bestellungen-liste");
+  var knownOverdue = overdueOrders();
+  function newIds(vorher, jetzt) {
+    return Object.keys(jetzt).filter(function (id) {
+      return !(id in vorher);
     });
+  }
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    var ziel = e.detail.target && e.detail.target.id;
+    if (ziel === "bestellungen-liste") {
+      var currentOrders = karten("bestellungen-liste");
+      var newOrders = newIds(knownOrders, currentOrders);
+      knownOrders = currentOrders;
+      // A card that turned red since the last look: nobody has tapped "Passt",
+      // so nobody is looking. The alarm of a complaint, once per card.
+      var currentOverdue = overdueOrders();
+      var turnedRed = newIds(knownOverdue, currentOverdue);
+      knownOverdue = currentOverdue;
+      if (turnedRed.length) {
+        ton([660, 440, 660, 440]);
+        var red = document.querySelector(
+          '#bestellungen-liste [data-id="' + turnedRed[0] + '"]'
+        );
+        if (red) red.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      }
+      if (!newOrders.length) return;
+      // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
+      // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
+      // niemand das Blinken. A card that turned red in the same redraw keeps
+      // the sound and the view: the new cards still blink.
+      if (!turnedRed.length) ton([523, 659, 784]);
+      newOrders.forEach(function (id, i) {
+        var el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
+        if (!el) return;
+        el.classList.add("neu");
+        if (i === 0 && !turnedRed.length) {
+          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+        }
+      });
+      return;
+    }
+    if (ziel !== "rueckrufe-liste") return;
+    var jetzt = karten("rueckrufe-liste");
+    var neu = newIds(bekannt, jetzt);
     bekannt = jetzt;
     if (!neu.length) return;
     var beschwerde = neu.some(function (id) {
@@ -130,7 +178,83 @@
     ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
   });
 
+  function reloadOrders() {
+    window.htmx.ajax("GET", "/gui/fragments/bestellungen", {
+      target: "#bestellungen-liste",
+    });
+  }
+
+  // Korrektur: eigener Kasten ueber den Spalten. Er schliesst nach dem
+  // Speichern (Ereignis vom Server), mit "Abbrechen" und nach 90 Sekunden ohne
+  // Tap - wer zum klingelnden Telefon geht, laesst sonst eine halbe Korrektur
+  // offen stehen.
+  var correctionBox = document.getElementById("korrektur");
+  var idleTimer = null;
+  var IDLE_MS = 90000;
+  function closeCorrection() {
+    if (correctionBox) correctionBox.innerHTML = "";
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+  function armIdleTimer() {
+    if (idleTimer) window.clearTimeout(idleTimer);
+    idleTimer = window.setTimeout(closeCorrection, IDLE_MS);
+  }
+  if (correctionBox) {
+    correctionBox.addEventListener("click", function (e) {
+      if (e.target.closest("[data-schliessen]")) {
+        closeCorrection();
+        return;
+      }
+      armIdleTimer();
+    });
+    // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
+    correctionBox.addEventListener("input", armIdleTimer);
+    // Ins Bild rollen nur beim Oeffnen, nicht nach jedem Tap: rollt die Seite
+    // unter dem Finger weg, trifft der naechste Tap einen anderen Knopf (im
+    // Browsertest die Wartezeit in der Kopfzeile).
+    var wasOpen = false;
+    document.body.addEventListener("htmx:beforeSwap", function (e) {
+      if (e.detail.target === correctionBox) wasOpen = !!correctionBox.firstElementChild;
+    });
+    document.body.addEventListener("htmx:afterSwap", function (e) {
+      if (e.detail.target !== correctionBox || !correctionBox.firstElementChild) return;
+      armIdleTimer();
+      if (!wasOpen) correctionBox.scrollIntoView({ block: "start" });
+    });
+  }
+  // "Gericht aus" (T-4.8): eigener Kasten wie die Korrektur, "Fertig" schliesst.
+  // Nach jedem Tap zeigt die Kachel in der Kopfzeile sofort die neue Zahl.
+  var dishBox = document.getElementById("gericht-aus");
+  if (dishBox) {
+    dishBox.addEventListener("click", function (e) {
+      if (e.target.closest("[data-schliessen]")) dishBox.innerHTML = "";
+    });
+  }
+  function reloadDishes() {
+    var search = document.getElementById("gericht-suche");
+    if (!search) return;
+    window.htmx.ajax("GET", "/gui/fragments/gericht-aus", {
+      target: "#gericht-liste",
+      values: { q: search.value },
+    });
+  }
+  document.body.addEventListener("gerichte-geaendert", function () {
+    kopfzeile();
+  });
+
+  document.body.addEventListener("bestellungen-geaendert", function () {
+    closeCorrection();
+    reloadOrders();
+  });
+
   var strom = new EventSource("/gui/events");
+  // Laedt auch, waehrend jemand korrigiert: der Kasten liegt ausserhalb der
+  // Liste und bleibt stehen (Design-Review T-4.7).
+  strom.addEventListener("orders", function () {
+    offline(false);
+    reloadOrders();
+  });
   strom.addEventListener("callbacks", function () {
     offline(false);
     rueckrufe();
@@ -140,6 +264,13 @@
   strom.addEventListener("header", function () {
     offline(false);
     kopfzeile();
+  });
+  // Ein anderes Tablet hat ein Gericht aus- oder wieder angeschaltet, oder der
+  // Schalter ist am Morgen abgelaufen: Kachel und offene Liste zeigen es.
+  strom.addEventListener("dishes", function () {
+    offline(false);
+    kopfzeile();
+    reloadDishes();
   });
   strom.addEventListener("today", function () {
     offline(false);

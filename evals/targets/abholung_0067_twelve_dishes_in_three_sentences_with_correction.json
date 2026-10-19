@@ -1,0 +1,102 @@
+{
+  "id": "abholung_0067",
+  "name": "Twelve dishes in three sentences with corrections",
+  "tags": [
+    "abholung",
+    "mehrere_positionen",
+    "mengenaenderung",
+    "wunsch",
+    "level-5"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, aeh, ja, ich haette gern eine grosse Bestellung zum Abholen, Moment ..."
+    },
+    {
+      "role": "customer",
+      "text": "Also: dreimal die 23, zweimal die 22, einmal Papaya-Salat, aeh, und zwei Pho Bo, ach nee, eine Pho Bo und eine Pho Ga."
+    },
+    {
+      "role": "customer",
+      "text": "Dann zweimal die 32, einmal mit Huhn, einmal mit Rind und Nudeln statt Reis, die 47 mit Ente und Erdnusssauce, und die 35b."
+    },
+    {
+      "role": "customer",
+      "text": "Ach, und die Fruehlingsrollen doch nur zweimal. Und zum Nachtisch einmal Mochi."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das ist alles."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schneider."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "23",
+        "quantity": 2
+      },
+      {
+        "number": "22",
+        "quantity": 2
+      },
+      {
+        "number": "25",
+        "quantity": 1
+      },
+      {
+        "number": "13",
+        "quantity": 1
+      },
+      {
+        "number": "14",
+        "quantity": 1
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
+      },
+      {
+        "number": "32",
+        "quantity": 1,
+        "options": [
+          "Rind",
+          "Nudeln statt Reis"
+        ]
+      },
+      {
+        "number": "47",
+        "quantity": 1,
+        "options": [
+          "Ente",
+          "Erdnusssauce"
+        ]
+      },
+      {
+        "number": "35b",
+        "quantity": 1
+      },
+      {
+        "number": "61",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Schneider",
+    "confirmed": true,
+    "escalated": false
+  }
+}

@@ -139,6 +139,7 @@ def test_unbrauchbare_rufnummer_fragt_nach(client):
     assert r.json()["say"]
 
 
+@pytest.mark.latency
 def test_latenz_p95_unter_300_ms(client):
     http, tenant_id, call_id = client
 

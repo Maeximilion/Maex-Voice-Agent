@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
+<title id="t">Eval trend</title>
+<desc id="d">Pass rate of model qwen3.6-35b-a3b from 2026-10-13 to 2026-10-15. regular cases latest 20 of 41; target cases latest 2 of 27</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
+<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<rect width="1200" height="440" rx="24" fill="#0D0819"/>
+<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="440" rx="24" fill="url(#dots)" opacity="0.8"/>
+<rect x="40" y="40" width="1120" height="370" rx="10" fill="#17102B" stroke="#2B2148"/>
+<circle cx="52" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="70.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="88.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="106.8" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="125.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="143.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="161.6" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="179.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="198.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="216.4" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="234.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="252.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="271.2" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="289.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="307.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="326" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="344.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="362.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="380.8" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="399.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="417.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="435.6" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="453.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="472.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="490.4" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="508.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="526.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="545.2" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="563.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="581.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="600" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="618.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="636.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="654.8" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="673.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="691.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="709.6" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="727.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="746.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="764.4" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="782.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="800.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="819.2" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="837.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="855.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="874" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="892.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="910.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="928.8" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="947.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="965.3" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="983.6" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1001.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1020.1" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1038.4" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1056.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1074.9" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1093.2" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1111.5" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1129.7" cy="40" r="4.5" fill="#0D0819"/>
+<circle cx="1148" cy="40" r="4.5" fill="#0D0819"/>
+<text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">PASS RATE OVER TIME · QWEN3.6-35B-A3B</text>
+<text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end"></text>
+<line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
+<line x1="120" y1="330" x2="900" y2="330" stroke="#2B2148"/>
+<text x="106" y="335" font-size="14" fill="#A89CCB" text-anchor="end">0 %</text>
+<line x1="120" y1="273.5" x2="900" y2="273.5" stroke="#2B2148"/>
+<text x="106" y="278.5" font-size="14" fill="#A89CCB" text-anchor="end">25 %</text>
+<line x1="120" y1="217" x2="900" y2="217" stroke="#2B2148"/>
+<text x="106" y="222" font-size="14" fill="#A89CCB" text-anchor="end">50 %</text>
+<line x1="120" y1="160.5" x2="900" y2="160.5" stroke="#2B2148"/>
+<text x="106" y="165.5" font-size="14" fill="#A89CCB" text-anchor="end">75 %</text>
+<line x1="120" y1="104" x2="900" y2="104" stroke="#2B2148"/>
+<text x="106" y="109" font-size="14" fill="#A89CCB" text-anchor="end">100 %</text>
+<line x1="120" y1="106.3" x2="900" y2="106.3" stroke="#E8FF2E" stroke-dasharray="6 6" opacity="0.6"/>
+<text x="912" y="111.3" font-size="14" fill="#E8FF2E">target 99 %</text>
+<text x="217.5" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">13 Oct</text>
+<text x="607.5" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">14 Oct</text>
+<text x="900" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">15 Oct</text>
+<path d="M120 236.3 L315 241.8 L510 192.2 L705 186.7 L900 219.8" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="120" cy="236.3" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-13: 17/41</title></circle>
+<circle cx="315" cy="241.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-13: 16/41</title></circle>
+<circle cx="510" cy="192.2" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 25/41</title></circle>
+<circle cx="705" cy="186.7" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 26/41</title></circle>
+<circle cx="900" cy="219.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-15: 20/41</title></circle>
+<text x="912" y="209.8" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 20/41</text>
+<path d="M120 313.3 L315 304.9 L510 313.3" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="120" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-13: 2/27</title></circle>
+<circle cx="315" cy="304.9" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-13: 3/27</title></circle>
+<circle cx="510" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-14: 2/27</title></circle>
+<text x="522" y="303.3" font-size="15" fill="#9D7BFF" font-weight="700">target cases 2/27</text>
+<text x="1136" y="73" font-size="14" fill="#A89CCB" text-anchor="end">Scripted stand-in model: 41/41 regular cases.</text>
+</svg>

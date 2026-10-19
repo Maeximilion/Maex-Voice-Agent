@@ -1,0 +1,16 @@
+{# "Gericht aus" (docs/06 §3, T-4.8): eigener Kasten ueber den Spalten wie die
+   Korrektur, damit die Spalten weiter live bleiben. Suchfeld oben, darunter die
+   Gerichte mit grossen Schaltern. Ein Tap = heute aus bis Betriebsschluss, ein
+   zweiter nimmt es zurueck. Keine Rueckfrage (§1 Regel 6). #}
+<section class="card gericht-aus">
+  <div class="res-head">
+    <h2>Gericht aus</h2>
+    <button type="button" class="schliessen" data-schliessen>Fertig</button>
+  </div>
+  <p class="muted">Antippen: heute aus bis Betriebsschluss. Die KI bietet es nicht mehr an. Nochmal antippen: wieder da.</p>
+  <input type="search" id="gericht-suche" name="q" value="{{ query }}"
+         placeholder="Nummer oder Name" autocomplete="off" inputmode="search"
+         hx-get="/gui/fragments/gericht-aus" hx-target="#gericht-liste"
+         hx-trigger="input changed delay:250ms, search">
+  <div id="gericht-liste">{% include "fragments/gericht_aus_liste.html" %}</div>
+</section>

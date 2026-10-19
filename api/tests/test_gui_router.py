@@ -6,12 +6,16 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
+from api.domain.status import config as switches
+from api.gui.router import _page_response
 from api.main import app
 from api.models import Call, Reservation, ServiceConfig
 from api.tests.conftest import p95_ms
@@ -167,6 +171,7 @@ def test_eigene_dateien_werden_ausgeliefert(client):
     assert htmx.status_code == 200 and len(htmx.content) > 10_000
 
 
+@pytest.mark.latency
 def test_fragment_bleibt_schnell(client, engine, tenant_id):
     for i in range(20):
         reservierung(engine, tenant_id, name=f"Gast {i}", hh=17 + i % 5)
@@ -197,7 +202,7 @@ HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 
 def config_von(engine, tenant_id) -> ServiceConfig:
     with Session(engine) as s:
-        config = s.get(ServiceConfig, tenant_id)
+        config = s.get_one(ServiceConfig, tenant_id)
         s.expunge(config)
         return config
 
@@ -206,7 +211,14 @@ def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
     body = client.get("/gui/").text
 
     assert 'id="kopfzeile"' in body
-    for knopf in ("KI pausieren", "Lieferung aus", "Wartezeit +15", "Wartezeit +30"):
+    for knopf in (
+        "KI pausieren",
+        "Lieferung aus",
+        "Wartezeit Abholung 15 Minuten weniger",
+        "Wartezeit Abholung 15 Minuten mehr",
+        "Wartezeit Lieferung 15 Minuten weniger",
+        "Wartezeit Lieferung 15 Minuten mehr",
+    ):
         assert knopf in body
 
 
@@ -249,22 +261,44 @@ def test_lieferung_aus_und_an(client, engine, tenant_id):
     assert config_von(engine, tenant_id).delivery_enabled is True
 
 
-def test_wartezeit_plus_15(client, engine, tenant_id):
+def test_wartezeit_lieferung_plus_15_laesst_abholung_stehen(client, engine, tenant_id):
     vorher = config_von(engine, tenant_id)
 
-    body = client.post("/gui/kopfzeile/wartezeit/15", headers=HX).text
+    body = client.post("/gui/kopfzeile/wartezeit/lieferung/15", headers=HX).text
 
     nachher = config_von(engine, tenant_id)
-    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes + 15
     assert nachher.delivery_wait_minutes == vorher.delivery_wait_minutes + 15
-    assert (
-        f"Wartezeit {nachher.pickup_wait_minutes} / {nachher.delivery_wait_minutes} Min"
-        in body
+    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes
+    assert f"Wartezeit Lieferung {nachher.delivery_wait_minutes} Min" in body
+
+
+def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
+    client, engine, tenant_id
+):
+    vorher = config_von(engine, tenant_id)
+
+    client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX)
+    nachher = config_von(engine, tenant_id)
+    assert nachher.pickup_wait_minutes == max(
+        vorher.pickup_wait_minutes - 15, switches.MIN_WAIT_MINUTES
     )
+
+    for _ in range(5):
+        body = client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX).text
+    assert f"Wartezeit Abholung {switches.MIN_WAIT_MINUTES} Min" in body
+    knopf = body.split('aria-label="Wartezeit Abholung 15 Minuten weniger"')[1]
+    assert knopf.split(">")[0].strip() == "disabled"
 
 
 @pytest.mark.parametrize(
-    "pfad", ["/gui/kopfzeile/wartezeit/20", "/gui/kopfzeile/lieferung/vielleicht"]
+    "pfad",
+    [
+        "/gui/kopfzeile/wartezeit/abholung/20",
+        "/gui/kopfzeile/wartezeit/abholung/0",
+        "/gui/kopfzeile/wartezeit/tisch/15",
+        "/gui/kopfzeile/wartezeit/15",
+        "/gui/kopfzeile/lieferung/vielleicht",
+    ],
 )
 def test_unbekannter_knopf_aendert_nichts(client, engine, tenant_id, pfad):
     vorher = config_von(engine, tenant_id)
@@ -297,13 +331,14 @@ def test_fehlende_konfiguration_rote_leiste(client, engine, tenant_id):
         s.delete(s.get(ServiceConfig, tenant_id))
         s.commit()
 
-    response = client.post("/gui/kopfzeile/wartezeit/15", headers=HX)
+    response = client.post("/gui/kopfzeile/wartezeit/abholung/15", headers=HX)
 
     assert response.status_code == 409
     assert "Bitte nochmal tippen" in response.text
     assert "Traceback" not in response.text
 
 
+@pytest.mark.latency
 def test_schalten_bleibt_schnell(client, tenant_id):
     assert p95_ms(lambda: client.post("/gui/kopfzeile/lieferung/aus", headers=HX)) < 300
     assert p95_ms(lambda: client.get("/gui/fragments/kopfzeile")) < 300
@@ -327,7 +362,7 @@ def test_nur_html_fehler_ersetzen_die_kopfzeile():
 
 def test_fremder_status_kommt_als_json(client, tenant_id):
     """Warum der Test oben noetig ist: ein 404 aus dem Router ist JSON, kein HTML."""
-    response = client.post("/gui/kopfzeile/wartezeit/20", headers=HX)
+    response = client.post("/gui/kopfzeile/wartezeit/abholung/20", headers=HX)
 
     assert response.headers["content-type"].startswith("application/json")
 
@@ -420,6 +455,7 @@ def test_rueckrufe_ohne_mandant_klartext(client):
     assert response.status_code == 503 and "Keine Betriebsdaten" in response.text
 
 
+@pytest.mark.latency
 def test_rueckrufe_bleiben_schnell(client, engine, tenant_id):
     for i in range(20):
         rueckruf(engine, tenant_id, summary=f"Gast {i}")
@@ -476,16 +512,76 @@ def test_tablet_schrift_mindestens_18px():
     )
 
 
-def test_schalten_ohne_csrf_token_verboten(client, engine, tenant_id):
-    """CSRF-Schutz: POST braucht den passenden Token-Header."""
-    # Ohne Token-Header
+@pytest.mark.parametrize(
+    "cookie, header",
+    [
+        (None, "testtoken"),
+        ("testtoken", None),
+        ("testtoken", "wrong-token"),
+        ("", "testtoken"),
+        ("caf\u00e9", "testtoken"),
+    ],
+)
+def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
+    client.cookies.clear()
     headers = {"HX-Request": "true"}
+    if cookie is not None:
+        headers["Cookie"] = f'csrf_token="{cookie}"'.encode("latin-1")
+    if header is not None:
+        headers["X-CSRF-Token"] = header
+    before = config_von(engine, tenant_id).call_mode
     response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
     assert response.status_code == 403
-    assert "CSRF" in response.text
+    assert config_von(engine, tenant_id).call_mode == before
 
-    # Mit falschem Token-Header
-    headers = {"HX-Request": "true", "X-CSRF-Token": "falscher_token"}
-    response = client.post("/gui/kopfzeile/ki-pausieren", headers=headers)
-    assert response.status_code == 403
-    assert "CSRF" in response.text
+
+def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("/gui/")
+    token = client.cookies.get("csrf_token")
+    assert token and len(token) >= 32
+    assert f'<meta name="csrf-token" content="{token}">' in response.text
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=lax" in response.headers["set-cookie"]
+    assert (
+        client.post(
+            "/gui/kopfzeile/ki-pausieren",
+            headers={
+                "HX-Request": "true",
+                "X-CSRF-Token": token,
+            },
+        ).status_code
+        == 200
+    )
+    assert client.get("/gui/").cookies.get("csrf_token") == token
+
+
+def test_page_replaces_a_csrf_cookie_it_could_never_accept(client, tenant_id):
+    client.cookies.clear()
+    response = client.get(
+        "/gui/", headers={"Cookie": 'csrf_token="caf\u00e9"'.encode("latin-1")}
+    )
+    token = response.cookies.get("csrf_token")
+    assert token and token.isascii() and len(token) >= 32
+
+
+def test_https_page_marks_csrf_cookie_secure(client, tenant_id):
+    client.cookies.clear()
+    response = client.get("https://testserver/gui/")
+    assert "Secure" in response.headers["set-cookie"]
+
+
+def test_production_csrf_cookie_is_secure_behind_http_proxy(monkeypatch):
+    monkeypatch.setattr(settings, "env", "production")
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/gui/dev/console",
+            "scheme": "http",
+            "server": ("api", 8000),
+            "headers": [],
+        }
+    )
+    response = _page_response(request, "dev/console.html", {})
+    assert "Secure" in response.headers["set-cookie"]

@@ -92,3 +92,20 @@ def spoken_time(dt: datetime) -> str:
     if minute == 45:
         return f"viertel vor {_hour_word(hour + 1, standalone=True)}"
     return f"{hour} Uhr {minute}"
+
+
+def spoken_daytime(dt: datetime) -> str:
+    """„abends um sieben": die Tageszeit macht eine Uhrzeit ohne Tag eindeutig."""
+    hour = dt.hour
+    if 5 <= hour < 11:
+        daytime = "morgens"
+    elif 11 <= hour < 14:
+        daytime = "mittags"
+    elif 14 <= hour < 17:
+        daytime = "nachmittags"
+    elif 17 <= hour < 23:
+        daytime = "abends"
+    else:
+        daytime = "nachts"
+    clock = _hour_word(hour, standalone=True) if dt.minute == 0 else spoken_time(dt)
+    return f"{daytime} um {clock}"
