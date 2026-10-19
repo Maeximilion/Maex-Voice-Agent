@@ -49,7 +49,9 @@ fi
 # The team on our own number: the dialplan would ring us, the loop guard would
 # drop the call, and every caller would be lost (rule 5). `voice` refuses the
 # same; this is for the calls that reach the team without it.
-# In every form the dialplan's loop guard knows: +49..., 0049... and 0....
+# In every form the dialplan's loop guard knows: +49..., 0049... and 0..., and
+# as international digits without a prefix, which an access may dial too
+# (Codex on PR #340): the forms are compared without their "+".
 e164() {
     case "$1" in
         +*) printf '%s' "$1" ;;
@@ -58,7 +60,11 @@ e164() {
         *) printf '%s' "$1" ;;
     esac
 }
-same() { [ "$(e164 "$1")" = "$(e164 "$2")" ]; }
+same() {
+    a=$(e164 "$1")
+    b=$(e164 "$2")
+    [ "${a#+}" = "${b#+}" ]
+}
 if same "$TEAM_PHONE" "$VOICE_NUMBER"; then
     echo "asterisk does not start: TEAM_PHONE is the AI telephone's own number" >&2
     exit 1
@@ -95,11 +101,12 @@ echo "asterisk: $(printf '%s\n' "$targets" | awk -F, '{ print NF }') more number
 # Asterisk takes SIP only from the access's addresses (#252 finding 2). Its ACL
 # takes addresses, not names, so ACCESS_HOST is looked up here, once, as
 # Asterisk looks up a name in `match` once at the start; an access that moves
-# to another address needs a restart. A name counts with its own addresses and
-# those of the servers its `_sip._udp` SRV records name: the registration over
+# to another address needs a restart. A name with `_sip._udp` SRV records
+# counts with the addresses of the servers they name: the registration over
 # our only transport, UDP, follows them, and a trunk's calls come from them
-# (ultrareview of PR #340; TCP and TLS servers stay out, Codex on PR #340).
-# IPv4 only, as the transport.
+# (ultrareview of PR #340). Its own A record is then used for nothing and stays
+# out, as do servers for TCP and TLS (Codex on PR #340). A name without such
+# records counts with its A records. IPv4 only, as the transport.
 ipv4() { getent ahostsv4 "$1" | awk '{ print $1 }'; }
 SRV_SERVERS=
 case "$ACCESS_HOST" in
@@ -109,12 +116,11 @@ case "$ACCESS_HOST" in
         ;;
 esac
 ACCESS_ADDRESSES=$(
-    {
+    if [ -n "$SRV_SERVERS" ]; then
+        printf '%s\n' "$SRV_SERVERS" | while read -r server; do ipv4 "$server"; done
+    else
         ipv4 "$ACCESS_HOST"
-        printf '%s\n' "$SRV_SERVERS" | while read -r server; do
-            [ -z "$server" ] || ipv4 "$server"
-        done
-    } | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
+    fi | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
 )
 if [ -z "$ACCESS_ADDRESSES" ]; then
     echo "asterisk does not start: ACCESS_HOST has no IPv4 address" >&2

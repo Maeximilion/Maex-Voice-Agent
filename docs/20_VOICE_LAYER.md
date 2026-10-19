@@ -240,9 +240,11 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   before anything reads it, and the endpoint is identified by address alone (`identify_by=ip`; the
   global `endpoint_identifier_order=ip` only puts the address first, Asterisk appends the
   identifiers it leaves out, so every endpoint needs `identify_by=ip`). The ACL takes addresses,
-  not names, so `render.sh` looks `ACCESS_HOST` up once at the start, with the servers its
-  `_sip._udp` SRV records name: the registration over our only transport, UDP, follows them
-  (servers for TCP and TLS stay out, Codex on PR #340). `permit` and `match` get the same list,
+  not names, so `render.sh` looks `ACCESS_HOST` up once at the start: a name with `_sip._udp` SRV
+  records counts with the servers they name, which the registration over our only transport, UDP,
+  follows; its own A record is then used for nothing and stays out, as do servers for TCP and TLS
+  (Codex on PR #340). A name without such records counts with its A records. `permit` and `match`
+  get the same list,
   which the container's output names. An access that moves to another address needs a restart of
   `asterisk`. Taking the A record alone would have refused a trunk's calls from the servers behind
   its SRV records while the registration stayed green (ultrareview of PR #340); a SIP trunk
@@ -258,7 +260,9 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
 - `render.sh` drops blanks, empty fields and `TEAM_PHONE` in any of its forms from
   `TRANSFER_TARGETS` (in another form the dialplan would ring the same telephone twice) and hands
   the cleaned list on to Asterisk; it refuses an entry that is not a number or is our own number in
-  any of its three forms, a value with a line break, and an `ACCESS_HOST` without an IPv4 address.
+  any of its forms (+49..., 0049..., 0..., and 49... without a prefix, which an access may dial
+  too; the last for `TEAM_PHONE` as well, Codex on PR #340), a value with a line break, and an
+  `ACCESS_HOST` without an IPv4 address.
 
 | Drill | Result |
 |---|---|
@@ -446,8 +450,8 @@ call log gets the model and its cost, and the log the line "model usage", as on 
 For Asterisk only, never in Python: the registrar's host, user and password (`ACCESS_HOST`,
 `ACCESS_USER`, `ACCESS_PASSWORD`), the numbers besides `TEAM_PHONE` a transfer may go to
 (`TRANSFER_TARGETS`, §5), and the public media address (not yet, it comes with the trunk).
-Asterisk takes SIP only from the IPv4 addresses of `ACCESS_HOST` and of the servers its SIP SRV
-records name, looked up when it starts (§5).
+Asterisk takes SIP only from the IPv4 addresses of the servers `ACCESS_HOST`'s `_sip._udp` SRV
+records name, or of `ACCESS_HOST` itself without such records, looked up when it starts (§5).
 The pilot's router and a later trunk provider are named in `.env`, never in the repository.
 `deploy/asterisk/render.sh` puts them, and the token, into the configuration on a tmpfs inside the
 container (a ";" escaped, which would start a comment there) and stops the start when one is

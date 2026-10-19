@@ -101,7 +101,9 @@ def test_valid_values_pass_every_check(render, targets, more):
     assert f"{more} more numbers for a transfer" in done.stdout
 
 
-@pytest.mark.parametrize("form", ["+4972215550900", "004972215550900", "072215550900"])
+@pytest.mark.parametrize(
+    "form", ["+4972215550900", "004972215550900", "072215550900", "4972215550900"]
+)
 def test_team_phone_on_the_list_in_any_form_is_left_out(render, form):
     """TEAM_PHONE is always on the list; in another form the dialplan would
     ring the same telephone a second time after an unanswered leg at it."""
@@ -116,6 +118,8 @@ def test_team_phone_on_the_list_in_any_form_is_left_out(render, form):
         "+4972215550100",
         "004972215550100",
         "072215550100",
+        # International digits without a prefix: an access may dial them.
+        "4972215550100",
         "+4972215550901,072215550100",
     ],
 )
@@ -141,8 +145,9 @@ def test_a_transfer_target_that_is_no_number_is_refused(render, targets):
     assert "TRANSFER_TARGETS holds something that is not a number" in done.stderr
 
 
-def test_the_team_on_our_own_number_is_refused(render):
-    done = render(TEAM_PHONE="072215550100")
+@pytest.mark.parametrize("team", ["072215550100", "4972215550100"])
+def test_the_team_on_our_own_number_is_refused(render, team):
+    done = render(TEAM_PHONE=team)
     assert done.returncode == 1
     assert "TEAM_PHONE is the AI telephone's own number" in done.stderr
 
@@ -168,15 +173,16 @@ def test_a_named_access_counts_with_the_servers_of_its_udp_srv_records(render, d
     calls of a trunk come from the servers they name; an ACL with the A
     record alone would refuse them while the registration stays green
     (ultrareview of PR #340). Only `_sip._udp`: our only transport is UDP, and
-    a TCP server has no business sending it (Codex on PR #340). The team legs
-    go by the SRV records too."""
+    a TCP server has no business sending it, and the A record of the name is
+    used for nothing then, so it stays out too (Codex on PR #340). The team
+    legs go by the SRV records too."""
     dns["a"] = "trunk.example 10.0.0.1\nsip1.example 10.0.0.2\nsip2.example 10.0.0.3\n"
     dns["srv"] = (
         "_sip._udp.trunk.example sip1.example.\n_sip._tcp.trunk.example sip2.example\n"
     )
     done = render(ACCESS_HOST="trunk.example")
     assert reached_the_templates(done), done.stderr
-    assert "SIP only from 10.0.0.1,10.0.0.2\n" in done.stdout
+    assert "SIP only from 10.0.0.2\n" in done.stdout
     assert "team legs by the SRV records of ACCESS_HOST" in done.stdout
 
 
