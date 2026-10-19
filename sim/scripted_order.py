@@ -33,10 +33,38 @@ from api.domain.menu.search import (
     say_for_wish,
     say_understood,
 )
-from api.domain.menu.wishes import classify_wish
+from api.domain.menu.wishes import (
+    ALLERGY_NOTE,
+    classify_wish,
+    denies_allergy,
+    kitchen_note,
+    removal_with,
+)
 from api.schemas.menu import MenuHit, OptionGroup, Wish
+from api.schemas.orders import NOTE_MAX
 
 SAY_WHAT = "Was möchten Sie bestellen?"
+# Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
+# start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
+# Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),
+# "gegen" after a comma. An "auf" after a comma still ends the list
+# ("Erdnuesse, auf jeden Fall"), and "auf jeden/keinen Fall" is no "auf".
+_AGAINST = re.compile(
+    r"^\s*(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b|,\s*gegen\b"
+    r"|\b(?:und|aber|sondern)\s+(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b",
+    re.IGNORECASE,
+)
+_BUT = re.compile(r"\baber\b", re.IGNORECASE)
+# Before a removal in an answer: "Bitte ohne Zwiebeln", "Und ohne Zwiebeln".
+_ANSWER_FILLERS = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
+# An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
+# nichts." ("Nein." stays a question: no to what is unclear).
+_NOTHING = frozenset(
+    {"kein", "keine", "keinen", "keinem", "keiner", "keinerlei", "nichts"}
+)
+_NOTHING_FILL = frozenset(
+    {"gar", "gegen", "auf", "doch", "ueberhaupt", "nein", "danke"}
+)
 SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
@@ -504,7 +532,10 @@ class PickupScript:
             groups = [
                 OptionGroup.model_validate(g) for g in hit.get("option_groups", [])
             ]
-            wish = classify_wish(wish["text"], groups).model_dump()
+            classified = classify_wish(wish["text"], groups)
+            if classified is None:
+                return None
+            wish = classified.model_dump()
         if wish.get("note"):
             # Leaving out in addition to an extra ("ohne Zwiebeln, dafür mit Huhn").
             item.note = wish["note"]
@@ -575,28 +606,67 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
-        if wish.kind != "allergy" and _orders_something(text, self._numbers()):
-            # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
-            # stays open instead of noting "Keine Eine Cola" (review PR #139).
+        if (wish is None or wish.kind != "allergy") and _orders_something(
+            text, self._numbers()
+        ):
+            # "Eine Cola bitte", "Nummer 12", also "Die 23 noch, ich habe keine
+            # Allergie": not an ingredient - the question stays open instead
+            # of noting "Keine Eine Cola" (review PR #139).
             return LLMTurn(
                 say=self._allergy_question(),
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
+        # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
+        but = _BUT.search(text)
+        nothing = _withdraws(text[: but.start()] if but else text)
+        if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
+            # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
+            # question is closed, nothing goes to the kitchen; a removal said
+            # with it is noted (issue #252).
+            item = self._allergy_for.pop(0)
+            if nothing and but:
+                behind = classify_wish(text[but.end() :], [])
+                if behind is not None:
+                    item.note = _with_removal(item.note, removal_with(behind))
+            if wish is not None and not nothing:
+                # A removal said with it is noted. An addition is not taken:
+                # the answer is read without the dish's options (stand-in
+                # only, docs/01_STATUS.md).
+                item.note = _with_removal(item.note, removal_with(wish))
+            if not self._allergy_for:
+                self._allergy_named = False
+            return self._next(slots, patch, lead=self._take_deferred())
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
-            bare = re.sub(
-                r"^\s*(?:gegen|auf|keine[nm]?|kein)\s+", "", text, flags=re.IGNORECASE
-            )
+            # A removal said with it is no ingredient ("Ohne Zwiebeln und
+            # gegen Erdnuesse"), nor is the "gegen" in front of one (#252).
+            bare, removal = _ingredient_answer(text)
+            item = self._allergy_for[0]
+            # Also a removal behind the ingredient ("Erdnuesse, aber ohne
+            # Zwiebeln"), which the answer read as a wish already has.
+            for said in (removal, wish.note):
+                item.note = _with_removal(item.note, said)
             wish = classify_wish(f"allergisch gegen {bare}", [])
-        if not wish.ingredient:
+        if wish is None or not wish.ingredient:
+            # A removal said with an answer that names no ingredient yet stays.
+            if wish is not None:
+                item = self._allergy_for[0]
+                item.note = _with_removal(item.note, removal_with(wish))
             return LLMTurn(
                 say=self._allergy_question(),
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
         item = self._allergy_for.pop(0)
-        item.note = wish.text
+        # A removal said together with the allergy is in the note already and
+        # follows it (issue #252).
+        # Rebuilt from the allergy alone, so a removal said again is noted
+        # once (#252).
+        item.note = kitchen_note(
+            _with_removal(item.note, removal_with(wish)),
+            ALLERGY_NOTE.format(ingredient=wish.ingredient),
+        )
         lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:
             self._allergy_named = False
@@ -979,3 +1049,40 @@ def _is_done(text: str) -> bool:
 
 def _join(*parts: str | None) -> str:
     return " ".join(p for p in parts if p)
+
+
+def _withdraws(text: str) -> bool:
+    """ "Keine.", "Gar keine.", "Gegen nichts.": no allergy after all."""
+    words = set(_words(text))
+    return bool(words & _NOTHING) and words <= _NOTHING | _NOTHING_FILL
+
+
+def _ingredient_answer(text: str) -> tuple[str, str | None]:
+    """An answer to "Wogegen?" in its parts: the ingredient, and a removal
+    said with it. "Ohne Zwiebeln und gegen Erdnuesse" -> ("Erdnuesse", "Ohne
+    Zwiebeln"); "Erdnuesse und gegen Sesam" -> ("Erdnuesse und Sesam", None);
+    "Keine Erdnuesse" -> ("Erdnuesse", None)."""
+    parts = [part.strip(" ,.") for part in _AGAINST.split(text)]
+    parts = [part for part in parts if part]
+    # "Bitte ohne Zwiebeln": the removal behind a polite filler (Codex PR #330).
+    removals = [
+        p
+        for p in parts
+        if len(parts) > 1
+        and [w for w in _words(p) if w not in _ANSWER_FILLERS][:1] == ["ohne"]
+    ]
+    bare = " und ".join(p for p in parts if p not in removals)
+    # "Keine Erdnuesse", also "Ohne Zwiebeln." alone: the ingredient.
+    bare = re.sub(r"^\s*(?:keine[nm]?|kein|ohne)\s+", "", bare, flags=re.IGNORECASE)
+    return bare, ", ".join(removals) or None
+
+
+def _with_removal(note: str | None, removal: str | None) -> str | None:
+    """The note with a removal added, each removal once, within an order line."""
+    said = [n for n in (note or "").split(", ") if n]
+    known = {n.lower() for n in said}
+    new = [r for r in (removal or "").split(", ") if r and r.lower() not in known]
+    if not new:
+        return note
+    joined = ", ".join([*said, *new])
+    return joined if len(joined) <= NOTE_MAX else note

@@ -26,6 +26,7 @@ from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
+from api.domain.menu.wishes import denies_allergy, wish_candidates
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -64,6 +65,8 @@ OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
 # note on the dish named with it (Codex PR #139); everything else in that
 # sentence is judged like the call before the order and like the order itself.
 ALLERGY_STEM = "allergi"
+# The parts of an opening sentence, with what joins them kept.
+_PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 PICKUP = ("abhol", "mitnehmen")
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
@@ -176,19 +179,45 @@ class ScriptedLLM:
             return self._after_readback(state, text, slots, patch)
 
         wants_pickup = self._pickup is None and _wants_pickup(text)
+        # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
+        # Judged on the clause the search classifies, not with the dish in
+        # front ("Ente auf Thai Art").
+        clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
+        # Also a denial in a part of its own, before the dish: "Ich habe keine
+        # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
+        # moechte Pho Bo zum Abholen" (Codex PR #330).
+        parts = _PARTS.split(text)
+        named = [part for part in parts[::2] if ALLERGY_STEM in part.lower()]
+        denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
+            bool(named) and all(denies_allergy(part) for part in named)
+        )
+        # The dish is searched without a denial said in a part of its own,
+        # and without the separator in front of it (or behind it, first):
+        # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
+        # "und" (Codex PR #330).
+        dropped = {
+            n
+            for n in range(0, len(parts), 2)
+            if ALLERGY_STEM in parts[n].lower() and denies_allergy(parts[n])
+        }
+        dropped |= {n - 1 if n else n + 1 for n in set(dropped)}
+        dish_text = "".join(p for n, p in enumerate(parts) if n not in dropped)
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
         # checked on the search result (`_after_tool`).
         own_allergy = (
             wants_pickup
             and ALLERGY_STEM in text.lower()
+            and not denied
             and "?" not in text
             and _opening_dish(text) is not None
         )
         stems: tuple[str, ...] = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
         if wants_pickup:
             stems = OUT_OF_SCOPE_IN_ORDER + tuple(
-                s for s in OUT_OF_SCOPE if not (own_allergy and s == ALLERGY_STEM)
+                s
+                for s in OUT_OF_SCOPE
+                if not ((own_allergy or denied) and s == ALLERGY_STEM)
             )
         if _mentions_stem(text, stems) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
@@ -203,7 +232,7 @@ class ScriptedLLM:
             self._opening_allergy = text if own_allergy else None
             started_pickup = True
             if not self._status_checked:
-                self._opening_query = _opening_dish(text)
+                self._opening_query = _opening_dish(dish_text)
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -220,7 +249,7 @@ class ScriptedLLM:
                 # "zum Abholen" verdeckte sonst die 23 (Codex PR #130, P2). Ohne
                 # Gericht die Frage nach der Bestellung, das Gesagte (Name,
                 # Nummer) bleibt im state_patch (Review PR #133).
-                dish = _opening_dish(text)
+                dish = _opening_dish(dish_text)
                 if dish is None:
                     return self._pickup.start(patch=patch)
                 text = dish
