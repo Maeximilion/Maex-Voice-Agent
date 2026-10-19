@@ -1257,6 +1257,18 @@ def test_generic_denial_next_to_a_named_allergy(said, ingredient):
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich bin allergisch gegen Erdnüsse und habe eine Sesamallergie",
+        "ich bin allergisch gegen Erdnüsse, habe eine Sesamallergie",
+    ],
+)
+def test_no_joiner_left_in_the_note(said):
+    """Codex PR #330, round 7: "Keine Erdnuesse und und Sesam"."""
+    assert classify_wish(said, []).ingredient == "Erdnüsse und Sesam"
+
+
 def test_sonst_does_not_end_the_ingredients():
     """Own review: "sonst" ended the list and the sesame was lost."""
     wish = classify_wish(

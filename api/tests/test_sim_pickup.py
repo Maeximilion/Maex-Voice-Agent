@@ -1077,6 +1077,11 @@ def test_allergy_withdrawn_with_a_removal_notes_the_removal(session, tenant):
         ("Gegen Erdnüsse.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
         # Round 4: an "auf" further on still ends the list.
         ("Erdnüsse, auf jeden Fall.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        # Codex PR #330, round 7: "und auf".
+        (
+            "Erdnüsse und auf Sesam.",
+            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+        ),
     ],
 )
 def test_every_ingredient_of_the_answer_is_noted(session, tenant, answer, note):
@@ -1132,6 +1137,11 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Erdnüsse, aber ohne Zwiebeln."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            ["Ohne Zwiebeln und auf Erdnüsse."],
             "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
         ),
         # Round 7: an answer that names nothing.

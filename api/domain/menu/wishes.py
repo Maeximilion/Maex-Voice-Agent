@@ -320,6 +320,9 @@ def _ends_list(word: str | None) -> bool:
         # An addition is no ingredient: "allergisch gegen Erdnuesse, mit
         # Nudeln" must not take the noodles into the note unpriced (#252).
         or word in _ADD
+        # A verb begins a clause of its own: "gegen Erdnuesse und habe eine
+        # Sesamallergie" keeps no "und" in the note (Codex PR #330).
+        or word in _DENIAL_VERBS
         or word in _AFFIRMATIONS
         or _is_allergy(word)
         or word.endswith("mal")

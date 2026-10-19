@@ -45,9 +45,12 @@ from api.schemas.orders import NOTE_MAX
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 # Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
-# start, "gegen" after a comma or "und" ("Ohne Zwiebeln und gegen
-# Erdnuesse"). Another "auf" still ends the list ("Erdnuesse, auf jeden Fall").
-_AGAINST = re.compile(r"^\s*(?:gegen|auf)\b|(?:,|\bund\b)\s*gegen\b", re.IGNORECASE)
+# start or after "und" ("Ohne Zwiebeln und auf Erdnuesse", Codex PR #330),
+# "gegen" after a comma. An "auf" after a comma still ends the list
+# ("Erdnuesse, auf jeden Fall").
+_AGAINST = re.compile(
+    r"^\s*(?:gegen|auf)\b|,\s*gegen\b|\bund\s+(?:gegen|auf)\b", re.IGNORECASE
+)
 # An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
 # nichts." ("Nein." stays a question: no to what is unclear).
 _NOTHING = frozenset(
