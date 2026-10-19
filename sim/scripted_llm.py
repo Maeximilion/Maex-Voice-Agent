@@ -191,12 +191,17 @@ class ScriptedLLM:
         denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
             bool(named) and all(denies_allergy(part) for part in named)
         )
-        # The dish is searched without a denial said in a part of its own.
-        dish_text = "".join(
-            part
-            for n, part in enumerate(parts)
-            if n % 2 or not (ALLERGY_STEM in part.lower() and denies_allergy(part))
-        )
+        # The dish is searched without a denial said in a part of its own,
+        # and without the separator in front of it (or behind it, first):
+        # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
+        # "und" (Codex PR #330).
+        dropped = {
+            n
+            for n in range(0, len(parts), 2)
+            if ALLERGY_STEM in parts[n].lower() and denies_allergy(parts[n])
+        }
+        dropped |= {n - 1 if n else n + 1 for n in set(dropped)}
+        dish_text = "".join(p for n, p in enumerate(parts) if n not in dropped)
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
         # checked on the search result (`_after_tool`).

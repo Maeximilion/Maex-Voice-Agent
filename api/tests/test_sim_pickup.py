@@ -1155,6 +1155,17 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
             ["Keine, aber ohne Zwiebeln."],
             "ohne Zwiebeln",
         ),
+        # Codex PR #330, round 9.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Bitte ohne Zwiebeln, aber gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Bitte ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Erdnüsse, aber auf jeden Fall."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
         # Round 7: an answer that names nothing.
         ("Pho Bo, ich habe eine Allergie.", ["Nein, keine."], None),
         # Round 5: a short removal next to a longer one that begins like it.

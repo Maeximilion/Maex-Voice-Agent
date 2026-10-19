@@ -48,12 +48,15 @@ SAY_WHAT = "Was möchten Sie bestellen?"
 # start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
 # Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),
 # "gegen" after a comma. An "auf" after a comma still ends the list
-# ("Erdnuesse, auf jeden Fall").
+# ("Erdnuesse, auf jeden Fall"), and "auf jeden/keinen Fall" is no "auf".
 _AGAINST = re.compile(
-    r"^\s*(?:gegen|auf)\b|,\s*gegen\b|\b(?:und|aber|sondern)\s+(?:gegen|auf)\b",
+    r"^\s*(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b|,\s*gegen\b"
+    r"|\b(?:und|aber|sondern)\s+(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b",
     re.IGNORECASE,
 )
 _BUT = re.compile(r"\baber\b", re.IGNORECASE)
+# Before a removal in an answer: "Bitte ohne Zwiebeln", "Und ohne Zwiebeln".
+_ANSWER_FILLERS = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
 # An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
 # nichts." ("Nein." stays a question: no to what is unclear).
 _NOTHING = frozenset(
@@ -1061,7 +1064,13 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
     "Keine Erdnuesse" -> ("Erdnuesse", None)."""
     parts = [part.strip(" ,.") for part in _AGAINST.split(text)]
     parts = [part for part in parts if part]
-    removals = [p for p in parts if len(parts) > 1 and _words(p)[:1] == ["ohne"]]
+    # "Bitte ohne Zwiebeln": the removal behind a polite filler (Codex PR #330).
+    removals = [
+        p
+        for p in parts
+        if len(parts) > 1
+        and [w for w in _words(p) if w not in _ANSWER_FILLERS][:1] == ["ohne"]
+    ]
     bare = " und ".join(p for p in parts if p not in removals)
     # "Keine Erdnuesse", also "Ohne Zwiebeln." alone: the ingredient.
     bare = re.sub(r"^\s*(?:keine[nm]?|kein|ohne)\s+", "", bare, flags=re.IGNORECASE)
