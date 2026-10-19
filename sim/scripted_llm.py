@@ -26,7 +26,7 @@ from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from api.domain.menu.wishes import denies_allergy, wish_candidates
+from api.domain.menu.wishes import denies_allergy, mentions_allergy, wish_candidates
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -182,12 +182,16 @@ class ScriptedLLM:
         # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
         # Judged on the clause the search classifies, not with the dish in
         # front ("Ente auf Thai Art").
-        clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
+        # The allergy words as the domain reads them, not only "allergi": a
+        # part with "Laktoseintoleranz" or "vertrage keine" next to a denial
+        # was not judged, and the intolerance was lost (review of PR #330).
+        mentioned = mentions_allergy(text)
+        clauses = wish_candidates(text) if mentioned else []
         # Also a denial in a part of its own, before the dish: "Ich habe keine
         # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
         # moechte Pho Bo zum Abholen" (Codex PR #330).
         parts = _PARTS.split(text)
-        named = [part for part in parts[::2] if ALLERGY_STEM in part.lower()]
+        named = [part for part in parts[::2] if mentions_allergy(part)]
         denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
             bool(named) and all(denies_allergy(part) for part in named)
         )
@@ -195,11 +199,7 @@ class ScriptedLLM:
         # and without the separator in front of it (or behind it, first):
         # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
         # "und" (Codex PR #330).
-        dropped = {
-            n
-            for n in range(0, len(parts), 2)
-            if ALLERGY_STEM in parts[n].lower() and denies_allergy(parts[n])
-        }
+        dropped = {n for n in range(0, len(parts), 2) if denies_allergy(parts[n])}
         dropped |= {n - 1 if n else n + 1 for n in set(dropped)}
         dish_text = "".join(p for n, p in enumerate(parts) if n not in dropped)
         # Only a statement next to a dish: a question about the dish goes to
@@ -207,7 +207,7 @@ class ScriptedLLM:
         # checked on the search result (`_after_tool`).
         own_allergy = (
             wants_pickup
-            and ALLERGY_STEM in text.lower()
+            and mentioned
             and not denied
             and "?" not in text
             and _opening_dish(text) is not None

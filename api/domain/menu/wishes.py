@@ -162,6 +162,7 @@ def _ingredient(text: str) -> str | None:
     """Die Zutaten, wie der Gast sie sagt: "Erdnussallergie" -> "Erdnuss",
     "allergisch gegen Sesam" -> "Sesam", mehrere in Reihenfolge ("Milch und
     Nuss"). None: nicht erkennbar, nachfragen."""
+    text = _without_second_preposition(text)
     found: list[tuple[int, str]] = []
     for pattern in _INGREDIENT:
         for match in pattern.finditer(text):
@@ -186,6 +187,57 @@ def _ingredient(text: str) -> str | None:
     if len(pieces) == 1:
         return pieces[0]
     return ", ".join(pieces[:-1]) + " und " + pieces[-1]
+
+
+# What follows a "gegen" or "auf" that carries on no list of ingredients: a
+# time ("und gegen halb sieben", "gegen Abend") or "auf jeden Fall".
+_NOT_LISTED = frozenset(
+    {"halb", "viertel", "abend", "mittag", "jeden", "keinen", "alle"}
+)
+_LIST_JOINERS = frozenset({",", "und", "sowie", "oder"})
+
+
+def _without_second_preposition(text: str) -> str:
+    """ "gegen Erdnuesse und gegen Sesam" -> "gegen Erdnuesse und Sesam": a
+    "gegen" or "auf" that carries on the list of the one before it, so its
+    ingredient is read with the others; before, only the first reached the
+    kitchen (review of PR #330). Only behind a list that the rules of
+    `_until_new_clause` would read on, never before a time ("und gegen 18
+    Uhr"). Also "gegen Erdnuesse gegen Sesam", where the ear wrote no comma."""
+    tokens, words = _tokens(text)
+    kept: list[str] = []
+    last = 0
+    for i in range(1, len(words) - 1):
+        follows = words[i + 1]
+        if (
+            words[i] not in _PREPOSITIONS
+            or follows in _NOT_LISTED
+            or follows in _NO_INGREDIENT
+            or follows in _NEGATION
+            or _ends_list(follows)
+        ):
+            continue
+        j = i - 1
+        while j > 0 and words[j] in _LIST_MODIFIERS:
+            j -= 1
+        first = next(
+            (p for p in range(j - 1, -1, -1) if words[p] in _PREPOSITIONS), None
+        )
+        listed = [] if first is None else words[first + 1 : j]
+        joiner = ""
+        if words[j] not in _LIST_JOINERS:
+            # No joiner at all: only one word between the two, as said.
+            if j != i - 1 or first != j - 1 or _ends_list(words[j]):
+                continue
+            joiner = "und "
+        elif not listed or not all(
+            w in _LIST_JOINERS or not _ends_list(w) for w in listed
+        ):
+            continue
+        kept.append(text[last : tokens[i].start()] + joiner)
+        last = tokens[i + 1].start()
+    kept.append(text[last:])
+    return "".join(kept)
 
 
 _GEGEN = re.compile(r"gegen", re.IGNORECASE)
@@ -635,6 +687,9 @@ def _denial_end(words: list[str], i: int) -> int | None:
     noun = _noun_after(words, i + 1, word)
     if word in _NEGATION and noun < len(words) and _allergy_word(words[noun]):
         end = noun + 1
+        # Reached a bare generic word over "und" ("keine Allergien und
+        # Unvertraeglichkeiten"): the negation may not reach it.
+        bare_und = False
         # The denial goes on only where the next allergy word is denied too:
         # "oder keine Unvertraeglichkeiten", "weder (eine) Allergie noch
         # (eine) Unvertraeglichkeit" (Codex PR #330), or a bare generic word
@@ -655,10 +710,16 @@ def _denial_end(words: list[str], i: int) -> int | None:
                     nxt < len(words) and _generic(words[nxt]) and _generic(words[noun])
                 ):
                     break
+                bare_und = bare_und or joiner == "und"
             if nxt >= len(words) or not _allergy_word(words[nxt]):
                 break
             end = nxt + 1
         if end < len(words) and words[end] in _PREPOSITIONS:
+            if bare_und:
+                # "keine Allergie und allergisch gegen Erdnuesse": an
+                # ingredient behind a word the negation may not reach is no
+                # denial; it is asked about (review of PR #330).
+                return None
             end = _list_end(words, end + 1)
     elif word in ("nicht", "weder") and after in _PREPOSITIONS:
         # "nicht gegen Erdnuesse allergisch", "weder gegen Erdnuesse noch
@@ -785,11 +846,19 @@ def _but_sonst_nichts(words: list[str]) -> set[str]:
     }
 
 
+def mentions_allergy(text: str) -> bool:
+    """Does the guest speak of an allergy of their own, in the words
+    `classify_wish` reads ("Erdnussallergie", "laktoseintolerant", "ich
+    vertrage keine Erdnuesse")? Not "Allergene" or "allergiefrei", the
+    question about a dish."""
+    return bool(_allergy_words(_tokens(_clean(text))[1]))
+
+
 def denies_allergy(text: str) -> bool:
     """Does the guest only deny an allergy of their own ("ich habe keine
     Allergie", "nicht allergisch")? As `classify_wish` decides without the
     dish's options: the allergy words give no allergy."""
-    if not _allergy_words(_tokens(_clean(text))[1]):
+    if not mentions_allergy(text):
         return False
     wish = classify_wish(text, [])
     return wish is None or wish.kind != "allergy"

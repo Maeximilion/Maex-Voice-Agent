@@ -2209,3 +2209,53 @@ def test_a_menu_that_cannot_be_read_is_an_outage_not_a_crash():
     asked._suggestions = [{"number": "S1", "name": "Lachs Nigiri"}]
     with pytest.raises(LLMError):
         asked._pick_suggestion("die S1")
+
+
+@pytest.mark.parametrize(
+    ("opening", "ingredient"),
+    [
+        (
+            "Ich habe keine Allergie, aber eine Laktoseintoleranz, und möchte Pho Bo "
+            "zum Abholen.",
+            "Laktose",
+        ),
+        (
+            "Ich habe eine Laktoseintoleranz, aber keine Allergie, und möchte Pho Bo "
+            "zum Abholen.",
+            "Laktose",
+        ),
+        (
+            "Ich habe keine Allergie, aber ich vertrage keine Erdnüsse und möchte "
+            "Pho Bo zum Abholen.",
+            "Erdnüsse",
+        ),
+        # Older than #330: no "allergi" in the sentence at all.
+        ("Ich vertrage keine Erdnüsse und möchte Pho Bo zum Abholen.", "Erdnüsse"),
+    ],
+)
+def test_an_intolerance_in_the_opening_is_not_lost(
+    session, tenant, opening, ingredient
+):
+    """Review of PR #330: the opening was judged denied when every part with
+    "allergi" denied, so a part with "Laktoseintoleranz" or "vertrage" next to
+    it was not looked at; neither the allergy guard nor the hand-over held,
+    and the order was confirmed without the intolerance."""
+    replay(
+        session,
+        case(
+            opening,
+            "Pho Bo.",
+            "Nein, das wars.",
+            "Auf den Namen Mueller.",
+            "0721 5551234",
+            "Ja.",
+        ),
+        tenant,
+        now=NOW,
+    )
+    session.expire_all()
+    noted = [
+        note for order in orders(session) for note in _notes(session, order) if note
+    ]
+    handed_over = list(session.scalars(select(Callback)))
+    assert handed_over or any(ingredient in note for note in noted)

@@ -1473,3 +1473,78 @@ def test_alte_optionsdatei_behaelt_den_grund(session, tenant_id):
         select(ItemOption.price_reason).where(ItemOption.option_name == "Nudeln")
     )
     assert reason == GRUND
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich habe keine Allergie und allergisch auf Erdnüsse",
+        "ich bin nicht allergisch und intolerant gegen Laktose",
+        "keine Allergien und Unverträglichkeit gegen Laktose",
+        "ohne Zwiebeln, ich habe keine Allergie und allergisch gegen Erdnüsse",
+    ],
+)
+def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
+    """Review of PR #330: the denial was carried over "und" to a bare allergy
+    word and took its "gegen X" as denied, so the allergy was dropped without
+    a question (None, or the removal alone). The negation may not reach that
+    word: the agent asks."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "keine Allergien und Unverträglichkeiten",
+        "ich habe keine Allergien oder Unverträglichkeiten gegen Laktose",
+        "weder Allergie noch Unverträglichkeit gegen Laktose",
+    ],
+)
+def test_a_denial_of_both_stays_a_denial(said):
+    assert classify_wish(said, BEILAGE) is None
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        ("ich bin allergisch gegen Erdnüsse und gegen Sesam", "Erdnüsse und Sesam"),
+        ("ich bin gegen Erdnüsse und gegen Sesam allergisch", "Erdnüsse und Sesam"),
+        (
+            "ich habe eine Allergie gegen Erdnüsse und auch gegen Sesam",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse, gegen Sesam und gegen Milch",
+            "Erdnüsse, Sesam und Milch",
+        ),
+        ("ich bin allergisch auf Erdnüsse und auf Sesam", "Erdnüsse und Sesam"),
+        # The ear wrote no comma.
+        ("ich bin gegen Erdnüsse gegen Sesam allergisch", "Erdnüsse und Sesam"),
+        (
+            "ohne Zwiebeln, ich bin allergisch gegen Erdnüsse und gegen Sesam",
+            "Erdnüsse und Sesam",
+        ),
+    ],
+)
+def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
+    """Review of PR #330, older than it: the ingredient behind a second
+    "gegen" without its own allergy word was lost, only one reached the
+    kitchen."""
+    assert classify_wish(said, BEILAGE).ingredient == ingredient
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich bin allergisch gegen Erdnüsse und gegen 18 Uhr hole ich ab",
+        "ich bin allergisch gegen Erdnüsse, gegen halb sieben hole ich ab",
+        "ich bin allergisch gegen Erdnüsse und gegen Abend komme ich",
+        "ich bin allergisch gegen Erdnüsse und auf jeden Fall ohne Zwiebeln",
+        "Pho Bo und gegen Erdnüsse bin ich allergisch",
+    ],
+)
+def test_a_gegen_that_lists_nothing_stays_out(said):
+    """A time or "auf jeden Fall" is no second ingredient, and a "gegen"
+    without one before it begins the list."""
+    assert classify_wish(said, BEILAGE).ingredient == "Erdnüsse"
