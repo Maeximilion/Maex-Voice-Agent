@@ -949,6 +949,9 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "Weder Allergien noch Unverträglichkeiten",
         "ich habe weder eine Allergie noch eine Unverträglichkeit",
         "ich bin weder gegen Erdnüsse noch gegen Soja allergisch",
+        # Codex PR #330, round 2: a modifier before the noun.
+        "ich habe keine bekannten Allergien",
+        "keine bekannten Allergien oder Unverträglichkeiten",
         # Answers to "Wogegen?" that take the allergy back (own review).
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
@@ -1041,6 +1044,7 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "ich bin weder gegen Sesam allergisch noch gegen Soja, aber gegen Erdnüsse",
         "ich habe weder eine Erdnussallergie noch eine Sojaallergie, aber eine Sesamallergie",
         "ich vertrage weder Gluten noch Laktose",
+        "ich habe keine bekannten Allergien, aber eine Sesamallergie",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):

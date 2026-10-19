@@ -428,6 +428,12 @@ def _clause_start(words: list[str], i: int, nearest: bool = False) -> int:
 _KEIN = (_REMOVE - {"ohne"}) | {"keiner", "keinerlei"}
 # Every word that may deny an allergy word right behind it.
 _NEGATION = _KEIN | {"nicht", "weder"}
+# Words between a negation and the allergy noun that change nothing about the
+# denial: "keine bekannten Allergien" (Codex PR #330).
+_MODIFIERS = frozenset(
+    {"bekannt", "bekannte", "bekannten", "bekannter", "bekanntes"}
+    | {"echte", "echten", "richtige", "richtigen", "besondere", "besonderen"}
+)
 _PREPOSITIONS = frozenset({"gegen", "auf"})
 # The verb behind a denial in a clause: "weil ich keine Allergie habe".
 _DENIAL_VERBS = frozenset({"habe", "hab", "haben", "bin", "sind"})
@@ -440,7 +446,9 @@ _DENIAL_LEAD = (
 )
 # Words of an allergy phrase in front of its allergy word, when no comma or
 # "ich" marks where the phrase begins: "ohne Zwiebeln hab eine Erdnussallergie".
-_PHRASE_LEAD = _ARTICLES | _NEGATION | _DENIAL_LEAD | {"hat", "ist", "noch"}
+_PHRASE_LEAD = (
+    _ARTICLES | _NEGATION | _MODIFIERS | _DENIAL_LEAD | {"hat", "ist", "noch"}
+)
 # What opens an allergy clause together with "ich": "weil ich", "und ich".
 _OPENING = _PHRASE_LEAD | _CLAUSE_OPENERS
 # Between a denial and the wish after it: "keine Allergie, danke. Ohne ...".
@@ -475,12 +483,13 @@ def _negated(words: list[str]) -> bool:
     "keine Erdnussallergie", "nicht allergisch", "nicht gegen", "gegen
     nichts"?"""
     for n, word in enumerate(words[:-1]):
-        after = words[n + 1]
-        # "weder eine Allergie": the article in between does not count.
-        if word == "weder" and after in _ARTICLES and n + 2 < len(words):
-            after = words[n + 2]
-        if word in _NEGATION and _allergy_word(after):
-            return True
+        if word in _NEGATION:
+            # "weder eine Allergie", "keine bekannten Allergien": the article
+            # and the modifier in between do not count.
+            at = _past_article(words, n + 1) if word == "weder" else n + 1
+            at = _past_modifiers(words, at)
+            if at < len(words) and _allergy_word(words[at]):
+                return True
         if word in ("nicht", "weder") and words[n + 1] in _PREPOSITIONS:
             return True
         if word in _PREPOSITIONS and (
@@ -529,6 +538,7 @@ def _denial_end(words: list[str], i: int) -> int | None:
     word, after = [*words[i : i + 2], "", ""][:2]
     end: int | None = None
     noun = _past_article(words, i + 1) if word == "weder" else i + 1
+    noun = _past_modifiers(words, noun)
     if word in _NEGATION and noun < len(words) and _allergy_word(words[noun]):
         end = noun + 1
         # "keine Allergien oder (keine) Unvertraeglichkeiten", "weder (eine)
@@ -537,7 +547,7 @@ def _denial_end(words: list[str], i: int) -> int | None:
             nxt = end + 1
             if nxt < len(words) and words[nxt] in _KEIN:
                 nxt += 1
-            nxt = _past_article(words, nxt)
+            nxt = _past_modifiers(words, _past_article(words, nxt))
             if nxt >= len(words) or not _allergy_word(words[nxt]):
                 break
             end = nxt + 1
@@ -574,6 +584,13 @@ def _denial_end(words: list[str], i: int) -> int | None:
 def _past_article(words: list[str], i: int) -> int:
     """Behind an article at `i`, if there is one: "weder eine Allergie"."""
     return i + 1 if i < len(words) and words[i] in _ARTICLES else i
+
+
+def _past_modifiers(words: list[str], i: int) -> int:
+    """Behind the modifiers at `i`: "keine bekannten Allergien"."""
+    while i < len(words) and words[i] in _MODIFIERS:
+        i += 1
+    return i
 
 
 def _denial(words: list[str], named: list[int], start: int) -> int | None:
