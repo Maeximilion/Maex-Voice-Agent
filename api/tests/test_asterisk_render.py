@@ -151,20 +151,33 @@ def test_an_ipv4_access_is_the_only_address(render):
     done = render(ACCESS_HOST="10.1.2.3")
     assert reached_the_templates(done), done.stderr
     assert "SIP only from 10.1.2.3\n" in done.stdout
+    assert "team legs to ACCESS_HOST, port 5060" in done.stdout
 
 
-def test_a_named_access_counts_with_the_servers_of_its_srv_records(render, dns):
+def test_a_named_access_without_srv_records_is_dialled_on_port_5060(render, dns):
+    """The port spares lookups of records that do not exist (docs/20 §11)."""
+    dns["a"] = "router 10.0.0.9\n"
+    done = render(ACCESS_HOST="router")
+    assert reached_the_templates(done), done.stderr
+    assert "SIP only from 10.0.0.9\n" in done.stdout
+    assert "team legs to ACCESS_HOST, port 5060" in done.stdout
+
+
+def test_a_named_access_counts_with_the_servers_of_its_udp_srv_records(render, dns):
     """Asterisk's registration follows the SRV records of ACCESS_HOST, so the
     calls of a trunk come from the servers they name; an ACL with the A
     record alone would refuse them while the registration stays green
-    (ultrareview of PR #340)."""
+    (ultrareview of PR #340). Only `_sip._udp`: our only transport is UDP, and
+    a TCP server has no business sending it (Codex on PR #340). The team legs
+    go by the SRV records too."""
     dns["a"] = "trunk.example 10.0.0.1\nsip1.example 10.0.0.2\nsip2.example 10.0.0.3\n"
     dns["srv"] = (
         "_sip._udp.trunk.example sip1.example.\n_sip._tcp.trunk.example sip2.example\n"
     )
     done = render(ACCESS_HOST="trunk.example")
     assert reached_the_templates(done), done.stderr
-    assert "SIP only from 10.0.0.1,10.0.0.2,10.0.0.3\n" in done.stdout
+    assert "SIP only from 10.0.0.1,10.0.0.2\n" in done.stdout
+    assert "team legs by the SRV records of ACCESS_HOST" in done.stdout
 
 
 def test_a_name_with_srv_records_only_is_an_access(render, dns):
@@ -173,6 +186,8 @@ def test_a_name_with_srv_records_only_is_an_access(render, dns):
     done = render(ACCESS_HOST="trunk.example")
     assert reached_the_templates(done), done.stderr
     assert "SIP only from 10.0.0.2\n" in done.stdout
+    # No A record: with port 5060 the team leg would find no server at all.
+    assert "team legs by the SRV records of ACCESS_HOST" in done.stdout
 
 
 @pytest.mark.parametrize("host", ["access.invalid", "::1"])

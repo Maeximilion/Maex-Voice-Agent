@@ -96,21 +96,24 @@ echo "asterisk: $(printf '%s\n' "$targets" | awk -F, '{ print NF }') more number
 # takes addresses, not names, so ACCESS_HOST is looked up here, once, as
 # Asterisk looks up a name in `match` once at the start; an access that moves
 # to another address needs a restart. A name counts with its own addresses and
-# those of the servers its SIP SRV records name: Asterisk's registration follows
-# them, and a trunk's calls come from them (ultrareview of PR #340). IPv4 only,
-# as the transport.
+# those of the servers its `_sip._udp` SRV records name: the registration over
+# our only transport, UDP, follows them, and a trunk's calls come from them
+# (ultrareview of PR #340; TCP and TLS servers stay out, Codex on PR #340).
+# IPv4 only, as the transport.
 ipv4() { getent ahostsv4 "$1" | awk '{ print $1 }'; }
-srv_targets() {
-    case "$1" in *[!0-9.]*) ;; *) return 0 ;; esac
-    for service in _sip._udp _sip._tcp _sips._tcp; do
-        nslookup -type=SRV "$service.$1" 2>/dev/null |
-            awk '/service = / { sub(/\.$/, "", $NF); print $NF }'
-    done
-}
+SRV_SERVERS=
+case "$ACCESS_HOST" in
+    *[!0-9.]*)
+        SRV_SERVERS=$(nslookup -type=SRV "_sip._udp.$ACCESS_HOST" 2>/dev/null |
+            awk '/service = / { sub(/\.$/, "", $NF); print $NF }')
+        ;;
+esac
 ACCESS_ADDRESSES=$(
     {
         ipv4 "$ACCESS_HOST"
-        srv_targets "$ACCESS_HOST" | while read -r server; do ipv4 "$server"; done
+        printf '%s\n' "$SRV_SERVERS" | while read -r server; do
+            [ -z "$server" ] || ipv4 "$server"
+        done
     } | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
 )
 if [ -z "$ACCESS_ADDRESSES" ]; then
@@ -118,6 +121,19 @@ if [ -z "$ACCESS_ADDRESSES" ]; then
     exit 1
 fi
 echo "asterisk: SIP only from $ACCESS_ADDRESSES"
+
+# Where the dialplan sends a team leg. With SRV records: the name alone, and
+# Asterisk takes the server and port from them, as the registration does; with
+# a port it would skip them and dial the A record, which such an access may not
+# have (Codex on PR #340). Without: port 5060 given, which spares the lookups
+# of records that do not exist (2 to 7 s on the workbench, docs/20 §11).
+if [ -n "$SRV_SERVERS" ]; then
+    export ACCESS_DIAL="$ACCESS_HOST"
+    echo "asterisk: team legs by the SRV records of ACCESS_HOST"
+else
+    export ACCESS_DIAL="$ACCESS_HOST:5060"
+    echo "asterisk: team legs to ACCESS_HOST, port 5060"
+fi
 
 # ";" starts a comment in Asterisk's configuration: a password with one would be
 # cut short without a word. Escaped for the files only; the environment the
