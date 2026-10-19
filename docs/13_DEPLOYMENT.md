@@ -226,14 +226,25 @@ A job renamed in `ci.yml` has to be renamed there too, otherwise the old name ne
 
 ### CodeQL and dependency updates
 
-GitHub's default setup scans every pull request except the ones Dependabot opens
-([upstream explanation](https://github.com/github/codeql-action/issues/2858)); its `CodeQL`
-result on those is neutral with "configurations not found". Decided 19.10.2026 (Maxi): the
-default setup stays. A Dependabot pull request changes a lock file, not our code, and
-`dependency-review` checks the new versions for known vulnerabilities. An explicit
-`codeql.yml` workflow that also scans Dependabot pull requests was built and removed again
-(PR #333 and its removal): it meant a workflow file to maintain, merge commits instead of
-squash for every Dependabot pull request, and new languages added by hand.
+GitHub's default setup scans pushes to `main`, the weekly schedule and pull requests, but
+not pull requests that Dependabot opens
+([upstream explanation](https://github.com/github/codeql-action/issues/2858)) and not pull
+requests from forks ([setup types](https://docs.github.com/en/code-security/concepts/code-scanning/setup-types));
+their `CodeQL` result is neutral with "configurations not found". Decided 19.10.2026
+(Maxi): the default setup stays, and both gaps are accepted:
+
+- **Dependabot:** `pip` and `docker-compose` updates change version pins, `docker` updates
+  a base image, `github-actions` updates a pinned action in a workflow. `dependency-review`
+  only rejects new versions with known high or critical vulnerabilities; it does not
+  analyze a changed workflow. What covers the rest: the human review of every Dependabot
+  pull request, and CodeQL on `main` after the merge, which flags the changed workflow
+  there.
+- **Forks:** the repository is public; every outside pull request is treated as untrusted and
+  read by a person before a merge; CodeQL on `main` scans it after the merge.
+
+An explicit `codeql.yml` workflow that closed both gaps was built and removed again (PR
+#333 and PR #335): it meant a workflow file to maintain, merge commits instead of squash
+for every Dependabot pull request, and new languages added by hand.
 
 ---
 

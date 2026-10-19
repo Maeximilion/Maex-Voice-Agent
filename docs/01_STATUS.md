@@ -7,7 +7,7 @@
 
 ## Summary
 
-**GitHub's default CodeQL setup stays (Maxi, 19.10.2026).** The explicit `codeql.yml` workflow from PR #333, which would also have scanned Dependabot pull requests, is removed again before it was ever switched on: a workflow file to maintain and merge commits for every Dependabot pull request outweigh a scan of pull requests that change only lock files, which `dependency-review` already checks. Reasoning in docs/13 §6 "CodeQL and dependency updates".
+**GitHub's default CodeQL setup stays (Maxi, 19.10.2026).** The explicit `codeql.yml` workflow from PR #333, which would also have scanned Dependabot pull requests, is removed again before it was ever switched on: a workflow file to maintain and merge commits for every Dependabot pull request outweigh a scan of Dependabot and fork pull requests before the merge; both gaps are accepted, `main` is scanned after every merge. Reasoning in docs/13 §6 "CodeQL and dependency updates".
 
 **The operations controls require a CSRF token (PR #316, 19.10.2026).** The page and the dev-only simulator console set a `csrf_token` cookie that a script in `base.html` copies into each HTMX request; every write needs the matching `X-CSRF-Token` header, otherwise 403 before any change. The cookie is Secure outside dev/test (also behind Caddy) and on local HTTPS; a page reload keeps it, so other tabs stay usable. The Jules branch was reconciled with current order controls and proxy authentication.
 
