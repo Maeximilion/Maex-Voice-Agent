@@ -151,12 +151,17 @@ if [ -z "$model" ]; then
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
 fi
 # A brief resent after a mismatch usually follows a switch, and PostModelSwitch runs
-# asynchronously: give it a moment, then read the stored model again.
-# ponytail: a fixed 1 s wait on resends only; a switch slower than that still reports a mismatch.
-if [ -n "$route" ] && grep -qx "$(cksum <<<"$want ${effort:-any}")" "$state/$sid.seen" 2>/dev/null; then
-  sleep 1
-  m=$(cat "$state/$sid.model" 2>/dev/null)
-  [ -z "$m" ] || model=$m
+# asynchronously: wait until the stored model is the routed one, at most 5 s (the hook
+# timeout is 10 s). A thread that really stays on the wrong model (fork, cloud) pays the
+# 5 s once, on that resend.
+if [ -n "$route" ] && [ -z "$(jq -r '.model // empty' <<<"$input")" ] \
+  && grep -qx "$(cksum <<<"$want ${effort:-any}")" "$state/$sid.seen" 2>/dev/null; then
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    m=$(cat "$state/$sid.model" 2>/dev/null)
+    [ -z "$m" ] || model=$m
+    [[ "$model" == "$want"* ]] && break
+    sleep 0.5
+  done
 fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
 if [ -z "$model" ]; then

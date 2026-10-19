@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 from pathlib import Path
 
 import pytest
@@ -344,6 +345,28 @@ def test_a_resend_reads_the_model_the_switch_stored(run):
         sid="r",
     )
     assert run(BRIEF, model="", effort="medium", sid="r") is None
+
+
+def test_a_resend_waits_for_a_slow_model_switch(run):
+    run("", hook_event_name="SessionStart", model="claude-opus-5-5", sid="slow")
+    run(BRIEF, model="", effort="medium", sid="slow")
+    # The switch lands 1.5 s after the resend starts.
+    switch = threading.Timer(
+        1.5,
+        run,
+        args=("",),
+        kwargs={
+            "hook_event_name": "PostModelSwitch",
+            "model": "",
+            "to_model": "claude-sonnet-5-5",
+            "sid": "slow",
+        },
+    )
+    switch.start()
+    try:
+        assert run(BRIEF, model="", effort="medium", sid="slow") is None
+    finally:
+        switch.join()
 
 
 def test_a_haiku_route_needs_effort_none(run):
