@@ -123,6 +123,10 @@
 {"say": "und 20a", "expect": "?", "why": "digits with a card letter: drei und 20a can be 23a"}
 {"say": "und äh vierzig sieben", "expect": "?", "why": "the pause changes nothing: und vierzig sieben asks back as well, it can be the tail of drei und vierzig"}
 {"say": "die drei und äh zwanzig", "expect": "?", "why": "a hesitation inside drei und zwanzig: the 3 and the 20 are not taken apart, the guest is asked"}
+{"say": "die drei und bitte zwanzig Frühlingsrollen", "expect": "?", "why": "a paused drei und zwanzig next to a name: 23 Fruehlingsrollen or the 3 and 20 of them, the guest is asked (ultra review PR #329)"}
+{"say": "die S drei und äh zwanzig", "expect": "?", "why": "the same with a card prefix: S23 or S3 and 20"}
+{"say": "die drei öhm und zwanzig", "expect": "?", "why": "a hesitation before the und is a pause as well"}
+{"say": "die drei und äh 20a", "expect": "?", "why": "a card letter behind the tens: 23a or 3 and 20a"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}
 {"say": "Nummer hallo 23", "expect": "?", "why": "Begruessung ist kein Fuellwort zwischen Marker und Zahl (Review PR #147)"}
 {"say": "Nummer dazu 23", "expect": "?", "why": "dazu ist kein Fuellwort zwischen Marker und Zahl"}

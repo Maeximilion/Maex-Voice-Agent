@@ -27,12 +27,12 @@ Position, die Sauce ist Option und kein zweites Gericht.
 
 import re
 
-from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
     INSIDE_SPLIT,
     find_quantity,
     fold,
     parse_cardinal,
+    tens_half,
 )
 
 # A separator takes the whitespace behind it, not the whitespace in front: a
@@ -53,6 +53,8 @@ _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk"
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
 # A "bitte" before the "und" closes the position: "die 4 bitte und 20" is two.
 _PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
+# The first half of "drei und zwanzig".
+_UNITS = range(1, 10)
 _EMPTY_WORDS = frozenset(
     {
         "aeh",
@@ -132,17 +134,15 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         left = _WORD.findall(fold(parts[-1]))
         right = _WORD.findall(fold(piece))
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
-        # does not split the number into the 3 and the 20, but only when both
-        # sides are nothing but the number: joined next to a name ("die drei
-        # und bitte zwanzig Fruehlingsrollen", "Pho Bo drei äh und zwanzig"),
-        # the name search would drop both numbers (Codex PR #147).
+        # does not split the number into the 3 and the 20: the sentence stays
+        # whole and `sole_item_number` asks, also next to a prefix, a letter
+        # or a name (Codex PR #147).
         a = len(left)
         while a and left[a - 1] in _PAUSE_BEFORE_UND:
             a -= 1
         b = 0
         while b < len(right) and right[b] in INSIDE_SPLIT:
             b += 1
-        paused = a < len(left) or b > 0
         number_joined = (
             sep.strip().casefold() == "und"
             and a
@@ -151,13 +151,8 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 # "hundert und eins": nur eine Zahl hängt an, keine neue
                 # Position ("die hundert und eine Cola", Codex PR #124).
                 (left[a - 1].endswith("hundert") and _only_number(piece))
-                or (
-                    parse_cardinal(f"{left[a - 1]} und {right[b]}") is not None
-                    and (
-                        not paused
-                        or (_only_number(piece) and not normalize_query(parts[-1]))
-                    )
-                )
+                # "drei und zwanzig" ist 23, auch "zwei und zwanzigmal".
+                or (parse_cardinal(left[a - 1]) in _UNITS and tens_half(right[b]))
             )
         )
         attached = not _opens_position(piece) if by_position else _modifies(piece)

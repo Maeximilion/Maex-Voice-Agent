@@ -1156,6 +1156,29 @@ _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
 
 
+def tens_half(token: str) -> bool:
+    """Can the token be the second half of "drei und zwanzig"? A tens word or
+    number, also as a quantity: "und zwanzigmal die 13" is the same half as
+    "und zwanzig mal die 13"."""
+    times = _QUANTITY_SUFFIX.match(token)
+    return _word_value(times.group(1) if times else token) in TENS.values()
+
+
+def _split_by_pause(tokens: list[str], k: int) -> bool:
+    """ "drei und äh zwanzig", "drei äh und zwanzig": a unit, a pause at the
+    "und" and a tens half. It can be 23 or the 3 and the 20; the sentence asks,
+    also next to a name (Codex PR #147). Without the pause `_scan` reads 23."""
+    i, j = k - 1, k + 1
+    while i >= 0 and tokens[i] in INSIDE_SPLIT:
+        i -= 1
+    while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
+        j += 1
+    if i < 0 or j >= len(tokens) or (i, j) == (k - 1, k + 1):
+        return False
+    unit = _word_value(tokens[i])
+    return unit is not None and 1 <= unit <= 9 and tens_half(tokens[j])
+
+
 def _too_large(token: str) -> bool:
     """A number word above MAX_VALUE, also a compound one.
 
@@ -1231,6 +1254,8 @@ def sole_item_number(
     without an article in front is the quantity ("zwei S zwölf").
     """
     tokens = _tokens(text)
+    if any(t == "und" and _split_by_pause(tokens, k) for k, t in enumerate(tokens)):
+        return None, True
     glued = _glued(text)
     prefixed = _prefixed(text)
     mengen = _quantity_spans(tokens)
@@ -1343,11 +1368,8 @@ def sole_item_number(
         j = k + 1
         while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
             j += 1
-        if j < len(tokens):
-            # "und zwanzigmal die 13" is the same half as "und zwanzig mal".
-            times = _QUANTITY_SUFFIX.match(tokens[j])
-            if _word_value(times.group(1) if times else tokens[j]) in TENS.values():
-                return False
+        if j < len(tokens) and tens_half(tokens[j]):
+            return False
         return all(
             t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
         )

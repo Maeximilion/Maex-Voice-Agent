@@ -46,14 +46,16 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
         ("drei und bitte zwanzig", ["drei und bitte zwanzig"]),
         ("die drei äh und zwanzig", ["die drei äh und zwanzig"]),
-        # As on main: joined, the name search would drop the 3; asking is #328.
+        # Also next to a name, a letter or a quantity: sole_item_number asks.
         (
             "die drei und bitte zwanzig Frühlingsrollen",
-            ["die drei", "bitte zwanzig Frühlingsrollen"],
+            ["die drei und bitte zwanzig Frühlingsrollen"],
         ),
+        ("die drei und äh 20a", ["die drei und äh 20a"]),
+        ("zwei und zwanzigmal die 13", ["zwei und zwanzigmal die 13"]),
         ("die 23 und äh die 13", ["die 23", "äh die 13"]),
         ("die 4 bitte und 20", ["die 4 bitte", "20"]),
-        ("Pho Bo drei äh und zwanzig", ["Pho Bo drei äh", "zwanzig"]),
+        ("Pho Bo drei äh und zwanzig", ["Pho Bo drei äh und zwanzig"]),
         # Korrektur und Alternative: im Zweifel ganz lassen
         ("Nummer 23, nein, 24", ["Nummer 23, nein, 24"]),
         ("die 23 oder die 24", ["die 23 oder die 24"]),

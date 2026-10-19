@@ -228,9 +228,9 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    the sentence went whole to the name search, which strips the numbers, so
    „einmal Pho Bo, und 30" was Pho Bo alone. The same holds for the dish part in
    front of a wish („und 30 mit Reis" asks; before, „mit Reis" was searched as a
-   name). A pause at the „und" of a spoken number keeps it one piece when both
-   sides are nothing but the number („die drei und äh zwanzig" asks instead of
-   taking the 3 and the 20).
+   name). A pause at the „und" of a spoken number („die drei und äh zwanzig",
+   „die drei äh und zwanzig") keeps it one piece, and the sentence asks whether
+   it is 23 or the 3 and the 20, also next to a prefix, a letter or a name.
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
