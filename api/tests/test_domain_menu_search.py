@@ -707,6 +707,47 @@ def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
     ]
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "einmal Pho Bo, und 30",
+        "einmal Pho Bo, und öhm 30",
+        "zweimal die drei und äh zwanzig und Pho Bo",
+        "die drei, und zwanzig",
+        "Pho Bo, und zwanzig und einer Sesamallergie",
+        "die Nummer 48 Ente süß und sauer",
+    ],
+)
+def test_an_unclear_number_piece_makes_the_sentence_ask(session, tenant_id, said):
+    """Codex PR #147 and its ultra review: a piece with an unclear number makes
+    the whole sentence a question. Kept whole, the name search dropped the
+    numbers and took Pho Bo alone; as a position of its own, "die drei" before
+    the cut was taken as a dish, and an allergy hung on the wrong part."""
+    with pytest.raises(Ambiguous):
+        position_parts(session, tenant_id, said, now=NOW)
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, said)
+
+
+def test_an_unclear_part_asks_alone(session, tenant_id):
+    """Only the part with the unclear number asks; a part the sentence cut off
+    as clear is still taken (own review PR #329)."""
+    said = "die 13 und die 24, und 30"
+    assert position_parts(session, tenant_id, said, now=NOW) == [
+        "die 13",
+        "die 24, und 30",
+    ]
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, "die 24, und 30")
+
+
+def test_an_unclear_number_before_a_wish_asks(session, tenant_id):
+    """ "und 30 mit Reis": handed to the search over the whole sentence, the
+    wish words were a name and found another dish (ultra review PR #329)."""
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, "und 30 mit Reis")
+
+
 def test_dasselbe_gericht_verschieden_genannt_bleibt_ganz(session, tenant_id):
     """ "Pho und Pho Bo" trifft zweimal die 13, aber mit anderen Worten: das kann
     ein Gericht sein, das der Gast praezisiert. Ganz lassen, nicht verdoppeln."""
@@ -1315,6 +1356,8 @@ def test_weight_stays_in_the_name():
         "Zweimal die 13 die 25 einmal die S12",
         "Die 13 und Sushi eins",
         "Die 13.",
+        "Zweimal die drei und äh zwanzig und die 13",
+        "Die 13 und die 24, und 30",
     ],
 )
 def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(
