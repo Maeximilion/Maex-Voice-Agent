@@ -943,6 +943,9 @@ def test_kitchen_note_names_the_removal_once(removal, allergy, note):
         "ich habe keine Laktoseintoleranz",
         "ich bin gegen nichts allergisch",
         "ich bin auf nichts allergisch",
+        # Round 6.
+        "ich bin gegen keine Nüsse allergisch",
+        "Gegen nichts allergisch",
         # Answers to "Wogegen?" that take the allergy back (own review).
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
@@ -1028,6 +1031,8 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         # Round 4: an intolerance before the denial.
         "Laktose vertrage ich überhaupt nicht, ich bin aber nicht allergisch",
         "Gluten verträgt mein Magen nicht, ich habe keine Allergie",
+        # Round 6: a "vertrage" whose ingredient comes before it.
+        "Erdnussallergie, aber Sesam vertrage ich nicht",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):
@@ -1143,6 +1148,11 @@ def test_gegen_of_the_dish_name_is_no_allergy_phrase():
     [
         (
             "mit Soße auf dem Reis ohne Zwiebeln bin allergisch gegen Erdnüsse",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        # Round 6: the verb at the end of the clause is no ingredient.
+        (
+            "ohne Zwiebeln, weil ich allergisch gegen Erdnüsse bin",
             "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
         ),
         (

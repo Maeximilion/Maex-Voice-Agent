@@ -1113,6 +1113,21 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
             ["Keine Allergie, aber mit Erdnüssen habe ich Probleme.", "Erdnüsse."],
             "WICHTIG: Keine Erdnüsse. Grund: Allergie",
         ),
+        # Round 6: a removal in an answer that names no ingredient yet.
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            [
+                "Ohne Koriander, ich habe eine Nahrungsmittelallergie.",
+                "Erdnüsse.",
+            ],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Koriander",
+        ),
+        # Round 6: a removal alone as the answer is the ingredient.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Ohne Zwiebeln."],
+            "WICHTIG: Keine Zwiebeln. Grund: Allergie",
+        ),
         # Round 5: a short removal next to a longer one that begins like it.
         (
             "Pho Bo ohne Eisbergsalat, ich habe eine Allergie.",
@@ -1125,6 +1140,19 @@ def test_answer_to_the_allergy_question(session, tenant, first, answers, note):
     _bestellung(session, tenant, first, *answers)
     [order] = orders(session)
     assert _notes(session, order) == [note]
+
+
+def test_denial_with_another_dish_keeps_the_question(session, tenant):
+    """Own review, round 6: the dish named with the denial was dropped and the
+    question closed; it stays open, as before."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo, ich habe eine Allergie.",
+        "Die 23 noch, ich habe keine Allergie.",
+        "Erdnüsse.",
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
 
 
 def test_removal_said_again_with_the_ingredient(session, tenant):

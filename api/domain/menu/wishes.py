@@ -346,7 +346,14 @@ def _until_new_clause(rest: str) -> str:
         if i in skip:
             continue
         # Eine weitere Allergie-Wendung zaehlt fuer sich, nicht als Zutat.
-        if piece in ".;!?" or word == "bitte" or _is_allergy(word):
+        # Nor is the verb at the end of a clause ("weil ich allergisch gegen
+        # Erdnuesse bin", #252).
+        if (
+            piece in ".;!?"
+            or word == "bitte"
+            or _is_allergy(word)
+            or word in _DENIAL_VERBS
+        ):
             break
         if piece == "," or word in ("und", "sowie", "oder"):
             nxt = word_at(i + 1)
@@ -462,9 +469,19 @@ def _negated(words: list[str]) -> bool:
     return any(
         ((word in _KEIN or word == "nicht") and _allergy_word(after))
         or (word == "nicht" and after in _PREPOSITIONS)
-        or (word in _PREPOSITIONS and after == "nichts")
+        or (word in _PREPOSITIONS and (after == "nichts" or after in _KEIN))
         for word, after in pairwise(words)
     )
+
+
+def _object_end(words: list[str], i: int) -> int | None:
+    """After what follows "gegen" or "auf" at `i`: "nichts", "keine Nuesse",
+    or a list of ingredients; None if none of them."""
+    if i < len(words) and words[i] == "nichts":
+        return i + 1
+    if i < len(words) and words[i] in _KEIN:
+        return _list_end(words, i + 1)
+    return _list_end(words, i)
 
 
 def _list_end(words: list[str], i: int) -> int | None:
@@ -487,8 +504,8 @@ def _list_end(words: list[str], i: int) -> int | None:
 def _denial_end(words: list[str], i: int) -> int | None:
     """Where the denial that begins at `i` ends: "ich habe keine
     Erdnussallergie", "keine Allergie gegen Erdnuesse", "nicht allergisch",
-    "nicht gegen Erdnuesse allergisch", "gegen nichts allergisch". None: no
-    such denial."""
+    "nicht gegen Erdnuesse allergisch", "gegen nichts allergisch", "gegen
+    keine Nuesse allergisch". None: no such denial."""
     while i < len(words) and words[i] in _DENIAL_LEAD:
         i += 1
     word, after = [*words[i : i + 2], "", ""][:2]
@@ -503,13 +520,13 @@ def _denial_end(words: list[str], i: int) -> int | None:
             end += 1
         else:
             end = None
-    elif (
-        word in _PREPOSITIONS
-        and after == "nichts"
-        and i + 2 < len(words)
-        and _allergy_word(words[i + 2])
-    ):
-        end = i + 3
+    elif word in _PREPOSITIONS and (after == "nichts" or after in _KEIN):
+        # "gegen nichts allergisch", "gegen keine Nuesse allergisch"
+        end = _object_end(words, i + 1)
+        if end is not None and end < len(words) and _allergy_word(words[end]):
+            end += 1
+        else:
+            end = None
     while end is not None and end < len(words) and words[end] in _DENIAL_VERBS:
         end += 1
     return end
@@ -589,7 +606,7 @@ def _phrase_start(words: list[str], i: int) -> int:
         prep = next(
             (j for j in range(i - 1, -1, -1) if words[j] in _PREPOSITIONS), None
         )
-        if prep is not None and _list_end(words, prep + 1) == i:
+        if prep is not None and _object_end(words, prep + 1) == i:
             i = prep
     while i > 0 and words[i - 1] in _PHRASE_LEAD:
         i -= 1
@@ -772,9 +789,16 @@ def _with_allergy(
     else:
         removal = removal_with(_classify(head, groups)) if head else None
     # A negation in front of the phrase ("die Sosse nicht auf den Reis") may
-    # name a denied ingredient: then only the phrase is read.
+    # name a denied ingredient: then only the phrase is read. A "vertrage"
+    # whose ingredient comes before it ("Sesam vertrage ich nicht") is not
+    # read at all, so the whole is asked for, or that allergen would be lost.
     ingredient = None
-    if not _negated(words[start:]):
+    unread = any(
+        words[i].startswith(("vertrag", "vertraeg"))
+        and not (i + 1 < len(words) and words[i + 1] in _KEIN)
+        for i in named
+    )
+    if not unread and not _negated(words[start:]):
         ingredient = _ingredient(
             text[tokens[start].start() :] if _negated(words[:start]) else text
         )

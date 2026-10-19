@@ -34,6 +34,7 @@ from api.domain.menu.search import (
     say_understood,
 )
 from api.domain.menu.wishes import (
+    ALLERGY_NOTE,
     classify_wish,
     denies_allergy,
     kitchen_note,
@@ -594,8 +595,19 @@ class PickupScript:
         # ingredient itself; only the bare word ("Erdnuesse", "gegen
         # Erdnuesse") gets the sentence opening (Codex PR #139, P1).
         wish = classify_wish(text, [])
+        if (wish is None or wish.kind != "allergy") and _orders_something(
+            text, self._numbers()
+        ):
+            # "Eine Cola bitte", "Nummer 12", also "Die 23 noch, ich habe keine
+            # Allergie": not an ingredient - the question stays open instead
+            # of noting "Keine Eine Cola" (review PR #139).
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
         nothing = _withdraws(text)
-        if wish is None or nothing or denies_allergy(text):
+        if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
             # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
             # question is closed, nothing goes to the kitchen; a removal said
             # with it is noted (issue #252).
@@ -608,14 +620,6 @@ class PickupScript:
             if not self._allergy_for:
                 self._allergy_named = False
             return self._next(slots, patch, lead=self._take_deferred())
-        if wish.kind != "allergy" and _orders_something(text, self._numbers()):
-            # "Eine Cola bitte", "Nummer 12": not an ingredient - the question
-            # stays open instead of noting "Keine Eine Cola" (review PR #139).
-            return LLMTurn(
-                say=self._allergy_question(),
-                state_patch=patch or None,
-                understanding_failure="allergy",
-            )
         if wish.kind != "allergy":
             # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse".
             # A removal said with it is no ingredient ("Ohne Zwiebeln und
@@ -626,6 +630,10 @@ class PickupScript:
                 item.note = _with_removal(item.note, removal)
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if wish is None or not wish.ingredient:
+            # A removal said with an answer that names no ingredient yet stays.
+            if wish is not None:
+                item = self._allergy_for[0]
+                item.note = _with_removal(item.note, removal_with(wish))
             return LLMTurn(
                 say=self._allergy_question(),
                 state_patch=patch or None,
@@ -634,7 +642,12 @@ class PickupScript:
         item = self._allergy_for.pop(0)
         # A removal said together with the allergy is in the note already and
         # follows it (issue #252).
-        item.note = kitchen_note(item.note, wish.text)
+        # Rebuilt from the allergy alone, so a removal said again is noted
+        # once (#252).
+        item.note = kitchen_note(
+            _with_removal(item.note, removal_with(wish)),
+            ALLERGY_NOTE.format(ingredient=wish.ingredient),
+        )
         lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:
             self._allergy_named = False
@@ -1034,7 +1047,8 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
     parts = [part for part in parts if part]
     removals = [p for p in parts if len(parts) > 1 and _words(p)[:1] == ["ohne"]]
     bare = " und ".join(p for p in parts if p not in removals)
-    bare = re.sub(r"^\s*(?:keine[nm]?|kein)\s+", "", bare, flags=re.IGNORECASE)
+    # "Keine Erdnuesse", also "Ohne Zwiebeln." alone: the ingredient.
+    bare = re.sub(r"^\s*(?:keine[nm]?|kein|ohne)\s+", "", bare, flags=re.IGNORECASE)
     return bare, ", ".join(removals) or None
 
 
