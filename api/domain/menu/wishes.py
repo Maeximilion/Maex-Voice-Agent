@@ -433,23 +433,26 @@ _NEGATION = _KEIN | {"nicht", "weder"}
 # "echte" or "richtige" are none: "keine richtige Allergie gegen Nuesse" is
 # a reaction to nuts.
 _MODIFIERS = frozenset(
-    {"bekannte", "bekannten", "bekannter", "bekanntes", "weiteren", "sonstigen"}
+    {"bekannte", "bekannten", "bekannter", "bekanntes", "weitere", "weiteren"}
+    | {"sonstige", "sonstigen", "andere", "anderen"}
 )
 _PREPOSITIONS = frozenset({"gegen", "auf"})
 # The verb behind a denial in a clause: "weil ich keine Allergie habe".
 _DENIAL_VERBS = frozenset({"habe", "hab", "haben", "bin", "sind"})
-_DENIAL_TRAIL = _DENIAL_VERBS | {"ich", "wir", "bekannt"}
-# What may stand in front of a denial: "ich habe doch gar keine Allergie".
-_DENIAL_LEAD = (
-    _DENIAL_VERBS
-    | {"ich", "wir", "auch", "doch", "gar", "ueberhaupt", "eigentlich", "wirklich"}
-    | {"also", "aber", "und", "nein", "weil", "wegen", "denn", "mir", "uns"}
+# "Keine Allergien sind mir bekannt"
+_DENIAL_TRAIL = _DENIAL_VERBS | {"ich", "wir", "mir", "uns", "bekannt"}
+# What may stand in front of a denial or an allergy phrase: "ich habe doch gar
+# keine Allergie".
+_LEAD_WORDS = _DENIAL_VERBS | (
+    {"ich", "wir", "auch", "doch", "gar", "ueberhaupt", "eigentlich", "wirklich"}
+    | {"also", "aber", "und", "nein", "weil", "wegen", "denn"}
 )
+# Before a denial only: "Mir ist keine Allergie bekannt". Not before an
+# allergy phrase, where "fuer uns" may end a removal.
+_DENIAL_LEAD = _LEAD_WORDS | {"mir", "uns", "ist"}
 # Words of an allergy phrase in front of its allergy word, when no comma or
 # "ich" marks where the phrase begins: "ohne Zwiebeln hab eine Erdnussallergie".
-_PHRASE_LEAD = (
-    _ARTICLES | _NEGATION | _MODIFIERS | _DENIAL_LEAD | {"hat", "ist", "noch"}
-)
+_PHRASE_LEAD = _ARTICLES | _NEGATION | _LEAD_WORDS | {"hat", "ist", "noch"}
 # What opens an allergy clause together with "ich": "weil ich", "und ich".
 _OPENING = _PHRASE_LEAD | _CLAUSE_OPENERS
 # Between a denial and the wish after it: "keine Allergie, danke. Ohne ...".
@@ -482,18 +485,18 @@ def _allergy_word(word: str) -> bool:
 def _negated(words: list[str]) -> bool:
     """Does a negation touch an allergy anywhere in `words` (with commas):
     "keine Erdnussallergie", "nicht allergisch", "nicht gegen", "gegen
-    nichts"?"""
+    nichts"? Only the closing "sonst keine (weiteren) Allergien" after a named
+    allergy does not count: it denies no ingredient and none follows it."""
     for n, word in enumerate(words[:-1]):
         if word in _NEGATION:
             at = _noun_after(words, n + 1, word)
-            # A generic word without "gegen" denies no ingredient: "ich habe
-            # eine Erdnussallergie, sonst keine bekannten Allergien" still
-            # reads the peanuts.
-            follows = words[at + 1] if at + 1 < len(words) else ""
-            if (
-                at < len(words)
-                and _allergy_word(words[at])
-                and (not _generic(words[at]) or follows in _PREPOSITIONS)
+            if at >= len(words) or not _allergy_word(words[at]):
+                pass
+            elif not (
+                n
+                and words[n - 1] in ("sonst", "ansonsten")
+                and _generic(words[at])
+                and at + 1 == len(words)
             ):
                 return True
         if word in ("nicht", "weder") and words[n + 1] in _PREPOSITIONS:
@@ -593,40 +596,33 @@ def _denial_end(words: list[str], i: int) -> int | None:
     return end
 
 
-def _past_article(words: list[str], i: int) -> int:
-    """Behind an article at `i`, if there is one: "weder eine Allergie"."""
-    return i + 1 if i < len(words) and words[i] in _ARTICLES else i
+def _noun_after(words: list[str], i: int, joiner: str) -> int:
+    """Where the allergy word behind `joiner` ("keine", "weder", "noch",
+    "oder") would stand, from `i`: past an article after "weder", "noch" or
+    "oder" ("weder eine Allergie"), and past the modifiers ("keine bekannten
+    Allergien")."""
+    if joiner in ("weder", "noch", "oder") and i < len(words) and words[i] in _ARTICLES:
+        i += 1
+    while i < len(words) and words[i] in _MODIFIERS:
+        i += 1
+    return i
 
 
-def _noun_after(words: list[str], i: int, negation: str) -> int:
-    """Where the allergy word that `negation` denies would stand, from `i`:
-    past an article after "weder" or "noch" ("weder eine Allergie") and past
-    the modifiers ("keine bekannten Allergien")."""
-    if negation in ("weder", "noch"):
-        i = _past_article(words, i)
-    return _past_modifiers(words, i)
+# What stands before an allergy word that names no ingredient.
+_GENERIC_PREFIXES = _GENERIC_STEMS | {""}
 
 
 def _generic(word: str) -> bool:
     """An allergy word that names no ingredient: "Allergien", "allergisch",
     "Unvertraeglichkeit", "Lebensmittelallergie"; not "Erdnussallergie" or
-    "laktoseintolerant"."""
-    at = min(
-        (
-            word.find(key)
-            for key in ("allerg", "intoleran", "unvertraeglich")
-            if key in word
-        ),
-        default=0,
-    )
-    return word[:at] in {"", *_GENERIC_STEMS}
-
-
-def _past_modifiers(words: list[str], i: int) -> int:
-    """Behind the modifiers at `i`: "keine bekannten Allergien"."""
-    while i < len(words) and words[i] in _MODIFIERS:
-        i += 1
-    return i
+    "laktoseintolerant". A word without one of the keys counts as naming one,
+    the safe side."""
+    found = [
+        word.find(key)
+        for key in ("allerg", "intoleran", "unvertraeglich")
+        if key in word
+    ]
+    return bool(found) and word[: min(found)] in _GENERIC_PREFIXES
 
 
 def _denial(words: list[str], named: list[int], start: int) -> int | None:
@@ -705,6 +701,13 @@ def _phrase_start(words: list[str], i: int) -> int:
         )
         if prep is not None and _object_end(words, prep + 1) == i:
             i = prep
+    # "keine bekannten Allergien": the modifiers only after a negation, since
+    # "Bekannten" may also be a person ("fuer meinen Bekannten").
+    j = i
+    while j > 0 and words[j - 1] in _MODIFIERS:
+        j -= 1
+    if j < i and j > 0 and words[j - 1] in _NEGATION:
+        i = j
     while i > 0 and words[i - 1] in _PHRASE_LEAD:
         i -= 1
     return i

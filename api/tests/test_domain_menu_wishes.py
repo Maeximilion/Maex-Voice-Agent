@@ -953,6 +953,11 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "ich habe keine bekannten Allergien",
         "keine bekannten Allergien oder Unverträglichkeiten",
         "Mir sind keine Allergien bekannt",
+        "Mir ist keine Allergie bekannt",
+        "Keine Allergien sind mir bekannt",
+        "ich habe keine weitere Allergie",
+        "ich habe keine anderen Allergien",
+        "ich habe keine Allergie oder eine Unverträglichkeit",
         "ich habe keine weiteren Allergien",
         "weder bekannte Allergien noch Unverträglichkeiten",
         # Answers to "Wogegen?" that take the allergy back (own review).
@@ -985,6 +990,11 @@ def test_denied_allergy_is_no_wish(said):
         ),
         ("ich habe keine Allergie, ohne Zwiebeln, sonst nichts", "note", None),
         ("ich habe keine Allergie, nur ohne Zwiebeln", "note", "ohne Zwiebeln"),
+        (
+            "ohne Zwiebeln für meinen Bekannten ich habe keine Allergie",
+            "note",
+            "ohne Zwiebeln für meinen Bekannten",
+        ),
         # A full stop the words do not show (own review).
         ("ich habe keine Allergie. Ohne Koriander bitte.", "note", "Ohne Koriander"),
         ("mit Nudeln, ich bin nicht allergisch", "option", "mit Nudeln"),
@@ -1050,6 +1060,13 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "ich habe keine Erdnussallergie und eine Sesamallergie",
         "ich habe keine Erdnussallergie und eine bekannte Sesamallergie",
         "ich bin kein Allergiker und laktoseintolerant",
+        # Own review of the Codex round 2 fix: a generic denial next to more.
+        "ich habe keine bekannten Allergien, aber eine Sesamallergie",
+        "ich habe keine Allergie und eine Laktoseintoleranz",
+        "ich habe keine Allergie und Laktoseintoleranz",
+        "Gegen Erdnüsse bin ich nicht allergisch, aber gegen Sesam",
+        "ich habe keine Allergie oder Unverträglichkeit gegen Laktose, aber gegen Gluten",
+        "ich bin weder allergisch noch intolerant gegen Laktose, aber gegen Gluten",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):
@@ -1159,10 +1176,8 @@ def test_addition_after_the_ingredient_is_no_ingredient():
 @pytest.mark.parametrize(
     ("said", "ingredient"),
     [
-        # A generic denial names no ingredient, so the one named is read.
+        # "sonst keine Allergien" at the end denies no ingredient.
         ("ich habe eine Erdnussallergie, sonst keine bekannten Allergien", "Erdnuss"),
-        ("ich habe keine bekannten Allergien, aber eine Sesamallergie", "Sesam"),
-        ("ich habe keine Allergie und eine Laktoseintoleranz", "Laktose"),
         # "richtige" is a hedge, not a denial (own review).
         ("ich habe keine richtige Allergie gegen Nüsse", "Nüsse"),
     ],
