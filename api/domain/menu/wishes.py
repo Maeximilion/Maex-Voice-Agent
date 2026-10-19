@@ -231,9 +231,13 @@ def _without_second_preposition(text: str) -> str:
         )
         listed = [] if first is None else words[first + 1 : j]
         # Not across a full stop: "gegen Erdnuesse. Gegen Sesam bin ich
-        # allergisch" is two phrases, each read on its own.
-        if first is None or _SENTENCE_END.search(
-            text, tokens[first].end(), tokens[i].start()
+        # allergisch" is two phrases, each read on its own. And only the
+        # same preposition again, as a list repeats it: "gegen Erdnuesse und
+        # auf Diaet" is a clause of its own (Codex PR #338).
+        if (
+            first is None
+            or words[first] != words[i]
+            or _SENTENCE_END.search(text, tokens[first].end(), tokens[i].start())
         ):
             continue
         joiner = ""
@@ -715,11 +719,15 @@ def _denial_end(words: list[str], i: int) -> int | None:
     noun = _noun_after(words, i + 1, word)
     if word in _NEGATION and noun < len(words) and _allergy_word(words[noun]):
         end = noun + 1
-        # The last allergy word was reached over a bare "und" ("keine
-        # Allergien und Unvertraeglichkeiten"): the negation may not reach
-        # it. Only the last counts: "... und keine Intoleranz gegen Laktose"
-        # negates its own (Codex PR #338).
+        # The last allergy word was reached over a bare "und" by a negation
+        # that cannot govern it: "keine" governs a second noun ("keine
+        # Allergien und Unvertraeglichkeiten gegen Laktose" denies both),
+        # never an adjective ("keine Allergie und allergisch auf
+        # Erdnuesse"), and "nicht" no noun ("nicht allergisch und
+        # Unvertraeglichkeit gegen Laktose"). Only the last counts: "... und
+        # keine Intoleranz" negates its own (Codex PR #338).
         bare_und = False
+        governor = word
         # The denial goes on only where the next allergy word is denied too:
         # "oder keine Unvertraeglichkeiten", "weder (eine) Allergie noch
         # (eine) Unvertraeglichkeit" (Codex PR #330), or a bare generic word
@@ -732,6 +740,7 @@ def _denial_end(words: list[str], i: int) -> int | None:
             if nxt < len(words) and words[nxt] in _KEIN:
                 joiner, nxt = words[nxt], nxt + 1
                 nxt = _noun_after(words, nxt, joiner)
+                governor = joiner
             elif joiner == "noch":
                 nxt = _noun_after(words, nxt, joiner)
             else:
@@ -741,7 +750,9 @@ def _denial_end(words: list[str], i: int) -> int | None:
                     nxt < len(words) and _generic(words[nxt]) and _generic(words[noun])
                 ):
                     break
-                bare = joiner == "und"
+                bare = joiner == "und" and not (
+                    governor in _KEIN and _allergy_noun(words[nxt])
+                )
             if nxt >= len(words) or not _allergy_word(words[nxt]):
                 break
             end, bare_und = nxt + 1, bare
@@ -827,6 +838,14 @@ def _noun_after(words: list[str], i: int, joiner: str) -> int:
 
 # What stands before an allergy word that names no ingredient.
 _GENERIC_PREFIXES = _GENERIC_STEMS | {""}
+
+
+def _allergy_noun(word: str) -> bool:
+    """An allergy noun ("Allergien", "Unvertraeglichkeit", "Intoleranz",
+    "Allergiker"), not an adjective ("allergisch", "intolerant")."""
+    return word.endswith(
+        ("allergie", "allergien", "allergiker", "keit", "keiten", "intoleranz")
+    ) or word.endswith("intoleranzen")
 
 
 def _generic(word: str) -> bool:

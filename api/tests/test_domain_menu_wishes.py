@@ -1480,15 +1480,17 @@ def test_alte_optionsdatei_behaelt_den_grund(session, tenant_id):
     [
         "ich habe keine Allergie und allergisch auf Erdnüsse",
         "ich bin nicht allergisch und intolerant gegen Laktose",
-        "keine Allergien und Unverträglichkeit gegen Laktose",
+        "keine Allergien und allergisch gegen Sesam",
         "ohne Zwiebeln, ich habe keine Allergie und allergisch gegen Erdnüsse",
+        # "nicht" governs no noun.
+        "ich bin nicht allergisch und Unverträglichkeit gegen Laktose",
     ],
 )
 def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
-    """Review of PR #330: the denial was carried over "und" to a bare allergy
-    word and took its "gegen X" as denied, so the allergy was dropped without
-    a question (None, or the removal alone). The negation may not reach that
-    word: the agent asks."""
+    """Review of PR #330: the denial was carried over "und" to an allergy
+    adjective and took its "gegen X" as denied, so the allergy was dropped
+    without a question (None, or the removal alone). "keine" does not govern
+    an adjective: the agent asks."""
     wish = classify_wish(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
@@ -1501,6 +1503,9 @@ def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
         "weder Allergie noch Unverträglichkeit gegen Laktose",
         # Codex PR #338: the last allergy word is negated on its own.
         "keine Allergien und Unverträglichkeiten und keine Intoleranz gegen Laktose",
+        # Codex PR #338: "keine" governs both nouns.
+        "ich habe keine Allergien und Unverträglichkeiten gegen Laktose",
+        "keine Allergie und Unverträglichkeit gegen Laktose",
     ],
 )
 def test_a_denial_of_both_stays_a_denial(said):
@@ -1561,6 +1566,9 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
         "ich bin allergisch gegen Erdnüsse und auf dem Weg zu euch",
         "ich bin allergisch gegen Erdnüsse und auf Antibiotika angewiesen",
         "ich bin allergisch gegen Erdnüsse, auf Wiedersehen",
+        # Codex PR #338: a list repeats its own preposition.
+        "ich bin allergisch gegen Erdnüsse und auf Diät",
+        "ich bin allergisch gegen Erdnüsse und auf Reisen",
     ],
 )
 def test_a_gegen_that_lists_nothing_stays_out(said):
