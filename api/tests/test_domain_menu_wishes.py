@@ -973,6 +973,7 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "ich habe keine weitere Allergie",
         "ich habe keine anderen Allergien",
         "Keine Allergie ist mir bekannt",
+        "Allergien sind mir keine bekannt",
         # Codex PR #330: the negation after the noun.
         "eine Erdnussallergie habe ich nicht",
         "Allergien habe ich keine",
@@ -1186,6 +1187,12 @@ def test_removal_without_a_tab():
             "ich habe eine Allergie, ohne Zwiebeln",
             "ich habe eine Allergie",
             "ohne Zwiebeln",
+        ),
+        # Codex PR #330, round 8: "aber keine".
+        (
+            "ich habe eine Erdnussallergie, aber keine Zwiebeln",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Keine Zwiebeln",
+            None,
         ),
         # Between two allergies, and up to a new dish (own review).
         (

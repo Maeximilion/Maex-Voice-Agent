@@ -542,7 +542,9 @@ def _negation_behind(words: list[str], i: int) -> int | None:
     keine" (Codex PR #330). None when there is none, also for "habe ich nicht
     nur" and for a removal "habe ich keine Erdnuesse"."""
     if not (
-        i + 1 < len(words) and words[i] in _DENIAL_VERBS and words[i + 1] in _PRONOUNS
+        i + 1 < len(words)
+        and words[i] in _DENIAL_VERBS
+        and words[i + 1] in _PRONOUNS | {"mir", "uns"}
     ):
         return None
     k = _skip(words, i + 2, _ADVERBS)
@@ -850,9 +852,17 @@ def _removal_inside(words: list[str], named: list[int]) -> tuple[int, int, int] 
     """A removal said after the first allergy word ("allergisch gegen
     Erdnuesse, aber ohne Zwiebeln", Codex PR #330): where its connectors begin,
     where "ohne" stands, and where it ends, at a new dish or allergy or at the
-    end. Only "ohne": a "keine" there may still belong to the allergy ("ich
-    vertrage keine Erdnuesse, keine Mandeln")."""
-    at = next((j for j in range(named[0] + 1, len(words)) if words[j] == "ohne"), None)
+    end. "ohne", or "keine" after "aber" ("aber keine Zwiebeln"); a "keine"
+    alone may still belong to the allergy ("ich vertrage keine Erdnuesse,
+    keine Mandeln")."""
+    at = next(
+        (
+            j
+            for j in range(named[0] + 1, len(words))
+            if words[j] == "ohne" or (words[j] in _KEIN and words[j - 1] == "aber")
+        ),
+        None,
+    )
     if at is None:
         return None
     begin = at

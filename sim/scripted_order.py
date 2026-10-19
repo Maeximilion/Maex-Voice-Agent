@@ -45,12 +45,15 @@ from api.schemas.orders import NOTE_MAX
 
 SAY_WHAT = "Was möchten Sie bestellen?"
 # Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
-# start or after "und" ("Ohne Zwiebeln und auf Erdnuesse", Codex PR #330),
+# start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
+# Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),
 # "gegen" after a comma. An "auf" after a comma still ends the list
 # ("Erdnuesse, auf jeden Fall").
 _AGAINST = re.compile(
-    r"^\s*(?:gegen|auf)\b|,\s*gegen\b|\bund\s+(?:gegen|auf)\b", re.IGNORECASE
+    r"^\s*(?:gegen|auf)\b|,\s*gegen\b|\b(?:und|aber|sondern)\s+(?:gegen|auf)\b",
+    re.IGNORECASE,
 )
+_BUT = re.compile(r"\baber\b", re.IGNORECASE)
 # An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
 # nichts." ("Nein." stays a question: no to what is unclear).
 _NOTHING = frozenset(
@@ -611,12 +614,18 @@ class PickupScript:
                 state_patch=patch or None,
                 understanding_failure="allergy",
             )
-        nothing = _withdraws(text)
+        # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
+        but = _BUT.search(text)
+        nothing = _withdraws(text[: but.start()] if but else text)
         if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
             # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
             # question is closed, nothing goes to the kitchen; a removal said
             # with it is noted (issue #252).
             item = self._allergy_for.pop(0)
+            if nothing and but:
+                behind = classify_wish(text[but.end() :], [])
+                if behind is not None:
+                    item.note = _with_removal(item.note, removal_with(behind))
             if wish is not None and not nothing:
                 # A removal said with it is noted. An addition is not taken:
                 # the answer is read without the dish's options (stand-in

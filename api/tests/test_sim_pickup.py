@@ -1144,6 +1144,17 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
             ["Ohne Zwiebeln und auf Erdnüsse."],
             "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
         ),
+        # Codex PR #330, round 8: "aber gegen", and a removal with nothing.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Ohne Zwiebeln, aber gegen Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Keine, aber ohne Zwiebeln."],
+            "ohne Zwiebeln",
+        ),
         # Round 7: an answer that names nothing.
         ("Pho Bo, ich habe eine Allergie.", ["Nein, keine."], None),
         # Round 5: a short removal next to a longer one that begins like it.
@@ -1197,6 +1208,7 @@ def test_removal_said_again_with_the_ingredient(session, tenant):
         "Ich moechte Pho Bo zum Abholen, ich habe keine Allergie.",
         # Codex PR #330: the denial before the dish.
         "Ich habe keine Allergie, ich moechte Pho Bo zum Abholen.",
+        "Ich habe keine Allergie und moechte Pho Bo zum Abholen.",
     ],
 )
 def test_denied_allergy_in_the_opening_sentence_is_an_order(session, tenant, opening):

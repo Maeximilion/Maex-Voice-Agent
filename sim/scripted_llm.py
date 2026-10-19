@@ -65,6 +65,8 @@ OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
 # note on the dish named with it (Codex PR #139); everything else in that
 # sentence is judged like the call before the order and like the order itself.
 ALLERGY_STEM = "allergi"
+# The parts of an opening sentence, with what joins them kept.
+_PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 PICKUP = ("abhol", "mitnehmen")
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
@@ -182,16 +184,18 @@ class ScriptedLLM:
         # front ("Ente auf Thai Art").
         clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
         # Also a denial in a part of its own, before the dish: "Ich habe keine
-        # Allergie, ich moechte Pho Bo zum Abholen" (Codex PR #330).
-        named = [part for part in text.split(",") if ALLERGY_STEM in part.lower()]
+        # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
+        # moechte Pho Bo zum Abholen" (Codex PR #330).
+        parts = _PARTS.split(text)
+        named = [part for part in parts[::2] if ALLERGY_STEM in part.lower()]
         denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
             bool(named) and all(denies_allergy(part) for part in named)
         )
         # The dish is searched without a denial said in a part of its own.
-        dish_text = ",".join(
+        dish_text = "".join(
             part
-            for part in text.split(",")
-            if not (ALLERGY_STEM in part.lower() and denies_allergy(part))
+            for n, part in enumerate(parts)
+            if n % 2 or not (ALLERGY_STEM in part.lower() and denies_allergy(part))
         )
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
