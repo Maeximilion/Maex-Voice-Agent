@@ -11,7 +11,7 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|(speech|spoken|utterance|transcript)[- ]?to[- ]?(menu|item)|menu[- ]?item matching|match(ing|es)? (speech|what the caller says|a spoken)|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after'
+xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|(speech|spoken|utterance|transcript)[- ]?to[- ]?(menu|item)|menu[- ]?item matching|match(ing|es)? (speech|what the caller says|a spoken)|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after|(third|3rd|fourth|dritte[nr]?) (fix.?)?(attempt|try|versuch)|orders? (are |is |gets? |becomes? )?confirmed|(becomes?|turns?) confirmed'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
@@ -20,7 +20,7 @@ sonnet="\\bgui\\b|\\bdocs?\\b|readme|\\bseeds?\\b|$dataimport|"'status update|up
 # Docs-only: a Markdown file or docs/ path and no code path. Hard-rule words in such a
 # prompt are the topic of the text, not code that decides.
 # ponytail: "fix migration 007 and update docs/03" counts as docs-only; name the code path to avoid it.
-docpath='\.md\b|\bdocs/|readme'
+docpath='\.md\b|\bdocs/|readme|\bdocs?\b|\bdocument(ation)?\b'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
@@ -60,6 +60,12 @@ head=${head%%</*}
 route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
 # "none" is Haiku's effort only; on another model it would switch the effort check off.
 [[ "${route,,}" == *" none"* && "${route,,}" != *haiku* ]] && route=
+# Only a model ID the routing table in CLAUDE.md names can be switched to; a typo is malformed.
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
+if [ -n "$route" ] && [ -f "$root/CLAUDE.md" ]; then
+  id=$(grep -oiE 'claude-[a-z0-9.-]+' <<<"$route" | tr 'A-Z' 'a-z')
+  grep -qF "\`$id\`" "$root/CLAUDE.md" || route=
+fi
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
   msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" (effort low, medium, high, xhigh, max or none), so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
@@ -95,9 +101,11 @@ else
     want=claude-haiku-4-5 effort=none
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.
+  # The topic of a doc ("the telephony docs") and a typo fix in it are not code work.
   elif grep -qiE "$docpath" <<<"$lower" \
-    && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g' <<<"$lower" \
-      | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation|refactor|implement|debug|migrate|deploy)[a-z]*\b"; then
+    && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#[a-z_-]+ (docs?|documentation)\b##g
+        s#\bfix(es|ing)? (a |the )?(typos?|wording|spelling|links?|sections?|grammar|formatting)\b##g' <<<"$lower" \
+      | grep -qiE "$codepath|$opus|alembic|migrations/|\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation|refactor|implement|debug|migrate|deploy|fix)[a-z]*\b"; then
     want=claude-sonnet-5-5 effort=medium
   # A menu or data import is import work, also when it carries prices or allergens.
   elif grep -qiE "$dataimport" <<<"$lower" \
@@ -133,7 +141,8 @@ model=$(jq -r '.model // empty' <<<"$input")
 if [ -z "$model" ]; then
   transcript=$(jq -r '.transcript_path // empty' <<<"$input")
   [ -f "$transcript" ] && model=$(tac "$transcript" 2>/dev/null \
-    | jq -r 'select(.type == "assistant" and (.isSidechain | not)) | .message.model
+    | jq -r '(select(.type == "assistant" and (.isSidechain | not)) | .message.model),
+             (select(.type == "attachment" and .attachment.type == "model") | .attachment.identity.modelId)
              | select(type == "string" and startswith("claude-"))' 2>/dev/null | head -n 1)
 fi
 # No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.

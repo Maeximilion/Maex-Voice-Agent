@@ -209,6 +209,51 @@ def test_docs_next_to_unnamed_work_takes_the_default(run):
     assert run("Update README with the new setup steps", sid="r") is None
 
 
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix how orders are confirmed after a customer yes",
+        "Change when an order becomes confirmed",
+        "This is the third attempt to fix authentication",
+    ],
+)
+def test_confirmation_wording_and_repeated_failures_are_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Update the telephony docs with setup details",
+        "Document the agent behavior in the docs",
+    ],
+)
+def test_docs_named_after_an_area_stay_on_sonnet(run, prompt):
+    assert run(prompt) is None
+
+
+def test_docs_next_to_a_code_fix_take_the_default(run):
+    out = run("Update README and fix authentication", "claude-opus-5-5", "high")
+    assert out is None
+
+
+def test_an_unknown_model_id_is_a_malformed_route(run):
+    brief = "Route: claude-sonet-5-5 medium\nUpdate the GUI."
+    out = run(brief, "claude-opus-5-5", "high")
+    assert "Route line is not" in message(out)
+
+
+def test_the_model_is_read_from_a_transcript_attachment(run, tmp_path):
+    transcript = tmp_path / "t.jsonl"
+    line = {
+        "type": "attachment",
+        "attachment": {"type": "model", "identity": {"modelId": "claude-sonnet-5-5"}},
+    }
+    transcript.write_text(json.dumps(line) + "\n")
+    out = run(BRIEF, model="", transcript_path=str(transcript))
+    assert out is None
+
+
 def test_an_outage_banner_is_gui_work(run):
     assert run("Fix the outage banner in the GUI") is None
 

@@ -364,7 +364,9 @@ Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `
 #   claude-rc server    Remote Control server: claude.ai, the app and projects start sessions here
 #   further arguments go to "claude remote-control" after "server", else to claude
 set -euo pipefail
-# Owner only: the copied settings may hold a credential in their env block.
+# Owner only while the settings are copied (they may hold a credential in their env block);
+# Claude itself runs with the caller's usual mask.
+old_umask=$(umask)
 umask 077
 src="$HOME/.claude" dst="$HOME/.claude-rc"
 mkdir -p "$dst"
@@ -387,6 +389,7 @@ jq 'del(.apiKeyHelper, .env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANT
         .env.CLAUDE_CODE_OAUTH_TOKEN, .env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC,
         .env.DISABLE_GROWTHBOOK)' "$src/settings.json" > "$tmp"
 mv "$tmp" "$dst/settings.json"
+umask "$old_umask"
 
 unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK
