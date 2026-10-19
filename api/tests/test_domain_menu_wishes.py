@@ -903,14 +903,6 @@ def test_removal_before_an_allergy_without_ingredient_waits_in_note():
     [
         ("ohne Zwiebeln", "WICHTIG: Keine Erdnuss. Grund: Allergie", None),
         (None, "WICHTIG: Keine Erdnuss. Grund: Allergie", None),
-        # The answer to "Wogegen?" says the removal again (own review).
-        (
-            "ohne Zwiebeln",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
-        ),
-        # Only the whole removal counts as said again.
-        ("ohne Ei", "WICHTIG: Keine Ei. Grund: Allergie. Ohne Eisbergsalat", None),
         # Too long for an order line: the allergy stays, the removal goes.
         (
             "ohne " + "Zwiebeln, " * 20 + "Koriander",
@@ -919,7 +911,7 @@ def test_removal_before_an_allergy_without_ingredient_waits_in_note():
         ),
     ],
 )
-def test_kitchen_note_names_the_removal_once(removal, allergy, note):
+def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
     """The allergy first, as the kitchen reads it (E14), then the removal."""
     expected = note or (
         f"{allergy}. {removal[0].upper()}{removal[1:]}" if removal else allergy
@@ -946,6 +938,12 @@ def test_kitchen_note_names_the_removal_once(removal, allergy, note):
         # Round 6.
         "ich bin gegen keine Nüsse allergisch",
         "Gegen nichts allergisch",
+        # Round 7: the usual phrases.
+        "ich habe keine Allergien oder Unverträglichkeiten",
+        "keine Allergien und keine Unverträglichkeiten",
+        "Keine Allergie habe ich",
+        "ich bin gegen gar nichts allergisch",
+        "ich habe keine Allergie oder so",
         # Answers to "Wogegen?" that take the allergy back (own review).
         "Nein, ich habe keine Allergie",
         "Doch, keine Allergie",
@@ -1083,6 +1081,12 @@ def test_denial_next_to_an_addition_waits_for_the_dish():
 def test_removal_without_a_tab():
     wish = classify_wish("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
     assert wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+
+
+def test_addition_after_the_ingredient_is_no_ingredient():
+    """Own review, round 7: "mit Nudeln" went into the allergy note unpriced."""
+    wish = classify_wish("ich bin allergisch gegen Erdnüsse, mit Nudeln", BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", "Erdnüsse")
 
 
 def test_negation_before_the_phrase_keeps_its_ingredient():

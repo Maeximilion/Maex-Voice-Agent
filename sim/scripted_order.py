@@ -53,7 +53,9 @@ _AGAINST = re.compile(r"^\s*(?:gegen|auf)\b|(?:,|\bund\b)\s*gegen\b", re.IGNOREC
 _NOTHING = frozenset(
     {"kein", "keine", "keinen", "keinem", "keiner", "keinerlei", "nichts"}
 )
-_NOTHING_FILL = frozenset({"gar", "gegen", "auf", "doch", "ueberhaupt"})
+_NOTHING_FILL = frozenset(
+    {"gar", "gegen", "auf", "doch", "ueberhaupt", "nein", "danke"}
+)
 SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
@@ -625,9 +627,11 @@ class PickupScript:
             # A removal said with it is no ingredient ("Ohne Zwiebeln und
             # gegen Erdnuesse"), nor is the "gegen" in front of one (#252).
             bare, removal = _ingredient_answer(text)
-            if removal:
-                item = self._allergy_for[0]
-                item.note = _with_removal(item.note, removal)
+            item = self._allergy_for[0]
+            # Also a removal behind the ingredient ("Erdnuesse, aber ohne
+            # Zwiebeln"), which the answer read as a wish already has.
+            for said in (removal, wish.note):
+                item.note = _with_removal(item.note, said)
             wish = classify_wish(f"allergisch gegen {bare}", [])
         if wish is None or not wish.ingredient:
             # A removal said with an answer that names no ingredient yet stays.

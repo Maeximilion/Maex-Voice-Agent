@@ -1128,6 +1128,14 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
             ["Ohne Zwiebeln."],
             "WICHTIG: Keine Zwiebeln. Grund: Allergie",
         ),
+        # Round 7: a removal behind the ingredient.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Erdnüsse, aber ohne Zwiebeln."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        # Round 7: an answer that names nothing.
+        ("Pho Bo, ich habe eine Allergie.", ["Nein, keine."], None),
         # Round 5: a short removal next to a longer one that begins like it.
         (
             "Pho Bo ohne Eisbergsalat, ich habe eine Allergie.",
