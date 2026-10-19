@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.10
+> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.11
 
 ---
 
@@ -575,6 +575,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.11 · 19.10.2026:** T-10.13 done: dialplan dials only listed numbers, falls back to TEAM_PHONE, SIP only from the access
 - **v2.3.10 · 19.10.2026:** Maxi keeps GitHub's default CodeQL setup; the explicit codeql.yml workflow from PR #333 is removed
 - **v2.3.9 · 19.10.2026:** PR #333: prepare explicit CodeQL coverage for dependency PRs; activation waits for the workflow on main
 - **v2.3.8 · 19.10.2026:** PR #316: CSRF token required on operations controls (Jules branch reconciled with main)

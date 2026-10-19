@@ -281,10 +281,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(
-                    f"{NUMBER_PREFIX}{n}"
-                    for n in (101, 102, 103, 104, 105, 106, 107, 108, 109, 110)
-                ),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 111)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
