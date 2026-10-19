@@ -10,7 +10,7 @@ httpx==0.28.*
 pytest==9.*
 pytest-asyncio==1.4.*
 pytest-xdist==3.*
-ruff==0.16.*
+ruff==0.17.*
 mypy==2.*
 # stubs for the yaml the tests read; mypy has none of its own
 types-PyYAML==6.*
