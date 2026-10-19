@@ -11,6 +11,7 @@
 |---|---|---|
 | Project hook `sync_main.sh` | `.claude/hooks/`, wired in `.claude/settings.json`. At session start it fetches, fast-forwards a clean `main` where it is checked out, moves the branch `main` itself where no folder has it checked out, and puts the main folder back on `main` when the branch it was left on is finished (nothing uncommitted, remote branch gone, and its work in `origin/main`: its commits, or after a squash merge its changes, or a merged pull request with exactly its head commit, which needs `gh`; since 12.10.2026). Where another folder has `main` checked out, or `gh` had to be asked and could not answer, it warns instead of switching. A warning names the files that block the sync, or git's reason where a clean folder could not be fast-forwarded. Called with `--json`, as `.claude/settings.json` does, it goes out as a message the user sees (`systemMessage`) and as an instruction for Claude to raise it first (`additionalContext`); plain stdout of a SessionStart hook reaches Claude only (since 14.10.2026). Codex calls it without the flag and gets plain lines. `/done` runs it again after a merge | yes, versioned and tested |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
+| Launcher `claude-rc` (Ubuntu only) | `~/.local/bin/claude-rc` | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
 | Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |
 | Memory notes | `~/.claude/projects/` on Windows, linked into Ubuntu | no |
@@ -27,6 +28,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
+| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, or right after a wrapper tag (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (`SessionStart` may omit it), it does not stop the thread: it carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
@@ -344,6 +346,84 @@ fi
 jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
 ```
 
+### claude-rc (Ubuntu only)
+
+Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` and without an API key (Remote Control takes only the claude.ai login) at every start, and the daemon and caches stay apart. Session transcripts and memory live under the linked `projects` folder on purpose, so history and memory carry over between both launchers; each session writes its own transcript file. The launcher refuses to run when `~/.claude-rc` is a link or resolves to `~/.claude`, because its settings rewrite would then replace the real `~/.claude/settings.json`. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
+
+```bash
+#!/usr/bin/env bash
+# Claude Code with Remote Control, without the Headroom proxy.
+# Remote Control refuses a custom ANTHROPIC_BASE_URL, and ~/.claude/settings.json sets one
+# (Headroom on 127.0.0.1:8787) that a shell variable cannot override. This launcher runs
+# Claude with its own config folder ~/.claude-rc: login, hooks, plugins, skills, memory and
+# history are links into ~/.claude, and settings.json is rebuilt from ~/.claude/settings.json
+# without ANTHROPIC_BASE_URL and API keys at every start. The daemon and caches stay
+# separate, so a Headroom session and this one never share a process; session transcripts
+# and memory under projects/ are shared on purpose (each session has its own file).
+# Usage, inside the checkout (cd ~/Maex-Voice-Agent):
+#   claude-rc           interactive session, linked to claude.ai through Remote Control
+#   claude-rc server    Remote Control server: claude.ai, the app and projects start sessions here
+#   further arguments go to "claude remote-control" after "server", else to claude
+set -euo pipefail
+# Owner only while the settings are copied (they may hold a credential in their env block);
+# Claude itself runs with the caller's usual mask.
+old_umask=$(umask)
+umask 077
+src="$HOME/.claude" dst="$HOME/.claude-rc"
+# A ~/.claude-rc that is a link, or the same folder as ~/.claude, would let the settings
+# rewrite below replace the real ~/.claude/settings.json.
+if [ -L "$dst" ] || { [ -d "$dst" ] && [ "$(cd "$dst" && pwd -P)" = "$(cd "$src" && pwd -P)" ]; }; then
+  echo "claude-rc: $dst must be its own folder, not a link to or the same as $src; nothing changed." >&2
+  exit 1
+fi
+mkdir -p "$dst"
+chmod 700 "$dst"
+# A login refresh replaces the linked .credentials.json with a file of its own. Hand a newer
+# login back to ~/.claude and link again, so the normal launcher never keeps a stale token.
+# ponytail: only at the next claude-rc start; while both run, a refresh in one stays there until then.
+c=.credentials.json
+if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
+  if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
+  rm -f "$dst/$c"
+fi
+shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
+        history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
+for name in "${shared[@]}"; do
+  # A real file in ~/.claude-rc (Claude replaced a link) is left alone.
+  if [ -e "$src/$name" ] && { [ -L "$dst/$name" ] || [ ! -e "$dst/$name" ]; }; then
+    ln -sfn "$src/$name" "$dst/$name"
+  fi
+done
+if [ -L "$dst/.claude.json" ] || [ ! -e "$dst/.claude.json" ]; then
+  ln -sfn "$HOME/.claude.json" "$dst/.claude.json"
+fi
+# Remote Control takes only the claude.ai login, no API key. A file of its own per start,
+# so two launches at once never move each other's file.
+tmp=$(mktemp "$dst/settings.json.XXXXXX")
+jq 'del(.apiKeyHelper, .env.ANTHROPIC_BASE_URL, .env.ANTHROPIC_API_KEY, .env.ANTHROPIC_AUTH_TOKEN,
+        .env.CLAUDE_CODE_OAUTH_TOKEN, .env.CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC,
+        .env.DISABLE_GROWTHBOOK, .env.CLAUDE_CODE_USE_BEDROCK, .env.CLAUDE_CODE_USE_VERTEX,
+        .env.CLAUDE_CODE_USE_FOUNDRY)' "$src/settings.json" > "$tmp"
+mv "$tmp" "$dst/settings.json"
+umask "$old_umask"
+
+unset ANTHROPIC_BASE_URL ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_OAUTH_TOKEN \
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC DISABLE_GROWTHBOOK \
+      CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY
+# Telemetry opt-outs stay as they are (a privacy choice), but where the organization requires
+# Trusted Devices they make Remote Control unavailable: say so instead of failing silently.
+if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
+  || jq -e '.env | has("DISABLE_TELEMETRY") or has("DO_NOT_TRACK")' "$dst/settings.json" > /dev/null 2>&1; then
+  echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
+fi
+export CLAUDE_CONFIG_DIR="$dst"
+if [ "${1-}" = server ]; then
+  shift
+  exec claude remote-control "$@"
+fi
+exec claude --remote-control "$@"
+```
+
 ## 5. Restore
 
 ### Windows
@@ -395,6 +475,18 @@ tmp="$(mktemp ~/.claude/settings.json.new.XXXXXX)" \
 
 Delete the backups once the check passed.
 
+`claude-rc`, same console: `mkdir -p ~/.local/bin`, save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`. Ubuntu's `~/.profile` puts `~/.local/bin` on `PATH` at the next login once the folder exists; until then call it as `~/.local/bin/claude-rc`.
+
+### Ubuntu threads for projects and claude.ai
+
+A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
+
+```bash
+cd ~/Maex-Voice-Agent && ~/.local/bin/claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench
+```
+
+The first start asks `Enable Remote Control? (y/n)` once; answer `y`. Each session it starts gets its own git worktree, so two sessions never write in the main folder. The server runs as long as the terminal stays open and the PC is on; `Ctrl+C` stops it. A plain interactive session that can also be followed from claude.ai is `claude-rc` without `server`.
+
 ## 6. Check that a hook fires
 
 A hook that runs without anything to report leaves no visible trace. For `sync-main.sh --branch`, feed it by hand from a branch that is behind `main`. Console: Git Bash or Ubuntu terminal, inside the checkout.
@@ -405,6 +497,26 @@ jq -n --arg cwd "$PWD" '{cwd: $cwd}' | bash ~/.claude/hooks/sync-main.sh --branc
 
 It prints a JSON object with a "Branch sync check" text when the branch is behind and nothing when it is not. The note is given once per branch and state of `main` and repeats after 30 minutes: a second run right away prints nothing, and a run by hand uses up the note the session would have got in that time. Inside a session the sign that it ran is a fresh `.fetched` stamp file for the checkout in `~/.claude/hook-state/branch-sync/`; the hook keeps its own stamp because any other fetch also refreshes `FETCH_HEAD`. A session that was already open when the settings changed may not load the new entry; a new session does.
 
+### Projects (beta): do hooks load, and do threads get their model
+
+A project in the desktop app is one coordinating chat that starts threads. Whether a project chat and its threads load `.claude/settings.json` and `~/.claude/settings.json` has not been checked yet; this test answers it. Setup: the project has the repository and the local folder `C:\Users\Maxi\Documents\GitHub\Maex-Voice-Agent` as context, and `route_advice.sh` is on `main` (threads start from `main`, cloud threads from the default branch, so a hook only on a branch is invisible to them). Run it once, fill in the results table, and repeat it after an app update that changes projects.
+
+| Step | Where, what to send | Passes when |
+|---|---|---|
+| 1 | Project chat, model Opus 5.5, effort `xhigh`. Send: `Routing test: read only the docs in README.md, change nothing, and list every routing line you saw in this turn.` | A line `routing advice: this prompt fits claude-sonnet-5-5 at effort medium ... fresh thread ...` shows up, and Claude opens its reply with it. Proves the project chat loads project hooks. If the chat also asks to rename the session, the user-level `session-title.sh` ran too |
+| 2 | Same chat. Send: `Start a thread for a docs test on Sonnet 5.5 at effort medium. The thread only runs printenv CLAUDE_EFFORT and reports its model and effort; it changes nothing.` | Claude starts the thread fresh with `model` `claude-sonnet-5-5` and `effort` `medium`, the brief starts with `Route: claude-sonnet-5-5 medium`, the thread reports Sonnet 5.5 and `medium`, and no routing line appears in the thread |
+| 3 | Same chat. Send: `Start the same test as a fork, with the brief line Route: claude-sonnet-5-5 medium.` | A fork ignores `model` and `effort`, so the thread runs on Opus 5.5, shows `routing check: the brief asks for claude-sonnet-5-5 ...` and answers only `ROUTE-MISMATCH ...`. The project chat switches the thread to Sonnet 5.5 and `medium` and sends the brief again; the thread then reports Sonnet 5.5 and `medium`. Proves the switch loop. If the project chat has no tool to switch a thread, note it here: then only the report remains |
+| 4 | Same chat. Send step 2 again, but as a cloud thread. | Only to learn the cloud's behaviour; threads stay local afterwards. Cloud threads ignore `model` and `effort` at the start as well: `ROUTE-MISMATCH` is expected, then the switch as in step 3. No line at all means project hooks do not load in the cloud |
+| 5 | Ubuntu terminal: `cd ~/Maex-Voice-Agent && ~/.local/bin/claude-rc server --spawn worktree --no-create-session-in-dir --name ubuntu-workbench`. Project chat: `Start a thread in Ubuntu (ubuntu-workbench) on Sonnet 5.5 at effort medium: run only uname -a and printenv CLAUDE_EFFORT and report.` | The thread runs in a worktree under `~/Maex-Voice-Agent`, reports `Linux ... microsoft-standard-WSL2`, Sonnet 5.5 and `medium`, and no routing line appears |
+
+If step 1 shows nothing although a plain local session on `main` does, the project chat does not load hooks: say so here, and the coordinating chat has to apply the table on its own (`CLAUDE.md` section 6, "Threads").
+
+Results:
+
+| Date | App version | Step 1 | Step 2 | Step 3 | Step 4 | Step 5 |
+|---|---|---|---|---|---|---|
+| open | | | | | | |
+
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 14.10.2026 (`sync-main.sh`), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 15.10.2026 (`claude-rc`), 14.10.2026 (`sync-main.sh`), 06.10.2026 (the others).
