@@ -1,14 +1,14 @@
 # PCF – Maex Voice-Agent
 
 > **AI Call Intake for Delivery, Pickup, and Reservations**
-> Version 1.1 · 07.10.2026 · Status: released (Gate P passed) · E1 flipped on 07.10.2026: own voice layer, see section 3 and `docs/20_VOICE_LAYER.md`
+> Version 1.0 · 11.09.2026 · Status: released (Gate P passed)
 > This file is the Single Source of Truth for all project chats. Each chat reads it at the start and ends with a handover block (section 12).
 
 ---
 
 ## 1. Objective
 
-An AI agent answers calls on the landline of <Pilotbetrieb>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, resolves complaints by fixed rules from the database and passes what the rules do not cover to humans (D19, 07.10.2026; not built yet). The interface is simple enough that the team operates it under stress without explanation.
+An AI agent answers calls on the landline of <Pilotbetrieb>. It correctly handles reservations, pickups, and deliveries, hands off to kitchen, register, and team, and escalates complaints to humans. The interface is simple enough that the team operates it under stress without explanation.
 
 ### Guiding Principles (First Principles)
 
@@ -43,7 +43,7 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 **In scope**
 - Reservations, pickups, deliveries (zone, flat fee, minimum order value)
 - Inquiries from configuration: hours, delivery area, wait time, allergens
-- Complaint → resolved by fixed rules from the database, else a callback task (D19, 07.10.2026) · request for a human → handoff or callback task
+- Complaint or request for human → handoff or callback task
 - GUI for operations (tablet) and admin
 - Learning phase (offline shadow mode) and eval suite
 
@@ -60,35 +60,32 @@ Every call goes through 5 links: **Listen → Understand → Verify → Confirm 
 
 | # | Decision | Rationale | Status |
 |---|---|---|---|
-| E1 | ~~**Hybrid:** Telephony and speech processing via an EU-hosted specialist service; logic, DB, and GUI in-house~~ **Flipped 07.10.2026 (Maxi): no hosted voice platform, the voice layer is built in-house** (`docs/20_VOICE_LAYER.md`) | Until 07.10.2026: heavy lifting outsourced. Now: no platform fee, our code decides every sentence, independence from router and carrier. The price: estimated 5 to 8 weeks of work and uptime that is ours | set 11.09.2026, flipped 07.10.2026 |
-| E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | confirmed by Maxi 07.10.2026; the call mix is the owner's estimate (under 30 calls on weekdays, 30 to 60 on weekends), no measured baseline |
+| E1 | **Hybrid:** Telephony and speech processing via an EU-hosted specialist service; logic, DB, and GUI in-house | Heavy lifting (real-time audio, latency) is outsourced, error-critical logic built in-house, components remain swappable | set 11.09.2026 |
+| E2 | Stages: Reservations → Pickup → Delivery | Each stage introduces exactly one new challenge | Assumption, confirm in G0 via call mix |
 | E3 | Rollout: Shadow → Overflow → Primary | Risk grows only with evidence | Assumption, holds until veto |
 | E4 | Register stays booking master (TSE); agent DB for agent data only | Legal certainty, single source of truth for revenue | Assumption, holds until veto |
 | E5 | Pilot <Pilotbetrieb>, number stays; menu, hours, zones from DB | Transferable to other locations later | Assumption, holds until veto |
 | E6 | Training = knowledge base + eval suite + offline shadow mode, no model fine-tuning | Cheaper, measurable, legally simpler | Assumption, holds until veto |
 | E7 | AI discloses itself as AI at the start of the call | EU AI Act Art. 50, in effect since 02.08.2026 | Mandatory |
-| E8 | Human request, cancellation → team immediately, else callback task. **Complaint, changed 07.10.2026 (Maxi, D19):** the AI resolves it by fixed rules from the database; what the rules do not resolve is recorded and the team calls back | Trust, error containment; the goal is that the AI handles every call completely | changed 07.10.2026; complaints not built yet (T-10.11), the code still hands them to the team |
-| E15 | The own voice layer starts as a chain: speech-to-text, our conversation core, text-to-speech. Ear and mouth are swappable. A model that hears and speaks itself is measured against the chain on the same cases and replaces it only by numbers. A hosted voice platform is the last resort | The core and the eval suite stay as they are; research found speech-to-speech models weaker on tasks and not faster (not our numbers, T-10.10 measures) | set 07.10.2026 (Maxi) |
-| E16 | The product does not depend on a restaurant's router or carrier: the software speaks SIP. Nothing heavy runs in the restaurant. One model call per turn, no multi-agent setup on a live call | Sellable to other restaurants; cash-register PCs are weak; every extra model call costs time and adds a place to misunderstand | set 07.10.2026 (Maxi) |
+| E8 | Complaint, human request, cancellation → team immediately, else callback task | Trust, error containment | Assumption, holds until veto |
 
 ---
 
-## 4. Architecture (own voice layer since 07.10.2026)
+## 4. Architecture (Hybrid)
 
 ```text
 Caller
   │
   ▼
 Landline <Pilotbetrieb> (existing provider)
-  │  Test phase: our software is one more telephone at the router
-  │  Operation: forward or port to a SIP trunk
+  │  Redirect / SIP
   │  Mode: Shadow · Overflow · Primary
   ▼
-Own voice layer (our server, docs/20_VOICE_LAYER.md)
-  │  Asterisk → speech recognition → conversation core → voice synthesis
+Voice Platform (EU)
+  │  Speech recognition → Model → Voice synthesis
   │  Touch tones · Interruption · Transfer
   │
-  │  Tools in process (hot path)
+  │  Tools via HTTPS (hot path)
   ▼
 Agent API ─────────► Agent DB (EU)
   │                      ▲
@@ -143,8 +140,6 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 | 5 Overflow operation | AI only when no one picks up | G5 | M |
 | 6 Primary operation & ongoing | AI first, ongoing maintenance | Monthly review | Ongoing |
 
-**Security audit at every gate from G1 on** (Maxi, 15.10.2026): a gate also needs an audit per `docs/09_OPERATIONS_LEGAL.md` section 5 that covers the current code of the exposed areas, with no open P1 finding. The first call from outside the workbench and every component that becomes reachable from outside the host wait for one as well. The audit runs at these occasions only, not continuously.
-
 ### Stage 0 – Foundation
 **Goal:** Clarify facts, legal framework, budget, and vendors before code begins.
 - **C1** Current state capture: register and interface, receipt printer, phone provider and router, call volume and peak times, missed calls, call mix, menu format, reservation workflow, team workflows
@@ -155,8 +150,6 @@ Stages are the timeline, chats are work packages (section 10). Each stage delive
 
 **Gate G0 – Go/No-Go:** Budget approved · Legal framework clarified · Telephony path feasible · Vendor selected for PoC · Stage order confirmed per call mix
 
-Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path chosen for the test phase (`docs/20_VOICE_LAYER.md`), and "telephony path feasible" is shown by measurement at the pilot's router (T-10.1 and T-10.2), not on paper (Maxi, 07.10.2026). State per criterion: `docs/01_STATUS.md`, section Gates in Detail.
-
 ### Stage 1 – Reservation Through-cut
 **Goal:** The chain test number → AI → tool → DB → GUI runs once completely real. Reservation is the vehicle because it needs few data points and touches no money.
 - **C2** PoC on test number: latency, caller ID on redirect, touch tones, transfer, interruption
@@ -166,7 +159,7 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 - **C6** Operations GUI v0: reservations today, callbacks, switch "AI pause"
 - **C7 parallel** (after legal approval and testing): Begin recording real team calls with consent. Data collection in background from now on.
 
-**Gate G1:** 20 role-play calls (noise, dialect, interruption, human request) → 100% booked correctly or escalated cleanly · latency on target · cost per call measured · outage test: voice layer gone → call lands with team
+**Gate G1:** 20 role-play calls (noise, dialect, interruption, human request) → 100% booked correctly or escalated cleanly · latency on target · cost per call measured · outage test: platform gone → call lands with team
 
 ### Stage 2 – Pickup
 **Goal:** Menu understood reliably, order reaches kitchen correctly.
@@ -215,8 +208,6 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 ## 6. Vendor Criteria (C2)
 
-> Superseded for the voice platform on 07.10.2026 (E1 flipped). The must criteria still hold, now for the pieces of the own voice layer: speech-to-text, text-to-speech, model and telephone access (`docs/20_VOICE_LAYER.md`). The list stays as the checklist for the last resort, a hosted platform.
-
 **Must**
 - Data processing in the EU, DPA available
 - Good German speech recognition and voices
@@ -260,7 +251,7 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 ## 8. Legal Check (C1, before first real call)
 
-> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision, and the question of the data protection officer (D9) stays open.
+> Note: Not legal advice. Have a lawyer or data protection consultant review before go-live.
 
 - [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Recording:** Consent from customer and team (§201 StGB); announcement and way to object
@@ -275,20 +266,18 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 | # | Risk | Mitigation | Stage |
 |---|---|---|---|
-| R1 | Latency or unnatural voice → customers hang up | Measure latency in the spike (T-10.3), choose the speech engines accordingly | 1 |
+| R1 | Latency or unnatural voice → customers hang up | Measure latency in PoC, select vendor accordingly | 1 |
 | R2 | Dish names or dialect misunderstood | Vocabulary, numbers, keyboard, evals with real recordings | 2 |
-| R3 | Internet, server or voice layer down during peak | Fallback to team (`docs/20_VOICE_LAYER.md` §5, measured in T-10.2), alarm, "AI pause" | 1 |
+| R3 | Internet or platform down during peak | Fallback to team, alarm, "AI pause" | 1 |
 | R4 | Recording or AI disclosure legally challenged | Legal check before G0, vetted announcement text | 0 |
 | R5 | Menu or prices differ from register | one master, reconciliation test, "dish sold out" | 2 |
 | R6 | Wrong allergen information | DB values only, else team callback | 2 |
 | R7 | Costs spiral (spam, loops, long calls) | Max duration, loop protection, cost alarm | 1 |
-| R8 | Caller ID lost on redirect | An IP telephone at the router and a SIP trunk receive it, a forward set in the router does not (research, tested in T-10.1); fallback: ask for number | 1 |
+| R8 | Caller ID lost on redirect | Test in PoC; fallback: ask for number | 1 |
 | R9 | A change silently degrades quality | Regression evals, versioning | 2 |
 | R10 | Team doesn't use the GUI | 2-tap rule, team in role-plays | 1 |
-| R11 | Vendor lock-in or price increase | Logic, prompts, evals and since 07.10.2026 the voice layer in-house; speech engines behind ports | 0 |
+| R11 | Vendor lock-in or price increase | Logic, prompts, evals in-house, tools via webhook | 0 |
 | R12 | Double order from retry or network error | Idempotency key per order | 2 |
-| R13 | The self-built voice layer takes longer than estimated or stays unreliable (end of utterance, interruption, handing a call to the team) | Three spikes with go or no-go first; ways out in `docs/20_VOICE_LAYER.md` §13: SIP trunk, then a hosted platform | 1 |
-| R14 | The router path of the test phase fails or a router update changes it (handing over to the team, VPN, limit of two calls) | Test phase only; the entry for operation is a SIP trunk | 1 |
 
 ---
 
@@ -337,9 +326,6 @@ End: handover block per PCF section 12.
 ```
 
 ### C2 – Architecture, Telephony & Vendors
-
-> Superseded 07.10.2026: the comparison ran in Claude Code and ended with E1 flipped (`docs/20_VOICE_LAYER.md`). The prompt stays for the record.
-
 ```text
 Project Maex Voice-Agent · Chat C2 – Architecture, Telephony & Vendors (Stage 0–1)
 Read the current "PCF – Maex Voice-Agent" first (Google Drive or attachment). E1 Hybrid is set.
@@ -482,298 +468,6 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
-## Handover 05.10.2026 - demo run of the operations view, for local Claude Code
-Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migrations to
-       005, `scripts.seed`, the test menu from `evals/menu` (32 dishes), API on port 8000,
-       `/health` ok, `/gui/` 200. `sim.replay` puts calls on the board: two pickups (A1,
-       A2) under "Neue Bestellungen", a table for four under "Heute"; screenshot in
-       Chromium at 1280x800, the board fills without a reload. Run in a cloud session
-       outside Docker (Postgres 16 and a Python 3.12 venv), so `make up` itself was not
-       run here. Does not run: a real model (T-2.4, the rule-based stand-in answers), a
-       phone (C2), callbacks in the demo (both escalation cases transfer to the team,
-       none creates a callback).
-Artifacts: No code changed. This block, one line in docs/01_STATUS.md "Done", item 8 in
-       "What's next". Branch ccr-f287e6bf-i93pl3, PR #191: 62b2ef1 (handover) and
-       9f7756e (Codex review, two P2: demo commands pinned to an open day, one shell
-       command each, both run as written).
-Decisions: None by Maxi. Assumption: `evals/menu` is the demo menu, because `scripts.seed`
-       loads no menu and the real register data is not for a demo.
-Gate: G0 open, this session changes nothing for it.
-Open: 1. Locally: `git pull` on main, start `claude` in the repo, `/start`. Then the demo:
-          cp .env.example .env          (set the passwords)
-          make up && make migrate && make seed
-          docker compose exec api python -m scripts.import_menu evals/menu
-          open http://localhost:8000/gui/ in the browser, then in a second terminal
-          docker compose exec api python -m sim.cli --caller +497215551234 \
-             --now 2026-10-06T12:15+02:00
-          and order as the guest ("Ich möchte zwei Frühlingsrollen abholen").
-          Recorded calls instead of typing:
-          docker compose exec api python -m sim.replay --now 2026-10-06T12:15+02:00 \
-             evals/cases/abholung_0001_zwei_positionen_mit_option.json
-          2026-10-06 is a Tuesday, an open day in the seed data; any open day works.
-       2. Proposal, waits for Maxi's yes: `make demo` that imports the test menu and
-          replays a few calls on an open day, with a test and a README line.
-       3. T-3.5 on a real tablet needs the API reachable from the tablet (see Lessons).
-Lessons: Monday is the closed day in the seed data: on a Monday every sim call ends
-       "abandoned" and no order or reservation is written; pass `--now` on an open day.
-       The column "Heute" follows the real clock, not `--now`: a reservation shows only
-       when its date is the real today. `reservierung_0001` asks for "morgen", so replay
-       it with `--now` the day before today, and only when today is open. Orders show
-       whatever their date. Since PR #181 the dev host ports bind to 127.0.0.1 only
-       (`docker-compose.override.yml`): a tablet on the local network cannot reach port
-       8000 of the workbench; the tunnel from docs/13 §2 or a browser on the same machine
-       does. Without Docker: the Postgres cluster must be UTF8 (`initdb --encoding=UTF8
-       --locale=C.UTF-8`); a SQL_ASCII cluster fails at the first connect with "cannot
-       use a string pattern on a bytes-like object". Use Python 3.12 for the venv from
-       `api/requirements.txt`. `import_menu evals/menu` warns about aliases; expected.
-       The check `github-advanced-security` is red on PR #191 and on every PR until the
-       account's quota resets: the scanner stops with HTTP 402 "monthly quota exceeded"
-       before it reads the diff. Not a code finding; commented once on the PR.
-
-## Handover 04.10.2026 - text phone allergy guard (open point from PR #155)
-Status: Runs: on the open allergy question "Wogegen?" the text phone decides from the active
-       menu what a card number is. "B12", "Vitamin B12" and "Gegen E 621" are recorded as the
-       allergy note; "S12", "S zwölf", "Sushi zwölf", "Nummer 12", "die 25g" and "Eine Cola
-       bitte" stay an order and the question stays open. Merged into main as 67b3bcd (PR
-       #168, squash), reviewed by Codex on the merged head, CI green. Suite 2769 passed, 2
-       skipped; latency 22 passed; cases/ 26/26, hard metrics 0; targets/ 1/27 unchanged;
-       number eval 181/181. Does not run: a spaced name whose bare number is a dish on the
-       menu ("Vitamin B 12" next to dish 12) still asks again - it fails safe and stays as
-       built (card number scope, Maxi 04.10.).
-Artifacts: PR #168 -> main 67b3bcd. Code: sim/scripted_order.py (MenuNumbers,
-       _orders_something), sim/scripted_llm.py and sim/session.py (menu_numbers, wiring in
-       SimCall), evals/runner.py (model_factory takes now and menu), api/domain/menu/items.py
-       (active_numbers, card_format uses it). Tests: api/tests/test_sim_pickup.py,
-       api/tests/test_evals_runner.py. Docs: 01, 11 §sim, CHANGELOG. Along the way PR #170:
-       the two POSIX file-mode tests of the call log skip on Windows.
-Decisions: The scripted model gets the menu from its caller, not from the database itself:
-       SimCall and the eval runner hand in a callable, read only when an answer has to be
-       told apart from an order. Existence on the menu instead of the prefix alone: a bare
-       number inside a sentence counts only if the menu has it, otherwise "Gegen E 621" would
-       stay an order or "die 12 mit Reis" would become a kitchen note. A number form the menu
-       can have but lacks ("S13") still counts as an order: asking again is the safe side.
-       No new eval case: the unit tests were the red tests, cases/ stays at 26.
-Gate: G0 open, unchanged.
-Open: one worktree, branch and chat per item, independent of each other:
-       1. task/backup-restore (T-9.3) - recommended first: the real register import waits
-          on Maxi's go and must not run without a backup; `make backup` fails today. The
-          task definition is docs/07 (T-9.3) and docs/13 §4, not this line: scripts/backup.sh
-          and restore.sh, a daily pg_dump at 03:00 by cron, the dump encrypted onto a second
-          storage at another EU provider, and the restore really rehearsed once. Scripts and
-          a local rehearsal need nothing from Maxi. The second storage costs money and
-          depends on the hosting choice (D3): until it exists, T-9.3 stays open and the
-          session says so instead of ticking it off.
-       2. feat/n8n-team-events - n8n workflow for reservation.confirmed, callback.created and
-          order.handover_failed as push or SMS to the team, export to n8n/.
-       3. fix/sim-open-points - every text phone point in docs/01 "Open Points from
-          Reviews"; read the table, this list is only the index. Due with the next sim
-          change: option in two groups, rejection plus replacement in one answer, digit in
-          a dish name read as quantity, allergy in the opening sentence (ends in a callback
-          instead of an order). Due with T-2.4, can be left for the real model: reason for
-          a surcharge, whole pickup order taken while pickup is closed. Stand-in only, none
-          blocks.
-       4. docs/english-code-comments - translation sweep, runs in its own chat and worktree
-          (29 commits ahead, 11 behind main on 04.10., no PR yet); it has to merge main
-          first, sim/scripted_order.py changed under it.
-       Waits on Maxi, not on code: the real register import (steps in docs/01 "What's
-       next"), the paper check of the input slip (T-4.6), the tablet test (T-3.5), the voice
-       platform (C2, blocks T-2.4).
-       Cleanup done 04.10.: the worktrees of five merged branches are removed
-       (sim-allergy-guard, lunch-menus-m-vm, real-menu-import-dry-run, latency-serial,
-       Maex-Voice-Agent-wt-skip-posix-mode); their local branches remain. Left on purpose:
-       infallible-grothendieck-a345ac (PR #145 merged, but it holds a .env with its own
-       values that is in no other place; Maxi decides) and this handover's worktree until
-       its PR is merged.
-Lessons: docs/01_STATUS.md conflicts on every parallel PR: each one bumps the same version
-       line and adds a changelog line at the same place. PR #168 was merged with main four
-       times, and each merge moves the head past the commit Codex reviewed. Merge main right
-       before asking for the review and hold other merges until it is in. A new LLM factory
-       in evals/runner.py gets (now, menu); a ScriptedLLM built without `menu` knows no
-       prefix and would note "S12" as an ingredient. The test menu KARTE has no prefixes: use
-       the `sushi` fixture in test_sim_pickup.py for S and SM. Never undo a temporary edit
-       with `git checkout -- <file>`: it drops every uncommitted change of that file (it cost
-       the runner change once here); commit first or work on a copy. The database on port
-       5432 belongs to another worktree's stack; the tests build their own scratch databases.
-
-## Handover 04.10.2026 - T-4.12 card numbers with prefix and suffix g
-Status: Runs: card numbers with a prefix from the menu (S, SM) and the suffix g, in search,
-       import, tablet and text phone; merged into main as 26aaf8e (PR #155, squash). Number
-       eval 181/181, conversation suite cases/ 26/26, hard metrics 0, search_menu p95 under
-       300 ms with 260 dishes. Does not run yet: the first real import of the register menu
-       (only the converter dry run was done: all 50 Sushi and sauce dishes pass), lunch menus
-       M/VM (excluded in the converter), reading "s12" aloud on the voice platform (untested).
-Artifacts: PR #155 -> main 26aaf8e. Code: api/domain/menu/{numberwords,search,importer,items,
-       normalize,sold_out,pos_convert}.py, api/domain/ordering/correction.py, api/agent/
-       dispatch.py, sim/scripted_order.py, evals/number_eval.py. Evals: 68 new lines in
-       evals/cases/nummern.jsonl, abholung_0070 to 0074, eval menu with S1, S12, SM1, 45, 45g.
-       Docs: 01, 04 §search_menu, 07 (T-4.12), 08, 11, 14.
-Decisions: Maxi 26.09. - S, SM and G now; lunch menus M/VM later; no combinations like 35AE.
-       Prefixes are never in the code, they follow from the active numbers of the menu
-       (rule 1). A category word counts only if every number of that category carries a
-       prefix. Never a guess (rule 2): unknown prefix, number above 999 or wrong suffix is
-       not_found; a prefixed number directly next to a name asks back, separated by "und" or
-       a comma it is two positions. Import rejects prefixes that already mean a quantity,
-       marker or spoken word (x, st, nr, no, hm, ja, es, so, um, zu, da, du, er, ob).
-       Maxi 04.10. - everything written for the repo is English (CLAUDE.md §8, PR #166).
-Gate: G0 open, unchanged. T-4.12 itself is done; the real import is the next step towards
-       stage 2.
-Open: one worktree and branch per item; the items are independent and run in parallel,
-       the order of work is "What's next" in docs/01_STATUS.md:
-       1. fix/sim-allergy-guard - text phone: decide "is this an order?" from the menu's
-          CardFormat, so "B12" and "E 621" on "Wogegen?" are ingredients (open point docs/01).
-       2. task/real-menu-import-dry-run - converter plus import --dry-run against a local DB
-          with the register copies (gitignored), read the report; needs Maxi for
-          --allergens-confirmed-by and the register cleanup before the real run.
-       3. task/lunch-menus-m-vm - register groups 100 to 102; needs Maxi's decision on how
-          lunch menus are offered ("Menü eins" is not a category word today).
-       4. docs/english-code-comments - translation sweep, already running in its own
-          worktree; it branched from the old PR head and has to merge main first. It also
-          takes the German leftovers of T-4.12: the two older import messages, the eval
-          `why` notes and the T-4.12 text in docs/04, 07, 14.
-       5. chore/dependabot - PRs #159 and #160 were red only because of the latency flake
-          that #163 fixed; rebase and re-run.
-       Not startable in code: "s12" read aloud (needs the voice platform, C2), paper check of
-       the input slip (T-4.6) and the tablet test (T-3.5) need a person.
-Lessons: The eval suite v2 on main gives ids that are unique across cases/ and targets/ and
-       wants a level tag; check the highest id before adding a case. Codex reviews one
-       commit: every push needs a new "@codex review", and a docs-only note still moves the
-       head, so record a late P2 in an existing open point instead of a new commit. Latency
-       tests need @pytest.mark.latency and run serially. Two call-log tests fail only on
-       Windows (file permissions), green in CI. The venv lives at C:\v412; long paths break
-       sqlalchemy on Windows.
-
-## Handover 26.09.2026 - D2, D11, Vorbereitung T-4.11 (Kassen-Import)
-Status: Reine Klaerungs- und Doku-Sitzung, kein Code geaendert. D2 und D11 entschieden, die
-       Kasse (<Kassensystem>) ist Quelle fuer Karte und Preise und einziger Weg fuer Quittung
-       und Kuechenbon (TSE). Die Spalten der Kassendateien sind in docs/14 §Quelle Kasse dem
-       Importformat zugeordnet. Laeuft noch nicht: der Umwandler .dbf -> CSV (T-4.11), die
-       Umstellung der Druckbruecke auf den Eingabezettel (T-4.6), getrennte und senkbare
-       Wartezeiten (T-3.6).
-Artifacts: Branch claude/kassensystem-integration-fragen-3gf8zj, PR #148 (docs, CI gruen auf dem
-       ersten Push; drei Codex-P2 in 09cdef9 behoben und aufgeloest). docs/01 (v1.34.1), 02 §2a
-       §5 §6, 06 §3, 07 (T-3.6, T-4.6, T-4.11), 09, 13, 14 §Quelle Kasse.
-Decisions: D2 · Bons druckt nur die Kasse; die Druckbruecke bleibt unabhaengig und druckt bis zur
-       Kassenschnittstelle jede Bestellung als Eingabezettel "NICHT IN KASSE - bitte eingeben"
-       auf den Haupt-Bondrucker an der Kasse (80 mm), danach nur als Notweg (Regel 5).
-       Planungsannahme: <Kassenanbieter> arbeitet nicht mit, Uebertragung von Hand ·
-       D11 · Telefonpreis VK1_PREIS; VK2 (Abholer) und VK3 (Restaurant) heute gleich, Abweichung
-       von VK2 ist ein Fehler im Bericht · A_PREIS sind ungenutzte Aktionspreise · GROESSE ist die
-       Portionsgroesse (Suppen klein/gross) · DETAILS ungenutzt · Kategorie aus W_BEZEICH
-       (feiner, fuer "Gericht aus"-Alternativen) · Zutaten der Kasse = Extras mit Auf- oder
-       Abschlag -> item_options, freiwillig, ohne Default (passt zu D8) · Kassennummer als
-       eigenes Feld menu_items.pos_code (Codex PR #148), im Export fehlende Artikel werden nach
-       --dry-run per Schalter inaktiv, nie geloescht.
-Gate: G0 unveraendert offen (Anbieter, Budget, Rechtspruefung, C1). Block 3: T-4.11 neu, offen.
-Open: T-4.11 in einer neuen Sitzung. Maxi laedt genau diese sechs Dateien hoch, als Kopie nach
-       Kassenschluss: artikel.DBF, artikel.DBT, zutaten.DBF, zutaten.DBT, warengrp.dbf,
-       zutgrp.DBF (DBF und DBT gehoeren paarweise zusammen, ohne DBT sind die langen Felder wie
-       ZUTATEN leer; Demo-Ordner nicht). Ablage imports/kasse/ (gitignored). Zuerst lesen und
-       an den echten Suppenzeilen klaeren: wie GROESSE ("+-16") und GRPREIS1-6 Groessen und
-       Preise kodieren und wo "klein"/"gross" stehen; wie zutaten und zutgrp zusammenhaengen
-       und welche Artikel welche Zutatengruppe erlauben; ob artikel.DBF eine Sperr-Spalte hat.
-       Dann Umwandler (nur lesend, dbf-Lesen mit neuer Abhaengigkeit oder eigenem Leser -
-       entscheiden und begruenden), Migration pos_code, Schalter fuer fehlende Artikel,
-       Tests mit synthetischen .dbf, nie mit echten Daten im Repo.
-Lessons: Allergen-Buchstaben der Kasse laufen a bis n OHNE Luecke, LMIV und unsere DB
-       ueberspringen I, J, K, Q. l/m/n 1:1 uebernommen waere Sellerie/Senf/Sesam statt
-       Sulfite/Lupinen/Weichtiere, und die DB wuerde nicht widersprechen - nur ueber die
-       Umsetztabelle in docs/14 importieren, unbekannter Buchstabe ist Fehler · Allergene und
-       Zusatzstoffe sind in der Kasse heute nicht gepflegt (ein Testeintrag), also ueberall
-       "keine Auskunft", bis Maxi sie in der Kasse anhakt; ZUTATEN nie als Allergenquelle ·
-       BEZEICH ist auf 40 Zeichen abgeschnitten, der Agent liest das vor -> Warnung · Artikel.dbf
-       enthaelt EK_PREIS und Verkaufszaehler: Betriebsdaten, bleiben in imports/ · Telefon:
-       Fritz!Box 6591 Cable, drei Nummern, Zahl paralleler Gespraeche unbekannt; eine
-       Weiterleitung in der Box belegt zwei Kanaele (C2).
-
-## Handover 23.09.2026 - T-4.5, confirm fuer Bestellungen
-Status: Abholung laeuft ueber HTTP von der Suche bis zum Abholcode: search_menu, get_item_details,
-       draft_order (T-4.5, PR #124) und confirm fuer entity: order (PR #125) liegen auf main.
-       draft_order prueft Oeffnung, aktiv/aus, Optionen und Pflichtgruppen im Code, rechnet in
-       Cent und liefert readback; confirm vergibt A1, A2, ... je Betriebstag und gibt nur im Modus
-       primary sofort an die Kueche. search_menu fragt bei mehreren Positionen in einem Satz nach
-       (split_positions), statt eine still zu verlieren. 1470 Tests gruen, CI gruen, ruff sauber,
-       draft_order p95 22 ms, confirm Bestellung p95 36 ms. Laeuft noch nicht: der Agent kennt die
-       Menue-Tools nicht (agent/dispatch.py, prompts/tools_v1.md nur Stufe 1), die Freigabe im
-       Tablet (T-4.7) fehlt - ausserhalb von primary bleibt eine bestaetigte Bestellung dort
-       stehen -, kein n8n-Workflow empfaengt order.confirmed (T-4.6), kein echtes Modell (T-2.4),
-       keine Telefonie (C2), keine echte Karte (C1).
-Artifacts: PR #124 squash-gemergt (main = 303d1b7): api/domain/ordering/{draft,validation,pricing,
-       readback}.py, api/domain/menu/split.py, api/schemas/orders.py, api/tools/draft_order.py,
-       option_key in api/domain/menu/items.py, Import-Pruefung in importer.py, Guard in
-       search.py. PR #125 squash-gemergt (main = 4610355): api/domain/ordering/confirm.py,
-       api/domain/confirm.py, api/schemas/confirm.py. Tests: test_domain_draft_order,
-       test_tool_draft_order, test_domain_menu_split, test_domain_confirm_order. docs/01 (v1.25.0),
-       03, 04, 07, README, CHANGELOG.
-Decisions: Pflichtgruppe ohne Wahl wird erfragt, nie mit der Voreinstellung gefuellt - die waere
-       geraten (CLAUDE.md 2 Regel 2) · Replay-Schnappschuss in audit_log nur mit Kartendaten
-       (Nummer, Name, Warnungen), Name/Telefon/Hinweise aus orders/order_items - audit_log bleibt
-       laenger als die Bestellung, die Loeschung (T-6.7) setzt an orders an · ready_at auf die
-       volle Minute aufgerundet, in UTC · Kartenfehler (Optionen in zwei Schreibweisen,
-       uneinheitliches required, negativer Preis) gehen per service_unavailable ans Team statt
-       geraten zu werden, der Import lehnt sie ab · search_menu zerlegt nicht, verweigert aber
-       Saetze mit mehreren Positionen (ambiguous, Teile in message) · nur primary uebergibt sofort,
-       overflow/shadow/paused warten auf Freigabe · Abholcode "A"+Zahl je Mandant und Betriebstag,
-       Tag aus created_at, Advisory-Lock · confirm liest den Modus FOR SHARE, damit ein laufender
-       Not-Aus nicht ueberholt wird.
-Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Block 3 (Stufe 2,
-       Sammel-Issue #9): T-4.1 bis T-4.5 fertig, confirm fuer Bestellungen dazu; offen T-4.6
-       bis T-4.9.
-Open: Menue-Tools fuer den Agenten - search_menu, get_item_details und draft_order in
-       agent/dispatch.py (confirm fuer Bestellungen laeuft dort schon ueber den generischen
-       Adapter; es fehlen order_id im Zustand, der Prompt und sim/scripted_llm.py), mit
-       Nachfrage je Teil, wenn search_menu "mehrere Positionen" meldet. Danach T-4.7 (Freigabe
-       im Tablet), dann T-4.6 (Bon ueber n8n). Offener Punkt aus docs/01: "die 23 und Pho Bo"
-       (zweites Gericht ohne Menge) laesst sich ohne Karte nicht sicher trennen.
-Lessons: Codex liefert je Runde neue Randfaelle, solange eine Heuristik offen ist - sieben Runden
-       fuer split_positions. Lieber frueh die harte Grenze ziehen (im Zweifel ganz lassen und laut
-       nachfragen) und den Rest als Open Point festhalten · ein Replay-Schnappschuss ist schnell
-       gebaut und schnell ein Datenschutzproblem: was laenger lebt als die Bestellung, darf keine
-       Personendaten tragen - eigenes Review vor dem Merge hat das gefunden, nicht der Bot · der
-       Docker-Daemon fiel zweimal weg; Docker Desktop liegt unter
-       %LOCALAPPDATA%\Programs\DockerDesktop\, danach docker compose up -d · git checkout -- <datei>
-       setzt die ganze Datei zurueck, nicht nur die letzte Aenderung; fuer temporaere Messungen
-       lieber -s mit einer Kopie arbeiten · main ist im Haupt-Checkout belegt, im Worktree von
-       origin/main abzweigen.
-
-## Handover 22.09.2026 - T-4.4 (Review, Merge)
-Status: Karten-Tools vollstaendig bis zur Bestellung: search_menu (T-4.3, PR #117) und
-       get_item_details (T-4.4, PR #118) laufen gegen main. Beschreibung, Optionsgruppen und
-       Allergene zu einer menu_item_id; Allergene nur aus item_allergens, ohne gepflegte Zeile
-       known: false. 1359 Tests gruen gegen PostgreSQL 16 mit pg_trgm, CI gruen, ruff sauber,
-       get_item_details p95 8,7 ms gegen 300 ms Budget. Laeuft noch nicht: draft_order (T-4.5),
-       ein echtes Modell (T-2.4, weiterhin FakeLLM), die Telefonie (C2 offen), die echte Karte
-       (C1 offen).
-Artifacts: PR #118 squash-gemergt, main = 4933cee. Drei Commits auf dem Branch:
-       34d9c83 (Merge-Konflikt in docs/01 aufgeloest), 50c75a1 (beide Review-Befunde gefixt),
-       d1ee25d (docs/01 und docs/07 auf den neuen Vertrag). api/domain/menu/{details,items}.py,
-       api/schemas/menu.py, api/tools/get_item_details.py, api/tests/test_domain_menu_details.py
-       (19 Faelle), docs/04, docs/05, docs/01 auf v1.23.0, CHANGELOG. Danach in derselben Sitzung
-       erledigt: PR #122 (Compose-Mounts, hier angestossen) gemergt, main = d8561e8, und PR #120
-       (Jules zu T-4.3) geschlossen.
-Decisions: allergen_question als Pflichtfeld im Request, ohne Vorgabewert - der Satz zum Rueckruf
-       darf nur auf die Allergenfrage kommen, weil dasselbe Tool auch Optionen beantwortet; ein
-       Default entscheidet still und falsch, ein fehlendes Pflichtfeld faellt als invalid_input
-       sofort auf. Der Satz bleibt dabei im Code (CLAUDE.md 9), nur das Ob wandert zum Agenten
-       · confirmed_at als Ortsdatum des Mandanten statt UTC-Datum (CLAUDE.md 8), wie jedes andere
-       Domain-Modul es haelt · die beiden Codex-P1 nicht gefixt, sondern widerlegt: sie galten dem
-       search_menu-Entwurf, den 51192fc entfernt hat, und mains Fassung deckt beide durch
-       bestehende Regressionstests ab.
-Gate: G0 weiter offen, unveraendert (Anbieter, Budget, Rechtspruefung, C1). Interner Stand:
-       Block 3 (Stufe 2: Abholung, Sammel-Issue #9) bei 4 von 9 Aufgaben - T-4.1 bis T-4.4 fertig,
-       T-4.5 bis T-4.9 offen. T-4.5 ist der naechste Schritt und hat alle Abhaengigkeiten erfuellt.
-Open: T-4.5 draft_order mit allen Pruefungen und readback - alle Abhaengigkeiten erfuellt,
-       Testdaten reichen, bis die echte Karte da ist. Danach C1 Karten-CSV und der echte Import.
-       Nichts blockiert: die Nebenbaustellen dieser Sitzung sind zu.
-Lessons: Codex reviewt einen Commit, nicht die PR - die Zeile "Reviewed commit" steht im Kommentar
-       und zeigte hier auf db4be19d0, einen Stand, den ein spaeterer Merge laengst entfernt hatte.
-       Immer gegen den Head pruefen, bevor man einen Bot-Befund fixt, und nach Fix-Commits
-       @codex review auf den echten Head setzen · GitHub laesst den Autor seine eigene PR nicht
-       freigeben, ein Bot-Review landet als COMMENTED, nie als APPROVED - reviewDecision bleibt
-       auf eigenen PRs leer · der api-Container mountet weder sim/ noch Makefile, deploy/,
-       .claude/ oder docs/, deshalb melden make test vier Collection-Errors und make lint drei
-       falsche I001, waehrend die CI gruen ist; mit allen Pfaden dazugemountet sind es 1359 gruene
-       Tests. Das ist der Inhalt von PR #122.
-
 ## Handover 17.09.2026 – T-2.1, T-2.2
 Status: agent/ conversation core running: prompt.py, state.py, dispatch.py, loop.py, llm.py+FakeLLM
        (T-2.1); ladder.py (Verständnis-Leiter) and escalation.py (Sofort-Auslöser) wired into
@@ -835,9 +529,9 @@ Lessons: Claude Code web sandbox: Docker daemon doesn't start automatically and 
 |---|---|---|
 | POS system and interface | Stage 0 | C1 |
 | Phone provider, PBX, redirect | Stage 0 | C1 |
-| ~~Budget monthly and one-time~~ decided 07.10.2026: D17 in `docs/01_STATUS.md` | before G0 | C1 |
-| ~~Stage order final (call mix)~~ confirmed 07.10.2026: E2 | G0 | C0 |
-| ~~Vendor and hosting~~ decided 07.10.2026: own voice layer (E1), hosting D3 | G0 | C2 |
+| Budget monthly and one-time | before G0 | C1 |
+| Stage order final (call mix) | G0 | C0 |
+| Vendor and hosting | G0 | C2 |
 | DB tech | Stage 1 | C3 |
 | GUI tech | Stage 1 | C6 |
 | Voice: natural or synthetic | Stage 1 | C4 |
@@ -862,5 +556,4 @@ Lessons: Claude Code web sandbox: Docker daemon doesn't start automatically and 
 
 ## 16. Changelog
 
-- **v1.1 · 07.10.2026:** E1 flipped: own voice layer instead of a hosted platform (new E15, E16, `docs/20_VOICE_LAYER.md`). E2 confirmed, E8 changed for complaints (D19). Risks R13 and R14, vendor criteria and the C2 prompt marked superseded.
 - **v1.0 · 11.09.2026:** First version from C0 (loops 1–8). Contains objective, guiding principles, KPIs, hybrid architecture, stages 0–6 with gates, vendor criteria, data model, legal check, risks, and 8 work packages with start prompts.

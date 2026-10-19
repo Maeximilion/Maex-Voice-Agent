@@ -1,53 +1,23 @@
 """Gemeinsame Fixtures: Wegwerf-Datenbanken, damit die Entwicklungsdaten unberührt bleiben."""
 
-import os
 import time
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+import uuid
+from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 from alembic import command
+from alembic.config import Config
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 
-from api.models import ServiceConfig
+from api.config import settings
 
-# Von hier importieren die Migrationstests weiterhin alembic_config.
-from evals.scratch_db import (  # noqa: F401
-    ALEMBIC_INI,
-    alembic_config,
-    create_scratch_db,
-    drop_scratch_db,
-    migrate,
-)
+ALEMBIC_INI = Path(__file__).resolve().parents[2] / "db" / "alembic.ini"
+
 
 LATENZ_BUDGET_MS = 300
 LATENZ_RUNDEN = 3
-
-# Gesetzt von _latenz_messung, solange ein Test mit @pytest.mark.latency läuft.
-_latenz_test_aktiv = False
-
-
-def pytest_configure(config):
-    config.addinivalue_line(
-        "markers",
-        "latency: misst das Latenzbudget mit echter Uhr; läuft in CI seriell, "
-        "nicht unter xdist (docs/13 §6)",
-    )
-
-
-@pytest.fixture(autouse=True)
-def _latenz_messung(request):
-    """Latenztests messen nur seriell: unter xdist-Workern messen sie die Last."""
-    global _latenz_test_aktiv
-    if request.node.get_closest_marker("latency") is None:
-        yield
-        return
-    if os.environ.get("PYTEST_XDIST_WORKER"):
-        pytest.skip("Latenz misst nur seriell: pytest -m latency")
-    _latenz_test_aktiv = True
-    try:
-        yield
-    finally:
-        _latenz_test_aktiv = False
 
 
 def p95_ms(
@@ -64,16 +34,7 @@ def p95_ms(
     Ausreißer durch Last auf einem geteilten CI-Runner verteilen sich so auf mehr
     Stichproben (bei 60 Aufrufen bis zu 3), ein Überschreiten auch nur in jedem
     dritten Aufruf bleibt rot. Das Budget selbst wird nicht gelockert.
-
-    Mit echter Uhr nur in Tests mit @pytest.mark.latency; die laufen in CI seriell
-    nach der parallelen Suite, sonst misst p95 die Konkurrenz der xdist-Worker.
     """
-    # Jede Uhr aus dem Modul time ist echt (perf_counter, monotonic, ...); Fakes nicht.
-    if getattr(clock, "__module__", None) == "time" and not _latenz_test_aktiv:
-        pytest.fail(
-            "p95_ms mit echter Uhr braucht @pytest.mark.latency am Test",
-            pytrace=False,
-        )
     samples: list[float] = []
     for _ in range(rounds):
         for _ in range(n):
@@ -87,26 +48,34 @@ def p95_ms(
     return p95
 
 
-@contextmanager
-def scratch_db_at(revision: str) -> Iterator[str]:
-    """Eigene Wegwerf-Datenbank, auf `revision` migriert, danach gelöscht."""
-    url = create_scratch_db()
-    try:
-        command.upgrade(alembic_config(url), revision)
-        yield url
-    finally:
-        drop_scratch_db(url)
+def alembic_config(url: str) -> Config:
+    cfg = Config(str(ALEMBIC_INI))
+    cfg.set_main_option("sqlalchemy.url", url)
+    return cfg
 
 
-@pytest.fixture
+def create_scratch_db() -> str:
+    base_url = make_url(settings.database_url)
+    name = f"maex_test_{uuid.uuid4().hex[:8]}"
+    admin = create_engine(base_url, isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{name}"'))
+    admin.dispose()
+    # str(URL) maskiert das Passwort als "***", deshalb explizit rendern.
+    return base_url.set(database=name).render_as_string(hide_password=False)
+
+
+def drop_scratch_db(url: str) -> None:
+    scratch = make_url(url)
+    admin = create_engine(make_url(settings.database_url), isolation_level="AUTOCOMMIT")
+    with admin.connect() as conn:
+        conn.execute(text(f'DROP DATABASE "{scratch.database}" WITH (FORCE)'))
+    admin.dispose()
+
+
+@pytest.fixture(scope="module")
 def scratch_db_url():
-    """Leere Datenbank ohne Schema, für Migrationstests; je Test eine eigene.
-
-    Je Test, nicht je Modul: unter pytest-xdist landen die Tests einer Datei auf
-    verschiedenen Workern, und ein Test, der auf der Revision eines vorigen
-    aufbaut, sieht dort eine leere Datenbank. Umgekehrt ist `upgrade` auf eine
-    ältere Revision still ein No-op, ein Upgrade-Test prüfte dann nichts.
-    """
+    """Leere Datenbank ohne Schema, für Migrationstests."""
     url = create_scratch_db()
     try:
         yield url
@@ -114,49 +83,12 @@ def scratch_db_url():
         drop_scratch_db(url)
 
 
-@pytest.fixture(scope="session")
-def migrated_template_url():
-    """Einmal je Testlauf migriert; jeder Test bekommt davon eine Kopie."""
-    url = create_scratch_db(prefix="maex_tmpl")
-    try:
-        migrate(url)
-        yield url
-    finally:
-        drop_scratch_db(url)
-
-
 @pytest.fixture
-def bounded_db(migrated_db_url):
-    """`db.bounded_sessions` on the test's database, by bound in ms; every
-    engine it made is disposed after the test."""
-    from api.db import bounded_sessions
-
-    made = []
-
-    def at(ms: int):
-        made.append(bounded_sessions(ms, url=migrated_db_url))
-        return made[-1]
-
-    yield at
-    for sessions in made:
-        sessions.kw["bind"].dispose()
-
-
-@pytest.fixture
-def migrated_db_url(migrated_template_url):
+def migrated_db_url():
     """Frische Datenbank auf dem aktuellen Schema, je Test eine eigene."""
-    url = create_scratch_db(template=migrated_template_url)
+    url = create_scratch_db()
     try:
+        command.upgrade(alembic_config(url), "head")
         yield url
     finally:
         drop_scratch_db(url)
-
-
-def lift_party_limits(session, tenant_id) -> None:
-    """For tests about capacity, which fill a window with one large party. What
-    the agent books itself is limited (#252, `service_config`); those limits
-    have tests of their own (`test_domain_slots.py`)."""
-    config = session.get(ServiceConfig, tenant_id)
-    config.reservation_max_party_size = 1000
-    config.reservation_max_party_size_same_day = 1000
-    session.commit()

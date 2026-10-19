@@ -18,11 +18,5 @@ def check_slot_tool(
     body: CheckSlotRequest, session: Session = Depends(get_db)
 ) -> JSONResponse:
     bind_call_id(str(body.call_id))
-    result = check_slot(
-        session,
-        body.tenant_id,
-        body.reserved_for,
-        body.party_size,
-        call_id=body.call_id,
-    )
+    result = check_slot(session, body.tenant_id, body.reserved_for, body.party_size)
     return envelope.ok(result.model_dump(mode="json"), say=result.say)

@@ -46,7 +46,7 @@ def get_service_status(
     # Ein pausierter Service zählt nicht als offen, auch wenn sein Fenster läuft.
     enabled = [s for s in all_services() if s != DELIVERY or config.delivery_enabled]
     windows = {s: open_window_at(data, now, s, zone) for s in all_services()}
-    active = [w for w in (windows[s] for s in enabled) if w is not None]
+    active = [windows[s] for s in enabled if windows[s] is not None]
     is_open = bool(active)
     closes_at = max(closes for _, closes in active).astimezone(UTC) if is_open else None
     pickup_open = windows[PICKUP] is not None

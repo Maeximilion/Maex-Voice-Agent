@@ -65,9 +65,6 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     # Schalter "Gericht aus" (docs/06 §3): ausverkauft bis zu diesem Zeitpunkt.
     sold_out_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     description: Mapped[str | None] = mapped_column(Text)
-    # Artikelnummer genau wie in der Kasse ("35B"); `number` ist klein für die
-    # Suche. Eingabezettel und Kassenübergabe brauchen diese Schreibweise (T-4.11).
-    pos_code: Mapped[str | None] = mapped_column(Text)
 
 
 class ItemOption(UUIDPrimaryKey, Timestamps, Base):
@@ -97,9 +94,6 @@ class ItemOption(UUIDPrimaryKey, Timestamps, Base):
     required: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
-    # Warum die Option mehr kostet (Migration 003, T-4.10). Der Agent nennt nur
-    # diesen Satz, nie eine eigene Begruendung.
-    price_reason: Mapped[str | None] = mapped_column(Text)
 
 
 class ItemAllergen(Timestamps, Base):

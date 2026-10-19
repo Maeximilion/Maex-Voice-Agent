@@ -60,8 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    major, minor, patch = (int(g) for g in header_match.groups()[3:6])
-    old_version = (major, minor, patch)
+    old_version = tuple(int(g) for g in header_match.groups()[3:6])
     new_version = bump(old_version, args.level)
     new_version_str = ".".join(str(part) for part in new_version)
     today = datetime.now(BERLIN).strftime("%d.%m.%Y")

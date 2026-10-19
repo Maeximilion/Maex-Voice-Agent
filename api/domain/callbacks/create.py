@@ -7,7 +7,6 @@ der Datenbank, das Team sieht sie in der Oberfläche, n8n bekommt das Ereignis.
 
 import uuid
 from datetime import datetime
-from typing import cast
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -18,12 +17,7 @@ from api.domain.customers.phone import normalize_phone
 from api.events import enqueue
 from api.events.types import CALLBACK_CREATED
 from api.models import AuditLog, Call, Callback, Tenant
-from api.schemas.callbacks import (
-    CallbackReason,
-    CallbackStatus,
-    CallbackTask,
-    CreateCallbackRequest,
-)
+from api.schemas.callbacks import CallbackTask, CreateCallbackRequest
 
 ACTOR_AGENT = "agent"
 ACTION_CREATED = "callback.created"
@@ -138,13 +132,11 @@ def _open_for_call(session: Session, req: CreateCallbackRequest) -> Callback | N
 
 
 def _task(c: Callback) -> CallbackTask:
-    # The columns are text; ck_callbacks_status and ck_callbacks_reason keep them
-    # to these values, and CallbackTask checks them again.
     return CallbackTask(
         callback_id=c.id,
-        status=cast(CallbackStatus, c.status),
+        status=c.status,
         phone=c.phone,
-        reason=cast(CallbackReason, c.reason),
+        reason=c.reason,
         summary=c.summary,
         say=SAY_NOTED,
     )

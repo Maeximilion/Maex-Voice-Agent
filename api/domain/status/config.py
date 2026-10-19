@@ -1,7 +1,7 @@
 """Live-Schalter des Betriebs: service_config lesen und schreiben (docs/11 §domain/status).
 
 Die Kopfzeile der Betriebsansicht (docs/06 §3) schaltet hier: KI pausieren und
-wieder einschalten, Lieferung an und aus, Wartezeit je Service ändern. Jede Änderung
+wieder einschalten, Lieferung an und aus, Wartezeit erhöhen. Jede Änderung
 schreibt audit_log mit dem Wert davor und danach, damit sich später nachlesen
 lässt, wer um 18:05 die Lieferung abgestellt hat.
 
@@ -20,7 +20,7 @@ from api.models import AuditLog, ServiceConfig
 ACTOR_TABLET = "gui:tablet"
 ACTION_MODE = "service_config.mode_changed"
 ACTION_DELIVERY = "service_config.delivery_changed"
-ACTION_WAIT = "service_config.wait_changed"
+ACTION_WAIT = "service_config.wait_raised"
 
 PAUSED = "paused"
 # Wohin "KI einschalten" zurückkehrt, wenn nicht nachlesbar ist, was vor der
@@ -28,14 +28,6 @@ PAUSED = "paused"
 RESUME_FALLBACK = "shadow"
 # Obergrenze gegen Dauertippen: mehr als drei Stunden sagt die KI keinem Gast an.
 MAX_WAIT_MINUTES = 180
-# Untergrenze beim Senken: schneller als zehn Minuten verspricht die KI nichts,
-# auch wenn jemand mehrmals "-15" tippt (Annahme 26.09.2026, T-3.6).
-MIN_WAIT_MINUTES = 10
-# Service in der Kopfzeile -> Feld in service_config.
-WAIT_FIELDS = {
-    "pickup": "pickup_wait_minutes",
-    "delivery": "delivery_wait_minutes",
-}
 
 
 def _locked(session: Session, tenant_id: uuid.UUID) -> ServiceConfig:
@@ -136,41 +128,32 @@ def set_delivery(
     return config
 
 
-def change_wait(
-    session: Session,
-    tenant_id: uuid.UUID,
-    service: str,
-    minutes: int,
-    actor: str = ACTOR_TABLET,
+def raise_wait(
+    session: Session, tenant_id: uuid.UUID, minutes: int, actor: str = ACTOR_TABLET
 ) -> ServiceConfig:
-    """Ändert die Wartezeit eines Service um `minutes`, zwischen Unter- und Obergrenze.
+    """Erhöht Abhol- und Lieferwartezeit um denselben Betrag, gedeckelt.
 
-    Abholung und Lieferung getrennt (T-3.6, docs/06 §3): ist nur der Fahrer
-    unterwegs, bleibt die Abholzeit, wie sie ist. An einer Grenze angekommen,
-    ändert ein weiterer Tap nichts und schreibt nichts.
+    Beide zusammen, weil die Kopfzeile einen Knopf "Wartezeit +15" hat und nicht
+    zwei: wenn die Küche voll ist, ist sie für beide voll (docs/06 §3).
     """
-    field = WAIT_FIELDS.get(service)
-    if field is None:
-        raise InvalidInput(f"Unbekannter Service {service!r} fuer die Wartezeit")
-    if minutes == 0:
-        raise InvalidInput("Wartezeit ändert sich um 0 Minuten nicht")
+    if minutes <= 0:
+        raise InvalidInput(f"Wartezeit muss steigen, nicht {minutes} Minuten")
     config = _locked(session, tenant_id)
-    before = getattr(config, field)
-    # Die Grenze gilt nur in Tipp-Richtung: steht in der DB schon weniger als die
-    # Untergrenze, macht "-15" daraus nicht mehr (und "+15" über 180 nicht weniger).
-    if minutes < 0:
-        after = max(before + minutes, min(MIN_WAIT_MINUTES, before))
-    else:
-        after = min(before + minutes, max(MAX_WAIT_MINUTES, before))
+    before = (config.pickup_wait_minutes, config.delivery_wait_minutes)
+    after = tuple(min(value + minutes, MAX_WAIT_MINUTES) for value in before)
     if after != before:
         _audit(
             session,
             config,
             ACTION_WAIT,
             actor,
-            {"service": service, "step": minutes, "from": before, "to": after},
+            {
+                "step": minutes,
+                "from": {"pickup": before[0], "delivery": before[1]},
+                "to": {"pickup": after[0], "delivery": after[1]},
+            },
         )
-        setattr(config, field, after)
+        config.pickup_wait_minutes, config.delivery_wait_minutes = after
     session.commit()
     return config
 

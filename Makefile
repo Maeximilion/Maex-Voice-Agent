@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-record readme-assets backup lock
+.PHONY: up down logs migrate seed test lint fmt eval backup
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -9,8 +9,8 @@ down:
 logs:
 	docker compose logs -f api
 
-migrate:  ## Schema auf den neuesten Stand, as the owner of the schema (docs/13 §3)
-	bash scripts/migrate.sh upgrade head
+migrate:  ## Schema auf den neuesten Stand
+	docker compose exec api alembic -c db/alembic.ini upgrade head
 
 seed:     ## Testdaten für den Pilotbetrieb
 	docker compose exec api python -m scripts.seed
@@ -19,47 +19,13 @@ test:
 	docker compose exec api pytest -q
 
 lint:
-	docker compose exec api ruff check api scripts evals printbridge sim db
-	docker compose exec api mypy
+	docker compose exec api ruff check api scripts evals
 
 fmt:
-	docker compose exec api ruff format api scripts evals printbridge sim db
+	docker compose exec api ruff format api scripts evals
 
-# The runner works in the api container, which sees neither .git nor .github/: the run is
-# recorded here on the host, after it (docs/08 §4). Best effort: a failed record
-# prints a warning, and the target exits with the eval's own code.
-PYTHON ?= python3
-define eval_and_record
-	@start=$$(date +%s); \
-	docker compose exec api python -m evals.runner $(1) $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),); \
-	code=$$?; \
-	$(PYTHON) scripts/readme_assets.py auto-record --suite $(2) --since $$start \
-		|| echo "warning: the eval run was not recorded (docs/08 §4)" >&2; \
-	exit $$code
-endef
-
-eval:     ## Eval-Suite, optional TAGS=menu,noise; a full real-model run records itself on a branch
-	$(call eval_and_record,,cases)
-
-eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (docs/08 §1)
-	$(call eval_and_record,--cases evals/targets,targets)
-
-eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
-	python -m evals.number_eval
-
-eval-record: ## Record an eval report by hand and redraw (SUITE=targets, REPORT=<file>); make eval does it on its own
-	$(PYTHON) scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
-
-readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
-	$(PYTHON) scripts/readme_assets.py render
+eval:     ## Eval-Suite, optional TAGS=menu,noise
+	docker compose exec api python -m evals.runner $(if $(TAGS),--tags $(TAGS),) $(if $(MODEL),--model $(MODEL),)
 
 backup:
 	bash scripts/backup.sh
-
-# Rebuilds api/requirements.txt (exact versions with hashes) from api/requirements.in,
-# in the base image of api/Dockerfile: the pins are for Linux and Python 3.12.
-# Existing pins stay; ARGS="--upgrade-package jinja2" moves one, ARGS=--upgrade all.
-lock:     ## Lock file from api/requirements.in, optional ARGS=--upgrade
-	MSYS_NO_PATHCONV=1 docker run --rm --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
-		-v "$(CURDIR)/api:/work" -w /work python:3.12-slim sh -c \
-		"pip install --quiet --user --no-warn-script-location pip-tools==7.6.2 && python -m piptools compile --quiet --generate-hashes --strip-extras --output-file=requirements.txt $(ARGS) requirements.in"

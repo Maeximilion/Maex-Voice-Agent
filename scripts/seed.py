@@ -77,7 +77,7 @@ def seed(session: Session, tenant_name: str, timezone: str) -> SeedResult:
         for d in open_days
         for start, end, guests in CAPACITY_WINDOWS
     ]
-    session.add_all([*hours, *capacity])
+    session.add_all(hours + capacity)
     session.commit()
 
     return SeedResult(

@@ -1,32 +1,22 @@
 """confirm: der einzige Übergang von draft nach confirmed (docs/04 §confirm).
 
-Generisch über beide Vorgangsarten; die Bestellung liegt in
-`domain/ordering/confirm.py` (Abholcode, Übergabe je Modus).
+Generisch über beide Vorgangsarten. Bestellungen kommen mit Stufe 2, bis dahin
+kennt der Verteiler unten nur Reservierungen.
 """
-
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
-from api.core.time import utcnow
-from api.domain.ordering.confirm import confirm_order
-from api.domain.reservations.capacity import has_room, lock_capacity_days
-from api.domain.reservations.slots import ASK_OTHER_TIME
 from api.events import enqueue
 from api.events.types import RESERVATION_CONFIRMED
-from api.models import AuditLog, Call, Reservation, ServiceConfig, Tenant
+from api.models import AuditLog, Call, Reservation, Tenant
 from api.schemas.confirm import Confirmation, ConfirmRequest
 
 ACTOR_AGENT = "agent"
 SAY_STOERUNG = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 SAY_CANCELLED = (
     "Diese Reservierung wurde bereits storniert. Ich verbinde Sie mit dem Restaurant."
-)
-SAY_SEATS_GONE = (
-    f"Dieser Tisch ist in der Zwischenzeit leider vergeben worden. {ASK_OTHER_TIME}"
 )
 
 # Der Vorgang ist nach dem ersten confirm bestätigt; jeder weitere Aufruf liest
@@ -35,9 +25,7 @@ SAY_SEATS_GONE = (
 CONFIRMED = Confirmation(status="confirmed", handover="queued", pickup_code=None)
 
 
-def confirm(
-    session: Session, req: ConfirmRequest, now: datetime | None = None
-) -> Confirmation:
+def confirm(session: Session, req: ConfirmRequest) -> Confirmation:
     tenant = session.get(Tenant, req.tenant_id)
     if tenant is None:
         raise NotFound("Mandant unbekannt")
@@ -47,13 +35,11 @@ def confirm(
         raise NotFound("Anruf unbekannt", say=SAY_STOERUNG)
 
     if req.entity == "reservation":
-        return _confirm_reservation(session, req, tenant, now or utcnow())
-    return confirm_order(session, req)
+        return _confirm_reservation(session, req)
+    raise NotFound("Bestellungen gibt es erst ab Stufe 2", say=SAY_STOERUNG)
 
 
-def _confirm_reservation(
-    session: Session, req: ConfirmRequest, tenant: Tenant, now: datetime
-) -> Confirmation:
+def _confirm_reservation(session: Session, req: ConfirmRequest) -> Confirmation:
     # Zeilensperre bis zum Ende der Transaktion: zwei gleichzeitige Aufrufe auf
     # denselben Entwurf dürfen nicht zweimal in die Outbox schreiben.
     reservation = session.execute(
@@ -80,26 +66,6 @@ def _confirm_reservation(
         # Nichts zu schreiben; commit gibt nur die Sperre frei.
         session.commit()
         return CONFIRMED
-
-    # A draft holds its seats only while its call can confirm it (capacity.py).
-    # One that is confirmed after that, or after the capacity was lowered, may
-    # find them given away: check again, under the same lock as the making of
-    # a draft, so that two late confirmations cannot both see the window empty.
-    config = session.get(ServiceConfig, req.tenant_id)
-    if config is None:
-        raise NotFound("Mandant ohne service_config", say=SAY_STOERUNG)
-    zone = ZoneInfo(tenant.timezone)
-    lock_capacity_days(
-        session, req.tenant_id, reservation.reserved_for.astimezone(zone).date()
-    )
-    if not has_room(
-        session,
-        reservation,
-        zone,
-        now=now,
-        draft_lifetime=timedelta(seconds=config.max_call_seconds),
-    ):
-        raise Conflict("Plätze inzwischen vergeben", say=SAY_SEATS_GONE)
 
     reservation.status = "confirmed"
     session.add(

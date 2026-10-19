@@ -1,26 +1,20 @@
 """create_reservation: Entwurf anlegen, Satz zum Vorlesen zurückgeben. Erst confirm macht ihn gültig."""
 
 import uuid
-from datetime import datetime
-from typing import cast
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound, TeamDecides
+from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
-from api.domain.reservations.capacity import lock_capacity_days
 from api.domain.reservations.slots import check_slot
 from api.domain.reservations.spoken import spoken_date, spoken_party_size, spoken_time
 from api.models import AuditLog, Call, Reservation, Tenant
-from api.schemas.reservations import (
-    CreateReservationRequest,
-    ReservationDraft,
-    ReservationStatus,
-)
+from api.schemas.reservations import CreateReservationRequest, ReservationDraft
 
 ACTOR_AGENT = "agent"
 ACTION_DRAFT_CREATED = "reservation.draft_created"
@@ -39,7 +33,7 @@ def create_reservation(
     # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
-        return _replay(existing, req.tenant_id, req.call_id, zone)
+        return _replay(existing, req.tenant_id, zone)
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
@@ -51,17 +45,8 @@ def create_reservation(
     phone = normalize_phone(req.phone)
     note = (req.note or "").strip() or None
 
-    lock_capacity_days(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
-    slot = check_slot(
-        session,
-        req.tenant_id,
-        req.reserved_for,
-        req.party_size,
-        now=now,
-        call_id=req.call_id,
-    )
-    if slot.team_callback:
-        raise TeamDecides("party above what the agent books itself", say=slot.say)
+    _lock_business_day(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
+    slot = check_slot(session, req.tenant_id, req.reserved_for, req.party_size, now=now)
     if not slot.available:
         raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
 
@@ -88,7 +73,7 @@ def create_reservation(
         existing = _by_key(session, req.idempotency_key)
         if existing is None:
             raise
-        return _replay(existing, req.tenant_id, req.call_id, zone)
+        return _replay(existing, req.tenant_id, zone)
 
     session.add(
         AuditLog(
@@ -108,16 +93,24 @@ def create_reservation(
     return _draft(reservation, zone)
 
 
+def _lock_business_day(session: Session, tenant_id: uuid.UUID, day: date) -> None:
+    """Prüfen und Anlegen laufen je Betrieb und Tag nacheinander, sonst überbuchen
+    zwei gleichzeitige Anrufe dasselbe Fenster: beide lesen die Kapazität, bevor
+    einer schreibt. Die Sperre hält bis zum Ende der Transaktion."""
+    session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:key)::bigint)"),
+        {"key": f"reservations:{tenant_id}:{day.isoformat()}"},
+    )
+
+
 def _by_key(session: Session, key: str) -> Reservation | None:
     return session.scalar(select(Reservation).where(Reservation.idempotency_key == key))
 
 
 def _replay(
-    existing: Reservation, tenant_id: uuid.UUID, call_id: uuid.UUID, zone: ZoneInfo
+    existing: Reservation, tenant_id: uuid.UUID, zone: ZoneInfo
 ) -> ReservationDraft:
-    # Wie bei Bestellungen: nie die Reservierung eines anderen Anrufs (Codex PR
-    # #127, P1).
-    if existing.tenant_id != tenant_id or existing.call_id != call_id:
+    if existing.tenant_id != tenant_id:
         raise Conflict("Idempotenz-Schlüssel gehört zu einem anderen Vorgang")
     return _draft(existing, zone)
 
@@ -125,9 +118,7 @@ def _replay(
 def _draft(r: Reservation, zone: ZoneInfo) -> ReservationDraft:
     return ReservationDraft(
         reservation_id=r.id,
-        # The column is text; ck_reservations_status keeps it to these values,
-        # and ReservationDraft checks it again.
-        status=cast(ReservationStatus, r.status),
+        status=r.status,
         reserved_for=r.reserved_for,
         party_size=r.party_size,
         guest_name=r.guest_name,

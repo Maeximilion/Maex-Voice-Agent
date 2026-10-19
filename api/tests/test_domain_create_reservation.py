@@ -2,32 +2,17 @@
 
 import threading
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-from psycopg.errors import QueryCanceled
-from sqlalchemy import create_engine, func, select, text
-from sqlalchemy.exc import OperationalError
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound, TeamDecides
-from api.domain.calls import end_call
-from api.domain.confirm import confirm
-from api.domain.reservations import capacity as reservations_capacity
+from api.core.errors import Conflict, InvalidInput, NotFound
 from api.domain.reservations import create_reservation
-from api.models import (
-    AuditLog,
-    Call,
-    Capacity,
-    OpeningHours,
-    Reservation,
-    ServiceConfig,
-)
-from api.schemas.calls import EndCallRequest
-from api.schemas.confirm import ConfirmRequest
+from api.models import AuditLog, Call, Reservation
 from api.schemas.reservations import CreateReservationRequest
-from api.tests.conftest import lift_party_limits
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -135,35 +120,11 @@ def test_schluessel_eines_anderen_mandanten_ist_conflict(session, tenant_id, cal
         )
 
 
-def test_schluessel_eines_anderen_anrufs_ist_conflict(session, tenant_id, call_id):
-    """Codex PR #127, P1: wie bei Bestellungen - ein Schluessel eines anderen
-    Anrufs liefert nie dessen Reservierung."""
-    key = "gleicher-schluessel-anderer-anruf"
-    create_reservation(
-        session, request(tenant_id, call_id, idempotency_key=key), now=NOW
-    )
-    other_call = Call(
-        tenant_id=tenant_id,
-        external_session_id="ext-2",
-        started_at=NOW,
-        delete_after=DIENSTAG,
-    )
-    session.add(other_call)
-    session.commit()
-    with pytest.raises(Conflict):
-        create_reservation(
-            session, request(tenant_id, other_call.id, idempotency_key=key), now=NOW
-        )
-
-
-def test_voller_abend_ist_conflict_ohne_mittag(session, tenant_id, call_id):
-    lift_party_limits(session, tenant_id)
-    # T-1.14: Alternativen nur im selben Service; der Abend ist ganz voll.
+def test_voller_slot_ist_conflict_mit_alternativen(session, tenant_id, call_id):
     create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
-    other = _other_call(session, tenant_id)
     with pytest.raises(Conflict) as exc:
-        create_reservation(session, request(tenant_id, other, party_size=1), now=NOW)
-    assert "halb sieben ist leider nichts frei" in exc.value.say
+        create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
+    assert "halb sieben ist leider voll" in exc.value.say
     assert session.scalar(select(func.count()).select_from(Reservation)) == 1
 
 
@@ -245,7 +206,6 @@ def test_readback_morgen_eine_person_mit_hinweis(session, tenant_id, call_id):
 
 
 def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
-    lift_party_limits(session, tenant_id)
     draft = create_reservation(
         session,
         request(
@@ -263,224 +223,10 @@ def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
 
 
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
-    # For every other call: a call's own drafts do not count against it (#207).
-    lift_party_limits(session, tenant_id)
     create_reservation(session, request(tenant_id, call_id, party_size=39), now=NOW)
-    second, third = _other_call(session, tenant_id), _other_call(session, tenant_id)
-    create_reservation(session, request(tenant_id, second, party_size=1), now=NOW)
+    create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
     with pytest.raises(Conflict):
-        create_reservation(session, request(tenant_id, third, party_size=1), now=NOW)
-
-
-# --- A draft holds its seats only while its call can still confirm it (#250) ---
-
-
-def _other_call(session, tenant_id) -> uuid.UUID:
-    call = Call(
-        tenant_id=tenant_id,
-        external_session_id="ext-2",
-        started_at=NOW,
-        delete_after=DIENSTAG,
-    )
-    session.add(call)
-    session.commit()
-    return call.id
-
-
-def _call_limit(session, tenant_id) -> timedelta:
-    """From the database, like the code under test: no number of its own."""
-    return timedelta(seconds=session.get(ServiceConfig, tenant_id).max_call_seconds)
-
-
-def _hang_up(session, tenant_id, call_id, at: datetime) -> None:
-    end_call(
-        session,
-        EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome="abandoned"),
-        now=at,
-    )
-
-
-def test_a_draft_of_a_live_call_keeps_its_seats(session, tenant_id, call_id):
-    """While the guest is on the line nobody else gets the table."""
-    lift_party_limits(session, tenant_id)
-    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
-    other = _other_call(session, tenant_id)
-
-    with pytest.raises(Conflict):
-        create_reservation(session, request(tenant_id, other, party_size=2), now=NOW)
-
-
-def test_a_draft_of_an_ended_call_gives_its_seats_back(session, tenant_id, call_id):
-    """Forty seats asked for, then hung up at the read-back: the evening must
-    not stay full for everyone who calls after."""
-    lift_party_limits(session, tenant_id)
-    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
-    _hang_up(session, tenant_id, call_id, NOW + timedelta(minutes=1))
-    other = _other_call(session, tenant_id)
-
-    later = NOW + timedelta(minutes=2)
-    draft = create_reservation(
-        session, request(tenant_id, other, party_size=40), now=later
-    )
-
-    assert draft.status == "draft"
-
-
-def test_a_draft_past_the_call_limit_gives_its_seats_back(session, tenant_id, call_id):
-    """A call that never got its end event (process died, line dropped) must not
-    hold seats for good either: no call lasts longer than the limit."""
-    lift_party_limits(session, tenant_id)
-    create_reservation(session, request(tenant_id, call_id, party_size=40), now=NOW)
-    other = _other_call(session, tenant_id)
-    limit = _call_limit(session, tenant_id)
-
-    with pytest.raises(Conflict):
-        create_reservation(
-            session,
-            request(tenant_id, other, party_size=2),
-            now=NOW + limit - timedelta(seconds=1),
-        )
-    draft = create_reservation(
-        session,
-        request(tenant_id, other, party_size=2),
-        now=NOW + limit + timedelta(seconds=1),
-    )
-
-    assert draft.status == "draft"
-
-
-def test_a_confirmed_table_keeps_its_seats_after_the_call(session, tenant_id, call_id):
-    """Only drafts expire. A yes is a booking, whatever the call did after."""
-    lift_party_limits(session, tenant_id)
-    draft = create_reservation(
-        session, request(tenant_id, call_id, party_size=40), now=NOW
-    )
-    confirm(
-        session,
-        ConfirmRequest(
-            call_id=call_id,
-            tenant_id=tenant_id,
-            entity="reservation",
-            entity_id=draft.reservation_id,
-            idempotency_key=uuid.uuid4().hex,
-        ),
-        now=NOW,
-    )
-    _hang_up(session, tenant_id, call_id, NOW + timedelta(minutes=1))
-    other = _other_call(session, tenant_id)
-    much_later = NOW + _call_limit(session, tenant_id) * 3
-
-    with pytest.raises(Conflict):
-        create_reservation(
-            session, request(tenant_id, other, party_size=2), now=much_later
-        )
-
-
-# --- A call's own drafts do not count against it (#207) ---
-
-WEDNESDAY_EVENING = berlin(MITTWOCH, 19)
-
-
-def _seat(session, tenant_id, call, guests: int, status: str = "confirmed") -> None:
-    """What the window already holds, written directly."""
-    session.add(
-        Reservation(
-            tenant_id=tenant_id,
-            call_id=call,
-            status=status,
-            guest_name="Schmidt",
-            phone="+4900000000",
-            party_size=guests,
-            reserved_for=WEDNESDAY_EVENING,
-            idempotency_key=uuid.uuid4().hex,
-            created_at=NOW,
-        )
-    )
-    session.commit()
-
-
-def _six(tenant_id, call_id, **overrides) -> CreateReservationRequest:
-    wish = {"party_size": 6, "reserved_for": WEDNESDAY_EVENING, **overrides}
-    return request(tenant_id, call_id, **wish)
-
-
-def _confirm(session, tenant_id, call_id, reservation_id):
-    return confirm(
-        session,
-        ConfirmRequest(
-            call_id=call_id,
-            tenant_id=tenant_id,
-            entity="reservation",
-            entity_id=reservation_id,
-            idempotency_key=uuid.uuid4().hex,
-        ),
-        now=NOW,
-    )
-
-
-@pytest.mark.parametrize(
-    "correction",
-    [{"reserved_for": berlin(MITTWOCH, 19, 30)}, {"party_size": 8}],
-    ids=["new_time", "more_guests"],
-)
-def test_a_corrected_draft_does_not_count_against_its_own_call(
-    session, tenant_id, call_id, correction
-):
-    """30 of 40 seats booked, the guest drafts six and then corrects the time or
-    the party size. Ten seats are free: the corrected table is drafted, and the
-    yes books it. Before, the first draft stood in the way (36 + 6 > 40)."""
-    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
-    create_reservation(session, _six(tenant_id, call_id), now=NOW)
-
-    corrected = create_reservation(
-        session, _six(tenant_id, call_id, **correction), now=NOW
-    )
-
-    assert corrected.status == "draft"
-    assert _confirm(session, tenant_id, call_id, corrected.reservation_id).status == (
-        "confirmed"
-    )
-
-
-def test_the_draft_of_another_live_call_still_counts(session, tenant_id, call_id):
-    other = _other_call(session, tenant_id)
-    _seat(session, tenant_id, other, 30)
-    _seat(session, tenant_id, other, 6, status="draft")
-
-    with pytest.raises(Conflict):
-        create_reservation(session, _six(tenant_id, call_id), now=NOW)
-
-
-def test_a_confirmed_table_of_the_same_call_still_counts(session, tenant_id, call_id):
-    """A second table in the same call: the first is booked, not replaced."""
-    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
-    first = create_reservation(session, _six(tenant_id, call_id), now=NOW)
-    _confirm(session, tenant_id, call_id, first.reservation_id)
-
-    with pytest.raises(Conflict):
-        create_reservation(
-            session,
-            _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, 30)),
-            now=NOW,
-        )
-
-
-def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
-    """A call may hold two drafts now, but `confirm` counts every confirmed
-    seat: only one of them can be booked."""
-    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
-    first = create_reservation(session, _six(tenant_id, call_id), now=NOW)
-    second = create_reservation(
-        session,
-        _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, 30)),
-        now=NOW,
-    )
-
-    assert _confirm(session, tenant_id, call_id, first.reservation_id).status == (
-        "confirmed"
-    )
-    with pytest.raises(Conflict):
-        _confirm(session, tenant_id, call_id, second.reservation_id)
+        create_reservation(session, request(tenant_id, call_id, party_size=1), now=NOW)
 
 
 def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
@@ -509,20 +255,15 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
         tenant = uuid.UUID(
             seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
         )
-        lift_party_limits(s, tenant)
-        # One call per request: a call's own drafts do not count against it (#207).
-        calls = [
-            Call(
-                tenant_id=tenant,
-                external_session_id=f"ext-{n}",
-                started_at=NOW,
-                delete_after=DIENSTAG,
-            )
-            for n in range(8)
-        ]
-        s.add_all(calls)
+        call = Call(
+            tenant_id=tenant,
+            external_session_id="ext",
+            started_at=NOW,
+            delete_after=DIENSTAG,
+        )
+        s.add(call)
         s.commit()
-        call_ids = [call.id for call in calls]
+        call = call.id
 
     start = threading.Barrier(8)
     results: list[object] = []
@@ -535,10 +276,7 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
                 create_reservation(
                     own,
                     request(
-                        tenant,
-                        call_ids[n],
-                        idempotency_key=f"parallel-{n}",
-                        party_size=10,
+                        tenant, call, idempotency_key=f"parallel-{n}", party_size=10
                     ),
                     now=NOW,
                 )
@@ -564,96 +302,3 @@ def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):
 
     assert results.count("ok") == 4, f"erwartet 4 Buchungen, bekam {results}"
     assert booked == 40, f"Fenster mit 40 Plätzen ist mit {booked} Gästen überbucht"
-
-
-def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
-    """Review PR #152: Montag 23:30 und Dienstag 00:30 liegen im selben Fenster
-    18:00-01:00. Haelt ein Anruf die Sperre fuer Montag 23:30, muss ein zweiter fuer
-    Dienstag 00:30 warten; mit einer Sperre je Kalendertag liefe er parallel und
-    ueberbuchte das Fenster. Deterministisch statt mit Threads: B bekommt 300 ms."""
-    engine = create_engine(migrated_db_url)
-    montag = date(2026, 9, 14)
-    with Session(engine) as s:
-        tenant = uuid.UUID(
-            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
-        )
-        s.add_all(
-            [
-                OpeningHours(
-                    tenant_id=tenant,
-                    weekday=0,
-                    opens_at=time(18),
-                    closes_at=time(1),
-                    service="dinein",
-                ),
-                Capacity(
-                    tenant_id=tenant,
-                    weekday=0,
-                    slot_start=time(18),
-                    slot_end=time(1),
-                    max_guests=20,
-                ),
-            ]
-        )
-        call = Call(
-            tenant_id=tenant,
-            external_session_id="ext",
-            started_at=NOW,
-            delete_after=DIENSTAG,
-        )
-        s.add(call)
-        s.commit()
-        call = call.id
-
-    with Session(engine) as a, Session(engine) as b:
-        # A prueft gerade Montag 23:30, die Transaktion ist offen.
-        reservations_capacity.lock_capacity_days(a, tenant, montag)
-        b.execute(text("SET LOCAL statement_timeout = 300"))
-        with pytest.raises(OperationalError) as waited:
-            create_reservation(
-                b,
-                request(
-                    tenant,
-                    call,
-                    idempotency_key="nacht-b",
-                    reserved_for=berlin(DIENSTAG, 0, 30),
-                ),
-                now=berlin(montag, 8),
-            )
-        # Genau das Warten auf die Sperre, nicht irgendein anderer DB-Fehler.
-        assert isinstance(waited.value.orig, QueryCanceled)
-        b.rollback()
-        a.rollback()
-    engine.dispose()
-
-
-@pytest.mark.parametrize(
-    ("day", "party_size", "heard"),
-    [
-        (DIENSTAG, 6, "sechs Personen noch heute"),  # same day, above 5
-        (MITTWOCH, 9, "neun Personen kann ich"),  # any day, above 8
-        (date(2026, 12, 15), 2, "höchstens 90 Tage im Voraus"),  # day 91
-    ],
-)
-def test_beyond_the_limits_of_the_restaurant_nothing_is_drafted(
-    session, tenant_id, call_id, day, party_size, heard
-):
-    wish = request(
-        tenant_id, call_id, party_size=party_size, reserved_for=berlin(day, 18, 30)
-    )
-    with pytest.raises(Conflict) as exc:
-        create_reservation(session, wish, now=NOW)
-    assert heard in exc.value.say
-    # A table for the team is told apart from a wish nobody can book.
-    assert isinstance(exc.value, TeamDecides) is ("Personen" in heard)
-    assert session.scalar(select(func.count()).select_from(Reservation)) == 0
-
-
-@pytest.mark.parametrize(("day", "party_size"), [(DIENSTAG, 5), (MITTWOCH, 8)])
-def test_at_the_limits_the_agent_drafts_the_table(
-    session, tenant_id, call_id, day, party_size
-):
-    wish = request(
-        tenant_id, call_id, party_size=party_size, reserved_for=berlin(day, 18, 30)
-    )
-    assert create_reservation(session, wish, now=NOW).party_size == party_size

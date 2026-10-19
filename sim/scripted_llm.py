@@ -2,10 +2,9 @@
 
 `api/agent/llm.py` hält die Schnittstelle (`LLMClient`) und ein Testdouble für die
 Loop-Unit-Tests bereit; das hier ist der skriptfähige Fake für `sim/`, den sein
-Docstring ankündigt. Er versteht die Abläufe aus `prompts/system_v2.md`: Status
-abfragen, dann entweder Reservierungsangaben einsammeln, `check_slot`,
-`create_reservation`, vorlesen, auf ein Ja hin `confirm` - oder eine Abholung
-(`sim/scripted_order.py`).
+Docstring ankündigt. Er versteht genau den Ablauf aus `prompts/system_v1.md`:
+Status abfragen, Reservierungsangaben einsammeln, `check_slot`, `create_reservation`,
+vorlesen, auf ein Ja hin `confirm`.
 
 Er ist ausdrücklich **kein** Sprachmodell: er rät nichts, er erkennt Muster. Wo er
 nichts erkennt, meldet er einen Fehlversuch (`understanding_failure`) und überlässt
@@ -16,18 +15,12 @@ auch hier ausschließlich aus den Tool-Ergebnissen, nie aus diesem Modul
 
 import json
 import re
-from collections.abc import Callable
-from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
-from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from api.domain.menu.wishes import denies_allergy, wish_candidates
-from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -42,37 +35,15 @@ QUESTIONS = {
 
 GREETING = (
     "Guten Tag, hier ist der KI-Assistent des Restaurants. "
-    "Ich kann einen Tisch für Sie reservieren oder eine Bestellung zum Abholen aufnehmen."
+    "Ich kann einen Tisch für Sie reservieren."
 )
 SAY_CONFIRMED = "Ist notiert. Vielen Dank für den Anruf und bis dann."
 SAY_ASK_AGAIN = "Was soll ich ändern?"
 SAY_HANDOVER = "Ich gebe an das Team weiter."
-# After a number the core did not take. Why it did not is not known here, the
-# most likely reason is named.
-SAY_PHONE_AGAIN = (
-    "Die Rufnummer brauche ich bitte mit Vorwahl. "
-    "Unter welcher Nummer sind Sie erreichbar?"
-)
 
-# Anliegen, die dieses Skript nicht selbst kann: Lieferung (Version 2 noch nicht),
-# Allergene und das Vorlesen der Karte (dafuer ist ein echtes Modell noetig).
-OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
-# Waehrend einer Bestellung faellt "Karte" natuerlich ("die 23 von der Karte").
-# Die Frage nach Allergenen geht ans Team; die eigene Allergie ("ich habe eine
-# Erdnussallergie") ist ein Hinweis zur Position (E14, Codex PR #139).
-OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
-# In the sentence that announces the pickup the guest's own allergy may be a
-# note on the dish named with it (Codex PR #139); everything else in that
-# sentence is judged like the call before the order and like the order itself.
-ALLERGY_STEM = "allergi"
-# The parts of an opening sentence, with what joins them kept.
-_PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
-PICKUP = ("abhol", "mitnehmen")
-# "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
-# Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
-ORDER_WORD = ("bestell",)
-RESERVATION_WORDS = ("tisch", "reserv", "platz", "personen")
-SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb dessen, was die KI selbst kann."
+# Anliegen, die Version 1 nicht kann (prompts/system_v1.md §Harte Regeln).
+OUT_OF_SCOPE = ("speisekarte", "abhol", "liefer", "allergi", "karte")
+SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb von Version 1."
 
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
 NO = ("nein", "nicht", "falsch", "doch nicht", "anders")
@@ -99,12 +70,6 @@ _NAME = re.compile(
 )
 # Mindestens sieben Ziffern, damit Uhrzeit ("19:30") und Datum ("22.09.") nicht als
 # Rufnummer durchgehen. Der Punkt fehlt deshalb bewusst in der Zeichenklasse.
-# Nur die eindeutigen Einleitungen eines Namens. Das nackte "auf" von _NAME ist in
-# einem Gerichtnamen eine Praeposition ("Ente auf Reis") (Codex PR #133, P2).
-_NAME_CLAUSE = re.compile(
-    r"(?i:auf den namen|mein name ist|name ist|ich heiße|ich heisse)\s+"
-    r"[A-ZÄÖÜ][^\s,.;!?]{1,40}"
-)
 _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
 _TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _TIME_DOT = re.compile(r"\b(\d{1,2})\.(\d{2})\s*uhr\b", re.IGNORECASE)
@@ -118,49 +83,20 @@ class ScriptedLLM:
 
     `now` und `timezone` kommen von außen, damit ein Replay denselben Satz zweimal
     gleich versteht ("morgen um 19 Uhr" ist sonst vom Kalender des Rechners abhängig).
-    `menu` reads the card numbers of the active menu for the pickup script
-    (`MenuNumbers`); the caller has the database, this module does not.
     """
 
-    def __init__(
-        self,
-        *,
-        now: datetime,
-        timezone: str,
-        menu: Callable[[], MenuNumbers] | None = None,
-    ):
+    def __init__(self, *, now: datetime, timezone: str):
         self._now = now
-        self._menu = menu
         self._zone = ZoneInfo(timezone)
         self._status_checked = False
         self._greeted = False
         # Das zuletzt gehoerte Anliegen ausserhalb von Version 1, bis der Rueckruf
         # steht (Codex-Review PR #104, P1).
         self._out_of_scope_request: str | None = None
-        # Abholung, sobald der Gast sie nennt; die letzte Suchanfrage, weil das
-        # Tool-Ergebnis sie nicht mitliefert.
-        self._pickup: PickupScript | None = None
-        self._last_query = ""
-        # "Ich moechte die 23 zum Abholen": der erste Satz nennt schon ein Gericht.
-        # Er wird nach der Statusabfrage gesucht, die Begruessung davor gesprochen
-        # (Codex PR #130, P2).
-        self._opening_query: str | None = None
-        self._opening_prefix: str | None = None
-        # The sentence that announced the pickup together with the guest's own
-        # allergy, until the search shows whether the allergy reached a dish.
-        self._opening_allergy: str | None = None
 
     def next_turn(
-        self,
-        system_prompt: str,
-        state_json: dict[str, Any],
-        input_text: str,
-        *,
-        timeout: float | None = None,  # rules answer at once: nothing to cut off
+        self, system_prompt: str, state_json: dict[str, Any], input_text: str
     ) -> LLMTurn:
-        if state_json.get("greeted"):
-            # The phone line said the disclosure already (telephony/handler.py).
-            self._greeted = True
         result = _as_tool_result(input_text)
         if result is not None:
             return self._after_tool(state_json, result)
@@ -172,67 +108,15 @@ class ScriptedLLM:
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
-        if self._pickup is not None and self._pickup.readback_for:
-            yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
-            return self._pickup.on_readback(yes, text)
-        if state.get("stage") == "readback_pending" and self._pickup is None:
+        if state.get("stage") == "readback_pending":
             return self._after_readback(state, text, slots, patch)
 
-        wants_pickup = self._pickup is None and _wants_pickup(text)
-        # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
-        # Judged on the clause the search classifies, not with the dish in
-        # front ("Ente auf Thai Art").
-        clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
-        # Also a denial in a part of its own, before the dish: "Ich habe keine
-        # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
-        # moechte Pho Bo zum Abholen" (Codex PR #330).
-        parts = _PARTS.split(text)
-        named = [part for part in parts[::2] if ALLERGY_STEM in part.lower()]
-        denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
-            bool(named) and all(denies_allergy(part) for part in named)
-        )
-        # The dish is searched without a denial said in a part of its own,
-        # and without the separator in front of it (or behind it, first):
-        # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
-        # "und" (Codex PR #330).
-        dropped = {
-            n
-            for n in range(0, len(parts), 2)
-            if ALLERGY_STEM in parts[n].lower() and denies_allergy(parts[n])
-        }
-        dropped |= {n - 1 if n else n + 1 for n in set(dropped)}
-        dish_text = "".join(p for n, p in enumerate(parts) if n not in dropped)
-        # Only a statement next to a dish: a question about the dish goes to
-        # the team (Codex PR #178). Whether the allergy reached a position is
-        # checked on the search result (`_after_tool`).
-        own_allergy = (
-            wants_pickup
-            and ALLERGY_STEM in text.lower()
-            and not denied
-            and "?" not in text
-            and _opening_dish(text) is not None
-        )
-        stems: tuple[str, ...] = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
-        if wants_pickup:
-            stems = OUT_OF_SCOPE_IN_ORDER + tuple(
-                s
-                for s in OUT_OF_SCOPE
-                if not ((own_allergy or denied) and s == ALLERGY_STEM)
-            )
-        if _mentions_stem(text, stems) or self._out_of_scope_request:
+        if _mentions_stem(text, OUT_OF_SCOPE) or self._out_of_scope_request:
             # Vor der Statusabfrage, sonst verschluckt der erste Zug den Sonderfall.
             # Und gemerkt, bis der Rückruf steht: der nächste Zug enthält oft nur noch
             # die Rufnummer und träfe kein Stichwort mehr (Codex-Review PR #104, P1).
             self._out_of_scope_request = self._out_of_scope_request or text
             return self._out_of_scope(slots, patch)
-
-        started_pickup = False
-        if wants_pickup:
-            self._pickup = PickupScript(self._menu)
-            self._opening_allergy = text if own_allergy else None
-            started_pickup = True
-            if not self._status_checked:
-                self._opening_query = _opening_dish(dish_text)
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -242,26 +126,7 @@ class ScriptedLLM:
                 tool_call=ToolCall("get_service_status"), state_patch=patch or None
             )
 
-        if self._pickup is not None:
-            if started_pickup:
-                # Abholung erst nach der Statusabfrage genannt ("Guten Tag", dann
-                # "die 23 zum Abholen"): wie im ersten Satz nur das Gericht suchen,
-                # "zum Abholen" verdeckte sonst die 23 (Codex PR #130, P2). Ohne
-                # Gericht die Frage nach der Bestellung, das Gesagte (Name,
-                # Nummer) bleibt im state_patch (Review PR #133).
-                dish = _opening_dish(dish_text)
-                if dish is None:
-                    return self._pickup.start(patch=patch)
-                text = dish
-            turn = self._pickup.on_customer(text, slots, patch)
-            self._remember_query(turn)
-            return turn
-
         return self._next_step(slots, patch=patch, understood=bool(patch))
-
-    def _remember_query(self, turn: LLMTurn) -> None:
-        if turn.tool_call and turn.tool_call.name == "search_menu":
-            self._last_query = turn.tool_call.args["query"]
 
     def _after_readback(
         self,
@@ -315,35 +180,7 @@ class ScriptedLLM:
         say = result.get("say")
         slots = state.get("slots", {})
 
-        if name == "search_menu" and self._opening_allergy:
-            request, self._opening_allergy = self._opening_allergy, None
-            if not _allergy_on_a_dish(result):
-                # The allergy reached no position (no dish, not on the menu,
-                # sold out, several to choose from): it must not get lost, the
-                # team calls back as before the order (review PR #178).
-                prefix, self._opening_prefix = self._opening_prefix, None
-                self._out_of_scope_request = request
-                turn = self._out_of_scope(slots, {})
-                return replace(turn, say=_join(prefix, turn.say)) if turn.say else turn
-        if name == "search_menu" and self._opening_prefix is not None:
-            return self._after_opening_search(result, slots)
         if not result.get("ok"):
-            if name == "search_menu" and self._pickup is not None:
-                # War es die Antwort auf eine Rueckfrage, gilt die Frage weiter.
-                reopened = self._pickup.on_search_failed(say)
-                if reopened is not None:
-                    return reopened
-                # Was vor einer nachgeholten Suche verstanden wurde, geht mit.
-                say = _join(self._pickup.take_carry(), say)
-            # The core refused the call for the guest's name or number, a
-            # number without its area code for one (agent/guards.py): ask for
-            # it again. Handing over instead ended outside the opening hours
-            # with a promise and neither a transfer nor a callback (Codex
-            # PR #244, P1). The hint says so, the state does not: with a
-            # caller ID it always holds a number (review after it, P1).
-            again = self._asked_again(result.get("hint"))
-            if again is not None:
-                return again
             return self._after_failure(name, say)
         if name == "create_callback":
             self._out_of_scope_request = None
@@ -351,34 +188,9 @@ class ScriptedLLM:
         if name == "get_service_status":
             if self._out_of_scope_request:
                 return self._out_of_scope(slots, {})
-            if self._pickup is not None:
-                prefix = _join(self._greeting_once(), say)
-                if self._opening_query:
-                    self._opening_prefix = prefix or ""
-                    self._last_query, self._opening_query = self._opening_query, None
-                    return LLMTurn(
-                        tool_call=ToolCall("search_menu", {"query": self._last_query})
-                    )
-                return self._pickup.start(prefix)
             return self._next_step(slots, prefix=self._greeting_once(), extra=say)
-        if self._pickup is not None:
-            if name == "search_menu":
-                return self._pickup.on_search(self._last_query, data, slots, say)
-            if name == "draft_order":
-                return self._pickup.on_draft(data)
-            if name == "confirm" and "pickup_code" in data:
-                return self._pickup.on_confirmed(data)
         if name == "check_slot":
             if data.get("available"):
-                # The state is what the core took. A detail this script read
-                # from the sentence may be missing there: the core keeps no
-                # name or number the guest did not say as such, a number
-                # without its area code for one (agent/guest_details.py).
-                missing = _missing(slots)
-                if missing:
-                    return LLMTurn(
-                        say=QUESTIONS[missing], understanding_failure=missing
-                    )
                 return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
             # Alternativen stehen im vorgeschriebenen Satz aus dem Code (docs/05 §5).
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
@@ -387,35 +199,6 @@ class ScriptedLLM:
         if name == "confirm":
             return LLMTurn(say=SAY_CONFIRMED)
         return LLMTurn(say=say or SAY_HANDOVER)
-
-    def _after_opening_search(
-        self, result: dict[str, Any], slots: dict[str, Any]
-    ) -> LLMTurn:
-        """Die Suche mit dem Gericht aus dem ersten Satz, die Begruessung davor.
-        Gesucht wird nur, wenn der Satz ein Gericht nennt (`_opening_dish`); findet
-        die Suche es nicht, hoert der Gast das ("Schnitzel" gibt es nicht), statt
-        nur gefragt zu werden, was er bestellen moechte (Codex PR #133, P2)."""
-        assert self._pickup is not None
-        prefix, self._opening_prefix = self._opening_prefix or None, None
-        if not result.get("ok"):
-            say = result.get("say")
-            if not say:
-                return self._pickup.start(prefix)
-            return LLMTurn(say=_join(prefix, say))
-        turn = self._pickup.on_search(
-            self._last_query, result.get("data") or {}, slots, result.get("say")
-        )
-        if turn.say:
-            return replace(turn, say=_join(prefix, turn.say))
-        return turn
-
-    def _asked_again(self, hint: object) -> LLMTurn | None:
-        if hint == HINT_GUEST_PHONE:
-            return LLMTurn(say=SAY_PHONE_AGAIN, understanding_failure="phone")
-        if hint == HINT_GUEST_NAME:
-            question = SAY_NAME if self._pickup is not None else QUESTIONS["guest_name"]
-            return LLMTurn(say=question, understanding_failure="guest_name")
-        return None
 
     def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:
         """Ein Fehlschlag mit vorgeschriebenem Satz geht an den Kunden zurück, der
@@ -440,7 +223,7 @@ class ScriptedLLM:
         extra: str | None = None,
         understood: bool = True,
     ) -> LLMTurn:
-        missing = _missing(slots)
+        missing = next((f for f in SLOT_ORDER if not slots.get(f)), None)
         if missing:
             say = " ".join(p for p in (prefix, extra, QUESTIONS[missing]) if p)
             return LLMTurn(
@@ -527,11 +310,6 @@ class ScriptedLLM:
             return None
 
 
-def _missing(slots: dict[str, Any]) -> str | None:
-    """The first detail of a reservation that is still open."""
-    return next((field for field in SLOT_ORDER if not slots.get(field)), None)
-
-
 def _draft(slots: dict[str, Any]) -> dict[str, Any]:
     return {field: slots[field] for field in SLOT_ORDER}
 
@@ -545,19 +323,6 @@ def _as_tool_result(text: str) -> dict[str, Any] | None:
     if isinstance(parsed, dict) and "tool" in parsed:
         return parsed
     return None
-
-
-def _allergy_on_a_dish(result: dict[str, Any]) -> bool:
-    """Did the search put the guest's allergy on one dish that can be ordered?
-    Several hits are not enough: the choice can still be rejected, and the
-    allergy would go with it (Codex PR #178)."""
-    data = result.get("data") or {}
-    return bool(result.get("ok")) and any(
-        (part.get("wish") or {}).get("kind") == "allergy"
-        and part.get("match_type") in CLEAR_MATCHES
-        and any(not hit.get("sold_out") for hit in (part.get("results") or [])[:1])
-        for part in data.get("positions") or [data]
-    )
 
 
 def _mentions_stem(text: str, stems: tuple[str, ...]) -> bool:
@@ -658,42 +423,3 @@ def _day(text: str, local_now: datetime) -> date | None:
             ahead = (index - local_now.weekday()) % 7 or 7
             return (local_now + timedelta(days=ahead)).date()
     return None
-
-
-# Was im ersten Satz nur die Abholung ankuendigt, nicht das Gericht. Ein echtes
-# Modell gaebe search_menu nur das Gericht; das Skript streicht den Rest.
-_PICKUP_WORDS = re.compile(
-    r"\b(?:zu[mr]\s+)?(?:abholen|mitnehmen)\b|\bbestell\w*|\b(?:et)?was\b|\bgerne?\b|\b(?:guten\s+(?:tag|abend|morgen)|hallo|moin)\b",
-    re.IGNORECASE,
-)
-
-
-def _wants_pickup(text: str) -> bool:
-    if _mentions_stem(text, PICKUP):
-        return True
-    return _mentions_stem(text, ORDER_WORD) and not _mentions_stem(
-        text, RESERVATION_WORDS
-    )
-
-
-def _opening_dish(text: str) -> str | None:
-    """Das Gericht aus dem Satz, der die Abholung ankuendigt ("Ich moechte die 23
-    zum Abholen" -> "Ich moechte die 23"), oder None, wenn er keins nennt. Name
-    und Rufnummer im selben Satz sind kein Gericht: sie kommen in den
-    state_patch, nicht in die Suche (Review PR #133)."""
-    rest = _PICKUP_WORDS.sub(" ", text)
-    rest = _PHONE.sub(_drop_phone, _NAME_CLAUSE.sub(" ", rest)).strip(" .,!?")
-    return rest if normalize_query(rest) or re.search(r"\d", rest) else None
-
-
-def _drop_phone(match: re.Match[str]) -> str:
-    """Nur eine echte Rufnummer (sieben Ziffern, wie in `_phone`) faellt weg. Nach
-    dem Streichen von "zum Abholen bestellen" stehen Leerzeichen hinter der 13, und
-    "13    " sah sonst aus wie eine Nummer (Eval-Suite T-5.2)."""
-    raw = match.group(1)
-    return " " if sum(c.isdigit() for c in raw) >= 7 else match.group(0)
-
-
-def _join(*parts: str | None) -> str | None:
-    joined = " ".join(p for p in parts if p)
-    return joined or None

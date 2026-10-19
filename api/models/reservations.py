@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, SoftDelete, TenantScoped, Timestamps, UUIDPrimaryKey
@@ -16,7 +16,6 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     __tablename__ = "reservations"
     __table_args__ = (
         _in("status", RESERVATION_STATUSES, "ck_reservations_status"),
-        CheckConstraint("party_size > 0", name="ck_reservations_party_size"),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
     )
 

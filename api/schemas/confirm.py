@@ -16,7 +16,5 @@ class ConfirmRequest(ToolRequest):
 
 class Confirmation(BaseModel):
     status: Literal["confirmed"]
-    # queued: geht an die Kueche. awaiting_approval: wartet auf die Freigabe im
-    # Tablet, weil der Modus nicht primary ist (docs/02 §Modus).
-    handover: Literal["queued", "awaiting_approval"]
+    handover: Literal["queued"]
     pickup_code: str | None = None

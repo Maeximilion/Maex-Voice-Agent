@@ -1,9 +1,3 @@
-# Base file, shared by development and production. No service publishes a host
-# port here: Compose merges `ports` lists across files, so an override cannot
-# take one away again with `ports: []`. Dev ports live in
-# docker-compose.override.yml (loopback only), the public ones in
-# deploy/docker-compose.prod.yml (caddy only). api/tests/test_compose_ports.py
-# checks both.
 services:
   db:
     image: postgres:16-alpine
@@ -14,6 +8,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
@@ -24,22 +20,11 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
-    # .env also holds what belongs to the owner of the schema. Where the
-    # application has a database role of its own (docs/13 §3), a process that
-    # reads its environment must not find the superuser's password there.
-    # scripts/migrate.sh hands the owner's URL to Alembic in a container of its
-    # own: inside this one the application could read it from /proc.
-    # The same for the AI telephone's secrets: the access password is for
-    # Asterisk only, the media token for `voice` (docs/20 §7).
-    environment: &without_the_owner
-      POSTGRES_PASSWORD: ""
-      OWNER_DATABASE_URL: ""
-      BACKUP_DATABASE_URL: ""
-      ACCESS_PASSWORD: ""
-      VOICE_MEDIA_TOKEN: ""
     depends_on:
       db:
         condition: service_healthy
+    ports:
+      - "8000:8000"
     volumes:
       - ./api:/app/api
       - ./gui:/app/gui
@@ -47,40 +32,9 @@ services:
       - ./scripts:/app/scripts
       - ./evals:/app/evals
       - ./db:/app/db
-      # Quellcode wie ./api: ohne dieses Verzeichnis koennen die sim-Tests `sim` nicht
-      # importieren (4 Collection-Errors) und ruff sortiert sim-Importe als Fremdpaket
-      # ein (falsche I001-Meldungen). make test und make lint wichen so von der CI ab.
-      - ./sim:/app/sim
-      # Druckbruecke (T-4.6): laeuft im Lokal, ihre Tests laufen hier mit.
-      - ./printbridge:/app/printbridge
-      # scripts/status_bump.py schreibt docs/01_STATUS.md, deshalb nicht read-only.
-      - ./docs:/app/docs
       # Ohne diese Datei findet ruff im Container keine Konfiguration und prueft nach
       # seiner Standardmenge: make lint wuerde andere Regeln melden als die CI.
       - ./pyproject.toml:/app/pyproject.toml:ro
-      # Die folgenden Pfade liest die Testsuite nur: test_commands.py prueft die
-      # Slash-Befehle gegen Makefile, .claude/commands und die verwiesenen Dokumente,
-      # test_gui_router.py prueft deploy/Caddyfile. Fehlen sie, faellt pytest mit
-      # FileNotFoundError aus, obwohl der Code in Ordnung ist.
-      - ./Makefile:/app/Makefile:ro
-      - ./deploy:/app/deploy:ro
-      # Nur commands/, nicht ganz .claude/: dort liegen im Haupt-Checkout die
-      # Worktrees mit ihren eigenen .env-Dateien, die im Container nichts zu
-      # suchen haben (CLAUDE.md §8). Der Test liest ohnehin nur die Befehle.
-      - ./.claude/commands:/app/.claude/commands:ro
-      - ./CLAUDE.md:/app/CLAUDE.md:ro
-      - ./README.md:/app/README.md:ro
-      - ./CHANGELOG.md:/app/CHANGELOG.md:ro
-      # test_n8n_workflow.py checks the workflow export against api/events/types.py.
-      - ./n8n:/app/n8n:ro
-      # test_push_service.py checks that the example holds no credentials. Only
-      # the example: .env itself never goes into a container.
-      - ./.env.example:/app/.env.example:ro
-      # api/tests/test_compose_mounts.py prueft diese Liste gegen das, was die
-      # Suite tatsaechlich liest, und braucht die Datei dafuer im Container.
-      - ./docker-compose.yml:/app/docker-compose.yml:ro
-      # api/tests/test_compose_ports.py reads the dev ports from this file.
-      - ./docker-compose.override.yml:/app/docker-compose.override.yml:ro
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 15s
@@ -92,169 +46,31 @@ services:
     build: ./api
     restart: unless-stopped
     env_file: .env
-    environment:
-      <<: *without_the_owner
-      # The view's proxy secret is for the API and Caddy only.
-      GUI_PROXY_SECRET: ""
-    command: python -m api.jobs.cold_path
+    command: python -m api.events.dispatcher
     depends_on:
       db:
         condition: service_healthy
-    # Hier laufen weder pytest noch ruff: der Prozess braucht nur api, scripts und db.
     volumes:
       - ./api:/app/api
       - ./scripts:/app/scripts
       - ./db:/app/db
 
-  # The own voice layer (docs/20 §2): the AI telephone. Started only with the
-  # profile `voice` (`docker compose --profile voice up -d`, or
-  # COMPOSE_PROFILES=voice in .env), never by a plain `up`: without a telephone
-  # access in .env there is nothing for it to answer.
-  voice:
-    profiles: ["voice"]
-    # The API's image plus the speech engines (api/Dockerfile, target voice).
-    build:
-      context: ./api
-      target: voice
-    restart: unless-stopped
-    env_file: .env
-    environment:
-      <<: *without_the_owner
-      # Its own secret, from .env by interpolation.
-      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
-      # The view's proxy secret is for the API and Caddy only.
-      GUI_PROXY_SECRET: ""
-    # Not root, from the start (docs/01 open points): it reads its mounts and
-    # writes nothing there.
-    user: "10001:10001"
-    # One worker: the live calls are held in this process (api/telephony/app.py).
-    command:
-      - uvicorn
-      - --factory
-      - api.telephony.app:from_settings
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8001"
-    depends_on:
-      db:
-        condition: service_healthy
-    # The core of a call reads its prompt from prompts/, the engines their
-    # model files from /models: those the speech kit downloads (docs/20 §10).
-    # A worktree hard-links them from the main checkout:
-    # mkdir -p deploy/speech/run && cp -al ~/Maex-Voice-Agent/deploy/speech/run/models deploy/speech/run/
-    volumes:
-      - ./api:/app/api
-      - ./prompts:/app/prompts
-      - ./deploy/speech/run/models:/models:ro
-    # Whisper on the graphics card (VOICE_EAR_DEVICE=cuda, the workbench's).
-    # ponytail: asked for on every host that runs the profile; one without a
-    # graphics card needs `deploy: !reset {}` in its own Compose file.
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      # Loading the engines takes its time; until then nothing listens.
-      start_period: 120s
-
-  asterisk:
-    profiles: ["voice"]
-    # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
-    # build. Not older: before 22.11.0 a `voice` that takes the connection and
-    # answers nothing held the call for ever, and the team never rang (Asterisk
-    # issue #1979, the drill "voice frozen").
-    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
-    restart: unless-stopped
-    # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
-    # image does, without its -vvvddd: verbose output prints every dialplan
-    # step with its values, the media token included.
-    entrypoint: ["/bin/sh", "/templates/render.sh"]
-    command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
-    # Only what the AI telephone needs, not the whole .env: no database or
-    # model credentials in this container.
-    environment:
-      ASTERISK_TERMINAL_OPTS: "-n"
-      VOICE_NUMBER: ${VOICE_NUMBER:-}
-      VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
-      TEAM_PHONE: ${TEAM_PHONE:-}
-      ACCESS_HOST: ${ACCESS_HOST:-}
-      ACCESS_USER: ${ACCESS_USER:-}
-      ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
-    tmpfs:
-      - /etc/asterisk
-    volumes:
-      - ./deploy/asterisk/conf:/templates/conf:ro
-      - ./deploy/asterisk/render.sh:/templates/render.sh:ro
-    # Healthy only while registered at the access: booted but not registered,
-    # no call reaches the AI telephone, and `docker compose ps` should say so
-    # (Codex on PR #297).
-    healthcheck:
-      test: ["CMD-SHELL", "asterisk -rx 'pjsip show registrations' | grep -q ' Registered '"]
-      interval: 10s
-      timeout: 5s
-      retries: 6
-
   n8n:
-    # Pinned on purpose: a floating tag can change n8n behaviour (and migrate its database)
-    # without anyone noticing. Dependabot proposes updates as pull requests.
-    # 2.41.4 or newer is required: GHSA-3qcw-p65v-c7vq (unauthenticated, unbounded growth of
-    # the database through the authorize endpoint) affects every older release.
-    image: n8nio/n8n:2.43.3
+    image: n8nio/n8n:latest
     restart: unless-stopped
     environment:
-      # No N8N_BASIC_AUTH_* here: n8n dropped that login with version 1 and
-      # ignores the variables. The editor is protected by its own owner account
-      # and, in production, by the access in deploy/Caddyfile. The two values in
-      # .env are the credential of the webhook node (n8n/README.md), which the
-      # dispatcher sends; n8n itself never reads them from the environment.
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
       GENERIC_TIMEZONE: Europe/Berlin
       # n8n lauscht standardmäßig auf "::" und stirbt auf Docker-Hosts ohne IPv6
       N8N_LISTEN_ADDRESS: 0.0.0.0
     volumes:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows
-
-  push:
-    # Push server for team notifications (D13, n8n/README.md): the n8n workflow
-    # publishes, the team's devices subscribe. Nothing is forwarded to an
-    # upstream relay, the messages stay on this server.
-    image: binwiederhier/ntfy:v2.29.0
-    restart: unless-stopped
-    # The server refuses to start with an empty user list, and with access
-    # rules for users it does not know. So the rules are set only when users
-    # exist; without users it starts closed for everyone instead of not at all.
-    # n8n may only write to the topic, the team may only read it.
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        if [ -n "$$NTFY_AUTH_USERS" ]; then
-          export NTFY_AUTH_ACCESS="n8n:team:wo,team:team:ro"
-        else
-          unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
-        fi
-        exec ntfy serve
-    environment:
-      - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
-      - NTFY_AUTH_FILE=/var/lib/ntfy/auth.db
-      # Closed unless a rule opens it.
-      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
-      - NTFY_ENABLE_LOGIN=true
-      # Keys without a value come from .env (.env.example).
-      - NTFY_BASE_URL
-      - NTFY_AUTH_USERS
-      - NTFY_AUTH_TOKENS
-    volumes:
-      - pushdata:/var/lib/ntfy
+    ports:
+      - "5678:5678"
 
 volumes:
   pgdata:
   n8ndata:
-  pushdata:

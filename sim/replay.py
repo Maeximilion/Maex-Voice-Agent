@@ -20,12 +20,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMClient, LLMError
 from api.core.errors import AppError
 from api.db import SessionLocal
 from api.models import Reservation, Tenant
 from sim.noise import noisy_text
-from sim.session import SCRIPTED, SimCall, Turn, call_time, render_turn, resolve_tenant
+from sim.session import SimCall, Turn, render_turn, resolve_tenant
 
 CUSTOMER = "customer"
 
@@ -56,22 +55,13 @@ def replay(
     rng: random.Random | None = None,
     now: datetime | None = None,
     on_turn: Callable[[Turn], None] | None = None,
-    llm: LLMClient | None = None,
-    model: str = SCRIPTED,
 ) -> tuple[SimCall, list[Turn]]:
-    """`llm` ersetzt das Skript-Modell; der Eval-Runner schaltet hier seinen
-    Beobachter dazwischen (evals/recorder.py). Without `llm`, `model` picks the
-    stand-in or a model by name (`sim.session.make_llm`)."""
     rng = rng or random.Random()
     call = SimCall(
         session,
         tenant,
         now=now,
         external_session_id=f"replay-{case.get('id', 'ohne-id')}-{rng.random():.6f}",
-        # Rufnummernerkennung: ohne das Feld ist die Nummer unterdrueckt.
-        caller_id=case.get("caller_id"),
-        llm=llm,
-        model=model,
     )
     turns = []
     for line in customer_lines(case):
@@ -92,13 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, help="Saat für das Rauschen")
     parser.add_argument(
         "--now",
-        type=call_time,
+        type=datetime.fromisoformat,
         help="Zeitpunkt des Anrufs mit Zeitzone, z. B. 2026-09-15T18:00+02:00",
-    )
-    parser.add_argument(
-        "--model",
-        default=SCRIPTED,
-        help="scripted (default), or the name of a model on the server of LLM_BASE_URL",
     )
     return parser
 
@@ -117,12 +102,7 @@ def main(argv: list[str] | None = None) -> int:
             except (OSError, ValueError, json.JSONDecodeError) as exc:
                 print(f"Fall nicht lesbar: {exc}", file=sys.stderr)
                 return 2
-            try:
-                _run_one(session, case, tenant, args)
-            except LLMError as exc:
-                # Raised when the call is built: the model has no server.
-                print(f"Model '{args.model}' not usable: {exc}", file=sys.stderr)
-                return 2
+            _run_one(session, case, tenant, args)
     return 0
 
 
@@ -138,12 +118,9 @@ def _run_one(
         rng=random.Random(args.seed),
         now=args.now,
         on_turn=lambda turn: print(render_turn(turn)),
-        model=args.model,
     )
     ended = call.finish()
     print(f"Anruf beendet: {ended.outcome}, {ended.duration_seconds} s")
-    if usage := call.usage_line():
-        print(f"  {usage}")
     print(f"  Datenbank: {_db_summary(session, call)}")
 
 

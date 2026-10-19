@@ -14,14 +14,12 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from http import HTTPStatus
 
 from fastapi import Request, Response
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from api.core.auth import token_matches
 from api.core.logging import get_logger, log
 from api.db import get_db
 
@@ -42,23 +40,10 @@ async def tool_call_log_middleware(
     # Vor call_next lesen: Starlette cacht den Body dabei auf dem Request-Objekt,
     # sodass der Endpunkt ihn danach noch normal parsen kann. Nach call_next ist
     # der Stream bereits verbraucht ("Stream consumed").
-    #
-    # Only with the token: this middleware runs before the endpoint checks it. A
-    # request that will be turned away must cost neither the parsing of its body
-    # nor a write to the database.
-    authorized = is_tool and token_matches(request.headers.get("authorization", ""))
-    ids = await _ids_from_body(request) if authorized else None
+    ids = await _ids_from_body(request) if is_tool else None
     started = time.perf_counter()
     response = await call_next(request)
-    # Only a tool that ran is logged. No endpoint in the scope: no route matched
-    # (404), and the name in the entry would be whatever text the path carried.
-    # 405: the path matched and the method did not, so the scope has an endpoint
-    # although nothing was called (Codex, PR #253).
-    if (
-        ids is None
-        or "endpoint" not in request.scope
-        or response.status_code == HTTPStatus.METHOD_NOT_ALLOWED
-    ):
+    if not is_tool or ids is None:
         return response
     call_id, tenant_id = ids
 
@@ -66,11 +51,7 @@ async def tool_call_log_middleware(
     # Antwort erst beim Durchlaufen von body_iterator preisgibt. Einmal gelesen,
     # muss sie durch eine gleichwertige Antwort ersetzt werden, sonst bekommt der
     # Client einen leeren Body.
-    # Starlette annotates call_next as returning a plain Response; what it hands
-    # in is its private _StreamingResponse, which has the iterator.
-    body = b"".join(
-        [chunk async for chunk in response.body_iterator]  # type: ignore[attr-defined]
-    )
+    body = b"".join([chunk async for chunk in response.body_iterator])
     response = Response(
         content=body,
         status_code=response.status_code,
@@ -88,13 +69,7 @@ async def tool_call_log_middleware(
         # anderen gleichzeitigen Tool-Aufruf ausbremsen, deshalb in den Thread-Pool.
         await run_in_threadpool(_append, request, call_id, tenant_id, entry)
     except Exception:  # noqa: BLE001 - Protokoll darf die Antwort nie kippen
-        # A UUID has 36 characters; whatever else was sent is cut there.
-        log(
-            logger,
-            logging.WARNING,
-            "tool_calls nicht geschrieben",
-            call_id=call_id[:36],
-        )
+        log(logger, logging.WARNING, "tool_calls nicht geschrieben", call_id=call_id)
     return response
 
 
@@ -104,8 +79,7 @@ async def _ids_from_body(request: Request) -> tuple[str, str] | None:
     den Anruf eines anderen Mandanten schreiben (Codex-Review PR #99, P1)."""
     try:
         payload = json.loads(await request.body())
-    except (ValueError, TypeError, RecursionError):
-        # RecursionError: a body nested deeper than the parser goes.
+    except (ValueError, TypeError):
         return None
     if not isinstance(payload, dict):
         return None

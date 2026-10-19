@@ -1,7 +1,0 @@
-{"t": 0.0002, "dir": "probe", "exten": "611", "caller": "+4972215550611", "wall": 1791384074.4380884}
-{"t": 0.0003, "dir": "in", "text": "{\"event\":\"MEDIA_START\",\"connection_id\":\"voice\",\"channel\":\"WebSocket/voice/0x7600ad791e20\",\"channel_id\":\"1791384074.11\",\"format\":\"slin16\",\"optimal_frame_size\":640,\"ptime\":20,\"channel_variables\":{\"DIALEDPEERNUMBER\":\"voice/c(slin16)f(json)v(exten=611,caller=%2B4972215550611)\",\"MEDIA_WEBSOCKET_CONNECTION_ID\":\"voice\",\"MEDIA_WEBSOCKET_OPTIMAL_FRAME_SIZE\":\"640\"}}"}
-{"t": 0.0031, "dir": "out", "bytes": 32000}
-{"t": 0.0032, "dir": "out", "text": "{\"command\": \"REPORT_QUEUE_DRAINED\"}"}
-{"t": 1.0192, "dir": "in", "text": "{\"event\":\"QUEUE_DRAINED\",\"channel_id\":\"1791384074.11\"}"}
-{"t": 1.0193, "dir": "out", "text": "{\"command\": \"HANGUP\"}"}
-{"t": 1.0198, "dir": "probe", "closed": true, "heard_hz": null, "audio_in_seconds": 0.0, "first_audio_t": null, "frame_bytes": {}, "frame_interval_ms": null, "digits": ""}
