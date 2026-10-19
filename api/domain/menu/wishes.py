@@ -415,6 +415,13 @@ def _clause_start(words: list[str], i: int, nearest: bool = False) -> int:
         j = openers[-1]
         while j > comma + 1 and words[j - 1] in _OPENING:
             j -= 1
+        # "gegen Erdnuesse bin ich nicht allergisch": the clause begins at the
+        # "gegen" whose list ends right before it (Codex PR #330).
+        prep = next(
+            (k for k in range(j - 1, comma, -1) if words[k] in _PREPOSITIONS), None
+        )
+        if prep is not None and _object_end(words, prep + 1) == j:
+            j = prep
         return j
     return comma + 1 if comma >= 0 else _phrase_start(words, i)
 
@@ -441,6 +448,8 @@ _PREPOSITIONS = frozenset({"gegen", "auf"})
 _DENIAL_VERBS = frozenset({"habe", "hab", "haben", "bin", "sind"})
 # "Keine Allergien sind mir bekannt"
 _DENIAL_TRAIL = _DENIAL_VERBS | {"ich", "wir", "mir", "uns", "bekannt", "ist"}
+# Who has the allergy, in "habe ich nicht".
+_PRONOUNS = frozenset({"ich", "wir"})
 # What may stand in front of a denial or an allergy phrase: "ich habe doch gar
 # keine Allergie".
 _LEAD_WORDS = _DENIAL_VERBS | (
@@ -495,6 +504,8 @@ def _negated(words: list[str]) -> bool:
             denies = at < len(words) and _allergy_word(words[at])
             if denies and not _closing(words, n, at):
                 return True
+        if _allergy_word(word) and _negation_behind(words, n + 1) is not None:
+            return True
         if word in ("nicht", "weder") and words[n + 1] in _PREPOSITIONS:
             return True
         if word in _PREPOSITIONS and (
@@ -502,6 +513,20 @@ def _negated(words: list[str]) -> bool:
         ):
             return True
     return False
+
+
+def _negation_behind(words: list[str], i: int) -> int | None:
+    """Behind the negation that follows a noun or a list at `i` with its verb:
+    "(eine Erdnussallergie) habe ich nicht", "(gegen Erdnuesse) bin ich nicht"
+    (Codex PR #330). None when there is none."""
+    if (
+        i + 2 < len(words)
+        and words[i] in _DENIAL_VERBS
+        and words[i + 1] in _PRONOUNS
+        and words[i + 2] in _NEGATION
+    ):
+        return i + 3
+    return None
 
 
 def _closing(words: list[str], n: int, at: int) -> bool:
@@ -554,7 +579,9 @@ def _denial_end(words: list[str], i: int) -> int | None:
     """Where the denial that begins at `i` ends: "ich habe keine
     Erdnussallergie", "keine Allergie gegen Erdnuesse", "nicht allergisch",
     "nicht gegen Erdnuesse allergisch", "gegen nichts allergisch", "gegen
-    keine Nuesse allergisch". None: no such denial."""
+    keine Nuesse allergisch", and after the noun: "eine Erdnussallergie habe
+    ich nicht", "gegen Erdnuesse bin ich nicht allergisch". None: no such
+    denial."""
     while i < len(words) and words[i] in _DENIAL_LEAD:
         i += 1
     word, after = [*words[i : i + 2], "", ""][:2]
@@ -609,6 +636,18 @@ def _denial_end(words: list[str], i: int) -> int | None:
             end += 1
         else:
             end = None
+    elif word in _PREPOSITIONS:
+        # "gegen Erdnuesse bin ich nicht allergisch" (Codex PR #330)
+        listed = _list_end(words, i + 1)
+        behind = None if listed is None else _negation_behind(words, listed)
+        if behind is not None and behind < len(words) and _allergy_word(words[behind]):
+            end = behind + 1
+    else:
+        # "eine Erdnussallergie habe ich nicht", "Allergien habe ich keine"
+        # (Codex PR #330)
+        noun = i + 1 if word in _ARTICLES else i
+        if noun < len(words) and _allergy_word(words[noun]):
+            end = _negation_behind(words, noun + 1)
     # "Keine Allergie habe ich"
     while end is not None and end < len(words) and words[end] in _DENIAL_TRAIL:
         end += 1
@@ -717,7 +756,12 @@ def _phrase_start(words: list[str], i: int) -> int:
         prep = next(
             (j for j in range(i - 1, -1, -1) if words[j] in _PREPOSITIONS), None
         )
-        if prep is not None and _object_end(words, prep + 1) == i:
+        listed = None if prep is None else _object_end(words, prep + 1)
+        if listed is not None and listed != i:
+            # "gegen Erdnuesse bin ich nicht allergisch"
+            behind = _negation_behind(words, listed)
+            listed = i if behind == i else listed
+        if prep is not None and listed == i:
             i = prep
     # "keine bekannten Allergien", "weder eine bekannte": the modifiers only
     # after a negation, since "Bekannten" may also be a person ("fuer

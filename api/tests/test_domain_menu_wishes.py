@@ -254,7 +254,14 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
 
 @pytest.mark.parametrize(
     "said",
-    ["Pho Bo, ich habe keine Erdnussallergie", "die 13, ich habe keine Allergie"],
+    [
+        "Pho Bo, ich habe keine Erdnussallergie",
+        "die 13, ich habe keine Allergie",
+        "Pho Bo, keine Allergie",
+        "die 13, nicht allergisch",
+        "Pho Bo, kein Allergiker",
+        "Pho Bo, eine Erdnussallergie habe ich nicht",
+    ],
 )
 def test_search_with_a_denied_allergy_has_no_wish(session, tenant_id, said):
     result = suche(session, tenant_id, said)
@@ -958,6 +965,10 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "ich habe keine weitere Allergie",
         "ich habe keine anderen Allergien",
         "Keine Allergie ist mir bekannt",
+        # Codex PR #330: the negation after the noun.
+        "eine Erdnussallergie habe ich nicht",
+        "Allergien habe ich keine",
+        "gegen Erdnüsse bin ich nicht allergisch",
         "ich habe keine Allergie oder sonstige Unverträglichkeiten",
         "weder eine bekannte Allergie noch eine Unverträglichkeit",
         "weder eine bekannte Erdnussallergie noch eine Sesamallergie",
@@ -1078,6 +1089,7 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "ich habe keine Erdnussallergie und weitere Allergien gegen Sesam",
         "ich habe keine Nussallergie und andere Allergien",
         "ich habe keine Nussallergie und Allergien gegen Sesam",
+        "eine Erdnussallergie habe ich nicht, aber eine Sesamallergie",
         "keine Erdnussallergie oder Allergie gegen Sesam",
     ],
 )
