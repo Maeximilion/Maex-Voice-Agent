@@ -327,13 +327,19 @@ def _position_parts(
     if len(parts) > 1:
         # Read the menu once for all parts.
         card = card if card is not None else card_format(session, tenant_id)
-        return [
-            position
-            for part in parts
-            for position in _position_parts(
-                session, tenant_id, part, now, high, low, card
-            )
-        ]
+        cut: list[str] = []
+        for part in parts:
+            try:
+                cut += _position_parts(session, tenant_id, part, now, high, low, card)
+            except Ambiguous:
+                # "die 13 und die 24, und 30": only this part asks for its
+                # number, the 13 is still taken (Codex PR #147). A part that
+                # would not ask on its own ("Pho Bo, und zwanzig" reads as a
+                # name with a quantity) makes the whole sentence ask instead.
+                if not sole_item_number(part, card)[1]:
+                    raise
+                cut.append(part)
+        return cut
     pieces = raw_pieces(query)
     if len(pieces) <= 1:
         return [query]

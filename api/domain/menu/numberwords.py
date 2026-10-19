@@ -1154,6 +1154,8 @@ _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 # marker, quantity or card prefix cannot sit there, so after "und" they mark
 # a continuation, not the second half of a number. Also read by `split`.
 INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
+# Before the "und" a "bitte" closes the position: "die 4 bitte und 20" is two.
+PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
 
 
 def tens_half(token: str) -> bool:
@@ -1169,11 +1171,14 @@ def _split_by_pause(tokens: list[str], k: int) -> bool:
     "und" and a tens half. It can be 23 or the 3 and the 20; the sentence asks,
     also next to a name (Codex PR #147). Without the pause `_scan` reads 23."""
     i, j = k - 1, k + 1
-    while i >= 0 and tokens[i] in INSIDE_SPLIT:
+    while i >= 0 and tokens[i] in PAUSE_BEFORE_UND:
         i -= 1
     while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
         j += 1
     if i < 0 or j >= len(tokens) or (i, j) == (k - 1, k + 1):
+        return False
+    # "eine äh und zwanzig" is an article, not the first half; "ein" opens 21.
+    if tokens[i] in ARTICLES - {"ein"}:
         return False
     unit = _word_value(tokens[i])
     return unit is not None and 1 <= unit <= 9 and tens_half(tokens[j])

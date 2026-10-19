@@ -729,6 +729,18 @@ def test_an_unclear_number_piece_makes_the_sentence_ask(session, tenant_id, said
         suche(session, tenant_id, said)
 
 
+def test_an_unclear_part_asks_alone(session, tenant_id):
+    """Only the part with the unclear number asks; a part the sentence cut off
+    as clear is still taken (own review PR #329)."""
+    said = "die 13 und die 24, und 30"
+    assert position_parts(session, tenant_id, said, now=NOW) == [
+        "die 13",
+        "die 24, und 30",
+    ]
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, "die 24, und 30")
+
+
 def test_an_unclear_number_before_a_wish_asks(session, tenant_id):
     """ "und 30 mit Reis": handed to the search over the whole sentence, the
     wish words were a name and found another dish (ultra review PR #329)."""
@@ -1345,6 +1357,7 @@ def test_weight_stays_in_the_name():
         "Die 13 und Sushi eins",
         "Die 13.",
         "Zweimal die drei und äh zwanzig und die 13",
+        "Die 13 und die 24, und 30",
     ],
 )
 def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(

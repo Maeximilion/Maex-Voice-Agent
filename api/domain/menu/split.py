@@ -29,6 +29,7 @@ import re
 
 from api.domain.menu.numberwords import (
     INSIDE_SPLIT,
+    PAUSE_BEFORE_UND,
     find_quantity,
     fold,
     parse_cardinal,
@@ -51,8 +52,6 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
-# A "bitte" before the "und" closes the position: "die 4 bitte und 20" is two.
-_PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
 # The first half of "drei und zwanzig".
 _UNITS = range(1, 10)
 _EMPTY_WORDS = frozenset(
@@ -136,9 +135,10 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
         # does not split the number into the 3 and the 20: the sentence stays
         # whole and `sole_item_number` asks, also next to a prefix, a letter
-        # or a name (Codex PR #147).
+        # or a name (Codex PR #147). The words here carry no punctuation; a
+        # comma is a separator of its own (#328).
         a = len(left)
-        while a and left[a - 1] in _PAUSE_BEFORE_UND:
+        while a and left[a - 1] in PAUSE_BEFORE_UND:
             a -= 1
         b = 0
         while b < len(right) and right[b] in INSIDE_SPLIT:
@@ -151,7 +151,7 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
                 # "hundert und eins": nur eine Zahl hängt an, keine neue
                 # Position ("die hundert und eine Cola", Codex PR #124).
                 (left[a - 1].endswith("hundert") and _only_number(piece))
-                # "drei und zwanzig" ist 23, auch "zwei und zwanzigmal".
+                # "drei und zwanzig" is 23, "zwei und zwanzigmal" one number too.
                 or (parse_cardinal(left[a - 1]) in _UNITS and tens_half(right[b]))
             )
         )
