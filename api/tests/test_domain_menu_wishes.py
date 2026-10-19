@@ -957,7 +957,9 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "Keine Allergien sind mir bekannt",
         "ich habe keine weitere Allergie",
         "ich habe keine anderen Allergien",
-        "ich habe keine Allergie oder eine Unverträglichkeit",
+        "Keine Allergie ist mir bekannt",
+        "weder eine bekannte Allergie noch eine Unverträglichkeit",
+        "weder eine bekannte Erdnussallergie noch eine Sesamallergie",
         "ich habe keine weiteren Allergien",
         "weder bekannte Allergien noch Unverträglichkeiten",
         # Answers to "Wogegen?" that take the allergy back (own review).
@@ -990,6 +992,7 @@ def test_denied_allergy_is_no_wish(said):
         ),
         ("ich habe keine Allergie, ohne Zwiebeln, sonst nichts", "note", None),
         ("ich habe keine Allergie, nur ohne Zwiebeln", "note", "ohne Zwiebeln"),
+        ("Das ist keine Allergie, aber bitte ohne Laktose", "note", "ohne Laktose"),
         (
             "ohne Zwiebeln für meinen Bekannten ich habe keine Allergie",
             "note",
@@ -1067,6 +1070,13 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "Gegen Erdnüsse bin ich nicht allergisch, aber gegen Sesam",
         "ich habe keine Allergie oder Unverträglichkeit gegen Laktose, aber gegen Gluten",
         "ich bin weder allergisch noch intolerant gegen Laktose, aber gegen Gluten",
+        # A denial goes on only with a negation of its own (own review): an
+        # allergy said after "oder"/"und" is asked about.
+        "ich habe keine Allergie oder eine Unverträglichkeit",
+        "keine Allergie oder eine Allergie gegen Sesam",
+        "ich habe keine Erdnussallergie oder eine Sesamallergie",
+        "ich habe keine Erdnussallergie und weitere Allergien gegen Sesam",
+        "ich habe keine Nussallergie und andere Allergien",
     ],
 )
 def test_negation_mixed_with_more_asks_for_the_ingredient(said):
@@ -1178,6 +1188,12 @@ def test_addition_after_the_ingredient_is_no_ingredient():
     [
         # "sonst keine Allergien" at the end denies no ingredient.
         ("ich habe eine Erdnussallergie, sonst keine bekannten Allergien", "Erdnuss"),
+        (
+            "ich habe eine Erdnussallergie, sonst keine anderen Allergien bekannt",
+            "Erdnuss",
+        ),
+        ("ich habe eine Erdnussallergie, sonst keine Allergien, danke", "Erdnuss"),
+        ("ich bin allergisch gegen Sesam, sonst keine weiteren Allergien", "Sesam"),
         # "richtige" is a hedge, not a denial (own review).
         ("ich habe keine richtige Allergie gegen Nüsse", "Nüsse"),
     ],
@@ -1236,6 +1252,27 @@ def test_denies_allergy(said, denied):
     """The stand-in asks this before it sends an opening with an allergy to
     the team (own review): the nearest "ich" begins the denial."""
     assert denies_allergy(said) is denied
+
+
+@pytest.mark.parametrize(
+    ("said", "note"),
+    [
+        (
+            "ohne Zwiebeln eine bekannte Sesamallergie",
+            "WICHTIG: Keine Sesam. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        (
+            "ohne Zwiebeln für uns ich habe eine Erdnussallergie",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln für uns",
+        ),
+    ],
+)
+def test_words_of_the_allergy_phrase_stay_out_of_the_removal(said, note):
+    assert classify_wish(said, []).text == note
+
+
+def test_mir_opens_the_allergy_clause():
+    assert first_split("die 13 mir ist eine Erdnussallergie bekannt")[0] == "die 13"
 
 
 def test_gegen_of_the_dish_name_is_no_allergy_phrase():
