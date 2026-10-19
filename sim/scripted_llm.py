@@ -181,7 +181,18 @@ class ScriptedLLM:
         # Judged on the clause the search classifies, not with the dish in
         # front ("Ente auf Thai Art").
         clauses = wish_candidates(text) if ALLERGY_STEM in text.lower() else []
-        denied = bool(clauses) and denies_allergy(clauses[-1][1])
+        # Also a denial in a part of its own, before the dish: "Ich habe keine
+        # Allergie, ich moechte Pho Bo zum Abholen" (Codex PR #330).
+        named = [part for part in text.split(",") if ALLERGY_STEM in part.lower()]
+        denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
+            bool(named) and all(denies_allergy(part) for part in named)
+        )
+        # The dish is searched without a denial said in a part of its own.
+        dish_text = ",".join(
+            part
+            for part in text.split(",")
+            if not (ALLERGY_STEM in part.lower() and denies_allergy(part))
+        )
         # Only a statement next to a dish: a question about the dish goes to
         # the team (Codex PR #178). Whether the allergy reached a position is
         # checked on the search result (`_after_tool`).
@@ -212,7 +223,7 @@ class ScriptedLLM:
             self._opening_allergy = text if own_allergy else None
             started_pickup = True
             if not self._status_checked:
-                self._opening_query = _opening_dish(text)
+                self._opening_query = _opening_dish(dish_text)
 
         if not self._status_checked:
             # Öffnung und Erreichbarkeit kennt nur die Datenbank (CLAUDE.md §2 Regel 1),
@@ -229,7 +240,7 @@ class ScriptedLLM:
                 # "zum Abholen" verdeckte sonst die 23 (Codex PR #130, P2). Ohne
                 # Gericht die Frage nach der Bestellung, das Gesagte (Name,
                 # Nummer) bleibt im state_patch (Review PR #133).
-                dish = _opening_dish(text)
+                dish = _opening_dish(dish_text)
                 if dish is None:
                     return self._pickup.start(patch=patch)
                 text = dish

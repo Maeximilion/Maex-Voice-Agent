@@ -690,8 +690,19 @@ def _denial_end(words: list[str], i: int) -> int | None:
         # "eine Erdnussallergie habe ich nicht", "Allergien habe ich keine",
         # "eine Allergie gegen Erdnuesse habe ich nicht" (Codex PR #330)
         noun = i + 1 if word in _ARTICLES else i
-        if noun < len(words) and _allergy_word(words[noun]):
-            end = _negation_behind(words, _after_object(words, noun + 1))
+        k = noun + 1
+        if noun >= len(words) or not _allergy_word(words[noun]):
+            pass
+        elif (
+            k + 1 < len(words)
+            and words[k] in _PREPOSITIONS
+            and words[k + 1] in ("nichts", "gar")
+        ):
+            # "allergisch gegen (gar) nichts" (Codex PR #330); not "Allergie
+            # gegen keine ...", which may be "keine Ahnung"
+            end = _object_end(words, k + 1)
+        else:
+            end = _negation_behind(words, _after_object(words, k))
     # "Keine Allergie habe ich"
     while end is not None and end < len(words) and words[end] in _DENIAL_TRAIL:
         end += 1

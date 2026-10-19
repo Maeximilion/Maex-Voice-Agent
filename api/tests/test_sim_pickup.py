@@ -1185,6 +1185,8 @@ def test_removal_said_again_with_the_ingredient(session, tenant):
     [
         "Ich moechte Pho Bo zum Abholen, ich habe keine Erdnussallergie.",
         "Ich moechte Pho Bo zum Abholen, ich habe keine Allergie.",
+        # Codex PR #330: the denial before the dish.
+        "Ich habe keine Allergie, ich moechte Pho Bo zum Abholen.",
     ],
 )
 def test_denied_allergy_in_the_opening_sentence_is_an_order(session, tenant, opening):

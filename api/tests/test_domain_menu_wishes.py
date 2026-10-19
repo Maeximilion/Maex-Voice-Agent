@@ -268,6 +268,7 @@ def test_search_finds_the_dish_before_gegen_x_bin_ich_allergisch(session, tenant
         "Pho Bo, kein Allergiker",
         "Pho Bo, eine Erdnussallergie habe ich nicht",
         "Pho Bo, gegen Erdnüsse bin ich nicht allergisch",
+        "Pho Bo, ich bin allergisch gegen nichts",
     ],
 )
 def test_search_with_a_denied_allergy_has_no_wish(session, tenant_id, said):
@@ -979,6 +980,8 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "eine Erdnussallergie habe ich gar nicht",
         "gegen nichts bin ich allergisch",
         "gegen gar nichts bin ich allergisch",
+        "ich bin allergisch gegen nichts",
+        "ich bin allergisch gegen gar nichts",
         "ich bin gegen Erdnüsse nicht allergisch",
         "ich habe keine Allergie oder sonstige Unverträglichkeiten",
         "weder eine bekannte Allergie noch eine Unverträglichkeit",
