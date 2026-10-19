@@ -28,9 +28,12 @@ Position, die Sauce ist Option und kein zweites Gericht.
 import re
 
 from api.domain.menu.numberwords import (
+    INSIDE_SPLIT,
+    PAUSE_BEFORE_UND,
     find_quantity,
     fold,
     parse_cardinal,
+    tens_half,
 )
 
 # A separator takes the whitespace behind it, not the whitespace in front: a
@@ -49,6 +52,8 @@ _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
 # Nach fold(). Deckungsgleich mit numberwords._QUANTITY_NOUNS.
 _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk", "st"})
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
+# The first half of "drei und zwanzig".
+_UNITS = range(1, 10)
 _EMPTY_WORDS = frozenset(
     {
         "aeh",
@@ -127,15 +132,27 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
     for sep, piece in zip(separators, pieces[1:], strict=True):
         left = _WORD.findall(fold(parts[-1]))
         right = _WORD.findall(fold(piece))
+        # A pause at the "und" ("drei und äh zwanzig", "drei äh und zwanzig")
+        # does not split the number into the 3 and the 20: the sentence stays
+        # whole and `sole_item_number` asks, also next to a prefix, a letter
+        # or a name (Codex PR #147). The words here carry no punctuation; a
+        # comma is a separator of its own (#328).
+        a = len(left)
+        while a and left[a - 1] in PAUSE_BEFORE_UND:
+            a -= 1
+        b = 0
+        while b < len(right) and right[b] in INSIDE_SPLIT:
+            b += 1
         number_joined = (
             sep.strip().casefold() == "und"
-            and left
-            and right
+            and a
+            and b < len(right)
             and (
                 # "hundert und eins": nur eine Zahl hängt an, keine neue
                 # Position ("die hundert und eine Cola", Codex PR #124).
-                (left[-1].endswith("hundert") and _only_number(piece))
-                or parse_cardinal(f"{left[-1]} und {right[0]}") is not None
+                (left[a - 1].endswith("hundert") and _only_number(piece))
+                # "drei und zwanzig" is 23, "zwei und zwanzigmal" one number too.
+                or (parse_cardinal(left[a - 1]) in _UNITS and tens_half(right[b]))
             )
         )
         attached = not _opens_position(piece) if by_position else _modifies(piece)

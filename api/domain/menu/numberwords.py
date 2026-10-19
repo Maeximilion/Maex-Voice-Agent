@@ -1146,6 +1146,42 @@ _LEAD_FILLER = frozenset(
 # How a sentence continues the order from the previous one: "Und noch die 24",
 # "Und dann dazu die 24".
 _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
+# What can sit inside a number split by a pause: "drei und, äh, zwanzig",
+# "drei und bitte zwanzig" (Codex PR #147). All punctuation, also a full stop:
+# the ear writes a pause as "..." or a stray full stop ("und... zwanzig"), and
+# asking back is the safe answer (unlike `_PAUSES`, where a full stop only
+# keeps a word from being read as a letter). An article, opening word,
+# marker, quantity or card prefix cannot sit there, so after "und" they mark
+# a continuation, not the second half of a number. Also read by `split`.
+INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
+# Before the "und" a "bitte" closes the position: "die 4 bitte und 20" is two.
+PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
+
+
+def tens_half(token: str) -> bool:
+    """Can the token be the second half of "drei und zwanzig"? A tens word or
+    number, also as a quantity: "und zwanzigmal die 13" is the same half as
+    "und zwanzig mal die 13"."""
+    times = _QUANTITY_SUFFIX.match(token)
+    return _word_value(times.group(1) if times else token) in TENS.values()
+
+
+def _split_by_pause(tokens: list[str], k: int) -> bool:
+    """ "drei und äh zwanzig", "drei äh und zwanzig": a unit, a pause at the
+    "und" and a tens half. It can be 23 or the 3 and the 20; the sentence asks,
+    also next to a name (Codex PR #147). Without the pause `_scan` reads 23."""
+    i, j = k - 1, k + 1
+    while i >= 0 and tokens[i] in PAUSE_BEFORE_UND:
+        i -= 1
+    while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
+        j += 1
+    if i < 0 or j >= len(tokens) or (i, j) == (k - 1, k + 1):
+        return False
+    # "eine äh und zwanzig" is an article, not the first half; "ein" opens 21.
+    if tokens[i] in ARTICLES - {"ein"}:
+        return False
+    unit = _word_value(tokens[i])
+    return unit is not None and 1 <= unit <= 9 and tens_half(tokens[j])
 
 
 def _too_large(token: str) -> bool:
@@ -1223,6 +1259,8 @@ def sole_item_number(
     without an article in front is the quantity ("zwei S zwölf").
     """
     tokens = _tokens(text)
+    if any(t == "und" and _split_by_pause(tokens, k) for k, t in enumerate(tokens)):
+        return None, True
     glued = _glued(text)
     prefixed = _prefixed(text)
     mengen = _quantity_spans(tokens)
@@ -1322,11 +1360,20 @@ def sole_item_number(
     # die 24") or a marker ("Nummer und 24") comes before it, it connects
     # something in this sentence that is missing. And never before a tens
     # word: "und zwanzig" is the second half of "drei und zwanzig", the
-    # recognition only cut it off (review PR #147). Only "und": an "oder" or
+    # recognition only cut it off (review PR #147), also in digits ("und 20",
+    # the ear wrote "Nummer 3 und 20" for a 23, docs/20) and with a pause
+    # between the two: "und äh zwanzig", "und bitte zwanzig" (`INSIDE_SPLIT`,
+    # Codex PR #147). "und die zwanzig", "und S zwanzig", "und Nummer zwanzig"
+    # and "und ein und zwanzig" stay continuations. Only "und": an "oder" or
     # "nein" up front refers to something this sentence does not name and
     # stays a follow-up question.
     def _opens(k: int) -> bool:
-        if tokens[k] != "und" or (k + 1 < len(tokens) and tokens[k + 1] in TENS):
+        if tokens[k] != "und":
+            return False
+        j = k + 1
+        while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
+            j += 1
+        if j < len(tokens) and tens_half(tokens[j]):
             return False
         return all(
             t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
