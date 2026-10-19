@@ -224,68 +224,27 @@ gh api -X PUT "repos/{owner}/{repo}/rulesets/24583491" --input .github/rulesets/
 
 A job renamed in `ci.yml` has to be renamed there too, otherwise the old name never reports and every pull request waits.
 
-### CodeQL coverage for dependency updates
+### CodeQL and dependency updates
 
-GitHub's default setup intentionally does not scan Dependabot-triggered pull requests
-([upstream explanation](https://github.com/github/codeql-action/issues/2858)). Its
-`CodeQL` result can therefore be neutral with "3 configurations not found" even though
-the scans on `main` are healthy. An empty maintainer commit triggers a scan once; it
-does not fix the next dependency update.
+GitHub's default setup scans pushes to `main`, the weekly schedule and pull requests, but
+not pull requests that Dependabot opens
+([upstream explanation](https://github.com/github/codeql-action/issues/2858)) and not pull
+requests from forks ([setup types](https://docs.github.com/en/code-security/concepts/code-scanning/setup-types));
+their `CodeQL` result is neutral with "configurations not found". Decided 19.10.2026
+(Maxi): the default setup stays, and both gaps are accepted:
 
-`.github/workflows/codeql.yml` scans Python, JavaScript/TypeScript, and Actions on every
-pull request targeting `main`, pushes to `main`, a weekly schedule, and manual dispatch.
-There are no actor or path exclusions. PRs use `pull_request`, GitHub-hosted runners,
-no repository secrets, and no project build or dependency installation. The token has
-only repository read and security-result upload permissions. Dependabot uploads are
-supported on this event even with a restricted token
-([GitHub documentation](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/resource-not-accessible)).
+- **Dependabot:** `pip` and `docker-compose` updates change version pins, `docker` updates
+  a base image, `github-actions` updates a pinned action in a workflow. `dependency-review`
+  only rejects new versions with known high or critical vulnerabilities; it does not
+  analyze a changed workflow. What covers the rest: the human review of every Dependabot
+  pull request, and CodeQL on `main` after the merge, which flags the changed workflow
+  there.
+- **Forks:** the repository is public; every outside pull request is treated as untrusted and
+  read by a person before a merge; CodeQL on `main` scans it after the merge.
 
-**Rollout is staged, not yet activated.** Until `env.CODEQL_PUBLISH` in the workflow file is `"true"`, the jobs run the full
-analysis without uploading results. The switch is a file value, not a repository
-variable, because Dependabot and fork PRs see no `vars`. A successful validation proves that
-analysis ran, not that it found no alerts. Default setup remains responsible for
-published security results. This avoids conflicting uploads while the replacement is
-reviewed. Do not disable default setup before the workflow is merged to `main`.
-
-After Maxi merges the workflow, switch during a period with no merges in progress.
-Step 1 and step 3 run from Bash with the repository owner's authenticated GitHub CLI;
-step 2 is a reviewed PR that sets `CODEQL_PUBLISH: "true"` in the workflow file.
-
-Step 1, turn default setup off:
-
-```bash
-backup_dir=$(mktemp -d)
-gh api repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup > "$backup_dir/codeql-default-setup.json"
-gh api --method PATCH repos/Maeximilion/Maex-Voice-Agent/code-scanning/default-setup -f state=not-configured
-```
-
-Step 2, merge the one-line PR that flips `CODEQL_PUBLISH` to `"true"`.
-
-Step 3, enable and run the workflow:
-
-```bash
-gh workflow enable codeql.yml --repo Maeximilion/Maex-Voice-Agent
-gh workflow run codeql.yml --ref main --repo Maeximilion/Maex-Voice-Agent
-gh run list --workflow codeql.yml --repo Maeximilion/Maex-Voice-Agent
-```
-
-Keep the backup path. Verify all three language jobs and their uploaded results on
-`main`, then retrigger the `pull_request` event of each open PR (push a commit or
-close and reopen it); `workflow_dispatch` on its branch is not a PR-associated
-analysis and does not count as coverage. A fresh Dependabot PR must show
-all three `CodeQL scan` jobs and a successful CodeQL results check. Existing default
-setup analysis configurations may remain in tool status; mark them inactive only
-after the replacement has published its baseline, without deleting alert history.
-Merge Dependabot PRs with a merge commit, never a squash: a squash commit on `main` is authored by Dependabot, its push workflow gets a read-only token and cannot upload CodeQL results, which leaves the `main` analysis stale; if a squash slips through, the Monday schedule or `gh workflow run codeql.yml --ref main` refreshes it.
-Keep the existing required checks and security thresholds unchanged. A cancelled run
-on an older commit is expected when a newer PR commit supersedes it; assess the latest
-head, not historical commit badges.
-
-If activation fails, stop merges, set `CODEQL_PUBLISH` back to `"false"` in a commit, and restore
-default setup with the languages, query suite, threat model, and runner settings in
-the saved snapshot. Confirm a successful default scan before resuming merges. The
-explicit workflow will return to clearly labelled validation mode. Never report
-the staged migration as active coverage for Dependabot until the upload check passes.
+An explicit `codeql.yml` workflow that closed both gaps was built and removed again (PR
+#333 and PR #335): it meant a workflow file to maintain, merge commits instead of squash
+for every Dependabot pull request, and new languages added by hand.
 
 ---
 
