@@ -6,7 +6,6 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="csrf-token" content="{{ csrf_token }}">
 <title>{% block title %}{{ tenant.name if tenant else "Maex Voice-Agent" }}{% endblock %}</title>
 <link rel="stylesheet" href="/gui/static/app.css">
 <script src="/gui/static/htmx.min.js" defer></script>
@@ -22,6 +21,13 @@
 {% if problem %}<div class="banner danger">{{ problem }}</div>{% endif %}
 {% block header %}{% endblock %}
 <main>{% block main %}{% endblock %}</main>
+<script>
+  // Every write sends the CSRF cookie as a header (docs/06 section 9).
+  document.addEventListener("htmx:configRequest", function (e) {
+    var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+    if (m) e.detail.headers["X-CSRF-Token"] = m[1];
+  });
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

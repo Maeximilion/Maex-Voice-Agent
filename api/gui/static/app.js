@@ -8,15 +8,6 @@
 
   var stoerung = document.getElementById("stoerung");
 
-  // Add the page token to HTMX requests.
-  document.body.addEventListener('htmx:configRequest', function (e) {
-    var meta = document.querySelector('meta[name="csrf-token"]');
-    var token = meta && meta.getAttribute("content");
-    if (token) {
-      e.detail.headers['X-CSRF-Token'] = token;
-    }
-  });
-
   // Ein Tap, der am Server scheitert, liefert trotzdem die Kopfzeile mit der
   // roten Leiste. htmx tauscht bei 4xx/5xx sonst nichts aus, und der Knopf
   // saehe aus, als haette er nichts getan. Getauscht wird aber nur HTML: andere

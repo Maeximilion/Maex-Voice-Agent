@@ -174,19 +174,20 @@ def _header(session: Session, tenant: Tenant) -> dict:
 def _page_response(
     request: Request, template: str, context: dict, status_code: int = 200
 ) -> HTMLResponse:
-    """Issue the same CSRF token to the cookie and the full page's meta tag."""
+    """Render a full page and issue the CSRF cookie base.html sends back as a header."""
     token = request.cookies.get("csrf_token")
     if not token or not token.isascii():
         # A token _require_htmx can never accept would lock every tap out.
         token = secrets.token_urlsafe(32)
-    context["csrf_token"] = token
     response = templates.TemplateResponse(
         request, template, context, status_code=status_code
     )
     response.set_cookie(
         "csrf_token",
         token,
-        httponly=True,
+        # Readable on purpose: base.html copies it into X-CSRF-Token at send
+        # time, so every tab uses the cookie the browser holds right now.
+        httponly=False,
         samesite="lax",
         secure=settings.env not in LOCAL_ENVS or request.url.scheme == "https",
     )

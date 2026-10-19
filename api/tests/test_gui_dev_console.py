@@ -364,7 +364,8 @@ def test_console_page_issues_csrf_token(client, tenant_id):
     page = client.get(BASE)
     token = client.cookies.get("csrf_token")
     assert token and len(token) >= 32
-    assert f'<meta name="csrf-token" content="{token}">' in page.text
+    # The console loads no app.js; base.html must send the header there too.
+    assert 'e.detail.headers["X-CSRF-Token"]' in page.text
     assert (
         client.post(
             f"{BASE}/call",
