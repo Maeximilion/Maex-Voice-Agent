@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.6
+> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.7
 
 ---
 
 ## Summary
+
+**Recording waiting voice results on a branch no longer deletes them (#207, 16.10.2026).** `python3 scripts/readme_assets.py pending --record` wrote the drill and spike rows from `evals/reports/voice_pending.csv` into `docs/metrics/voice_history.csv` and then removed the pending file in every report folder; a branch closed without a merge took the only copy with it. A row now leaves the file only once `origin/main`'s history holds it, so on `main` it shows as pending again until a merged branch has recorded it; a row that does not parse (a kit killed mid-write) is skipped with a note instead of stopping `pending`, the next appended row starts a line of its own, the pruned file is swapped in whole, and `pending` reads the history once instead of once per row. `api/tests/test_readme_assets.py` records on a branch against the main folder's pending file, prunes against a stand-in for main's history, and keeps a cut-off row.
 
 **The operations view answers only requests that came through Caddy (T-9.7, 15.10.2026).** Since Asterisk, a service that takes outside input, shares the Docker network with the API, Caddy's Basic-Auth alone was not enough (security audit, #252 finding 6). Maxi chose the smaller of two fixes: Caddy sends a secret header, `GUI_PROXY_SECRET`, and every route of `/gui` checks it outside dev and test. A server without the secret locks the tablet out, so a deploy checks the tablet. Separate Docker networks, which would protect the database, n8n and Asterisk as well, are noted as T-9.8 for later.
 

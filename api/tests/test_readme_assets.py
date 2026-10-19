@@ -630,6 +630,7 @@ def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(ra, "EVAL_HISTORY", tmp_path / "eval.csv")
     monkeypatch.setattr(ra, "VOICE_HISTORY", tmp_path / "voice.csv")
     monkeypatch.setattr(ra, "recording_branch", lambda root=ra.ROOT: "task/x")
+    monkeypatch.setattr(ra, "merged_voice", set)
 
     def render() -> int:
         state["renders"] += 1
@@ -710,8 +711,127 @@ def test_pending_records_on_a_branch_and_then_lists_nothing(recording: dict) -> 
     assert ra.record_pending([folder]) == 0
     assert len(ra.read_eval_history(ra.EVAL_HISTORY)) == 1
     assert len(ra.read_voice_history(ra.VOICE_HISTORY)) == 1
-    assert not (folder / ra.VOICE_PENDING).exists()
+    assert (folder / ra.VOICE_PENDING).exists()
     assert ra.pending([folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY) == ([], [])
+
+
+def test_rows_recorded_on_a_closed_branch_still_wait_for_main(
+    recording: dict, tmp_path: Path
+) -> None:
+    """#207: a branch that records and is then closed unmerged loses nothing.
+
+    The rows wait in the main folder, the second report folder of a worktree."""
+    here, main_folder = recording["reports"], tmp_path / "main" / "reports"
+    main_folder.mkdir(parents=True)
+    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, drill_row())
+    assert ra.record_pending([here, main_folder]) == 0
+    main_history = tmp_path / "main_voice.csv"
+    _, rows = ra.pending([here, main_folder], ra.EVAL_HISTORY, main_history)
+    assert rows == [drill_row()]
+    # A second recording on the same branch writes no line twice.
+    assert ra.record_pending([here, main_folder]) == 0
+    with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
+        assert len(list(ra.csv.DictReader(fh))) == 1
+    # A later kit run is the only one still pending on that branch.
+    later = {**drill_row("14"), "run_at": "2026-10-15T20:00:00+00:00"}
+    ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, later)
+    _, rows = ra.pending([here, main_folder], ra.EVAL_HISTORY, ra.VOICE_HISTORY)
+    assert rows == [later]
+
+
+def test_recording_drops_the_waiting_rows_main_already_holds(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    later = {**drill_row("14"), "run_at": "2026-10-15T20:00:00+00:00"}
+    for row in (drill_row(), later):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
+    merged = {ra._voice_identity({**drill_row(), "value": "15.0"})}
+    monkeypatch.setattr(ra, "merged_voice", lambda: merged)
+    assert ra.record_pending([folder]) == 0
+    with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
+        assert list(ra.csv.DictReader(fh)) == [later]
+    merged.add(ra._voice_identity(later))
+    assert ra.record_pending([folder]) == 0
+    assert not (folder / ra.VOICE_PENDING).exists()
+
+
+def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
+    recording: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A line cut off when a kit was killed neither blocks `pending` nor is pruned,
+    and the next kit's row starts a line of its own."""
+    folder = recording["reports"]
+    merged_row = {**drill_row("14"), "run_at": "2026-10-15T18:00:00+00:00"}
+    ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, merged_row)
+    with (folder / ra.VOICE_PENDING).open("a", encoding="utf-8") as fh:
+        fh.write("2026-10-15,T-1.11,Outage drills,1")  # the "5" of 15 never written
+    hand_edit = {**drill_row("13"), "date": "16.10.2026"}
+    for row in (drill_row(), hand_edit):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
+    monkeypatch.setattr(ra, "merged_voice", lambda: {ra._voice_identity(merged_row)})
+    assert ra.record_pending([folder]) == 0
+    assert capsys.readouterr().err.count("does not parse") == 2
+    with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
+        assert [r["value"] for r in ra.csv.DictReader(fh)] == ["15"]
+    with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
+        cut, kept, edited = ra.csv.DictReader(fh)
+    assert cut["value"] == "1" and cut["unit"] is None
+    assert kept == drill_row() and edited == hand_edit
+
+
+def test_a_kit_writing_to_an_empty_pending_file_writes_the_header(
+    tmp_path: Path,
+) -> None:
+    waiting = tmp_path / ra.VOICE_PENDING
+    waiting.touch()  # the kit before was killed ahead of its header
+    ra.append_row(waiting, ra.VOICE_FIELDS, drill_row())
+    _, rows = ra.pending([tmp_path], tmp_path / "e.csv", tmp_path / "v.csv")
+    assert rows == [drill_row()]
+
+
+def test_a_pending_file_another_session_holds_open_is_pruned_later(
+    recording: dict, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    folder = recording["reports"]
+    for row in (drill_row(), {**drill_row("14"), "run_at": "2026-10-15T20:00:00Z"}):
+        ra.append_row(folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, row)
+    before = (folder / ra.VOICE_PENDING).read_text(encoding="utf-8")
+
+    def held_open(src: object, dst: object) -> None:
+        raise PermissionError("in use")
+
+    monkeypatch.setattr(ra.os, "replace", held_open)
+    ra.prune_pending(folder / ra.VOICE_PENDING, {ra._voice_identity(drill_row())})
+    assert (folder / ra.VOICE_PENDING).read_text(encoding="utf-8") == before
+    assert [p.name for p in folder.iterdir()] == [ra.VOICE_PENDING]
+
+
+@pytest.mark.skipif(ra.shutil.which("git") is None, reason="needs git")
+def test_main_s_voice_rows_come_from_origin_main(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CEILING_DIRECTORIES", str(tmp_path.parent))
+
+    def git(*args: str) -> None:
+        isolated = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath="]
+        ra.subprocess.run(
+            ["git", *isolated, *args], cwd=tmp_path, check=True, capture_output=True
+        )
+
+    history = tmp_path / ra.VOICE_PATH
+    history.parent.mkdir(parents=True)
+    row = {**drill_row(), "metric": "Outage drill café"}  # read as UTF-8 on Windows
+    ra.append_row(history, ra.VOICE_FIELDS, row)
+    assert ra.merged_voice(tmp_path) == set()  # no git, no pruning
+    git("init", "-q")
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "m")
+    git("update-ref", "refs/remotes/origin/main", "HEAD")
+    history.unlink()  # the checkout's own file plays no part
+    assert ra.merged_voice(tmp_path) == {ra._voice_identity(row)}
 
 
 def test_pending_refuses_to_record_on_main(
@@ -1121,7 +1241,7 @@ def test_a_kit_on_main_waits_for_the_recorder_holding_the_lock(
     assert rows == [drill_row()]
 
 
-def test_pending_record_holds_the_lock_while_it_reads_and_removes(
+def test_pending_record_holds_the_lock_while_it_reads(
     recording: dict, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     folder = recording["reports"]
@@ -1143,7 +1263,6 @@ def test_pending_record_holds_the_lock_while_it_reads_and_removes(
     monkeypatch.setattr(ra, "record_voice", while_recording)
     ra.record_pending([folder])
     assert held == [True]
-    assert not (folder / ra.VOICE_PENDING).exists()
 
 
 def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
