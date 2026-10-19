@@ -379,13 +379,18 @@ fi
 mkdir -p "$dst"
 chmod 700 "$dst"
 # A login refresh replaces the linked .credentials.json with a file of its own. Hand a newer
-# login back to ~/.claude and link again, so the normal launcher never keeps a stale token.
-# ponytail: only at the next claude-rc start; while both run, a refresh in one stays there until then.
-c=.credentials.json
-if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
-  if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
-  rm -f "$dst/$c"
-fi
+# login back to ~/.claude and link again, at start and when Claude exits, so the normal
+# launcher never keeps a stale token.
+# ponytail: while both run at once, a refresh in one reaches the other when claude-rc exits.
+sync_login() {
+  local c=.credentials.json
+  if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
+    if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
+    rm -f "$dst/$c"
+    [ ! -e "$src/$c" ] || ln -sfn "$src/$c" "$dst/$c"
+  fi
+}
+sync_login
 shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
         history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
 for name in "${shared[@]}"; do
@@ -417,11 +422,16 @@ if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
   echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
 fi
 export CLAUDE_CONFIG_DIR="$dst"
+# Not exec: the login is handed back once Claude exits.
+status=0
 if [ "${1-}" = server ]; then
   shift
-  exec claude remote-control "$@"
+  claude remote-control "$@" || status=$?
+else
+  claude --remote-control "$@" || status=$?
 fi
-exec claude --remote-control "$@"
+sync_login
+exit "$status"
 ```
 
 ## 5. Restore
