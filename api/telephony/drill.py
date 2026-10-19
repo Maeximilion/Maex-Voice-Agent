@@ -32,6 +32,13 @@ one call per drill:
                   nothing: the team rings
   frozen mid-call `voice` is paused after it answered: the team rings
   database down   the database is stopped: the team rings
+  off the list    `voice` hands the call to a number that is not on the
+                  dialplan's list: the team rings at TEAM_PHONE, the number is
+                  never dialled
+  listed, busy    `voice` hands the call to another number of the list, which
+                  is busy: the team rings at TEAM_PHONE after it
+  stranger        an INVITE from an address that is not the router, From user
+                  `access` (the endpoint's name), is refused
 
 A team ring is timed on this machine's monotonic clock from the call being
 placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
@@ -52,6 +59,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -69,6 +77,10 @@ RUN_MARKER = ".voice-drill-run"
 NUMBER_PREFIX = "+4972215550"
 VOICE_NUMBER = NUMBER_PREFIX + "100"
 TEAM_PHONE = NUMBER_PREFIX + "900"
+# On the AI telephone's list of transfer targets (TRANSFER_TARGETS); the
+# router's telephone there is busy. And a number on no list.
+LISTED_BUSY_NUMBER = NUMBER_PREFIX + "901"
+UNLISTED_NUMBER = NUMBER_PREFIX + "999"
 # docs/20 §5: each row of the outage map within the limit Maxi sets (proposal).
 TEAM_LIMIT_SECONDS = 30.0
 # What a call may take at most before the drill gives up on it.
@@ -166,6 +178,7 @@ class Drill:
             "DRILL_GID": str(os.getgid()),
             "VOICE_NUMBER": VOICE_NUMBER,
             "TEAM_PHONE": TEAM_PHONE,
+            "TRANSFER_TARGETS": LISTED_BUSY_NUMBER,
             "ACCESS_HOST": "router",
             "ACCESS_USER": "ai",
         }
@@ -209,6 +222,9 @@ class Drill:
 
     def mode(self, mode: str) -> None:
         self.sql(f"update service_config set call_mode = '{mode}'")
+
+    def team_phone(self, number: str) -> None:
+        self.sql(f"update service_config set team_phone = '{number}'")
 
     def log(self, service: str) -> list[str]:
         return self.compose("logs", "--no-color", service).splitlines()
@@ -267,9 +283,11 @@ class Drill:
             for number in [
                 *(
                     f"{NUMBER_PREFIX}{n}"
-                    for n in (101, 102, 103, 104, 105, 106, 107, 108)
+                    for n in (101, 102, 103, 104, 105, 106, 107, 108, 109, 110)
                 ),
                 TEAM_PHONE,
+                LISTED_BUSY_NUMBER,
+                UNLISTED_NUMBER,
             ]
             for form in (number, "%2B" + number[1:])
         ]
@@ -321,10 +339,21 @@ class Call:
 
     @property
     def team_rings(self) -> str:
+        return self.rings_at(TEAM_PHONE)
+
+    @staticmethod
+    def rings_at(number: str) -> str:
         # Not by the caller's number: the team leg carries the user of our
         # registration (`from_user`). One call at a time, and only lines after
         # this one was placed count.
-        return rf"DRILL team rings at \{TEAM_PHONE}\b"
+        return rf"DRILL team rings at \{number}\b"
+
+    def first_line(self, pattern: str) -> int | None:
+        """Where `pattern` first shows in the router's log for this call."""
+        for i, line in enumerate(self.lines("router")):
+            if re.search(pattern, line):
+                return i
+        return None
 
     @property
     def answered(self) -> str:
@@ -443,6 +472,119 @@ def drill_paused(drill: Drill) -> list[Check]:
     ]
 
 
+def transfer_to(drill: Drill, n: int, number: str) -> tuple[Call, Check]:
+    """Call n while the database names `number` as the team's and the mode is
+    paused: the core hands the call over before a word (#252 findings 1, 3)."""
+    drill.team_phone(number)
+    drill.mode("paused")
+    try:
+        call = drill.place(n)
+        check = team_check(f"handed to {number}: the team rings", call, call.placed)
+    finally:
+        drill.mode("primary")
+        drill.team_phone(TEAM_PHONE)
+    drill.quiet()
+    return call, check
+
+
+def drill_unlisted(drill: Drill) -> list[Check]:
+    call, check = transfer_to(drill, 109, UNLISTED_NUMBER)
+    dialled = call.router_says(call.rings_at(UNLISTED_NUMBER))
+    return [
+        check,
+        (
+            "off the list: the number is never dialled",
+            not dialled,
+            f"dialled: {dialled}",
+        ),
+    ]
+
+
+def drill_listed_busy(drill: Drill) -> list[Check]:
+    call, check = transfer_to(drill, 110, LISTED_BUSY_NUMBER)
+    busy = call.first_line(call.rings_at(LISTED_BUSY_NUMBER))
+    team = call.first_line(call.team_rings)
+    return [
+        check,
+        (
+            "listed, busy: tried first, then the team at TEAM_PHONE",
+            busy is not None and team is not None and busy < team,
+            f"router log lines: listed number {busy}, TEAM_PHONE {team}",
+        ),
+    ]
+
+
+def drill_stranger(drill: Drill) -> list[Check]:
+    """Sent from the container of `voice`, an address on the network that is
+    not the router's (#252 finding 2)."""
+    answers = drill.compose(
+        "exec",
+        "-T",
+        "voice",
+        "python",
+        "-c",
+        "from api.telephony.drill import stranger_invite; print(*stranger_invite())",
+    )
+    codes = [int(code) for code in answers.split()]
+    # Whatever got through ends here, so the next drill starts alone.
+    drill.cli("asterisk", "channel request hangup all")
+    return [
+        (
+            "stranger: an INVITE from another address as `access` is refused",
+            refused(codes),
+            f"answers: {' '.join(map(str, codes)) or 'none'}",
+        )
+    ]
+
+
+def refused(codes: list[int]) -> bool:
+    """A final error and nothing on the way that says the call went on."""
+    return bool(codes) and codes[-1] >= 400 and all(c == 100 or c >= 400 for c in codes)
+
+
+def stranger_invite(
+    host: str = "asterisk", port: int = 5060, timeout: float = 4.0
+) -> list[int]:
+    """One INVITE as the access sends it, From user `access`: the name of the
+    endpoint, which Asterisk's identification by user took from anywhere. The
+    status codes of the answers, up to the first final one or `timeout`. Runs
+    inside the drill's `voice` container; standard library only."""
+    address = socket.gethostbyname(host)
+    tag = secrets.token_hex(8)
+    codes: list[int] = []
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.connect((address, port))
+        me, my_port = sock.getsockname()
+        sdp = (
+            f"v=0\r\no=- 1 1 IN IP4 {me}\r\ns=-\r\nc=IN IP4 {me}\r\nt=0 0\r\n"
+            "m=audio 40000 RTP/AVP 8\r\na=rtpmap:8 PCMA/8000\r\n"
+        )
+        sock.send(
+            (
+                f"INVITE sip:ai@{address} SIP/2.0\r\n"
+                f"Via: SIP/2.0/UDP {me}:{my_port};branch=z9hG4bK{tag};rport\r\n"
+                "Max-Forwards: 70\r\n"
+                f"From: <sip:access@stranger.invalid>;tag={tag}\r\n"
+                f"To: <sip:ai@{address}>\r\n"
+                f"Call-ID: {tag}@stranger.invalid\r\n"
+                "CSeq: 1 INVITE\r\n"
+                f"Contact: <sip:access@{me}:{my_port}>\r\n"
+                "Content-Type: application/sdp\r\n"
+                f"Content-Length: {len(sdp)}\r\n\r\n{sdp}"
+            ).encode()
+        )
+        end = time.monotonic() + timeout
+        while not codes or codes[-1] < 200:
+            sock.settimeout(max(end - time.monotonic(), 0.001))
+            try:
+                status = sock.recv(65535).split(b"\r\n", 1)[0].split()
+            except (TimeoutError, ConnectionRefusedError):
+                break
+            if len(status) > 1 and status[0] == b"SIP/2.0" and status[1].isdigit():
+                codes.append(int(status[1]))
+    return codes
+
+
 def drill_crash(drill: Drill) -> list[Check]:
     call = drill.place(105)
     call.wait(call.answered, timeout=15)
@@ -520,8 +662,11 @@ def drill_database_down(drill: Drill) -> list[Check]:
 SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("a silent caller (101)", drill_silent),
     ("a call from our own number (100)", drill_own_number),
+    ("an INVITE from a stranger", drill_stranger),
     ("keys, and the model is down (102)", drill_keys),
     ("mode paused (103)", drill_paused),
+    ("a transfer to a number off the list (109)", drill_unlisted),
+    ("a transfer to a busy number on the list (110)", drill_listed_busy),
     ("voice crashes in the middle of a call (105)", drill_crash),
     ("voice is down (104)", drill_voice_down),
     ("voice is frozen (107)", drill_voice_frozen),
