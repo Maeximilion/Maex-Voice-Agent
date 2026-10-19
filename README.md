@@ -69,7 +69,7 @@ The images below are drawn from the measurement files in [`docs/metrics/`](docs/
   <img src=".github/assets/voice-bench.svg" width="100%" alt="Measurements of the own voice layer with date, value, limit and verdict go, at limit or no-go: the telephony spike, silent wrong numbers of the speech recognition, dishes heard right in spoken orders and the outage drills. Numbers in docs/metrics/voice_history.csv.">
 </p>
 
-How the images stay current: a full eval run on a real model records itself (`make eval` and `make eval-targets` on a branch), the voice kits record their own measurements, and every record redraws the images from the files; CI fails when an image no longer matches its data (`docs/15_README_STRATEGY.md`, section "Assets and design").
+How the images stay current: a full eval run on a real model records itself (`make eval` and `make eval-targets` on a branch), the voice kits record their own measurements, and every Sunday night a routine redraws the images and the status from the files and merges them in one PR (`docs/15_README_STRATEGY.md`, section "Assets and design").
 
 <!-- readme:capabilities -->
 **What works:**

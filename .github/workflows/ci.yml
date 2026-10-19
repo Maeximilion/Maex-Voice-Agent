@@ -60,9 +60,11 @@ jobs:
           python-version: "3.12"
           cache: pip
       # The README images are drawn from docs/metrics/, the task list and the status
-      # (stdlib only, before the install): a stale image fails here, the fix is
-      # `make readme-assets` (docs/15_README_STRATEGY.md, "Assets and design").
-      - name: README images match their data
+      # (stdlib only, before the install). Advisory since 2026-10-19: a stale image
+      # shows here as a warning, the weekly README update redraws it
+      # (docs/15_README_STRATEGY.md, "Keeping them current").
+      - name: README images match their data (advisory)
+        continue-on-error: true
         run: python scripts/readme_assets.py render --check
       # The compiled lock file: exact versions, every download checked against its hash.
       - run: pip install --require-hashes -r api/requirements.txt

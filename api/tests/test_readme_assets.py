@@ -262,11 +262,6 @@ def test_check_reports_a_stale_asset(
     assert ra.render(check=True) == 1
 
 
-def test_committed_assets_match_their_data() -> None:
-    """The same check CI runs; a failure here means `make readme-assets`."""
-    assert ra.render(check=True) == 0
-
-
 # --- recording guards (Codex on 73a0005) -----------------------------------------
 
 
@@ -1348,15 +1343,10 @@ def test_nothing_open_still_names_the_heading(assets: Path) -> None:
     assert ra.image_findings() == {ra.IMAGES_HEADING: []}
 
 
-def test_a_stale_image_is_reported_by_name_and_digest(assets: Path) -> None:
+def test_a_stale_svg_waits_for_the_weekly_update(assets: Path) -> None:
     ra.mark_uploaded()
     (assets / "progress.svg").write_text("<svg/>", encoding="utf-8")
-    (entry,) = ra.image_findings()[ra.IMAGES_HEADING]
-    name, digest = entry["id"].split(":")
-    assert name == "progress.svg" and len(digest) == 64
-    assert "make readme-assets" in entry["label"]
-    # The same stale state gives the same key, so the issue mentions it once.
-    assert ra.image_findings()[ra.IMAGES_HEADING] == [entry]
+    assert ra.image_findings() == {ra.IMAGES_HEADING: []}
 
 
 def test_a_new_social_preview_is_reported_until_it_is_marked_uploaded(
