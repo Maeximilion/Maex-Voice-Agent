@@ -37,9 +37,11 @@ import argparse
 import csv
 import functools
 import hashlib
+import io
 import itertools
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -576,6 +578,33 @@ def _voice_identity(row: dict[str, str]) -> object:
     return (row.get("run_at") or "", *measured)
 
 
+def _voice_key(row: dict[str, str]) -> object | None:
+    """The identity of a history row, None for one that does not parse."""
+    try:
+        return _voice_identity(row)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _waiting_key(row: dict[str, str]) -> object | None:
+    """The identity of a waiting row, None for one that is not whole: a line cut off
+    when a kit was killed (too few fields, or too many where the next row was
+    appended to it), or a hand edit with a date `render` cannot read.
+    ponytail: a line cut inside its last field still has every field; one write
+    of one short line makes that rare, so no end-of-line marker for it."""
+    if None in row or None in row.values():
+        return None
+    try:
+        date.fromisoformat(row["date"])
+    except (KeyError, ValueError):
+        return None
+    return _voice_key(row)
+
+
+def voice_identities(text: str | None) -> set[object]:
+    return {_voice_key(r) for r in csv.DictReader(io.StringIO(text or ""))} - {None}
+
+
 def read_eval_history(path: Path = EVAL_HISTORY) -> list[EvalRun]:
     if not path.exists():
         return []
@@ -672,12 +701,21 @@ def run_from_report(report: dict, suite: str) -> dict[str, str]:
 
 
 def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
-    new = not path.exists()
+    # An empty file is one whose writer was killed before the header.
+    new = not path.exists() or path.stat().st_size == 0
     path.parent.mkdir(parents=True, exist_ok=True)
+    cut = False
+    if not new:
+        # A line a killed writer cut off stays a line of its own.
+        with path.open("rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            cut = fh.read(1) != b"\n"
     with path.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
         if new:
             writer.writeheader()
+        elif cut:
+            fh.write("\n")
         writer.writerow({k: row.get(k, "") for k in fields})
 
 
@@ -771,10 +809,7 @@ def record_report(
 def is_voice_recorded(row: dict[str, str], path: Path = VOICE_HISTORY) -> bool:
     if not path.exists():
         return False
-    with path.open(encoding="utf-8", newline="") as fh:
-        return any(
-            _voice_identity(old) == _voice_identity(row) for old in csv.DictReader(fh)
-        )
+    return _voice_identity(row) in voice_identities(path.read_text(encoding="utf-8"))
 
 
 def record_voice(row: dict[str, str], path: Path = VOICE_HISTORY) -> str:
@@ -2364,6 +2399,7 @@ def report_folder(suite: str | None, reports: Path = REPORTS) -> Path:
 
 # A measurement made on `main` waits here, in the ignored report folder.
 VOICE_PENDING = "voice_pending.csv"
+VOICE_PATH = VOICE_HISTORY.relative_to(ROOT).as_posix()
 # What each voice kit reports, by the package that built it (docs/20 §10).
 KIT_PACKAGE = {"drill": "T-1.11", "spike": "T-10.1 step 1", "speech": "T-10.3"}
 KIT_METRIC = {
@@ -2375,7 +2411,12 @@ KIT_METRIC = {
 def git(*args: str, root: Path = ROOT) -> str | None:
     try:
         return subprocess.run(
-            ["git", *args], cwd=root, capture_output=True, text=True, check=True
+            ["git", *args],
+            cwd=root,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError):
         return None
@@ -2426,7 +2467,7 @@ def file_lock(path: Path) -> Iterator[None]:
 
 def pending_lock(folder: Path) -> AbstractContextManager[None]:
     """One writer at a time on a folder's pending file: a kit appending a row, or
-    `pending --record` reading and removing it."""
+    `pending --record` reading it and dropping the rows `main` holds."""
     return file_lock(folder / "voice_pending.lock")
 
 
@@ -2514,6 +2555,7 @@ def pending(
     reports: list[tuple[Path, str]] = []
     rows: list[dict[str, str]] = []
     names: set[tuple[str, str]] = set()
+    seen = voice_identities(voice.read_text(encoding="utf-8") if voice.exists() else "")
     for folder in report_folders() if folders is None else folders:
         for suite, sub in (("cases", folder), ("targets", folder / "targets")):
             for path in sorted(sub.glob("eval_*.json")):
@@ -2529,30 +2571,85 @@ def pending(
         waiting = folder / VOICE_PENDING
         if waiting.exists():
             with waiting.open(encoding="utf-8", newline="") as fh:
-                rows += [
-                    r
-                    for r in unique(list(csv.DictReader(fh)), _voice_identity)
-                    if not is_voice_recorded(r, voice) and r not in rows
-                ]
+                for row in csv.DictReader(fh):
+                    if (key := _waiting_key(row)) is None:
+                        print(
+                            f"readme_assets: {shown(waiting)} has a row that does not "
+                            f"parse, skipped: {row}",
+                            file=sys.stderr,
+                        )
+                    elif key not in seen:
+                        seen.add(key)
+                        rows.append(row)
     return reports, rows
+
+
+def merged_voice(root: Path = ROOT) -> set[object]:
+    """The voice rows `main` holds on GitHub, as of the last fetch."""
+    text = git("show", f"origin/main:{VOICE_PATH}", root=root)
+    if text is None:
+        print(
+            f"readme_assets: no origin/main:{VOICE_PATH} to compare with, "
+            "waiting voice rows not pruned",
+            file=sys.stderr,
+        )
+    return voice_identities(text)
+
+
+def prune_pending(path: Path, merged: set[object]) -> None:
+    """Drop the waiting rows `main` already holds, and the file once none is left.
+    A row that does not parse stays as it is, for a person to look at."""
+    if not merged or not path.exists():
+        return
+    with path.open(encoding="utf-8", newline="") as fh:
+        table = list(csv.reader(fh))
+    if not table:
+        return
+    header, *lines = table
+    # As DictReader reads a row: a missing field is None, extra ones sit under None.
+    keep = [
+        line
+        for line in lines
+        if _waiting_key(dict(itertools.zip_longest(header, line))) not in merged
+    ]
+    if len(keep) == len(lines):
+        return
+    # A new file swapped in whole: a kill halfway through loses no waiting row.
+    fresh = path.with_name(path.name + ".tmp")
+    try:
+        if not keep:
+            path.unlink()
+            return
+        with fresh.open("w", encoding="utf-8", newline="") as fh:
+            csv.writer(fh, lineterminator="\n").writerows([header, *keep])
+        os.replace(fresh, path)
+    except OSError as exc:
+        # On Windows, a `pending` listing in another session that holds the file
+        # open. Pruning is housekeeping: the rows stay for the next recording.
+        print(f"readme_assets: {shown(path)} not pruned: {exc}", file=sys.stderr)
+        fresh.unlink(missing_ok=True)
 
 
 @under_history_lock
 def record_pending(folders: list[Path] | None = None) -> int:
     folders = report_folders() if folders is None else folders
-    reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
-    if not reports and not rows:
-        print("nothing pending")
-        return 0
-    if recording_branch() is None:
-        print("on main nothing is recorded: run this on a branch", file=sys.stderr)
-        return 1
     with ExitStack() as held:
-        # Every pending file stays locked from the read to its removal: a kit that
-        # finishes meanwhile waits and then starts a new one.
+        # No pending file is read or pruned while a kit appends to it.
         for folder in folders:
             held.enter_context(pending_lock(folder))
+        # A row leaves only once `main` holds it: if the branch that recorded it is
+        # closed without a merge, `pending` lists the row again (#207).
+        waiting = [f / VOICE_PENDING for f in folders if (f / VOICE_PENDING).exists()]
+        merged = merged_voice() if waiting else set()
+        for path in waiting:
+            prune_pending(path, merged)
         reports, rows = pending(folders, EVAL_HISTORY, VOICE_HISTORY)
+        if not reports and not rows:
+            print("nothing pending")
+            return 0
+        if recording_branch() is None:
+            print("on main nothing is recorded: run this on a branch", file=sys.stderr)
+            return 1
         for path, suite in reports:
             report = json.loads(path.read_text(encoding="utf-8"))
             print(
@@ -2561,8 +2658,6 @@ def record_pending(folders: list[Path] | None = None) -> int:
             )
         for row in rows:
             print(record_voice(row, VOICE_HISTORY))
-        for folder in folders:
-            (folder / VOICE_PENDING).unlink(missing_ok=True)
     return render()
 
 
