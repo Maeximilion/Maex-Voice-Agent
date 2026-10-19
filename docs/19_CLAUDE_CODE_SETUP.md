@@ -348,7 +348,7 @@ jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", a
 
 ### claude-rc (Ubuntu only)
 
-Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` and without an API key (Remote Control takes only the claude.ai login) at every start, and runtime state (daemon, sessions, caches) stays apart. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
+Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` and without an API key (Remote Control takes only the claude.ai login) at every start, and the daemon and caches stay apart. Session transcripts and memory live under the linked `projects` folder on purpose, so history and memory carry over between both launchers; each session writes its own transcript file. The launcher refuses to run when `~/.claude-rc` is a link or resolves to `~/.claude`, because its settings rewrite would then replace the real `~/.claude/settings.json`. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
 
 ```bash
 #!/usr/bin/env bash
@@ -357,8 +357,9 @@ Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `
 # (Headroom on 127.0.0.1:8787) that a shell variable cannot override. This launcher runs
 # Claude with its own config folder ~/.claude-rc: login, hooks, plugins, skills, memory and
 # history are links into ~/.claude, and settings.json is rebuilt from ~/.claude/settings.json
-# without ANTHROPIC_BASE_URL and API keys at every start. Runtime state (daemon, sessions, caches) stays
-# separate, so a Headroom session and this one never share a process.
+# without ANTHROPIC_BASE_URL and API keys at every start. The daemon and caches stay
+# separate, so a Headroom session and this one never share a process; session transcripts
+# and memory under projects/ are shared on purpose (each session has its own file).
 # Usage, inside the checkout (cd ~/Maex-Voice-Agent):
 #   claude-rc           interactive session, linked to claude.ai through Remote Control
 #   claude-rc server    Remote Control server: claude.ai, the app and projects start sessions here
@@ -369,6 +370,12 @@ set -euo pipefail
 old_umask=$(umask)
 umask 077
 src="$HOME/.claude" dst="$HOME/.claude-rc"
+# A ~/.claude-rc that is a link, or the same folder as ~/.claude, would let the settings
+# rewrite below replace the real ~/.claude/settings.json.
+if [ -L "$dst" ] || { [ -d "$dst" ] && [ "$(cd "$dst" && pwd -P)" = "$(cd "$src" && pwd -P)" ]; }; then
+  echo "claude-rc: $dst must be its own folder, not a link to or the same as $src; nothing changed." >&2
+  exit 1
+fi
 mkdir -p "$dst"
 chmod 700 "$dst"
 shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
