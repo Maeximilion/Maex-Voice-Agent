@@ -266,7 +266,7 @@ analysis and does not count as coverage. A fresh Dependabot PR must show
 all three `CodeQL scan` jobs and a successful CodeQL results check. Existing default
 setup analysis configurations may remain in tool status; mark them inactive only
 after the replacement has published its baseline, without deleting alert history.
-Merge Dependabot PRs with a merge commit, never a squash: a squash commit on `main` is authored by Dependabot, its push workflow gets a read-only token and cannot upload CodeQL results, which leaves the `main` analysis stale.
+Merge Dependabot PRs with a merge commit, never a squash: a squash commit on `main` is authored by Dependabot, its push workflow gets a read-only token and cannot upload CodeQL results, which leaves the `main` analysis stale; if a squash slips through, the Monday schedule or `gh workflow run codeql.yml --ref main` refreshes it.
 Keep the existing required checks and security thresholds unchanged. A cancelled run
 on an older commit is expected when a newer PR commit supersedes it; assess the latest
 head, not historical commit badges.

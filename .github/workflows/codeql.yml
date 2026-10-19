@@ -1,5 +1,8 @@
 name: codeql
 
+# A push to main authored by Dependabot (squash merge) runs with a read-only token and cannot
+# upload results; merge those PRs with a merge commit (docs/13_DEPLOYMENT.md). If one slips
+# through, the Monday schedule below (or workflow_dispatch on main) refreshes the main analysis.
 "on":
   push:
     branches: [main]
