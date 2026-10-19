@@ -7,9 +7,9 @@
 
 ## Grundregeln für jede Session
 
-1. **Erst lesen, dann tippen.** `/start` liest `CLAUDE.md` und `docs/01_STATUS.md` und schlägt die nächste Aufgabe vor.
-2. **Eine Aufgabe, ein Branch.** `task/T-1-3-service-status`. Merge nach `main` nur mit grünen Tests.
-3. **Plan vor Code**, sobald mehr als drei Dateien betroffen sind. Plan zeigen, kurz bestätigen lassen, dann bauen.
+1. **Erst lesen, dann tippen.** `/start` reads the current sections of `docs/01_STATUS.md` and the open tasks, and suggests the next task.
+2. **Eine Aufgabe, ein Branch.** `task/T-1-3-service-status`. Merging into `main` follows `CLAUDE.md` §6.
+3. **Plan vor Code**, sobald mehr als drei Dateien betroffen sind. Show the plan, then build; wait only where `CLAUDE.md` §6 says so.
 4. **Klein committen.** Ein Commit pro abgeschlossenem Schritt, nicht pro Session.
 5. **Ausführen, nicht behaupten.** Tests laufen wirklich. Latenz wird wirklich gemessen.
 6. **Weiterdenk-Budget: drei Schritte.** Nach der Aufgabe bis zu drei naheliegende Folgeschritte selbst machen (Test ergänzen, Doku nachziehen, offensichtliche Lücke), dann melden.
