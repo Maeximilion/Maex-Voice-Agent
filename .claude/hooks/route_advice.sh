@@ -106,15 +106,16 @@ else
   # A file or data transfer is not a call transfer, and how a price looks is not what it is,
   # whichever comes first ("price badge", "badge color for the price").
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
-      s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?) (typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g
-      s/\b(typography|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)( [a-z]+){0,2} (for|of) (the |an? )?(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?)\b//g' \
+      s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?) (typography|banners?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)\b//g
+      s/\b(typography|banners?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text)( [a-z]+){0,2} (for|of) (the |an? )?(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?)\b//g' \
       <<<"$lower" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
   elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
-  # Sonnet work only when no other code path is named (api/gui/ and templates are Sonnet's own).
+  # Sonnet work only when no other code path or implementation work is named (api/gui/ and
+  # templates are Sonnet's own).
   # Docs-only prompts were taken above, so a docs mention left here sits next to other work.
   elif sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#\b(readme|docs?)\b##g' <<<"$lower" | grep -qiE "$sonnet" \
-    && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g' <<<"$lower" | grep -qiE "$codepath"; then
+    && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g' <<<"$lower" | grep -qiE "$codepath|\b(implement|refactor|debug|migrate|deploy)[a-z]*\b"; then
     want=claude-sonnet-5-5 effort=medium
   else
     # No keyword: the table's default, but not for a short line that names no work.
@@ -154,7 +155,7 @@ want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
 # match except where xhigh is wanted: that one is asked about once.
 if [[ "$model" == "$want"* ]]; then
-  if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then exit 0; fi
+  if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then [ -z "$route" ] || rm -f "$state/$sid.seen"; exit 0; fi
   [ -n "$have_effort" ] || [ "$effort" = xhigh ] || exit 0
 fi
 

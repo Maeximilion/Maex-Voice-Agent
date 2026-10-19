@@ -209,6 +209,22 @@ def test_docs_next_to_unnamed_work_takes_the_default(run):
     assert run("Update README with the new setup steps", sid="r") is None
 
 
+def test_an_outage_banner_is_gui_work(run):
+    assert run("Fix the outage banner in the GUI") is None
+
+
+def test_gui_next_to_unnamed_implementation_takes_the_default(run):
+    out = run("Update the GUI and implement authentication", "claude-opus-5-5", "high")
+    assert out is None
+
+
+def test_a_matching_brief_resets_the_retry_count(run):
+    assert "do not start" in str(run(BRIEF, "claude-opus-5-5", "xhigh"))
+    assert run(BRIEF, "claude-sonnet-5-5", "medium") is None
+    # Moved back to the wrong setting later: a new episode stops again.
+    assert "do not start" in str(run(BRIEF, "claude-opus-5-5", "xhigh"))
+
+
 def test_a_mere_fable_mention_is_no_request(run):
     out = run("Mention Fable in the README", "claude-fable-5-1", "high")
     assert "claude-sonnet-5-5 at effort medium" in message(out)
