@@ -9,7 +9,7 @@
 
 An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints are to be resolved by fixed rules from the database, and what the rules do not cover goes to the team (D19, 07.10.2026; until T-10.11 is built the code hands a complaint to a human). Edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
 
-**Division of Labor (since 07.10.2026, E1 flipped):** there is no external voice platform. We build the **logic, database, interface and the voice layer**: Asterisk takes the call on our own server, speech-to-text and text-to-speech sit behind swappable ports, the conversation core decides (`docs/20_VOICE_LAYER.md`). The voice layer is decided, not built yet; a hosted platform is the last resort only.
+**Division of Labor (since 07.10.2026, E1 flipped):** there is no external voice platform. We build the **logic, database, interface and the voice layer**: Asterisk takes the call on our own server, speech-to-text and text-to-speech sit behind swappable ports, the conversation core decides (`docs/20_VOICE_LAYER.md`). The voice layer runs on the workbench in the test phase (T-1.11), not live yet; a hosted platform is the last resort only.
 
 **Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
 
@@ -40,7 +40,7 @@ These six rules override any convenience. If a task violates them: **stop and as
 | Tests | pytest, pytest-asyncio, httpx | Default |
 | Lint/Format | ruff (Format + Lint), mypy non-strict mode | Default |
 | Operations | Docker Compose, Hosting in EU | Set |
-| Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, not built |
+| Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, test phase on the workbench |
 
 "Default" = suggestion, can change. If Maxi disagrees, this and `docs/01_STATUS.md` get updated.
 
@@ -123,7 +123,7 @@ maex-voice-agent/
 ## 6. How You Work
 
 ### Slash Commands (`.claude/commands/`)
-`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with red eval case first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 **Where a task runs:** a work package row with the note `Environment: Ubuntu (WSL) on the workbench` runs only in a session started in Ubuntu on Maxi's PC, never Windows-local and never in the cloud. `/task` checks this before it reads anything else. Start, kits and limits: `docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10.
 
@@ -165,13 +165,13 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 **Findings for another open PR** (Maxi, 2026-10-06): a finding that belongs to an open PR of another session goes there as one comment: the finding, the evidence, the proposed change and where it is tracked. Never as an edit on that PR's branch from a different session.
 
-**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A new commit after the review needs a new review before the merge. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A general go-ahead for the task ("do it all", "let the AI finish it") does not cover this merge; only Maxi's word for that PR does (2026-10-19, #330). A new commit after the review needs a new review before the merge. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
 
 ### Reviews
-Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every commit that moves the head, a merge from `main` included. The rest is advisory (Maxi, 2026-10-06):
+Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every commit that moves the head, a merge from `main` included. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test, a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06):
 
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
-- `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1.
+- `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
 - Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
 ### Session End

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.9
+> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.10
 
 ---
 
@@ -259,6 +259,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D19 | ~~What the AI does with a complaint~~ **decided 07.10.2026 (Maxi): it resolves the complaint itself by fixed rules from the database; what the rules do not resolve is recorded and the team calls back.** Replaces E8 for complaints. Open: the rule catalogue (which remedy in which case, with limits); every remedy is money and comes from the database (hard rule 1) | Maxi | done; catalogue before T-10.11 |
 | D20 | ~~Who reviews the legal check~~ **decided 07.10.2026 (Maxi): the checklist is worked through by putting the same question catalogue to two AI models independently (Gemini and Claude) and comparing the answers until every point is settled; no lawyer or data protection consultant.** Recorded with the decision: this is not legal advice, two models can share an error, liability stays with the controller. Claude recommended a professional for the final review; Maxi decided otherwise. D9 stays open. Every open point of `docs/09_OPERATIONS_LEGAL.md` keeps blocking real customer calls | Maxi | done; the check itself is open |
 | D21 | Does live audio that is streamed to a speech service without being stored fall under the rules for recordings (E11)? In the test phase no audio leaves the workbench, so the question is due with the EU speech services | part of the check (D20) | before the first real call on a speech service |
+| D22 | Status and history layout (Claude setup audit, 19.10.2026). `/start` now reads only the current sections of this file (about 49 KB instead of 476 KB). Open: move the Summary paragraphs, Done rows and Changelog lines into one `docs/HISTORY.md`, one entry per event, merged with git's built-in `union` driver (tested: two parallel entries merge without a conflict). Replayed on the 95 merges of `main` into a branch since 12.10.2026: 68 conflicted, 62 of them in this file; with history and changelog under `union`, 55 would still conflict, mostly on the header line that every PR rewrites (`Status: … · Status version`), and 23 without that line. Also open from the audit: a CI check against a tracked `.env`, and blocking Claude's file tools from reading `.env` | Maxi | before the status is restructured |
 
 ---
 
@@ -570,6 +571,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.3.10 · 19.10.2026:** Claude setup audit: wording fixes in CLAUDE.md, /start, /bug, /done, playbooks and docs/19; user sync hook yields to the project hook; D22 open
 - **v2.3.9 · 19.10.2026:** PR #333: prepare explicit CodeQL coverage for dependency PRs; activation waits for the workflow on main
 - **v2.3.8 · 19.10.2026:** PR #316: CSRF token required on operations controls (Jules branch reconciled with main)
 - **v2.3.7 · 19.10.2026:** #252 follow-up: removal before an allergy kept, denied allergy gives no note, gegen-allergisch pattern linear
