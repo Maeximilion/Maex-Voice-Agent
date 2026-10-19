@@ -252,6 +252,12 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
     assert "Küche" in result.say
 
 
+def test_search_finds_the_dish_before_gegen_x_bin_ich_allergisch(session, tenant_id):
+    result = suche(session, tenant_id, "Pho Bo, gegen Erdnüsse bin ich allergisch")
+    assert [h.number for h in result.results] == ["13"]
+    assert (result.wish.kind, result.wish.ingredient) == ("allergy", "Erdnüsse")
+
+
 @pytest.mark.parametrize(
     "said",
     [
@@ -261,6 +267,7 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
         "die 13, nicht allergisch",
         "Pho Bo, kein Allergiker",
         "Pho Bo, eine Erdnussallergie habe ich nicht",
+        "Pho Bo, gegen Erdnüsse bin ich nicht allergisch",
     ],
 )
 def test_search_with_a_denied_allergy_has_no_wish(session, tenant_id, said):
@@ -969,6 +976,10 @@ def test_kitchen_note_names_the_allergy_first(removal, allergy, note):
         "eine Erdnussallergie habe ich nicht",
         "Allergien habe ich keine",
         "gegen Erdnüsse bin ich nicht allergisch",
+        "eine Erdnussallergie habe ich gar nicht",
+        "gegen nichts bin ich allergisch",
+        "gegen gar nichts bin ich allergisch",
+        "ich bin gegen Erdnüsse nicht allergisch",
         "ich habe keine Allergie oder sonstige Unverträglichkeiten",
         "weder eine bekannte Allergie noch eine Unverträglichkeit",
         "weder eine bekannte Erdnussallergie noch eine Sesamallergie",
@@ -1090,6 +1101,9 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         "ich habe keine Nussallergie und andere Allergien",
         "ich habe keine Nussallergie und Allergien gegen Sesam",
         "eine Erdnussallergie habe ich nicht, aber eine Sesamallergie",
+        "eine Erdnussallergie habe ich gar nicht aber gegen Sesam",
+        "eine Allergie gegen Erdnüsse habe ich nicht aber gegen Sesam",
+        "Nur Erdnüsse, gegen Sesam bin ich nicht allergisch",
         "keine Erdnussallergie oder Allergie gegen Sesam",
     ],
 )
@@ -1108,6 +1122,10 @@ def test_negation_mixed_with_more_asks_for_the_ingredient(said):
         ("ich bin nicht nur gegen Erdnüsse allergisch", "Erdnüsse"),
         # The negation that names the allergy itself.
         ("ich vertrage keine Erdnüsse", "Erdnüsse"),
+        # "nicht nur", and "keine" that begins a removal (own review).
+        ("eine Erdnussallergie hab ich nicht nur", "Erdnuss"),
+        ("eine Erdnussallergie habe ich keine Erdnüsse bitte", "Erdnuss"),
+        ("ich habe eine Erdnussallergie, weitere Allergien habe ich keine", "Erdnuss"),
         # Not right in front: unsure, so the allergy stays.
         ("ich habe nicht eine Erdnussallergie", "Erdnuss"),
     ],
@@ -1277,11 +1295,14 @@ def test_dish_ends_where_the_allergy_phrase_begins(said):
 @pytest.mark.parametrize(
     ("said", "denied"),
     [
-        ("Ich moechte Pho Bo zum Abholen ich habe keine Allergie", True),
-        ("Ich moechte Pho Bo zum Abholen, ich habe keine Allergie", True),
         # Only the clause, as the stand-in asks (round 4): "nichts" in front.
         ("ich habe keine Allergie", True),
         ("sonst nichts, ich habe keine Allergie", False),
+        # The whole opening is no plain denial (the dish is in it); the
+        # stand-in asks about the clause the search classifies.
+        ("Ich moechte Pho Bo zum Abholen, ich habe keine Allergie", False),
+        # Own review: an ingredient before the denial is not dropped.
+        ("Erdnüsse, eine Sesamallergie habe ich nicht", False),
         # Round 5: the same answer as classify_wish.
         ("ich habe keine Allergie, aber mit Erdnüssen habe ich Probleme", False),
         ("ich habe eine Erdnussallergie", False),
@@ -1306,6 +1327,15 @@ def test_denies_allergy(said, denied):
 )
 def test_words_of_the_allergy_phrase_stay_out_of_the_removal(said, note):
     assert classify_wish(said, []).text == note
+
+
+def test_auf_in_a_removal_stays_with_it():
+    """Own review: the "auf" of "ohne Zwiebeln auf Reis" was moved into the
+    allergy clause."""
+    wish = classify_wish("ohne Zwiebeln auf Reis ich habe eine Erdnussallergie", [])
+    assert (
+        wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln auf Reis"
+    )
 
 
 def test_gegen_of_the_dish_name_is_no_allergy_phrase():
