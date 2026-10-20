@@ -1583,6 +1583,32 @@ def test_a_number_the_guest_named_goes_on_the_card(session, tenant):
     assert the_call(session, sid).caller_id is None
 
 
+def test_a_named_number_is_forgotten_after_the_handover_window(session, tenant):
+    """A team that answered sends no report, and the number would stay for the
+    next call that comes with the same id (Codex on PR #345): only a report
+    within minutes of the handover reads it."""
+    clock = Clock()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ich will mich beschweren."},
+        ]
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, clock=clock)
+    sid = port.play(case, handler)
+
+    clock.now += handler_module.NAMED_PHONE_SECONDS + 1
+    assert handler.on_team_missed(sid) is False
+
+    assert session.scalars(select(Callback)).all() == []
+
+
 def test_without_any_number_the_report_has_no_card(session, tenant):
     case = {"transcript": COMPLAINT["transcript"]}
     port = FakeTelephony()

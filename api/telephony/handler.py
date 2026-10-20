@@ -100,8 +100,12 @@ _DIGIT = re.compile(r"[0-9]")
 CLOSED_MEMORY = 10_000
 # Numbers guests named in calls handed to the team, for the card of a team leg
 # nobody answers; the call log keeps only the caller id. The report comes
-# within a minute of the handover, and an answered leg sends none.
+# about a minute after the handover (the last sentence, two legs of 30 s), and
+# an answered leg sends none: older entries are dropped, so a number neither
+# outlives its call for long nor lands on another call with the same id
+# (Codex on PR #345).
 NAMED_PHONES_KEPT = 1000
+NAMED_PHONE_SECONDS = 300.0
 # How long the log of a call that ended as it should waits on a lock. Longer
 # than the line's bound for a turn (`telephony/app.py`, `DB_TIMEOUT_MS`): after
 # our hangup or transfer nobody waits on it, and a lock held for a moment must
@@ -169,7 +173,7 @@ class CallHandler:
         # closed as soon as the opening is done.
         self._ended_while_starting: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
-        self._named_phones: OrderedDict[str, str] = OrderedDict()
+        self._named_phones: OrderedDict[str, tuple[str, float]] = OrderedDict()
 
     # -- events from the line ----------------------------------------------------
 
@@ -288,7 +292,8 @@ class CallHandler:
 
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
-            phone = self._named_phones.pop(session_id, None)
+            self._forget_old_named_phones()
+            phone, _ = self._named_phones.pop(session_id, (None, 0.0))
         session: Session | None = None
         try:
             session = self._session_factory()
@@ -556,9 +561,19 @@ class CallHandler:
         if not phone or phone == live.state.caller_phone:
             return
         with self._lock:
-            self._named_phones[live.session_id] = phone
+            self._forget_old_named_phones()
+            self._named_phones[live.session_id] = (phone, self._clock())
+            self._named_phones.move_to_end(live.session_id)
             while len(self._named_phones) > NAMED_PHONES_KEPT:
                 self._named_phones.popitem(last=False)
+
+    def _forget_old_named_phones(self) -> None:
+        """Under `_lock`. Oldest first, in the order they were kept."""
+        while self._named_phones:
+            _, kept_at = next(iter(self._named_phones.values()))
+            if self._clock() - kept_at <= NAMED_PHONE_SECONDS:
+                return
+            self._named_phones.popitem(last=False)
 
 
 def _close_quietly(session: Session | None) -> None:
