@@ -875,13 +875,12 @@ def test_number_is_refused_without_a_caller_id_too():
 @pytest.mark.parametrize(
     "call",
     [
-        # A detail that is missing is for the validation in dispatch.py, which
-        # names the field.
-        reservation(),
-        reservation(guest_name="Müller"),
+        # A name or a customer that is missing is for the validation in
+        # dispatch.py, which names the field. A missing number gets the phone
+        # hint (test_agent_guards.py): the validation's text alone kept a real
+        # model sending the same call without one.
         ToolCall("draft_order", {"type": "pickup", "items": []}),
         ToolCall("draft_order", {"type": "pickup", "customer": "Müller", "items": []}),
-        ToolCall("create_callback", {"reason": "out_of_scope"}),
         # Tools that carry no guest detail.
         ToolCall("check_slot", {"party_size": 4}),
         ToolCall("search_menu", {"query": "Müller 0171 2345678"}),
