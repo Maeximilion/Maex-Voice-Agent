@@ -4,8 +4,10 @@
   Frames in go to the call's `MediaLine` and on to its session; frames out come
   from the line through one writer per connection.
 - `/calls/{call_id}/ending`: once `Dial` returns, the dialplan asks how our leg
-  ended. "hangup" ends the call, "transfer <number>" is dialled, and anything
-  else, an empty answer or none at all, rings the team (CLAUDE.md §2 rule 5).
+  ended. "hangup" ends the call, "transfer <number>" is dialled if the number
+  is TEAM_PHONE or on TRANSFER_TARGETS of the dialplan, else TEAM_PHONE, and
+  anything else, an empty answer or none at all, rings the team (CLAUDE.md §2
+  rule 5, docs/20 §5).
 
 Both want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
