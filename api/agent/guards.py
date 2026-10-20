@@ -120,9 +120,11 @@ HINT_NOT_BOOKED = (
 # Words that tell a guest something is booked. The pickup code comes from
 # `confirm` only; a model that names one before it has made it up.
 _BOOKING_CLAIM = re.compile(
-    r"(?<!nicht )\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
+    r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
     re.IGNORECASE,
 )
+# A claim word after one of these in the same clause says the opposite.
+_NEGATION = re.compile(r"\b(nicht|nichts|kein\w*)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -192,16 +194,21 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
     Der Abholcode lautet 8842" (13.10.2026).
 
-    "noch nicht bestätigt" is no claim: a model that explains a refused
-    `confirm` that way was refused itself and lost a hop (eval run of
-    20.10.2026).
+    A claim word after "nicht", "nichts" or "kein..." in the same clause is
+    no claim ("noch nicht bestätigt", "Es ist noch nichts gebucht"): a model
+    that explained a refused `confirm` that way was refused itself and lost a
+    hop (eval run of 20.10.2026; Codex PR #347).
 
-    ponytail: by word, not by meaning. "nicht mehr bestätigt" is refused; and
-    after one booking in a call a second, unbooked one is not caught. A
-    per-draft check if the call log shows either."""
-    if state.booked or not _BOOKING_CLAIM.search(say):
+    ponytail: by word, not by meaning; and after one booking in a call a
+    second, unbooked one is not caught. A per-draft check if the call log
+    shows the need."""
+    if state.booked:
         return None
-    return _NOT_BOOKED
+    for claim in _BOOKING_CLAIM.finditer(say):
+        clause = re.split(r"[.!?,;:]", say[: claim.start()])[-1]
+        if not _NEGATION.search(clause):
+            return _NOT_BOOKED
+    return None
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:

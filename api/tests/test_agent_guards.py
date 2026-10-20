@@ -812,6 +812,8 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Ihr Tisch ist reserviert.",
         "Das ist gebucht.",
         "Ihr Abholcode ist A12.",
+        # The negation of another clause does not cover the claim.
+        "Das war nicht schwer, Ihr Tisch ist reserviert.",
     ],
 )
 def test_a_claimed_booking_before_confirm_is_refused(say):
@@ -822,6 +824,8 @@ def test_a_claimed_booking_before_confirm_is_refused(say):
     "say",
     [
         "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
+        "Es ist noch nichts gebucht.",
+        "Da ist noch kein Tisch reserviert, soll ich das tun?",
         "Möchten Sie einen Tisch reservieren?",
         "Soll ich das so bestätigen?",
     ],

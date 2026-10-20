@@ -584,7 +584,9 @@ def _local_times(value: Any, zone: tzinfo) -> Any:
     if isinstance(value, list):
         return [_local_times(item, zone) for item in value]
     if isinstance(value, str) and "T" in value:
-        with suppress(ValueError):
+        # A free text such as a note can look like a time at the edge of the
+        # calendar, which no zone can take (Codex PR #347).
+        with suppress(ValueError, OverflowError):
             moment = datetime.fromisoformat(value)
             if moment.tzinfo is not None:
                 return moment.astimezone(zone).isoformat(timespec="minutes")

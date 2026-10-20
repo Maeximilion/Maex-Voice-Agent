@@ -1398,19 +1398,16 @@ def test_local_times_touch_only_points_in_time():
         "name": "Tom Yam Talay",
         "wait": 15,
         "nothing": None,
+        # No zone can take it: left as it is (Codex PR #347).
+        "note": "9999-12-31T23:00:00-12:00",
     }
 
     local = _local_times(data, zone)
 
     assert local["closes_at"] == "2026-09-15T22:00+02:00"
     assert local["alternatives"] == ["2026-09-15T19:30+02:00"]
-    assert {k: local[k] for k in ("day", "naive", "name", "wait", "nothing")} == {
-        "day": "2026-09-15",
-        "naive": "2026-09-15T20:00:00",
-        "name": "Tom Yam Talay",
-        "wait": 15,
-        "nothing": None,
-    }
+    kept = ("day", "naive", "name", "wait", "nothing", "note")
+    assert {k: local[k] for k in kept} == {k: data[k] for k in kept}
 
 
 def test_a_booking_nobody_made_is_not_said(session, state):
