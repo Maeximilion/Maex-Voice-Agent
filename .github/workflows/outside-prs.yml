@@ -16,7 +16,7 @@ jobs:
   close:
     if: >-
       !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-      && !contains(fromJSON('["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]"]'), github.event.pull_request.user.login)
+      && !contains(fromJSON('["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]", "claude[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     steps:
       - name: Close the pull request
