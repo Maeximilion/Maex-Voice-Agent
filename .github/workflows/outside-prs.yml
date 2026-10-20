@@ -1,0 +1,28 @@
+name: outside-prs
+
+# Pull requests come from Maxi, collaborators and known bots only (Maxi, 2026-10-15).
+# Anyone else may open an issue; a pull request of theirs is closed with a pointer
+# to issues. pull_request_target gives the token the right to close a pull request
+# from a fork. It never checks out or runs the pull request's code, and no text from
+# the pull request reaches the shell except the author's login through an env value.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  close:
+    if: >-
+      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+      && !contains(fromJSON('["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close the pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          gh pr close "$NUMBER" --comment "Thank you for your interest. This repository does not take pull requests from outside contributors. Please open an issue describing the problem or the idea instead."
