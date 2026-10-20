@@ -19,6 +19,8 @@ Aufzeichnen braucht die Einwilligung von Kunde und Team (§201 StGB) und den vol
 
 **Entschieden (Maxi, 24.09.2026):** Das Protokoll darf vor dem abgeschlossenen Rechts-Check geführt werden. Der DSFA-Entwurf vom 24.09.2026 führt es trotzdem als Verarbeitung personenbezogener Daten (D12), weil Uhrzeit und Wortlaut über die Anrufliste des Routers einem Anrufer zugeordnet werden können. Deshalb gelten die Regeln unten und eine Löschfrist von 90 Tagen für die CSV (D10). Keine Rechtsberatung.
 
+**Confirmed by the legal check (20.10.2026, `docs/09_OPERATIONS_LEGAL.md` §1 L15):** E10 and the 90 days stand. Maxi decided that the log records only the hour of a call, not the minute, so a line can hardly be matched to the router's call list; the column `time` below changes with T-11.4 (the duplicate check counts by minute today, so the hour cannot simply be typed in before that). The privacy notice on example.com names the log once it is online.
+
 ---
 
 ## 2. Das Format
