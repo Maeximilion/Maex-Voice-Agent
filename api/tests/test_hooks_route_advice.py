@@ -165,6 +165,22 @@ def test_route_line_is_read_after_a_wrapper_tag(run):
     assert "routing check" in message(out)
 
 
+REMINDER = "<system-reminder>\nThe worktree was reassigned.\n</system-reminder>\n\n"
+APP_BRIEF = "Background (from the session that started this one):\nDocs.\n\nTask:\n"
+
+
+@pytest.mark.parametrize("reminder", ["", REMINDER, REMINDER * 2])
+def test_route_line_is_read_behind_the_desktop_app_wrapper(run, reminder):
+    out = run(reminder + APP_BRIEF + BRIEF, "claude-opus-5-5", "xhigh")
+    context = out["hookSpecificOutput"]["additionalContext"]
+    assert "ROUTE-MISMATCH want=claude-sonnet-5-5 medium" in context
+
+
+def test_route_line_in_the_app_background_is_only_text(run):
+    prompt = REMINDER + APP_BRIEF.replace("Docs.", BRIEF) + "Fix a typo."
+    assert run(prompt, "claude-opus-5-5", "xhigh") is None
+
+
 def test_route_line_further_down_is_only_text(run):
     prompt = f"Update this hook, the fixture reads:\nRoute: claude-haiku-4-5 none\n{HOOKS_PROMPT}"
     out = run(prompt, "claude-haiku-4-5", effort="")
@@ -505,10 +521,18 @@ def test_a_pasted_search_stays_a_search(run):
 
 
 def test_unknown_model_never_stops_a_routed_thread(run):
-    out = run(BRIEF, model="")
+    out = run(BRIEF, model="", effort="xhigh")
     assert "not known" in message(out)
+    assert "its effort is xhigh" in message(out)
     assert "Carry on" in out["hookSpecificOutput"]["additionalContext"]
     assert run(HOOKS_PROMPT, model="", sid="plain") is None
+
+
+def test_unknown_model_with_the_routed_effort_is_silent(run):
+    # A thread's first prompt in the desktop app: no model known, the effort took.
+    assert run(REMINDER + APP_BRIEF + BRIEF, model="") is None
+    out = run("Route: claude-haiku-4-5 none\nFind the seed.", model="", sid="h")
+    assert "not known" in message(out)
 
 
 def test_a_half_applied_switch_carries_on(run):
@@ -723,7 +747,7 @@ def test_lookups_looks_and_short_tasks(run, prompt, model, effort, expected):
 def test_a_model_switch_without_a_model_forgets_the_old_one(run):
     run("", hook_event_name="SessionStart", model="claude-opus-5-5", sid="s")
     run("", hook_event_name="PostModelSwitch", model="", sid="s")
-    assert "not known" in message(run(BRIEF, model="", sid="s"))
+    assert "not known" in message(run(BRIEF, model="", effort="high", sid="s"))
 
 
 def test_a_docs_file_named_after_an_opus_area_stays_on_sonnet(run):
