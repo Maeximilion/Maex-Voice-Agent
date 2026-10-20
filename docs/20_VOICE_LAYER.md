@@ -243,7 +243,14 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   not names, so `render.sh` looks `ACCESS_HOST` up once at the start: a name with `_sip._udp` SRV
   records counts with the servers they name, which the registration over our only transport, UDP,
   follows; its own A record is then used for nothing and stays out, as do servers for TCP and TLS
-  (Codex on PR #340). A name without such records counts with its A records. `permit` and `match`
+  (Codex on PR #340). A name without such records counts with its A records. A lookup that fails
+  (timeout, SERVFAIL; busybox's `nslookup` answers NXDOMAIN or an empty answer when there are no
+  records) stops the start, and the restart policy tries again: read as "no records", it would
+  leave the A record alone in the ACL while the registration, once DNS is back, follows the SRV
+  records (Codex on PR #340, checked in the image on 20.10.2026). So does an SRV server without
+  an IPv4 address: left out, its calls would be refused once DNS answers for it again, and the
+  image's `getent` (musl) exits 2 for a failed lookup and a missing A record alike. A trunk with
+  an IPv6-only server would therefore never start; to check with the trunk (T-10.12). `permit` and `match`
   get the same list,
   which the container's output names. An access that moves to another address needs a restart of
   `asterisk`. Taking the A record alone would have refused a trunk's calls from the servers behind

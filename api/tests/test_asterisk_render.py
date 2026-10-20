@@ -37,30 +37,46 @@ awk -v n="$2" '$1 == n { print $2 "\\tSTREAM " n; print $2 "\\tDGRAM  " n; hit =
     END { exit !hit }' "$FAKE_DNS/a"
 """
 NSLOOKUP = """#!/bin/sh
-# nslookup -type=SRV <service>.<name>, in the format of busybox.
+# nslookup -type=SRV <service>.<name> as busybox in the Asterisk image answers
+# (measured 20.10.2026): exit 0 with the records, or with none for a name that
+# has other records only (NODATA); exit 1 with NXDOMAIN for a name without any,
+# and exit 1 for a timeout or a SERVFAIL.
+kind=$(awk -v n="$2" '$1 == n { print $2 }' "$FAKE_DNS/other")
+case "$kind" in
+    timeout) echo ';; connection timed out; no servers could be reached'; exit 1 ;;
+esac
 printf 'Server:\\t\\t127.0.0.11\\nAddress:\\t127.0.0.11:53\\n\\n'
-printf 'Non-authoritative answer:\\n'
-awk -v n="$2" '$1 == n { print n "\\tservice = 0 0 5060 " $2 }' "$FAKE_DNS/srv"
+case "$kind" in
+    servfail) printf "** server can't find %s: SERVFAIL\\n" "$2"; exit 1 ;;
+    nodata) printf 'Non-authoritative answer:\\n'; exit 0 ;;
+esac
+records=$(awk -v n="$2" '$1 == n { print n "\\tservice = 0 0 5060 " $2 }' "$FAKE_DNS/srv")
+if [ -z "$records" ]; then
+    printf "** server can't find %s: NXDOMAIN\\n" "$2"
+    exit 1
+fi
+printf 'Non-authoritative answer:\\n%s\\n' "$records"
 """
 
 
 @pytest.fixture
 def dns(tmp_path):
     """Records for the stand-in: `dns["a"]` lines "name address", `dns["srv"]`
-    lines "_sip._udp.name target"."""
+    lines "_sip._udp.name target", `dns["other"]` lines "_sip._udp.name kind"
+    for an SRV query answered otherwise (nodata, timeout, servfail)."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, script in (("getent", GETENT), ("nslookup", NSLOOKUP)):
         (bin_dir / name).write_text(script)
         (bin_dir / name).chmod(0o755)
-    return {"a": "", "srv": ""}
+    return {"a": "", "srv": "", "other": ""}
 
 
 @pytest.fixture
 def render(tmp_path, dns):
     def run(**values: str) -> subprocess.CompletedProcess[str]:
-        (tmp_path / "a").write_text(dns["a"])
-        (tmp_path / "srv").write_text(dns["srv"])
+        for name in ("a", "srv", "other"):
+            (tmp_path / name).write_text(dns[name])
         return subprocess.run(
             ["sh", str(RENDER)],
             env={
@@ -194,6 +210,44 @@ def test_a_name_with_srv_records_only_is_an_access(render, dns):
     assert "SIP only from 10.0.0.2\n" in done.stdout
     # No A record: with port 5060 the team leg would find no server at all.
     assert "team legs by the SRV records of ACCESS_HOST" in done.stdout
+
+
+def test_an_srv_server_without_an_ipv4_address_stops_the_start(render, dns):
+    """Left out, its calls would be refused by the ACL once DNS answers for it
+    again, until a restart (Codex on PR #340). musl's getent exits 2 for a
+    lookup that failed and for a name without an A record alike (measured in
+    the image on 20.10.2026), so both stop the start."""
+    dns["a"] = "sip1.example 10.0.0.2\n"
+    dns["srv"] = (
+        "_sip._udp.trunk.example sip1.example\n_sip._udp.trunk.example sip2.example\n"
+    )
+    done = render(ACCESS_HOST="trunk.example")
+    assert done.returncode == 1
+    assert "SRV server sip2.example of ACCESS_HOST has no IPv4 address" in done.stderr
+
+
+def test_a_name_with_other_records_only_counts_with_its_a_records(render, dns):
+    """NODATA: the name exists, busybox answers without records and exits 0."""
+    dns["a"] = "router 10.0.0.9\n"
+    dns["other"] = "_sip._udp.router nodata\n"
+    done = render(ACCESS_HOST="router")
+    assert reached_the_templates(done), done.stderr
+    assert "SIP only from 10.0.0.9\n" in done.stdout
+    assert "team legs to ACCESS_HOST, port 5060" in done.stdout
+
+
+@pytest.mark.parametrize("kind", ["timeout", "servfail"])
+def test_a_failed_srv_lookup_stops_the_start(render, dns, kind):
+    """A lookup that fails is no answer. Taken as "no records", the ACL would
+    hold the name's A record only, and once DNS is back the registration would
+    follow the SRV records to servers whose calls the ACL refuses until a
+    restart (Codex on PR #340). Stopped, the container's restart policy tries
+    again, and the router rings the team telephones meanwhile (docs/20 §3)."""
+    dns["a"] = "trunk.example 10.0.0.1\n"
+    dns["other"] = f"_sip._udp.trunk.example {kind}\n"
+    done = render(ACCESS_HOST="trunk.example")
+    assert done.returncode == 1
+    assert "the SRV lookup of ACCESS_HOST failed" in done.stderr
 
 
 @pytest.mark.parametrize("host", ["access.invalid", "::1"])

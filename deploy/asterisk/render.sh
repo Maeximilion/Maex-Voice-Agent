@@ -107,21 +107,51 @@ echo "asterisk: $(printf '%s\n' "$targets" | awk -F, '{ print NF }') more number
 # (ultrareview of PR #340). Its own A record is then used for nothing and stays
 # out, as do servers for TCP and TLS (Codex on PR #340). A name without such
 # records counts with its A records. IPv4 only, as the transport.
+# busybox's nslookup exits 0 with the records, or with none (NODATA), and 1
+# with NXDOMAIN for a name without any. Anything else, a timeout or SERVFAIL,
+# is no answer and stops the start (Codex on PR #340): taken as "no records",
+# the ACL would hold the A record alone while the registration, once DNS is
+# back, follows the SRV records. The restart policy tries again.
 ipv4() { getent ahostsv4 "$1" | awk '{ print $1 }'; }
 SRV_SERVERS=
 case "$ACCESS_HOST" in
     *[!0-9.]*)
-        SRV_SERVERS=$(nslookup -type=SRV "_sip._udp.$ACCESS_HOST" 2>/dev/null |
-            awk '/service = / { sub(/\.$/, "", $NF); print $NF }')
+        if srv=$(nslookup -type=SRV "_sip._udp.$ACCESS_HOST" 2>&1); then
+            SRV_SERVERS=$(printf '%s\n' "$srv" |
+                awk '/service = / { sub(/\.$/, "", $NF); print $NF }')
+        else
+            case "$srv" in
+                *": NXDOMAIN") ;;
+                *)
+                    echo "asterisk does not start: the SRV lookup of ACCESS_HOST failed" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
         ;;
 esac
-ACCESS_ADDRESSES=$(
-    if [ -n "$SRV_SERVERS" ]; then
-        printf '%s\n' "$SRV_SERVERS" | while read -r server; do ipv4 "$server"; done
-    else
-        ipv4 "$ACCESS_HOST"
-    fi | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
-)
+# Every server the SRV records name has to have an address: one left out would
+# have its calls refused once DNS answers for it again (Codex on PR #340).
+# musl's getent exits 2 for a failed lookup and a missing A record alike, so
+# both stop the start; ponytail: a trunk with an IPv6-only server never starts,
+# check per record type with nslookup if one does (T-10.12).
+if [ -n "$SRV_SERVERS" ]; then
+    addresses=
+    set -f
+    for server in $SRV_SERVERS; do
+        found=$(ipv4 "$server")
+        if [ -z "$found" ]; then
+            echo "asterisk does not start: SRV server $server of ACCESS_HOST has no IPv4 address" >&2
+            exit 1
+        fi
+        addresses="$addresses$found$newline"
+    done
+    set +f
+else
+    addresses=$(ipv4 "$ACCESS_HOST")
+fi
+ACCESS_ADDRESSES=$(printf '%s\n' "$addresses" |
+    awk 'NF && !seen[$0]++ { printf "%s%s", sep, $0; sep = "," }')
 if [ -z "$ACCESS_ADDRESSES" ]; then
     echo "asterisk does not start: ACCESS_HOST has no IPv4 address" >&2
     exit 1
