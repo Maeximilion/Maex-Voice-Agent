@@ -322,15 +322,16 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 
 | Data | Period | How |
 |---|---|---|
-| Call recordings | 30 days; at once on withdrawal | daily job, hard delete |
-| Transcripts | 90 days; anonymised sentences without limit (L14) | daily job |
+| Call recordings | 30 days; at once on withdrawal | daily job, hard delete (T-11.3) |
+| Transcripts | 90 days; anonymised sentences without limit (L14) | daily job (T-7.1) |
 | Call log without audio (`imports/anrufprotokoll.csv`, docs/17) | 90 days (D10); the hour of the call only, not the minute (L15) | weekly `scripts/call_log.py --frist-tage 90 --loeschen`; paper sheets destroyed after typing |
 | `calls.caller_id` | 90 days after the call (was 24 months) | daily job nulls it; the statistics in `calls` stay |
 | Name, phone, address and notes on orders and reservations | 90 days after the order or reservation date | daily job strips the fields; items, prices, times and `call_id` stay |
 | A caller's allergy in `order_items.note` or `orders.note` | end of the business day after pickup or delivery | daily job empties the note text (L13) |
+| `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it) | daily job strips both fields (T-11.2) |
 | Customers and their addresses | 24 months after the last contact | daily job (T-6.7) |
 | Outbox payloads | 7 days after a successful dispatch; a failed event at most 30 days | daily job nulls the payload, the event row stays 90 days |
-| Container and Caddy logs | 14 days | log rotation (T-11.7) |
+| Container and Caddy logs | 14 days | cleanup by age, size limits alone do not hold the period (T-11.7) |
 | n8n executions | 7 days | `EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE=168` (T-11.7) |
 | Backups | rolling 30 days | retention of `scripts/backup.sh` and a lifecycle rule on the storage; the erasures are replayed after a restore (T-9.3) |
 | `audit_log` | 12 months | daily job |
