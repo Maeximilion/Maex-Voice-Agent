@@ -107,12 +107,27 @@ echo "asterisk: $(printf '%s\n' "$targets" | awk -F, '{ print NF }') more number
 # (ultrareview of PR #340). Its own A record is then used for nothing and stays
 # out, as do servers for TCP and TLS (Codex on PR #340). A name without such
 # records counts with its A records. IPv4 only, as the transport.
+# busybox's nslookup exits 0 with the records, or with none (NODATA), and 1
+# with NXDOMAIN for a name without any. Anything else, a timeout or SERVFAIL,
+# is no answer and stops the start (Codex on PR #340): taken as "no records",
+# the ACL would hold the A record alone while the registration, once DNS is
+# back, follows the SRV records. The restart policy tries again.
 ipv4() { getent ahostsv4 "$1" | awk '{ print $1 }'; }
 SRV_SERVERS=
 case "$ACCESS_HOST" in
     *[!0-9.]*)
-        SRV_SERVERS=$(nslookup -type=SRV "_sip._udp.$ACCESS_HOST" 2>/dev/null |
-            awk '/service = / { sub(/\.$/, "", $NF); print $NF }')
+        if srv=$(nslookup -type=SRV "_sip._udp.$ACCESS_HOST" 2>&1); then
+            SRV_SERVERS=$(printf '%s\n' "$srv" |
+                awk '/service = / { sub(/\.$/, "", $NF); print $NF }')
+        else
+            case "$srv" in
+                *": NXDOMAIN") ;;
+                *)
+                    echo "asterisk does not start: the SRV lookup of ACCESS_HOST failed" >&2
+                    exit 1
+                    ;;
+            esac
+        fi
         ;;
 esac
 ACCESS_ADDRESSES=$(
