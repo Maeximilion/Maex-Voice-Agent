@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.3.12
+> Status: 20.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.4.0
 
 ---
 
@@ -579,6 +579,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.4.0 · 20.10.2026:** README images and generated README parts update weekly, Sunday 23:00, through a cloud routine; /ponytail-review and the status bump are part of the merge gate
 - **v2.3.12 · 19.10.2026:** Review of the merged PR #330: a denial joined by und to a named allergen asks, the stand-in judges intolerances next to a denial, the ingredient behind a second gegen is kept; D24 allergy direction recorded
 - **v2.3.11 · 19.10.2026:** Claude setup audit: wording fixes in CLAUDE.md, /start, /bug, /done, playbooks and docs/19; user sync hook yields to the project hook; CI fails on a tracked env file, `.env.*` ignored, Claude asks before reading `.env`; D22 and D23 open
 - **v2.3.10 · 19.10.2026:** Maxi keeps GitHub's default CodeQL setup; the explicit codeql.yml workflow from PR #333 is removed
