@@ -12,3 +12,7 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-14,,,scripted-stand-in,cases,41,41,,,,,,,,,status-note,reference
 2026-10-14,,,scripted-stand-in,targets,27,1,,,,,,,,,status-note,reference
 2026-10-15,2026-10-14T22:36:27+00:00,eval_20261014_223627_373401.json,qwen3.6-35b-a3b,cases,41,20,0,0,0,0,1,0.1515,11,21714,report,
+2026-10-20,2026-10-20T21:34:59+00:00,eval_20261020_213459_521019.json,qwen3.6-35b-a3b,cases,43,27,0,0,0,0,1,0.0857,13,22844,report,main baseline run 1
+2026-10-20,2026-10-20T21:45:52+00:00,eval_20261020_214552_588544.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1714,9,22172,report,main baseline run 2
+2026-10-20,2026-10-20T21:55:36+00:00,eval_20261020_215536_048231.json,qwen3.6-35b-a3b,cases,43,23,0,0,0,0,2,0.2571,14,23521,report,"transfer, local times, booking guard; run 1"
+2026-10-21,2026-10-20T22:09:23+00:00,eval_20261020_220923_184732.json,qwen3.6-35b-a3b,cases,43,20,0,0,0,0,2,0.2286,15,23692,report,"transfer, local times, booking guard; run 2"
