@@ -4,14 +4,15 @@ name: outside-prs
 # Anyone else may open an issue; a pull request of theirs is closed with a pointer
 # to issues. pull_request_target gives the token the right to close a pull request
 # from a fork. It does not fire for every head branch (GitHub skips some SHA-like
-# branch names, Codex PR #346), so the hourly schedule sweeps all open pull requests
-# as well. Nothing of a pull request is checked out or run, and only pull request
-# numbers reach the shell: the authors are filtered inside jq.
+# branch names, Codex PR #346), so the hourly sweep closes the rest
+# (outside-prs-sweep.yml). The schedule lives in its own file: GitHub turns
+# off scheduled workflows after 60 days without activity, and this file, without a
+# schedule, keeps running on the event. Nothing of a pull request is checked out or
+# run, and only pull request numbers reach the shell: authors are filtered in jq.
 on:
   pull_request_target:
     types: [opened, reopened]
-  schedule:
-    - cron: "17 * * * *"
+  workflow_call:
   workflow_dispatch:
 
 permissions:

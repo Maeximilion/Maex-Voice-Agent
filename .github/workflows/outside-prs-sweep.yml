@@ -1,0 +1,15 @@
+name: outside-prs-sweep
+
+# The hourly run of outside-prs.yml, for pull requests whose head branch the
+# pull_request_target event skips. Kept apart so GitHub's 60-day switch-off of
+# scheduled workflows on a quiet repository leaves the event workflow running.
+on:
+  schedule:
+    - cron: "17 * * * *"
+
+permissions:
+  pull-requests: write
+
+jobs:
+  sweep:
+    uses: ./.github/workflows/outside-prs.yml
