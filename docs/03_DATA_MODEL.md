@@ -318,16 +318,23 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 
 ## Löschkonzept
 
-| Daten | Frist | Umsetzung |
-|---|---|---|
-| Anrufaufnahmen | 30 Tage (Vorschlag) | täglicher Job, harte Löschung |
-| Anrufprotokoll ohne Ton (`imports/anrufprotokoll.csv`, docs/17) | 90 Tage (entschieden 24.09.2026, D10) | wöchentlich `scripts/call_log.py --frist-tage 90 --loeschen`; Papierbögen nach dem Abtippen vernichten |
-| Transkripte | 90 Tage (Vorschlag) | täglicher Job |
-| `calls` ohne personenbezogene Felder | 24 Monate | Statistik bleibt, `caller_id` wird genullt |
-| Kunden ohne Bestellung | 24 Monate (Vorschlag) | `delete_after`, täglicher Job |
-| Bestellungen | nach steuerlicher Aufbewahrungspflicht | Master ist ohnehin die Kasse |
+Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md` §1, L8, L13, L15). Every period is a setting (`.env` or `service_config`), never a number in the code. Built so far: the call log deletion only; the rest is T-11.2, T-11.7, T-6.7 and T-9.3.
 
-Fristen sind Vorschläge und gehören in den Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`).
+| Data | Period | How |
+|---|---|---|
+| Call recordings | 30 days; at once on withdrawal | daily job, hard delete |
+| Transcripts | 90 days; anonymised sentences without limit (L14) | daily job |
+| Call log without audio (`imports/anrufprotokoll.csv`, docs/17) | 90 days (D10); the hour of the call only, not the minute (L15) | weekly `scripts/call_log.py --frist-tage 90 --loeschen`; paper sheets destroyed after typing |
+| `calls.caller_id` | 90 days after the call (was 24 months) | daily job nulls it; the statistics in `calls` stay |
+| Name, phone, address and notes on orders and reservations | 90 days after the order or reservation date | daily job strips the fields; items, prices, times and `call_id` stay |
+| A caller's allergy in `order_items.note` or `orders.note` | end of the business day after pickup or delivery | daily job empties the note text (L13) |
+| Customers and their addresses | 24 months after the last contact | daily job (T-6.7) |
+| Outbox payloads | 7 days after a successful dispatch; a failed event at most 30 days | daily job nulls the payload, the event row stays 90 days |
+| Container and Caddy logs | 14 days | log rotation (T-11.7) |
+| n8n executions | 7 days | `EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE=168` (T-11.7) |
+| Backups | rolling 30 days | retention of `scripts/backup.sh` and a lifecycle rule on the storage; the erasures are replayed after a restore (T-9.3) |
+| `audit_log` | 12 months | daily job |
+| Order rows without personal fields | as long as the tax adviser asks (L18); the register is the master | kept |
 
 ---
 
