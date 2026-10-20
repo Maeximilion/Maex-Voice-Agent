@@ -54,13 +54,16 @@ level() { case "$1" in low) echo 1 ;; medium) echo 2 ;; high) echo 3 ;; xhigh) e
 # A thread the desktop app starts gets its brief behind the app's own lines: optional
 # <system-reminder> blocks, "Background (from the session that started this one):", the
 # background and a "Task:" line. The brief starts after that line.
+# ponytail: a second "Task:" line (in the background or the brief) makes the boundary
+# unknowable, so no Route line is read then: silent as before, never a wrong stop.
 brief=$(awk 'BEGIN { lead = 1 }
   lead && /^<system-reminder>/ { skip = 1 }
   skip { if (/<\/system-reminder>/) skip = 0; next }
   lead && !NF { next }
   lead { lead = 0; if (!/^Background \(from the session that started this one\):/) exit; next }
-  !task { task = /^Task: *$/; next }
-  { print }' <<<"$prompt")
+  /^Task: *$/ { tasks++; next }
+  tasks { out = out $0 "\n" }
+  END { if (tasks == 1) printf "%s", out }' <<<"$prompt")
 [ -n "$brief" ] || brief=$prompt
 first=$(awk 'NF { print; exit }' <<<"$brief")
 case "$first" in
@@ -190,7 +193,7 @@ have_effort=${have_effort:-$CLAUDE_CODE_EFFORT_LEVEL}
 # and effort together at the start: a routed effort that took counts as a match.
 if [ -z "$model" ]; then
   [ -n "$route" ] || exit 0
-  [ -n "$effort" ] && [ "$have_effort" = "$effort" ] && exit 0
+  [ -n "$effort" ] && [ "$have_effort" = "$effort" ] && { rm -f "$state/$sid.seen"; exit 0; }
   msg="routing check: the brief asks for $want at effort $shown, but this session's model is not known to the hook yet and its effort is ${have_effort:-unknown}, so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'

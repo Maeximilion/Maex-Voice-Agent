@@ -181,6 +181,12 @@ def test_route_line_in_the_app_background_is_only_text(run):
     assert run(prompt, "claude-opus-5-5", "xhigh") is None
 
 
+def test_a_task_line_in_the_app_background_is_no_boundary(run):
+    background = "Task:\nRoute: claude-haiku-4-5 none\nDocs."
+    prompt = REMINDER + APP_BRIEF.replace("Docs.", background) + BRIEF
+    assert run(prompt, "claude-sonnet-5-5", "medium") is None
+
+
 def test_route_line_further_down_is_only_text(run):
     prompt = f"Update this hook, the fixture reads:\nRoute: claude-haiku-4-5 none\n{HOOKS_PROMPT}"
     out = run(prompt, "claude-haiku-4-5", effort="")
@@ -533,6 +539,14 @@ def test_unknown_model_with_the_routed_effort_is_silent(run):
     assert run(REMINDER + APP_BRIEF + BRIEF, model="") is None
     out = run("Route: claude-haiku-4-5 none\nFind the seed.", model="", sid="h")
     assert "not known" in message(out)
+
+
+def test_an_effort_only_match_clears_an_earlier_mismatch(run):
+    assert run(BRIEF, "claude-opus-5-5", "xhigh", sid="s") is not None
+    assert run(BRIEF, model="", sid="s") is None
+    # The same route wrong again later in the session stops once more.
+    again = run(BRIEF, "claude-opus-5-5", "xhigh", sid="s")
+    assert "do not start" in again["hookSpecificOutput"]["additionalContext"]
 
 
 def test_a_half_applied_switch_carries_on(run):

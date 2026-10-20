@@ -528,7 +528,7 @@ Results:
 
 What the run of 2026-10-20 showed about the hook in the desktop app:
 
-- The app sends a fresh thread its brief behind lines of its own: a `<system-reminder>` block when the thread shares a worktree, then `Background (from the session that started this one):`, the background and a line `Task:`. `route_advice.sh` read the reminder as the first line and stayed silent; it now reads the Route line as the first line after `Task:`. A Route line inside the background stays text.
+- The app sends a fresh thread its brief behind lines of its own: a `<system-reminder>` block when the thread shares a worktree, then `Background (from the session that started this one):`, the background and a line `Task:`. `route_advice.sh` read the reminder as the first line and stayed silent; it now reads the Route line as the first line after `Task:`. A Route line inside the background stays text, and a second `Task:` line anywhere in the wrapper makes the boundary unknowable, so no Route line is read then (silent, never a wrong stop; Codex PR #342).
 - The app's `SessionStart` carries no model, and on a session's first prompt the transcript holds no model entry yet, so the hook knows no model on the first prompt of any session: plain prompts get no advice there, and a thread's brief is checked by its effort only. A routed effort that took counts as a match (the app sets model and effort together at the start); any other effort gives the "cannot be checked" line, never a stop.
 
 ## 7. Keeping this file true
