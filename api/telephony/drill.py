@@ -531,12 +531,11 @@ OPEN_ALL_DAY = (
 
 
 @contextmanager
-def team_away(drill: Drill, how: str, *, open_all_day: bool = True) -> Iterator[None]:
+def team_away(drill: Drill, how: str) -> Iterator[None]:
     """The router's team telephone does not answer for one drill: "busy" at
     once, or "ring" for longer than the AI telephone waits. Set back whatever
     fails, as are the hours."""
-    if open_all_day:
-        drill.sql(OPEN_ALL_DAY)
+    drill.sql(OPEN_ALL_DAY)
     try:
         drill.cli("router", f"dialplan set global TEAM_AWAY {how}")
         yield
@@ -544,8 +543,7 @@ def team_away(drill: Drill, how: str, *, open_all_day: bool = True) -> Iterator[
         try:
             drill.cli("router", "dialplan set global TEAM_AWAY answer")
         finally:
-            if open_all_day:
-                drill.sql("delete from special_days where note = 'drill'")
+            drill.sql("delete from special_days where note = 'drill'")
 
 
 def missed_of(call: Call) -> tuple[str, str, str, str]:
@@ -603,7 +601,7 @@ def drill_team_missed_paused(drill: Drill) -> list[Check]:
     the card is written and nothing is played."""
     try:
         drill.mode("paused")
-        with team_away(drill, "busy", open_all_day=False):
+        with team_away(drill, "busy"):
             call = drill.place(112)
             call.wait(call.ended, timeout=CALL_TIMEOUT_SECONDS)
     finally:
@@ -640,7 +638,9 @@ def drill_team_missed_voice_down(drill: Drill) -> list[Check]:
     return [
         (
             "team missed, voice down: no card, the caller hears to call again",
-            card == "" and told == "missed_later SUCCESS" and "|0|" in f"{row}|0|",
+            card == ""
+            and told == "missed_later SUCCESS"
+            and (not row or row.split("|")[1] == "0"),
             f"voice answered [{card}], told: {told or 'nothing'}, "
             f"call row {row or 'not found'}, call over {ended - call.placed:.1f} s "
             "after it was placed",

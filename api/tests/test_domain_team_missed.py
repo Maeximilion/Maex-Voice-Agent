@@ -239,11 +239,32 @@ def test_a_report_before_the_call_log_keeps_its_outcome(session, tenant_id):
     assert call.ended_at is not None and call.outcome == "callback"
 
 
-def test_a_report_waits_for_the_call_log_and_then_turns_it_into_a_callback(
-    migrated_db_url,
+def test_an_outage_logged_after_the_report_stays_an_error(session, tenant_id):
+    """The outage path hands the call on, the busy team answers before its log:
+    the card stays, and so does the error the outage is counted by (Codex,
+    own review of T-10.8)."""
+    call = make_call(session, tenant_id, outcome=None)
+
+    assert team_missed(session, tenant_id, "1760000000.1", now=REPORTED) is not None
+    ended = end_call(
+        session,
+        EndCallRequest(call_id=call.id, tenant_id=tenant_id, outcome="error"),
+        now=REPORTED,
+    )
+
+    assert ended.outcome == "error"
+    assert len(cards(session, call.id)) == 1
+
+
+@pytest.mark.parametrize(
+    ("logged", "after"), [("transferred", "callback"), ("error", "error")]
+)
+def test_a_report_waits_for_the_call_log_and_reads_what_it_wrote(
+    migrated_db_url, logged, after
 ):
     """Both take the call's row: the report that comes while end_call holds it
-    waits, and turns the logged 'transferred' into 'callback' after it."""
+    waits, and reads the logged outcome after it. Without the lock it would
+    turn an 'error' it never saw into 'callback'."""
     engine = create_engine(migrated_db_url)
     try:
         with Session(engine) as setup:
@@ -270,7 +291,7 @@ def test_a_report_waits_for_the_call_log_and_then_turns_it_into_a_callback(
         assert worker.is_alive()  # waits on the row
         end_call(
             holder,
-            EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome="transferred"),
+            EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome=logged),
             now=REPORTED,
         )
         holder.close()
@@ -278,6 +299,6 @@ def test_a_report_waits_for_the_call_log_and_then_turns_it_into_a_callback(
 
         assert results and results[0] is not None
         with Session(engine) as check:
-            assert check.get(Call, call_id).outcome == "callback"
+            assert check.get(Call, call_id).outcome == after
     finally:
         engine.dispose()

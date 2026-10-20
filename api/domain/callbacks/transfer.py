@@ -34,7 +34,8 @@ ACTION_TRANSFERRED = "call.transferred"
 SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 # A call the line reports is at most this old: the dialplan's backstop of an
 # hour on our leg, then up to two team legs of 30 s. The line's ids repeat
-# after a restart of Asterisk; an older row of the same id is another call.
+# after a restart of the telephone system; an older row of the same id is
+# another call.
 MISSED_WINDOW = timedelta(hours=2)
 # For the team, like the summaries of `agent/loop.py`: what happened, and the
 # guest's concern as far as the transfer named it (the reason is the card's
@@ -102,7 +103,7 @@ def team_missed(
     may be closed already. `phone` is a number the guest named in the call,
     which only the line's process still knows; else the caller id. The call's
     outcome becomes "callback", also when its log is still being written
-    (`end_call` keeps it); an "error" stays."""
+    (`end_call` keeps it); an "error" stays, logged before or after."""
     now = now or utcnow()
     call = session.execute(
         select(Call)

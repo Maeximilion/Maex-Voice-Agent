@@ -463,6 +463,11 @@ def test_with_voice_down_the_caller_still_hears_to_call_again(tmp_path):
         tmp_path, 113, card="", told="missed_noted", row="transferred|0|"
     )
     assert not all(ok for _, ok, _ in drill.drill_team_missed_voice_down(promised))
+    # A card written although `voice` gave no answer: not what the point says.
+    written = missed_stage(
+        tmp_path, 113, card="", told="missed_later", row=f"callback|1|{CALLER_111}"
+    )
+    assert not all(ok for _, ok, _ in drill.drill_team_missed_voice_down(written))
 
 
 def test_the_announcements_asterisk_plays_are_the_sentences_of_the_code(tmp_path):

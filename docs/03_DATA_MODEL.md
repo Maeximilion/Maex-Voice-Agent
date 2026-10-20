@@ -108,7 +108,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | started_at / ended_at | TIMESTAMPTZ | |
 | duration_seconds | INT | |
 | intent | TEXT | `reservation` / `pickup` / `delivery` / `info` / `complaint` / `unknown` |
-| outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error`. A transferred call whose team leg nobody answered becomes `callback` once its card is written, also when that comes before the log of our leg; `error` stays (T-10.8) |
+| outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error`. A transferred call whose team leg nobody answered becomes `callback` once its card is written, also when that comes before the log of our leg; `error` stays, logged before or after the card (T-10.8) |
 | transfer_reason | TEXT NULL | |
 | cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
