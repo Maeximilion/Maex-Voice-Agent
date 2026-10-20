@@ -130,13 +130,28 @@ case "$ACCESS_HOST" in
         fi
         ;;
 esac
-ACCESS_ADDRESSES=$(
-    if [ -n "$SRV_SERVERS" ]; then
-        printf '%s\n' "$SRV_SERVERS" | while read -r server; do ipv4 "$server"; done
-    else
-        ipv4 "$ACCESS_HOST"
-    fi | awk '!seen[$0]++ { printf "%s%s", sep, $0; sep = "," }'
-)
+# Every server the SRV records name has to have an address: one left out would
+# have its calls refused once DNS answers for it again (Codex on PR #340).
+# musl's getent exits 2 for a failed lookup and a missing A record alike, so
+# both stop the start; ponytail: a trunk with an IPv6-only server never starts,
+# check per record type with nslookup if one does (T-10.12).
+if [ -n "$SRV_SERVERS" ]; then
+    addresses=
+    set -f
+    for server in $SRV_SERVERS; do
+        found=$(ipv4 "$server")
+        if [ -z "$found" ]; then
+            echo "asterisk does not start: SRV server $server of ACCESS_HOST has no IPv4 address" >&2
+            exit 1
+        fi
+        addresses="$addresses$found$newline"
+    done
+    set +f
+else
+    addresses=$(ipv4 "$ACCESS_HOST")
+fi
+ACCESS_ADDRESSES=$(printf '%s\n' "$addresses" |
+    awk 'NF && !seen[$0]++ { printf "%s%s", sep, $0; sep = "," }')
 if [ -z "$ACCESS_ADDRESSES" ]; then
     echo "asterisk does not start: ACCESS_HOST has no IPv4 address" >&2
     exit 1

@@ -212,6 +212,20 @@ def test_a_name_with_srv_records_only_is_an_access(render, dns):
     assert "team legs by the SRV records of ACCESS_HOST" in done.stdout
 
 
+def test_an_srv_server_without_an_ipv4_address_stops_the_start(render, dns):
+    """Left out, its calls would be refused by the ACL once DNS answers for it
+    again, until a restart (Codex on PR #340). musl's getent exits 2 for a
+    lookup that failed and for a name without an A record alike (measured in
+    the image on 20.10.2026), so both stop the start."""
+    dns["a"] = "sip1.example 10.0.0.2\n"
+    dns["srv"] = (
+        "_sip._udp.trunk.example sip1.example\n_sip._udp.trunk.example sip2.example\n"
+    )
+    done = render(ACCESS_HOST="trunk.example")
+    assert done.returncode == 1
+    assert "SRV server sip2.example of ACCESS_HOST has no IPv4 address" in done.stderr
+
+
 def test_a_name_with_other_records_only_counts_with_its_a_records(render, dns):
     """NODATA: the name exists, busybox answers without records and exits 0."""
     dns["a"] = "router 10.0.0.9\n"
