@@ -1,0 +1,42 @@
+name: outside-prs
+
+# Pull requests come from Maxi, collaborators and known bots only (Maxi, 2026-10-15).
+# Anyone else may open an issue; a pull request of theirs is closed with a pointer
+# to issues. pull_request_target gives the token the right to close a pull request
+# from a fork. It does not fire for every head branch (GitHub skips some SHA-like
+# branch names, Codex PR #346), so the hourly sweep closes the rest
+# (outside-prs-sweep.yml). The schedule lives in its own file: GitHub turns
+# off scheduled workflows after 60 days without activity, and this file, without a
+# schedule, keeps running on the event. Nothing of a pull request is checked out or
+# run, and only pull request numbers reach the shell: authors are filtered in jq.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  pull-requests: write
+
+concurrency:
+  group: outside-prs
+  cancel-in-progress: false
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close pull requests from outside users
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          # shellcheck disable=SC2016 # $a and $l are jq variables, not shell ones
+          gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" --jq '
+            .[]
+            | select(.author_association as $a | ["OWNER", "MEMBER", "COLLABORATOR"] | index($a) | not)
+            | select(.user.login as $l | ["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]", "claude[bot]"] | index($l) | not)
+            | .number' |
+          while read -r number; do
+            gh pr close "$number" --comment "Thank you for your interest. This repository does not take pull requests from outside contributors. Please open an issue describing the problem or the idea instead."
+          done
