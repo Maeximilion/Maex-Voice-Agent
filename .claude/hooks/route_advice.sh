@@ -51,10 +51,24 @@ level() { case "$1" in low) echo 1 ;; medium) echo 2 ;; high) echo 3 ;; xhigh) e
 
 # The Route line counts only as the brief's first non-empty line, or right after a
 # wrapper tag (<brief>...), so a Route line quoted or pasted further down is just text.
-first=$(awk 'NF { print; exit }' <<<"$prompt")
+# A thread the desktop app starts gets its brief behind the app's own lines: optional
+# <system-reminder> blocks, "Background (from the session that started this one):", the
+# background and a "Task:" line. The brief starts after that line.
+# ponytail: a second "Task:" line (in the background or the brief) makes the boundary
+# unknowable, so no Route line is read then: silent as before, never a wrong stop.
+brief=$(awk 'BEGIN { lead = 1 }
+  lead && /^<system-reminder>/ { skip = 1 }
+  skip { if (/<\/system-reminder>/) skip = 0; next }
+  lead && !NF { next }
+  lead { lead = 0; if (!/^Background \(from the session that started this one\):/) exit; next }
+  /^Task: *$/ { tasks++; next }
+  tasks { out = out $0 "\n" }
+  END { if (tasks == 1) printf "%s", out }' <<<"$prompt")
+[ -n "$brief" ] || brief=$prompt
+first=$(awk 'NF { print; exit }' <<<"$brief")
 case "$first" in
   "<pasted_content"*|"<!--"*) head= ;;
-  "<"*) head=${first#*>}; [ -n "${head// }" ] || head=$(awk 'NF { n++ } n == 2 { print; exit }' <<<"$prompt") ;;
+  "<"*) head=${first#*>}; [ -n "${head// }" ] || head=$(awk 'NF { n++ } n == 2 { print; exit }' <<<"$brief") ;;
   *) head=$first ;;
 esac
 # A wrapper closed on the same line (<brief>Route: ...</brief>) leaves its closing tag.
@@ -169,20 +183,24 @@ if [ -n "$route" ] && [ -z "$(jq -r '.model // empty' <<<"$input")" ] \
   m=$(cat "$state/$sid.model" 2>/dev/null)
   [ -z "$m" ] || model=$m
 fi
-# No model known (SessionStart may omit it, a prompt never carries it): nothing to compare.
+# The live effort first: Claude Code hands the effective level to hooks as CLAUDE_EFFORT,
+# and some events carry an effort object; CLAUDE_CODE_EFFORT_LEVEL is the launch value.
+have_effort=${CLAUDE_EFFORT:-$(jq -r '(.effort | objects | .level) // (.effort | strings) // empty' <<<"$input")}
+have_effort=${have_effort:-$CLAUDE_CODE_EFFORT_LEVEL}
+# No model known: the desktop app's SessionStart omits it, a prompt never carries it, and
+# on a session's first prompt the transcript has no model entry yet. A thread's first
+# prompt is its brief, so only the effort can be compared there. The app applies model
+# and effort together at the start: a routed effort that took counts as a match.
 if [ -z "$model" ]; then
   [ -n "$route" ] || exit 0
-  msg="routing check: the brief asks for $want at effort $shown, but this session's model is not known to the hook yet, so the setting of this thread cannot be checked."
+  [ -n "$effort" ] && [ "$have_effort" = "$effort" ] && { rm -f "$state/$sid.seen"; exit 0; }
+  msg="routing check: the brief asks for $want at effort $shown, but this session's model is not known to the hook yet and its effort is ${have_effort:-unknown}, so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
 fi
 # A Fable session asked for by name keeps Fable, at the table's effort for it.
 [ -n "${fable_named-}" ] && [ "$(family "$model")" = 4 ] && want=claude-fable-5-1 effort=high
-# The live effort first: Claude Code hands the effective level to hooks as CLAUDE_EFFORT,
-# and some events carry an effort object; CLAUDE_CODE_EFFORT_LEVEL is the launch value.
-have_effort=${CLAUDE_EFFORT:-$(jq -r '(.effort | objects | .level) // (.effort | strings) // empty' <<<"$input")}
-have_effort=${have_effort:-$CLAUDE_CODE_EFFORT_LEVEL}
 
 want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
