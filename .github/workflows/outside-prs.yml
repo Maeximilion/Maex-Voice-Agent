@@ -3,26 +3,39 @@ name: outside-prs
 # Pull requests come from Maxi, collaborators and known bots only (Maxi, 2026-10-15).
 # Anyone else may open an issue; a pull request of theirs is closed with a pointer
 # to issues. pull_request_target gives the token the right to close a pull request
-# from a fork. It never checks out or runs the pull request's code, and no text from
-# the pull request reaches the shell except the author's login through an env value.
+# from a fork. It does not fire for every head branch (GitHub skips some SHA-like
+# branch names, Codex PR #346), so the hourly schedule sweeps all open pull requests
+# as well. Nothing of a pull request is checked out or run, and only pull request
+# numbers reach the shell: the authors are filtered inside jq.
 on:
   pull_request_target:
     types: [opened, reopened]
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   pull-requests: write
 
+concurrency:
+  group: outside-prs
+  cancel-in-progress: false
+
 jobs:
   close:
-    if: >-
-      !contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
-      && !contains(fromJSON('["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]", "claude[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     steps:
-      - name: Close the pull request
+      - name: Close pull requests from outside users
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr close "$NUMBER" --comment "Thank you for your interest. This repository does not take pull requests from outside contributors. Please open an issue describing the problem or the idea instead."
+          # shellcheck disable=SC2016 # $a and $l are jq variables, not shell ones
+          gh api --paginate "repos/$GH_REPO/pulls?state=open&per_page=100" --jq '
+            .[]
+            | select(.author_association as $a | ["OWNER", "MEMBER", "COLLABORATOR"] | index($a) | not)
+            | select(.user.login as $l | ["dependabot[bot]", "github-actions[bot]", "chatgpt-codex-connector[bot]", "claude[bot]"] | index($l) | not)
+            | .number' |
+          while read -r number; do
+            gh pr close "$number" --comment "Thank you for your interest. This repository does not take pull requests from outside contributors. Please open an issue describing the problem or the idea instead."
+          done
