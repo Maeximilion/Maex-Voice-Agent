@@ -676,9 +676,11 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   continues.
 - **Router path:** whether the router lets an IP telephone hand a call to a team telephone; whether a
   VPN peer may register as an IP telephone; what a second and third caller hear.
-- **Legal (D21, part of the check in `docs/09_OPERATIONS_LEGAL.md`):** whether live audio streamed
-  to a speech service without storage falls under the rules for recordings (E11). In the test phase
-  no audio leaves the workbench.
+- **Legal (D21, answered 20.10.2026, `docs/09_OPERATIONS_LEGAL.md` §1 L6):** live audio streamed
+  to a speech service without storage is no recording in the sense of E11, when the service keeps
+  audio and transcript only for the request, stores nothing afterwards and does not train on it.
+  Before the first real call on a speech service: zero retention written into its DPA, provider-side
+  audio logging off. In the test phase no audio leaves the workbench.
 - **Texts that still name the voice platform:** the headers of `prompts/tools_v1.md` and `prompts/tools_v2.md`, comments in `api/telephony/`, `docs/03`, `docs/04`, `docs/08` and `docs/10`. They change with the first build package; a change under `prompts/` needs an eval run.
 - **From T-10.3, numbers with a letter, what the number rule does not catch** (the prefix
   heard as "ist" is fixed since 12.10.2026, §6): (1) the letter is dropped completely,
@@ -735,9 +737,13 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **From T-10.3, the voice (D4):** Maxi finds the test-phase voice not clean enough for customers; his own voice as the mouth is an idea kept for the measurement of the operation services (`docs/01_STATUS.md` D4).
 - **From T-10.3, licences:** the Piper package (`piper-tts` 1.8) is GPL-3.0-or-later, the voice
   `thorsten` is from a CC0 data set; Parakeet v3 is CC-BY-4.0, its ONNX runtime wrapper MIT; Whisper
-  and its wrapper are MIT. All run as separate programs on our own machine in the test phase. What
-  that means once the software is handed to a customer is a point for the legal check before
-  operation; in operation the plan is EU services anyway (§6).
+  and its wrapper are MIT. On the T-10.3 bench they ran as separate programs; the service `voice`
+  imports Piper in-process (`api/telephony/adapters/tts_piper.py`, loaded by `telephony/app.py`).
+  **Legal check, 20.10.2026 (`docs/09_OPERATIONS_LEGAL.md` §1 L16):** no duty while the software
+  runs only as our own service; once a copy is handed to anyone else (E16), a shipped `voice` would
+  be one combined work with Piper, and Maxi then picks Piper behind a process boundary, `voice`
+  under the GPL, or Piper not shipped. Parakeet (CC-BY-4.0) needs its attribution when shipped. In
+  operation the plan is EU services anyway (§6).
 - **From T-10.3, candidates for operation (web research of 12.10.2026, not verified, no account
   yet):** the speech-to-text and text-to-speech services of the text model's favourite vendor
   (docs/18 §3), and one vendor with an EU endpoint for both. Where each processes data and whether a
