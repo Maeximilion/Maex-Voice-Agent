@@ -59,6 +59,12 @@ HINT_CONFIRM = (
     "Entwurf. Erst den readback wörtlich vorlesen (steht im Zustand, solange er "
     "nicht vorgelesen ist), dann auf ein klares Ja warten."
 )
+HINT_NO_DRAFT = (
+    "Abgelehnt: es gibt keinen Entwurf, den der Gast bestätigen könnte. Erst "
+    "`draft_order` mit dem `cart` aus dem Zustand aufrufen, bei einem Tisch "
+    "`create_reservation`, dann dessen `readback` vorlesen und auf ein klares Ja "
+    "warten."
+)
 HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
     "search_menu in diesem Anruf. Erst suchen; bei mehreren Treffern den Gast "
@@ -100,6 +106,11 @@ HINT_GUEST_PHONE = (
     "die er als seine Rufnummer genannt hat. Steht kein `phone` in `slots`, frag "
     "den Gast, unter welcher Rufnummer mit Vorwahl er erreichbar ist."
 )
+HINT_CALLBACK_PHONE = (
+    "Abgelehnt: ein Rückruf braucht eine Rufnummer, und in `slots` steht kein "
+    "`phone`. Frag den Gast, unter welcher Nummer mit Vorwahl er erreichbar ist. "
+    "Ist er nicht zu verstehen: `transfer_to_team`."
+)
 HINT_NOT_BOOKED = (
     "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
     "durchgegangen. Sag nie, etwas sei bestätigt, gebucht oder reserviert, und "
@@ -109,7 +120,7 @@ HINT_NOT_BOOKED = (
 # Words that tell a guest something is booked. The pickup code comes from
 # `confirm` only; a model that names one before it has made it up.
 _BOOKING_CLAIM = re.compile(
-    r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
+    r"(?<!nicht )\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
     re.IGNORECASE,
 )
 
@@ -181,10 +192,13 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
     Der Abholcode lautet 8842" (13.10.2026).
 
-    ponytail: by word, not by meaning. "noch nicht bestätigt" is refused too
-    and costs the model a hop to say it otherwise; and after one booking in a
-    call a second, unbooked one is not caught. A per-draft check if the call
-    log shows either."""
+    "noch nicht bestätigt" is no claim: a model that explains a refused
+    `confirm` that way was refused itself and lost a hop (eval run of
+    20.10.2026).
+
+    ponytail: by word, not by meaning. "nicht mehr bestätigt" is refused; and
+    after one booking in a call a second, unbooked one is not caught. A
+    per-draft check if the call log shows either."""
     if state.booked or not _BOOKING_CLAIM.search(say):
         return None
     return _NOT_BOOKED
@@ -278,10 +292,23 @@ def refusal(
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
     which the core has taken by now."""
     if call.name == "confirm":
-        return None if _may_confirm(state, start, user_text, call) else _CONFIRM
+        if _may_confirm(state, start, user_text, call):
+            return None
+        # Without any draft "read it back first" points nowhere: a real model
+        # then answered the guest's yes with a `confirm` of an id it made up,
+        # turn after turn (eval run of 20.10.2026).
+        return _CONFIRM if _readback_id(state) else _NO_DRAFT
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
+    if not phone and _books_under_a_number(call):
+        # The validation would only say "phone: Input should be a valid
+        # string", and a real model sent `create_callback` without a number
+        # four times in a row instead of asking for one, also on a line that
+        # carried nothing but noise, where only the team can help (20.10.2026).
+        # With a number in `slots` the general hint names it.
+        nobody_known = call.name == "create_callback" and not state.slots.get("phone")
+        return _CALLBACK_PHONE if nobody_known else _GUEST_PHONE
     if phone is not None and not _phone_counts(state, phone):
         return _GUEST_PHONE
     if call.name == "draft_order":
@@ -305,6 +332,14 @@ def _guest_details(call: ToolCall) -> tuple[Any, Any]:
     if isinstance(customer, dict):
         return customer.get("name"), customer.get("phone")
     return None, None
+
+
+def _books_under_a_number(call: ToolCall) -> bool:
+    """A call that cannot go through without a number. A `draft_order`
+    without a `customer` object is left to the validation, which names it."""
+    if call.name == "draft_order":
+        return isinstance(call.args.get("customer"), dict)
+    return call.name in ("create_reservation", "create_callback")
 
 
 def _phone_counts(state: ConversationState, phone: Any) -> bool:
@@ -336,6 +371,10 @@ def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:
 
 
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
+_NO_DRAFT = ToolResult(ok=False, error_code="conflict", hint=HINT_NO_DRAFT)
+_CALLBACK_PHONE = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_CALLBACK_PHONE
+)
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
 _CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITEM)
 _CART_SOLD_OUT = ToolResult(ok=False, error_code="conflict", hint=HINT_CART_SOLD_OUT)

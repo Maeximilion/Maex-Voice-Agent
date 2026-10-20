@@ -10,7 +10,16 @@ import pytest
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult
-from api.agent.guards import begin_turn, note_said, refusal
+from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
+    HINT_CONFIRM,
+    HINT_GUEST_PHONE,
+    HINT_NO_DRAFT,
+    begin_turn,
+    false_booking,
+    note_said,
+    refusal,
+)
 from api.agent.llm import ToolCall
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
 
@@ -172,9 +181,23 @@ def test_confirm_after_a_failed_correction_is_refused():
 
 
 def test_confirm_without_any_draft_is_refused():
+    """With no draft at all the hint names the tool that makes one: "read it
+    back first" pointed nowhere, and a real model confirmed made-up ids."""
     state = new_state()
 
-    assert refusal(state, begin_turn(state), "Ja", confirm(str(uuid.uuid4())))
+    refused = refusal(state, begin_turn(state), "Ja", confirm(str(uuid.uuid4())))
+
+    assert refused is not None
+    assert refused.hint == HINT_NO_DRAFT
+
+
+def test_confirm_of_a_draft_not_read_back_keeps_the_readback_hint():
+    state, draft_id = drafted()
+
+    refused = refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
+    assert refused is not None
+    assert refused.hint == HINT_CONFIRM
 
 
 @pytest.mark.parametrize(
@@ -740,3 +763,84 @@ def test_state_patch_drops_facts_from_a_tool_result():
 
     assert applied == {"party_size": 4}
     assert state.slots == {"phone": "+4972215551234", "party_size": 4}
+
+
+@pytest.mark.parametrize(
+    ("call", "hint"),
+    [
+        (
+            ToolCall("create_callback", {"phone": None, "reason": "out_of_scope"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (
+            ToolCall("create_callback", {"phone": "", "reason": "out_of_scope"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (ToolCall("create_callback", {"reason": "out_of_scope"}), HINT_CALLBACK_PHONE),
+        (
+            ToolCall("create_reservation", {"guest_name": None, "party_size": 2}),
+            HINT_GUEST_PHONE,
+        ),
+        (
+            ToolCall("draft_order", {"customer": {"name": None, "phone": None}}),
+            HINT_GUEST_PHONE,
+        ),
+    ],
+)
+def test_a_booking_without_a_number_gets_the_phone_hint(call, hint):
+    """The validation said only "phone: Input should be a valid string", and a
+    real model sent create_callback without a number four times in a row."""
+    state = new_state()
+
+    refused = refusal(state, begin_turn(state), "Bitte rufen Sie zurück", call)
+
+    assert refused is not None
+    assert refused.hint == hint
+
+
+def test_a_draft_without_a_customer_is_left_to_the_validation():
+    state = new_state()
+    call = ToolCall("draft_order", {"items": []})
+
+    assert refusal(state, begin_turn(state), "Das wars", call) is None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Ihre Abholung ist bestätigt. Der Abholcode lautet 8842.",
+        "Ihr Tisch ist reserviert.",
+        "Das ist gebucht.",
+        "Ihr Abholcode ist A12.",
+    ],
+)
+def test_a_claimed_booking_before_confirm_is_refused(say):
+    assert false_booking(new_state(), say) is not None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
+        "Möchten Sie einen Tisch reservieren?",
+        "Soll ich das so bestätigen?",
+    ],
+)
+def test_no_claim_or_a_denied_one_passes(say):
+    assert false_booking(new_state(), say) is None
+
+
+def test_after_a_confirm_the_booking_may_be_named():
+    state = new_state(booked=True)
+
+    assert false_booking(state, "Ihr Abholcode ist A12.") is None
+
+
+def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
+    state = new_state(slots={"phone": "+4972215551234"})
+    call = ToolCall("create_callback", {"phone": None, "reason": "out_of_scope"})
+
+    refused = refusal(state, begin_turn(state), "Rufen Sie mich zurück", call)
+
+    assert refused is not None
+    assert refused.hint == HINT_GUEST_PHONE
