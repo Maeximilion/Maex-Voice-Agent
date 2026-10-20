@@ -517,6 +517,8 @@ Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_under
 
 **Fehler:** unbekannter Anruf oder fremder Mandant → `not_found` mit Störungssatz · unbrauchbare Rufnummer → `invalid_input` mit Nachfrage-Satz · leeres `summary` → `invalid_input` · unbekannter `reason` → `invalid_input`.
 
+**Second writer, not a tool:** after a team leg nobody answered, the line's process writes the card through the same function, the same lock and the same rule of one open card per call (`callbacks.team_missed`, T-10.8). The number is the one the guest named in the call or the caller id; the reason is the transfer's (a cancellation becomes `human_requested`, a transfer without a reason, paused or the outage path, `out_of_scope`); the audit actor is `telephony`; the call's outcome becomes `callback` (an `error` stays). Without a usable number no card is written.
+
 Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der Landesvorwahl entfällt dabei (`+49 (0)7221 5551234` → `+4972215551234`).
 
 ---
@@ -527,7 +529,7 @@ Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der La
 
 **Response** `{ "ok": true, "data": { "transfer_to": "+49…", "available": true }, "say": null }`
 
-Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen Rückruf an. **Schleifenschutz:** Ziel ist immer die Durchwahl, nie die Hauptnummer, und `transfer_to_team` wird je Anruf höchstens einmal ausgeführt.
+Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen Rückruf an. `available` is the opening hours, not a ping (Maxi, 20.10.2026): outside them nobody is rung and the agent writes the callback; inside them the call is handed to the team, and on the phone line the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card written by the line's process (`callbacks.team_missed`, docs/20 §5, T-10.8). **Schleifenschutz:** Ziel ist immer die Durchwahl, nie die Hauptnummer, und `transfer_to_team` wird je Anruf höchstens einmal ausgeführt.
 
 ---
 
