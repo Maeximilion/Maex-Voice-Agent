@@ -24,7 +24,7 @@ from api.core.time import utcnow
 from api.domain.callbacks.create import create_callback
 from api.domain.customers.phone import normalize_phone
 from api.domain.status.hours import all_services, load_hours, open_window_at
-from api.models import AuditLog, Call, ServiceConfig, Tenant
+from api.models import AuditLog, Call, Callback, ServiceConfig, Tenant
 from api.schemas.callbacks import CallbackReason, CallbackTask, CreateCallbackRequest
 from api.schemas.transfer import TransferResult, TransferToTeamRequest
 
@@ -101,9 +101,10 @@ def team_missed(
 
     `external_session_id` is the id the line gave the call; our leg and its log
     may be closed already. `phone` is a number the guest named in the call,
-    which only the line's process still knows; else the caller id. The call's
-    outcome becomes "callback", also when its log is still being written
-    (`end_call` keeps it); an "error" stays, logged before or after."""
+    which only the line's process still knows; else the caller id, else the
+    number of an open card of the call. The call's outcome becomes "callback",
+    also when its log is still being written (`end_call` keeps it); an "error"
+    stays, logged before or after."""
     now = now or utcnow()
     call = session.execute(
         select(Call)
@@ -117,13 +118,25 @@ def team_missed(
         .with_for_update(),
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
-    number = None if call is None else _number(phone) or _number(call.caller_id)
+    # Without a number left, an open card of the call still counts: the core
+    # wrote it under a number only the gone process knew (`create_callback`
+    # returns it, one open card per call).
+    number = (
+        None
+        if call is None
+        else _number(phone)
+        or _number(call.caller_id)
+        or _open_card_phone(session, call)
+    )
     if call is None or number is None:
         session.rollback()
         return None
 
     reason = call.transfer_reason
-    if call.outcome in (None, "transferred"):
+    # Whatever the log of our leg derived, before this or after it (`end_call`
+    # keeps it): the card is what became of the call. An error stays, the
+    # outage is counted by it.
+    if call.outcome != "error":
         call.outcome = "callback"
     return create_callback(
         session,
@@ -150,6 +163,18 @@ def _card_reason(reason: str | None) -> CallbackReason:
     return "human_requested" if reason == "cancellation" else "out_of_scope"
 
 
+def _open_card_phone(session: Session, call: Call) -> str | None:
+    return session.scalars(
+        select(Callback.phone)
+        .where(
+            Callback.call_id == call.id,
+            Callback.status == "open",
+            Callback.deleted_at.is_(None),
+        )
+        .limit(1)
+    ).first()
+
+
 def _number(raw: str | None) -> str | None:
     """E.164, or None. The message of a refused number holds the number, so it
     goes nowhere."""
@@ -173,8 +198,9 @@ def _team_reachable(
 
     On the phone line the dial result now has the last word inside the opening
     hours: the team is rung, and a leg nobody answers becomes a callback card
-    (`team_missed`, T-10.8). Outside them nobody is rung and the agent writes
-    the card itself (Maxi, 20.10.2026). The text phone and the evals have no
+    (`team_missed`, T-10.8). Outside them the agent's handover rings nobody
+    and the agent writes the card itself (Maxi, 20.10.2026); the outage
+    paths of the line ring the team at any hour. The text phone and the evals have no
     line and keep this guess alone.
     """
     zone = ZoneInfo(timezone)

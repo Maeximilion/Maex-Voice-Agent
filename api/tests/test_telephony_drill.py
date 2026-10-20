@@ -24,13 +24,17 @@ class Stage(drill.Drill):
         self.script = script
         self.logs: dict[str, list[str]] = {"router": [], "asterisk": [], "voice": []}
         self.commands: list[tuple[str, ...]] = []
-        # What a command prints, by a piece of it; "" for every other.
-        self.prints: dict[str, str] = {}
+        # What a command prints, by a piece of it; "" for every other. An
+        # exception is raised, as a command that fails does.
+        self.prints: dict[str, str | Exception] = {}
 
     def compose(self, *args: str) -> str:
         self.commands.append(args)
         joined = " ".join(args)
-        return next((out for key, out in self.prints.items() if key in joined), "")
+        out = next((out for key, out in self.prints.items() if key in joined), "")
+        if isinstance(out, Exception):
+            raise out
+        return out
 
     def cli(self, service: str, command: str) -> str:
         self.commands.append(("cli", service, command))
@@ -43,7 +47,12 @@ class Stage(drill.Drill):
     def sql(self, statement: str) -> str:
         self.commands.append(("sql", statement))
         return next(
-            (out for key, out in self.prints.items() if key in statement), "callback"
+            (
+                out
+                for key, out in self.prints.items()
+                if key in statement and isinstance(out, str)
+            ),
+            "callback",
         )
 
     def log(self, service: str) -> list[str]:
@@ -473,12 +482,18 @@ def test_with_voice_down_the_caller_still_hears_to_call_again(tmp_path):
 def test_the_announcements_asterisk_plays_are_the_sentences_of_the_code(tmp_path):
     stage = Stage(tmp_path, {})
     stage.prints["ANNOUNCEMENTS"] = '{"missed_noted": "Ja.", "missed_later": "Nein."}'
-    stage.prints["missed_noted.sln16"] = "Ja."
-    stage.prints["missed_later.sln16"] = "Nein."
+    # The fake mouth's audio is the sentence, then silence.
+    stage.prints["missed_noted.sln16"] = "Ja.\x00"
+    stage.prints["missed_later.sln16"] = "Nein.\x00"
 
     [(_, ok, detail)] = drill.drill_announcements(stage)
     assert ok, detail
 
-    stage.prints["missed_later.sln16"] = "Vielleicht."
-    [(_, ok, _)] = drill.drill_announcements(stage)
-    assert not ok
+    for stale in (
+        "Vielleicht",  # another sentence
+        "Nein. Und",  # an older, longer sentence that begins the same way
+        drill.DrillError("head: No such file or directory"),  # none at all
+    ):
+        stage.prints["missed_later.sln16"] = stale
+        [(_, ok, detail)] = drill.drill_announcements(stage)
+        assert not ok and "missed_later" in detail

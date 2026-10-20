@@ -61,6 +61,11 @@ SAY_OUTAGE = (
     "Bei mir gibt es gerade eine technische Störung. "
     "Ich verbinde Sie direkt mit dem Restaurant."
 )
+# The outage sentence when it is the first of the call, before the greeting
+# (the database down at the start, a call this process does not know): the AI
+# says it is one first (docs/09 L1), without the restaurant's name, which may
+# not be readable then.
+SAY_OUTAGE_FIRST = f"Hier ist der KI-Assistent des Restaurants. {SAY_OUTAGE}"
 # The caller hears a goodbye before the line goes dead. The code adds it unless
 # the agent's last sentence already parts ("bis dann" after a reservation, "bis
 # gleich" after a pickup), so it is never said twice.
@@ -441,7 +446,8 @@ class CallHandler:
             self._keep_named_phone(live)
         try:
             try:
-                self._port.say(session_id, SAY_OUTAGE)
+                greeted = live is not None and live.state.greeted
+                self._port.say(session_id, SAY_OUTAGE if greeted else SAY_OUTAGE_FIRST)
             except Exception:
                 logger.exception("outage sentence could not be spoken")
             self._port.transfer(session_id, target)

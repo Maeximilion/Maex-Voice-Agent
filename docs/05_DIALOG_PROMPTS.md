@@ -453,6 +453,9 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 **Ausfall**
 > „Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
 
+As the first sentence of a call, before the greeting (the database down at the start, a call the process does not know; `telephony/handler.py` `SAY_OUTAGE_FIRST`, draft), the AI says it is one first (L1 of docs/09), without the restaurant's name, which may not be readable then:
+> „Hier ist der KI-Assistent des Restaurants. Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant."
+
 **Nobody reachable** (`agent/loop.py` `SAY_NOBODY_REACHABLE`, draft): the core gives up, the team is not reachable and there is no number for a callback. No sentence that promises the team is spoken then.
 > „Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant niemanden. Bitte rufen Sie später noch einmal an."
 

@@ -21,6 +21,7 @@ an ear or mouth it cannot load. An engine that hangs later ends the process
 
 import base64
 import binascii
+import contextlib
 import hmac
 import os
 import threading
@@ -335,21 +336,26 @@ def announce(mouth: Mouth, folder: Path) -> None:
     this process's voice, as files Asterisk plays (raw 16 kHz, `.sln16`), so
     they are heard with `voice` or the database down. Rendered at every start,
     so they follow the code; each is renamed into place whole. A failure costs
-    the sentences, never the start: without a file the dialplan plays nothing
-    (`STAT`)."""
+    the sentences, never the start: the file of an older start goes too, and
+    without a file the dialplan plays nothing (`STAT`)."""
     for name, sentence in ANNOUNCEMENTS.items():
+        target = folder / f"{name}.sln16"
         try:
             audio = b"".join(mouth.speak(sentence))
+            if not audio:
+                raise RuntimeError("the mouth made no audio")
             # Whole samples: an odd byte would shift every sample behind it.
             audio += b"\x00" * (len(audio) % 2 + ANNOUNCEMENT_TAIL_BYTES)
             part = folder / f".{name}.part"
             part.write_bytes(audio)
-            part.replace(folder / f"{name}.sln16")
+            part.replace(target)
         except Exception as exc:  # noqa: BLE001 - never the start
             logger.warning(
                 "announcement not rendered",
                 extra={"extra": {"name": name, "error": type(exc).__name__}},
             )
+            with contextlib.suppress(OSError):
+                target.unlink(missing_ok=True)
 
 
 def create_app(voice: Voice) -> FastAPI:

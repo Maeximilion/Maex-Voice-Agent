@@ -36,6 +36,7 @@ from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import (
     FAREWELL,
     SAY_OUTAGE,
+    SAY_OUTAGE_FIRST,
     STILL_THERE,
     CallHandler,
     key_terms,
@@ -254,7 +255,9 @@ def test_database_down_at_call_start_still_reaches_the_team(session, tenant):
 
     # Without a database the number from the environment is the only one left.
     assert port.transfers(sid) == [settings.team_phone]
-    assert port.says(sid) == [SAY_OUTAGE]
+    # The first sentence of the call: the AI says it is one (docs/09 L1), and a
+    # team that does not answer leaves it the sentence after the leg too.
+    assert port.says(sid) == [SAY_OUTAGE_FIRST]
 
 
 @pytest.mark.parametrize("mode", ["paused", "shadow"])
@@ -371,7 +374,7 @@ def test_turn_for_an_unknown_call_goes_to_the_team(session, tenant):
 
     handler.on_user_turn("lost-session", "Hallo?")
 
-    assert port.says("lost-session") == [SAY_OUTAGE]
+    assert port.says("lost-session") == [SAY_OUTAGE_FIRST]
     assert port.transfers("lost-session") == [settings.team_phone]
 
 

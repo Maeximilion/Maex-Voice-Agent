@@ -498,6 +498,30 @@ def test_a_mouth_or_folder_that_fails_does_not_stop_the_process(tmp_path, caplog
     assert warned == ["announcement not rendered"] * 2 * len(ANNOUNCEMENTS)
 
 
+def test_a_failed_render_leaves_no_sentence_of_an_older_start(tmp_path):
+    """The volume outlives `voice`: a file from before a deploy would still
+    be played with the old text (ultra review on PR #345)."""
+    voice_app.announce(FakeMouth(), tmp_path)
+    broken = FakeMouth()
+    broken.broken = True
+
+    voice_app.announce(broken, tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_a_mouth_that_makes_no_audio_leaves_no_file(tmp_path):
+    """Half a second of silence would pass `STAT` and be logged as told."""
+
+    class Silent(FakeMouth):
+        def speak(self, text):
+            yield b""
+
+    voice_app.announce(Silent(), tmp_path)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_the_dialplan_plays_only_announcements_the_process_renders():
     conf = DIALPLAN.read_text()
     played = set(re.findall(r"\bmissed_[a-z]+\b", conf))
@@ -518,6 +542,18 @@ def test_the_dialplan_tells_only_a_caller_the_ai_answered():
     assert missed.index('"${VOICE_LEG}" != "ANSWER"') < missed.index("Playback(")
     for line in re.findall(r"Log\([^\n]*", missed):
         assert "CALLERID" not in line and "TARGET" not in line, line
+
+
+def test_the_dialplan_reports_every_missed_leg_and_waits_out_the_row():
+    """Also after a leg `voice` took and lost before a word (CHANUNAVAIL), whose
+    row is there; and long enough for the 2 s the write may wait on the row
+    (ultra review on PR #345)."""
+    conf = DIALPLAN.read_text()
+    missed = conf[conf.index("exten => missed,1") :]
+    missed = missed[: missed.index("\n\n")]
+    report = missed.index("/missed")
+    assert "GotoIf" not in missed[:report]
+    assert "CURLOPT(httptimeout)=4" in missed[:report]
 
 
 # -- with the real call handler and a database ----------------------------------------
@@ -588,7 +624,7 @@ def test_a_call_is_greeted_and_logged_when_the_caller_hangs_up(session, tenant):
 
 
 @pytest.fixture
-def startable(monkeypatch):
+def startable(monkeypatch, tmp_path):
     """Settings the service starts with, but for the database."""
     for name, value in {
         "voice_media_token": TOKEN,
@@ -603,6 +639,8 @@ def startable(monkeypatch):
     # No watchdog thread is left behind: it would end the test process with
     # `os._exit` once a watched call took long.
     monkeypatch.setattr(voice_app.Watchdog, "start", lambda self: None)
+    # Never the volume a running `voice` plays from.
+    monkeypatch.setattr(voice_app, "ANNOUNCEMENTS_FOLDER", tmp_path)
     return monkeypatch
 
 

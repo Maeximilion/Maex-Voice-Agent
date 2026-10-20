@@ -546,9 +546,9 @@ def team_away(drill: Drill, how: str) -> Iterator[None]:
             drill.sql("delete from special_days where note = 'drill'")
 
 
-def missed_of(call: Call) -> tuple[str, str, str, str]:
-    """The call's id, what `voice` answered the report, and what the caller
-    was told, from the AI telephone's log; and the call's row as
+def missed_of(call: Call) -> tuple[str, str, str]:
+    """What `voice` answered the report and what the caller was told, from the
+    AI telephone's log; and the call's row, by the id that log names, as
     "outcome|cards|phone"."""
     sid = card = told = ""
     for line in call.lines("asterisk"):
@@ -568,7 +568,7 @@ def missed_of(call: Call) -> tuple[str, str, str, str]:
         if sid
         else ""
     )
-    return sid, card, told, row
+    return card, told, row
 
 
 def drill_team_missed(drill: Drill) -> list[Check]:
@@ -580,7 +580,7 @@ def drill_team_missed(drill: Drill) -> list[Check]:
         check = team_check("team missed: the team rings", call, call.placed)
         call.wait(call.ended, timeout=CALL_TIMEOUT_SECONDS)
     drill.quiet()
-    _, card, told, row = missed_of(call)
+    card, told, row = missed_of(call)
     return [
         check,
         (
@@ -607,7 +607,7 @@ def drill_team_missed_paused(drill: Drill) -> list[Check]:
     finally:
         drill.mode("primary")
     drill.quiet()
-    _, card, told, row = missed_of(call)
+    card, told, row = missed_of(call)
     return [
         (
             "team missed, paused: a card, nothing played, the call never answered",
@@ -634,7 +634,7 @@ def drill_team_missed_voice_down(drill: Drill) -> list[Check]:
     finally:
         drill.restart("voice")
     drill.quiet()
-    _, card, told, row = missed_of(call)
+    card, told, row = missed_of(call)
     return [
         (
             "team missed, voice down: no card, the caller hears to call again",
@@ -663,18 +663,7 @@ def drill_announcements(drill: Drill) -> list[Check]:
         )
     )
     differ = [
-        name
-        for name, sentence in expected.items()
-        if drill.compose(
-            "exec",
-            "-T",
-            "asterisk",
-            "head",
-            "-c",
-            str(len(sentence.encode())),
-            f"/announcements/{name}.sln16",
-        )
-        != sentence
+        name for name, sentence in expected.items() if not plays(drill, name, sentence)
     ]
     return [
         (
@@ -683,6 +672,25 @@ def drill_announcements(drill: Drill) -> list[Check]:
             f"different: {', '.join(differ)}" if differ else f"{len(expected)} match",
         )
     ]
+
+
+def plays(drill: Drill, name: str, sentence: str) -> bool:
+    """The file holds the sentence and silence behind it: no other sentence,
+    nor an older, longer one that begins the same way. A missing file is a
+    failed point, not a broken run."""
+    try:
+        head = drill.compose(
+            "exec",
+            "-T",
+            "asterisk",
+            "head",
+            "-c",
+            str(len(sentence.encode()) + 1),
+            f"/announcements/{name}.sln16",
+        )
+    except DrillError:
+        return False
+    return head == sentence + "\x00"
 
 
 def drill_stranger(drill: Drill) -> list[Check]:

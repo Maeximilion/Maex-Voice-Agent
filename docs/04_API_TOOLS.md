@@ -529,7 +529,7 @@ Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der La
 
 **Response** `{ "ok": true, "data": { "transfer_to": "+49…", "available": true }, "say": null }`
 
-Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen Rückruf an. `available` is the opening hours, not a ping (Maxi, 20.10.2026): outside them nobody is rung and the agent writes the callback; inside them the call is handed to the team, and on the phone line the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card written by the line's process (`callbacks.team_missed`, docs/20 §5, T-10.8). **Schleifenschutz:** Ziel ist immer die Durchwahl, nie die Hauptnummer, und `transfer_to_team` wird je Anruf höchstens einmal ausgeführt.
+Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen Rückruf an. `available` is the opening hours, not a ping (Maxi, 20.10.2026): outside them the agent's handover rings nobody and the agent writes the callback (the outage paths of the phone line ring the team at any hour); inside them the call is handed to the team, and on the phone line the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card written by the line's process (`callbacks.team_missed`, docs/20 §5, T-10.8). **Schleifenschutz:** Ziel ist immer die Durchwahl, nie die Hauptnummer, und `transfer_to_team` wird je Anruf höchstens einmal ausgeführt.
 
 ---
 

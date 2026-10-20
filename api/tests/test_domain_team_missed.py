@@ -180,6 +180,18 @@ def test_the_newest_call_of_that_id_counts_and_an_old_one_never(session, tenant_
     assert len(cards(session, new.id)) == 1
 
 
+def test_of_two_calls_with_that_id_in_the_window_the_newer_gets_the_card(
+    session, tenant_id
+):
+    earlier = make_call(session, tenant_id, started_at=STARTED - timedelta(hours=1))
+    later = make_call(session, tenant_id)
+
+    assert team_missed(session, tenant_id, "1760000000.1", now=REPORTED) is not None
+
+    assert cards(session, earlier.id) == []
+    assert len(cards(session, later.id)) == 1
+
+
 def test_a_second_report_returns_the_same_card(session, tenant_id):
     call = make_call(session, tenant_id)
 
@@ -210,6 +222,52 @@ def test_a_card_the_core_wrote_in_the_call_stays_the_only_one(session, tenant_id
 
     assert task is not None and task.callback_id == earlier.callback_id
     assert len(cards(session, call.id)) == 1
+
+
+def test_an_open_card_counts_also_when_no_number_is_left(session, tenant_id):
+    """Withheld caller id, the core wrote a card under the number the guest
+    named, and the process that knew that number is gone: the card is there,
+    and the caller may hear so (ultra review on PR #345)."""
+    call = make_call(session, tenant_id, caller_id=None)
+    earlier = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call.id,
+            tenant_id=tenant_id,
+            phone="+497215550222",
+            reason="human_requested",
+            summary="Kunde wollte mit einem Menschen sprechen.",
+        ),
+        now=STARTED,
+    )
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None and task.callback_id == earlier.callback_id
+    session.refresh(call)
+    assert call.outcome == "callback"
+
+
+@pytest.mark.parametrize("logged", ["abandoned", "completed"])
+def test_the_outcome_is_callback_whichever_write_comes_first(
+    session, tenant_id, logged
+):
+    """The dialplan rang the team although the core handed nothing over (`voice`
+    too slow to answer, the backstop): the log derives another outcome. The
+    card makes it "callback", before the log or after it."""
+    first = make_call(session, tenant_id, sid="1760000000.1", outcome=logged)
+    assert team_missed(session, tenant_id, "1760000000.1", now=REPORTED) is not None
+    session.refresh(first)
+    assert first.outcome == "callback"
+
+    second = make_call(session, tenant_id, sid="1760000000.2", outcome=None)
+    assert team_missed(session, tenant_id, "1760000000.2", now=REPORTED) is not None
+    ended = end_call(
+        session,
+        EndCallRequest(call_id=second.id, tenant_id=tenant_id, outcome=logged),
+        now=REPORTED,
+    )
+    assert ended.outcome == "callback"
 
 
 def test_an_error_outcome_stays(session, tenant_id):
@@ -275,26 +333,27 @@ def test_a_report_waits_for_the_call_log_and_reads_what_it_wrote(
             )
             call_id = make_call(setup, tenant_id, outcome=None).id
 
-        holder = Session(engine)
-        holder.execute(
-            text("select 1 from calls where id = :id for update"), {"id": call_id}
-        )
         results: list[object] = []
 
         def report() -> None:
             with Session(engine) as s:
                 results.append(team_missed(s, tenant_id, "1760000000.1", now=REPORTED))
 
-        worker = threading.Thread(target=report)
-        worker.start()
-        worker.join(timeout=0.5)
-        assert worker.is_alive()  # waits on the row
-        end_call(
-            holder,
-            EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome=logged),
-            now=REPORTED,
-        )
-        holder.close()
+        # Closed whatever fails, or the row stays locked and the worker waits
+        # until the database is dropped.
+        with Session(engine) as holder:
+            holder.execute(
+                text("select 1 from calls where id = :id for update"), {"id": call_id}
+            )
+            worker = threading.Thread(target=report)
+            worker.start()
+            worker.join(timeout=0.5)
+            assert worker.is_alive()  # waits on the row
+            end_call(
+                holder,
+                EndCallRequest(call_id=call_id, tenant_id=tenant_id, outcome=logged),
+                now=REPORTED,
+            )
         worker.join(timeout=10)
 
         assert results and results[0] is not None

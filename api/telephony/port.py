@@ -56,7 +56,10 @@ class CallEvents(Protocol):
     """What the line reports of its calls. The events of one call come one
     after another, never two at once (`CallSession` reports them on the call's
     worker): the handler uses a call's database session on the thread that
-    reports. Events of different calls may come at the same time."""
+    reports. Events of different calls may come at the same time. Not so
+    `on_team_missed`: it comes from the dialplan on another thread, also while
+    `on_call_ended` of the same call still runs, and uses no session of the
+    call."""
 
     def on_call_started(self, session_id: str) -> None:
         """A call was picked up. Called again for the same session on a retry."""
