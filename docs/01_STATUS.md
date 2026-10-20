@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 20.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.5.0
+> Status: 20.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.0
 
 ---
 
@@ -592,6 +592,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.6.0 · 20.10.2026:** T-10.8 done: a team leg nobody answers at TEAM_PHONE becomes a callback card, and a caller the AI answered hears so; outside the opening hours nobody is rung (D25)
 - **v2.5.0 · 20.10.2026:** Legal check answered (D20): Gemini and Claude rounds compared, D9 Maxi himself, D21 answered, E14 needs consent, 90-day deletion set, call log by the hour; duties in docs/09 section 1, tasks T-11.1 to T-11.8
 - **v2.4.2 · 20.10.2026:** Route line read behind the desktop app's brief wrapper; first Projects test row in docs/19
 - **v2.4.1 · 20.10.2026:** T-10.13 done: dialplan dials only listed numbers, falls back to TEAM_PHONE, SIP only from the access
