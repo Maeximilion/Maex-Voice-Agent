@@ -19,14 +19,17 @@ from api.agent.guards import (
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
     HINT_ITEM,
+    HINT_NOT_BOOKED,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import (
     MAX_TOOL_HOPS,
+    SAY_ESCALATION,
     SAY_NOBODY_REACHABLE,
     SAY_ORDER_NOT_PLACED,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
+    _local_times,
     _order_lines,
 )
 from api.agent.state import ConversationState, initial_state
@@ -169,7 +172,9 @@ def test_transfer_erfolgreich_beendet_das_gespraech(session, state):
                     name="transfer_to_team", args={"reason": "complaint"}
                 )
             ),
-            LLMTurn(say="Ich verbinde Sie."),
+            # Never asked for: a real model called transfer_to_team again on
+            # its own result until the hop limit (13.10.2026).
+            LLMTurn(tool_call=ToolCall(name="transfer_to_team", args={})),
         ]
     )
     loop = ConversationLoop(
@@ -181,7 +186,31 @@ def test_transfer_erfolgreich_beendet_das_gespraech(session, state):
     result = loop.run_turn(state, "Da gibt es leider ein Problem mit meiner Bestellung")
 
     assert result.ended is True
+    assert result.say == [SAY_ESCALATION]
     assert state.stage == "transferred"
+    assert len(llm.calls) == 1
+
+
+def test_transfer_without_a_reachable_team_goes_back_to_the_model(session, state):
+    """Before opening nobody takes the call: the model gets the result and can
+    take a callback instead, the call does not end on the tool."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Unter welcher Nummer erreichen wir Sie?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.say == ["Unter welcher Nummer erreichen wir Sie?"]
+    assert result.ended is False
+    assert '"available": false' in llm.calls[1][2]
 
 
 def test_max_call_seconds_uebergibt_wirklich_statt_nur_anzukuendigen(session, state):
@@ -1338,3 +1367,90 @@ def test_options_and_the_note_of_a_line_reach_the_card(state):
     assert _order_lines(state, 70) == (
         "1x 12 (Größe: groß; ohne Zwiebeln), 2x 12 (Größe: klein)"
     )
+
+
+def test_times_in_a_tool_result_reach_the_model_in_local_time(session, state):
+    """closes_at is UTC in the tool and 22:00 in Berlin: the model read the
+    UTC hour and said "bis 21 Uhr" (13.10.2026)."""
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="get_service_status")),
+            LLMTurn(say="Wir haben geöffnet."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Habt ihr offen?")
+
+    data = json.loads(llm.calls[1][2])["data"]
+    closes = datetime.fromisoformat(data["closes_at"])
+    assert closes.utcoffset() == OPEN_NOW.utcoffset()
+    assert data["closes_at"].endswith("+02:00")
+
+
+def test_local_times_touch_only_points_in_time():
+    zone = BERLIN
+    data = {
+        "closes_at": "2026-09-15T20:00:00Z",
+        "alternatives": ["2026-09-15T17:30:00+00:00"],
+        "day": "2026-09-15",
+        "naive": "2026-09-15T20:00:00",
+        "name": "Tom Yam Talay",
+        "wait": 15,
+        "nothing": None,
+    }
+
+    local = _local_times(data, zone)
+
+    assert local["closes_at"] == "2026-09-15T22:00+02:00"
+    assert local["alternatives"] == ["2026-09-15T19:30+02:00"]
+    assert {k: local[k] for k in ("day", "naive", "name", "wait", "nothing")} == {
+        "day": "2026-09-15",
+        "naive": "2026-09-15T20:00:00",
+        "name": "Tom Yam Talay",
+        "wait": 15,
+        "nothing": None,
+    }
+
+
+def test_a_booking_nobody_made_is_not_said(session, state):
+    """On "Ja, passt" with no draft a real model said the pickup was
+    confirmed and named a code it made up (13.10.2026)."""
+    llm = FakeLLM(
+        [
+            LLMTurn(say="Ihre Abholung ist bestätigt. Der Abholcode lautet 8842."),
+            LLMTurn(say="Was darf ich für Sie notieren?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == ["Was darf ich für Sie notieren?"]
+    refused = json.loads(llm.calls[1][2])
+    assert refused["ok"] is False
+    assert refused["hint"] == HINT_NOT_BOOKED
+    assert llm.calls[1][1]["called"] == ["say"]
+
+
+def test_a_model_that_insists_on_a_booking_ends_with_the_team(session, state):
+    llm = FakeLLM(
+        [LLMTurn(say="Ihr Tisch ist reserviert.") for _ in range(MAX_TOOL_HOPS)]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.ended is True
+    assert "reserviert" not in " ".join(result.say)
+
+
+def test_after_a_confirm_the_booking_may_be_said(session, state):
+    read_back_reservation(session, state)
+    llm = confirming(state, then_say="Ihre Reservierung ist bestätigt.")
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == ["Ihre Reservierung ist bestätigt."]
+    assert state.booked is True

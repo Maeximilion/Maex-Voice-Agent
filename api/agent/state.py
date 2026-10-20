@@ -74,6 +74,10 @@ class ConversationState(BaseModel):
     readback: str | None = None
     readback_heard: bool = False
     transferred: bool = False
+    # A `confirm` went through in this call. Memory of the core, never sent to
+    # the model: before it, no sentence may tell the guest that something is
+    # booked (`guards.false_booking`).
+    booked: bool = False
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -448,6 +452,7 @@ def apply_tool_result(
             # Booked: no longer an order that is being put together.
             state.cart = []
         state.stage = "confirmed"
+        state.booked = True
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
         # read a draft that no longer is one (Codex PR #258).

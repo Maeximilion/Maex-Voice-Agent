@@ -14,8 +14,9 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, get_args
 
 from sqlalchemy import select
@@ -65,6 +66,8 @@ ENDED_STAGES = frozenset({"transferred", "ended"})
 # Name under which a refused order of the model (`LLMTurn.cart`) goes back to
 # it and into `calls.tool_calls`. No tool: nothing is dispatched under it.
 CART = "cart"
+# The same for a sentence the core did not let through (`guards.false_booking`).
+SAY = "say"
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
 # Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
@@ -160,6 +163,8 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
+        zone = self._local_now(state).tzinfo
+        assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -267,12 +272,23 @@ class ConversationLoop:
                         self._session, state.call_id, state.tenant_id, CART, refused
                     )
                     called.append(CART)
-                    pending_input = _tool_result_as_input(CART, refused)
+                    pending_input = _tool_result_as_input(CART, refused, zone)
                     continue
 
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                refused = guards.false_booking(state, say)
+                if refused is not None:
+                    # Rule 3 for what the guest hears: "Ihre Abholung ist
+                    # bestätigt, der Abholcode lautet 8842" with nothing booked
+                    # sends a guest away who will find no order (13.10.2026).
+                    log_refused(
+                        self._session, state.call_id, state.tenant_id, SAY, refused
+                    )
+                    called.append(SAY)
+                    pending_input = _tool_result_as_input(SAY, refused, zone)
+                    continue
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -307,8 +323,16 @@ class ConversationLoop:
                 # both, so the tool's sentence would end its turn, and a guest
                 # who hangs up then would be lost (Codex PR #280).
                 return self._table_to_team(state, turn.tool_call.args, result.say)
+            if turn.tool_call.name == "transfer_to_team" and state.transferred:
+                # The model handed the call over itself, and the team takes it:
+                # the call ends here, as in `_handoff`. Asked again, a real
+                # model called transfer_to_team on its own result until the hop
+                # limit, and the call went to the team as stuck (13.10.2026).
+                return TurnResult(
+                    state=state, say=[result.say or SAY_ESCALATION], ended=True
+                )
             called.append(turn.tool_call.name)
-            pending_input = _tool_result_as_input(turn.tool_call.name, result)
+            pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
 
@@ -529,10 +553,11 @@ def _handoff_summary(reason: str, detail: str | None) -> str:
     return f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
 
 
-def _tool_result_as_input(name: str, result: ToolResult) -> str:
-    """Ergebnis dem Modell als nächster Zug zurückgeben, ohne echten Kundeninput."""
+def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:
+    """Ergebnis dem Modell als nächster Zug zurückgeben, ohne echten Kundeninput.
+    Times in the restaurant's local time (`zone`), like `now` in the state."""
     if result.ok:
-        payload = {"tool": name, "ok": True, "data": result.data}
+        payload = {"tool": name, "ok": True, "data": _local_times(result.data, zone)}
     else:
         payload = {"tool": name, "ok": False, "error_code": result.error_code}
     if result.hint:
@@ -546,3 +571,21 @@ def _tool_result_as_input(name: str, result: ToolResult) -> str:
         # selbst improvisieren.
         payload["say"] = result.say
     return json.dumps(payload, default=str, ensure_ascii=False)
+
+
+def _local_times(value: Any, zone: tzinfo) -> Any:
+    """Every point in time of a tool result in local time. The tools answer in
+    UTC (`closes_at` 20:00Z for 22:00), and a real model read the UTC hour as
+    the restaurant's and said "bis 21 Uhr" and "bis 22 Uhr" for the same 22:00
+    (13.10.2026). Only text with a date, a time and an offset is one; a bare
+    date or a number stays as it is."""
+    if isinstance(value, dict):
+        return {key: _local_times(item, zone) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_local_times(item, zone) for item in value]
+    if isinstance(value, str) and "T" in value:
+        with suppress(ValueError):
+            moment = datetime.fromisoformat(value)
+            if moment.tzinfo is not None:
+                return moment.astimezone(zone).isoformat(timespec="minutes")
+    return value

@@ -100,6 +100,18 @@ HINT_GUEST_PHONE = (
     "die er als seine Rufnummer genannt hat. Steht kein `phone` in `slots`, frag "
     "den Gast, unter welcher Rufnummer mit Vorwahl er erreichbar ist."
 )
+HINT_NOT_BOOKED = (
+    "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
+    "durchgegangen. Sag nie, etwas sei bestätigt, gebucht oder reserviert, und "
+    "nenne keinen Abholcode. Erst den readback vorlesen und auf ein klares Ja "
+    "des Gastes warten."
+)
+# Words that tell a guest something is booked. The pickup code comes from
+# `confirm` only; a model that names one before it has made it up.
+_BOOKING_CLAIM = re.compile(
+    r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -160,6 +172,22 @@ def note_said(state: ConversationState, say: str) -> None:
         for item_id, label in state.offered_items.items()
         if item_id not in named
     }
+
+
+def false_booking(state: ConversationState, say: str) -> ToolResult | None:
+    """The failed result for a sentence that tells the guest something is
+    booked while no `confirm` went through in this call; None lets it through.
+    The hard metrics read the database and do not see such a sentence: on
+    "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
+    Der Abholcode lautet 8842" (13.10.2026).
+
+    ponytail: by word, not by meaning. "noch nicht bestätigt" is refused too
+    and costs the model a hop to say it otherwise; and after one booking in a
+    call a second, unbooked one is not caught. A per-draft check if the call
+    log shows either."""
+    if state.booked or not _BOOKING_CLAIM.search(say):
+        return None
+    return _NOT_BOOKED
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:
@@ -315,6 +343,7 @@ _CART_OPTION = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_O
 _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIFFERS)
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
+_NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
 
 
 def unheard_readback(state: ConversationState) -> str | None:
