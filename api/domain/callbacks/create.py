@@ -34,7 +34,11 @@ SAY_NOTED = (
 
 
 def create_callback(
-    session: Session, req: CreateCallbackRequest, now: datetime | None = None
+    session: Session,
+    req: CreateCallbackRequest,
+    now: datetime | None = None,
+    *,
+    actor: str = ACTOR_AGENT,
 ) -> CallbackTask:
     now = now or utcnow()
     if session.get(Tenant, req.tenant_id) is None:
@@ -73,7 +77,7 @@ def create_callback(
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,
-            actor=ACTOR_AGENT,
+            actor=actor,
             action=ACTION_CREATED,
             entity="callback",
             entity_id=callback.id,

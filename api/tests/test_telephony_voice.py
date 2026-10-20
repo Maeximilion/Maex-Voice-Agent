@@ -9,12 +9,14 @@ dialplan does when our leg is gone. No network, no Asterisk.
 import asyncio
 import base64
 import json
+import re
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
@@ -22,11 +24,12 @@ from api.agent.llm import LLMError
 from api.config import settings
 from api.core.errors import NotFound
 from api.domain.calls import tenant_named
+from api.models import Callback
 from api.telephony import app as voice_app
 from api.telephony import router as router_module
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
 from api.telephony.app import Voice, create_app, voice_from_settings
-from api.telephony.handler import GREETING
+from api.telephony.handler import ANNOUNCEMENTS, GREETING
 from api.telephony.router import _write
 from api.telephony.session import Lines
 from api.tests.test_telephony import (  # noqa: F401 - fixtures
@@ -104,6 +107,12 @@ class Core:
 
     def on_call_ended(self, session_id: str) -> None:
         self.seen.append(("ended",))
+
+    def on_team_missed(self, session_id: str) -> bool:
+        self.seen.append(("missed", session_id))
+        return self.card_written
+
+    card_written = True
 
 
 @pytest.fixture
@@ -429,6 +438,88 @@ def test_health_answers_without_a_token(phone):
     assert client.get("/health").text == "ok"
 
 
+# -- the team leg nobody answered (T-10.8) ---------------------------------------
+
+DIALPLAN = (
+    Path(__file__).resolve().parents[2]
+    / "deploy"
+    / "asterisk"
+    / "conf"
+    / "extensions.conf"
+)
+
+
+def test_the_missed_door_wants_the_token(phone):
+    client, core = phone
+    assert client.post(f"/calls/{CALL}/missed").status_code == 401
+    assert client.post(f"/calls/{CALL}/missed", headers=basic("x")).status_code == 401
+    assert ("missed", CALL) not in core.seen
+
+
+@pytest.mark.parametrize(("written", "answer"), [(True, "noted"), (False, "none")])
+def test_the_missed_door_says_noted_only_for_a_written_card(phone, written, answer):
+    """The dialplan promises a callback on "noted" alone; anything else, an
+    error or no answer at all, is "call again later"."""
+    client, core = phone
+    core.card_written = written
+
+    response = client.post(f"/calls/{CALL}/missed", headers=basic(TOKEN))
+
+    assert (response.status_code, response.text) == (200, answer)
+    assert ("missed", CALL) in core.seen
+
+
+def test_the_announcements_are_rendered_with_the_mouth_of_the_process(tmp_path):
+    voice_app.announce(FakeMouth(), tmp_path)
+
+    for name, sentence in ANNOUNCEMENTS.items():
+        audio = (tmp_path / f"{name}.sln16").read_bytes()
+        # The fake mouth's "audio" is the sentence: this one, and whole samples
+        # with half a second of silence behind it.
+        assert audio.startswith(sentence.encode())
+        assert len(audio) % 2 == 0
+        assert audio.endswith(b"\x00" * voice_app.ANNOUNCEMENT_TAIL_BYTES)
+    assert sorted(p.name for p in tmp_path.iterdir()) == sorted(
+        f"{name}.sln16" for name in ANNOUNCEMENTS
+    )
+
+
+def test_a_mouth_or_folder_that_fails_does_not_stop_the_process(tmp_path, caplog):
+    """Without the files the dialplan plays nothing (`STAT`); calls are still
+    taken."""
+    broken = FakeMouth()
+    broken.broken = True
+
+    voice_app.announce(broken, tmp_path)
+    voice_app.announce(FakeMouth(), tmp_path / "missing")
+
+    assert list(tmp_path.iterdir()) == []
+    warned = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warned == ["announcement not rendered"] * 2 * len(ANNOUNCEMENTS)
+
+
+def test_the_dialplan_plays_only_announcements_the_process_renders():
+    conf = DIALPLAN.read_text()
+    played = set(re.findall(r"\bmissed_[a-z]+\b", conf))
+    assert played == set(ANNOUNCEMENTS)
+    # Playback of a missing file answers the call first and then fails: the
+    # caller would sit in silence (checked on 22.11.0).
+    playback = conf.index("Playback(")
+    assert "STAT(e," in conf[conf.rindex("exten =>", 0, playback) : playback]
+
+
+def test_the_dialplan_tells_only_a_caller_the_ai_answered():
+    """A caller in paused mode or with `voice` unreached never heard the AI
+    say who it is: the card is written, nothing is played to them."""
+    conf = DIALPLAN.read_text()
+    missed = conf[conf.index("exten => missed,1") :]
+    missed = missed[: missed.index("\n\n")]
+    assert '"${VOICE_LEG}" != "ANSWER"' in missed
+    assert missed.index('"${VOICE_LEG}" != "ANSWER"') < missed.index("Playback(")
+    for line in re.findall(r"Log\([^\n]*", missed):
+        assert "CALLERID" not in line and "TARGET" not in line, line
+
+
 # -- with the real call handler and a database ----------------------------------------
 
 
@@ -455,6 +546,25 @@ def test_a_paused_line_hands_the_call_to_the_team_unanswered(session, tenant):  
         assert ending(client) == f"transfer {TEAM_PHONE}"
     wait_for(lambda: voice.lines.caller_id(CALL) is None)
     assert the_call(session, CALL).caller_id == "+4972215550701"
+
+
+def test_a_team_that_does_not_answer_a_paused_line_gets_a_card(session, tenant):  # noqa: F811
+    set_mode(session, tenant.id, "paused")
+    voice = voice_for(session, tenant)
+    with TestClient(create_app(voice)) as client:
+        with connect(client) as ws:
+            ws.send_text(media_start())
+            assert receive_command(ws) == {"command": "HANGUP"}
+        assert ending(client) == f"transfer {TEAM_PHONE}"
+        wait_for(lambda: voice.lines.caller_id(CALL) is None)
+
+        missed = client.post(f"/calls/{CALL}/missed", headers=basic(TOKEN))
+
+    assert missed.text == "noted"
+    call = the_call(session, CALL)
+    assert call.outcome == "callback"
+    [card] = session.scalars(select(Callback).where(Callback.call_id == call.id))
+    assert card.phone == "+4972215550701"
 
 
 def test_a_call_is_greeted_and_logged_when_the_caller_hangs_up(session, tenant):  # noqa: F811

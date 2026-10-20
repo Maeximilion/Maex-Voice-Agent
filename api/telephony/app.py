@@ -40,7 +40,7 @@ from api.db import SessionLocal, bounded_sessions, engine, refuse_a_superuser_ro
 from api.domain.calls import call_routing, tenant_named
 from api.domain.customers.phone import E164
 from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
-from api.telephony.handler import CallHandler
+from api.telephony.handler import ANNOUNCEMENTS, CallHandler
 from api.telephony.port import CallEvents
 from api.telephony.router import router
 from api.telephony.session import CallSession, Lines
@@ -77,6 +77,11 @@ ENGINE_HANG_SECONDS = 30.0
 ENGINE_LOAD_SECONDS = 120.0
 # The exit code of a process its watchdog ended (EX_SOFTWARE).
 EXIT_ENGINE_HUNG = 70
+# Where the sentences after a team leg nobody answered go (`announce`): a
+# volume Asterisk reads (docker-compose.yml). Half a second of silence behind
+# each, so its last word is not cut off by the hangup.
+ANNOUNCEMENTS_FOLDER = Path("/announcements")
+ANNOUNCEMENT_TAIL_BYTES = 16000
 
 logger = get_logger(__name__)
 _T = TypeVar("_T")
@@ -320,6 +325,32 @@ class Voice:
         with self._lock:
             return self._endings.pop(call_id, "")
 
+    def missed(self, call_id: str) -> bool:
+        """Nobody answered the team leg: True once the callback card is written."""
+        return self._events.on_team_missed(call_id)
+
+
+def announce(mouth: Mouth, folder: Path) -> None:
+    """The sentences the dialplan plays after a team leg nobody answered, in
+    this process's voice, as files Asterisk plays (raw 16 kHz, `.sln16`), so
+    they are heard with `voice` or the database down. Rendered at every start,
+    so they follow the code; each is renamed into place whole. A failure costs
+    the sentences, never the start: without a file the dialplan plays nothing
+    (`STAT`)."""
+    for name, sentence in ANNOUNCEMENTS.items():
+        try:
+            audio = b"".join(mouth.speak(sentence))
+            # Whole samples: an odd byte would shift every sample behind it.
+            audio += b"\x00" * (len(audio) % 2 + ANNOUNCEMENT_TAIL_BYTES)
+            part = folder / f".{name}.part"
+            part.write_bytes(audio)
+            part.replace(folder / f"{name}.sln16")
+        except Exception as exc:  # noqa: BLE001 - never the start
+            logger.warning(
+                "announcement not rendered",
+                extra={"extra": {"name": name, "error": type(exc).__name__}},
+            )
+
 
 def create_app(voice: Voice) -> FastAPI:
     app = FastAPI(title="voice", docs_url=None, redoc_url=None, openapi_url=None)
@@ -372,6 +403,7 @@ def voice_from_settings() -> Voice:
             f"voice does not start: ear {settings.voice_ear!r} or mouth "
             f"{settings.voice_mouth!r} could not be loaded ({exc})"
         ) from exc
+    announce(make_mouth(), ANNOUNCEMENTS_FOLDER)
 
     lines = Lines()
     handler = CallHandler(

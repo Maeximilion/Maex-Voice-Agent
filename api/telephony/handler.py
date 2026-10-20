@@ -46,6 +46,8 @@ from api.agent.state import ConversationState, initial_state
 from api.config import settings
 from api.core.logging import bind_call_id, get_logger
 from api.core.time import utcnow
+from api.domain.callbacks import team_missed
+from api.domain.callbacks.create import SAY_NOTED
 from api.domain.calls import CallRouting, call_routing, end_call, start_call
 from api.domain.menu.items import active_count
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
@@ -63,6 +65,17 @@ SAY_OUTAGE = (
 # the agent's last sentence already parts ("bis dann" after a reservation, "bis
 # gleich" after a pickup), so it is never said twice.
 FAREWELL = "Vielen Dank für Ihren Anruf. Auf Wiederhören."
+# After a team leg nobody answered, played by the dialplan from files the
+# process renders at its start (`app.announce`), so it is heard with `voice`
+# down too; by their file names. "noted" only once the card is written
+# (`on_team_missed`), the other on anything else (docs/20 §5). Drafts.
+SAY_NOBODY_ANSWERED = "Im Restaurant hat gerade leider niemand abgenommen."
+ANNOUNCEMENTS = {
+    "missed_noted": f"{SAY_NOBODY_ANSWERED} {SAY_NOTED} {FAREWELL}",
+    "missed_later": (
+        f"{SAY_NOBODY_ANSWERED} Bitte rufen Sie später noch einmal an. {FAREWELL}"
+    ),
+}
 # What the code asks into a silent line, in this order; after the last one the
 # next silence ends the call with the farewell (docs/20 §4). Drafts.
 STILL_THERE = (
@@ -85,6 +98,10 @@ _DIGIT = re.compile(r"[0-9]")
 # Closed calls are remembered so a late event is ignored instead of being read
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
+# Numbers guests named in calls handed to the team, for the card of a team leg
+# nobody answers; the call log keeps only the caller id. The report comes
+# within a minute of the handover, and an answered leg sends none.
+NAMED_PHONES_KEPT = 1000
 # How long the log of a call that ended as it should waits on a lock. Longer
 # than the line's bound for a turn (`telephony/app.py`, `DB_TIMEOUT_MS`): after
 # our hangup or transfer nobody waits on it, and a lock held for a moment must
@@ -152,6 +169,7 @@ class CallHandler:
         # closed as soon as the opening is done.
         self._ended_while_starting: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
+        self._named_phones: OrderedDict[str, str] = OrderedDict()
 
     # -- events from the line ----------------------------------------------------
 
@@ -268,6 +286,32 @@ class CallHandler:
             self._remember_closed(session_id)
         self._finish(live, outcome)
 
+    def on_team_missed(self, session_id: str) -> bool:
+        with self._lock:
+            phone = self._named_phones.pop(session_id, None)
+        session: Session | None = None
+        try:
+            session = self._session_factory()
+            card = team_missed(
+                session,
+                self._tenant_id,
+                session_id,
+                phone=phone,
+                now=self._now or utcnow(),
+            )
+        except Exception as exc:  # noqa: BLE001 - the caller hears "call again"
+            # The type only: a message can carry the guest's number.
+            logger.error(
+                "no callback card for a team leg nobody answered",
+                extra={
+                    "extra": {"session_id": session_id, "error": type(exc).__name__}
+                },
+            )
+            return False
+        finally:
+            _close_quietly(session)
+        return card is not None
+
     # -- the call ----------------------------------------------------------------
 
     def _open(self, live: _LiveCall, routing: CallRouting) -> None:
@@ -345,6 +389,7 @@ class CallHandler:
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
         live.state.stage = "transferred"
+        self._keep_named_phone(live)
         self._await_end(live)
         self._port.transfer(live.session_id, target)
 
@@ -387,6 +432,8 @@ class CallHandler:
             except Exception:
                 logger.exception("rollback after the failure failed")
         target = live.team_phone if live is not None else self._fallback_team_phone
+        if live is not None:
+            self._keep_named_phone(live)
         try:
             try:
                 self._port.say(session_id, SAY_OUTAGE)
@@ -501,6 +548,17 @@ class CallHandler:
         self._closed.move_to_end(session_id)
         while len(self._closed) > CLOSED_MEMORY:
             self._closed.popitem(last=False)
+
+    def _keep_named_phone(self, live: _LiveCall) -> None:
+        """Before the handover, so a report that comes at once finds it. Only a
+        number other than the caller id, which the call log has."""
+        phone = live.state.slots.get("phone")
+        if not phone or phone == live.state.caller_phone:
+            return
+        with self._lock:
+            self._named_phones[live.session_id] = phone
+            while len(self._named_phones) > NAMED_PHONES_KEPT:
+                self._named_phones.popitem(last=False)
 
 
 def _close_quietly(session: Session | None) -> None:

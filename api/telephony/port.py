@@ -88,3 +88,10 @@ class CallEvents(Protocol):
         our hangup or transfer. Reported once for every call, also after a
         failure; the core closes its call log on it."""
         ...
+
+    def on_team_missed(self, session_id: str) -> bool:
+        """Nobody answered the team leg of a call we handed on, after its end
+        was reported: a callback card for the team (docs/20 §5, T-10.8). True
+        only once the card is written, so the caller may hear that the
+        restaurant calls back. Never raises."""
+        ...

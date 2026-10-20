@@ -22,8 +22,7 @@ one call per drill:
                   answers and the team does not ring
   keys            the caller's keys reach the core as a turn, the model cannot
                   be reached, and the core hands the call over: the team rings,
-                  or, outside the opening hours by the core's guess (T-10.8), a
-                  callback card and goodbye
+                  or, outside the opening hours, a callback card and goodbye
   paused          the core sends the call to the team before a word: the team
                   rings, and the AI never answered the call
   voice crashes   `voice` is killed in the middle of a call: the team rings
@@ -39,6 +38,15 @@ one call per drill:
                   is busy: the team rings at TEAM_PHONE after it
   stranger        an INVITE from an address that is not the router, From user
                   `access` (the endpoint's name), is refused by the ACL (403)
+  team missed     the team telephone is busy after the core handed the call
+                  over: a callback card under the caller's number, and the
+                  caller hears that the restaurant calls back (T-10.8)
+  missed, paused  the same in mode paused: a card, and nothing is played to a
+                  caller who never heard the AI
+  missed, down    the team telephone rings unanswered and `voice` is stopped
+                  meanwhile: no card, the caller hears to call again, from the
+                  file `voice` rendered at its start
+  sentences       the files Asterisk plays hold the sentences of the code
 
 A team ring is timed on this machine's monotonic clock from the call being
 placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
@@ -63,7 +71,8 @@ import socket
 import subprocess
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from api.telephony.spike import docker_problem, step, usable_run_dir
@@ -284,7 +293,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 111)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 114)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -511,6 +520,171 @@ def drill_listed_busy(drill: Drill) -> list[Check]:
     ]
 
 
+# A special day open around the clock: the core hands a call to the team only
+# inside the opening hours (Maxi, 20.10.2026), and a drill must not depend on
+# the hour it runs at.
+OPEN_ALL_DAY = (
+    "insert into special_days (tenant_id, date, closed, opens_at, closes_at, note) "
+    "select id, (now() at time zone timezone)::date, false, '00:00', '00:00', "
+    "'drill' from tenants"
+)
+
+
+@contextmanager
+def team_away(drill: Drill, how: str, *, open_all_day: bool = True) -> Iterator[None]:
+    """The router's team telephone does not answer for one drill: "busy" at
+    once, or "ring" for longer than the AI telephone waits. Set back whatever
+    fails, as are the hours."""
+    if open_all_day:
+        drill.sql(OPEN_ALL_DAY)
+    try:
+        drill.cli("router", f"dialplan set global TEAM_AWAY {how}")
+        yield
+    finally:
+        try:
+            drill.cli("router", "dialplan set global TEAM_AWAY answer")
+        finally:
+            if open_all_day:
+                drill.sql("delete from special_days where note = 'drill'")
+
+
+def missed_of(call: Call) -> tuple[str, str, str, str]:
+    """The call's id, what `voice` answered the report, and what the caller
+    was told, from the AI telephone's log; and the call's row as
+    "outcome|cards|phone"."""
+    sid = card = told = ""
+    for line in call.lines("asterisk"):
+        found = re.search(r"call ([0-9.]+): nobody at the team, card \[(\w*)\]", line)
+        if found:
+            sid, card = found.groups()
+        found = re.search(r"told the caller (missed_\w+) (\w+)", line)
+        if found:
+            told = " ".join(found.groups())
+    row = (
+        call.drill.sql(
+            "select c.outcome || '|' || count(b.id) || '|' || coalesce(max(b.phone), '') "
+            "from calls c left join callbacks b on b.call_id = c.id "
+            f"and b.deleted_at is null where c.external_session_id = '{sid}' "
+            "group by c.outcome"
+        )
+        if sid
+        else ""
+    )
+    return sid, card, told, row
+
+
+def drill_team_missed(drill: Drill) -> list[Check]:
+    """111 presses keys, the core hands the call to the team, whose telephone
+    is busy: within a fraction of a second, while our leg's log may still be
+    written."""
+    with team_away(drill, "busy"):
+        call = drill.place(111)
+        check = team_check("team missed: the team rings", call, call.placed)
+        call.wait(call.ended, timeout=CALL_TIMEOUT_SECONDS)
+    drill.quiet()
+    _, card, told, row = missed_of(call)
+    return [
+        check,
+        (
+            "team missed: a callback card under the caller's number",
+            card == "noted" and row == f"callback|1|{call.caller}",
+            f"voice answered [{card}], call row {row or 'not found'}",
+        ),
+        (
+            "team missed: the caller hears that the restaurant calls back",
+            told == "missed_noted SUCCESS",
+            f"told: {told or 'nothing'}",
+        ),
+    ]
+
+
+def drill_team_missed_paused(drill: Drill) -> list[Check]:
+    """112 in mode paused: the AI never answered and never said who it is, so
+    the card is written and nothing is played."""
+    try:
+        drill.mode("paused")
+        with team_away(drill, "busy", open_all_day=False):
+            call = drill.place(112)
+            call.wait(call.ended, timeout=CALL_TIMEOUT_SECONDS)
+    finally:
+        drill.mode("primary")
+    drill.quiet()
+    _, card, told, row = missed_of(call)
+    return [
+        (
+            "team missed, paused: a card, nothing played, the call never answered",
+            card == "noted"
+            and row == f"callback|1|{call.caller}"
+            and not told
+            and call.dialstatus() != "ANSWER",
+            f"voice answered [{card}], call row {row or 'not found'}, "
+            f"told: {told or 'nothing'}, caller's dial status {call.dialstatus()}",
+        )
+    ]
+
+
+def drill_team_missed_voice_down(drill: Drill) -> list[Check]:
+    """113: the team telephone rings unanswered, and `voice` is stopped
+    meanwhile. No card can be written; the caller hears the sentence from the
+    file anyway."""
+    try:
+        with team_away(drill, "ring"):
+            call = drill.place(113)
+            call.wait(call.team_rings, timeout=TEAM_LIMIT_SECONDS + 10)
+            drill.compose("stop", "voice")
+            _, ended = call.wait(call.ended, timeout=CALL_TIMEOUT_SECONDS + 30)
+    finally:
+        drill.restart("voice")
+    drill.quiet()
+    _, card, told, row = missed_of(call)
+    return [
+        (
+            "team missed, voice down: no card, the caller hears to call again",
+            card == "" and told == "missed_later SUCCESS" and "|0|" in f"{row}|0|",
+            f"voice answered [{card}], told: {told or 'nothing'}, "
+            f"call row {row or 'not found'}, call over {ended - call.placed:.1f} s "
+            "after it was placed",
+        )
+    ]
+
+
+def drill_announcements(drill: Drill) -> list[Check]:
+    """What Asterisk plays is what the code says now: rendered by the drill's
+    mouth, whose audio is the sentence's text."""
+    expected = json.loads(
+        drill.compose(
+            "exec",
+            "-T",
+            "voice",
+            "python",
+            "-c",
+            "import json; from api.telephony.handler import ANNOUNCEMENTS; "
+            "print(json.dumps(ANNOUNCEMENTS))",
+        )
+    )
+    differ = [
+        name
+        for name, sentence in expected.items()
+        if drill.compose(
+            "exec",
+            "-T",
+            "asterisk",
+            "head",
+            "-c",
+            str(len(sentence.encode())),
+            f"/announcements/{name}.sln16",
+        )
+        != sentence
+    ]
+    return [
+        (
+            "the sentences Asterisk plays are the code's",
+            bool(expected) and not differ,
+            f"different: {', '.join(differ)}" if differ else f"{len(expected)} match",
+        )
+    ]
+
+
 def drill_stranger(drill: Drill) -> list[Check]:
     """Sent from the container of `voice`, an address on the network that is
     not the router's (#252 finding 2)."""
@@ -664,6 +838,10 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("an INVITE from a stranger", drill_stranger),
     ("keys, and the model is down (102)", drill_keys),
     ("mode paused (103)", drill_paused),
+    ("the sentences after a team leg nobody answered", drill_announcements),
+    ("the team does not answer (111)", drill_team_missed),
+    ("the team does not answer a paused line (112)", drill_team_missed_paused),
+    ("the team does not answer, voice goes down (113)", drill_team_missed_voice_down),
     ("a transfer to a number off the list (109)", drill_unlisted),
     ("a transfer to a busy number on the list (110)", drill_listed_busy),
     ("voice crashes in the middle of a call (105)", drill_crash),
