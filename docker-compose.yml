@@ -4,10 +4,67 @@
 # docker-compose.override.yml (loopback only), the public ones in
 # deploy/docker-compose.prod.yml (caddy only). api/tests/test_compose_ports.py
 # checks both.
+
+# Every service (#252 finding 8): no process gains rights after the start
+# (setuid binaries, file capabilities), and no kernel capability is kept that
+# the service does not need. A service that needs one adds it with `cap_add`.
+x-hardened: &hardened
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+# What the own code reads (api/config.py), handed by name instead of all of
+# .env (#252 finding 7): a key without a value takes the line of .env, and with
+# no such line it stays unset, so the default of api/config.py applies. The
+# owner of the schema, Asterisk, Caddy, n8n and the push server have secrets in
+# .env that none of api, dispatcher and voice gets. Each of the three adds the
+# secrets it reads below; api/tests/test_deploy_exposure.py checks the lists
+# against api/config.py.
+x-settings: &settings
+  ENV:
+  LOG_LEVEL:
+  # Secrets all three need: the database, and the token, which the start check
+  # of api/config.py asks of every process outside dev and test, also of one
+  # that serves no route behind it (dispatcher, voice).
+  DATABASE_URL:
+  AGENT_API_TOKEN:
+  TENANT_NAME:
+  TENANT_TIMEZONE:
+  TEAM_PHONE:
+  MAX_CALL_SECONDS:
+  N8N_WEBHOOK_URL:
+  N8N_BASIC_AUTH_USER:
+  N8N_TIMEOUT_SECONDS:
+  DISPATCHER_INTERVAL_SECONDS:
+  DISPATCHER_BATCH:
+  KITCHEN_BRIDGE_TENANT_ID:
+  LLM_BASE_URL:
+  LLM_MODEL:
+  LLM_TIMEOUT_SECONDS:
+  LLM_MAX_OUTPUT_TOKENS:
+  LLM_REASONING_EFFORT:
+  LLM_INPUT_CENTS_PER_MTOK:
+  LLM_OUTPUT_CENTS_PER_MTOK:
+  VOICE_NUMBER:
+  VOICE_SILENCE_SECONDS:
+  VOICE_EAR:
+  VOICE_MOUTH:
+  VOICE_EAR_DEVICE:
+  VOICE_MOUTH_VOICE:
+  MENU_FUZZY_THRESHOLD_HIGH:
+  MENU_FUZZY_THRESHOLD_LOW:
+  CALL_LOG_RETENTION_DAYS:
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    <<: *hardened
+    # The image's entrypoint starts as root, makes the data directory the
+    # postgres user's and drops to it.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    # Writes into its volume, its socket and lock file into /var/run/postgresql.
+    read_only: true
+    tmpfs: [/var/run/postgresql, /tmp]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -23,20 +80,23 @@ services:
   api:
     build: ./api
     restart: unless-stopped
-    env_file: .env
-    # .env also holds what belongs to the owner of the schema. Where the
-    # application has a database role of its own (docs/13 §3), a process that
-    # reads its environment must not find the superuser's password there.
-    # scripts/migrate.sh hands the owner's URL to Alembic in a container of its
-    # own: inside this one the application could read it from /proc.
-    # The same for the AI telephone's secrets: the access password is for
-    # Asterisk only, the media token for `voice` (docs/20 §7).
-    environment: &without_the_owner
-      POSTGRES_PASSWORD: ""
-      OWNER_DATABASE_URL: ""
-      BACKUP_DATABASE_URL: ""
-      ACCESS_PASSWORD: ""
-      VOICE_MEDIA_TOKEN: ""
+    # Capabilities stay: in development it runs as root and writes into the
+    # mounted checkout (status_bump.py, eval reports), which on a Linux host
+    # belongs to another user and needs DAC_OVERRIDE. The production file
+    # drops them all, with a user of its own and a read-only root.
+    security_opt: ["no-new-privileges:true"]
+    # Not the owner of the schema: where the application has a database role
+    # of its own (docs/13 §3), a process that reads its environment must not
+    # find the superuser's password there. scripts/migrate.sh hands the
+    # owner's URL to Alembic in a container of its own.
+    environment:
+      <<: *settings
+      # Checked here, sent by Caddy (deploy/Caddyfile).
+      GUI_PROXY_SECRET:
+      KITCHEN_BRIDGE_TOKEN:
+      # For the eval runner and the text phone in this container (`make
+      # eval`); the production file blanks it, the server's API calls no model.
+      LLM_API_KEY:
     depends_on:
       db:
         condition: service_healthy
@@ -91,11 +151,14 @@ services:
     # Eigener Prozess, damit der heiße Pfad nie auf n8n wartet (docs/11 §events).
     build: ./api
     restart: unless-stopped
-    env_file: .env
+    <<: *hardened
+    # It writes nothing: its mounts and the image stay as they are.
+    read_only: true
+    tmpfs: [/tmp]
     environment:
-      <<: *without_the_owner
-      # The view's proxy secret is for the API and Caddy only.
-      GUI_PROXY_SECRET: ""
+      <<: *settings
+      # The credential of the webhook node it sends (n8n/README.md).
+      N8N_BASIC_AUTH_PASSWORD:
     command: python -m api.jobs.cold_path
     depends_on:
       db:
@@ -117,16 +180,18 @@ services:
       context: ./api
       target: voice
     restart: unless-stopped
-    env_file: .env
     environment:
-      <<: *without_the_owner
-      # Its own secret, from .env by interpolation.
+      <<: *settings
+      # The core of a call asks the model.
+      LLM_API_KEY:
+      # Its own secret, shared with Asterisk only.
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
-      # The view's proxy secret is for the API and Caddy only.
-      GUI_PROXY_SECRET: ""
     # Not root, from the start (docs/01 open points): it reads its mounts and
     # writes nothing there but the sentences into /announcements.
     user: "10001:10001"
+    <<: *hardened
+    read_only: true
+    tmpfs: [/tmp]
     # One worker: the live calls are held in this process (api/telephony/app.py).
     command:
       - uvicorn
@@ -179,6 +244,12 @@ services:
     # step with its values, the media token included.
     entrypoint: ["/bin/sh", "/templates/render.sh"]
     command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+    # render.sh and the image's entrypoint run as root: they write the
+    # configuration and make the runtime directories the asterisk user's,
+    # then Asterisk drops to that user itself. Not read-only: it writes into
+    # /var/lib, /var/spool and /var/log of the image, next to what it ships there.
+    <<: *hardened
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     # Only what the AI telephone needs, not the whole .env: no database or
     # model credentials in this container.
     environment:
@@ -213,6 +284,13 @@ services:
     image: n8nio/n8n:2.43.3
     restart: unless-stopped
     environment:
+      # No usage data to n8n (#252 finding 9).
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      # Optional, from .env: the key n8n encrypts the stored credentials with.
+      # Unset, n8n uses the one it wrote into the volume (/home/node/.n8n/config)
+      # at its first start. Set, it must be that very key, or n8n refuses to
+      # start: copy it from the volume, never a new one (docs/13 §3).
+      N8N_ENCRYPTION_KEY:
       # No N8N_BASIC_AUTH_* here: n8n dropped that login with version 1 and
       # ignores the variables. The editor is protected by its own owner account
       # and, in production, by the access in deploy/Caddyfile. The two values in
@@ -224,6 +302,11 @@ services:
     volumes:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows
+    <<: *hardened
+    # It writes its database and key into the volume and its compiled
+    # assets into ~/.cache, which it creates at every start.
+    read_only: true
+    tmpfs: [/tmp, /home/node/.cache]
 
   push:
     # Push server for team notifications (D13, n8n/README.md): the n8n workflow
@@ -256,6 +339,10 @@ services:
       - NTFY_AUTH_TOKENS
     volumes:
       - pushdata:/var/lib/ntfy
+    # Root in the image, but it only listens and writes into its volume.
+    <<: *hardened
+    read_only: true
+    tmpfs: [/tmp]
 
 volumes:
   pgdata:
