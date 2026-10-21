@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Version, Datum und Changelog-Zeile in docs/01_STATUS.md automatisch fortschreiben."""
+"""Bump the version, date and changelog line in docs/01_STATUS.md automatically."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ HEADER_RE = re.compile(
     r"(Status:\s*)(\d{2}\.\d{2}\.\d{4})(.*?Status version:\s*)(\d+)\.(\d+)\.(\d+)"
 )
 CHANGELOG_RE = re.compile(r"(## Changelog\n\n)")
-# Das Datum in der Doku ist Ortszeit, nicht UTC (CLAUDE.md §8).
+# The date in the docs is local time, not UTC (CLAUDE.md §8).
 BERLIN = ZoneInfo("Europe/Berlin")
 
 
@@ -30,17 +30,17 @@ def bump(version: tuple[int, int, int], level: str) -> tuple[int, int, int]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("level", choices=["patch", "minor", "major"])
-    parser.add_argument("message", help="eine Zeile für den Changelog-Eintrag")
+    parser.add_argument("message", help="one line for the changelog entry")
     parser.add_argument(
         "--file",
         default=Path("docs/01_STATUS.md"),
         type=Path,
-        help="Zieldatei (Default: docs/01_STATUS.md)",
+        help="target file (default: docs/01_STATUS.md)",
     )
     args = parser.parse_args(argv)
 
     if not args.file.exists():
-        print(f"Fehler: {args.file} existiert nicht.", file=sys.stderr)
+        print(f"Error: {args.file} does not exist.", file=sys.stderr)
         return 1
 
     text = args.file.read_text(encoding="utf-8")
@@ -48,14 +48,14 @@ def main(argv: list[str] | None = None) -> int:
     header_match = HEADER_RE.search(text)
     if not header_match:
         print(
-            f"Fehler: keine Kopfzeile 'Status: DD.MM.YYYY … Status version: X.Y.Z' in {args.file} gefunden.",
+            f"Error: no header line 'Status: DD.MM.YYYY ... Status version: X.Y.Z' found in {args.file}.",
             file=sys.stderr,
         )
         return 1
 
     if "## Changelog" not in text:
         print(
-            f"Fehler: keine Überschrift '## Changelog' in {args.file} gefunden.",
+            f"Error: no '## Changelog' heading found in {args.file}.",
             file=sys.stderr,
         )
         return 1
@@ -78,7 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     text, n = CHANGELOG_RE.subn(lambda m: m.group(1) + changelog_entry, text, count=1)
     if n == 0:
         print(
-            f"Fehler: Changelog-Eintrag konnte nicht eingefügt werden in {args.file}.",
+            f"Error: could not insert the changelog entry into {args.file}.",
             file=sys.stderr,
         )
         return 1

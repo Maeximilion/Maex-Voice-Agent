@@ -1,45 +1,45 @@
-# Druckbrücke
+# Print bridge
 
-Holt Küchenbons vom Server und druckt sie auf dem Bondrucker im Lokal (T-4.6).
+Fetches kitchen slips from the server and prints them on the receipt printer at the restaurant (T-4.6).
 
-Der Server steht im Rechenzentrum und erreicht den Drucker im Lokal nicht. Die Brücke läuft auf einem Rechner im Lokal, fragt alle zwei Sekunden nach neuen Bons, druckt sie und meldet zurück. Sie ruft nur hinaus: im Router muss kein Port offen sein.
+The server sits in the data center and cannot reach the printer at the restaurant. The bridge runs on a computer at the restaurant, asks for new slips every two seconds, prints them and reports back. It only calls outward: no port needs to be open in the router.
 
-Was passiert, wenn etwas ausfällt:
+What happens when something fails:
 
-| Ausfall | Folge |
+| Failure | Consequence |
 |---|---|
-| Drucker aus, Papier leer, Deckel offen | Brücke meldet den Fehler, die Karte im Tablet wird sofort rot, "Nochmal senden" |
-| Brücke oder Internet im Lokal weg | nach 60 s ohne Abholung wird die Karte rot (Wächter auf dem Server), Alarm |
-| Rückmeldung geht verloren | der Bon kommt nach 60 s wieder, die Brücke erkennt ihn und druckt keinen zweiten Zettel |
-| Team korrigiert, bevor der erste Bon gedruckt ist | nur der neue Stand wird gedruckt, nie ein alter nach einem neuen |
+| Printer off, paper empty, lid open | Bridge reports the error, the card on the tablet turns red at once, "Send again" |
+| Bridge or internet at the restaurant gone | After 60 s without a pickup the card turns red (watchdog on the server), alarm |
+| Acknowledgement is lost | The slip comes again after 60 s, the bridge recognizes it and prints no second slip |
+| Team corrects before the first slip is printed | Only the new state is printed, never an old one after a new one |
 
-## Voraussetzungen
+## Prerequisites
 
-- Genau eine Brücke je Betrieb: das Druckprotokoll liegt auf ihrem Rechner, eine zweite Brücke könnte einen Bon doppelt drucken
+- Exactly one bridge per operation: the print log lives on its computer, a second bridge could print a slip twice
 
-- Python 3.12 auf dem Rechner, der die Brücke ausführt
-- Netzwerkdrucker (Epson mit Netzwerkkarte): keine weiteren Pakete
-- Drucker per USB am Windows-Rechner: `pip install pywin32`
+- Python 3.12 on the computer that runs the bridge
+- Network printer (Epson with a network card): no further packages
+- Printer connected by USB to the Windows computer: `pip install pywin32`
 
-Welcher Anschluss? Unter Windows: Drucker und Scanner, Rechtsklick auf den Drucker, Druckereigenschaften, Reiter Anschlüsse. `USB001` heißt USB, `IP_…` oder `EpsonNet…` heißt Netzwerk.
+Which connection? On Windows: Printers and scanners (German: "Drucker und Scanner"), right-click the printer, printer properties, Ports tab (German: "Anschlüsse"). `USB001` means USB, `IP_…` or `EpsonNet…` means network.
 
-## Einstellungen
+## Settings
 
-Als Umgebungsvariablen:
+As environment variables:
 
-| Name | Beispiel | Bedeutung |
+| Name | Example | Meaning |
 |---|---|---|
-| `MAEX_SERVER_URL` | `https://agent.example.com` | Server, nur https (außer localhost) |
-| `MAEX_KITCHEN_TOKEN` | lang und zufällig | gleicher Wert wie `KITCHEN_BRIDGE_TOKEN` auf dem Server; dort auch `KITCHEN_BRIDGE_TENANT_ID` (Pflicht): das Token gilt nur für diesen Betrieb |
-| `MAEX_TENANT_ID` | UUID | Betrieb, dessen Bons gedruckt werden |
-| `MAEX_PRINTER` | `tcp:192.168.1.50` oder `windows:EPSON TM-T20II Küche` | Drucker |
-| `MAEX_PRINTER_WIDTH` | `48` | Zeichen je Zeile (80-mm-Papier, Schrift A) |
-| `MAEX_STATE_FILE` | `C:\maex\printbridge_state.json` | Druckprotokoll, nur Bestell-ids |
-| `MAEX_INTERVAL_SECONDS` | `2` | Abfrageabstand |
+| `MAEX_SERVER_URL` | `https://agent.example.com` | Server, https only (except localhost) |
+| `MAEX_KITCHEN_TOKEN` | long and random | Same value as `KITCHEN_BRIDGE_TOKEN` on the server; there also `KITCHEN_BRIDGE_TENANT_ID` (required): the token is valid only for this operation |
+| `MAEX_TENANT_ID` | UUID | Operation whose slips are printed |
+| `MAEX_PRINTER` | `tcp:192.168.1.50` or `windows:EPSON TM-T20II Kitchen` | Printer |
+| `MAEX_PRINTER_WIDTH` | `48` | Characters per line (80 mm paper, font A) |
+| `MAEX_STATE_FILE` | `C:\maex\printbridge_state.json` | Print log, order ids only |
+| `MAEX_INTERVAL_SECONDS` | `2` | Polling interval |
 
-## Inbetriebnahme
+## Commissioning
 
-Erst ein Probebon, ohne Server und ohne echte Bestellung:
+First a test slip, without a server and without a real order:
 
 ```bash
 python -m printbridge --test
@@ -47,7 +47,7 @@ python -m printbridge --test
 
 The test slip carries a notice block above the slip and again before the cut (centered, double size, white on black) that asks for a photo of the slip. A slip of a real order carries no such block. Checked on paper on 06.10.2026 (`EPSON TM-T20II Receipt`, Windows queue).
 
-Dann ein einzelner Durchlauf und danach der Dauerbetrieb:
+Then a single pass and after that continuous operation:
 
 ```bash
 python -m printbridge --once
@@ -57,10 +57,10 @@ python -m printbridge --once
 python -m printbridge
 ```
 
-Unter Windows startet die Aufgabenplanung die Brücke bei der Anmeldung ("Beim Start", "Bei Fehler neu starten").
+On Windows, the Task Scheduler starts the bridge at logon ("At startup", "Restart on failure").
 
-Die Uhrzeiten auf dem Bon (fertig um, gedruckt) kommen vom Server in der Zeitzone des Betriebs; die Uhr des Rechners spielt keine Rolle.
+The times on the slip (ready at, printed) come from the server in the operation's time zone; the computer's clock plays no role.
 
-Beim Netzwerkdrucker fragt die Brücke vor jedem Bon den Status ab (offline, Papier). Dafür muss die automatische Statusrückmeldung (ASB) des Druckers aus sein, so ist er ab Werk eingestellt.
+With a network printer the bridge queries the status before every slip (offline, paper). For this, the printer's automatic status back (ASB) must be off, which is how it is set from the factory.
 
-Der Kassenbetrieb läuft weiter: Kasse und Brücke teilen sich den Drucker, die Aufträge kommen nacheinander.
+Register operation continues: the register and the bridge share the printer, the jobs arrive one after the other.

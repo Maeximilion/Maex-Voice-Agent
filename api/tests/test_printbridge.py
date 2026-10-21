@@ -226,9 +226,11 @@ class FakeWin32Print:
 
 def test_windows_warteschlange_druckt_roh():
     api = FakeWin32Print(jobs_after_write=[{"JobId": 7, "Status": 0x10}])
-    WindowsPrinter("EPSON TM-T20II Küche", api=api, sleep=lambda _s: None).send(b"BON")
+    WindowsPrinter("EPSON TM-T20II Kitchen", api=api, sleep=lambda _s: None).send(
+        b"BON"
+    )
     assert api.data == b"BON"
-    assert api.calls == ["open EPSON TM-T20II Küche", "end", "close"]
+    assert api.calls == ["open EPSON TM-T20II Kitchen", "end", "close"]
 
 
 def test_windows_drucker_aus_wird_gemeldet():
@@ -252,7 +254,7 @@ def test_windows_haengender_auftrag_wird_geloescht():
 def test_druckerangabe():
     assert isinstance(from_spec("tcp:192.168.1.50"), TcpPrinter)
     assert from_spec("tcp:192.168.1.50:9101").port == 9101
-    assert from_spec("windows:EPSON TM-T20II Küche").name == "EPSON TM-T20II Küche"
+    assert from_spec("windows:EPSON TM-T20II Kitchen").name == "EPSON TM-T20II Kitchen"
     with pytest.raises(ValueError):
         from_spec("usb")
 
