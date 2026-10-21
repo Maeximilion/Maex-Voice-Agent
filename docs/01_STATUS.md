@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.0
+> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.1
 
 ---
 
@@ -593,6 +593,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the three critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
 - **v2.6.0 · 20.10.2026:** T-10.8 done: a team leg nobody answers at TEAM_PHONE becomes a callback card, and a caller the AI answered hears so; outside the opening hours nobody is rung (D25)
 - **v2.5.4 · 21.10.2026:** Codex review of 8617153 on PR #346: the hourly sweep moves to outside-prs-sweep.yml, so a 60-day schedule switch-off leaves the event workflow running
 - **v2.5.3 · 21.10.2026:** Codex review of 50bc363 on PR #346: outside-prs.yml also sweeps open pull requests hourly, since pull_request_target skips some SHA-like branches
