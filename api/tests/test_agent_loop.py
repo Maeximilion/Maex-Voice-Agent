@@ -15,6 +15,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
     HINT_CONFIRM,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
@@ -1450,4 +1451,71 @@ def test_after_a_confirm_the_booking_may_be_said(session, state):
     result = loop.run_turn(state, "Ja, passt")
 
     assert result.say == ["Ihre Reservierung ist bestätigt."]
-    assert state.booked is True
+    assert state.booked == {"reservation"}
+
+
+def numberless(tenant_id, call_id):
+    """No caller ID and no number given: nobody to call back."""
+    return ConversationState(call_id=call_id, tenant_id=tenant_id)
+
+
+def wants_a_callback():
+    return LLMTurn(
+        tool_call=ToolCall(
+            name="create_callback",
+            args={"phone": None, "reason": "not_understood", "summary": "Rauschen"},
+        )
+    )
+
+
+def test_a_callback_without_a_number_goes_to_the_team_when_it_is_there(
+    session, tenant_id, call_id
+):
+    """`eskalation_0016`: a line with nothing but noise and no caller ID. The
+    model asked for the number on every turn and the call reached nobody
+    (Codex PR #347, P1)."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM([wants_a_callback(), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "... krrr ...")
+
+    assert result.ended is True
+    assert result.say == [SAY_ESCALATION]
+    assert state.stage == "transferred"
+    assert len(llm.calls) == 1
+
+
+def test_a_callback_without_a_number_asks_for_it_when_nobody_is_there(
+    session, tenant_id, call_id
+):
+    """Before opening the number is the only way left: the model asks."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM([wants_a_callback(), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert result.ended is False
+    assert result.say == ["Unter welcher Nummer?"]
+    assert json.loads(llm.calls[1][2])["hint"] == HINT_CALLBACK_PHONE
+
+
+def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
+    session, tenant_id, call_id
+):
+    """Nobody there and the number never understood: the ladder ends the call
+    honestly instead of asking forever."""
+    state = numberless(tenant_id, call_id)
+    turns = [t for _ in range(10) for t in (wants_a_callback(), LLMTurn(say="Nummer?"))]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    results = []
+    while not (results and results[-1].ended) and len(results) < 10:
+        results.append(loop.run_turn(state, "... chhh ..."))
+
+    assert results[-1].ended is True
+    assert results[-1].say == [SAY_NOBODY_REACHABLE]
+    assert len(results) < 10

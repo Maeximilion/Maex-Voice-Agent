@@ -42,6 +42,7 @@ from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Tenant
 from api.schemas.callbacks import CallbackReason
 from api.schemas.reservations import CheckSlotRequest
+from api.schemas.transfer import TransferReason
 
 logger = get_logger("api.agent.loop")
 
@@ -70,6 +71,7 @@ CART = "cart"
 SAY = "say"
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
+_TRANSFER_REASONS = frozenset(get_args(TransferReason))
 # Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
 # in CallbackReason gar nicht existiert (docs/03: Storno ist nur ein
 # Transfer-Grund, kein Rückruf-Grund — siehe api/schemas/transfer.py).
@@ -316,6 +318,12 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if result is guards.CALLBACK_WITHOUT_NUMBER:
+                handed = self._callback_without_number(
+                    state, turn.tool_call.args, user_text, reported_failures
+                )
+                if handed is not None:
+                    return handed
             if result.data.get("team_callback"):
                 # A table that is free, but the team decides (#252). The core
                 # hands the wish over here and now, and the model is not asked
@@ -335,6 +343,40 @@ class ConversationLoop:
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
+
+    def _callback_without_number(
+        self,
+        state: ConversationState,
+        args: dict[str, Any],
+        user_text: str,
+        reported_failures: set[str],
+    ) -> TurnResult | None:
+        """The model wants the team to call back, and nobody's number is known.
+        The team takes the call instead where it is reachable. Otherwise only
+        the number is left, so the model asks for it, and the turn counts on
+        the ladder for `phone` like a failed answer: on a line with nothing but
+        noise a real model asked for the number on every turn, and the call
+        ended with neither a callback nor the team (`eskalation_0016`, Codex
+        PR #347, P1). None lets the model ask."""
+        reason = args.get("reason")
+        transfer = self._dispatch(
+            state,
+            "transfer_to_team",
+            {"reason": reason if reason in _TRANSFER_REASONS else "not_understood"},
+        )
+        apply_tool_result(state, "transfer_to_team", transfer)
+        if state.transferred:
+            return TurnResult(
+                state=state, say=[transfer.say or SAY_ESCALATION], ended=True
+            )
+        if "phone" not in reported_failures:
+            reported_failures.add("phone")
+            self._ladder.record_failure("phone")
+            if self._ladder.should_end_call("phone"):
+                return self._handoff(
+                    state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
+                )
+        return None
 
     def _left_in_turn(self, turn_started: float | None) -> float | None:
         """Seconds the guest still waits for this turn; None without a deadline."""

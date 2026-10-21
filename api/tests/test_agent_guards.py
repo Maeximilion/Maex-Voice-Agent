@@ -826,6 +826,8 @@ def test_a_claimed_booking_before_confirm_is_refused(say):
         "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
         "Es ist noch nichts gebucht.",
         "Da ist noch kein Tisch reserviert, soll ich das tun?",
+        "Haben Sie bereits reserviert?",
+        "Möchten Sie den Abholcode per SMS? Dann brauche ich Ihre Nummer.",
         "Möchten Sie einen Tisch reservieren?",
         "Soll ich das so bestätigen?",
     ],
@@ -835,9 +837,30 @@ def test_no_claim_or_a_denied_one_passes(say):
 
 
 def test_after_a_confirm_the_booking_may_be_named():
-    state = new_state(booked=True)
+    state = new_state(booked={"order"})
 
     assert false_booking(state, "Ihr Abholcode ist A12.") is None
+    assert false_booking(state, "Das ist gebucht.") is None
+
+
+def test_a_booked_table_is_no_booked_order():
+    """After a confirmed table a pickup code is still made up (Codex PR #347)."""
+    state = new_state(booked={"reservation"})
+
+    assert false_booking(state, "Ihr Tisch ist reserviert.") is None
+    assert false_booking(state, "Ihre Abholung ist bestätigt, Code 8842.") is not None
+
+
+def test_a_new_draft_takes_back_the_booking_of_its_kind():
+    state = new_state(booked={"order", "reservation"})
+    apply_tool_result(
+        state,
+        "draft_order",
+        ToolResult(ok=True, data={"order_id": str(uuid.uuid4()), "readback": "x"}),
+    )
+
+    assert state.booked == {"reservation"}
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
 
 
 def test_a_callback_without_a_number_points_to_the_one_in_the_slots():

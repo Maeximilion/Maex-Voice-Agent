@@ -74,10 +74,11 @@ class ConversationState(BaseModel):
     readback: str | None = None
     readback_heard: bool = False
     transferred: bool = False
-    # A `confirm` went through in this call. Memory of the core, never sent to
-    # the model: before it, no sentence may tell the guest that something is
-    # booked (`guards.false_booking`).
-    booked: bool = False
+    # What a `confirm` booked in this call and no later draft of the same kind
+    # replaced: "order", "reservation". Memory of the core, never sent to the
+    # model: no sentence may tell the guest that something is booked that is
+    # not (`guards.false_booking`).
+    booked: set[str] = Field(default_factory=set)
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -424,12 +425,14 @@ def apply_tool_result(
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
         state.order_id = None
         state.stage = "readback_pending"
+        state.booked.discard("reservation")
         _to_read_out(state, result)
     elif name == "draft_order":
         state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
+        state.booked.discard("order")
         _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
@@ -452,7 +455,7 @@ def apply_tool_result(
             # Booked: no longer an order that is being put together.
             state.cart = []
         state.stage = "confirmed"
-        state.booked = True
+        state.booked.add("order" if state.order_id is not None else "reservation")
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
         # read a draft that no longer is one (Codex PR #258).

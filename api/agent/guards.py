@@ -106,10 +106,11 @@ HINT_GUEST_PHONE = (
     "die er als seine Rufnummer genannt hat. Steht kein `phone` in `slots`, frag "
     "den Gast, unter welcher Rufnummer mit Vorwahl er erreichbar ist."
 )
+# The loop has tried the team before the model reads this (`loop.py`).
 HINT_CALLBACK_PHONE = (
     "Abgelehnt: ein Rückruf braucht eine Rufnummer, und in `slots` steht kein "
-    "`phone`. Frag den Gast, unter welcher Nummer mit Vorwahl er erreichbar ist. "
-    "Ist er nicht zu verstehen: `transfer_to_team`."
+    "`phone`; das Team ist gerade nicht erreichbar. Frag den Gast, unter welcher "
+    "Nummer mit Vorwahl er erreichbar ist."
 )
 HINT_NOT_BOOKED = (
     "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
@@ -125,6 +126,12 @@ _BOOKING_CLAIM = re.compile(
 )
 # A claim word after one of these in the same clause says the opposite.
 _NEGATION = re.compile(r"\b(nicht|nichts|kein\w*)\b", re.IGNORECASE)
+# What a sentence claims was booked: an order, a table, or, naming neither,
+# anything the call booked.
+_ABOUT = (
+    ("order", re.compile(r"abhol|bestellung", re.IGNORECASE)),
+    ("reservation", re.compile(r"tisch|reserv", re.IGNORECASE)),
+)
 
 
 @dataclass(frozen=True)
@@ -195,20 +202,28 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     Der Abholcode lautet 8842" (13.10.2026).
 
     A claim word after "nicht", "nichts" or "kein..." in the same clause is
-    no claim ("noch nicht bestätigt", "Es ist noch nichts gebucht"): a model
-    that explained a refused `confirm` that way was refused itself and lost a
-    hop (eval run of 20.10.2026; Codex PR #347).
+    no claim ("noch nicht bestätigt", "Es ist noch nichts gebucht"), and
+    neither is a question ("Haben Sie bereits reserviert?"): a model that put
+    it that way was refused itself and lost a hop (eval run of 20.10.2026;
+    Codex PR #347). A sentence about an order needs a booked order, one about
+    a table a booked table: after a confirmed table "Ihre Abholung ist
+    bestätigt" is still refused (Codex PR #347).
 
-    ponytail: by word, not by meaning; and after one booking in a call a
-    second, unbooked one is not caught. A per-draft check if the call log
+    ponytail: by word, not by meaning. A per-draft check if the call log
     shows the need."""
-    if state.booked:
-        return None
-    for claim in _BOOKING_CLAIM.finditer(say):
-        clause = re.split(r"[.!?,;:]", say[: claim.start()])[-1]
-        if not _NEGATION.search(clause):
-            return _NOT_BOOKED
+    for sentence in re.findall(r"[^.!?]+[.!?]*", say):
+        if sentence.rstrip().endswith("?"):
+            continue
+        for claim in _BOOKING_CLAIM.finditer(sentence):
+            clause = re.split(r"[,;:]", sentence[: claim.start()])[-1]
+            if not _NEGATION.search(clause) and not _booked_for(state, sentence):
+                return _NOT_BOOKED
     return None
+
+
+def _booked_for(state: ConversationState, sentence: str) -> bool:
+    about = {kind for kind, words in _ABOUT if words.search(sentence)}
+    return about <= state.booked if about else bool(state.booked)
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:
@@ -315,7 +330,7 @@ def refusal(
         # carried nothing but noise, where only the team can help (20.10.2026).
         # With a number in `slots` the general hint names it.
         nobody_known = call.name == "create_callback" and not state.slots.get("phone")
-        return _CALLBACK_PHONE if nobody_known else _GUEST_PHONE
+        return CALLBACK_WITHOUT_NUMBER if nobody_known else _GUEST_PHONE
     if phone is not None and not _phone_counts(state, phone):
         return _GUEST_PHONE
     if call.name == "draft_order":
@@ -379,7 +394,8 @@ def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:
 
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
 _NO_DRAFT = ToolResult(ok=False, error_code="conflict", hint=HINT_NO_DRAFT)
-_CALLBACK_PHONE = ToolResult(
+# Public: the loop tries the team first on it (`loop.py`).
+CALLBACK_WITHOUT_NUMBER = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_CALLBACK_PHONE
 )
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
