@@ -7,6 +7,10 @@
 #   4. a review is clean: the Codex state comment names this head without open findings,
 #      or a comment by the owner or a collaborator opens with "Merge gate: <head sha>"
 #      (Claude's own review when Codex is out of quota, or the review loop limits decision).
+# The command must name the PR by number or URL and carry --match-head-commit <full sha>:
+# the gate checks that head, and gh refuses the merge once the head has moved. --auto is
+# refused, it would merge later without this gate. settings.json sets onFailure "block",
+# so a timeout or a crash of this script blocks too.
 # Not checkable here: that /ponytail-review ran, green evals, the xhigh rule. Those stay
 # with /done and CLAUDE.md. Every other command passes untouched.
 # ponytail: only `gh pr merge` at the start of a command is caught, `gh api .../merge` is not.
@@ -21,13 +25,18 @@ command -v jq >/dev/null || block "- jq is missing, so the gate cannot read the 
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
 merge=$(grep -Eo '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]+[^;&|[:space:]]+)*' <<<"$cmd" | head -1)
 [ -n "$merge" ] || exit 0
-# The PR is the first number or pull URL after `merge`; without one, gh takes the branch's PR.
-target=$(tr -s '[:space:]' '\n' <<<"${merge#*merge}" | grep -E '^([0-9]+|https://[^ ]+/pull/[0-9]+)$' | head -1)
+args=$(tr -s '[:space:]' '\n' <<<"${merge#*merge}" | sed '/^$/d')
+target=$(head -1 <<<"$args" | grep -E '^([0-9]+|https://[^ ]+/pull/[0-9]+)$')
+[ -n "$target" ] || block "- name the PR by number or URL right after \`gh pr merge\`, so the gate checks the PR that gets merged"
+! grep -qx -- '--auto' <<<"$args" || block "- --auto merges later, without this gate: merge once the gate passes"
+want=$(sed -n -e '/^--match-head-commit$/{n;p;}' -e 's/^--match-head-commit=//p' <<<"$args" | head -1)
+[[ $want =~ ^[0-9a-f]{40}$ ]] || block "- add --match-head-commit <full head sha>, so gh refuses the merge if the head moves after this check"
 
 cd "$(dirname "$0")/../.." || block "- the repository of the hook was not found"
-pr=$(gh pr view $target --json number,headRefOid,headRefName,statusCheckRollup 2>&1) ||
+pr=$(gh pr view "$target" --json number,headRefOid,headRefName,statusCheckRollup 2>&1) ||
   block "- gh pr view failed: $pr"
 read -r n head branch < <(jq -r '[.number, .headRefOid, .headRefName] | @tsv' <<<"$pr")
+[ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
 
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
@@ -58,7 +67,7 @@ clean=$(jq -rs --arg h "$head" '
       | capture("codex-review-state:v1 (?<s>\\{.*\\}) -->").s | (try fromjson catch {}) | .code_review
       | select(.commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)]
     + [$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | .body
-      | select(test("(^|\n)Merge gate: " + $h[0:7]))]) | length > 0' <<<"$comments")
+      | select(startswith("Merge gate: " + $h[0:7]))]) | length > 0' <<<"$comments")
 [ "$clean" = true ] ||
   fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: ${head:0:7}\""$'\n'
 

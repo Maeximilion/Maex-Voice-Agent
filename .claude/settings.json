@@ -30,8 +30,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/merge_gate.sh\"",
-            "timeout": 60
+            "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/merge_gate.sh\"; if [ -f \"$f\" ]; then bash \"$f\"; fi",
+            "timeout": 60,
+            "onFailure": "block"
           }
         ]
       }

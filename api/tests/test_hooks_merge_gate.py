@@ -96,10 +96,13 @@ def gate(tmp_path):
     hook.parent.mkdir(parents=True)
     shutil.copyfile(HOOK, hook)
 
+    current = {"sha": head}
+
     def pr(checks=GREEN, branch="feature", sha=None) -> None:
+        current["sha"] = sha or head
         body = {
             "number": 7,
-            "headRefOid": sha or head,
+            "headRefOid": current["sha"],
             "headRefName": branch,
             "statusCheckRollup": checks,
         }
@@ -119,8 +122,12 @@ def gate(tmp_path):
         body = f"<!-- codex-review-state:v1 {json.dumps(state)} -->\n\n## Codex"
         return {"user": {"login": CODEX}, "author_association": "NONE", "body": body}
 
-    def run(command: str = "gh pr merge 7 --merge"):
+    def run(command: str | None = None):
         assert BASH is not None  # checked at the top of this fixture
+        sha = current["sha"]
+        command = (command or "gh pr merge 7 --merge --match-head-commit {sha}").format(
+            sha=sha
+        )
         payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
         return subprocess.run(
             [BASH, hook.as_posix()],
@@ -173,7 +180,7 @@ def test_a_pending_or_failed_check_blocks(gate):
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
-    done = gate.run("cd x && gh pr merge 7 --merge")
+    done = gate.run("cd x && gh pr merge 7 --merge --match-head-commit={sha}")
     assert done.returncode == 2
     assert "behind main" in done.stderr
 
@@ -213,3 +220,47 @@ def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate)
     owner = {**outsider, "user": {"login": "maxi"}, "author_association": "OWNER"}
     gate.comments(outsider, owner)
     assert gate.run().returncode == 0
+
+    quoted = {**owner, "body": f"The rule says to post\n{note}"}
+    gate.comments(quoted)
+    assert gate.run().returncode == 2
+
+
+@pytest.mark.parametrize(
+    ("command", "reason"),
+    [
+        ("gh pr merge feature --merge --match-head-commit {sha}", "by number or URL"),
+        ("gh pr merge --merge 7 --match-head-commit {sha}", "by number or URL"),
+        ("gh pr merge 7 --merge", "--match-head-commit <full head sha>"),
+        ("gh pr merge 7 --merge --match-head-commit abc1234", "--match-head-commit"),
+        ("gh pr merge 7 --auto --merge --match-head-commit {sha}", "--auto"),
+        ("gh pr merge 7 --merge --match-head-commit " + "0" * 40, "the PR's head is"),
+    ],
+)
+def test_the_command_must_pin_the_pr_and_its_head(gate, command, reason):
+    done = gate.run(command)
+    assert done.returncode == 2
+    assert reason in done.stderr
+
+
+def test_a_stalled_gate_blocks_but_a_missing_script_does_not(gate, tmp_path):
+    """onFailure "block" turns a timeout or crash into a block. A session whose
+    CLAUDE_PROJECT_DIR points elsewhere (moved after start) has no script there;
+    that must not block every shell command."""
+    settings = json.loads((HOOK.parents[1] / "settings.json").read_text("utf-8"))
+    [entry] = [
+        hook
+        for group in settings["hooks"]["PreToolUse"]
+        for hook in group["hooks"]
+        if "merge_gate.sh" in hook["command"]
+    ]
+    assert entry["onFailure"] == "block"
+    done = subprocess.run(
+        [BASH, "-c", entry["command"]],
+        input='{"tool_input": {"command": "gh pr merge 7 --merge"}}',
+        env={**os.environ, "CLAUDE_PROJECT_DIR": str(tmp_path / "elsewhere")},
+        capture_output=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
