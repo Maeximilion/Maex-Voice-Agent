@@ -126,6 +126,10 @@ _BOOKING_CLAIM = re.compile(
     r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
     re.IGNORECASE,
 )
+# A sentence that speaks of a pickup code, and the tokens shaped like one:
+# the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
+_NAMES_A_CODE = re.compile(r"code|abholnummer", re.IGNORECASE)
+_CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.
 _ABOUT = (
@@ -218,12 +222,23 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
 
     ponytail: a claim without these words ("Ihre Bestellung geht in die
     Küche") is not caught. More words if the call log shows them."""
+    if _NAMES_A_CODE.search(say) and not _names_the_code(state, say):
+        return _NOT_BOOKED
     if not _BOOKING_CLAIM.search(say):
         return None
     about = _about(say)
     if state.stage != "readback_pending" and about and about <= state.booked:
         return None
     return _NOT_BOOKED
+
+
+def _names_the_code(state: ConversationState, say: str) -> bool:
+    """A sentence about a pickup code names the code the confirmed order got,
+    and no other token shaped like one: "Ihr Abholcode ist B99" after A1 sends
+    the guest to the counter with a code that finds no order (Codex PR #347).
+    Strict: a card number like "s12" next to it is refused as well."""
+    codes = {code.upper() for code in _CODE_SHAPED.findall(say)}
+    return state.pickup_code is not None and codes == {state.pickup_code.upper()}
 
 
 def _about(text: str) -> set[str]:

@@ -893,7 +893,7 @@ def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
 
 
 def test_after_a_confirm_the_booking_may_be_named():
-    state = new_state(booked={"order"}, stage="confirmed")
+    state = new_state(booked={"order"}, stage="confirmed", pickup_code="A12")
 
     assert false_booking(state, "Ihr Abholcode ist A12.") is None
     assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
@@ -917,3 +917,37 @@ def test_after_an_order_alone_these_claims_are_refused(say):
     state = new_state(booked={"order"}, stage="confirmed")
 
     assert false_booking(state, say) is not None
+
+
+def confirmed_order(code="A1"):
+    state = new_state()
+    order_id = str(uuid.uuid4())
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=True, data={"order_id": order_id})
+    )
+    apply_tool_result(state, "confirm", ToolResult(ok=True, data={"pickup_code": code}))
+    return state
+
+
+def test_only_the_confirmed_pickup_code_may_be_named():
+    """After A1, "B99" sends the guest to the counter with a code that finds no
+    order (Codex PR #347)."""
+    state = confirmed_order("A1")
+
+    assert false_booking(state, "Ihr Abholcode ist A1.") is None
+    assert false_booking(state, "Ihr Abholcode ist B99.") is not None
+    assert false_booking(state, "Ihr Code ist A1 oder B99.") is not None
+
+
+def test_a_code_before_any_confirm_is_made_up():
+    assert false_booking(new_state(), "Ihr Code lautet 8842.") is not None
+
+
+def test_a_new_draft_takes_back_the_pickup_code():
+    state = confirmed_order("A1")
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=True, data={"order_id": str(uuid.uuid4())})
+    )
+
+    assert state.pickup_code is None
+    assert false_booking(state, "Ihr Abholcode ist A1.") is not None

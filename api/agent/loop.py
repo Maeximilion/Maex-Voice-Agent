@@ -364,7 +364,13 @@ class ConversationLoop:
         transfer = self._dispatch(
             state,
             "transfer_to_team",
-            {"reason": reason if reason in _TRANSFER_REASONS else "not_understood"},
+            # A reason that is no string is no reason: `in` on a list or a
+            # dict would raise before dispatch could refuse it (Codex PR #347).
+            {
+                "reason": reason
+                if isinstance(reason, str) and reason in _TRANSFER_REASONS
+                else "not_understood"
+            },
         )
         apply_tool_result(state, "transfer_to_team", transfer)
         if state.transferred:

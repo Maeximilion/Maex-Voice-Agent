@@ -79,6 +79,9 @@ class ConversationState(BaseModel):
     # model: no sentence may tell the guest that something is booked that is
     # not (`guards.false_booking`).
     booked: set[str] = Field(default_factory=set)
+    # The pickup code the confirmed order got, the only one a sentence may
+    # name (`guards.false_booking`). Memory of the core, like `booked`.
+    pickup_code: str | None = None
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -433,6 +436,7 @@ def apply_tool_result(
         state.reservation_id = None
         state.stage = "readback_pending"
         state.booked.discard("order")
+        state.pickup_code = None
         _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
@@ -456,6 +460,8 @@ def apply_tool_result(
             state.cart = []
         state.stage = "confirmed"
         state.booked.add("order" if state.order_id is not None else "reservation")
+        if state.order_id is not None:
+            state.pickup_code = result.data.get("pickup_code")
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
         # read a draft that no longer is one (Codex PR #258).

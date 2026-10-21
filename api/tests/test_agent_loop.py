@@ -1538,3 +1538,19 @@ def test_a_callback_wish_before_the_question_for_the_number_counts_nothing(
     results = [loop.run_turn(state, "Rufen Sie mich zurück") for _ in range(8)]
 
     assert not any(result.ended for result in results)
+
+
+def test_a_callback_reason_that_is_no_string_does_not_crash_the_turn(
+    session, tenant_id, call_id
+):
+    """`in` on a list raised TypeError before dispatch could refuse it
+    (Codex PR #347)."""
+    state = numberless(tenant_id, call_id)
+    call = ToolCall(name="create_callback", args={"phone": None, "reason": []})
+    llm = FakeLLM([LLMTurn(tool_call=call), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert result.ended is True
+    assert state.stage == "transferred"
