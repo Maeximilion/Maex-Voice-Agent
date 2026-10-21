@@ -431,17 +431,22 @@ if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
 fi
 export CLAUDE_CONFIG_DIR="$dst"
 # Not exec: the login is handed back once Claude exits, also on Ctrl+C, a closed terminal or
-# a kill. Bash runs these traps after the running Claude has ended.
-trap sync_login EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
+# a kill of this wrapper alone. Bash runs a trap only between commands, so Claude runs in the
+# background and the traps forward the signal to it; the subshell undoes the INT and QUIT
+# ignore bash gives a background command, and <&0 keeps the terminal as Claude's input.
 if [ "${1-}" = server ]; then
   shift
-  claude remote-control "$@"
+  set -- remote-control "$@"
 else
-  claude --remote-control "$@"
+  set -- --remote-control "$@"
 fi
+( trap - INT QUIT; exec claude "$@" ) <&0 &
+child=$!
+trap sync_login EXIT
+for sig in HUP INT TERM; do trap "kill -$sig $child 2>/dev/null || true" "$sig"; done
+# A trap ends the wait early: wait again until Claude has ended, then exit with its status.
+while kill -0 "$child" 2>/dev/null; do wait "$child" || true; done
+wait "$child"
 ```
 
 ## 5. Restore

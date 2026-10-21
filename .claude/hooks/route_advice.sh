@@ -27,9 +27,10 @@ impl='\b(code|logic|matching|matcher|calculation|parser|handler|function|query|v
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # A clause led by a code verb that names no GUI, docs or other Sonnet work is code work,
 # whichever action comes first ("Fix authentication and update the GUI labels"). A bare verb
-# ("fix and restyle the GUI"), a typo fix and a fix of the status or a test are not.
+# ("fix and restyle the GUI"), a typo fix and a fix of the status or a test are not. A clause
+# starts only where a verb follows the conjunction or comma: "header and footer" is one object.
 code_clause() {
-  sed -E 's/ (and|then|plus|und) (also )?/\n/g; s/[,;] +/\n/g' <<<"$1" \
+  sed -E "s/( (and|then|plus|und)|[,;]) +(also )?($change)/\n\4/g" <<<"$1" \
     | grep -E '^(please )?(fix|implement|refactor|debug|migrate|deploy) ' \
     | grep -qviE "$sonnet|$docpath|\b(typos?|wording|spelling|grammar|formatting|status|tests?)\b"
 }

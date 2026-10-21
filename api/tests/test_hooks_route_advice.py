@@ -807,6 +807,9 @@ def test_a_leading_fix_outside_gui_or_docs_keeps_the_default(run, prompt):
         "Update docs/03_DATA_MODEL.md and fix the typo in the migration section",
         "Fix the project status and update the README",
         "Fix the failing unit test and update the README",
+        "Fix the header and footer in the GUI",
+        "Fix the links and sections in the documentation",
+        "Fix the salt, pepper and vinegar labels in the GUI template",
     ],
 )
 def test_a_leading_gui_or_docs_fix_stays_on_sonnet(run, prompt):
