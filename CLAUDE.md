@@ -179,7 +179,7 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 - P0 and P1 are always fixed, however many rounds it takes. No merge while one is open.
 - A P2 in code that hits an `xhigh` trigger from the Model Routing table (allergens, a booking, prices, the fate of a call) counts as P1.
 - Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets a one-line reason on its review thread.
-- After 3 rounds with only P2 findings left, Claude stops and decides: merge when the remaining P2s are cosmetic, speculative or out of scope, keep fixing when one is a real defect. Either way a PR comment lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green, and a PR with an `xhigh` trigger still goes to Maxi.
+- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green, and a PR with an `xhigh` trigger still goes to Maxi.
 - When the findings per round grow after 3 rounds, stop patching and propose a structural redesign to Maxi. Nothing is pushed until Maxi approves it.
 
 ### Session End
