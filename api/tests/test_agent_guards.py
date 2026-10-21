@@ -843,13 +843,6 @@ def test_a_sentence_without_a_booking_word_passes(say):
     assert false_booking(new_state(), say) is None
 
 
-def test_after_a_confirm_the_booking_may_be_named():
-    state = new_state(booked={"order"}, stage="confirmed")
-
-    assert false_booking(state, "Ihr Abholcode ist A12.") is None
-    assert false_booking(state, "Das ist gebucht.") is None
-
-
 def test_while_a_draft_waits_nothing_is_said_to_be_booked():
     """After a confirmed order a new table draft waits for its yes: "Das ist
     auch gebucht" may mean the table (Codex PR #347). Strict: also the true
@@ -860,13 +853,6 @@ def test_while_a_draft_waits_nothing_is_said_to_be_booked():
     assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
 
 
-def test_a_claim_that_names_nothing_needs_the_confirm_just_made():
-    state = new_state(booked={"order"}, stage="collecting")
-
-    assert false_booking(state, "Das ist gebucht.") is not None
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
-
-
 def test_the_claim_verb_does_not_name_a_table():
     """ "reserviert" is the claim: after a confirmed order this closing is
     about the order alone (Codex PR #347)."""
@@ -874,15 +860,6 @@ def test_the_claim_verb_does_not_name_a_table():
 
     assert false_booking(state, "Ihre Abholung ist für 18 Uhr reserviert.") is None
     assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
-
-
-def test_the_kind_comes_from_the_claim_not_from_the_question():
-    state = new_state(booked={"order"})
-    asks = "Ihre Bestellung ist bestätigt, möchten Sie noch einen Tisch reservieren?"
-
-    assert false_booking(state, asks) is None
-    # A claiming clause that names nothing takes the kind of its sentence.
-    assert false_booking(state, "Ihr Tisch für vier, der ist reserviert.") is not None
 
 
 def test_a_booked_table_is_no_booked_order():
@@ -913,3 +890,30 @@ def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
 
     assert refused is not None
     assert refused.hint == HINT_GUEST_PHONE
+
+
+def test_after_a_confirm_the_booking_may_be_named():
+    state = new_state(booked={"order"}, stage="confirmed")
+
+    assert false_booking(state, "Ihr Abholcode ist A12.") is None
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        # Names nothing: always refused, also right after a confirm, since
+        # the same guest sentence may have asked for a table as well
+        # (Codex PR #347).
+        "Das ist gebucht.",
+        # Names a table that is not booked; the period after "Nr." does not
+        # hide the table (Codex PR #347).
+        "Ihr Tisch Nr. 7 ist reserviert.",
+        # Names an order and a table: both must be booked.
+        "Ihre Bestellung ist bestätigt, möchten Sie noch einen Tisch reservieren?",
+    ],
+)
+def test_after_an_order_alone_these_claims_are_refused(say):
+    state = new_state(booked={"order"}, stage="confirmed")
+
+    assert false_booking(state, say) is not None
