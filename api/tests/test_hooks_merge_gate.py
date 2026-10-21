@@ -75,7 +75,9 @@ def gate(tmp_path):
         status = work / "docs" / "01_STATUS.md"
         status.parent.mkdir(exist_ok=True)
         if version:
-            status.write_text(f"> Status version: {version}\n", encoding="utf-8")
+            status.write_text(
+                f"> Status: 21.10.2026 · Status version: {version}\n", encoding="utf-8"
+            )
         (work / "work.txt").write_text(f"{name}\n", encoding="utf-8")
         git(work, "add", "-A")
         git(work, "commit", "-q", "-m", name)
@@ -99,8 +101,12 @@ def gate(tmp_path):
             (work / name).parent.mkdir(parents=True, exist_ok=True)
             (work / name).write_text(f"{number}\n", encoding="utf-8")
         if version:
-            status = work / "docs" / "01_STATUS.md"
-            status.write_text(f"> Status version: {version}\n", encoding="utf-8")
+            header = f"> Status: 21.10.2026 · Status version: {version}\n"
+            if (
+                version == "prepended"
+            ):  # a higher number in a note above the real header
+                header = "<!-- Status version: 9.0.0 -->\n> Status: 21.10.2026 · Status version: 1.0.0\n"
+            (work / "docs" / "01_STATUS.md").write_text(header, encoding="utf-8")
         git(work, "add", "-A")
         git(work, "commit", "-q", "-m", f"side {number}")
         git(work, "push", "-q", "origin", f"HEAD:refs/pull/{number}/head")
@@ -112,7 +118,7 @@ def gate(tmp_path):
     code = side_branch(9, "README.md", "api/app.py")
     versions = {
         v: (n, side_branch(n, "api/app.py", version=v))
-        for n, v in ((10, "1.0.00"), (11, "1.0.0.1"), (12, "1.0.10"))
+        for n, v in ((10, "1.0.00"), (11, "1.0.0.1"), (12, "1.0.10"), (13, "prepended"))
     }
     git(tmp_path, "clone", "-q", str(origin), str(checkout))
     hook = checkout / ".claude" / "hooks" / "merge_gate.sh"
@@ -332,7 +338,8 @@ def test_an_unbumped_head_blocks_except_on_the_weekly_readme_branch(gate):
 
 
 @pytest.mark.parametrize(
-    ("version", "bumped"), [("1.0.00", False), ("1.0.0.1", False), ("1.0.10", True)]
+    ("version", "bumped"),
+    [("1.0.00", False), ("1.0.0.1", False), ("1.0.10", True), ("prepended", False)],
 )
 def test_the_bump_compares_three_numbers(gate, version, bumped):
     number, sha = gate.versions[version]
@@ -354,7 +361,7 @@ def test_the_review_must_be_clean_on_the_head(gate):
     gate.comments(gate.codex("0" * 40))
     done = gate.run()
     assert done.returncode == 2
-    assert f'"Merge gate: {gate.head[:7]}"' in done.stderr
+    assert f'"Merge gate: {gate.head}"' in done.stderr
 
     gate.comments(gate.codex(gate.head, open_findings=True))
     assert gate.run().returncode == 2
@@ -368,7 +375,7 @@ def test_the_review_must_be_clean_on_the_head(gate):
 
 
 def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate):
-    note = f"Merge gate: {gate.head[:7]}, own review: Codex is out of quota."
+    note = f"Merge gate: {gate.head}, own review: Codex is out of quota."
     outsider = {
         "user": {"login": "someone"},
         "author_association": "NONE",
@@ -385,6 +392,11 @@ def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate)
     quoted = {**owner, "body": f"The rule says to post\n{note}"}
     gate.comments(quoted)
     assert gate.run().returncode == 2
+
+    # Seven characters could match another commit; the marker names the full sha.
+    for body in (f"Merge gate: {gate.head[:7]}", f"Merge gate: {gate.head}0"):
+        gate.comments({**owner, "body": body})
+        assert gate.run().returncode == 2
 
     # A Codex state with findings that came after the marker wins over it.
     findings = gate.codex(gate.head, True, at="12:00")

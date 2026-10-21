@@ -14,7 +14,7 @@
 #   3. the status version is higher than main's; exempt only chore/readme-weekly-* whose
 #      changes are all generated (README.md, .github/assets/*.svg, png-sources.json),
 #   4. a review is clean: the Codex state comment names this head without open findings,
-#      or a comment by the owner or a collaborator opens with "Merge gate: <head sha>"
+#      or a comment by the owner or a collaborator opens with "Merge gate: <full head sha>"
 #      (Claude's own review when Codex is out of quota, or the review loop limits decision).
 # settings.json sets onFailure "block", so a timeout or a crash of this script blocks too.
 # Not checkable here: that /ponytail-review ran, green evals, the xhigh rule. Those stay
@@ -72,7 +72,10 @@ if git fetch -q "$repo" "+refs/heads/main:$main" "refs/pull/$n/head" 2>/dev/null
     fail+="- the branch is behind main: merge origin/main into it, then get CI and the review on the new head"$'\n'
   generated='^(README\.md|\.github/assets/[^/]+\.svg|\.github/assets/png-sources\.json)$'
   if [[ $branch != chore/readme-weekly-* ]] || git diff --name-only "$main...$head" | grep -Evq "$generated"; then
-    v() { git show "$1:docs/01_STATUS.md" 2>/dev/null | grep -o 'Status version: [0-9.]*' | head -1 | cut -d' ' -f3; }
+    # Only the header line that scripts/status_bump.py writes ("> Status: <date> · ... · Status
+    # version: x.y.z"), never the same words elsewhere in the file.
+    v() { git show "$1:docs/01_STATUS.md" 2>/dev/null | tr -d '\r' |
+      sed -nE '/^> Status: /{s/.*Status version: ([0-9.]+)$/\1/p;q;}'; }
     m=$(v "$main")
     b=$(v "$head")
     # Exactly three numbers, compared as numbers: 2.7.00 is no bump over 2.7.0, 2.7.0.1 no version.
@@ -98,10 +101,10 @@ clean=$(jq -rs --arg h "$head" '
     | sort_by(.t) | last // {t: "", s: {}}) as $codex
   | ($codex.s | .commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)
   or ([$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"))
-      | select(.created_at > $codex.t and (.body | startswith("Merge gate: " + $h[0:7])))]
+      | select(.created_at > $codex.t and (.body | test("^Merge gate: " + $h + "([^0-9a-f]|$)")))]
     | length > 0)' <<<"$comments")
 [ "$clean" = true ] ||
-  fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: ${head:0:7}\""$'\n'
+  fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: $head\" (the full sha)"$'\n'
 
 [ -z "$fail" ] || block "$fail"
 exit 0
