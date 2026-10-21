@@ -812,12 +812,16 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Ihr Tisch ist reserviert.",
         "Das ist gebucht.",
         "Ihr Abholcode ist A12.",
-        # The negation of another clause does not cover the claim.
-        "Das war nicht schwer, Ihr Tisch ist reserviert.",
         # Only the asking clause is exempt (Codex PR #347).
         "Ihre Bestellung ist bestätigt, möchten Sie noch etwas?",
-        # "und" starts a clause the negation before it does not reach.
+        # A negation is not read: which words it reaches is grammar, and a
+        # word rule for it let these through (Codex PR #347).
+        "Das war nicht schwer, Ihr Tisch ist reserviert.",
         "Sie müssen nicht mehr warten und Ihr Tisch ist reserviert.",
+        "Ihr Tisch ist nicht nur reserviert, sondern auch schon vorbereitet.",
+        # So a denial is refused too; it costs the model one hop.
+        "Es ist noch nichts gebucht.",
+        "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
     ],
 )
 def test_a_claimed_booking_before_confirm_is_refused(say):
@@ -827,16 +831,14 @@ def test_a_claimed_booking_before_confirm_is_refused(say):
 @pytest.mark.parametrize(
     "say",
     [
-        "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
-        "Es ist noch nichts gebucht.",
-        "Da ist noch kein Tisch reserviert, soll ich das tun?",
         "Haben Sie bereits reserviert?",
+        "Haben Sie bereits reserviert oder möchten Sie neu reservieren?",
         "Möchten Sie den Abholcode per SMS? Dann brauche ich Ihre Nummer.",
         "Möchten Sie einen Tisch reservieren?",
         "Soll ich das so bestätigen?",
     ],
 )
-def test_no_claim_or_a_denied_one_passes(say):
+def test_a_question_or_no_claim_passes(say):
     assert false_booking(new_state(), say) is None
 
 

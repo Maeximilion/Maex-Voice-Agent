@@ -114,9 +114,9 @@ HINT_CALLBACK_PHONE = (
 )
 HINT_NOT_BOOKED = (
     "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
-    "durchgegangen. Sag nie, etwas sei bestätigt, gebucht oder reserviert, und "
-    "nenne keinen Abholcode. Erst den readback vorlesen und auf ein klares Ja "
-    "des Gastes warten."
+    "durchgegangen. Bis dahin sagst du die Wörter bestätigt, gebucht, "
+    "reserviert und Abholcode gar nicht, auch nicht verneint. Sag, was als "
+    "Nächstes geschieht: den readback vorlesen und auf ein klares Ja warten."
 )
 # Words that tell a guest something is booked. The pickup code comes from
 # `confirm` only; a model that names one before it has made it up.
@@ -124,11 +124,6 @@ _BOOKING_CLAIM = re.compile(
     r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
     re.IGNORECASE,
 )
-# A claim word after one of these in the same clause says the opposite.
-_NEGATION = re.compile(r"\b(nicht|nichts|kein\w*)\b", re.IGNORECASE)
-# Where a clause ends: a mark, or a conjunction that starts the next one ("Sie
-# müssen nicht mehr warten und Ihr Tisch ist reserviert"; Codex PR #347).
-_CLAUSE_END = re.compile(r"[,;:]|\b(?:und|aber|oder|sondern)\b", re.IGNORECASE)
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.
 _ABOUT = (
@@ -206,29 +201,31 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
     Der Abholcode lautet 8842" (13.10.2026).
 
-    A claim word after "nicht", "nichts" or "kein..." in the same clause is
-    no claim ("noch nicht bestätigt", "Es ist noch nichts gebucht"), and
-    neither is the clause that asks ("Haben Sie bereits reserviert?"): a
-    model that put it that way was refused itself and lost a hop (eval run of
-    20.10.2026; Codex PR #347). The clauses before it still count: "Ihre
-    Bestellung ist bestätigt, möchten Sie noch etwas?" claims an order. A sentence about an order needs a booked order, one about
-    a table a booked table: after a confirmed table "Ihre Abholung ist
-    bestätigt" is still refused (Codex PR #347).
+    A denial counts too ("Es ist noch nichts gebucht"): which words a
+    negation reaches is grammar ("nicht nur reserviert, sondern auch ...",
+    "nicht mehr warten und Ihr Tisch ist reserviert"), and a word rule for it
+    let claims through that it was meant to stop (Codex PR #347, four rounds).
+    A refused denial costs the model one hop, and the hint says what to say
+    instead. Only the asking part of a question is exempt, the clause after
+    its last comma ("Haben Sie bereits reserviert oder möchten Sie neu
+    reservieren?"); a clause before it still claims ("Ihre Bestellung ist
+    bestätigt, möchten Sie noch etwas?").
+
+    A sentence about an order needs a booked order, one about a table a
+    booked table: after a confirmed table "Ihre Abholung ist bestätigt" is
+    still refused (Codex PR #347).
 
     ponytail: by word, not by meaning; a question with a comma before its
     claim word ("Haben Sie schon, wie besprochen, reserviert?") is refused.
     A per-draft check if the call log shows the need."""
     for sentence in re.findall(r"[^.!?]+[.!?]*", say):
-        clauses = _CLAUSE_END.split(sentence)
+        clauses = re.split(r"[,;:]", sentence)
         if sentence.rstrip().endswith("?"):
             clauses = clauses[:-1]
         stated = " ".join(clauses)
         for clause in clauses:
-            for claim in _BOOKING_CLAIM.finditer(clause):
-                if _NEGATION.search(clause[: claim.start()]):
-                    continue
-                if not _booked_for(state, clause, stated):
-                    return _NOT_BOOKED
+            if _BOOKING_CLAIM.search(clause) and not _booked_for(state, clause, stated):
+                return _NOT_BOOKED
     return None
 
 
