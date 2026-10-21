@@ -7,19 +7,30 @@ work; a lower one is listed with what to do with it. No output: no open alert.
 
     python3 scripts/alert_fixes.py
 
-Needs an authenticated `gh`, stdlib only. A pull request fixes a Dependabot alert
-when the dependency graph between its base and head commits removes the alert's
-package with the alert's advisory, in any manifest (the comparison dependency
-review uses; requirements-voice.txt takes its pins from requirements.txt). It
-fixes a code-scanning alert when the alert has an instance in state "fixed" on
-the pull request's head commit. A pull request that only changes the alert's
-file is named as a candidate, never as the fix. Exit 1 when an API call failed:
-the lines that could be worked out are printed anyway, the error goes to stderr,
-and a source that failed is never reported as zero alerts.
+Needs an authenticated `gh`, stdlib only.
+
+A pull request fixes a Dependabot alert when the dependency graph between its
+base and head commits (the comparison dependency review uses) removes the
+alert's package with the alert's advisory from the alert's manifest and adds no
+version there that still carries it. It fixes a code-scanning alert when the
+alert has an instance in state "fixed" on the pull request's current head commit
+(`refs/pull/N/head`, this repository's CodeQL workflow) or its current test merge
+commit (`refs/pull/N/merge`, GitHub's default setup).
+
+Anything short of that is at most a candidate, named next to the blocking alert
+and never taken for the fix: a pull request that removes the advisory from
+another manifest (requirements-voice.txt takes its pins from requirements.txt),
+or one that changes the alert's file under its new or old name while no scan has
+confirmed it.
+
+Exit 1 when an API call failed: the lines that could be worked out are printed
+anyway, the error goes to stderr, and a source that failed is never reported as
+zero alerts.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import re
 import subprocess
@@ -87,31 +98,53 @@ def _alerts(gh: Gh, errors: list[str]) -> list[dict]:
     return alerts
 
 
-def _fixes(gh: Gh, pr: dict, alert: dict) -> bool:
-    base, head = pr["base"]["sha"], pr["head"]["sha"]
-    if alert["source"] == "dependabot":
-        changes = gh(f"{REPO}/dependency-graph/compare/{base}...{head}")
-        return any(
-            c["change_type"] == "removed"
-            and _package(c["name"]) == _package(alert["name"])
-            and any(
-                v["advisory_ghsa_id"] == alert["ghsa"] for v in c["vulnerabilities"]
-            )
-            for c in changes
-        )
-    instances = gh(
-        f"{REPO}/code-scanning/alerts/{alert['number']}/instances"
-        f"?ref=refs/pull/{pr['number']}/head&per_page=100"
+def _carrying(gh: Gh, pr: dict, alert: dict) -> list[dict]:
+    """Dependency changes of the pull request that carry the alert's advisory."""
+    changes = gh(
+        f"{REPO}/dependency-graph/compare/{pr['base']['sha']}...{pr['head']['sha']}"
     )
-    return any(i["state"] == "fixed" and i["commit_sha"] == head for i in instances)
+    return [
+        c
+        for c in changes
+        if _package(c["name"]) == _package(alert["name"])
+        and any(v["advisory_ghsa_id"] == alert["ghsa"] for v in c["vulnerabilities"])
+    ]
 
 
-def _changes_file(gh: Gh, pr: dict, path: str) -> bool:
+def _fixes(gh: Gh, pr: dict, alert: dict) -> bool:
+    if alert["source"] == "dependabot":
+        kinds = {
+            c["change_type"]
+            for c in _carrying(gh, pr, alert)
+            if c["manifest"] == alert["path"]
+        }
+        return kinds == {"removed"}
+    for ref, sha in (
+        ("head", pr["head"]["sha"]),
+        ("merge", pr.get("merge_commit_sha")),
+    ):
+        instances = gh(
+            f"{REPO}/code-scanning/alerts/{alert['number']}/instances"
+            f"?ref=refs/pull/{pr['number']}/{ref}&per_page=100"
+        )
+        if any(i["state"] == "fixed" and i["commit_sha"] == sha for i in instances):
+            return True
+    return False
+
+
+def _candidate(gh: Gh, pr: dict, alert: dict) -> bool:
+    if alert["source"] == "dependabot" and any(
+        c["change_type"] == "removed" for c in _carrying(gh, pr, alert)
+    ):
+        return True
     files = gh(f"{REPO}/pulls/{pr['number']}/files?per_page=100")
-    return any(f["filename"] == path for f in files)
+    return any(
+        alert["path"] in (f["filename"], f.get("previous_filename")) for f in files
+    )
 
 
 def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
+    gh = functools.cache(gh)  # one compare and one file list per pull request
     errors: list[str] = []
     alerts = _alerts(gh, errors)
     prs: list[dict] = []
@@ -121,12 +154,17 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
         except GhError as exc:
             errors.append(f"open pull requests: {exc}")
 
-    def ask(check: Callable[[Gh, dict, object], bool], pr: dict, arg: object) -> bool:
-        try:
-            return check(gh, pr, arg)
-        except GhError as exc:
-            errors.append(f"pull request #{pr['number']}: {exc}")
-            return False
+    def which(check: Callable[[Gh, dict, dict], bool], alert: dict) -> list[str]:
+        found = []
+        for pr in prs:
+            try:
+                if check(gh, pr, alert):
+                    found.append(f"#{pr['number']}")
+            except GhError as exc:
+                msg = f"pull request #{pr['number']}: {exc}"
+                if msg not in errors:  # the fix and the candidate check share a call
+                    errors.append(msg)
+        return found
 
     lines = []
     alerts.sort(key=lambda a: (a["severity"] not in BLOCKING, a["source"], a["number"]))
@@ -140,16 +178,14 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
             )
             lines.append(f"{head}: {what}")
             continue
-        fixed = [p["number"] for p in prs if ask(_fixes, p, a)]
+        fixed = which(_fixes, a)
         if fixed:
-            lines.append(f"{head}: fixed by " + ", ".join(f"#{n}" for n in fixed))
+            lines.append(f"{head}: fixed by {', '.join(fixed)}")
             continue
         line = f"{head}: BLOCKS TASKS, no open PR into main fixes it"
-        near = [p["number"] for p in prs if ask(_changes_file, p, a["path"])]
+        near = which(_candidate, a)
         if near:
-            line += "; candidates that change the file: " + ", ".join(
-                f"#{n}" for n in near
-            )
+            line += f"; candidates, not confirmed as the fix: {', '.join(near)}"
         lines.append(line)
     return lines, errors
 
