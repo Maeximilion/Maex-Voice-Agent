@@ -272,14 +272,11 @@ def test_each_secret_reaches_only_the_services_that_read_it():
 def test_no_service_gains_rights_after_its_start():
     """#252 finding 8: no setuid binary or file capability raises a process,
     in development and in production."""
-    for service in _services(_load(BASE)) | _services(_load(PROD)):
-        for options in (
-            _services(_load(BASE)).get(service, {}).get("security_opt"),
-            _merged(service).get("security_opt"),
-        ):
-            if service == "caddy" and options is None:
-                continue  # production only
-            assert "no-new-privileges:true" in (options or []), service
+    base = _services(_load(BASE))
+    for service, config in base.items():
+        assert "no-new-privileges:true" in config.get("security_opt", []), service
+    for service in base | _services(_load(PROD)):
+        assert "no-new-privileges:true" in _merged(service)["security_opt"], service
 
 
 # What a service may keep in production, and why, beside the comment in the
