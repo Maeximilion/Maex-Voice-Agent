@@ -33,7 +33,8 @@ cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
 cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
 # A line continuation must not hide the words from the check.
 continuation=$'\\\n'
-grep -Eqi 'gh(\.exe)?.?[[:space:]]+pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
+# Flags may stand between gh and pr (gh -R owner/repo pr merge), but no command separator.
+grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]]pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
 form='^[[:space:]]*gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
 [[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (--delete-branch after it is allowed), run in the repository's folder. A cd in front, a wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
 target=${BASH_REMATCH[1]}
@@ -50,11 +51,12 @@ read -r n head branch base <<<"$(jq -r '[.number, .headRefOid, .headRefName, .ba
 fail=""
 
 # A check that ran twice on one head counts by the run that started last: a cancelled run
-# can finish after the run that replaced it.
+# can finish after the run that replaced it, and a queued run without a start time is the
+# newest of all.
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
   if (.statusCheckRollup | length) == 0 then "no check reported yet"
   else .statusCheckRollup | group_by([.workflowName // "", .name // .context])
-    | map(sort_by(.startedAt // .completedAt // "") | last)[]
+    | map(sort_by(.startedAt // "9999") | last)[]
     | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
@@ -76,15 +78,17 @@ fi
 
 comments=$(gh api --paginate "repos/{owner}/{repo}/issues/$n/comments?per_page=100" 2>&1) ||
   block "${fail}- the PR comments could not be read: $comments"
+# Codex's newest state decides, unless a "Merge gate:" comment came after it.
 clean=$(jq -rs --arg h "$head" '
   (add // []) as $c
   | ([$c[] | select(.user.login == "chatgpt-codex-connector[bot]")
       | {t: .updated_at, s: (.body | capture("codex-review-state:v1 (?<s>\\{.*\\}) -->").s
           | (try fromjson catch {}) | .code_review)}]
-    | sort_by(.t) | last | .s // {}
-    | .commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)
-  or ([$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | .body
-      | select(startswith("Merge gate: " + $h[0:7]))] | length > 0)' <<<"$comments")
+    | sort_by(.t) | last // {t: "", s: {}}) as $codex
+  | ($codex.s | .commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)
+  or ([$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"))
+      | select(.created_at > $codex.t and (.body | startswith("Merge gate: " + $h[0:7])))]
+    | length > 0)' <<<"$comments")
 [ "$clean" = true ] ||
   fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: ${head:0:7}\""$'\n'
 

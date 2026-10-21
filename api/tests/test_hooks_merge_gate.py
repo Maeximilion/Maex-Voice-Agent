@@ -189,7 +189,11 @@ def test_a_ready_pr_passes(gate):
 
 
 def test_other_commands_pass_without_asking_github(gate):
-    for command in ("git status", "git merge origin/main"):
+    for command in (
+        "git status",
+        "git merge origin/main",
+        "gh pr view 7 && git merge origin/main",
+    ):
         assert gate.run(command).returncode == 0
     mention = gate.run('git commit -m "docs: gh pr merge needs a gate"')
     assert mention.returncode == 2
@@ -242,6 +246,13 @@ def test_a_check_that_ran_twice_counts_by_the_run_that_started_last(gate):
     other = {**run("FAILURE", "07:00", "07:01"), "workflowName": "Nightly"}
     gate.pr(checks=[*GREEN, run("SUCCESS", "08:01", "08:02"), other])
     assert gate.run().returncode == 2
+
+    # A rerun still queued has no start time yet and is the newest run.
+    queued = {"name": "title", "workflowName": "PR title", "status": "QUEUED"}
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:00", "08:01"), queued])
+    done = gate.run()
+    assert done.returncode == 2
+    assert "title: queued" in done.stderr
 
 
 def test_a_branch_behind_main_blocks(gate):
@@ -309,6 +320,7 @@ def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate)
     outsider = {
         "user": {"login": "someone"},
         "author_association": "NONE",
+        "created_at": "2026-10-21T11:00:00Z",
         "body": note,
     }
     gate.comments(outsider)
@@ -321,6 +333,14 @@ def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate)
     quoted = {**owner, "body": f"The rule says to post\n{note}"}
     gate.comments(quoted)
     assert gate.run().returncode == 2
+
+    # A Codex state with findings that came after the marker wins over it.
+    findings = gate.codex(gate.head, True, at="12:00")
+    gate.comments(owner, findings)
+    assert gate.run().returncode == 2
+    # A marker after those findings is the review loop limits decision and counts.
+    gate.comments(findings, {**owner, "created_at": "2026-10-21T13:00:00Z"})
+    assert gate.run().returncode == 0
 
 
 ONE_FORM = "the gate takes only"
@@ -350,6 +370,8 @@ ONE_FORM = "the gate takes only"
             ONE_FORM,
         ),
         ("GH pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh -R someone/fork pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh --repo a/b pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("cd ../other && gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh.exe pr merge 7 --squash", ONE_FORM),
         ("gh pr merge 7 --merge --match-head-commit " + "0" * 40, "the PR's head is"),
