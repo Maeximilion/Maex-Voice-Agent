@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
     begin_turn,
@@ -821,7 +822,12 @@ def test_date_the_guest_said_books_nothing_as_a_phone_number(written):
     assert apply_state_patch(state, {"phone": written}) == {}
     call = reservation(guest_name="Müller", phone=written)
     assert refused(state, call).hint == HINT_GUEST_PHONE
-    assert refused(state, callback(written)).hint == HINT_GUEST_PHONE
+    # A callback under a value that is no number counts as one without a
+    # number: refused, and the loop tries the team first (Codex PR #347).
+    assert refused(state, callback(written)).hint in (
+        HINT_GUEST_PHONE,
+        HINT_CALLBACK_PHONE,
+    )
 
 
 @pytest.mark.parametrize(

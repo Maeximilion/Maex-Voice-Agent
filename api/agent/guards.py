@@ -356,7 +356,9 @@ def refusal(
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
-    if not phone and _books_under_a_number(call):
+    # A value that is no phone number ("unbekannt") is none either: it went
+    # past this branch and the transfer was never tried (Codex PR #347).
+    if not e164(phone) and _books_under_a_number(call):
         # The validation would only say "phone: Input should be a valid
         # string", and a real model sent `create_callback` without a number
         # four times in a row instead of asking for one, also on a line that

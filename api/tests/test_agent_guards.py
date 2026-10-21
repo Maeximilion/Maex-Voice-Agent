@@ -784,6 +784,10 @@ def test_state_patch_drops_facts_from_a_tool_result():
         ),
         (ToolCall("create_callback", {"reason": "out_of_scope"}), HINT_CALLBACK_PHONE),
         (
+            ToolCall("create_callback", {"phone": "unbekannt", "reason": "x"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (
             ToolCall("create_reservation", {"guest_name": None, "party_size": 2}),
             HINT_GUEST_PHONE,
         ),
