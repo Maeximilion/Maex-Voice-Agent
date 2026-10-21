@@ -243,7 +243,10 @@ PATH="${PATH//:$here:/:}"
 PATH="${PATH#:}"
 export PATH="${PATH%:}"
 source "$LIB"
-BACKUP_PG_CLIENT=auto
+# Always the client of the image: a local client of another major version
+# (the CI runner brought Postgres 18 next to the 16 server) is refused when
+# the test asks for "local", and "auto" would bypass this stand-in.
+BACKUP_PG_CLIENT=docker
 pg_resolve_client
 pg "$tool" "$@"
 status=$?
