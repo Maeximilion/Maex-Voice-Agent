@@ -125,7 +125,7 @@ services:
       # The view's proxy secret is for the API and Caddy only.
       GUI_PROXY_SECRET: ""
     # Not root, from the start (docs/01 open points): it reads its mounts and
-    # writes nothing there.
+    # writes nothing there but the sentences into /announcements.
     user: "10001:10001"
     # One worker: the live calls are held in this process (api/telephony/app.py).
     command:
@@ -147,6 +147,7 @@ services:
       - ./api:/app/api
       - ./prompts:/app/prompts
       - ./deploy/speech/run/models:/models:ro
+      - announcements:/announcements
     # Whisper on the graphics card (VOICE_EAR_DEVICE=cuda, the workbench's).
     # ponytail: asked for on every host that runs the profile; one without a
     # graphics card needs `deploy: !reset {}` in its own Compose file.
@@ -194,6 +195,7 @@ services:
     volumes:
       - ./deploy/asterisk/conf:/templates/conf:ro
       - ./deploy/asterisk/render.sh:/templates/render.sh:ro
+      - announcements:/announcements:ro
     # Healthy only while registered at the access: booted but not registered,
     # no call reaches the AI telephone, and `docker compose ps` should say so
     # (Codex on PR #297).
@@ -259,3 +261,12 @@ volumes:
   pgdata:
   n8ndata:
   pushdata:
+  # The sentences after a team leg nobody answered (T-10.8): `voice` renders
+  # them at its start, Asterisk plays them, also while `voice` is down
+  # (api/telephony/app.py `announce`). Nothing secret in them; in memory, kept
+  # while either of the two runs, and rendered again at every start.
+  announcements:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=4m,uid=10001,gid=10001,mode=0755"

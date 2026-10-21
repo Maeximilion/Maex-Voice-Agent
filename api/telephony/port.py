@@ -56,7 +56,10 @@ class CallEvents(Protocol):
     """What the line reports of its calls. The events of one call come one
     after another, never two at once (`CallSession` reports them on the call's
     worker): the handler uses a call's database session on the thread that
-    reports. Events of different calls may come at the same time."""
+    reports. Events of different calls may come at the same time. Not so
+    `on_team_missed`: it comes from the dialplan on another thread, also while
+    `on_call_ended` of the same call still runs, and uses no session of the
+    call."""
 
     def on_call_started(self, session_id: str) -> None:
         """A call was picked up. Called again for the same session on a retry."""
@@ -87,4 +90,11 @@ class CallEvents(Protocol):
         """The line is gone: the caller hung up, or the line closed it after
         our hangup or transfer. Reported once for every call, also after a
         failure; the core closes its call log on it."""
+        ...
+
+    def on_team_missed(self, session_id: str) -> bool:
+        """Nobody answered the team leg of a call we handed on, after its end
+        was reported: a callback card for the team (docs/20 §5, T-10.8). True
+        only once the card is written, so the caller may hear that the
+        restaurant calls back. Never raises."""
         ...

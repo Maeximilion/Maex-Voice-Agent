@@ -43,11 +43,18 @@ def end_call(
 
     call.ended_at = now
     call.duration_seconds = max(0, round((now - call.started_at).total_seconds()))
-    call.outcome = req.outcome
+    # An outcome set before the log: the team leg nobody answered was reported
+    # while our leg's log was still being written (`callbacks.team_missed`).
+    # An error wins, as it does there: outages are counted by it.
+    call.outcome = (
+        req.outcome if req.outcome == "error" else call.outcome or req.outcome
+    )
     call.intent = req.intent
     call.cost_cents = req.cost_cents
     call.model = req.model
     session.commit()
     return CallEnded(
-        call_id=call.id, duration_seconds=call.duration_seconds, outcome=call.outcome
+        call_id=call.id,
+        duration_seconds=call.duration_seconds,
+        outcome=cast(Outcome, call.outcome),
     )

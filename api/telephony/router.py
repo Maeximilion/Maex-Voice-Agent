@@ -8,8 +8,11 @@
   is TEAM_PHONE or on TRANSFER_TARGETS of the dialplan, else TEAM_PHONE, and
   anything else, an empty answer or none at all, rings the team (CLAUDE.md §2
   rule 5, docs/20 §5).
+- `/calls/{call_id}/missed`: nobody answered the team leg at TEAM_PHONE. A
+  callback card is written; "noted" once it is, "none" otherwise, and the
+  dialplan tells the caller which (docs/20 §5, T-10.8).
 
-Both want the media token as the password of Basic credentials. A call is named
+All three want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
 media channel as an inherited variable, which `MEDIA_START` reports
 (`adapters.asterisk.call_of`), and asks by it.
@@ -56,6 +59,14 @@ def ending(call_id: str, request: Request) -> str:
     if not voice.authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=401)
     return voice.ending(call_id)
+
+
+@router.post("/calls/{call_id}/missed", response_class=PlainTextResponse)
+def missed(call_id: str, request: Request) -> str:
+    voice = _voice(request.app)
+    if not voice.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
+    return "noted" if voice.missed(call_id) else "none"
 
 
 @router.websocket("/media")
