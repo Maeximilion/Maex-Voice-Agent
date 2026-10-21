@@ -1,7 +1,7 @@
 # 12 – Claude-Code-Playbooks
 
 > Nicht jede Session ist gleich. Zehn wiederkehrende Situationen, jede mit festem Ablauf.
-> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, `/handover`.
+> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate`, `/handover`.
 
 ---
 
@@ -111,6 +111,7 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 ```text
 /done      → ponytail review on code diffs, tests, lint, set status in 07, update 01_STATUS,
              commit, push and open the PR without asking
+/ship 351 → drive the PR through CI, review rounds and the merge gate to its merge
 /handover  → Übergabeblock nach PCF Abschnitt 12, für den Chat oder die nächste Session
 ```
 
