@@ -500,9 +500,9 @@ def test_waechter_faden_ueberlebt_einen_fehler(caplog):
             pass
 
         def execute(self, *a, **k):
-            raise RuntimeError("DB weg")
+            raise RuntimeError("DB gone")
 
         scalars = scalar = execute
 
     watch_forever(Once(), 0, session_factory=Broken)
-    assert "Waechter abgebrochen" in caplog.text
+    assert "Watchdog pass aborted" in caplog.text

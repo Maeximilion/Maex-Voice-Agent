@@ -1,13 +1,12 @@
-"""Prozess des kalten Pfads: Dispatcher Richtung n8n plus Waechter fuer den Kuechenbon.
+"""Cold-path process: the dispatcher towards n8n plus the watchdog for the kitchen slip.
 
-`python -m api.jobs.cold_path` (docker-compose, Dienst `dispatcher`). Der Waechter
-gehoert zur Fachlogik (domain/ordering/handover.py), der Dispatcher zu events/;
-hier werden beide zusammengesteckt, damit events/ die Fachlogik nicht kennen muss.
+`python -m api.jobs.cold_path` (docker-compose, service `dispatcher`). The watchdog
+belongs to the domain logic (domain/ordering/handover.py), the dispatcher to events/;
+both are wired together here so that events/ does not have to know the domain logic.
 
-Der Waechter laeuft in einem eigenen Faden mit eigenem Takt. Haengt n8n, braucht
-ein Durchlauf des Dispatchers bis zu 20 x 10 s Timeout - im selben Takt waere
-die Karte genau waehrend eines zweiten Ausfalls minutenlang gruen geblieben
-(Codex PR #143).
+The watchdog runs in its own thread with its own cadence. If n8n hangs, one pass of
+the dispatcher takes up to 20 x 10 s of timeout - on the same cadence the card would
+have stayed green for minutes during exactly a second outage (Codex PR #143).
 """
 
 import logging
@@ -39,14 +38,14 @@ def watch_forever(
     session_factory: Callable[[], Session] = SessionLocal,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> None:
-    """Waechter-Schleife. Ein Fehler beendet nur den Durchlauf, nie den Faden."""
+    """Watchdog loop. An error ends only the pass, never the thread."""
     while not stop.is_set():
         session = session_factory()
         try:
             sweep(session, clock())
-        except Exception as exc:  # noqa: BLE001 - der Waechter darf nie sterben
+        except Exception as exc:  # noqa: BLE001 - the watchdog must never die
             session.rollback()
-            log(logger, logging.ERROR, "Waechter abgebrochen", error=str(exc))
+            log(logger, logging.ERROR, "Watchdog pass aborted", error=str(exc))
         finally:
             session.close()
         stop.wait(interval)

@@ -1,131 +1,131 @@
-# 16 – GitHub-Project
+# 16 – GitHub Project
 
-> Das Board auf GitHub ist eine **Ableitung**, keine Handarbeit. Es zeigt den Stand, den Issues und Pull Requests ohnehin schon haben.
-> Version 1.1 · 24.09.2026
-
----
-
-## 1. Die Regel in einem Satz
-
-**Waehrend der Arbeit fasst niemand das Board an.** Der Status bewegt sich durch Ereignisse, die GitHub selbst ausloest; alles andere faellt einmal taeglich in einem Bericht auf.
-
-Warum das so ist: Ein Board, das mitten in einer Aufgabe von Hand oder vom Agenten beschrieben wird, sammelt Dopplungen und Rauschen. Jede Aenderung kostet Kontext und bringt keinen Meter Code voran. Und ein Eintrag, der auf `Done` steht, bevor etwas gemerged wurde, sagt schlicht die Unwahrheit.
+> The board on GitHub is a **derivation**, not manual work. It shows the state that issues and pull requests already have.
+> Version 1.2 · 21.10.2026
 
 ---
 
-## 2. Ein Project, kein zweites
+## 1. The rule in one sentence
 
-**Es gibt genau ein Project.** Mehrere Boards fuer ein Repo und eine Person erzeugen nur Dopplungen: derselbe Vorgang steht an zwei Stellen und beide gehen auseinander.
+**During work, nobody touches the board.** The status moves through events that GitHub itself triggers; everything else shows up once a day in a report.
 
-Was wie ein zweites Project aussieht, ist immer eine **View**. Views kosten nichts, teilen dieselben Daten und lassen sich nicht widersprechen:
+Why: a board that is written to by hand or by the agent in the middle of a task collects duplicates and noise. Every change costs context and moves no code forward. And an entry that stands on `Done` before anything was merged simply tells an untruth.
 
-| View | Typ | Zeigt |
+---
+
+## 2. One project, no second one
+
+**There is exactly one project.** Several boards for one repo and one person only create duplicates: the same item stands in two places and the two drift apart.
+
+What looks like a second project is always a **view**. Views cost nothing, share the same data and cannot contradict each other:
+
+| View | Type | Shows |
 |---|---|---|
-| Board | Board nach Status | Der Arbeitsfluss: Todo, In progress, Done |
-| Aktuelle Iteration | Tabelle | Was gerade dran ist |
-| Backlog | Tabelle, nach Prioritaet | Offen, noch keiner Iteration zugeordnet |
-| Roadmap | Roadmap | Die Stufen ueber die Zeit. Monat oder Quartal ist eine Einstellung dieser View, kein eigenes Project |
-| In Review | Tabelle | Pull Requests, die auf Review warten |
+| Board | Board by status | The work flow: Todo, In progress, Done |
+| Current iteration | Table | What is on right now |
+| Backlog | Table, by priority | Open, not yet assigned to an iteration |
+| Roadmap | Roadmap | The stages over time. Month or quarter is a setting of this view, not a separate project |
+| In Review | Table | Pull requests waiting for review |
 
-Wenn eine Sicht fehlt: eine View anlegen, niemals ein Project.
+If a view is missing: create a view, never a project.
 
-**Das Project ist Nummer 2, `Maex Voice-Agent`** (`https://github.com/users/Maeximilion/projects/2`). Am 24.09.2026 zusammengefuehrt: Nummer 3 war eine vollstaendige Teilmenge von 2 (77 Issues, kein einziger eigener Eintrag), Nummer 1 und 4 waren leer. Alle drei sind geschlossen, nicht geloescht - sie lassen sich wieder oeffnen, falls je etwas fehlt.
+**The project is number 2, `Maex Voice-Agent`** (`https://github.com/users/Maeximilion/projects/2`). Merged on 24.09.2026: number 3 was a complete subset of 2 (77 issues, not a single entry of its own), numbers 1 and 4 were empty. All three are closed, not deleted - they can be reopened if anything is ever missing.
 
 ---
 
-## 3. Felder
+## 3. Fields
 
-| Feld | Typ | Woher der Wert kommt |
+| Field | Type | Where the value comes from |
 |---|---|---|
-| Status | Single Select | Eingebaute Workflows (Abschnitt 4). Nie von Hand |
-| Stufe | Single Select `stufe-0` bis `stufe-5` | Label des Issues, beim Anlegen gesetzt |
-| Art | Single Select `feature`, `chore`, `docs`, `test`, `refactor` | Label des Issues, genau eines |
-| Prioritaet | Single Select `hoch`, `mittel`, `niedrig` | Label `priority: *` |
-| Iteration | Iteration | Bei der Planung gesetzt, nicht waehrend der Arbeit |
+| Status | Single select | Built-in workflows (section 4). Never by hand |
+| Stufe (stage) | Single select `stufe-0` to `stufe-5` | Label of the issue, set on creation |
+| Art (kind) | Single select `feature`, `chore`, `docs`, `test`, `refactor` | Label of the issue, exactly one |
+| Prioritaet (priority) | Single select `hoch` (high), `mittel` (medium), `niedrig` (low) | Label `priority: *` |
+| Iteration | Iteration | Set during planning, not during work |
 
-**Status steht nur im Feld, nie zusaetzlich als Label.** Zwei Orte fuer dieselbe Wahrheit gehen immer auseinander. Die Labels `status: in-progress` und `status: needs-review` sind deshalb abgeschafft.
+**Status lives only in the field, never additionally as a label.** Two places for the same truth always drift apart. The labels `status: in-progress` and `status: needs-review` are therefore abolished.
 
-Einzige Ausnahme: `status: blocked`. `docs/07_WORKPACKAGES.md` fuehrt "blockiert" als Aufgabenstatus, und diese Datei ist die Quelle der Wahrheit. Das Label spiegelt sie, damit ein blockiertes Arbeitspaket auch ohne Board sichtbar ist.
+The one exception: `status: blocked`. `docs/07_WORKPACKAGES.md` lists "blocked" as a task status, and that file is the source of truth. The label mirrors it so that a blocked work package is visible even without the board.
 
 Dropped and paused work (06.10.2026): a pull request cannot be deleted, only closed, so the list grows. Work that is dropped on purpose (a Python or Postgres major bump that stays out for compatibility, a feature that was decided against) gets the existing label `wontfix` on its closed pull request or issue. Work that is only paused is not a label: it stays an open issue on the board in `Todo`, because a second "parked" place would drift from the Status field. The pull request list is read with `is:pr is:open`.
 
 ---
 
-## 4. Wie der Status sich bewegt
+## 4. How the status moves
 
-Einmalig in den Project-Einstellungen unter "Workflows" eingeschaltet, danach ohne Zutun:
+Switched on once in the project settings under "Workflows", after that without further action:
 
-| Ereignis | Folge |
+| Event | Result |
 |---|---|
-| Issue oder Pull Request geoeffnet | Eintrag wird aufgenommen, Status `Todo` |
-| Pull Request gemerged | Status `Done` |
-| Issue geschlossen | Status `Done` |
-| Eintrag wieder geoeffnet | Status `In Progress` |
+| Issue or pull request opened | Entry is added, status `Todo` |
+| Pull request merged | Status `Done` |
+| Issue closed | Status `Done` |
+| Entry reopened | Status `In Progress` |
 
-Damit der Merge das verknuepfte Issue mitnimmt, traegt **jede** Pull-Request-Beschreibung ein Schluesselwort: `Closes #12`. Ohne das schliesst der Merge nur den Pull Request und das Issue bleibt offen stehen.
+So that the merge takes the linked issue along, **every** pull request description carries a keyword: `Closes #12`. Without it the merge closes only the pull request and the issue stays open.
 
-`Done` entsteht ausschliesslich hier. Nicht vorher, nicht von Hand, nicht durch Claude Code.
+`Done` arises exclusively here. Not earlier, not by hand, not through Claude Code.
 
 ---
 
-## 5. Die taegliche Pflege
+## 5. The daily maintenance
 
-`.github/workflows/project-maintenance.yml` laeuft einmal taeglich um 03:00 UTC und ruft `scripts/project_report.py --fix` auf. Der Lauf korrigiert genau eine Sorte Fehler selbst und meldet alles andere in der Job-Zusammenfassung.
+`.github/workflows/project-maintenance.yml` runs once a day at 03:00 UTC and calls `scripts/project_report.py --fix`. The run corrects exactly one kind of error itself and reports everything else in the job summary.
 
-**Korrigiert wird:** was erledigt ist (Issue `CLOSED`, Pull Request `MERGED`), das Board aber nicht auf `Done` fuehrt. Ein Pull Request, der ohne Merge geschlossen wurde, hat ebenfalls den Zustand `CLOSED`, ist aber nicht erledigt - er wird nie automatisch auf `Done` gesetzt. Das ist die Luecke, die die eingebauten Workflows hinterlassen, denn sie greifen nur bei neuen Ereignissen und nie rueckwirkend. Die Korrektur ist idempotent und zieht das Board nur zur Wahrheit hin, nie davon weg.
+**Corrected:** what is done (issue `CLOSED`, pull request `MERGED`) but the board does not show as `Done`. A pull request that was closed without a merge also has the state `CLOSED` but is not done - it is never set to `Done` automatically. This is the gap the built-in workflows leave, because they act only on new events and never retroactively. The correction is idempotent and only pulls the board toward the truth, never away from it.
 
-**Nachgetragen wird**, bei Pull Requests und nur in leere Felder:
+**Filled in**, for pull requests and only into empty fields:
 
-| Feld | Wert |
+| Field | Value |
 |---|---|
-| Start date | Tag, an dem der Pull Request eroeffnet wurde |
-| Target date | Tag des Merge, bei ohne Merge geschlossenen der Tag des Schliessens |
-| Iteration, Quarter | der Zeitraum, in dem der Pull Request eroeffnet wurde - keiner, wenn der Tag vor oder zwischen den Zeitraeumen liegt |
+| Start date | Day the pull request was opened |
+| Target date | Day of the merge; for one closed without a merge, the day it was closed |
+| Iteration, Quarter | The period in which the pull request was opened - none if the day falls before or between the periods |
 
-Tage gelten nach Berliner Zeit. Was von Hand gesetzt ist, bleibt stehen. Issues bekommen nichts davon: bei ihnen ist die Iteration Planung, keine Tatsache.
+Days are counted in Berlin time. What was set by hand stays. Issues get none of this: for them the iteration is planning, not fact.
 
-Dazu setzt `scripts/pr_metadata.py` an jedem Pull Request ohne Assignee den Repo-Eigentuemer ein und an jedem ohne Label das Typ-Label aus dem Titel (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Ohne erkennbaren Typ bleibt das Label leer - lieber keins als ein geratenes.
+In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one.
 
-**Nur gemeldet wird** alles, was eine Entscheidung braucht:
+**Only reported** is everything that needs a decision:
 
-- offene Issues und Pull Requests des Repos, die auf dem Board fehlen - falls die automatische Aufnahme etwas verpasst hat. Verglichen wird die URL, nicht die Nummer
-- offen, steht aber auf `Done` - ein wieder geoeffneter Eintrag, den der Workflow nicht zurueckgesetzt hat
-- Pull Request ohne Merge geschlossen und nicht auf `Done` - ob archivieren oder stehen lassen, entscheidet `/project`
-- archiviert, aber wieder offen - wird zurueckgeholt, nicht neu angelegt. Ausgenommen sind archivierte Dopplungen: steht ein aktiver Eintrag mit derselben URL auf dem Board, bleibt die Kopie im Archiv. Archivierte Eintraege zaehlen beim Abgleich mit dem Repo als vorhanden, in allen anderen Pruefungen nicht
-- derselbe Vorgang zweimal auf dem Board
-- Eintraege ohne Status
-- Eintraege in Arbeit ohne Iteration (bewusst nicht der ganze Backlog, sonst meldet der Bericht taeglich alles)
-- `In Progress` seit sieben Tagen ohne Bewegung — wird gemeldet, nicht verschoben
+- open issues and pull requests of the repo that are missing on the board - in case the automatic intake missed something. The URL is compared, not the number
+- open, but on `Done` - a reopened entry that the workflow did not reset
+- pull request closed without a merge and not on `Done` - whether to archive or leave it is decided by `/project`
+- archived, but open again - it is brought back, not created anew. Archived duplicates are excepted: if an active entry with the same URL is on the board, the copy stays in the archive. Archived entries count as present when matching against the repo, but not in any other check
+- the same item twice on the board
+- entries without a status
+- entries in progress without an iteration (deliberately not the whole backlog, otherwise the report would list everything daily)
+- `In Progress` for seven days without movement — reported, not moved
 
-**Archiviert wird nie automatisch.** Fuer ein Portfolio ist sichtbare, erledigte Arbeit in der Roadmap ein Wert und kein Ballast. Wer aufraeumen will, startet den Lauf von Hand mit dem Schalter `archive`; dann verschwinden `Done`-Eintraege, die seit vierzehn Tagen unbewegt sind - aber nur abgeschlossene. Ein offener Eintrag auf `Done` wird nie archiviert, und was derselbe Lauf eben erst auf `Done` gesetzt hat, gilt als frisch bewegt.
+**Nothing is ever archived automatically.** For a portfolio, visible finished work in the roadmap is an asset and not ballast. Whoever wants to tidy up starts the run by hand with the `archive` switch; then `Done` entries that have not moved for fourteen days disappear - but only finished ones. An open entry on `Done` is never archived, and what the same run has just set to `Done` counts as freshly moved.
 
-### Das Entscheidungs-Issue
+### The decision issue
 
-Die Job-Zusammenfassung liest niemand von selbst. Darum sammelt der Lauf alles, was er nicht selbst entscheiden kann, in genau einem Issue mit dem Label `projektpflege` (`scripts/decision_issue.py`):
+Nobody reads the job summary on their own. So the run collects everything it cannot decide itself in exactly one issue with the label `projektpflege` (project maintenance, `scripts/decision_issue.py`):
 
-- **Anlegen**, sobald etwas offen ist - mit Erwaehnung, damit die Benachrichtigung ankommt.
-- **Aktualisieren** jeden Tag, ohne erneute Erwaehnung. Eine Erwaehnung gibt es nur, wenn ein neuer Punkt dazukommt, und dann nur fuer diesen.
-- **Schliessen**, sobald nichts mehr offen ist - und beim naechsten offenen Punkt **wieder oeffnen**, mit Erwaehnung. Es entsteht nie ein zweites Issue.
+- **Create** as soon as something is open - with a mention, so the notification arrives.
+- **Update** every day, without a new mention. A mention happens only when a new item is added, and then only for that one.
+- **Close** as soon as nothing is open any more - and **reopen** it at the next open item, with a mention. A second issue is never created.
 
 Since T-0.11 (15.10.2026) the same issue also carries the section "README images": the run checks the images on `main` and the uploaded social preview first, without `PROJECT_TOKEN`, and hands its findings to `decision_issue.py --also`. When a findings file is missing because its step failed, the run is partial: it rewrites only the sections of the files it has and never closes the issue (`docs/15_README_STRATEGY.md`, "Keeping them current").
 
-Das Issue schreibt der eingebaute `GITHUB_TOKEN`, nicht der `PROJECT_TOKEN`. Der Grund ist eine Eigenheit von GitHub: eine Erwaehnung, die vom eigenen Konto kommt, loest keine Benachrichtigung aus. Kommt sie von `github-actions`, schon.
+The issue is written by the built-in `GITHUB_TOKEN`, not the `PROJECT_TOKEN`. The reason is a quirk of GitHub: a mention that comes from your own account triggers no notification. If it comes from `github-actions`, it does.
 
-### Einrichtung
+### Setup
 
-Der `GITHUB_TOKEN` einer Action darf kontoeigene Projects nicht lesen. Es braucht einmalig:
+The `GITHUB_TOKEN` of an action may not read account-owned projects. One-time setup:
 
-1. Token anlegen, entweder
-   - klassisch unter `https://github.com/settings/tokens/new`, Scopes **`project`** und **`repo`** (einfachster Weg), oder
-   - fine-grained, Resource owner = eigenes Konto, Repository access = dieses Repo, dann unter **Account permissions** **Projects: Read and write** und unter **Repository permissions** **Issues** und **Pull requests** jeweils lesend
+1. Create a token, either
+   - classic at `https://github.com/settings/tokens/new`, scopes **`project`** and **`repo`** (simplest way), or
+   - fine-grained, resource owner = own account, repository access = this repo, then under **Account permissions** **Projects: Read and write** and under **Repository permissions** **Issues** and **Pull requests**, each read-only
 
-   Das Repo-Recht ist kein Beiwerk: ohne es liefert GitHub jeden Board-Eintrag eines privaten Repos mit leerem Inhalt, also ohne Nummer und Zustand. Das Skript bricht dann ab, statt still nichts zu tun (erster Lauf 24.09.2026).
-2. Im Repo als Secret `PROJECT_TOKEN` hinterlegen
-3. Im Repo als Variable `PROJECT_NUMBER` die Nummer aus der Project-URL hinterlegen
+   The repo permission is not an extra: without it GitHub returns every board entry of a private repo with empty content, so without number and state. The script then aborts instead of silently doing nothing (first run 24.09.2026).
+2. Store it in the repo as the secret `PROJECT_TOKEN`
+3. Store the number from the project URL in the repo as the variable `PROJECT_NUMBER`
 
-Beides ist seit 24.09.2026 eingerichtet (`PROJECT_NUMBER` = 2). Das Repo fuer den Abgleich offener Eintraege liest der Lauf in der Action aus `GITHUB_REPOSITORY`; lokal kommt es aus `PROJECT_REPO`. Fehlt beides, sagt der Bericht ausdruecklich, dass er nicht nach fehlenden Eintraegen gesucht hat. Laeuft der Token ab, faellt der taegliche Lauf rot aus - das ist gewollt, ein stilles Aussetzen waere schlimmer.
+Both have been set up since 24.09.2026 (`PROJECT_NUMBER` = 2). The repo for the comparison of open entries is read by the run in the action from `GITHUB_REPOSITORY`; locally it comes from `PROJECT_REPO`. If both are missing, the report says explicitly that it did not look for missing entries. If the token expires, the daily run turns red - this is intended, a silent pause would be worse.
 
-Lokal derselbe Lauf:
+The same run locally:
 
 ```bash
 PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJECT_REPO=Maeximilion/Maex-Voice-Agent python scripts/project_report.py
@@ -133,27 +133,27 @@ PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJEC
 
 ---
 
-## 6. Was Claude Code darf
+## 6. What Claude Code may do
 
-| | Erlaubt |
+| | Allowed |
 |---|---|
-| Waehrend `/task`, `/done`, `/bug` | Nichts. Kein `gh project`, weder lesend noch schreibend |
-| Beim Anlegen eines Issues | Labels setzen: Art, Stufe, Prioritaet |
-| Beim Oeffnen eines Pull Requests | `Closes #N` in die Beschreibung, Branchname mit Issue-Nummer |
-| Auf `/project` oder in `/gate` | Board lesen und pflegen. Mechanische Korrekturen (Status nach Merge, fehlende Eintraege, Dopplungen - die ueberzaehlige wird archiviert, nie geloescht) direkt, Ermessensfragen (Iteration, Archiv, neue Views) als Vorschlag |
+| During `/task`, `/done`, `/bug` | Nothing. No `gh project`, neither reading nor writing |
+| When creating an issue | Set labels: kind, stage, priority |
+| When opening a pull request | `Closes #N` in the description, branch name with the issue number |
+| On `/project` or in `/gate` | Read and maintain the board. Mechanical corrections (status after merge, missing entries, duplicates - the surplus one is archived, never deleted) directly, matters of judgment (iteration, archive, new views) as a proposal |
 
-Grundlage ist Maxis stehende Freigabe vom 24.09.2026: Claude raeumt das Board selbst auf und haelt es aktuell - aber nur ausserhalb der Arbeit an einer Aufgabe. Loeschen von Projects, Eintraegen oder Feldern bleibt ausgenommen.
+The basis is Maxi's standing approval of 24.09.2026: Claude tidies the board itself and keeps it current - but only outside work on a task. Deleting projects, entries or fields stays excluded.
 
-Die Verbindung zwischen Arbeit und Board entsteht ueber Schluesselwoerter und Branchnamen, nicht ueber API-Aufrufe. Branchname traegt die Nummer: `task/T-4.3-search-menu` oder `fix/12-kurzbeschreibung`.
+The connection between work and board arises through keywords and branch names, not through API calls. The branch name carries the number: `task/T-4.3-search-menu` or `fix/12-short-description`.
 
 ---
 
-## 7. Verwandte Dateien
+## 7. Related files
 
-| Datei | Bezug |
+| File | Relation |
 |---|---|
-| `docs/07_WORKPACKAGES.md` | Quelle der Wahrheit fuer Aufgaben und Abhaengigkeiten. Das Board spiegelt sie |
-| `docs/01_STATUS.md` | Wo das Projekt steht. Nicht das Board |
-| `scripts/project_report.py` | Die taegliche Pruefung |
-| `.github/workflows/project-maintenance.yml` | Der taegliche Lauf |
-| `.claude/skills/github-project/SKILL.md` | Dieselbe Regel fuer Claude Code |
+| `docs/07_WORKPACKAGES.md` | Source of truth for tasks and dependencies. The board mirrors it |
+| `docs/01_STATUS.md` | Where the project stands. Not the board |
+| `scripts/project_report.py` | The daily check |
+| `.github/workflows/project-maintenance.yml` | The daily run |
+| `.claude/skills/github-project/SKILL.md` | The same rule for Claude Code |

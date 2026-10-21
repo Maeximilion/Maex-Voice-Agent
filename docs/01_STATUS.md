@@ -596,6 +596,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.7.0 · 21.10.2026:** Merge gate hook, /ship command, parallel-work and eval comparison rules (insights review)
+- **v2.6.3 · 21.10.2026:** English sweep of small German leftovers: status_bump tests, issue templates, config comments, GitHub Project doc, printbridge README, cold_path (issue #324)
 - **v2.6.2 · 21.10.2026:** CLAUDE.md: review loop limits, Claude decides on P2-only PRs after 3 rounds (#351)
 - **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the three critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
 - **v2.6.0 · 20.10.2026:** T-10.8 done: a team leg nobody answers at TEAM_PHONE becomes a callback card, and a caller the AI answered hears so; outside the opening hours nobody is rung (D25)

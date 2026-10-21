@@ -1,63 +1,63 @@
-name: Fehler melden
-description: Ein Fehler im Betrieb oder in der Entwicklung
+name: Report a bug
+description: A bug in operation or in development
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Sicherheitslücken bitte nicht hier melden, sondern nach `SECURITY.md`.
-        Keine echten Kundendaten, Rufnummern oder Adressen eintragen.
+        Please do not report security vulnerabilities here, follow `SECURITY.md`.
+        Do not enter real customer data, phone numbers or addresses.
 
   - type: textarea
     id: was-passiert
     attributes:
-      label: Was passiert
-      description: Beobachtetes Verhalten, mit Fehlermeldung falls vorhanden.
+      label: What happens
+      description: Observed behavior, with the error message if there is one.
     validations:
       required: true
 
   - type: textarea
     id: erwartet
     attributes:
-      label: Was erwartet wurde
+      label: What was expected
     validations:
       required: true
 
   - type: textarea
     id: nachstellen
     attributes:
-      label: Schritte zum Nachstellen
-      description: Aufruf, Eingabe, Uhrzeit. Bei einem Tool-Aufruf die Anfrage ohne Zugangsdaten.
+      label: Steps to reproduce
+      description: Call, input, time. For a tool call, the request without credentials.
       placeholder: |
-        1. POST /v1/tools/check_slot mit ...
-        2. Antwort war ...
+        1. POST /v1/tools/check_slot with ...
+        2. Response was ...
     validations:
       required: true
 
   - type: dropdown
     id: bereich
     attributes:
-      label: Bereich
+      label: Area
       options:
-        - Agent-API und Tools
-        - Fachlogik
-        - Datenbank und Migrationen
-        - Oberfläche
-        - Automatisierung und Ereignisse
-        - Betrieb und Deployment
-        - unklar
+        - Agent API and tools
+        - Domain logic
+        - Database and migrations
+        - User interface
+        - Automation and events
+        - Operations and deployment
+        - unclear
     validations:
       required: true
 
   - type: input
     id: stand
     attributes:
-      label: Stand
-      description: Commit, Tag oder Datum des Laufs.
+      label: Version
+      description: Commit, tag or date of the run.
 
   - type: textarea
     id: log
     attributes:
-      label: Log-Auszug
-      description: Die entscheidenden Zeilen, nicht das ganze Log. Zugangsdaten vorher entfernen.
+      label: Log excerpt
+      description: The relevant lines, not the whole log. Remove credentials first.
       render: text
