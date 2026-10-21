@@ -900,6 +900,8 @@ def test_the_core_sentence_word_for_word_is_the_only_booking_a_model_says():
 
 def test_without_a_booking_every_booking_word_is_refused():
     assert false_booking(new_state(), "Ihre Bestellung ist bestätigt.") is not None
+    # The core's own wording, said by the model (Codex PR #347).
+    assert false_booking(new_state(), "Ihre Bestellung ist aufgegeben.") is not None
     assert false_booking(new_state(), BOOKED) is not None
 
 
