@@ -108,21 +108,36 @@ class Settings(BaseSettings):
     call_log_retention_days: int | None = None
 
     @model_validator(mode="after")
-    def _production_needs_a_real_token(self) -> Self:
+    def _production_needs_real_tokens(self) -> Self:
         """Refuse to start outside dev and test on a token anyone can know.
 
-        The token is all that stands between the network and the write tools.
-        A server set up from .env.example with the line left as it is, or left
-        out, would otherwise run on a value that is printed in this repository.
+        The agent token is all that stands between the network and the write
+        tools. A server set up from .env.example with the line left as it is,
+        or left out, would otherwise run on a value printed in this repository.
+        The kitchen token is offered to the internet by the proxy
+        (/v1/kitchen/*), and the n8n password guards the webhook; both get the
+        same rule when they are in use (security audit of 15.10.2026, #252
+        finding 5). The values themselves stay out of the messages: they end
+        up in a log.
         """
-        token = self.agent_api_token
-        if self.env not in LOCAL_ENVS and not valid_production_token(token):
-            # The value itself stays out of the message: it ends up in a log.
-            raise ValueError(
-                "AGENT_API_TOKEN is the placeholder, contains whitespace, or is "
-                f"shorter than {TOKEN_MIN_LENGTH} characters; set a random one in .env "
-                "(openssl rand -hex 32)"
-            )
+        if self.env in LOCAL_ENVS:
+            return self
+        rule = (
+            f"is the placeholder, contains whitespace, or is shorter than "
+            f"{TOKEN_MIN_LENGTH} characters; set a random one in .env "
+            "(openssl rand -hex 32)"
+        )
+        if not valid_production_token(self.agent_api_token):
+            raise ValueError(f"AGENT_API_TOKEN {rule}")
+        kitchen = self.kitchen_bridge_token
+        if kitchen and not valid_production_token(kitchen):
+            raise ValueError(f"KITCHEN_BRIDGE_TOKEN {rule}")
+        if kitchen == self.agent_api_token:
+            raise ValueError("KITCHEN_BRIDGE_TOKEN must differ from AGENT_API_TOKEN")
+        if self.n8n_basic_auth_user and not valid_production_token(
+            self.n8n_basic_auth_password
+        ):
+            raise ValueError(f"N8N_BASIC_AUTH_PASSWORD {rule}")
         return self
 
 

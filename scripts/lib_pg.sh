@@ -302,6 +302,16 @@ require_passphrase() {
     [ -n "${BACKUP_PASSPHRASE_FILE:-}" ] ||
         die 2 "BACKUP_PASSPHRASE_FILE is not set: the dump holds customer data and is only written encrypted"
     [ -s "$BACKUP_PASSPHRASE_FILE" ] || die 2 "BACKUP_PASSPHRASE_FILE is missing or empty"
+    # Whoever reads the passphrase reads every dump (#252 finding 10). -L: the
+    # mode of the file, not of a link to it. Git Bash on Windows shows every file
+    # as 644 and cannot change it, so the check is for Linux, where backups run.
+    case "$(uname -s)" in
+        MINGW* | MSYS* | CYGWIN*) ;;
+        *)
+            [ -z "$(find -L "$BACKUP_PASSPHRASE_FILE" -prune -perm /077)" ] ||
+                die 2 "BACKUP_PASSPHRASE_FILE is open to group or others; chmod 600 it"
+            ;;
+    esac
     command -v gpg >/dev/null || die 2 "gpg is not on PATH"
     # gpg creates a missing home directory without a lock: of two runs that start
     # together on a fresh machine (the nightly cron and a backup by hand), one dies
