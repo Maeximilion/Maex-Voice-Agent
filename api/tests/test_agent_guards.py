@@ -814,6 +814,8 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Ihr Abholcode ist A12.",
         # The negation of another clause does not cover the claim.
         "Das war nicht schwer, Ihr Tisch ist reserviert.",
+        # Only the asking clause is exempt (Codex PR #347).
+        "Ihre Bestellung ist bestätigt, möchten Sie noch etwas?",
     ],
 )
 def test_a_claimed_booking_before_confirm_is_refused(say):
@@ -841,6 +843,15 @@ def test_after_a_confirm_the_booking_may_be_named():
 
     assert false_booking(state, "Ihr Abholcode ist A12.") is None
     assert false_booking(state, "Das ist gebucht.") is None
+
+
+def test_the_claim_verb_does_not_name_a_table():
+    """ "reserviert" is the claim: after a confirmed order this closing is
+    about the order alone (Codex PR #347)."""
+    state = new_state(booked={"order"})
+
+    assert false_booking(state, "Ihre Abholung ist für 18 Uhr reserviert.") is None
+    assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
 
 
 def test_a_booked_table_is_no_booked_order():

@@ -130,7 +130,9 @@ _NEGATION = re.compile(r"\b(nicht|nichts|kein\w*)\b", re.IGNORECASE)
 # anything the call booked.
 _ABOUT = (
     ("order", re.compile(r"abhol|bestellung", re.IGNORECASE)),
-    ("reservation", re.compile(r"tisch|reserv", re.IGNORECASE)),
+    # Nouns only: "reserviert" is the claim, not what it is about ("Ihre
+    # Abholung ist für 18 Uhr reserviert" is about an order; Codex PR #347).
+    ("reservation", re.compile(r"tisch|reservierung", re.IGNORECASE)),
 )
 
 
@@ -203,21 +205,26 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
 
     A claim word after "nicht", "nichts" or "kein..." in the same clause is
     no claim ("noch nicht bestätigt", "Es ist noch nichts gebucht"), and
-    neither is a question ("Haben Sie bereits reserviert?"): a model that put
-    it that way was refused itself and lost a hop (eval run of 20.10.2026;
-    Codex PR #347). A sentence about an order needs a booked order, one about
+    neither is the clause that asks ("Haben Sie bereits reserviert?"): a
+    model that put it that way was refused itself and lost a hop (eval run of
+    20.10.2026; Codex PR #347). The clauses before it still count: "Ihre
+    Bestellung ist bestätigt, möchten Sie noch etwas?" claims an order. A sentence about an order needs a booked order, one about
     a table a booked table: after a confirmed table "Ihre Abholung ist
     bestätigt" is still refused (Codex PR #347).
 
-    ponytail: by word, not by meaning. A per-draft check if the call log
-    shows the need."""
+    ponytail: by word, not by meaning; a question with a comma before its
+    claim word ("Haben Sie schon, wie besprochen, reserviert?") is refused.
+    A per-draft check if the call log shows the need."""
     for sentence in re.findall(r"[^.!?]+[.!?]*", say):
+        clauses = re.split(r"[,;:]", sentence)
         if sentence.rstrip().endswith("?"):
-            continue
-        for claim in _BOOKING_CLAIM.finditer(sentence):
-            clause = re.split(r"[,;:]", sentence[: claim.start()])[-1]
-            if not _NEGATION.search(clause) and not _booked_for(state, sentence):
-                return _NOT_BOOKED
+            clauses = clauses[:-1]
+        for clause in clauses:
+            for claim in _BOOKING_CLAIM.finditer(clause):
+                if not _NEGATION.search(clause[: claim.start()]) and not _booked_for(
+                    state, sentence
+                ):
+                    return _NOT_BOOKED
     return None
 
 
