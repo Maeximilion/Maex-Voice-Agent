@@ -115,9 +115,9 @@ class Settings(BaseSettings):
         tools. A server set up from .env.example with the line left as it is,
         or left out, would otherwise run on a value printed in this repository.
         The kitchen token is offered to the internet by the proxy
-        (/v1/kitchen/*), and the n8n password guards the webhook; both get the
-        same rule where a service has them (security audit of 15.10.2026, #252
-        finding 5). The values themselves stay out of the messages: they end
+        (/v1/kitchen/*) and gets the same rule when it is set (security audit
+        of 15.10.2026, #252 finding 5); the n8n password is checked by the
+        dispatcher, the one process that has it (api/events/dispatcher.py). The values themselves stay out of the messages: they end
         up in a log.
         """
         if self.env in LOCAL_ENVS:
@@ -134,10 +134,6 @@ class Settings(BaseSettings):
             raise ValueError(f"KITCHEN_BRIDGE_TOKEN {rule}")
         if kitchen == self.agent_api_token:
             raise ValueError("KITCHEN_BRIDGE_TOKEN must differ from AGENT_API_TOKEN")
-        # Compose hands the password to the dispatcher only, the user to all.
-        password = self.n8n_basic_auth_password
-        if password and not valid_production_token(password):
-            raise ValueError(f"N8N_BASIC_AUTH_PASSWORD {rule}")
         return self
 
 

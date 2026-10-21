@@ -102,20 +102,9 @@ def test_production_starts_without_a_bridge_or_with_a_strong_kitchen_token():
     )
 
 
-@pytest.mark.parametrize("password", ["change_me", "short", "k" * 31, " " * 32])
-def test_production_does_not_start_on_a_weak_n8n_webhook_password(password):
-    with pytest.raises(ValidationError, match="N8N_BASIC_AUTH_PASSWORD"):
-        _settings(
-            env="prod",
-            agent_api_token=LONG_ENOUGH,
-            n8n_basic_auth_user="maex",
-            n8n_basic_auth_password=password,
-        )
-
-
-def test_the_n8n_password_is_checked_only_where_a_service_has_it():
+def test_the_api_and_voice_start_with_the_n8n_user_alone():
     """Compose hands every service the user and only the dispatcher the
-    password (#359): the API and voice must start with the user alone."""
+    password (#359); the dispatcher checks it (test_events_dispatcher.py)."""
     assert _settings(env="prod", agent_api_token=LONG_ENOUGH).env == "prod"
     with_user_only = _settings(
         env="prod", agent_api_token=LONG_ENOUGH, n8n_basic_auth_user="maex"
