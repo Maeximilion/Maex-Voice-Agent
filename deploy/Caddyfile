@@ -20,8 +20,14 @@
     basic_auth @gui {
         {$GUI_BASIC_AUTH_USER} {$GUI_BASIC_AUTH_HASH}
     }
-    # The buttons of the view act on one tap; no other page may frame them.
-    header @gui Content-Security-Policy "frame-ancestors 'none'"
+    # No browser guesses a type from content, and no address of the view, which
+    # can carry an order or call id, leaves in a Referer header.
+    header X-Content-Type-Options "nosniff"
+    header Referrer-Policy "no-referrer"
+    # The view loads only its own files (no CDN, no inline code: docs/06 §2,
+    # api/gui/static/base.js), so a future XSS can run nothing and send nothing
+    # elsewhere. The buttons act on one tap; no other page may frame them.
+    header @gui Content-Security-Policy "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
     # Public is what something outside this server needs: the operations view,
     # the print bridge in the restaurant and the health check. The tools and

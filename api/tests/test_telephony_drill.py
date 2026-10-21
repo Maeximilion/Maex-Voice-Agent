@@ -242,12 +242,14 @@ def test_the_strangers_invite_comes_as_the_access_and_reads_the_answers():
 
         worker = threading.Thread(target=answer, daemon=True)
         worker.start()
-        codes = drill.stranger_invite("127.0.0.1", pbx.getsockname()[1], timeout=5)
+        codes = drill.stranger_invite(
+            "127.0.0.1", pbx.getsockname()[1], timeout=5, user="+4972215550114"
+        )
         worker.join(timeout=5)
 
     assert codes == [100, 403]
     assert received[0].startswith(b"INVITE ")
-    assert b"\r\nFrom: <sip:access@" in received[0]
+    assert b"\r\nFrom: <sip:+4972215550114@" in received[0]
 
 
 def test_a_stranger_answered_by_nobody_has_no_codes():
@@ -262,9 +264,30 @@ def test_the_stranger_drill_hangs_up_whatever_got_through(tmp_path):
     stage.compose = lambda *args: "100 200"  # type: ignore[method-assign]
     stage.cli = lambda service, command: clis.append((service, command)) or ""  # type: ignore[method-assign]
 
-    [(_, ok, detail)] = drill.drill_stranger(stage)
-    assert not ok and "100 200" in detail
-    assert clis == [("asterisk", "channel request hangup all")]
+    [(_, ok, detail), (_, number_ok, _)] = drill.drill_stranger(stage)
+    assert not ok and not number_ok and "100 200" in detail
+    assert clis == [("asterisk", "channel request hangup all")] * 2
+
+
+def test_the_stranger_also_calls_with_a_number_the_logs_must_not_show(tmp_path):
+    """#252 finding 12: a refused INVITE must not leave the caller's number in
+    Asterisk's output; the second INVITE carries one, and the log check of
+    every run looks for it."""
+    stage = Stage(tmp_path, {})
+    sent: list[str] = []
+    stage.compose = lambda *args: sent.append(args[-1]) or "100 403"  # type: ignore[method-assign]
+    stage.cli = lambda service, command: ""  # type: ignore[method-assign]
+
+    checks = drill.drill_stranger(stage)
+
+    assert [ok for _, ok, _ in checks] == [True, True]
+    assert "user='access'" in sent[0]
+    assert f"user={drill.STRANGER_NUMBER!r}" in sent[1]
+    stage.logs["asterisk"].append(
+        f"Request 'INVITE' from '<sip:{drill.STRANGER_NUMBER}@x>' failed"
+    )
+    _, ok, detail = stage.no_caller_in_the_logs()
+    assert not ok and detail == "found in asterisk"
 
 
 def test_paused_sets_the_mode_back_when_the_team_never_rings(tmp_path, monkeypatch):
