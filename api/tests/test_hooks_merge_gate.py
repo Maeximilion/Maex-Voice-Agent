@@ -144,17 +144,24 @@ def gate(tmp_path):
             "body": body,
         }
 
-    def run(command: str | None = None):
+    def run(command: str | None = None, folder: Path = checkout):
+        """`folder` is the hook input's cwd, where the command would run."""
         assert BASH is not None  # checked at the top of this fixture
         sha = current["sha"]
         command = (command or "gh pr merge 7 --merge --match-head-commit {sha}").format(
             sha=sha
         )
-        payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
+        payload = json.dumps(
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": command},
+                "cwd": str(folder),
+            }
+        )
         return subprocess.run(
             [BASH, hook.as_posix()],
             input=payload,
-            cwd=checkout,
+            cwd=tmp_path,
             env=env,
             capture_output=True,
             encoding="utf-8",
@@ -205,35 +212,51 @@ def test_a_pending_or_failed_check_blocks(gate):
     assert "no check reported yet" in gate.run().stderr
 
 
-def test_a_check_that_ran_twice_counts_by_its_newest_run(gate):
-    def run(conclusion: str, at: str) -> dict:
+def test_a_check_that_ran_twice_counts_by_the_run_that_started_last(gate):
+    def run(conclusion: str, started: str, completed: str) -> dict:
         return {
             "name": "title",
             "workflowName": "PR title",
             "status": "COMPLETED",
             "conclusion": conclusion,
-            "completedAt": f"2026-10-21T{at}:00Z",
+            "startedAt": f"2026-10-21T{started}:00Z",
+            "completedAt": f"2026-10-21T{completed}:00Z",
         }
 
-    gate.pr(checks=[*GREEN, run("SUCCESS", "08:02"), run("CANCELLED", "08:01")])
+    replaced = run("CANCELLED", "08:00", "08:03")  # cancelled after its successor won
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:01", "08:02"), replaced])
     assert gate.run().returncode == 0
 
-    gate.pr(checks=[*GREEN, run("SUCCESS", "08:01"), run("FAILURE", "08:02")])
+    gate.pr(
+        checks=[
+            *GREEN,
+            run("SUCCESS", "08:00", "08:01"),
+            run("FAILURE", "08:02", "08:03"),
+        ]
+    )
     done = gate.run()
     assert done.returncode == 2
     assert "title: failure" in done.stderr
 
     # The same job name in another workflow is a check of its own.
-    other = {**run("FAILURE", "08:00"), "workflowName": "Nightly"}
-    gate.pr(checks=[*GREEN, run("SUCCESS", "08:02"), other])
+    other = {**run("FAILURE", "07:00", "07:01"), "workflowName": "Nightly"}
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:01", "08:02"), other])
     assert gate.run().returncode == 2
 
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
-    done = gate.run("cd x && gh pr merge 7 --merge --match-head-commit {sha}")
+    done = gate.run()
     assert done.returncode == 2
     assert "behind main" in done.stderr
+
+
+def test_the_gate_checks_the_folder_the_command_runs_in(gate, tmp_path):
+    # Not a clone of the repository: the head cannot be fetched there.
+    (tmp_path / "elsewhere").mkdir()
+    done = gate.run(folder=tmp_path / "elsewhere")
+    assert done.returncode == 2
+    assert "could not be fetched" in done.stderr
 
 
 def test_an_unbumped_head_blocks_except_on_the_weekly_readme_branch(gate):
@@ -327,6 +350,7 @@ ONE_FORM = "the gate takes only"
             ONE_FORM,
         ),
         ("GH pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("cd ../other && gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh.exe pr merge 7 --squash", ONE_FORM),
         ("gh pr merge 7 --merge --match-head-commit " + "0" * 40, "the PR's head is"),
     ],

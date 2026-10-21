@@ -2,7 +2,9 @@
 # PreToolUse gate for `gh pr merge` (CLAUDE.md §6 "Merging a PR into main", /done step 7b).
 # It guards against a forgotten step, not against a session that tries to get around it.
 # Allowlist, not a parser: a command that mentions `gh pr merge` passes only in this form,
-#   [cd <dir> && ]gh pr merge <number> --merge --match-head-commit <full sha> [--delete-branch]
+#   gh pr merge <number> --merge --match-head-commit <full sha> [--delete-branch]
+# and it is checked in the directory the command runs in (the hook input's cwd), where gh
+# resolves the PR too. A cd in front is refused: it could select another repository.
 # so a wrapped call (if, command, env, a subshell, bash -c), another strategy, --auto, a
 # branch name or a mention in a commit message or search is blocked with the form to use.
 # --match-head-commit makes gh refuse the merge once the head moves after this check.
@@ -32,12 +34,13 @@ cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
 # A line continuation must not hide the words from the check.
 continuation=$'\\\n'
 grep -Eqi 'gh(\.exe)?.?[[:space:]]+pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
-form='^[[:space:]]*(cd [^;&|`$()<>[:cntrl:]]+ && )?gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
-[[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (optionally \`cd <dir> && \` before it, --delete-branch after it). A wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
-target=${BASH_REMATCH[2]}
-want=${BASH_REMATCH[3]}
+form='^[[:space:]]*gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
+[[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (--delete-branch after it is allowed), run in the repository's folder. A cd in front, a wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
+target=${BASH_REMATCH[1]}
+want=${BASH_REMATCH[2]}
 
-cd "$(dirname "$0")/../.." || block "- the repository of the hook was not found"
+dir=$(jq -r '.cwd // empty' <<<"$input")
+cd "${dir:-$(dirname "$0")/../..}" || block "- the folder the command runs in was not found: $dir"
 pr=$(gh pr view "$target" --json number,headRefOid,headRefName,baseRefName,statusCheckRollup 2>&1) ||
   block "- gh pr view failed: $pr"
 # Through $(...), not < <(...): Git Bash drops the CR that jq on Windows ends lines with.
@@ -46,11 +49,12 @@ read -r n head branch base <<<"$(jq -r '[.number, .headRefOid, .headRefName, .ba
 [ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
 
-# A check that ran twice on one head (a cancelled run, then a new one) counts by its newest run.
+# A check that ran twice on one head counts by the run that started last: a cancelled run
+# can finish after the run that replaced it.
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
   if (.statusCheckRollup | length) == 0 then "no check reported yet"
   else .statusCheckRollup | group_by([.workflowName // "", .name // .context])
-    | map(sort_by(.completedAt // .startedAt // "") | last)[]
+    | map(sort_by(.startedAt // .completedAt // "") | last)[]
     | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
