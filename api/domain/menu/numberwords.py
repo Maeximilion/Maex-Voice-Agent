@@ -1235,8 +1235,11 @@ def _joined_without_und(tokens: list[str], k: int) -> bool:
         j += 1
     if j >= len(tokens) or not tens_half(tokens[j]) or (j > k + 1 and not paused):
         return False
+    after = j + 1
+    while after < len(tokens) and pause_before_und(tokens[after]):
+        after += 1  # "eine zwanzig äh Portionen"
     quantity = bool(_QUANTITY_SUFFIX.match(tokens[j])) or (
-        j + 1 < len(tokens) and tokens[j + 1] in _QUANTITY_NOUNS
+        after < len(tokens) and tokens[after] in _QUANTITY_NOUNS
     )
     return _first_half(tokens[k]) or (quantity and tokens[k] in ARTICLES)
 

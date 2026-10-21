@@ -1393,3 +1393,13 @@ def test_a_tens_quantity_after_a_unit_and_a_pause_or_after_eine_asks(text):
 )
 def test_a_quantity_after_a_comma_or_a_whole_number_stays(text, quantity):
     assert find_quantity(text) == quantity
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["eine zwanzig äh Portionen Pho", "eine zwanzig, ähm, Portionen Pho"],
+)
+def test_a_pause_before_the_quantity_noun_still_asks_after_eine(text):
+    """Codex on PR #362 (cd49a14): the quantity noun after a pause was not
+    seen, so "eine zwanzig äh Portionen Pho" went to the name search as Pho."""
+    assert sole_item_number(text) == (None, True)
