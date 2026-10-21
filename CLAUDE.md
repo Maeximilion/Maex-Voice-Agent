@@ -145,7 +145,7 @@ Mixed task: take the higher model and the higher effort. The `xhigh` triggers ar
 
 **Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests and Markdown, and `/gate` at every gate where something other than `.md` files changed since the last gate tag. No reminder for Markdown-only work.
 
-**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none. Alerts first (Maxi, 2026-10-21): an open Dependabot alert rated critical, and any open code-scanning alert with a security severity, is fixed before work on a task starts. `/start` then recommends that fix alone instead of tasks, routed by the table like any other change. The fix does not wait for a security audit: the audit is tied to exposure (`docs/09_OPERATIONS_LEGAL.md` section 5) and runs on the fixed state. A Dependabot alert below critical stays a suggestion next to the tasks.
+**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none. A critical or high alert is fixed before any task is picked (Maxi, 2026-10-21): while one is open and no open PR fixes it, `/start` suggests only its fix, in a PR of its own; the security audit of `docs/09_OPERATIONS_LEGAL.md` section 5 does not have to run before it. Whether an open PR fixes an alert is decided by `scripts/alert_fixes.py`, not by eye. A lower Dependabot alert is a pin for the next feature PR, not a choice of its own; a lower code-scanning alert is a suggestion next to the tasks.
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
@@ -187,6 +187,8 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
 
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. When the context fills up (long tool output, many iterations), Claude finishes the current step at a clean point, writes the `/handover` block, commits and pushes everything including the handover edits, and tells Maxi to continue in a new session with it, instead of starting the next large step.
+
 ---
 
 ## 7. Definition of Done
@@ -219,7 +221,7 @@ A task is complete when **all** of these are true:
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
-- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own; a version pin that fixes an alert from "Security alerts" (section 6) is the exception and gets its own PR
+- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own; the one exception is a version pin that fixes a critical or high security alert (section 6 "Security alerts")
 - `main` always stays runnable
 - **Nothing is edited on `main`, and nothing is left behind** (Maxi, 2026-10-14): every change, also one line in a doc, is made on a branch, in a worktree where the session has one, and reaches `main` through a PR. A session never ends with uncommitted changes or a stash: what is not finished is committed on its branch and pushed. Two uncommitted edits in the `main` folder of the Windows clone kept it from being pulled for two days (192 commits behind); the note in them existed on that PC only. Leftovers that are found (uncommitted files in a `main` folder, a stash, a `leftovers/*` branch) are reported, never stashed, reset or deleted without Maxi's word; `/start` lists them at every session start until they are gone
 - **What Maxi wants kept lives in the repository** (Maxi, 2026-10-21): a hook, setting, command or tool that Maxi asks to keep or merge goes into this repository (`.claude/`, `scripts/`) and reaches `main` through a PR. Where it has to stay user-level (`~/.claude`), its copy and restore steps go into `docs/19_CLAUDE_CODE_SETUP.md` in that PR. A usage gate once installed only in the home folder left nothing to merge

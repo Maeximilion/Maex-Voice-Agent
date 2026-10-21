@@ -596,9 +596,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.7.0 · 21.10.2026:** Merge gate hook, /ship command, parallel-work and eval comparison rules (insights review)
+- **v2.6.4 · 21.10.2026:** Alerts-first rule in the wording of PR #348 (critical or high, while no open PR fixes it), chosen by Maxi; a session hands over before its context is compressed; scripts/alert_fixes.py decides whether an open PR into main fixes an alert (dependency-graph compare on the alert's manifest for Dependabot, a fixed instance on the PR's current head or merge commit for code scanning; anything less is a named candidate), called by /start step 5a and the Codex start skill alike; a lower Dependabot alert is a pin for the next feature PR (Codex reviews of 233f1ba, 176e0be, 6d2cc1a and 187c275); 2.6.1 counts two alerts, not three
 - **v2.6.3 · 21.10.2026:** English sweep of small German leftovers: status_bump tests, issue templates, config comments, GitHub Project doc, printbridge README, cold_path (issue #324)
 - **v2.6.2 · 21.10.2026:** CLAUDE.md: review loop limits, Claude decides on P2-only PRs after 3 rounds (#351)
-- **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the three critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
+- **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the two critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
 - **v2.6.0 · 20.10.2026:** T-10.8 done: a team leg nobody answers at TEAM_PHONE becomes a callback card, and a caller the AI answered hears so; outside the opening hours nobody is rung (D25)
 - **v2.5.4 · 21.10.2026:** Codex review of 8617153 on PR #346: the hourly sweep moves to outside-prs-sweep.yml, so a 60-day schedule switch-off leaves the event workflow running
 - **v2.5.3 · 21.10.2026:** Codex review of 50bc363 on PR #346: outside-prs.yml also sweeps open pull requests hourly, since pull_request_target skips some SHA-like branches
