@@ -6,6 +6,7 @@ Gesprächsdauer, der Verlauf schon.
 """
 
 import json
+import re
 import uuid
 from contextlib import suppress
 from typing import Annotated, Any, Literal
@@ -300,6 +301,11 @@ def note_guest_details(state: ConversationState, guest_text: str) -> None:
             state.slots["phone"] = number
 
 
+_ANOTHER = re.compile(
+    r"\b(?:noch|auch|weitere[nmrs]?|zus(?:ä|ae)tzlich|zweite[nmrs]?)\b", re.IGNORECASE
+)
+
+
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
     this one. It only fills an empty `intent`: a word in a later sentence
@@ -316,7 +322,16 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     thing after a booking, keeps the first wish in the state until a tool of
     the other flow drafts. The model reads the change in the sentence itself,
     and from the first menu search on the state carries the order (`cart`)."""
-    if state.intent is not None or (wish := heard(guest_text)) is None:
+    wish = heard(guest_text)
+    if wish is not None and _ANOTHER.search(guest_text):
+        # "Ich möchte noch eine Pizza bestellen" after a confirmed order: the
+        # first order's booking does not speak for the second (Codex PR #347).
+        # Only with a word for another one: "ich hole es dann ab" after the
+        # confirm is no new order.
+        state.booked.discard("order" if wish == "pickup" else "reservation")
+        if wish == "pickup":
+            state.pickup_code = None
+    if state.intent is not None or wish is None:
         return
     # An order outranks table details, and those a search that may have been
     # only a question about the menu.

@@ -22,7 +22,12 @@ from api.agent.guards import (
     take_cart,
 )
 from api.agent.llm import ToolCall
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+    note_intent,
+)
 
 ENTE = str(uuid.uuid4())
 PHO = str(uuid.uuid4())
@@ -1016,3 +1021,30 @@ def test_a_new_table_request_after_a_confirmed_table_is_not_booked():
     )
 
     assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
+
+
+def test_a_date_next_to_the_code_is_no_code():
+    state = confirmed_order("A1")
+    say = "Ihre Bestellung für den 21.10.2026 ist bestätigt. Ihr Abholcode ist A1."
+
+    assert false_booking(state, say) is None
+
+
+@pytest.mark.parametrize(
+    ("said", "booked"),
+    [
+        # A second order asked for: the first one's booking does not speak
+        # for it (Codex PR #347).
+        ("Ich möchte noch eine Pizza bestellen", False),
+        ("Und zusätzlich noch etwas zum Abholen", False),
+        # The closing of the first order is no new one.
+        ("Danke, ich hole es dann ab", True),
+        ("Ja, passt", True),
+    ],
+)
+def test_a_wish_for_another_order_takes_back_the_booking(said, booked):
+    state = confirmed_order("A1")
+    note_intent(state, said)
+
+    assert ("order" in state.booked) is booked
+    assert (false_booking(state, "Ihr Abholcode ist A1.") is None) is booked

@@ -131,6 +131,11 @@ _BOOKING_CLAIM = re.compile(
 # "Code" on its own, not inside "Gutscheincode" or after "WLAN-" (Codex PR #347).
 _NAMES_A_CODE = re.compile(r"abholcode|abholnummer|(?<![\w-])code\b", re.IGNORECASE)
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
+# What a code word presents, up to the end of its sentence: a date elsewhere
+# ("für den 21.10.2026") is no code (Codex PR #347).
+_PRESENTED = re.compile(
+    r"(?:abholcode|abholnummer|(?<![\w-])code)\b([^.!?]*)", re.IGNORECASE
+)
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.
 _ABOUT = (
@@ -239,7 +244,11 @@ def _names_the_code(state: ConversationState, say: str) -> bool:
     and no other token shaped like one: "Ihr Abholcode ist B99" after A1 sends
     the guest to the counter with a code that finds no order (Codex PR #347).
     Strict: a card number like "s12" next to it is refused as well."""
-    codes = {code.upper() for code in _CODE_SHAPED.findall(say)}
+    codes = {
+        code.upper()
+        for tail in _PRESENTED.findall(say)
+        for code in _CODE_SHAPED.findall(tail)
+    }
     return state.pickup_code is not None and codes == {state.pickup_code.upper()}
 
 
