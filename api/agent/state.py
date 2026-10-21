@@ -164,6 +164,11 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
+        if "order" in self.booked and self.pickup_code:
+            # The model keeps nothing between turns: asked for the code later,
+            # it could only make one up, and the guard refuses every guess
+            # (Codex PR #347). The code `confirm` returned, nothing more.
+            data["pickup_code"] = self.pickup_code
         if (
             self.stage == "readback_pending"
             and self.readback

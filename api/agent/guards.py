@@ -130,6 +130,10 @@ _BOOKING_CLAIM = re.compile(
 # A sentence that speaks of a pickup code, and the tokens shaped like one:
 # the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
+# Shaped like a pickup code beyond doubt: counted anywhere in a sentence that
+# speaks of a code, also before the code word ("B99 ist Ihr Abholcode"; Codex
+# PR #347). Bare digits only after it, or a date before it would count.
+_LETTER_CODE = re.compile(r"\b[A-Za-z]\d{1,4}\b")
 # What a code word presents: everything after it. A date before it ("für den
 # 21.10.2026") is no code; a period does not end the span, or "Abholcode
 # lautet Nr. B99" hid B99 behind "Nr." (Codex PR #347). Strict: a date after
@@ -248,11 +252,10 @@ def _names_the_code(state: ConversationState, say: str) -> bool:
     #347). One that presents none ("Den QR Code auf Ihrer Rechnung kann ich
     nicht prüfen") is no pickup code; the booking words still apply. Strict:
     a card number like "s12" after the code word is refused as well."""
-    codes = {
-        code.upper()
-        for tail in _PRESENTED.findall(say)
-        for code in _CODE_SHAPED.findall(tail)
-    }
+    tails = _PRESENTED.findall(say)
+    codes = {code.upper() for tail in tails for code in _CODE_SHAPED.findall(tail)}
+    if tails:
+        codes |= {code.upper() for code in _LETTER_CODE.findall(say)}
     if not codes:
         return True
     return state.pickup_code is not None and codes == {state.pickup_code.upper()}

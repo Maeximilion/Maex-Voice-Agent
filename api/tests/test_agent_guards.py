@@ -949,6 +949,9 @@ def test_only_the_confirmed_pickup_code_may_be_named():
     assert false_booking(state, "Ihr Abholcode ist A1.") is None
     assert false_booking(state, "Ihr Abholcode ist B99.") is not None
     assert false_booking(state, "Ihr Code ist A1 oder B99.") is not None
+    # Before the code word as well (Codex PR #347).
+    assert false_booking(state, "B99 ist Ihr Abholcode.") is not None
+    assert false_booking(state, "A1 ist Ihr Abholcode.") is None
     # A period after "Nr." does not hide the code (Codex PR #347).
     assert false_booking(state, "Ihr Abholcode lautet Nr. B99.") is not None
     assert false_booking(state, "Ihr Abholcode lautet Nr. A1.") is None
@@ -1079,3 +1082,13 @@ def test_a_cancelled_replay_takes_the_booking_back():
 
     assert "order" not in state.booked
     assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
+
+
+def test_the_model_reads_the_pickup_code_while_the_order_is_booked():
+    """Asked for the code later, a model that keeps nothing between turns
+    could only make one up (Codex PR #347)."""
+    state = confirmed_order("A1")
+
+    assert state.to_prompt_json()["pickup_code"] == "A1"
+    note_intent(state, "Ich möchte noch etwas bestellen")
+    assert "pickup_code" not in state.to_prompt_json()
