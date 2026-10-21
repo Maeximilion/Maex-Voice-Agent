@@ -822,6 +822,8 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Ihr Tisch ist reserviert.",
         "Das ist gebucht.",
         "Ihr Abholcode ist A12.",
+        # Any ending (Codex PR #347).
+        "Ihre bestätigte Bestellung wird jetzt vorbereitet.",
         # Only the asking clause is exempt (Codex PR #347).
         "Ihre Bestellung ist bestätigt, möchten Sie noch etwas?",
         # A negation is not read: which words it reaches is grammar, and a
@@ -1045,6 +1047,8 @@ def test_a_date_next_to_the_code_is_no_code():
         ("Und zusätzlich noch etwas zum Abholen", False),
         # The closing of the first order is no new one.
         ("Danke, ich hole es dann ab", True),
+        # "noch" as "still" asks about the booked one (Codex PR #347).
+        ("Ist meine Bestellung noch zum Abholen da?", True),
         ("Ja, passt", True),
     ],
 )

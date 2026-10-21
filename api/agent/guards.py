@@ -123,7 +123,8 @@ HINT_NOT_BOOKED = (
 # Words that tell a guest something is booked. The pickup code comes from
 # `confirm` only; a model that names one before it has made it up.
 _BOOKING_CLAIM = re.compile(
-    r"\b(bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\b",
+    # Any ending: "Ihre bestätigte Bestellung" claims as well (Codex PR #347).
+    r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\w*",
     re.IGNORECASE,
 )
 # A sentence that speaks of a pickup code, and the tokens shaped like one:
