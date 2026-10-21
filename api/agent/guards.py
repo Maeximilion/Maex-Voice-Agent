@@ -126,6 +126,9 @@ _BOOKING_CLAIM = re.compile(
 )
 # A claim word after one of these in the same clause says the opposite.
 _NEGATION = re.compile(r"\b(nicht|nichts|kein\w*)\b", re.IGNORECASE)
+# Where a clause ends: a mark, or a conjunction that starts the next one ("Sie
+# müssen nicht mehr warten und Ihr Tisch ist reserviert"; Codex PR #347).
+_CLAUSE_END = re.compile(r"[,;:]|\b(?:und|aber|oder|sondern)\b", re.IGNORECASE)
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.
 _ABOUT = (
@@ -216,21 +219,30 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     claim word ("Haben Sie schon, wie besprochen, reserviert?") is refused.
     A per-draft check if the call log shows the need."""
     for sentence in re.findall(r"[^.!?]+[.!?]*", say):
-        clauses = re.split(r"[,;:]", sentence)
+        clauses = _CLAUSE_END.split(sentence)
         if sentence.rstrip().endswith("?"):
             clauses = clauses[:-1]
+        stated = " ".join(clauses)
         for clause in clauses:
             for claim in _BOOKING_CLAIM.finditer(clause):
-                if not _NEGATION.search(clause[: claim.start()]) and not _booked_for(
-                    state, sentence
-                ):
+                if _NEGATION.search(clause[: claim.start()]):
+                    continue
+                if not _booked_for(state, clause, stated):
                     return _NOT_BOOKED
     return None
 
 
-def _booked_for(state: ConversationState, sentence: str) -> bool:
-    about = {kind for kind, words in _ABOUT if words.search(sentence)}
+def _booked_for(state: ConversationState, clause: str, stated: str) -> bool:
+    """What the claiming clause is about, else what the stated part of its
+    sentence is about ("Ihr Tisch für vier, der ist reserviert"), else any
+    booking. Never the asking clause: "Ihre Bestellung ist bestätigt, möchten
+    Sie noch einen Tisch reservieren?" is about the order (Codex PR #347)."""
+    about = _about(clause) or _about(stated)
     return about <= state.booked if about else bool(state.booked)
+
+
+def _about(text: str) -> set[str]:
+    return {kind for kind, words in _ABOUT if words.search(text)}
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:

@@ -816,6 +816,8 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Das war nicht schwer, Ihr Tisch ist reserviert.",
         # Only the asking clause is exempt (Codex PR #347).
         "Ihre Bestellung ist bestätigt, möchten Sie noch etwas?",
+        # "und" starts a clause the negation before it does not reach.
+        "Sie müssen nicht mehr warten und Ihr Tisch ist reserviert.",
     ],
 )
 def test_a_claimed_booking_before_confirm_is_refused(say):
@@ -852,6 +854,15 @@ def test_the_claim_verb_does_not_name_a_table():
 
     assert false_booking(state, "Ihre Abholung ist für 18 Uhr reserviert.") is None
     assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
+
+
+def test_the_kind_comes_from_the_claim_not_from_the_question():
+    state = new_state(booked={"order"})
+    asks = "Ihre Bestellung ist bestätigt, möchten Sie noch einen Tisch reservieren?"
+
+    assert false_booking(state, asks) is None
+    # A claiming clause that names nothing takes the kind of its sentence.
+    assert false_booking(state, "Ihr Tisch für vier, der ist reserviert.") is not None
 
 
 def test_a_booked_table_is_no_booked_order():
