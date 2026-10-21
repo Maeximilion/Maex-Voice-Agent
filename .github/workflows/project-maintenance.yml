@@ -1,4 +1,4 @@
-name: projektpflege
+name: project-maintenance
 
 # The board is maintained once a day, not on every commit. During work nobody
 # touches it: the built-in Project workflows move the status on merge.
@@ -12,7 +12,7 @@ on:
   workflow_dispatch:
     inputs:
       archive:
-        description: "Zusaetzlich Done-Eintraege nach 14 Tagen archivieren (blendet sie aus der Roadmap aus)"
+        description: "Additionally archive Done entries after 14 days (hides them from the roadmap)"
         type: boolean
         default: false
 
@@ -52,7 +52,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: python scripts/readme_assets.py findings "$RUNNER_TEMP/images.json"
 
-      - name: Zugang pruefen
+      - name: Check access
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
@@ -62,7 +62,7 @@ jobs:
             exit 1
           fi
 
-      - name: Korrigieren und berichten
+      - name: Correct and report
         # Explicitly bash: only then does GitHub set pipefail. Without it the
         # exit code of tee wins, and a failed run would show green in the history.
         shell: bash
@@ -77,7 +77,7 @@ jobs:
             --findings-json "$RUNNER_TEMP/befunde.json" \
             | tee "$GITHUB_STEP_SUMMARY"
 
-      - name: Entscheidungs-Issue pflegen
+      - name: Maintain the decision issue
         # What the maintenance cannot decide itself lands in exactly one issue.
         # It mentions only on new points; once nothing is open, it closes itself.
         # Also after a failed board step: a missing findings file makes the run
@@ -89,7 +89,7 @@ jobs:
           python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
           --also "README images=$RUNNER_TEMP/images.json"
 
-      - name: Assignee und Label der Pull Requests ergaenzen
+      - name: Fill in assignee and label of pull requests
         # Last, so a failure here does not hold up the board and the decision issue.
         # Sets only what is missing: assignee = owner, label from the title.
         env:

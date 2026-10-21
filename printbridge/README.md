@@ -32,7 +32,7 @@ As environment variables:
 | `MAEX_SERVER_URL` | `https://agent.example.com` | Server, https only (except localhost) |
 | `MAEX_KITCHEN_TOKEN` | long and random | Same value as `KITCHEN_BRIDGE_TOKEN` on the server; there also `KITCHEN_BRIDGE_TENANT_ID` (required): the token is valid only for this operation |
 | `MAEX_TENANT_ID` | UUID | Operation whose slips are printed |
-| `MAEX_PRINTER` | `tcp:192.168.1.50` or `windows:EPSON TM-T20II Küche` | Printer |
+| `MAEX_PRINTER` | `tcp:192.168.1.50` or `windows:EPSON TM-T20II Kitchen` | Printer |
 | `MAEX_PRINTER_WIDTH` | `48` | Characters per line (80 mm paper, font A) |
 | `MAEX_STATE_FILE` | `C:\maex\printbridge_state.json` | Print log, order ids only |
 | `MAEX_INTERVAL_SECONDS` | `2` | Polling interval |
