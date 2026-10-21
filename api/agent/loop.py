@@ -357,7 +357,9 @@ class ConversationLoop:
         the ladder for `phone` like a failed answer: on a line with nothing but
         noise a real model asked for the number on every turn, and the call
         ended with neither a callback nor the team (`eskalation_0016`, Codex
-        PR #347, P1). None lets the model ask."""
+        PR #347, P1). It counts only once the model asked for the number: the
+        guest's first "Rufen Sie mich zurück" is no failed answer (Codex PR
+        #347). None lets the model ask."""
         reason = args.get("reason")
         transfer = self._dispatch(
             state,
@@ -369,7 +371,7 @@ class ConversationLoop:
             return TurnResult(
                 state=state, say=[transfer.say or SAY_ESCALATION], ended=True
             )
-        if "phone" not in reported_failures:
+        if state.asked_for_phone and "phone" not in reported_failures:
             reported_failures.add("phone")
             self._ladder.record_failure("phone")
             if self._ladder.should_end_call("phone"):

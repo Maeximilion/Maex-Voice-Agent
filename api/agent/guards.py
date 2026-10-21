@@ -115,8 +115,9 @@ HINT_CALLBACK_PHONE = (
 HINT_NOT_BOOKED = (
     "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
     "durchgegangen. Bis dahin sagst du die Wörter bestätigt, gebucht, "
-    "reserviert und Abholcode gar nicht, auch nicht verneint. Sag, was als "
-    "Nächstes geschieht: den readback vorlesen und auf ein klares Ja warten."
+    "reserviert und Abholcode gar nicht, auch nicht verneint oder in einer "
+    "Frage. Sag, was als Nächstes geschieht: den readback vorlesen und auf ein "
+    "klares Ja warten."
 )
 # Words that tell a guest something is booked. The pickup code comes from
 # `confirm` only; a model that names one before it has made it up.
@@ -201,41 +202,40 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
     "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
     Der Abholcode lautet 8842" (13.10.2026).
 
-    A denial counts too ("Es ist noch nichts gebucht"): which words a
-    negation reaches is grammar ("nicht nur reserviert, sondern auch ...",
-    "nicht mehr warten und Ihr Tisch ist reserviert"), and a word rule for it
-    let claims through that it was meant to stop (Codex PR #347, four rounds).
-    A refused denial costs the model one hop, and the hint says what to say
-    instead. Only the asking part of a question is exempt, the clause after
-    its last comma ("Haben Sie bereits reserviert oder möchten Sie neu
-    reservieren?"); a clause before it still claims ("Ihre Bestellung ist
-    bestätigt, möchten Sie noch etwas?").
+    Strict on purpose, by word and not by meaning: a booking word is
+    refused in any sentence, also denied ("Es ist noch nichts gebucht") or
+    asked ("Haben Sie bereits reserviert?"). Which words a negation or a
+    question reaches is grammar, and four review rounds of word rules for it
+    each let a claim through ("nicht nur reserviert, sondern ...", "Ihre
+    Bestellung ist bestätigt und möchten Sie noch etwas?"; Codex PR #347). A
+    refused sentence costs the model one hop, and the hint says what to say
+    instead.
 
-    A sentence about an order needs a booked order, one about a table a
-    booked table: after a confirmed table "Ihre Abholung ist bestätigt" is
-    still refused (Codex PR #347).
-
-    ponytail: by word, not by meaning; a question with a comma before its
-    claim word ("Haben Sie schon, wie besprochen, reserviert?") is refused.
-    A per-draft check if the call log shows the need."""
+    ponytail: a claim without these words ("Ihre Bestellung geht in die
+    Küche") is not caught. More words if the call log shows them."""
     for sentence in re.findall(r"[^.!?]+[.!?]*", say):
-        clauses = re.split(r"[,;:]", sentence)
-        if sentence.rstrip().endswith("?"):
-            clauses = clauses[:-1]
-        stated = " ".join(clauses)
-        for clause in clauses:
-            if _BOOKING_CLAIM.search(clause) and not _booked_for(state, clause, stated):
+        for clause in re.split(r"[,;:]", sentence):
+            if _BOOKING_CLAIM.search(clause) and not _booked_for(
+                state, clause, sentence
+            ):
                 return _NOT_BOOKED
     return None
 
 
-def _booked_for(state: ConversationState, clause: str, stated: str) -> bool:
-    """What the claiming clause is about, else what the stated part of its
-    sentence is about ("Ihr Tisch für vier, der ist reserviert"), else any
-    booking. Never the asking clause: "Ihre Bestellung ist bestätigt, möchten
-    Sie noch einen Tisch reservieren?" is about the order (Codex PR #347)."""
-    about = _about(clause) or _about(stated)
-    return about <= state.booked if about else bool(state.booked)
+def _booked_for(state: ConversationState, clause: str, sentence: str) -> bool:
+    """Whether the claim of `clause` is true. Never while a draft waits for
+    its yes: "Das ist auch gebucht" may mean that draft. A claim about an
+    order needs a booked order, one about a table a booked table, read from
+    the nouns of its clause, else of its sentence ("Ihr Tisch für vier, der
+    ist reserviert"); "Ihre Bestellung ist bestätigt, möchten Sie noch einen
+    Tisch reservieren?" is about the order (Codex PR #347). A claim that names
+    nothing passes only right after the `confirm`, while the stage says so."""
+    if state.stage == "readback_pending":
+        return False
+    about = _about(clause) or _about(sentence)
+    if about:
+        return about <= state.booked
+    return state.stage == "confirmed"
 
 
 def _about(text: str) -> set[str]:

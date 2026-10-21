@@ -1507,7 +1507,8 @@ def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
     """Nobody there and the number never understood: the ladder ends the call
     honestly instead of asking forever."""
     state = numberless(tenant_id, call_id)
-    turns = [t for _ in range(10) for t in (wants_a_callback(), LLMTurn(say="Nummer?"))]
+    asks = "Unter welcher Rufnummer erreichen wir Sie?"
+    turns = [t for _ in range(10) for t in (wants_a_callback(), LLMTurn(say=asks))]
     loop = ConversationLoop(
         session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
     )
@@ -1519,3 +1520,21 @@ def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
     assert results[-1].ended is True
     assert results[-1].say == [SAY_NOBODY_REACHABLE]
     assert len(results) < 10
+
+
+def test_a_callback_wish_before_the_question_for_the_number_counts_nothing(
+    session, tenant_id, call_id
+):
+    """Only an answer to the question for the number can fail: a model that
+    never asks for it does not run the ladder down (Codex PR #347)."""
+    state = numberless(tenant_id, call_id)
+    turns = [
+        t for _ in range(8) for t in (wants_a_callback(), LLMTurn(say="Wie bitte?"))
+    ]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    results = [loop.run_turn(state, "Rufen Sie mich zurück") for _ in range(8)]
+
+    assert not any(result.ended for result in results)

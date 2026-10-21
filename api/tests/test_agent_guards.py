@@ -819,9 +819,13 @@ def test_a_draft_without_a_customer_is_left_to_the_validation():
         "Das war nicht schwer, Ihr Tisch ist reserviert.",
         "Sie müssen nicht mehr warten und Ihr Tisch ist reserviert.",
         "Ihr Tisch ist nicht nur reserviert, sondern auch schon vorbereitet.",
-        # So a denial is refused too; it costs the model one hop.
+        # So a denial is refused too, and so is a question; it costs the
+        # model one hop.
         "Es ist noch nichts gebucht.",
         "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
+        "Haben Sie bereits reserviert?",
+        "Ihre Bestellung ist bestätigt und möchten Sie noch etwas?",
+        "Möchten Sie den Abholcode per SMS?",
     ],
 )
 def test_a_claimed_booking_before_confirm_is_refused(say):
@@ -831,22 +835,36 @@ def test_a_claimed_booking_before_confirm_is_refused(say):
 @pytest.mark.parametrize(
     "say",
     [
-        "Haben Sie bereits reserviert?",
-        "Haben Sie bereits reserviert oder möchten Sie neu reservieren?",
-        "Möchten Sie den Abholcode per SMS? Dann brauche ich Ihre Nummer.",
         "Möchten Sie einen Tisch reservieren?",
         "Soll ich das so bestätigen?",
     ],
 )
-def test_a_question_or_no_claim_passes(say):
+def test_a_sentence_without_a_booking_word_passes(say):
     assert false_booking(new_state(), say) is None
 
 
 def test_after_a_confirm_the_booking_may_be_named():
-    state = new_state(booked={"order"})
+    state = new_state(booked={"order"}, stage="confirmed")
 
     assert false_booking(state, "Ihr Abholcode ist A12.") is None
     assert false_booking(state, "Das ist gebucht.") is None
+
+
+def test_while_a_draft_waits_nothing_is_said_to_be_booked():
+    """After a confirmed order a new table draft waits for its yes: "Das ist
+    auch gebucht" may mean the table (Codex PR #347). Strict: also the true
+    claim about the order waits until the draft is decided."""
+    state = new_state(booked={"order"}, stage="readback_pending")
+
+    assert false_booking(state, "Das ist auch gebucht.") is not None
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
+
+
+def test_a_claim_that_names_nothing_needs_the_confirm_just_made():
+    state = new_state(booked={"order"}, stage="collecting")
+
+    assert false_booking(state, "Das ist gebucht.") is not None
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
 
 
 def test_the_claim_verb_does_not_name_a_table():
