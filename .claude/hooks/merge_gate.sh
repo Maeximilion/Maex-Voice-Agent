@@ -42,10 +42,12 @@ want=${BASH_REMATCH[2]}
 
 dir=$(jq -r '.cwd // empty' <<<"$input")
 cd "${dir:-$(dirname "$0")/../..}" || block "- the folder the command runs in was not found: $dir"
-pr=$(gh pr view "$target" --json number,headRefOid,headRefName,baseRefName,statusCheckRollup 2>&1) ||
+pr=$(gh pr view "$target" --json number,url,headRefOid,headRefName,baseRefName,statusCheckRollup 2>&1) ||
   block "- gh pr view failed: $pr"
 # Through $(...), not < <(...): Git Bash drops the CR that jq on Windows ends lines with.
-read -r n head branch base <<<"$(jq -r '[.number, .headRefOid, .headRefName, .baseRefName] | @tsv' <<<"$pr")"
+read -r n url head branch base <<<"$(jq -r '[.number, .url, .headRefOid, .headRefName, .baseRefName] | @tsv' <<<"$pr")"
+# The repository gh picked (its default can differ from origin), taken from the PR's URL.
+repo=${url%/pull/*}
 [ "$base" = main ] || block "- the PR targets $base, the gate only merges into main"
 [ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
@@ -61,13 +63,14 @@ checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
 
-if git fetch -q origin main "refs/pull/$n/head" 2>/dev/null && git cat-file -e "$head^{commit}" 2>/dev/null; then
-  git merge-base --is-ancestor origin/main "$head" ||
+main=refs/merge-gate/main
+if git fetch -q "$repo" "+refs/heads/main:$main" "refs/pull/$n/head" 2>/dev/null && git cat-file -e "$head^{commit}" 2>/dev/null; then
+  git merge-base --is-ancestor "$main" "$head" ||
     fail+="- the branch is behind main: merge origin/main into it, then get CI and the review on the new head"$'\n'
   generated='^(README\.md|\.github/assets/[^/]+\.svg|\.github/assets/png-sources\.json)$'
-  if [[ $branch != chore/readme-weekly-* ]] || git diff --name-only "origin/main...$head" | grep -Evq "$generated"; then
+  if [[ $branch != chore/readme-weekly-* ]] || git diff --name-only "$main...$head" | grep -Evq "$generated"; then
     v() { git show "$1:docs/01_STATUS.md" 2>/dev/null | grep -o 'Status version: [0-9.]*' | head -1 | cut -d' ' -f3; }
-    m=$(v origin/main)
+    m=$(v "$main")
     b=$(v "$head")
     { [ -n "$b" ] && [ "$m" != "$b" ] && [ "$(printf '%s\n' "$m" "$b" | sort -V | tail -1)" = "$b" ]; } ||
       fail+="- the status is not bumped ($m on main, ${b:-none} on ${head:0:7}): run scripts/status_bump.py, commit, push"$'\n'

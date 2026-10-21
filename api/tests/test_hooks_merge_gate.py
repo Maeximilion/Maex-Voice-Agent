@@ -118,6 +118,7 @@ def gate(tmp_path):
         current["sha"] = sha or head
         body = {
             "number": number,
+            "url": f"{origin.as_posix()}/pull/{number}",
             "headRefOid": current["sha"],
             "headRefName": branch,
             "baseRefName": base,
@@ -171,6 +172,8 @@ def gate(tmp_path):
     pr()
     comments(codex(head))
     return SimpleNamespace(
+        git=git,
+        checkout=checkout,
         base=base,
         head=head,
         generated=generated,
@@ -260,6 +263,15 @@ def test_a_branch_behind_main_blocks(gate):
     done = gate.run()
     assert done.returncode == 2
     assert "behind main" in done.stderr
+
+
+def test_the_gate_fetches_from_the_repository_gh_picked(gate, tmp_path):
+    # A fork clone whose origin knows neither main's history nor the pull ref,
+    # while gh's default repository is the upstream named in the PR's URL.
+    fork = tmp_path / "fork.git"
+    gate.git(tmp_path, "init", "-q", "--bare", str(fork))
+    gate.git(gate.checkout, "remote", "set-url", "origin", str(fork))
+    assert gate.run().returncode == 0
 
 
 def test_the_gate_checks_the_folder_the_command_runs_in(gate, tmp_path):
