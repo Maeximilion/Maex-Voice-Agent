@@ -175,6 +175,8 @@ def _ingredient(text: str) -> str | None:
         found.append((start, stem))
         if at_noun:
             found.extend(_stems_before(text[:start]))
+    for start, rest in _carried_on(text):
+        found.append((start, _until_new_clause(rest)))
     pieces: list[str] = []
     for _, piece in sorted(found):
         if not piece or _NO_INGREDIENT & set(_words(piece)):
@@ -226,6 +228,9 @@ def _without_second_preposition(text: str) -> str:
         j = i - 1
         while j > 0 and words[j] in _LIST_MODIFIERS:
             j -= 1
+        # ", aber auch gegen Sesam": "aber" before a modifier joins (#207).
+        if 0 < j < i - 1 and words[j] == "aber":
+            j -= 1
         first = next(
             (p for p in range(j - 1, -1, -1) if words[p] in _PREPOSITIONS), None
         )
@@ -270,6 +275,51 @@ def _item_ends(
         or _SENTENCE_END.search(text, tokens[k - 1].end(), tokens[k].start())
         is not None
     )
+
+
+def _carried_on(text: str) -> Iterator[tuple[int, str]]:
+    """The list carried on behind an allergy word that closes its phrase
+    (issue #207): "gegen Erdnuesse allergisch und gegen Sesam",
+    "Erdnussallergie, ausserdem gegen Sesam", "Erdnussallergie und Sesam".
+    Where it begins and the text from there. A bare word counts only behind
+    a word that names an allergen: "mit Allergie und Fruehlingsrollen" names
+    a dish. The text is empty where what follows is not one word that ends,
+    so the agent asks: "und gegen Sesam aus der Dose", "und Pho Bo"."""
+    tokens, words = _tokens(text)
+    last = -1
+    for n, word in enumerate(words):
+        if not _allergy_word(word):
+            continue
+        k = n + 1
+        comma = k < len(words) and words[k] == ","
+        k += comma
+        joined = k < len(words) and words[k] in ("und", "sowie", "oder")
+        if not joined and k + 1 < len(words) and words[k] == "aber":
+            # "aber auch Sesam"; "aber" alone may end the list.
+            k += words[k + 1] in _LIST_MODIFIERS
+        k += joined
+        while k < len(words) and words[k] in _LIST_MODIFIERS:
+            k += 1
+            joined = True
+        prep = k < len(words) and words[k] in _PREPOSITIONS
+        k += prep
+        # Each "gegen" belongs to the next allergy word after it: read back
+        # only to the one before, so a long text is not read again for each.
+        lo, last = last, n
+        if k >= len(words) or not (joined or comma):
+            continue
+        item = words[k]
+        if item in _GOES_ON or _ends_list(item):
+            continue
+        names = (
+            not _generic(word)
+            # "Erdnuss-Allergie"
+            or (n > 0 and text[tokens[n - 1].end() : tokens[n].start()] == "-")
+            or _prep_before(words, n, lo) is not None
+        )
+        if prep or names:
+            start = tokens[k].start()
+            yield start, text[start:] if _item_ends(text, tokens, words, k) else ""
 
 
 _GEGEN = re.compile(r"gegen", re.IGNORECASE)
@@ -448,17 +498,26 @@ def _until_new_clause(rest: str) -> str:
         ):
             break
         if piece == "," or word in ("und", "sowie", "oder"):
-            nxt = word_at(i + 1)
-            after = word_at(i + 2)
+            k = i + 1
+            # ", aber auch Sesam": "aber" before a modifier joins (#207).
+            if (
+                piece == ","
+                and word_at(k) == "aber"
+                and word_at(k + 1) in _LIST_MODIFIERS
+            ):
+                skip.add(k)
+                k += 1
+            nxt = word_at(k)
+            after = word_at(k + 1)
             if nxt in _LIST_MODIFIERS and not _ends_list(after):
-                skip.add(i + 1)
+                skip.add(k)
+                k += 1
                 nxt = after
             if _ends_list(nxt):
                 break
             # "und moechte bestellen" goes on with the order; "und moechte
             # (auch) keine Zwiebeln" stays in, so the kitchen still reads it.
-            at = i + 3 if i + 1 in skip else i + 2
-            follows = [word_at(k) for k in range(at, at + 3)]
+            follows = [word_at(m) for m in range(k + 1, k + 4)]
             if nxt in _ORDER_VERBS and not any(
                 w in _REMOVE or w in _NEGATION for w in follows
             ):
@@ -583,6 +642,19 @@ _OPENING = _PHRASE_LEAD | _CLAUSE_OPENERS
 _AFTER_DENIAL = frozenset(
     {",", "danke", "dankeschoen", "nur", "das", "wars", "ist", "alles", "sonst"}
     | {"nichts", "oder", "so"}
+)
+# What goes on with the call behind an allergy word, not with its list:
+# "und gegen 18 Uhr", "und moechte bestellen", ", danke", ", weitere
+# Allergien habe ich keine", "und meine Frau" (`_carried_on`).
+_GOES_ON = (
+    _CLAUSE_OPENERS
+    | _NOT_LISTED
+    | _NO_INGREDIENT
+    | _NEGATION
+    | _REMOVE
+    | _ORDER_VERBS
+    | _AFTER_DENIAL
+    | _MODIFIERS
 )
 # Words around a denial that may carry an allergen of their own.
 _MAY_NAME = _PREPOSITIONS | {"nichts"}
@@ -973,9 +1045,10 @@ def _phrase_start(words: list[str], i: int) -> int:
     return i
 
 
-# Words that join a removal to the allergy before it: ", aber ohne", "also ohne".
+# Words that join a removal to the allergy before it: ", aber ohne", "also ohne",
+# "aber auch keine" (#331).
 _CONNECTORS = frozenset(
-    {",", "aber", "und", "also", "deshalb", "daher", "dann", "bitte", "dafuer"}
+    {",", "aber", "und", "also", "deshalb", "daher", "dann", "bitte", "dafuer", "auch"}
 )
 # What joins a removal to what follows it.
 _JOINERS = frozenset({",", "und", "oder", "sowie", "aber"})
@@ -988,14 +1061,15 @@ def _removal_inside(words: list[str], named: list[int]) -> tuple[int, int, int] 
     """A removal said after the first allergy word ("allergisch gegen
     Erdnuesse, aber ohne Zwiebeln", Codex PR #330): where its connectors begin,
     where "ohne" stands, and where it ends, at a new dish or allergy or at the
-    end. "ohne", or "keine" after "aber" ("aber keine Zwiebeln"); a "keine"
-    alone may still belong to the allergy ("ich vertrage keine Erdnuesse,
-    keine Mandeln")."""
+    end. "ohne", or "keine" that an "aber" or "bitte" leads to ("aber keine
+    Zwiebeln", "aber bitte keine", #331); a "keine" alone may still belong to
+    the allergy ("ich vertrage keine Erdnuesse, keine Mandeln")."""
     at = next(
         (
             j
             for j in range(named[0] + 1, len(words))
-            if words[j] == "ohne" or (words[j] in _KEIN and words[j - 1] == "aber")
+            if words[j] == "ohne"
+            or (words[j] in _KEIN and _asked_to_leave_out(words, j, named[0]))
         ),
         None,
     )
@@ -1025,6 +1099,17 @@ def _removal_inside(words: list[str], named: list[int]) -> tuple[int, int, int] 
             break
         end += 1
     return begin, at, end
+
+
+def _asked_to_leave_out(words: list[str], j: int, lo: int) -> bool:
+    """Does an "aber" or "bitte" lead to the "keine" at `j` over the
+    connectors after `lo`?"""
+    k = j - 1
+    while k > lo and words[k] in _CONNECTORS:
+        if words[k] in ("aber", "bitte"):
+            return True
+        k -= 1
+    return False
 
 
 def _allergy_words(words: list[str]) -> list[int]:
@@ -1231,7 +1316,10 @@ def _with_allergy(
             text[tokens[start].start() :] if _negated(words[:start]) else text
         )
     if ingredient is None:
-        if removal is None:
+        # The removal waits for "Wogegen?" and goes on the order line as it is
+        # when the allergy is withdrawn: one too long for the line is lost, as
+        # in `kitchen_note` (#331).
+        if removal is None or len(removal) > NOTE_MAX:
             return Wish(text=text, kind="allergy")
         return Wish(text=text[tokens[start].start() :], kind="allergy", note=removal)
     return Wish(

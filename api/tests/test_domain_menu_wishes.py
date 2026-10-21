@@ -38,6 +38,7 @@ from api.domain.menu.wishes import (
 )
 from api.models import ItemOption, MenuItem
 from api.schemas.menu import OptionGroup, OptionOut
+from api.schemas.orders import NOTE_MAX
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -1597,3 +1598,147 @@ def test_a_clause_that_names_something_stays_in_the_note(said, kept):
     """The list ends at an order verb only when nothing to leave out follows
     it: the kitchen still reads "und möchte keine Zwiebeln" (Codex PR #338)."""
     assert kept in classify_wish(said, BEILAGE).text
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # Issue #207, P1: a second allergen behind the "allergisch" of a
+        # "gegen ... allergisch" phrase.
+        ("Ich bin gegen Erdnüsse allergisch und gegen Sesam", "Erdnüsse und Sesam"),
+        ("Ich bin gegen Erdnüsse allergisch, und gegen Sesam", "Erdnüsse und Sesam"),
+        ("Ich bin gegen Erdnüsse allergisch sowie gegen Sesam", "Erdnüsse und Sesam"),
+        (
+            "Ich bin gegen Erdnüsse allergisch und auch gegen Sesam",
+            "Erdnüsse und Sesam",
+        ),
+        # Issue #207, P1: a list behind a compound allergy noun.
+        ("Ich habe eine Erdnussallergie und gegen Sesam", "Erdnuss und Sesam"),
+        ("Ich habe eine Erdnussallergie und Sesam", "Erdnuss und Sesam"),
+        ("Ich habe eine Erdnussallergie, außerdem gegen Sesam", "Erdnuss und Sesam"),
+        ("Ich habe eine Erdnuss-Allergie und Sesam", "Erdnuss und Sesam"),
+        (
+            "Ich habe eine Erdnussallergie, Sesam und Sellerie",
+            "Erdnuss und Sesam und Sellerie",
+        ),
+        ("Ich bin gegen Erdnüsse allergisch und Sesam", "Erdnüsse und Sesam"),
+        # Before, the sesame was lost: "vertrage ich auch nicht" is no allergy
+        # word of its own.
+        (
+            "Ich habe eine Erdnussallergie, Sesam vertrage ich auch nicht",
+            "Erdnuss und Sesam",
+        ),
+        (
+            "Ich habe eine Erdnussallergie und gegen Sesam und Sellerie",
+            "Erdnuss und Sesam und Sellerie",
+        ),
+        # Issue #207, P1: "aber auch" carries a list on.
+        ("Ich bin allergisch gegen Erdnüsse, aber auch gegen Sesam", "Erdnüsse, Sesam"),
+        ("Ich bin allergisch gegen Erdnüsse, aber auch Sesam", "Erdnüsse, Sesam"),
+        # A generic allergy word names nothing itself: the "gegen" behind it does.
+        ("Ich habe eine Allergie und gegen Sesam", "Sesam"),
+    ],
+)
+def test_a_list_behind_the_closing_allergy_word_is_read(said, ingredient):
+    """Issue #207: only the first allergen reached the kitchen note and the
+    agent did not ask; the list behind the allergy word is read now."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        ("Ich habe eine Erdnussallergie und gegen 18 Uhr hole ich ab", "Erdnuss"),
+        ("Ich bin gegen Erdnüsse allergisch und gegen Abend komme ich", "Erdnüsse"),
+        ("Ich habe eine Erdnussallergie und auf jeden Fall ohne Zwiebeln", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und möchte bestellen", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und die Sommerrollen", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie, danke", "Erdnuss"),
+        (
+            "Ich habe eine Glutenunverträglichkeit und meine Frau eine Erdnussallergie",
+            "Gluten und Erdnuss",
+        ),
+        # A generic word followed by a dish: still "Wogegen?", never the dish.
+        ("Ich habe eine Allergie und Frühlingsrollen", None),
+    ],
+)
+def test_a_new_clause_behind_the_allergy_word_is_no_allergen(said, ingredient):
+    """Issue #207: a time, "auf jeden Fall", an order verb or a new dish behind
+    the allergy word goes on with the call, not with the list."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe eine Erdnussallergie und gegen Sesam aus der Dose",
+        "Ich habe eine Erdnussallergie und Pho Bo",
+        "Ich bin gegen Erdnüsse allergisch und gegen Weizen Mehl",
+    ],
+)
+def test_an_unread_list_behind_the_allergy_word_is_asked_about(said):
+    """Issue #207: what follows the allergy word may name an allergen but is
+    not one word the parser can read: the agent asks "Wogegen?" instead of
+    noting the first allergen alone."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    ("said", "text", "note"),
+    [
+        # Issue #331 (Codex PR #330): "aber bitte keine".
+        (
+            "ich bin allergisch gegen Erdnüsse, aber bitte keine Zwiebeln",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Erdnussallergie, aber auch keine Zwiebeln",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Keine Zwiebeln",
+            None,
+        ),
+        (
+            "ich habe eine Allergie, aber bitte keine Zwiebeln",
+            "ich habe eine Allergie",
+            "keine Zwiebeln",
+        ),
+        # Before, the list ended at "bitte" and the request was lost.
+        (
+            "ich vertrage keine Erdnüsse und bitte keine Mandeln",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Mandeln",
+            None,
+        ),
+    ],
+)
+def test_a_removal_after_aber_or_bitte_is_kept(said, text, note):
+    """Issue #331: only a "keine" right after "aber" opened a removal, so
+    "aber bitte keine Zwiebeln" lost the onions."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == ("allergy", text, note)
+
+
+def test_keine_without_aber_or_bitte_still_belongs_to_the_allergy():
+    """A "keine" that no "aber" or "bitte" leads to may still name an
+    allergen: it is not taken as a removal (Codex PR #330)."""
+    wish = classify_wish("ich vertrage keine Erdnüsse, keine Mandeln", BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", "Erdnüsse, keine Mandeln")
+
+
+@pytest.mark.parametrize(
+    ("removal", "kept"),
+    [
+        # Issue #331 (Codex PR #330): too long for an order line.
+        ("ohne " + "Zwiebeln, " * 20 + "Koriander", None),
+        ("ohne " + "x" * (NOTE_MAX - 5), "ohne " + "x" * (NOTE_MAX - 5)),
+        ("ohne " + "x" * (NOTE_MAX - 4), None),
+    ],
+)
+def test_a_waiting_removal_fits_an_order_line(removal, kept):
+    """A removal that waits in `note` for the answer to "Wogegen?" is put on
+    the order line as it is when the guest withdraws the allergy; one too
+    long for the line is lost, as in `kitchen_note`, and the allergy stays."""
+    wish = classify_wish(f"{removal}, ich habe eine Allergie", BEILAGE)
+    assert (wish.kind, wish.ingredient, wish.note) == ("allergy", None, kept)
