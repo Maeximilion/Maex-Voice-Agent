@@ -292,7 +292,7 @@ def reserved_prefix(prefix: str) -> bool:
     return (
         prefix in _QUANTITY_NOUNS
         or prefix in _ITEM_NUMBER_MARKERS
-        or prefix in _HESITATIONS
+        or hesitation(prefix)
         or prefix in _SPOKEN_PREFIXES
     )
 
@@ -340,7 +340,9 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
 
     Only what also sounds joined on the phone is joined: "vierzig sieben"
     (tens plus units), "drei und zwanzig", "zwei hundert". "zwei drei" stays
-    two and three -- turning that into 23 would be a guess.
+    two and three -- turning that into 23 would be a guess. So does "drei
+    zwanzig": a unit joins a tens word only across a spoken "und", and
+    `sole_item_number` asks about the two (#325).
 
     Two hard limits: punctuation and an article. Without them "Nummer 20, eine
     Portion" grew into the 21, because the rule for numbers spoken digit by
@@ -349,6 +351,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
     """
     i = start
     total: int | None = None
+    joined = False  # an "und" stood between unit and tens
     while i < len(tokens):
         token = tokens[i]
         if token in PUNCTUATION:
@@ -356,6 +359,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
         if token == "und" and total is not None and total < 10:
             # "ein und zwanzig": the tens must follow, otherwise it was a normal "und"
             if i + 1 < len(tokens) and _word_value(tokens[i + 1]) in TENS.values():
+                joined = True
                 i += 1
                 continue
             break
@@ -371,7 +375,7 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
             total *= 100
         elif total % 10 == 0 and total >= 20 and 1 <= value <= 9:
             total += value  # "vierzig sieben"
-        elif total < 10 and value % 10 == 0 and 20 <= value <= 90:
+        elif joined and total < 10 and value % 10 == 0 and 20 <= value <= 90:
             total += value  # "drei und zwanzig", the "und" was skipped
         elif total % 100 == 0 and total >= 100 and value < 100:
             total += value  # "zweihundert dreiundzwanzig"
@@ -413,7 +417,7 @@ def _clean_lead(tokens: list[str], at: int) -> bool:
         t in PUNCTUATION
         or t in _SPELLED_LEAD
         or t in _LEAD_FILLER
-        or t in _HESITATIONS
+        or hesitation(t)
         or t in _QUANTITY_NOUNS
         or _word_value(t) is not None
         or (_QUANTITY_SUFFIX.match(t) is not None and _word_value(t[:-3]) is not None)
@@ -479,7 +483,9 @@ def _with_prefix(
 
 
 def _quantity_spans(tokens: list[str]) -> list[_Span]:
-    """Numbers attached to a quantity marker: "zweimal", "2 x", "drei Portionen"."""
+    """Numbers attached to a quantity marker: "zweimal", "2 x", "drei Portionen".
+    Not the tens half of a number the ear may have cut: "drei und äh zwanzig
+    Portionen" is no 20 portions (`_second_half`, #328)."""
     spans: list[_Span] = []
     for i, token in enumerate(tokens):
         suffix = _QUANTITY_SUFFIX.match(token)
@@ -492,7 +498,7 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
             span = _scan_ending_at(tokens, i - 1)
             if span is not None:
                 spans.append(span)
-    return spans
+    return [s for s in spans if not _second_half(tokens, s.start)]
 
 
 def parse_cardinal(text: str) -> int | None:
@@ -715,8 +721,8 @@ def _heard_suffixes(
     """
     at = end
     letters = ""
-    while at < len(tokens) and (tokens[at] in _PAUSES or tokens[at] in _HESITATIONS):
-        letters += _HEARD_SUFFIXES.get(tokens[at], "")
+    while at < len(tokens) and (tokens[at] in _PAUSES or hesitation(tokens[at])):
+        letters += _heard_letters(tokens[at])
         at += 1
     word = tokens[at] if at < len(tokens) else ""
     rest = [t for t in tokens[at + 1 :] if t not in PUNCTUATION]
@@ -724,12 +730,18 @@ def _heard_suffixes(
         return ()
     if not (_word_value(word) is not None and rest[:1] and rest[0] in _QUANTITY_NOUNS):
         # Else "die 26 eine Portion": the word is the quantity, not an e.
-        letters += _HEARD_SUFFIXES.get(word, "")
+        letters += _heard_letters(word)
     return tuple(
         number + letter
         for letter in dict.fromkeys(letters)
         if canonical_card(number + letter) in card.lettered
     )
+
+
+def _heard_letters(token: str) -> str:
+    """The letters a word behind the number may have stood for. Every "äh"
+    that sounds like an e counts as "aeh", however it was spelt (#327)."""
+    return _HEARD_SUFFIXES.get("aeh" if _E_HESITATION.fullmatch(token) else token, "")
 
 
 def _trails(token: str) -> bool:
@@ -738,7 +750,7 @@ def _trails(token: str) -> bool:
     return (
         token in _SENTENCE_FILLER
         or token in _LEAD_FILLER
-        or token in _HESITATIONS
+        or hesitation(token)
         or token in _QUANTITY_NOUNS
         or _word_value(token) is not None
         or _QUANTITY_SUFFIX.match(token) is not None
@@ -789,8 +801,22 @@ def canonical_card(card: str) -> str:
 
 
 _LINK_ARTICLES = frozenset({"die", "der", "das", "den"})
-# Hesitations from the speech recognition, after fold() (ä -> ae).
-_HESITATIONS = frozenset({"aeh", "aehm", "aehh", "hm", "hmm", "ehm", "oehm"})
+# Hesitations from the speech recognition, after fold() (ä -> ae). The ear
+# spells the same sound in many ways ("äh", "ähh", "äääh", "ähm", "öh", "hmm",
+# and "eh", Parakeet's "äh" in T-10.3), so a pattern, not a list (#327). Not
+# "ah" and "oh": the ear writes them for the letters a and o ("23, ah" for 23a,
+# T-10.3). Not "em": the name of the letter m.
+_HESITATION = re.compile(r"(?:ae|oe|e)+h+m*|h+m+")
+# The ones that sound like an e: "27 äh" may have been 27e (`_heard_suffixes`).
+_E_HESITATION = re.compile(r"(?:ae|e)+h+")
+
+
+def hesitation(token: str) -> bool:
+    """Is the token, after fold(), a hesitation however the ear spelt it? One
+    rule for this module, `split` and `normalize` (#327)."""
+    return _HESITATION.fullmatch(token) is not None
+
+
 # Words that turn a second number into an alternative or a correction.
 _ALTERNATIVE_WORDS = frozenset(
     {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
@@ -813,7 +839,7 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     # Hesitations and articles are transparent ("Nummer 23, äh, 24", "Nummer 23
     # oder die 24"). Everything else must be a connecting word - an "oder"
     # between rice and noodles does not connect a later time (Codex PR #117).
-    words = [t for t in between if t not in _HESITATIONS and t not in _LINK_ARTICLES]
+    words = [t for t in between if not hesitation(t) and t not in _LINK_ARTICLES]
     return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
 
 
@@ -933,7 +959,7 @@ def _marker_target(
             tokens[j] in PUNCTUATION
             or tokens[j] in _MARKER_FILLER
             or tokens[j] in _SENTENCE_FILLER
-            or tokens[j] in _HESITATIONS
+            or hesitation(tokens[j])
         ):
             j += 1
             continue
@@ -1146,6 +1172,8 @@ _LEAD_FILLER = frozenset(
 # How a sentence continues the order from the previous one: "Und noch die 24",
 # "Und dann dazu die 24".
 _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
+
+
 # What can sit inside a number split by a pause: "drei und, äh, zwanzig",
 # "drei und bitte zwanzig" (Codex PR #147). All punctuation, also a full stop:
 # the ear writes a pause as "..." or a stray full stop ("und... zwanzig"), and
@@ -1153,9 +1181,13 @@ _OPENING = frozenset({"und", "dann", "noch", "dazu", "also", "ja"})
 # keeps a word from being read as a letter). An article, opening word,
 # marker, quantity or card prefix cannot sit there, so after "und" they mark
 # a continuation, not the second half of a number. Also read by `split`.
-INSIDE_SPLIT = PUNCTUATION | _HESITATIONS | {"bitte"}
-# Before the "und" a "bitte" closes the position: "die 4 bitte und 20" is two.
-PAUSE_BEFORE_UND = INSIDE_SPLIT - {"bitte"}
+def inside_split(token: str) -> bool:
+    return token == "bitte" or pause_before_und(token)
+
+
+def pause_before_und(token: str) -> bool:
+    """Before the "und" a "bitte" closes the position: "die 4 bitte und 20" is two."""
+    return token in PUNCTUATION or hesitation(token)
 
 
 def tens_half(token: str) -> bool:
@@ -1171,17 +1203,40 @@ def _split_by_pause(tokens: list[str], k: int) -> bool:
     "und" and a tens half. It can be 23 or the 3 and the 20; the sentence asks,
     also next to a name (Codex PR #147). Without the pause `_scan` reads 23."""
     i, j = k - 1, k + 1
-    while i >= 0 and tokens[i] in PAUSE_BEFORE_UND:
+    while i >= 0 and pause_before_und(tokens[i]):
         i -= 1
-    while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
+    while j < len(tokens) and inside_split(tokens[j]):
         j += 1
     if i < 0 or j >= len(tokens) or (i, j) == (k - 1, k + 1):
         return False
-    # "eine äh und zwanzig" is an article, not the first half; "ein" opens 21.
-    if tokens[i] in ARTICLES - {"ein"}:
-        return False
-    unit = _word_value(tokens[i])
-    return unit is not None and 1 <= unit <= 9 and tens_half(tokens[j])
+    return _first_half(tokens[i]) and tens_half(tokens[j])
+
+
+def _first_half(token: str) -> bool:
+    """Can the token be the first half of "drei und zwanzig"? A unit. "eine äh
+    und zwanzig" and "die eine zwanzig" start with an article, not with the
+    first half; "ein" opens 21."""
+    unit = _word_value(token)
+    return token not in ARTICLES - {"ein"} and unit is not None and 1 <= unit <= 9
+
+
+def _joined_without_und(tokens: list[str], k: int) -> bool:
+    """ "drei zwanzig", "die 3 20": a unit right before a tens half, no "und"
+    between. Two numbers, or a 23 whose "und" the ear lost; `_scan` joins
+    neither, and the sentence asks, also next to a name (#325)."""
+    return k + 1 < len(tokens) and _first_half(tokens[k]) and tens_half(tokens[k + 1])
+
+
+def _second_half(tokens: list[str], at: int) -> bool:
+    """Is the number at `at` maybe only the tens half of a number the ear cut,
+    by a pause at the "und" or without one ("drei und äh zwanzig Portionen",
+    "drei zwanzig mal die 13")? Then it is no quantity of its own (#328)."""
+    if at > 0 and _joined_without_und(tokens, at - 1):
+        return True
+    k = at - 1
+    while k >= 0 and inside_split(tokens[k]):
+        k -= 1
+    return k >= 0 and tokens[k] == "und" and _split_by_pause(tokens, k)
 
 
 def _too_large(token: str) -> bool:
@@ -1259,7 +1314,10 @@ def sole_item_number(
     without an article in front is the quantity ("zwei S zwölf").
     """
     tokens = _tokens(text)
-    if any(t == "und" and _split_by_pause(tokens, k) for k, t in enumerate(tokens)):
+    if any(
+        (t == "und" and _split_by_pause(tokens, k)) or _joined_without_und(tokens, k)
+        for k, t in enumerate(tokens)
+    ):
         return None, True
     glued = _glued(text)
     prefixed = _prefixed(text)
@@ -1362,7 +1420,7 @@ def sole_item_number(
     # word: "und zwanzig" is the second half of "drei und zwanzig", the
     # recognition only cut it off (review PR #147), also in digits ("und 20",
     # the ear wrote "Nummer 3 und 20" for a 23, docs/20) and with a pause
-    # between the two: "und äh zwanzig", "und bitte zwanzig" (`INSIDE_SPLIT`,
+    # between the two: "und äh zwanzig", "und bitte zwanzig" (`inside_split`,
     # Codex PR #147). "und die zwanzig", "und S zwanzig", "und Nummer zwanzig"
     # and "und ein und zwanzig" stay continuations. Only "und": an "oder" or
     # "nein" up front refers to something this sentence does not name and
@@ -1371,12 +1429,12 @@ def sole_item_number(
         if tokens[k] != "und":
             return False
         j = k + 1
-        while j < len(tokens) and tokens[j] in INSIDE_SPLIT:
+        while j < len(tokens) and inside_split(tokens[j]):
             j += 1
         if j < len(tokens) and tens_half(tokens[j]):
             return False
         return all(
-            t in PUNCTUATION or t in _HESITATIONS or t in _OPENING for t in tokens[:k]
+            t in PUNCTUATION or hesitation(t) or t in _OPENING for t in tokens[:k]
         )
 
     loose = any(
@@ -1405,7 +1463,7 @@ def sole_item_number(
                 and t not in _CONNECTORS
                 and t not in _SENTENCE_FILLER
                 and (t not in _LEAD_FILLER or k in after_marker)
-                and t not in _HESITATIONS
+                and not hesitation(t)
                 and t not in _ITEM_NUMBER_MARKERS
                 and not _QUANTITY_SUFFIX.match(t)
             )

@@ -231,9 +231,19 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    name). A pause at the „und" of a spoken number („die drei und äh zwanzig",
    „die drei äh und zwanzig") keeps it one piece, and the sentence asks whether
    it is 23 or the 3 and the 20, also next to a prefix, a letter or a name. A
-   comma at the „und" („die drei, und zwanzig Frühlingsrollen") is still cut
-   first (#328). In a sentence of several parts only the part with the unclear
-   number asks („die 13 und die 24, und 30": the 13 is taken).
+   comma on either side of the „und" is the same pause („die drei, und zwanzig
+   Frühlingsrollen", „die drei und, zwanzig"), and so is a sentence that starts
+   with the cut-off half („und äh, zwanzig", #328). A unit right before a tens
+   word without any „und" („drei zwanzig", „die 3 20") is two numbers or a 23
+   whose „und" the ear lost: the sentence asks as well (#325), and „die eine
+   zwanzig" is the 20, the „eine" its article. The tens half of such a number is
+   no quantity („drei und äh zwanzig Portionen" is not 20 portions, #328). A
+   hesitation counts however the ear spells it („äh", „ähh", „äääh", „öh",
+   „eh", „hmm"); „ah" and „oh" do not, the ear writes them for the letters a
+   and o (#327). When a name before the unclear number hits several dishes
+   („einmal Suppe, und 30"), the sentence still asks for the number instead of
+   searching the name alone (#328). In a sentence of several parts only the part
+   with the unclear number asks („die 13 und die 24, und 30": the 13 is taken).
    **Ein Satz, eine Position:** wer mehrere Positionen in einem Satz aufnehmen
    will, zerlegt ihn **vor** der Suche und fragt `search_menu` je Position. Die
    Zerlegung gehört zum Bestellfluss, nicht in `search_menu`: sie steht in
