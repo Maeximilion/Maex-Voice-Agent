@@ -36,6 +36,7 @@ from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import (
     FAREWELL,
     SAY_OUTAGE,
+    SAY_OUTAGE_FIRST,
     STILL_THERE,
     CallHandler,
     key_terms,
@@ -254,7 +255,9 @@ def test_database_down_at_call_start_still_reaches_the_team(session, tenant):
 
     # Without a database the number from the environment is the only one left.
     assert port.transfers(sid) == [settings.team_phone]
-    assert port.says(sid) == [SAY_OUTAGE]
+    # The first sentence of the call: the AI says it is one (docs/09 L1), and a
+    # team that does not answer leaves it the sentence after the leg too.
+    assert port.says(sid) == [SAY_OUTAGE_FIRST]
 
 
 @pytest.mark.parametrize("mode", ["paused", "shadow"])
@@ -371,7 +374,7 @@ def test_turn_for_an_unknown_call_goes_to_the_team(session, tenant):
 
     handler.on_user_turn("lost-session", "Hallo?")
 
-    assert port.says("lost-session") == [SAY_OUTAGE]
+    assert port.says("lost-session") == [SAY_OUTAGE_FIRST]
     assert port.transfers("lost-session") == [settings.team_phone]
 
 
@@ -1530,3 +1533,137 @@ def test_after_an_outage_transfer_the_log_waits_out_a_lock_like_any_end(
     call = _logged(session, "s-1")
     assert call.ended_at is not None
     assert call.outcome == "error"
+
+
+# -- the team leg nobody answered (T-10.8) ---------------------------------------
+
+COMPLAINT = {
+    "caller_id": "+497215551234",
+    "transcript": [
+        {"role": "customer", "text": "Ich will mich beschweren, das Essen war kalt."},
+    ],
+}
+
+
+def test_a_team_leg_nobody_answered_becomes_a_callback_card(session, tenant):
+    """The dialplan reports it after our leg and its log are closed: the card
+    is the team's only notice of the call then (docs/20 §5)."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(COMPLAINT, handler)
+    assert port.transfers(sid) == [TEAM_PHONE]
+
+    assert handler.on_team_missed(sid) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert (card.phone, card.reason) == ("+497215551234", "complaint")
+    assert the_call(session, sid).outcome == "callback"
+
+
+def test_a_number_the_guest_named_goes_on_the_card(session, tenant):
+    """Withheld caller id: only the number said in the call is left, and only
+    this process knows it once the call is closed."""
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ich will mich beschweren."},
+        ]
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(case, handler)
+    assert port.transfers(sid) == [TEAM_PHONE]
+
+    assert handler.on_team_missed(sid) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.phone == "+497215551234"
+    assert the_call(session, sid).caller_id is None
+
+
+def test_a_named_number_is_forgotten_after_the_handover_window(session, tenant):
+    """A team that answered sends no report, and the number would stay for the
+    next call that comes with the same id (Codex on PR #345): only a report
+    within minutes of the handover reads it."""
+    clock = Clock()
+    case = {
+        "transcript": [
+            {
+                "role": "customer",
+                "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr.",
+            },
+            {"role": "customer", "text": "Auf den Namen Mueller."},
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ich will mich beschweren."},
+        ]
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, clock=clock)
+    sid = port.play(case, handler)
+
+    clock.now += handler_module.NAMED_PHONE_SECONDS + 1
+    assert handler.on_team_missed(sid) is False
+
+    assert session.scalars(select(Callback)).all() == []
+
+
+def test_without_any_number_the_report_has_no_card(session, tenant):
+    case = {"transcript": COMPLAINT["transcript"]}
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(case, handler)
+
+    assert handler.on_team_missed(sid) is False
+
+    assert session.scalars(select(Callback)).all() == []
+
+
+@pytest.mark.parametrize("mode", ["paused", "shadow"])
+def test_a_call_the_ai_never_answered_becomes_a_card_too(session, tenant, mode):
+    """The team was rung at once and nobody took it: the card under the caller
+    id, without a concern the AI never heard."""
+    set_mode(session, tenant.id, mode)
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: NoLLM())
+    sid = port.play(RESERVATION, handler)
+
+    assert handler.on_team_missed(sid) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert (card.phone, card.reason) == ("+497215551234", "out_of_scope")
+
+
+def test_a_report_the_database_cannot_take_is_false_and_names_no_number(
+    session, tenant, caplog
+):
+    sessions = iter([session])
+
+    def once_then_down() -> Session:
+        try:
+            return next(sessions)
+        except StopIteration:
+            raise OperationalError(
+                "SELECT 1", {"phone": "+497215551234"}, Exception("refused")
+            ) from None
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, session_factory=once_then_down)
+    sid = port.play(COMPLAINT, handler)
+
+    with caplog.at_level(logging.INFO):
+        assert handler.on_team_missed(sid) is False
+
+    assert "5551234" not in caplog.text
+    assert any(sid in str(r.__dict__) for r in caplog.records)
+
+
+def test_a_report_for_a_call_this_process_never_saw_is_false(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+
+    assert handler.on_team_missed("1760000000.9") is False

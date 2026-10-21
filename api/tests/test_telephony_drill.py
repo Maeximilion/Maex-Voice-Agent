@@ -24,12 +24,20 @@ class Stage(drill.Drill):
         self.script = script
         self.logs: dict[str, list[str]] = {"router": [], "asterisk": [], "voice": []}
         self.commands: list[tuple[str, ...]] = []
+        # What a command prints, by a piece of it; "" for every other. An
+        # exception is raised, as a command that fails does.
+        self.prints: dict[str, str | Exception] = {}
 
     def compose(self, *args: str) -> str:
         self.commands.append(args)
-        return ""
+        joined = " ".join(args)
+        out = next((out for key, out in self.prints.items() if key in joined), "")
+        if isinstance(out, Exception):
+            raise out
+        return out
 
     def cli(self, service: str, command: str) -> str:
+        self.commands.append(("cli", service, command))
         if command.startswith("channel originate"):
             n = int(command.split("/")[1].split("@")[0])
             for name, lines in self.script[n].items():
@@ -37,7 +45,15 @@ class Stage(drill.Drill):
         return "0 active channels"
 
     def sql(self, statement: str) -> str:
-        return "callback"
+        self.commands.append(("sql", statement))
+        return next(
+            (
+                out
+                for key, out in self.prints.items()
+                if key in statement and isinstance(out, str)
+            ),
+            "callback",
+        )
 
     def log(self, service: str) -> list[str]:
         return list(self.logs[service])
@@ -345,3 +361,139 @@ def test_a_folder_with_somebodys_files_is_refused(tmp_path, monkeypatch):
     (tmp_path / "notes.txt").write_text("mine")
     assert drill.main(["--dry-run", "--run-dir", str(tmp_path)]) == 2
     assert (tmp_path / "notes.txt").read_text() == "mine"
+
+
+# -- the team leg nobody answered (T-10.8) ---------------------------------------
+
+CALLER_111 = drill.NUMBER_PREFIX + "111"
+
+
+def missed_stage(
+    tmp_path,
+    n: int,
+    *,
+    card: str,
+    told: str | None,
+    row: str,
+    dialstatus: str = "ANSWER",
+) -> Stage:
+    asterisk = [
+        f"call 1.1: voice leg {dialstatus} ending [transfer]",
+        "call 1.1: team leg BUSY",
+        f"call 1.1: nobody at the team, card [{card}]",
+    ]
+    if told:
+        asterisk.append(f"call 1.1: told the caller {told} SUCCESS")
+    stage = Stage(
+        tmp_path,
+        {
+            n: {
+                "router": [
+                    *router(n, "dials", "answered"),
+                    TEAM_RINGS,
+                    f"NoOp(DRILL {n} caller leg ended dialstatus={dialstatus})",
+                ],
+                "asterisk": asterisk,
+            }
+        },
+    )
+    stage.prints["external_session_id = '1.1'"] = row
+    return stage
+
+
+def test_a_team_nobody_answers_leaves_a_card_and_the_caller_hears_so(tmp_path):
+    good = missed_stage(
+        tmp_path,
+        111,
+        card="noted",
+        told="missed_noted",
+        row=f"callback|1|{CALLER_111}",
+    )
+    checks = drill.drill_team_missed(good)
+    assert all(ok for _, ok, _ in checks), checks
+
+    for card, told, row in (
+        ("none", "missed_later", "transferred|0|"),  # no card written
+        ("noted", None, f"callback|1|{CALLER_111}"),  # nothing played
+        ("noted", "missed_noted", "callback|1|+4972215550999"),  # another number
+        ("noted", "missed_noted", f"transferred|1|{CALLER_111}"),  # outcome kept
+    ):
+        stage = missed_stage(tmp_path, 111, card=card, told=told, row=row)
+        assert not all(ok for _, ok, _ in drill.drill_team_missed(stage))
+
+
+def test_the_team_drills_set_the_router_and_the_hours_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(drill, "TEAM_LIMIT_SECONDS", -9.9)
+    stage = missed_stage(
+        tmp_path, 111, card="noted", told="missed_noted", row="callback|1|x"
+    )
+    stage.script[111]["router"] = []  # the call never ends: the drill breaks
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_team_missed(stage)
+
+    clis = [c for c in stage.commands if "TEAM_AWAY" in " ".join(c)]
+    assert "TEAM_AWAY answer" in " ".join(clis[-1])
+    sqls = [c[1] for c in stage.commands if c[0] == "sql"]
+    assert "insert into special_days" in sqls[0]
+    assert sqls[-1].startswith("delete from special_days")
+
+
+def test_a_call_the_ai_never_answered_gets_a_card_and_no_sentence(tmp_path):
+    def paused(told: str | None) -> Stage:
+        return missed_stage(
+            tmp_path,
+            112,
+            card="noted",
+            told=told,
+            row=f"callback|1|{drill.NUMBER_PREFIX}112",
+            dialstatus="NOANSWER",
+        )
+
+    assert all(ok for _, ok, _ in drill.drill_team_missed_paused(paused(None)))
+    assert not all(
+        ok for _, ok, _ in drill.drill_team_missed_paused(paused("missed_noted"))
+    )
+
+
+def test_with_voice_down_the_caller_still_hears_to_call_again(tmp_path):
+    stage = missed_stage(
+        tmp_path, 113, card="", told="missed_later", row="transferred|0|"
+    )
+
+    checks = drill.drill_team_missed_voice_down(stage)
+
+    assert all(ok for _, ok, _ in checks), checks
+    assert ("stop", "voice") in stage.commands
+    assert stage.commands.index(("stop", "voice")) < stage.commands.index(
+        ("up", "-d", "--wait", "voice")
+    )
+    promised = missed_stage(
+        tmp_path, 113, card="", told="missed_noted", row="transferred|0|"
+    )
+    assert not all(ok for _, ok, _ in drill.drill_team_missed_voice_down(promised))
+    # A card written although `voice` gave no answer: not what the point says.
+    written = missed_stage(
+        tmp_path, 113, card="", told="missed_later", row=f"callback|1|{CALLER_111}"
+    )
+    assert not all(ok for _, ok, _ in drill.drill_team_missed_voice_down(written))
+
+
+def test_the_announcements_asterisk_plays_are_the_sentences_of_the_code(tmp_path):
+    stage = Stage(tmp_path, {})
+    stage.prints["ANNOUNCEMENTS"] = '{"missed_noted": "Ja.", "missed_later": "Nein."}'
+    # The fake mouth's audio is the sentence, then silence.
+    stage.prints["missed_noted.sln16"] = "Ja.\x00"
+    stage.prints["missed_later.sln16"] = "Nein.\x00"
+
+    [(_, ok, detail)] = drill.drill_announcements(stage)
+    assert ok, detail
+
+    for stale in (
+        "Vielleicht",  # another sentence
+        "Nein. Und",  # an older, longer sentence that begins the same way
+        drill.DrillError("head: No such file or directory"),  # none at all
+    ):
+        stage.prints["missed_later.sln16"] = stale
+        [(_, ok, detail)] = drill.drill_announcements(stage)
+        assert not ok and "missed_later" in detail

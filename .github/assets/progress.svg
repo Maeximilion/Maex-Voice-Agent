@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="740" viewBox="0 0 1200 740" role="img" aria-labelledby="t d">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="774" viewBox="0 0 1200 774" role="img" aria-labelledby="t d">
 <title id="t">Build progress</title>
-<desc id="d">51 of 92 tasks done, 4 in progress, 6 blocked, as of 2026-10-19. block 0 Scaffold 11 of 11; block 1 Reservations 14 of 14; block 1b Conversation core 4 of 5; block 1c Own voice layer 3 of 13; block 2 Tablet GUI 5 of 7; block 3 Pickup 13 of 15; block 4 Delivery 0 of 9; block 5 Learning 0 of 5; block 5b Deployment 1 of 7; block 6 Operations 0 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
+<desc id="d">52 of 100 tasks done, 4 in progress, 6 blocked, as of 2026-10-20. block 0 Scaffold 11 of 11; block 1 Reservations 14 of 14; block 1b Conversation core 4 of 5; block 1c Own voice layer 4 of 13; block 1d Block 1d 0 of 8; block 2 Tablet GUI 5 of 7; block 3 Pickup 13 of 15; block 4 Delivery 0 of 9; block 5 Learning 0 of 5; block 5b Deployment 1 of 7; block 6 Operations 0 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
-<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="740"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="740"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
-<rect width="1200" height="740" rx="24" fill="#0D0819"/>
-<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="740" rx="24" fill="url(#dots)" opacity="0.8"/>
-<rect x="40" y="40" width="1120" height="660" rx="10" fill="#17102B" stroke="#2B2148"/>
+<defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="774"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="774"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<rect width="1200" height="774" rx="24" fill="#0D0819"/>
+<pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.2" fill="#2B2148"/></pattern><rect width="1200" height="774" rx="24" fill="url(#dots)" opacity="0.8"/>
+<rect x="40" y="40" width="1120" height="694" rx="10" fill="#17102B" stroke="#2B2148"/>
 <circle cx="52" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="70.3" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="88.5" cy="40" r="4.5" fill="#0D0819"/>
@@ -68,12 +68,12 @@
 <circle cx="1129.7" cy="40" r="4.5" fill="#0D0819"/>
 <circle cx="1148" cy="40" r="4.5" fill="#0D0819"/>
 <text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">BUILD PROGRESS</text>
-<text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-19</text>
+<text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-20</text>
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
-<text x="64" y="132" font-size="40" fill="#E8FF2E" font-weight="700">51/92</text>
-<text x="200" y="132" font-size="18" fill="#F1ECFF">tasks done · 55 %</text>
-<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">4 in progress · 6 blocked · 31 open</text>
-<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="592.3" height="18" rx="9" fill="#E8FF2E"/><rect x="658.3" y="152" width="44.6" height="18" rx="9" fill="#9D7BFF"/><rect x="704.9" y="152" width="67.9" height="18" rx="9" fill="#FF5277"/>
+<text x="64" y="132" font-size="40" fill="#E8FF2E" font-weight="700">52/100</text>
+<text x="224" y="132" font-size="18" fill="#F1ECFF">tasks done · 52 %</text>
+<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">4 in progress · 6 blocked · 38 open</text>
+<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="555.4" height="18" rx="9" fill="#E8FF2E"/><rect x="621.4" y="152" width="40.9" height="18" rx="9" fill="#9D7BFF"/><rect x="664.3" y="152" width="62.3" height="18" rx="9" fill="#FF5277"/>
 <text x="64" y="229" font-size="15" fill="#A89CCB" font-weight="700">0</text>
 <text x="110" y="229" font-size="15" fill="#F1ECFF">Scaffold</text>
 <rect x="330" y="218" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="218" width="698" height="12" rx="6" fill="#E8FF2E"/>
@@ -88,61 +88,65 @@
 <text x="1136" y="297" font-size="15" fill="#F1ECFF" text-anchor="end">4/5</text>
 <text x="64" y="331" font-size="15" fill="#A89CCB" font-weight="700">1c</text>
 <text x="110" y="331" font-size="15" fill="#F1ECFF">Own voice layer</text>
-<rect x="330" y="320" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="320" width="159.5" height="12" rx="6" fill="#E8FF2E"/><rect x="491.5" y="320" width="105.7" height="12" rx="6" fill="#9D7BFF"/><rect x="599.2" y="320" width="51.8" height="12" rx="6" fill="#FF5277"/>
-<text x="1136" y="331" font-size="15" fill="#F1ECFF" text-anchor="end">3/13</text>
-<text x="64" y="365" font-size="15" fill="#A89CCB" font-weight="700">2</text>
-<text x="110" y="365" font-size="15" fill="#F1ECFF">Tablet GUI</text>
-<rect x="330" y="354" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="354" width="498" height="12" rx="6" fill="#E8FF2E"/>
-<text x="1136" y="365" font-size="15" fill="#F1ECFF" text-anchor="end">5/7</text>
-<text x="64" y="399" font-size="15" fill="#A89CCB" font-weight="700">3</text>
-<text x="110" y="399" font-size="15" fill="#F1ECFF">Pickup</text>
-<rect x="330" y="388" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="388" width="604.7" height="12" rx="6" fill="#E8FF2E"/>
-<text x="1136" y="399" font-size="15" fill="#F1ECFF" text-anchor="end">13/15</text>
-<text x="64" y="433" font-size="15" fill="#A89CCB" font-weight="700">4</text>
-<text x="110" y="433" font-size="15" fill="#F1ECFF">Delivery</text>
-<rect x="330" y="422" width="700" height="12" rx="6" fill="#0D0819"/>
-<text x="1136" y="433" font-size="15" fill="#F1ECFF" text-anchor="end">0/9</text>
-<text x="64" y="467" font-size="15" fill="#A89CCB" font-weight="700">5</text>
-<text x="110" y="467" font-size="15" fill="#F1ECFF">Learning</text>
-<rect x="330" y="456" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="456" width="698" height="12" rx="6" fill="#FF5277"/>
-<text x="1136" y="467" font-size="15" fill="#F1ECFF" text-anchor="end">0/5</text>
-<text x="64" y="501" font-size="15" fill="#A89CCB" font-weight="700">5b</text>
-<text x="110" y="501" font-size="15" fill="#F1ECFF">Deployment</text>
-<rect x="330" y="490" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="490" width="98" height="12" rx="6" fill="#E8FF2E"/><rect x="430" y="490" width="98" height="12" rx="6" fill="#9D7BFF"/>
-<text x="1136" y="501" font-size="15" fill="#F1ECFF" text-anchor="end">1/7</text>
-<text x="64" y="535" font-size="15" fill="#A89CCB" font-weight="700">6</text>
-<text x="110" y="535" font-size="15" fill="#F1ECFF">Operations</text>
-<rect x="330" y="524" width="700" height="12" rx="6" fill="#0D0819"/>
-<text x="1136" y="535" font-size="15" fill="#F1ECFF" text-anchor="end">0/6</text>
-<path d="M170 612 L177.2 611.9 L184.3 611.8 L191.5 611.6 L198.7 611.6 L205.8 611.8 L213 612.1 L220.2 612.6 L227.3 613 L234.5 613.1 L241.7 612.9 L248.8 612.3 L256 611.5 L263.2 610.7 L270.3 610.2 L277.5 610.2 L284.7 610.8 L291.8 611.8 L299 613 L306.2 614 L313.3 614.5 L320.5 614.2 L327.7 613.2 L334.8 611.8 L342 610.3 L349.2 609.2 L356.3 608.9 L363.5 609.5 L370.7 611 L377.8 612.8 L385 614.5 L392.2 615.5 L399.3 615.5 L406.5 614.5 L413.7 612.6 L420.8 610.5 L428 608.7 L435.2 607.9 L442.3 608.3 L449.5 609.8 L456.7 612 L463.8 614.3 L471 616 L478.2 616.5 L485.3 615.7 L492.5 613.8 L499.7 611.3 L506.8 608.9 L514 607.5 L521.2 607.3 L528.3 608.6 L535.5 610.9 L542.7 613.5 L549.8 615.7 L557 616.9 L564.2 616.6 L571.3 614.9 L578.5 612.4 L585.7 609.7 L592.8 607.7 L600 607 L607.2 607.7 L614.3 609.7 L621.5 612.4 L628.7 614.9 L635.8 616.6 L643 616.9 L650.2 615.7 L657.3 613.5 L664.5 610.9 L671.7 608.6 L678.8 607.3 L686 607.5 L693.2 608.9 L700.3 611.3 L707.5 613.8 L714.7 615.7 L721.8 616.5 L729 616 L736.2 614.3 L743.3 612 L750.5 609.8 L757.7 608.3 L764.8 607.9 L772 608.7 L779.2 610.5 L786.3 612.6 L793.5 614.5 L800.7 615.5 L807.8 615.5 L815 614.5 L822.2 612.8 L829.3 611 L836.5 609.5 L843.7 608.9 L850.8 609.2 L858 610.3 L865.2 611.8 L872.3 613.2 L879.5 614.2 L886.7 614.5 L893.8 614 L901 613 L908.2 611.8 L915.3 610.8 L922.5 610.2 L929.7 610.2 L936.8 610.7 L944 611.5 L951.2 612.3 L958.3 612.9 L965.5 613.1 L972.7 613 L979.8 612.6 L987 612.1 L994.2 611.8 L1001.3 611.6 L1008.5 611.6 L1015.7 611.8 L1022.8 611.9 L1030 612" fill="none" stroke="#2B2148" stroke-width="2"/>
-<circle cx="170" cy="612" r="9" fill="#E8FF2E" stroke="#E8FF2E" stroke-width="3"/>
-<text x="170" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">P</text>
-<text x="170" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">passed</text>
-<circle cx="313.3" cy="612" r="9" fill="#17102B" stroke="#9D7BFF" stroke-width="3"/>
-<text x="313.3" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G0</text>
-<text x="313.3" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">next</text>
-<circle cx="456.7" cy="612" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
-<text x="456.7" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G1</text>
-<text x="456.7" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
-<circle cx="600" cy="612" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
-<text x="600" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G2</text>
-<text x="600" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
-<circle cx="743.3" cy="612" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
-<text x="743.3" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G3</text>
-<text x="743.3" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
-<circle cx="886.7" cy="612" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
-<text x="886.7" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G4</text>
-<text x="886.7" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
-<circle cx="1030" cy="612" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
-<text x="1030" y="594" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G5</text>
-<text x="1030" y="642" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
-<text x="64" y="617" font-size="14" fill="#A89CCB">gates</text>
-<rect x="330" y="663" width="14" height="14" rx="7" fill="#E8FF2E"/>
-<text x="352" y="674" font-size="14" fill="#A89CCB">done</text>
-<rect x="406" y="663" width="14" height="14" rx="7" fill="#9D7BFF"/>
-<text x="428" y="674" font-size="14" fill="#A89CCB">in progress</text>
-<rect x="538" y="663" width="14" height="14" rx="7" fill="#FF5277"/>
-<text x="560" y="674" font-size="14" fill="#A89CCB">blocked</text>
-<rect x="638" y="663" width="14" height="14" rx="7" fill="#0D0819" stroke="#76699F"/>
-<text x="660" y="674" font-size="14" fill="#A89CCB">open</text>
+<rect x="330" y="320" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="320" width="213.4" height="12" rx="6" fill="#E8FF2E"/><rect x="545.4" y="320" width="105.7" height="12" rx="6" fill="#9D7BFF"/><rect x="653.1" y="320" width="51.8" height="12" rx="6" fill="#FF5277"/>
+<text x="1136" y="331" font-size="15" fill="#F1ECFF" text-anchor="end">4/13</text>
+<text x="64" y="365" font-size="15" fill="#A89CCB" font-weight="700">1d</text>
+<text x="110" y="365" font-size="15" fill="#F1ECFF">Block 1d</text>
+<rect x="330" y="354" width="700" height="12" rx="6" fill="#0D0819"/>
+<text x="1136" y="365" font-size="15" fill="#F1ECFF" text-anchor="end">0/8</text>
+<text x="64" y="399" font-size="15" fill="#A89CCB" font-weight="700">2</text>
+<text x="110" y="399" font-size="15" fill="#F1ECFF">Tablet GUI</text>
+<rect x="330" y="388" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="388" width="498" height="12" rx="6" fill="#E8FF2E"/>
+<text x="1136" y="399" font-size="15" fill="#F1ECFF" text-anchor="end">5/7</text>
+<text x="64" y="433" font-size="15" fill="#A89CCB" font-weight="700">3</text>
+<text x="110" y="433" font-size="15" fill="#F1ECFF">Pickup</text>
+<rect x="330" y="422" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="422" width="604.7" height="12" rx="6" fill="#E8FF2E"/>
+<text x="1136" y="433" font-size="15" fill="#F1ECFF" text-anchor="end">13/15</text>
+<text x="64" y="467" font-size="15" fill="#A89CCB" font-weight="700">4</text>
+<text x="110" y="467" font-size="15" fill="#F1ECFF">Delivery</text>
+<rect x="330" y="456" width="700" height="12" rx="6" fill="#0D0819"/>
+<text x="1136" y="467" font-size="15" fill="#F1ECFF" text-anchor="end">0/9</text>
+<text x="64" y="501" font-size="15" fill="#A89CCB" font-weight="700">5</text>
+<text x="110" y="501" font-size="15" fill="#F1ECFF">Learning</text>
+<rect x="330" y="490" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="490" width="698" height="12" rx="6" fill="#FF5277"/>
+<text x="1136" y="501" font-size="15" fill="#F1ECFF" text-anchor="end">0/5</text>
+<text x="64" y="535" font-size="15" fill="#A89CCB" font-weight="700">5b</text>
+<text x="110" y="535" font-size="15" fill="#F1ECFF">Deployment</text>
+<rect x="330" y="524" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="524" width="98" height="12" rx="6" fill="#E8FF2E"/><rect x="430" y="524" width="98" height="12" rx="6" fill="#9D7BFF"/>
+<text x="1136" y="535" font-size="15" fill="#F1ECFF" text-anchor="end">1/7</text>
+<text x="64" y="569" font-size="15" fill="#A89CCB" font-weight="700">6</text>
+<text x="110" y="569" font-size="15" fill="#F1ECFF">Operations</text>
+<rect x="330" y="558" width="700" height="12" rx="6" fill="#0D0819"/>
+<text x="1136" y="569" font-size="15" fill="#F1ECFF" text-anchor="end">0/6</text>
+<path d="M170 646 L177.2 645.9 L184.3 645.8 L191.5 645.6 L198.7 645.6 L205.8 645.8 L213 646.1 L220.2 646.6 L227.3 647 L234.5 647.1 L241.7 646.9 L248.8 646.3 L256 645.5 L263.2 644.7 L270.3 644.2 L277.5 644.2 L284.7 644.8 L291.8 645.8 L299 647 L306.2 648 L313.3 648.5 L320.5 648.2 L327.7 647.2 L334.8 645.8 L342 644.3 L349.2 643.2 L356.3 642.9 L363.5 643.5 L370.7 645 L377.8 646.8 L385 648.5 L392.2 649.5 L399.3 649.5 L406.5 648.5 L413.7 646.6 L420.8 644.5 L428 642.7 L435.2 641.9 L442.3 642.3 L449.5 643.8 L456.7 646 L463.8 648.3 L471 650 L478.2 650.5 L485.3 649.7 L492.5 647.8 L499.7 645.3 L506.8 642.9 L514 641.5 L521.2 641.3 L528.3 642.6 L535.5 644.9 L542.7 647.5 L549.8 649.7 L557 650.9 L564.2 650.6 L571.3 648.9 L578.5 646.4 L585.7 643.7 L592.8 641.7 L600 641 L607.2 641.7 L614.3 643.7 L621.5 646.4 L628.7 648.9 L635.8 650.6 L643 650.9 L650.2 649.7 L657.3 647.5 L664.5 644.9 L671.7 642.6 L678.8 641.3 L686 641.5 L693.2 642.9 L700.3 645.3 L707.5 647.8 L714.7 649.7 L721.8 650.5 L729 650 L736.2 648.3 L743.3 646 L750.5 643.8 L757.7 642.3 L764.8 641.9 L772 642.7 L779.2 644.5 L786.3 646.6 L793.5 648.5 L800.7 649.5 L807.8 649.5 L815 648.5 L822.2 646.8 L829.3 645 L836.5 643.5 L843.7 642.9 L850.8 643.2 L858 644.3 L865.2 645.8 L872.3 647.2 L879.5 648.2 L886.7 648.5 L893.8 648 L901 647 L908.2 645.8 L915.3 644.8 L922.5 644.2 L929.7 644.2 L936.8 644.7 L944 645.5 L951.2 646.3 L958.3 646.9 L965.5 647.1 L972.7 647 L979.8 646.6 L987 646.1 L994.2 645.8 L1001.3 645.6 L1008.5 645.6 L1015.7 645.8 L1022.8 645.9 L1030 646" fill="none" stroke="#2B2148" stroke-width="2"/>
+<circle cx="170" cy="646" r="9" fill="#E8FF2E" stroke="#E8FF2E" stroke-width="3"/>
+<text x="170" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">P</text>
+<text x="170" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">passed</text>
+<circle cx="313.3" cy="646" r="9" fill="#17102B" stroke="#9D7BFF" stroke-width="3"/>
+<text x="313.3" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G0</text>
+<text x="313.3" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">next</text>
+<circle cx="456.7" cy="646" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
+<text x="456.7" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G1</text>
+<text x="456.7" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
+<circle cx="600" cy="646" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
+<text x="600" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G2</text>
+<text x="600" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
+<circle cx="743.3" cy="646" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
+<text x="743.3" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G3</text>
+<text x="743.3" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
+<circle cx="886.7" cy="646" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
+<text x="886.7" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G4</text>
+<text x="886.7" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
+<circle cx="1030" cy="646" r="9" fill="#17102B" stroke="#76699F" stroke-width="3"/>
+<text x="1030" y="628" font-size="15" fill="#F1ECFF" text-anchor="middle" font-weight="700">G5</text>
+<text x="1030" y="676" font-size="13" fill="#A89CCB" text-anchor="middle">open</text>
+<text x="64" y="651" font-size="14" fill="#A89CCB">gates</text>
+<rect x="330" y="697" width="14" height="14" rx="7" fill="#E8FF2E"/>
+<text x="352" y="708" font-size="14" fill="#A89CCB">done</text>
+<rect x="406" y="697" width="14" height="14" rx="7" fill="#9D7BFF"/>
+<text x="428" y="708" font-size="14" fill="#A89CCB">in progress</text>
+<rect x="538" y="697" width="14" height="14" rx="7" fill="#FF5277"/>
+<text x="560" y="708" font-size="14" fill="#A89CCB">blocked</text>
+<rect x="638" y="697" width="14" height="14" rx="7" fill="#0D0819" stroke="#76699F"/>
+<text x="660" y="708" font-size="14" fill="#A89CCB">open</text>
 </svg>

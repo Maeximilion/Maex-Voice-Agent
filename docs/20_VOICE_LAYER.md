@@ -179,7 +179,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | `voice` is down or refuses the media connection | the dialplan | the dialplan dials the team number |
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer` |
-| The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, the caller hears that nobody is reachable (T-10.8) |
+| The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
@@ -214,7 +214,7 @@ crash) to the team telephone ringing, on the kit's monotonic clock, which polls 
 | `voice` frozen (its process paused: it takes the connection and answers nothing) | the team rang after 4.4 s, twice the connection timeout for the handshake. On Asterisk 22.10.1 it never rang: the handshake read had no timeout (issue #1979, fixed in 22.11.0), so the pin is 22.11.0 |
 | `voice` freezes in the middle of a call | the team rang 8.2 and 9.6 s after the freeze in two runs: two pings of 2 s without a pong close our leg (`enable_pingpongs`, 22.11.0 and later), then the dialplan's question to the frozen `voice` fails after 2 s. Without the pings the team had not rung after 40 s; only the backstop of an hour would have ended the call |
 | Database stopped | the outage sentence, the team rang after 8.3 s (the same lookup, for `db`) |
-| A turn of the core with the model down | the core hands over: the team rings, or, outside the opening hours by its guess, a callback card and goodbye (T-10.8) |
+| A turn of the core with the model down | the core hands over: the team rings, or, outside the opening hours, a callback card and goodbye; nobody is rung then (Maxi, 20.10.2026) |
 | A silent caller | answered, asked twice, goodbye and our hangup after 6.5 s (2 s silence in the drill); the team does not ring |
 | A call from our own number | refused, nobody answers, the team does not ring |
 
@@ -235,7 +235,7 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   the number cannot be reached does not make the caller hang up before `TEAM_PHONE` is tried. **A mailbox that answers is an answer:** a listed mobile whose mailbox picks up within the
   30 s keeps the call, and `TEAM_PHONE` never rings; SIP cannot tell a mailbox from a person. So a
   number on the list has no mailbox, or its forwarding on no answer is off (open point, §12).
-  Unanswered at `TEAM_PHONE` the call still ends (T-10.8).
+  Unanswered at `TEAM_PHONE` too, the call becomes a callback card (T-10.8, below).
 - SIP only from the access: an ACL refuses every request from another address, IPv4 and IPv6,
   before anything reads it, and the endpoint is identified by address alone (`identify_by=ip`; the
   global `endpoint_identifier_order=ip` only puts the address first, Asterisk appends the
@@ -276,6 +276,41 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
 | `voice` hands the call to a number off the list | the dialplan logs the refusal, the team rings at `TEAM_PHONE` after 0.2 s, the number is never dialled |
 | `voice` hands the call to a listed number that is busy | that number rings first, then `TEAM_PHONE`, 0.2 s after the call was placed; the list is given loosely, with `TEAM_PHONE` in its national form, so the drill also shows the cleaned list reaching the dialplan |
 | An INVITE from another address on the network, From user `access` | refused with `403`, the ACL's answer; on the old configuration `100`, then `200`. Without the ACL, identification by address alone answers `401`, which the drill counts as failed |
+
+**Built with T-10.8 (20.10.2026): a team that does not pick up.** A handover by the agent
+outside the opening hours changes nothing: the core writes the callback card itself and nobody
+is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a failure) ring
+`TEAM_PHONE` at any hour, as before (rule 5). When nobody answers at `TEAM_PHONE`, the last leg:
+
+- The dialplan reports the call to `voice` (`POST /calls/{id}/missed`, the media token, 4 s), by
+  the call's id, no number; also after a leg that found `voice` unreachable, since a leg it took
+  and lost before a word ends the same way and its row is there. `voice` writes the card through `callbacks.team_missed`: the call row is
+  found by its line id after its log is closed (the newest of the last two hours), the number is
+  the one the guest named in the call, kept in the process's memory at the handover, else the
+  caller id, else that of an open card of the call; the reason is the transfer's, the outcome
+  becomes `callback` whatever the log derived (an `error` stays). A busy team telephone answers
+  within a fraction of a second, while our leg's log may still be written: both take the call's
+  row, and `end_call` keeps an outcome set before it unless it logs an error. `voice` answers
+  `noted` only once the card is committed, `none` otherwise (no number, no row, an error). An
+  answer later than 4 s counts as none for the caller, and the card may still be written: the
+  caller hears to call again and is called back too, never the other way round.
+- A caller the AI answered then hears a sentence (docs/05 §6): that the restaurant calls back after
+  `noted`, to call again after anything else. Asterisk plays it from a file `voice` renders with
+  its own mouth at every start into the volume `announcements` (tmpfs, read-only for Asterisk),
+  so the sentence is heard with `voice` or the database down too, and it follows the code.
+  `STAT` guards the playback: a missing file would answer the call into silence (22.11.0).
+- Nothing is played to a caller the AI never answered (paused, shadow, `voice` not reached): the
+  call ends as an unanswered one does. A paused line still gets the card. A caller it answered
+  heard it say who it is first (L1 of docs/09): the greeting, or, when the outage sentence is
+  the first of the call (the database down at the start, a call the process does not know), the
+  outage sentence with the AI notice before it (`SAY_OUTAGE_FIRST`, docs/05 §6).
+
+| Drill | Result |
+|---|---|
+| The team telephone is busy after the core handed the call over | `noted`, one card under the caller's number, outcome `callback`, the caller hears that the restaurant calls back |
+| The same on a paused line | the card, nothing played, the call never answered |
+| `voice` is stopped while the team telephone rings unanswered | no card, the caller hears to call again, from the file |
+| The files Asterisk plays | hold the code's two sentences |
 
 Numbers per run: §11. **Open for the access of T-10.1 step 2 and T-10.12:** the ACL and `match` hold
 the addresses of `ACCESS_HOST` and its SRV targets only. A VPN that rewrites the router's address,
@@ -659,6 +694,8 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 14.10.2026 | T-1.11 part 2, the engines inside `voice` | The image of the target `voice` on the workbench (graphics card, the kit's model files read-only); `api/tests/test_telephony_speech_engines.py` in it; `voice` started as Compose starts it (uid 10001) with `whisper` and `piper` against a throwaway database; `python3 -m scripts.voice_drill` twice on the branch | The engine tests 4 of 4, among them a whole call through `/media` on the engines as the service loads them: Piper greets, "Ich hätte gern zweimal die Nummer 45." goes in as frames of the media channel and reaches the core word for word, the goodbye is played and the line hung up; mouth to first audio 0.08 s, ear 0.48 s after the audio. `voice` healthy 4 s after its start, the models loaded (two warnings: Hugging Face cannot write its tree cache into the read-only folder, onnxruntime cannot keep a telemetry id). Drills: first run 10 of 11, in "voice frozen" the team rang after 4 s and hung up after 2 s, but the caller's leg on the stand-in router stayed open until the kit gave up after 60 s (§12); second run 15 of 15 (kill 0.4 s, `paused` 0.2 s, `voice` stopped 5.2 s, frozen 4.5 s, frozen mid-call 8.1 s, database stopped 8.4 s). Not measured: an engine that really hangs in the service (the watchdog is tested against a clock), real voices, the router |
 | 19.10.2026 | T-10.13, the dialplan and the access after the audit | `python3 -m scripts.voice_drill` on the workbench, first on the configuration of `main` with the three new drills (6 of 8 points, then stopped: the stranger's INVITE was taken with `100` and `200`, and a transfer to a number off the list was dialled while `TEAM_PHONE` never rang), then on the branch: 20 of 20. A number off the list: the team rang at `TEAM_PHONE` after 0.2 s, the number never dialled; a busy listed number: tried first, then `TEAM_PHONE`; the stranger's INVITE: `403`. The other drills as on 14.10.2026 (`voice` down 3.9 s, frozen 4.3 s, frozen mid-call 7.9 s, database down 3.9 s, crash 0.4 s) | go |
 | 20.10.2026 | T-10.13 after the ultrareview of PR #340 | `python3 -m scripts.voice_drill` on the workbench with the SRV lookup, the cleaned list (given loosely, with `TEAM_PHONE` in its national form), `r` on the team legs and the stricter points: 20 of 20. The stranger's INVITE `403`; a number off the list refused by the dialplan, the team at `TEAM_PHONE` after 0.2 s; a busy listed number tried first, then `TEAM_PHONE`. `voice` down 4.0 s, frozen 4.2 s, frozen mid-call 5.9 s, database down 3.9 s, crash 0.4 s. `render.sh` in the image against real DNS: a SIP trunk provider's registrar name without an A record gives the six addresses of its three SRV targets | go |
+| 20.10.2026 | T-10.8 | `python3 -m scripts.voice_drill` on the workbench, with the router stand-in's team telephone busy (`TEAM_AWAY=busy`) or ringing past the 30 s (`ring`), the opening hours open around the clock for the drill (a special day) | **26 of 26 points.** Busy team after the core handed the call over (keys, model down): the team rang after 4.3 s, `voice` answered the report `noted`, one card under the caller's number, the call's outcome `callback`, the caller heard `missed_noted` (`PLAYBACKSTATUS` SUCCESS); the busy answer came while our leg's log could still be written. Paused line: a card, nothing played, the caller's leg never answered (BUSY). `voice` stopped while the team rang: no answer to the report, no card, the caller heard `missed_later` from the file, the call over 33.2 s after it was placed (36.7 s on the run after the review fixes, also 26 of 26). The files Asterisk plays hold the code's two sentences. The 20 points from before all green again; six new (team missed 3, paused 1, `voice` down 1, the
+sentences 1) |
 
 ---
 
@@ -749,8 +786,11 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   (docs/18 §3), and one vendor with an EU endpoint for both. Where each processes data and whether a
   data processing agreement exists is checked before the first key is used on anything but invented
   sentences.
-- **Team reachability:** today `transfer_to_team` guesses from the opening hours whether somebody
-  can answer; the real answer is the result of the transfer (T-10.8).
+- **Team reachability, decided 20.10.2026 (Maxi):** a handover by the agent outside the opening
+  hours rings nobody, and the agent writes the callback card at once (the outage paths ring
+  `TEAM_PHONE` at any hour, rule 5); inside them the call goes to the team, and the dial
+  result decides (T-10.8, §5). The text phone and the evals have no dial result and keep the
+  opening hours alone.
 - **From T-10.1 step 1, for T-1.11:** the media socket of the spike has no access control, which is
   fine on a network of its own without a published port; the service `voice` needs one (the
   connection in `websocket_client.conf` can carry a user name and password, and TLS). **Built
@@ -784,13 +824,24 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   has no mailbox, or its forwarding on no answer is off. The way out, if a mobile with a mailbox
   has to be on the list: the team member presses a key to take the call (Dial's `U()` with a spoken
   prompt), else the leg counts as not answered. Maxi's call; it needs a recorded prompt.
-- **From T-1.11, a team that does not pick up:** the dialplan rings the team for 30 s and then ends
-  the call; the caller hears nothing more. Since T-10.13 a leg at another number of the list that
-  nobody takes is first followed by one at `TEAM_PHONE`, 30 s more; unanswered there, the call ends
-  the same way. That is the row "The team does not pick up" of §5, the
-  task T-10.8 (a callback card, and a sentence that nobody is reachable), which waits for T-1.11.
-  Until then the core sends a call to the team only when the opening hours say somebody is there,
-  and no real customer calls the AI telephone (§3, test number).
+- **From T-10.8, a team that does not pick up (built 20.10.2026, §5):** open around it:
+  - A caller who hangs up while the team rings ends the dialplan, and no card is written; the
+    team's telephone shows a missed call from our registration, not the guest's number (T-10.2).
+    An `h` extension could report it as well (about four lines). Maxi's call.
+  - The card carries the reason of the transfer and what happened, not the guest's words: the
+    conversation's state is gone when the report comes. Kept in the line's memory with the number
+    the guest named, if the team asks for it.
+  - A card is lost when `voice` or the database is down at the report (the team telephone rang,
+    rule 5, and the caller hears to call again). Writing the report to a spool on the
+    announcements volume, which `voice` reads at its start, would keep it; not built, it would
+    keep numbers outside the database's deletion periods.
+  - In mode paused every team leg nobody answers is a card and a push: wanted, since the team
+    phone does not show the guest's number, but it can be many while the team is away.
+  - The sentences are drafts (docs/05 §6), like every other say text.
+  - A report that comes before the call row is written finds nothing: `voice` took more than
+    the dialplan's 10 s to open the call (each statement is bounded at 2 s, so only a database
+    slow on every one of them), the dialplan rang the team, and a busy team answered at once.
+    No card then, and nothing is played (the leg was not answered). Not retried.
 
 ---
 

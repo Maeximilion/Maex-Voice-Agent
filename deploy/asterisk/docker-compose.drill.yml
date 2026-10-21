@@ -66,6 +66,7 @@ services:
     volumes:
       - ../../api:/app/api:ro
       - ../../prompts:/app/prompts:ro
+      - announcements:/announcements
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
       interval: 2s
@@ -101,3 +102,11 @@ services:
         condition: service_healthy
       voice:
         condition: service_healthy
+
+volumes:
+  # As in docker-compose.yml, owned by the drill's user, who runs `voice` here.
+  announcements:
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=4m,uid=${DRILL_UID},gid=${DRILL_GID},mode=0755"
