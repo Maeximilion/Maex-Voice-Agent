@@ -128,7 +128,8 @@ _BOOKING_CLAIM = re.compile(
 )
 # A sentence that speaks of a pickup code, and the tokens shaped like one:
 # the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
-_NAMES_A_CODE = re.compile(r"code|abholnummer", re.IGNORECASE)
+# "Code" on its own, not inside "Gutscheincode" or after "WLAN-" (Codex PR #347).
+_NAMES_A_CODE = re.compile(r"abholcode|abholnummer|(?<![\w-])code\b", re.IGNORECASE)
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.

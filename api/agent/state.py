@@ -460,6 +460,10 @@ def apply_tool_result(
         # readback starts from these lines.
         with suppress(ValidationError):
             state.cart = cart_lines((args or {}).get("items"))
+    elif name == "check_slot":
+        # Another table asked for: the confirmed one does not speak for it
+        # until it is confirmed itself (Codex PR #347).
+        state.booked.discard("reservation")
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_service_status":

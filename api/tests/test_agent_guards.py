@@ -994,3 +994,25 @@ def test_a_new_cart_after_a_confirmed_order_is_not_booked():
     assert take_cart(state, [{"menu_item_id": REIS, "quantity": 2}]) is None
     assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
     assert state.pickup_code is None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Einen Gutscheincode kann ich leider nicht prüfen.",
+        "Den WLAN-Code kenne ich nicht.",
+    ],
+)
+def test_other_codes_are_no_pickup_code(say):
+    assert false_booking(new_state(), say) is None
+
+
+def test_a_new_table_request_after_a_confirmed_table_is_not_booked():
+    """After one confirmed table the guest asks for another: "Ihr Tisch ist
+    reserviert" must wait for that one's confirm (Codex PR #347)."""
+    state = new_state(booked={"reservation"}, stage="confirmed")
+    apply_tool_result(
+        state, "check_slot", ToolResult(ok=True, data={"available": True})
+    )
+
+    assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
