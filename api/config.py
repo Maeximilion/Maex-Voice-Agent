@@ -116,7 +116,7 @@ class Settings(BaseSettings):
         or left out, would otherwise run on a value printed in this repository.
         The kitchen token is offered to the internet by the proxy
         (/v1/kitchen/*), and the n8n password guards the webhook; both get the
-        same rule when they are in use (security audit of 15.10.2026, #252
+        same rule where a service has them (security audit of 15.10.2026, #252
         finding 5). The values themselves stay out of the messages: they end
         up in a log.
         """
@@ -134,9 +134,9 @@ class Settings(BaseSettings):
             raise ValueError(f"KITCHEN_BRIDGE_TOKEN {rule}")
         if kitchen == self.agent_api_token:
             raise ValueError("KITCHEN_BRIDGE_TOKEN must differ from AGENT_API_TOKEN")
-        if self.n8n_basic_auth_user and not valid_production_token(
-            self.n8n_basic_auth_password
-        ):
+        # Compose hands the password to the dispatcher only, the user to all.
+        password = self.n8n_basic_auth_password
+        if password and not valid_production_token(password):
             raise ValueError(f"N8N_BASIC_AUTH_PASSWORD {rule}")
         return self
 
