@@ -82,6 +82,9 @@ class ConversationState(BaseModel):
     # The pickup code the confirmed order got, the only one a sentence may
     # name (`guards.false_booking`). Memory of the core, like `booked`.
     pickup_code: str | None = None
+    # The lines of the confirmed order: a `cart` with other lines starts a
+    # new order, which nothing has booked yet (`replace_cart`).
+    booked_cart: list[dict[str, Any]] = Field(default_factory=list)
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -361,6 +364,12 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     if same_order(lines, state.cart):
         # The state keeps the sequence that was read out (Codex PR #237, P2).
         return
+    if "order" in state.booked and lines and not same_order(lines, state.booked_cart):
+        # A second order in the call: the first one's booking and code do not
+        # speak for it (Codex PR #347). The confirmed order repeated as `cart`
+        # in the closing answer is none.
+        state.booked.discard("order")
+        state.pickup_code = None
     order_corrected(state)
     state.cart = lines
 
@@ -465,6 +474,7 @@ def apply_tool_result(
     elif name == "confirm":
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
+            state.booked_cart = state.cart
             state.cart = []
         state.stage = "confirmed"
         state.booked.add("order" if state.order_id is not None else "reservation")

@@ -19,6 +19,7 @@ from api.agent.guards import (
     false_booking,
     note_said,
     refusal,
+    take_cart,
 )
 from api.agent.llm import ToolCall
 from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
@@ -973,3 +974,23 @@ def test_a_replayed_confirmed_draft_keeps_the_booking():
     assert state.stage == "confirmed"
     assert state.booked == {"order"}
     assert false_booking(state, "Ihr Abholcode ist A1.") is None
+
+
+def test_a_new_cart_after_a_confirmed_order_is_not_booked():
+    """A second order in the call: the first one's booking does not speak for
+    it, while the confirmed order repeated as cart is no new one (Codex PR
+    #347)."""
+    first = [{"menu_item_id": PHO, "quantity": 1}]
+    state = new_state(known_item_ids={PHO, REIS}, cart=first)
+    apply_tool_result(
+        state, "draft_order", ToolResult(ok=True, data={"order_id": str(uuid.uuid4())})
+    )
+    state.cart = first
+    apply_tool_result(state, "confirm", ToolResult(ok=True, data={"pickup_code": "A1"}))
+
+    assert take_cart(state, first) is None
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
+
+    assert take_cart(state, [{"menu_item_id": REIS, "quantity": 2}]) is None
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
+    assert state.pickup_code is None
