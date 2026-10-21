@@ -20,3 +20,6 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-21,2026-10-20T22:42:29+00:00,eval_20261020_224229_924521.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,2,0.1429,15,23566,report,head with the refusal hints; run 1
 2026-10-21,2026-10-20T22:52:49+00:00,eval_20261020_225249_005888.json,qwen3.6-35b-a3b,targets,27,3,0,15,0,0,0,0.2963,9,27735,report,head with the refusal hints
 2026-10-21,2026-10-20T23:00:54+00:00,eval_20261020_230054_484816.json,qwen3.6-35b-a3b,cases,43,21,0,0,0,0,2,0.2000,15,23499,report,head with the refusal hints; run 2
+2026-10-21,2026-10-21T09:02:12+00:00,eval_20261021_090212_512343.json,qwen3.6-35b-a3b,cases,43,23,0,0,0,0,1,0.2000,14,22455,report,"head 84bd789 (numberless callback to the team, strict booking guard); run 1"
+2026-10-21,2026-10-21T09:12:25+00:00,eval_20261021_091225_697771.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1429,14,22914,report,head 0277573 (plus second table and code word fixes); run 2
+2026-10-21,2026-10-21T09:23:35+00:00,eval_20261021_092335_473349.json,qwen3.6-35b-a3b,targets,27,1,0,16,0,0,0,0.2593,12,26701,report,head 0277573
