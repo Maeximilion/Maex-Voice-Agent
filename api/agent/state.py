@@ -301,10 +301,11 @@ def note_guest_details(state: ConversationState, guest_text: str) -> None:
             state.slots["phone"] = number
 
 
-# "noch" only as "noch ein/etwas/mal": "Ist mein Tisch noch reserviert?" asks
-# about the booked one (Codex PR #347).
+# "noch" and "auch" only before "ein/etwas/mal": "Ist mein Tisch noch
+# reserviert?" or "auch wirklich reserviert?" asks about the booked one
+# (Codex PR #347).
 _ANOTHER = re.compile(
-    r"\b(?:noch\s+(?:ein\w*|etwas|was|mal)|auch|weitere[nmrs]?"
+    r"\b(?:(?:noch|auch)\s+(?:ein\w*|etwas|was|mal|noch)|weitere[nmrs]?"
     r"|zus(?:ä|ae)tzlich|zweite[nmrs]?)\b",
     re.IGNORECASE,
 )

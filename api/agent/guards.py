@@ -130,11 +130,13 @@ _BOOKING_CLAIM = re.compile(
 # A sentence that speaks of a pickup code, and the tokens shaped like one:
 # the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
-# What a code word presents, up to the end of its sentence: a date elsewhere
-# ("für den 21.10.2026") is no code (Codex PR #347).
-# "Code" on its own, not inside "Gutscheincode" or after "WLAN-" (Codex PR #347).
+# What a code word presents: everything after it. A date before it ("für den
+# 21.10.2026") is no code; a period does not end the span, or "Abholcode
+# lautet Nr. B99" hid B99 behind "Nr." (Codex PR #347). Strict: a date after
+# the code counts and refuses the sentence. "Code" on its own, not inside
+# "Gutscheincode" or after "WLAN-" (Codex PR #347).
 _PRESENTED = re.compile(
-    r"(?:abholcode|abholnummer|(?<![\w-])code)\b([^.!?]*)", re.IGNORECASE
+    r"(?:abholcode|abholnummer|(?<![\w-])code)\b(.*)", re.IGNORECASE | re.DOTALL
 )
 # What a sentence claims was booked: an order, a table, or, naming neither,
 # anything the call booked.
