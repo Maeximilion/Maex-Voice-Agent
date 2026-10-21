@@ -39,13 +39,13 @@ updates:
       prefix: chore
       include: scope
     ignore:
-      # Die Python-Version des Containers wandert nicht allein: sie steht auch in der
-      # CI, in pyproject.toml (target-version), im README und in der Doku. Ein PR, der
-      # nur das Dockerfile anhebt, laesst Test- und Betriebsumgebung auseinanderlaufen.
+      # The container's Python version does not move on its own: it is also set in
+      # the CI, in pyproject.toml (target-version), in the README and in the docs. A PR
+      # that only raises the Dockerfile lets the test and operating environments drift apart.
       # The CI job docker-smoke builds the image, but the tests run on the Python of
-      # setup-python, not inside it. Der Sprung kommt als eigenes Arbeitspaket, wenn
-      # es einen Grund gibt.
-      # Bei Python-Tags ist 3.12 auf 3.14 ein Minor-Schritt, deshalb steht der hier mit.
+      # setup-python, not inside it. The jump comes as its own work package when
+      # there is a reason.
+      # For Python tags, 3.12 to 3.14 is a minor step, which is why that one is listed too.
       - dependency-name: python
         update-types:
           - version-update:semver-major
