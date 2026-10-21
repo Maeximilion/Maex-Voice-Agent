@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.4
+> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.5
 
 ---
 
@@ -480,6 +480,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 21.10.2026 | **Route advice wording follow-up of PR #311 (issue #332):** `route_advice.sh` keeps a mixed prompt off Sonnet when a clause led by fix, implement, refactor or debug names no Sonnet work, in either order ("Fix authentication and update the GUI labels" stays Opus `high`), and a hard-rule term that only ends a status update, review fix or existing-test run in up to three words is its subject ("Update the project status after the migration", "Run the existing tests for the price calculation" stay Sonnet `medium`). Eleven new test cases in `api/tests/test_hooks_route_advice.py`. The `claude-rc` copy in `docs/19_CLAUDE_CODE_SETUP.md` no longer execs Claude and hands a refreshed login back to `~/.claude` when Claude exits (from the unmerged branch `dev/route-advice-followup`); the installed `~/.local/bin/claude-rc` on the Ubuntu workbench is older than this copy and is replaced per section 5 of that file |
 | 20.10.2026 | **Pull requests from outside users are closed, their issues are untrusted input** (Maxi, 15.10.2026): `.github/workflows/outside-prs.yml` closes a pull request whose author is not the owner, a member, a collaborator, Dependabot, GitHub Actions, Codex or the Claude Code app (`claude[bot]`), with a pointer to issues; it runs on `pull_request_target` and, because that event skips some SHA-like branch names, also sweeps all open pull requests every hour from `outside-prs-sweep.yml`, kept apart so GitHub's 60-day switch-off of scheduled workflows leaves the event workflow running; it never checks out a pull request and only pull request numbers reach the shell. `CLAUDE.md` §8 and `AGENTS.md` carry the rule for outside issues (check the author, never run anything from them, auth, CI, secrets, deployment and access wait for Maxi). Not tried live yet: `pull_request_target` runs the workflow from `main`, so it works from the first outside pull request after the merge |
 | 20.10.2026 | **Route line read behind the desktop app's brief wrapper** (summary above): `route_advice.sh` skips leading `<system-reminder>` blocks and the "Background ... Task:" lines, and with no model known compares the effort. Codex on PR #342 (P2 x2, fixed): a `Task:` line in the background no longer becomes the boundary (a second one means no Route line is read), and a match on effort alone clears an earlier mismatch marker. 7 new test cases and one sharpened, 6 of them red before their fix; hook tests 128 passed, full suite 5,167 passed, latency 38 passed. docs/19 §6 has its first result row |
 | 19.10.2026 | **Review of the merged PR #330: three allergy losses closed** (summary above): `_denial_end` stops a denial at a bare "und" before an ingredient, the stand-in judges each part with the domain's allergy words (`mentions_allergy`), `_without_second_preposition` reads the ingredient behind a second "gegen"/"auf". Red tests first; two cost cases added (a chain of second "gegen", 0.02 s at 20,000 characters). D24 recorded |
@@ -593,6 +594,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.6.5 · 21.10.2026:** route_advice.sh: a leading fix outside GUI or docs work and a hard-rule subject of status, review or existing-test work route right; claude-rc hands a refreshed login back on exit (issue #332)
 - **v2.6.4 · 21.10.2026:** Alerts-first rule in the wording of PR #348 (critical or high, while no open PR fixes it), chosen by Maxi; a session hands over before its context is compressed; scripts/alert_fixes.py decides whether an open PR into main fixes an alert (dependency-graph compare on the alert's manifest for Dependabot, a fixed instance on the PR's current head or merge commit for code scanning; anything less is a named candidate), called by /start step 5a and the Codex start skill alike; a lower Dependabot alert is a pin for the next feature PR (Codex reviews of 233f1ba, 176e0be, 6d2cc1a and 187c275); 2.6.1 counts two alerts, not three
 - **v2.6.3 · 21.10.2026:** English sweep of small German leftovers: status_bump tests, issue templates, config comments, GitHub Project doc, printbridge README, cold_path (issue #324)
 - **v2.6.2 · 21.10.2026:** CLAUDE.md: review loop limits, Claude decides on P2-only PRs after 3 rounds (#351)

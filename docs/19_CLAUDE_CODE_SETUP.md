@@ -29,7 +29,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
-| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, right after a wrapper tag, or as the first line after the desktop app's `Task:` line (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (the desktop app's `SessionStart` omits it, so on every session's first prompt), it does not stop the thread: it is silent when the effort is the routed one and otherwise carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
+| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; a clause led by fix, implement, refactor or debug that names no GUI, docs or other Sonnet work keeps a mixed prompt off Sonnet in either order ("Fix authentication and update the GUI labels"); what a status update, review fix or run of existing tests is about stays its subject when it ends the prompt in up to three words ("Update the project status after the migration" stays on Sonnet); no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, right after a wrapper tag, or as the first line after the desktop app's `Task:` line (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (the desktop app's `SessionStart` omits it, so on every session's first prompt), it does not stop the thread: it is silent when the effort is the routed one and otherwise carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
 A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
@@ -387,13 +387,18 @@ fi
 mkdir -p "$dst"
 chmod 700 "$dst"
 # A login refresh replaces the linked .credentials.json with a file of its own. Hand a newer
-# login back to ~/.claude and link again, so the normal launcher never keeps a stale token.
-# ponytail: only at the next claude-rc start; while both run, a refresh in one stays there until then.
-c=.credentials.json
-if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
-  if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
-  rm -f "$dst/$c"
-fi
+# login back to ~/.claude and link again, at start and when Claude exits, so the normal
+# launcher never keeps a stale token.
+# ponytail: while both run at once, a refresh in one reaches the other when claude-rc exits.
+sync_login() {
+  local c=.credentials.json
+  if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
+    if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
+    rm -f "$dst/$c"
+    [ ! -e "$src/$c" ] || ln -sfn "$src/$c" "$dst/$c"
+  fi
+}
+sync_login
 shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
         history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
 for name in "${shared[@]}"; do
@@ -425,11 +430,16 @@ if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
   echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
 fi
 export CLAUDE_CONFIG_DIR="$dst"
+# Not exec: the login is handed back once Claude exits.
+status=0
 if [ "${1-}" = server ]; then
   shift
-  exec claude remote-control "$@"
+  claude remote-control "$@" || status=$?
+else
+  claude --remote-control "$@" || status=$?
 fi
-exec claude --remote-control "$@"
+sync_login
+exit "$status"
 ```
 
 ## 5. Restore
@@ -533,4 +543,4 @@ What the run of 2026-10-20 showed about the hook in the desktop app:
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 15.10.2026 (`claude-rc`), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits), 06.10.2026 (the others).

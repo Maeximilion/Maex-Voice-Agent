@@ -25,6 +25,14 @@ docpath='\.md\b|\bdocs/|readme|\bdocs?\b|\bdocument(ation)?\b'
 # action ("update README and fix authentication"); the mixed task takes the higher setting.
 impl='\b(code|logic|matching|matcher|calculation|parser|handler|function|query|validation|refactor|implement|debug|migrate|deploy)[a-z]*\b|\b(and|then|plus|und) (also )?(fix|implement|refactor|debug|migrate|deploy)\b'
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
+# A clause led by a code verb that names no GUI, docs or other Sonnet work is code work,
+# whichever action comes first ("Fix authentication and update the GUI labels"). A bare verb
+# ("fix and restyle the GUI") and a typo fix are not.
+code_clause() {
+  sed -E 's/ (and|then|plus|und) (also )?/\n/g; s/[,;] +/\n/g' <<<"$1" \
+    | grep -E '^(please )?(fix|implement|refactor|debug|migrate|deploy) ' \
+    | grep -qviE "$sonnet|$docpath|\b(typos?|wording|spelling|grammar|formatting)\b"
+}
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?([a-z]+ )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
 change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|run|execute|deploy|release|ship|optimi[sz]e|speed up|tune|harden|ausführen|starte|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
@@ -109,6 +117,11 @@ else
   # One line without paste wrappers, so ^ and $ below mean the start and end of the prompt.
   lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
+  # What status, review or existing-test work is about is its subject, not work of its own:
+  # "update the project status after the migration" is a status update.
+  # ponytail: only a subject of up to three words that ends the prompt, so "... after the
+  # migration and fix the downgrade" keeps the higher setting; a short "and" tail is lost.
+  topic=$(sed -E 's/(status updates?|(project|task|gate) status|(review|codex) (comments?|feedback|findings|threads?)|existing tests?) (after|about|on|for|from|of|in|regarding|around|covering|touching)( [a-z_-]+){1,3}[.!?]*$/\1/' <<<"$lower")
   # Fable runs only when Maxi asks for it by name; the hook never recommends it (below).
   # Named and not withdrawn ("off Fable", "not on Fable", "ohne Fable").
   grep -qiE '\b(on|use|using|with|mit|via|switch(ed)? to|run|keep) (claude-)?fable\b|\bfable\b.{0,40}\b(gate review|debug)|\b(gate review|debug)[a-z]*\b.{0,40}\bfable\b' <<<"$lower" \
@@ -126,26 +139,26 @@ else
   elif grep -qiE "$docpath" <<<"$lower" \
     && ! sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#[a-z_-]+ (docs?|documentation)\b##g
         s#\bfix(es|ing)? (a |the )?(typos?|wording|spelling|links?|sections?|grammar|formatting)\b##g' <<<"$lower" \
-      | grep -qiE "$codepath|$opus|alembic|migrations/|$impl"; then
+      | grep -qiE "$codepath|$opus|alembic|migrations/|$impl" && ! code_clause "$lower"; then
     want=claude-sonnet-5-5 effort=medium
   # A menu or data import is import work, also when it carries prices or allergens.
   elif grep -qiE "$dataimport" <<<"$lower" \
-    && ! grep -qiE "$codepath|$opus|$impl" <<<"$lower"; then
+    && ! grep -qiE "$codepath|$opus|$impl" <<<"$lower" && ! code_clause "$lower"; then
     want=claude-sonnet-5-5 effort=medium
   # A file or data transfer is not a call transfer, and how a price looks is not what it is,
   # whichever comes first ("price badge", "badge color for the price").
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
       s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?) (typography|banners?|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?)\b//g
       s/\b(typography|banners?|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?)( [a-z]+){0,2} (for|of) (the |an? )?(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?)\b//g' \
-      <<<"$lower" | grep -qiE "$xhigh"; then
+      <<<"$topic" | grep -qiE "$xhigh"; then
     want=claude-opus-5-5 effort=xhigh
-  elif grep -qiE "$opus" <<<"$lower"; then want=claude-opus-5-5 effort=high
+  elif grep -qiE "$opus" <<<"$topic"; then want=claude-opus-5-5 effort=high
   # Sonnet work only when no other code path or implementation work is named (api/gui/ and
   # templates are Sonnet's own).
   # Docs-only prompts were taken above, so a docs mention left here sits next to other work.
-  elif sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#\b(readme|docs?)\b##g' <<<"$lower" | grep -qiE "$sonnet" \
-    && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g; s#tests? for (the )?existing code##g' <<<"$lower" \
-      | grep -qiE "$codepath|$impl"; then
+  elif sed -E 's#[^ ]*\.md\b##g; s#\bdocs/[^ ]*##g; s#\b(readme|docs?)\b##g' <<<"$topic" | grep -qiE "$sonnet" \
+    && ! sed -E 's#\bapi/gui/[^ ]*##g; s#[^ ]*\.(html|j2|css|md)\b##g; s#tests? for (the )?existing code##g' <<<"$topic" \
+      | grep -qiE "$codepath|$impl" && ! code_clause "$topic"; then
     want=claude-sonnet-5-5 effort=medium
   else
     # No keyword: the table's default, but not for a short line that names no work.

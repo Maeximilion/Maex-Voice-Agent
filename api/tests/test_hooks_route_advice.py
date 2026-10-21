@@ -784,3 +784,49 @@ def test_the_draft_lifecycle_is_xhigh(run, prompt):
 def test_a_debugging_question_is_not_a_lookup(run):
     out = run("Could you find out why the confirm step double-books a reservation?")
     assert "effort xhigh" in message(out)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix authentication and update the GUI labels",
+        "Fix authentication and update the README",
+        "Fix the login check, then adjust the order list template",
+    ],
+)
+def test_a_leading_fix_outside_gui_or_docs_keeps_the_default(run, prompt):
+    # Issue #332 point 1: the mixed task takes the higher setting in either order.
+    assert run(prompt, "claude-opus-5-5", "high") is None
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Fix the GUI labels and update the README",
+        "Fix and restyle the GUI labels",
+        "Update docs/03_DATA_MODEL.md and fix the typo in the migration section",
+    ],
+)
+def test_a_leading_gui_or_docs_fix_stays_on_sonnet(run, prompt):
+    assert run(prompt) is None
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "Update the project status after the migration",
+        "Fix the review feedback about the migration",
+        "Run the existing tests for the price calculation",
+        "Fix the review comments on the allergen matching.",
+    ],
+)
+def test_a_hard_rule_subject_of_sonnet_work_stays_on_sonnet(run, prompt):
+    # Issue #332 point 2: status, review and existing-test work about a hard-rule topic.
+    assert run(prompt) is None
+
+
+def test_hard_rule_work_next_to_sonnet_work_keeps_xhigh(run):
+    out = run("Update the project status after the migration and fix the downgrade")
+    assert "effort xhigh" in message(out)
+    out = run("Fix the review comments on domain/ordering.py", sid="path")
+    assert "claude-opus-5-5 at effort high" in message(out)
