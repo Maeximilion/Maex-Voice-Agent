@@ -136,7 +136,8 @@ _ABOUT = (
     ("order", re.compile(r"abhol|bestellung", re.IGNORECASE)),
     # Nouns only: "reserviert" is the claim, not what it is about ("Ihre
     # Abholung ist für 18 Uhr reserviert" is about an order; Codex PR #347).
-    ("reservation", re.compile(r"tisch|reservierung", re.IGNORECASE)),
+    # At the start of a word: "automatisch" names no table (Codex PR #347).
+    ("reservation", re.compile(r"\btisch|reservierung", re.IGNORECASE)),
 )
 
 

@@ -951,3 +951,25 @@ def test_a_new_draft_takes_back_the_pickup_code():
 
     assert state.pickup_code is None
     assert false_booking(state, "Ihr Abholcode ist A1.") is not None
+
+
+def test_automatisch_names_no_table():
+    state = confirmed_order("A1")
+
+    assert false_booking(state, "Ihre Bestellung wurde automatisch bestätigt.") is None
+
+
+def test_a_replayed_confirmed_draft_keeps_the_booking():
+    """The same draft_order key after the confirm replays the confirmed order
+    (domain/ordering/draft.py `_replay`); it is no new draft (Codex PR #347)."""
+    state = confirmed_order("A1")
+    order_id = str(state.order_id)
+    apply_tool_result(
+        state,
+        "draft_order",
+        ToolResult(ok=True, data={"order_id": order_id, "status": "confirmed"}),
+    )
+
+    assert state.stage == "confirmed"
+    assert state.booked == {"order"}
+    assert false_booking(state, "Ihr Abholcode ist A1.") is None

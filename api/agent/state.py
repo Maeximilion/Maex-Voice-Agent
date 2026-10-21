@@ -419,6 +419,14 @@ def apply_tool_result(
         state.intent = intent
     if not result.ok:
         return
+    if (
+        name in ("create_reservation", "draft_order")
+        and result.data.get("status", "draft") != "draft"
+    ):
+        # The same key replays a draft that was decided since: the confirmed
+        # order comes back as it is. It is no new draft, and taking it as one
+        # dropped the booking and its pickup code (Codex PR #347).
+        return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
     # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst
     # stuenden zwei bestaetigbare Vorgaenge im Prompt, und das naechste Ja
