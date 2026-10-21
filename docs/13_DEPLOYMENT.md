@@ -28,7 +28,7 @@ The product is a web application on the EU server, not a program installed in th
 | From the first order on: the print bridge on one machine that reaches the main receipt printer at the register | until the register has an interface it prints every confirmed order as an input slip the team types in (D2, `docs/02_ARCHITECTURE.md` §2a); `printbridge/README.md`; today this needs Python 3.12 set up by hand |
 | A device that receives the team notifications: an app on a phone or the web page on the tablet | callbacks and failed handovers (D13, push server in §3); devices decided 19.10.2026: Android devices or the web page on the tablet (D14, option A) |
 
-Not needed in the restaurant: the repository, Docker, git, an installer for the product itself. Two small installs remain: the print bridge and the notification app on an Android device (or the web page on the tablet, which needs no install).
+Not needed in the restaurant: the repository, Docker, git, an installer for the product itself. One small install remains: the print bridge. A second one exists only when Android notifications are chosen, the notification app on an Android device; the web page on the tablet needs no install.
 
 **Why no desktop program (.exe) for the product** (asked 05.10.2026):
 

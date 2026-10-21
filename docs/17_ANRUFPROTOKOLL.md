@@ -7,7 +7,7 @@
 
 ## 1. Warum ohne Ton
 
-Aufzeichnen braucht die Einwilligung von Kunde und Team (§201 StGB) und den vollständigen Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`). Dessen Fragen sind seit 20.10.2026 beantwortet, aber seine Pflichten vor dem ersten echten Anruf sind offen (siehe unten), T-7.x sind blockiert. Ein handschriftliches Protokoll ohne Namen und Nummern braucht beides nicht und liefert schon das Wichtigste:
+Recording needs the consent of customer and team (§201 StGB) and the full legal check (`docs/09_OPERATIONS_LEGAL.md`). The check's questions have been answered since 20.10.2026, but its duties before the first real call are open (see below), and T-7.x stays blocked. A handwritten log without names and numbers needs neither and already delivers the most important things:
 
 | Frage | Woher | Wofür |
 |---|---|---|
