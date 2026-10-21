@@ -7,7 +7,7 @@
 
 ## 1. Warum ohne Ton
 
-Aufzeichnen braucht die Einwilligung von Kunde und Team (§201 StGB) und den vollständigen Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`). Der ist offen, T-7.x sind blockiert. Ein handschriftliches Protokoll ohne Namen und Nummern braucht beides nicht und liefert schon das Wichtigste:
+Aufzeichnen braucht die Einwilligung von Kunde und Team (§201 StGB) und den vollständigen Rechts-Check (`docs/09_OPERATIONS_LEGAL.md`). Dessen Fragen sind seit 20.10.2026 beantwortet, aber seine Pflichten vor dem ersten echten Anruf sind offen (siehe unten), T-7.x sind blockiert. Ein handschriftliches Protokoll ohne Namen und Nummern braucht beides nicht und liefert schon das Wichtigste:
 
 | Frage | Woher | Wofür |
 |---|---|---|
