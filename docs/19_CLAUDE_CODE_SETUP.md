@@ -20,7 +20,7 @@
 
 Windows and Ubuntu each have their own copy of the hooks and of the settings. A change on one side has to be repeated on the other. Nothing in this file is secret: the scripts hold no keys, and the settings block below holds none either.
 
-Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files (`state.json`, `override.json`, `previous_statusline.json`), which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4).
+Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable: it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
 
 ## 2. The hooks
 
@@ -761,7 +761,7 @@ if __name__ == "__main__":
 
 1. Save the three scripts from section 4 into `~/.claude/hooks/` under their names.
 2. Merge the block from section 3 into `~/.claude/settings.json` in an editor.
-2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows `python ~/.claude/usage_gate/gate.py hook` as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove`.
+2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows `python ~/.claude/usage_gate/gate.py hook` as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove` in Git Bash, or `python "$HOME\.claude\usage_gate\install.py" remove` in PowerShell.
 3. Check the result. Console: Git Bash, any folder.
 
 ```bash
