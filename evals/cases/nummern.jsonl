@@ -143,6 +143,8 @@
 {"say": "die 26 eh", "expect": "26", "why": "the same with eh (#327)"}
 {"say": "die 23, öh, 24", "expect": "?", "why": "a self-correction with another spelling of aeh (#327)"}
 {"say": "die drei ähhh und zwanzig", "expect": "?", "why": "a pause before the und in another spelling (#327)"}
+{"say": "Nummer drei äh zwanzig Portionen", "expect": "?", "why": "a hesitation between unit and tens without und: item 3 with 20 portions or a cut 23, the guest is asked (Codex PR #362)"}
+{"say": "eine zwanzig Portionen Pho Bo", "expect": "?", "why": "eine cannot be the article of a plural quantity: 20 or a cut 21 portions, the guest is asked (Codex PR #362)"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}
 {"say": "Nummer hallo 23", "expect": "?", "why": "Begruessung ist kein Fuellwort zwischen Marker und Zahl (Review PR #147)"}
 {"say": "Nummer dazu 23", "expect": "?", "why": "dazu ist kein Fuellwort zwischen Marker und Zahl"}

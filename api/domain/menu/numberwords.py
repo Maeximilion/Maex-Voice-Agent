@@ -1221,22 +1221,36 @@ def _first_half(token: str) -> bool:
 
 
 def _joined_without_und(tokens: list[str], k: int) -> bool:
-    """ "drei zwanzig", "die 3 20": a unit right before a tens half, no "und"
+    """ "drei zwanzig", "die 3 20": a unit before a tens half, no "und"
     between. Two numbers, or a 23 whose "und" the ear lost; `_scan` joins
-    neither, and the sentence asks, also next to a name (#325)."""
-    return k + 1 < len(tokens) and _first_half(tokens[k]) and tens_half(tokens[k + 1])
+    neither, and the sentence asks, also next to a name (#325). A hesitation
+    between them changes nothing ("Nummer drei äh zwanzig Portionen"); a bare
+    comma separates ("die 3, zwanzig Portionen" is 20 of the 3). "eine" counts
+    only before a tens quantity: it cannot be the article of "zwanzig
+    Portionen" (Codex PR #362)."""
+    j = k + 1
+    paused = False
+    while j < len(tokens) and pause_before_und(tokens[j]):
+        paused = paused or hesitation(tokens[j])
+        j += 1
+    if j >= len(tokens) or not tens_half(tokens[j]) or (j > k + 1 and not paused):
+        return False
+    quantity = bool(_QUANTITY_SUFFIX.match(tokens[j])) or (
+        j + 1 < len(tokens) and tokens[j + 1] in _QUANTITY_NOUNS
+    )
+    return _first_half(tokens[k]) or (quantity and tokens[k] in ARTICLES)
 
 
 def _second_half(tokens: list[str], at: int) -> bool:
     """Is the number at `at` maybe only the tens half of a number the ear cut,
     by a pause at the "und" or without one ("drei und äh zwanzig Portionen",
     "drei zwanzig mal die 13")? Then it is no quantity of its own (#328)."""
-    if at > 0 and _joined_without_und(tokens, at - 1):
-        return True
     k = at - 1
     while k >= 0 and inside_split(tokens[k]):
         k -= 1
-    return k >= 0 and tokens[k] == "und" and _split_by_pause(tokens, k)
+    if k >= 0 and tokens[k] == "und":
+        return _split_by_pause(tokens, k)
+    return k >= 0 and _joined_without_und(tokens, k)
 
 
 def _too_large(token: str) -> bool:

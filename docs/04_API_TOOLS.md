@@ -235,8 +235,11 @@ Das wichtigste Tool. Hier entsteht der meiste Fehler-Spielraum, deshalb strenge 
    Frühlingsrollen", „die drei und, zwanzig"), and so is a sentence that starts
    with the cut-off half („und äh, zwanzig", #328). A unit right before a tens
    word without any „und" („drei zwanzig", „die 3 20") is two numbers or a 23
-   whose „und" the ear lost: the sentence asks as well (#325), and „die eine
-   zwanzig" is the 20, the „eine" its article. The tens half of such a number is
+   whose „und" the ear lost: the sentence asks as well (#325), also with a
+   hesitation between them („Nummer drei äh zwanzig Portionen"), while a bare
+   comma separates („die 3, zwanzig Portionen" is 20 of the 3). „die eine
+   zwanzig" is the 20, the „eine" its article; before a tens quantity it
+   cannot be one, and „eine zwanzig Portionen" asks. The tens half of such a number is
    no quantity („drei und äh zwanzig Portionen" is not 20 portions, #328). A
    hesitation counts however the ear spells it („äh", „ähh", „äääh", „öh",
    „eh", „hmm"); „ah" and „oh" do not, the ear writes them for the letters a

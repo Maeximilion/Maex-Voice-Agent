@@ -1360,3 +1360,36 @@ def test_an_e_like_hesitation_in_any_spelling_may_be_the_e(text, cards):
 def test_other_hesitations_are_no_letter():
     ref, _ = sole_item_number("Die 26 öhm", LETTERED)
     assert ref is not None and ref.cards == ("26",)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nummer drei eh zwanzig Portionen",
+        "Nummer drei äh zwanzig Portionen",
+        "die 3, äh, zwanzig Portionen",
+        "drei ähm zwanzigmal die 13",
+        "eine zwanzig Portionen Pho",
+        "eine zwanzigmal die 13",
+    ],
+)
+def test_a_tens_quantity_after_a_unit_and_a_pause_or_after_eine_asks(text):
+    """Codex on PR #362: a hesitation between a unit and a tens word, without
+    an "und", left the tens as the quantity ("Nummer drei eh zwanzig Portionen"
+    was item 3 with 20 portions); and "eine" before a plural quantity cannot be
+    its article, so "eine zwanzig Portionen" is no 20 portions either."""
+    assert find_quantity(text) is None
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    ("text", "quantity"),
+    [
+        # A bare comma still separates the dish from the quantity.
+        ("die 3, zwanzig Portionen", 20),
+        ("die 13 äh zwanzig Portionen", 20),
+        ("eine Portion", 1),
+    ],
+)
+def test_a_quantity_after_a_comma_or_a_whole_number_stays(text, quantity):
+    assert find_quantity(text) == quantity
