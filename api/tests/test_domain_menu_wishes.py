@@ -1742,3 +1742,83 @@ def test_a_waiting_removal_fits_an_order_line(removal, kept):
     long for the line is lost, as in `kitchen_note`, and the allergy stays."""
     wish = classify_wish(f"{removal}, ich habe eine Allergie", BEILAGE)
     assert (wish.kind, wish.ingredient, wish.note) == ("allergy", None, kept)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Codex PR #361: the lactose of the adjective is not read, so the
+        # list would hold only the sesame.
+        "Pho Bo, ich bin laktoseintolerant und gegen Sesam",
+        "ich bin laktoseintolerant und Sesam",
+        # The same loss, older than PR #361.
+        "ich bin laktoseintolerant und allergisch gegen Sesam",
+        "ich bin Erdnussallergiker und allergisch gegen Sesam",
+        "ich bin laktoseintolerant gegen Sesam",
+    ],
+)
+def test_an_allergen_the_parser_cannot_read_is_asked_about(said):
+    """An allergy word that names an allergen the parser does not read
+    ("laktoseintolerant", "Erdnussallergiker") never gives the rest of the
+    list alone: the agent asks "Wogegen?"."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        ("ich bin hochallergisch gegen Erdnüsse", "Erdnüsse"),
+        ("ich bin stark allergisch gegen Erdnüsse", "Erdnüsse"),
+        ("ich habe eine Laktoseintoleranz und gegen Sesam", "Laktose und Sesam"),
+        ("ich bin allergisch gegen Erdnüsse und laktoseintolerant", None),
+    ],
+)
+def test_an_intensifier_names_no_allergen(said, ingredient):
+    """ "hoch" in "hochallergisch" names no allergen, the ingredient is read."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # Codex PR #361: a new subject after "aber auch".
+        (
+            "Pho Bo, ich bin allergisch gegen Erdnüsse, aber auch meine Frau möchte bestellen",
+            "Erdnüsse",
+        ),
+        # The same, older than PR #361.
+        (
+            "ich bin allergisch gegen Erdnüsse und auch meine Frau möchte bestellen",
+            "Erdnüsse",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse, und meine Frau möchte bestellen",
+            "Erdnüsse",
+        ),
+        ("ich habe eine Erdnussallergie und auch unser Sohn", "Erdnuss"),
+        ("ich bin allergisch gegen Erdnüsse und weil es eilt", "Erdnüsse"),
+        # The list goes on where an ingredient follows.
+        ("ich bin allergisch gegen Erdnüsse, aber auch gegen Sesam", "Erdnüsse, Sesam"),
+    ],
+)
+def test_a_new_subject_ends_the_list(said, ingredient):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # Codex PR #361: the next request after a full stop.
+        ("Ich habe eine Erdnussallergie. Und Cola", "Erdnuss"),
+        ("Ich bin gegen Erdnüsse allergisch! Und Cola", "Erdnüsse"),
+        ("Ich habe eine Erdnussallergie; und gegen Abend komme ich", "Erdnuss"),
+        # Without the full stop the list goes on.
+        ("Ich habe eine Erdnussallergie und Sesam", "Erdnuss und Sesam"),
+    ],
+)
+def test_no_list_goes_across_a_full_stop(said, ingredient):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)

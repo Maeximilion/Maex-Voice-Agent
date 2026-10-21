@@ -104,6 +104,10 @@ _CLAUSE_WORDS = (
     )
     | _ARTICLES
     | frozenset({"die", "der", "das", "den", "einmal"})
+    # A new subject: "aber auch meine Frau moechte bestellen" (Codex PR #361).
+    | frozenset({"mein", "meine", "meinem", "meinen", "meiner", "unser", "unsere"})
+    | frozenset({"unserem", "unseren", "unserer", "er", "sie", "es", "man"})
+    | frozenset({"weil", "denn"})
 )
 _PIECE = re.compile(r"[^\W_]+|[,.;!?]")
 # Kein Allergen, nur die Art der Allergie: "Nahrungsmittelallergie" - dann bleibt
@@ -184,11 +188,37 @@ def _ingredient(text: str) -> str | None:
         piece = piece[0].upper() + piece[1:]
         if piece not in pieces:
             pieces.append(piece)
-    if not pieces:
+    if not pieces or _left_unread(text, pieces):
         return None
     if len(pieces) == 1:
         return pieces[0]
     return ", ".join(pieces[:-1]) + " und " + pieces[-1]
+
+
+def _left_unread(text: str, pieces: list[str]) -> bool:
+    """Would the list leave out an allergen the guest named (Codex PR #361)?
+    An allergy word that names one no reader takes ("laktoseintolerant",
+    "Erdnussallergiker"), or a "gegen" with one word behind the first allergy
+    word that no piece holds ("und meine Frau gegen Sesam"). Then nothing is
+    noted and the agent asks "Wogegen?"."""
+    tokens, words = _tokens(text)
+    if any(
+        _allergy_word(word)
+        and not _generic(word)
+        and _ALLERGY_NOUN.search(word, 1) is None
+        for word in words
+    ):
+        return True
+    first = next((i for i, word in enumerate(words) if _is_allergy(word)), len(words))
+    read = {word for piece in pieces for word in _words(piece)}
+    return any(
+        words[i] == "gegen"
+        and words[i + 1] not in read
+        and words[i + 1] not in _GOES_ON
+        and not _ends_list(words[i + 1])
+        and _item_ends(text, tokens, words, i + 1)
+        for i in range(first + 1, len(words) - 1)
+    )
 
 
 # What follows a "gegen" or "auf" that carries on no list of ingredients: a
@@ -306,7 +336,12 @@ def _carried_on(text: str) -> Iterator[tuple[int, str]]:
         # Each "gegen" belongs to the next allergy word after it: read back
         # only to the one before, so a long text is not read again for each.
         lo, last = last, n
-        if k >= len(words) or not (joined or comma):
+        if (
+            k >= len(words)
+            or not (joined or comma)
+            # "Ich habe eine Erdnussallergie. Und Cola" (Codex PR #361)
+            or _SENTENCE_END.search(text, tokens[n].end(), tokens[k].start())
+        ):
             continue
         item = words[k]
         if item in _GOES_ON or _ends_list(item):
@@ -926,7 +961,7 @@ def _noun_after(words: list[str], i: int, joiner: str) -> int:
 
 
 # What stands before an allergy word that names no ingredient.
-_GENERIC_PREFIXES = _GENERIC_STEMS | {""}
+_GENERIC_PREFIXES = _GENERIC_STEMS | {"", "hoch", "schwer", "stark", "sehr", "extrem"}
 
 
 def _allergy_noun(word: str) -> bool:
