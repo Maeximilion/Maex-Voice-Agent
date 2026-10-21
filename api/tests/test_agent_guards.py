@@ -1006,6 +1006,8 @@ def test_a_new_cart_after_a_confirmed_order_is_not_booked():
     [
         "Einen Gutscheincode kann ich leider nicht prüfen.",
         "Den WLAN-Code kenne ich nicht.",
+        # A code word that presents no code is no pickup code (Codex PR #347).
+        "Den QR Code auf Ihrer Rechnung kann ich nicht prüfen.",
     ],
 )
 def test_other_codes_are_no_pickup_code(say):
@@ -1048,3 +1050,19 @@ def test_a_wish_for_another_order_takes_back_the_booking(said, booked):
 
     assert ("order" in state.booked) is booked
     assert (false_booking(state, "Ihr Abholcode ist A1.") is None) is booked
+
+
+def test_a_cancelled_replay_takes_the_booking_back():
+    """The team cancelled the order, the model repeats the draft: the replay
+    says so, and nothing may be said to be booked (Codex PR #347)."""
+    state = confirmed_order("A1")
+    apply_tool_result(
+        state,
+        "draft_order",
+        ToolResult(
+            ok=True, data={"order_id": str(state.order_id), "status": "cancelled"}
+        ),
+    )
+
+    assert "order" not in state.booked
+    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None

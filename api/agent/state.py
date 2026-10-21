@@ -443,13 +443,16 @@ def apply_tool_result(
         state.intent = intent
     if not result.ok:
         return
-    if (
-        name in ("create_reservation", "draft_order")
-        and result.data.get("status", "draft") != "draft"
-    ):
+    status = result.data.get("status", "draft")
+    if name in ("create_reservation", "draft_order") and status != "draft":
         # The same key replays a draft that was decided since: the confirmed
         # order comes back as it is. It is no new draft, and taking it as one
-        # dropped the booking and its pickup code (Codex PR #347).
+        # dropped the booking and its pickup code (Codex PR #347). A cancelled
+        # one takes the booking back (Codex PR #347).
+        if status == "cancelled":
+            state.booked.discard("order" if name == "draft_order" else "reservation")
+            if name == "draft_order":
+                state.pickup_code = None
         return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
     # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst

@@ -128,11 +128,10 @@ _BOOKING_CLAIM = re.compile(
 )
 # A sentence that speaks of a pickup code, and the tokens shaped like one:
 # the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
-# "Code" on its own, not inside "Gutscheincode" or after "WLAN-" (Codex PR #347).
-_NAMES_A_CODE = re.compile(r"abholcode|abholnummer|(?<![\w-])code\b", re.IGNORECASE)
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
 # What a code word presents, up to the end of its sentence: a date elsewhere
 # ("für den 21.10.2026") is no code (Codex PR #347).
+# "Code" on its own, not inside "Gutscheincode" or after "WLAN-" (Codex PR #347).
 _PRESENTED = re.compile(
     r"(?:abholcode|abholnummer|(?<![\w-])code)\b([^.!?]*)", re.IGNORECASE
 )
@@ -229,7 +228,7 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
 
     ponytail: a claim without these words ("Ihre Bestellung geht in die
     Küche") is not caught. More words if the call log shows them."""
-    if _NAMES_A_CODE.search(say) and not _names_the_code(state, say):
+    if not _names_the_code(state, say):
         return _NOT_BOOKED
     if not _BOOKING_CLAIM.search(say):
         return None
@@ -240,15 +239,19 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
 
 
 def _names_the_code(state: ConversationState, say: str) -> bool:
-    """A sentence about a pickup code names the code the confirmed order got,
-    and no other token shaped like one: "Ihr Abholcode ist B99" after A1 sends
-    the guest to the counter with a code that finds no order (Codex PR #347).
-    Strict: a card number like "s12" next to it is refused as well."""
+    """A code word that presents a token shaped like a code presents the code
+    the confirmed order got and no other: "Ihr Abholcode ist B99" after A1
+    sends the guest to the counter with a code that finds no order (Codex PR
+    #347). One that presents none ("Den QR Code auf Ihrer Rechnung kann ich
+    nicht prüfen") is no pickup code; the booking words still apply. Strict:
+    a card number like "s12" after the code word is refused as well."""
     codes = {
         code.upper()
         for tail in _PRESENTED.findall(say)
         for code in _CODE_SHAPED.findall(tail)
     }
+    if not codes:
+        return True
     return state.pickup_code is not None and codes == {state.pickup_code.upper()}
 
 
