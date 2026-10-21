@@ -34,8 +34,9 @@ cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
 # A line continuation must not hide the words from the check.
 continuation=$'\\\n'
 cmd=${cmd//$'`\n'/ } # PowerShell's line continuation is a backtick
-# Flags may stand between gh and pr (gh -R owner/repo pr merge), but no command separator.
-grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]]pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
+# Flags may stand between gh, pr and merge (gh -R owner/repo pr merge, gh pr -R x merge),
+# but no command separator; merge counts only as a word of its own (not --json mergeable).
+grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]]pr[[:space:]]([^;&|[:cntrl:]]*[[:space:]])?merge([[:space:]]|$)' <<<"${cmd//"$continuation"/ }" || exit 0
 form='^[[:space:]]*gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
 [[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (--delete-branch after it is allowed), run in the repository's folder. A cd in front, a wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
 target=${BASH_REMATCH[1]}
@@ -73,7 +74,12 @@ if git fetch -q "$repo" "+refs/heads/main:$main" "refs/pull/$n/head" 2>/dev/null
     v() { git show "$1:docs/01_STATUS.md" 2>/dev/null | grep -o 'Status version: [0-9.]*' | head -1 | cut -d' ' -f3; }
     m=$(v "$main")
     b=$(v "$head")
-    { [ -n "$b" ] && [ "$m" != "$b" ] && [ "$(printf '%s\n' "$m" "$b" | sort -V | tail -1)" = "$b" ]; } ||
+    # Exactly three numbers, compared as numbers: 2.7.00 is no bump over 2.7.0, 2.7.0.1 no version.
+    num() { [[ $1 =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] &&
+      echo "$((10#${BASH_REMATCH[1]})) $((10#${BASH_REMATCH[2]})) $((10#${BASH_REMATCH[3]}))"; }
+    read -r m1 m2 m3 <<<"$(num "$m")"
+    read -r b1 b2 b3 <<<"$(num "$b")"
+    { [ -n "$m3" ] && [ -n "$b3" ] && ((b1 > m1 || (b1 == m1 && (b2 > m2 || (b2 == m2 && b3 > m3))))); } ||
       fail+="- the status is not bumped ($m on main, ${b:-none} on ${head:0:7}): run scripts/status_bump.py, commit, push"$'\n'
   fi
 else

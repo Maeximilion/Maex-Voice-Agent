@@ -92,12 +92,15 @@ def gate(tmp_path):
     head = commit("feature", "1.0.1")
     git(work, "push", "-q", "origin", "HEAD:refs/pull/7/head")
 
-    def side_branch(number: int, *files: str) -> str:
-        """A branch off main that changes only `files`, without a bump."""
+    def side_branch(number: int, *files: str, version: str | None = None) -> str:
+        """A branch off main that changes only `files`, and the status version if given."""
         git(work, "switch", "-q", "-c", f"side-{number}", "main")
         for name in files:
             (work / name).parent.mkdir(parents=True, exist_ok=True)
             (work / name).write_text(f"{number}\n", encoding="utf-8")
+        if version:
+            status = work / "docs" / "01_STATUS.md"
+            status.write_text(f"> Status version: {version}\n", encoding="utf-8")
         git(work, "add", "-A")
         git(work, "commit", "-q", "-m", f"side {number}")
         git(work, "push", "-q", "origin", f"HEAD:refs/pull/{number}/head")
@@ -107,6 +110,10 @@ def gate(tmp_path):
 
     generated = side_branch(8, "README.md", ".github/assets/flow.svg")
     code = side_branch(9, "README.md", "api/app.py")
+    versions = {
+        v: (n, side_branch(n, "api/app.py", version=v))
+        for n, v in ((10, "1.0.00"), (11, "1.0.0.1"), (12, "1.0.10"))
+    }
     git(tmp_path, "clone", "-q", str(origin), str(checkout))
     hook = checkout / ".claude" / "hooks" / "merge_gate.sh"
     hook.parent.mkdir(parents=True)
@@ -178,6 +185,7 @@ def gate(tmp_path):
         head=head,
         generated=generated,
         code=code,
+        versions=versions,
         pr=pr,
         comments=comments,
         codex=codex,
@@ -196,6 +204,7 @@ def test_other_commands_pass_without_asking_github(gate):
         "git status",
         "git merge origin/main",
         "gh pr view 7 && git merge origin/main",
+        "gh pr view 7 --json mergeable,mergeStateStatus",
     ):
         assert gate.run(command).returncode == 0
     mention = gate.run('git commit -m "docs: gh pr merge needs a gate"')
@@ -308,6 +317,18 @@ def test_an_unbumped_head_blocks_except_on_the_weekly_readme_branch(gate):
     assert "not bumped" in done.stderr
 
 
+@pytest.mark.parametrize(
+    ("version", "bumped"), [("1.0.00", False), ("1.0.0.1", False), ("1.0.10", True)]
+)
+def test_the_bump_compares_three_numbers(gate, version, bumped):
+    number, sha = gate.versions[version]
+    gate.pr(sha=sha, number=number)
+    gate.comments(gate.codex(sha))
+    done = gate.run()
+    assert (done.returncode == 0) == bumped, done.stderr
+    assert ("not bumped" in done.stderr) != bumped
+
+
 def test_a_pr_into_another_base_blocks(gate):
     gate.pr(base="release")
     done = gate.run()
@@ -389,6 +410,7 @@ ONE_FORM = "the gate takes only"
         ("GH pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh pr `\nmerge 7 --squash", ONE_FORM),
         ("gh -R someone/fork pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh pr -R someone/fork merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh --repo a/b pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("cd ../other && gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh.exe pr merge 7 --squash", ONE_FORM),
