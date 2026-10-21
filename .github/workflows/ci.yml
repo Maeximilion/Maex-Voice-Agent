@@ -20,7 +20,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # The backup tests need a local Postgres client of the server major version (16); move together with the postgres image.
+    runs-on: ubuntu-24.04
     # A green run takes about three minutes; without a limit a hanging test holds
     # the runner for GitHub's default of six hours.
     timeout-minutes: 15
