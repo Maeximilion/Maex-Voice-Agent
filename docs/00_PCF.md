@@ -482,6 +482,28 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 22.10.2026 - PR #347: eval runs on Qwen, the core says every booking
+Status: PR #347 (dev/eval-qwen-optimization-8b4ad7) pushed, xhigh, Maxi merges. Final code
+       33843ab measured on qwen3.6-35b-a3b: 24/43 and 25/43 (main 27, 24), targets 2/27,
+       hard violations 0; two missed escalations: allergie_0002 (as on main) and
+       reservierung_0035 (new, see Open). Stand-in 43/43, suite green except mount-only tests.
+Artifacts: docs/metrics/eval_history.csv (every run of 20. to 22.10.), README charts, PR #347
+       description, docs/01_STATUS.md open points; issue #207 (cart repeated after confirm).
+Decisions: Maxi 21.10.: the core says every booking from the confirm result (booking_say),
+       the model repeats it word for word or not at all, after fifteen Codex rounds on word
+       rules. Maxi 21.10.: GPU runs on the llama-server start only in a window he names.
+Gate: G0 open; PR #347 open, blocked by reservierung_0035.
+Open: 1. reservierung_0035: Qwen sends reserved_for without an offset and check_slot refuses
+       it; read a time without an offset as the restaurant's local time (core/time.to_utc),
+       test, then two Qwen runs in Maxi's GPU window. 2. The stand-in's sentences after a
+       confirm (sim/scripted_llm.py SAY_CONFIRMED, sim/scripted_order.py pickup code and
+       approval) are never asked any more: delete them. 3. Codex review of the head and the
+       merge gate comment ("Merge gate: <sha>"), then Maxi merges.
+Lessons: a word guard on a model's German sentences does not converge under review; when
+       findings start to contradict each other, move the sentence to the core. Recreate the
+       eval container after a merge that replaces a bind-mounted file (README.md, CLAUDE.md),
+       or `docker exec` fails with "container is not running".
+
 ## Handover 05.10.2026 - demo run of the operations view, for local Claude Code
 Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migrations to
        005, `scripts.seed`, the test menu from `evals/menu` (32 dishes), API on port 8000,

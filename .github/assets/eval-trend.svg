@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">Eval trend</title>
-<desc id="d">Pass rate of model qwen3.6-35b-a3b from 2026-10-13 to 2026-10-21. regular cases latest 24 of 43; target cases latest 1 of 27</desc>
+<desc id="d">Pass rate of model qwen3.6-35b-a3b from 2026-10-13 to 2026-10-22. regular cases latest 25 of 43; target cases latest 2 of 27</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -82,36 +82,40 @@
 <text x="106" y="109" font-size="14" fill="#A89CCB" text-anchor="end">100 %</text>
 <line x1="120" y1="106.3" x2="900" y2="106.3" stroke="#E8FF2E" stroke-dasharray="6 6" opacity="0.6"/>
 <text x="912" y="111.3" font-size="14" fill="#E8FF2E">target 99 %</text>
-<text x="146" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">13 Oct</text>
-<text x="250" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">14 Oct</text>
-<text x="328" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">15 Oct</text>
-<text x="458" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">20 Oct</text>
-<text x="744" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">21 Oct</text>
-<path d="M120 236.3 L172 241.8 L224 192.2 L276 186.7 L328 219.8 L380 230.1 L432 188.1 L484 203.9 L536 209.1 L588 224.9 L640 203.9 L692 219.6 L744 209.1 L796 203.9 L848 203.9 L900 203.9" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
+<text x="142.9" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">13 Oct</text>
+<text x="234.7" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">14 Oct</text>
+<text x="303.5" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">15 Oct</text>
+<text x="418.2" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">20 Oct</text>
+<text x="670.6" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">21 Oct</text>
+<text x="877.1" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">22 Oct</text>
+<path d="M120 236.3 L165.9 241.8 L211.8 192.2 L257.6 186.7 L303.5 219.8 L349.4 230.1 L395.3 188.1 L441.2 203.9 L487.1 209.1 L532.9 224.9 L578.8 203.9 L624.7 219.6 L670.6 209.1 L716.5 203.9 L762.4 203.9 L808.2 203.9 L854.1 203.9 L900 198.6" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="236.3" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-13: 17/41</title></circle>
-<circle cx="172" cy="241.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-13: 16/41</title></circle>
-<circle cx="224" cy="192.2" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 25/41</title></circle>
-<circle cx="276" cy="186.7" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 26/41</title></circle>
-<circle cx="328" cy="219.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-15: 20/41</title></circle>
-<circle cx="380" cy="230.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 19/43</title></circle>
-<circle cx="432" cy="188.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 27/43</title></circle>
-<circle cx="484" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 24/43</title></circle>
-<circle cx="536" cy="209.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 23/43</title></circle>
-<circle cx="588" cy="224.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 20/43</title></circle>
-<circle cx="640" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
-<circle cx="692" cy="219.6" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 21/43</title></circle>
-<circle cx="744" cy="209.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 23/43</title></circle>
-<circle cx="796" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
-<circle cx="848" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
-<circle cx="900" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
-<text x="912" y="193.9" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 24/43</text>
-<path d="M120 313.3 L172 304.9 L224 313.3 L588 304.9 L640 321.6 L692 321.6" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="165.9" cy="241.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-13: 16/41</title></circle>
+<circle cx="211.8" cy="192.2" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 25/41</title></circle>
+<circle cx="257.6" cy="186.7" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-14: 26/41</title></circle>
+<circle cx="303.5" cy="219.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-15: 20/41</title></circle>
+<circle cx="349.4" cy="230.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 19/43</title></circle>
+<circle cx="395.3" cy="188.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 27/43</title></circle>
+<circle cx="441.2" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 24/43</title></circle>
+<circle cx="487.1" cy="209.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-20: 23/43</title></circle>
+<circle cx="532.9" cy="224.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 20/43</title></circle>
+<circle cx="578.8" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
+<circle cx="624.7" cy="219.6" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 21/43</title></circle>
+<circle cx="670.6" cy="209.1" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 23/43</title></circle>
+<circle cx="716.5" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
+<circle cx="762.4" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
+<circle cx="808.2" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-21: 24/43</title></circle>
+<circle cx="854.1" cy="203.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-22: 24/43</title></circle>
+<circle cx="900" cy="198.6" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-22: 25/43</title></circle>
+<text x="912" y="188.6" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 25/43</text>
+<path d="M120 313.3 L165.9 304.9 L211.8 313.3 L532.9 304.9 L578.8 321.6 L624.7 321.6 L854.1 313.3" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-13: 2/27</title></circle>
-<circle cx="172" cy="304.9" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-13: 3/27</title></circle>
-<circle cx="224" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-14: 2/27</title></circle>
-<circle cx="588" cy="304.9" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 3/27</title></circle>
-<circle cx="640" cy="321.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 1/27</title></circle>
-<circle cx="692" cy="321.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 1/27</title></circle>
-<text x="704" y="311.6" font-size="15" fill="#9D7BFF" font-weight="700">target cases 1/27</text>
+<circle cx="165.9" cy="304.9" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-13: 3/27</title></circle>
+<circle cx="211.8" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-14: 2/27</title></circle>
+<circle cx="532.9" cy="304.9" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 3/27</title></circle>
+<circle cx="578.8" cy="321.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 1/27</title></circle>
+<circle cx="624.7" cy="321.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-21: 1/27</title></circle>
+<circle cx="854.1" cy="313.3" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-22: 2/27</title></circle>
+<text x="866.1" y="303.3" font-size="15" fill="#9D7BFF" font-weight="700">target cases 2/27</text>
 <text x="1136" y="73" font-size="14" fill="#A89CCB" text-anchor="end">Scripted stand-in model: 41/41 regular cases.</text>
 </svg>
