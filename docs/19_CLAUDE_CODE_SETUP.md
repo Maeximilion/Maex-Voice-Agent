@@ -430,16 +430,18 @@ if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
   echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
 fi
 export CLAUDE_CONFIG_DIR="$dst"
-# Not exec: the login is handed back once Claude exits.
-status=0
+# Not exec: the login is handed back once Claude exits, also on Ctrl+C, a closed terminal or
+# a kill. Bash runs these traps after the running Claude has ended.
+trap sync_login EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [ "${1-}" = server ]; then
   shift
-  claude remote-control "$@" || status=$?
+  claude remote-control "$@"
 else
-  claude --remote-control "$@" || status=$?
+  claude --remote-control "$@"
 fi
-sync_login
-exit "$status"
 ```
 
 ## 5. Restore

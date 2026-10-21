@@ -805,6 +805,8 @@ def test_a_leading_fix_outside_gui_or_docs_keeps_the_default(run, prompt):
         "Fix the GUI labels and update the README",
         "Fix and restyle the GUI labels",
         "Update docs/03_DATA_MODEL.md and fix the typo in the migration section",
+        "Fix the project status and update the README",
+        "Fix the failing unit test and update the README",
     ],
 )
 def test_a_leading_gui_or_docs_fix_stays_on_sonnet(run, prompt):
@@ -818,6 +820,7 @@ def test_a_leading_gui_or_docs_fix_stays_on_sonnet(run, prompt):
         "Fix the review feedback about the migration",
         "Run the existing tests for the price calculation",
         "Fix the review comments on the allergen matching.",
+        "Update project status after migration 007",
     ],
 )
 def test_a_hard_rule_subject_of_sonnet_work_stays_on_sonnet(run, prompt):
@@ -830,3 +833,6 @@ def test_hard_rule_work_next_to_sonnet_work_keeps_xhigh(run):
     assert "effort xhigh" in message(out)
     out = run("Fix the review comments on domain/ordering.py", sid="path")
     assert "claude-opus-5-5 at effort high" in message(out)
+    # Writing findings is the review itself, not a fix of existing feedback.
+    out = run("Write review findings on migration", sid="write")
+    assert "effort xhigh" in message(out)

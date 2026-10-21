@@ -27,11 +27,11 @@ impl='\b(code|logic|matching|matcher|calculation|parser|handler|function|query|v
 codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|prompts|deploy|n8n|sim|printbridge)/'
 # A clause led by a code verb that names no GUI, docs or other Sonnet work is code work,
 # whichever action comes first ("Fix authentication and update the GUI labels"). A bare verb
-# ("fix and restyle the GUI") and a typo fix are not.
+# ("fix and restyle the GUI"), a typo fix and a fix of the status or a test are not.
 code_clause() {
   sed -E 's/ (and|then|plus|und) (also )?/\n/g; s/[,;] +/\n/g' <<<"$1" \
     | grep -E '^(please )?(fix|implement|refactor|debug|migrate|deploy) ' \
-    | grep -qviE "$sonnet|$docpath|\b(typos?|wording|spelling|grammar|formatting)\b"
+    | grep -qviE "$sonnet|$docpath|\b(typos?|wording|spelling|grammar|formatting|status|tests?)\b"
 }
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?([a-z]+ )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
@@ -121,7 +121,8 @@ else
   # "update the project status after the migration" is a status update.
   # ponytail: only a subject of up to three words that ends the prompt, so "... after the
   # migration and fix the downgrade" keeps the higher setting; a short "and" tail is lost.
-  topic=$(sed -E 's/(status updates?|(project|task|gate) status|(review|codex) (comments?|feedback|findings|threads?)|existing tests?) (after|about|on|for|from|of|in|regarding|around|covering|touching)( [a-z_-]+){1,3}[.!?]*$/\1/' <<<"$lower")
+  # Writing review findings is the review itself; only a fix of existing feedback counts.
+  topic=$(sed -E 's/(status updates?|(project|task|gate) status|(address|fix|apply|resolve|handle) (the )?(review|codex) (comments?|feedback|findings|threads?)|existing tests?) (after|about|on|for|from|of|in|regarding|around|covering|touching)( [a-z0-9_#-]+){1,3}[.!?]*$/\1/' <<<"$lower")
   # Fable runs only when Maxi asks for it by name; the hook never recommends it (below).
   # Named and not withdrawn ("off Fable", "not on Fable", "ohne Fable").
   grep -qiE '\b(on|use|using|with|mit|via|switch(ed)? to|run|keep) (claude-)?fable\b|\bfable\b.{0,40}\b(gate review|debug)|\b(gate review|debug)[a-z]*\b.{0,40}\bfable\b' <<<"$lower" \
