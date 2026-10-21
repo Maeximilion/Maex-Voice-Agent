@@ -10,15 +10,17 @@ FROM python:3.12-slim
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 
-COPY requirements.txt /app/
-RUN pip install --no-cache-dir -r /app/requirements.txt
+# Every package by hash, as the image of `voice` installs them (api/Dockerfile,
+# #252 finding 13): the project's, then ear and mouth with the CUDA libraries
+# CTranslate2 loads on a GPU, so the spike measures the versions that ship.
+COPY requirements.txt requirements-voice.txt /app/
+RUN pip install --no-cache-dir --require-hashes -r /app/requirements.txt \
+    && pip install --no-cache-dir --require-hashes -r /app/requirements-voice.txt
 
-# Ear: Whisper through CTranslate2, Parakeet through ONNX. Mouth: Piper.
-# The two nvidia packages are the CUDA libraries CTranslate2 loads on a GPU.
-RUN pip install --no-cache-dir \
-        faster-whisper==1.2.1 \
-        "onnx-asr[cpu,hub]==0.12.0" \
-        piper-tts==1.8.0 \
-        nvidia-cublas-cu12==12.9.2.10 \
-        nvidia-cudnn-cu12==9.27.0.42
+# Parakeet through ONNX, measured here only, so in neither lock file. Its
+# dependencies (numpy, onnxruntime, huggingface-hub) come hashed from the
+# voice file above; the hash is that of the py3-none-any wheel on PyPI.
+RUN echo "onnx-asr==0.12.0 --hash=sha256:5e7ceca454609819ea7833f61e2302e0c8f6ece4f8a78b66c5daba53cb51de4a" > /tmp/onnx-asr.txt \
+    && pip install --no-cache-dir --require-hashes --no-deps -r /tmp/onnx-asr.txt \
+    && pip check
 ENV LD_LIBRARY_PATH=/usr/local/lib/python3.12/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.12/site-packages/nvidia/cudnn/lib

@@ -30,7 +30,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `sync-main.sh` | PostToolUse on shell commands | The same, but only after a command that contains `gh pr merge`; the output of a command does not count. A refused fast-forward is reported to the user and to Claude, with the files that block it (since 14.10.2026). Known limit: `gh pr merge --auto` and a merge queue merge later, and nothing runs the hook at that moment; local `main` then follows at the next session start or the next merge command. |
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
-| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, right after a wrapper tag, or as the first line after the desktop app's `Task:` line (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (the desktop app's `SessionStart` omits it, so on every session's first prompt), it does not stop the thread: it is silent when the effort is the routed one and otherwise carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
+| `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; a clause led by fix, implement, refactor or debug that names no GUI, docs or other Sonnet work keeps a mixed prompt off Sonnet in either order ("Fix authentication and update the GUI labels"); what a status update, review fix or run of existing tests is about stays its subject when it ends the prompt in up to three words ("Update the project status after the migration" stays on Sonnet); no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, right after a wrapper tag, or as the first line after the desktop app's `Task:` line (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (the desktop app's `SessionStart` omits it, so on every session's first prompt), it does not stop the thread: it is silent when the effort is the routed one and otherwise carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
 | `usage_gate/gate.py hook` | SessionStart, UserPromptSubmit (first entry of each event) | Exit 2 with a message when this week's usage has reached today's cap (Monday to Wednesday 80 percent, Thursday to Sunday 95), so a new prompt never reaches Claude. Details in section 4. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
@@ -389,13 +389,18 @@ fi
 mkdir -p "$dst"
 chmod 700 "$dst"
 # A login refresh replaces the linked .credentials.json with a file of its own. Hand a newer
-# login back to ~/.claude and link again, so the normal launcher never keeps a stale token.
-# ponytail: only at the next claude-rc start; while both run, a refresh in one stays there until then.
-c=.credentials.json
-if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
-  if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
-  rm -f "$dst/$c"
-fi
+# login back to ~/.claude and link again, at start and when Claude exits, so the normal
+# launcher never keeps a stale token.
+# ponytail: while both run at once, a refresh in one reaches the other when claude-rc exits.
+sync_login() {
+  local c=.credentials.json
+  if [ -f "$dst/$c" ] && [ ! -L "$dst/$c" ]; then
+    if [ ! -e "$src/$c" ] || [ "$dst/$c" -nt "$src/$c" ]; then cp -p "$dst/$c" "$src/$c"; fi
+    rm -f "$dst/$c"
+    [ ! -e "$src/$c" ] || ln -sfn "$src/$c" "$dst/$c"
+  fi
+}
+sync_login
 shared=(.credentials.json hooks hook-state plugins projects skills plans agents commands
         history.jsonl CLAUDE.md keybindings.json .ponytail-active ponytail-modes ponytail-statusline.sh)
 for name in "${shared[@]}"; do
@@ -427,11 +432,23 @@ if [ -n "${DISABLE_TELEMETRY-}${DO_NOT_TRACK-}" ] \
   echo "claude-rc: DISABLE_TELEMETRY or DO_NOT_TRACK is set; if Remote Control does not start, Trusted Devices needs telemetry." >&2
 fi
 export CLAUDE_CONFIG_DIR="$dst"
+# Not exec: the login is handed back once Claude exits, also on Ctrl+C, a closed terminal or
+# a kill of this wrapper alone. Bash runs a trap only between commands, so Claude runs in the
+# background and the traps forward the signal to it; the subshell undoes the INT and QUIT
+# ignore bash gives a background command, and <&0 keeps the terminal as Claude's input.
 if [ "${1-}" = server ]; then
   shift
-  exec claude remote-control "$@"
+  set -- remote-control "$@"
+else
+  set -- --remote-control "$@"
 fi
-exec claude --remote-control "$@"
+( trap - INT QUIT; exec claude "$@" ) <&0 &
+child=$!
+trap sync_login EXIT
+for sig in HUP INT TERM; do trap "kill -$sig $child 2>/dev/null || true" "$sig"; done
+# A trap ends the wait early: wait again until Claude has ended, then exit with its status.
+while kill -0 "$child" 2>/dev/null; do wait "$child" || true; done
+wait "$child"
 ```
 
 ### usage_gate (Windows; Ubuntu optional)
@@ -442,9 +459,9 @@ Blocks new Claude Code prompts once this week's usage reaches today's cap, so th
 - `gate.py hook` runs on `UserPromptSubmit` and `SessionStart`. At or above the cap it exits 2 with a message; a session start cannot be blocked, so there it only warns.
 - Override: a prompt containing the sentence held in `OVERRIDE_SENTENCE` goes through and writes `override.json`, which keeps the gate open until the weekly reset.
 - It never blocks on missing data, a finished week, unreadable files or any error. The status line runs only in the terminal UI; the desktop app, Remote Control and `claude -p` sessions are gated by the hook but do not refresh `state.json`, so they use the last number a terminal session saw. Usage only grows within a week, so an older number can let a prompt through late and never blocks one too early.
-- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak`, puts `python ~/.claude/usage_gate/gate.py hook` (timeout 10) first in `SessionStart` and `UserPromptSubmit`, and sets the status line to `python ~/.claude/usage_gate/gate.py statusline`, followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line.
+- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged), and puts `python ~/.claude/usage_gate/gate.py hook` (timeout 10; with `CLAUDE_CONFIG_DIR` set, the gate in that folder, quoted, with forward slashes) first in `SessionStart` and `UserPromptSubmit`, and sets the status line to `python ~/.claude/usage_gate/gate.py statusline`, followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line.
 - Windows has it installed since 15.10.2026. The Ubuntu copy of the folder exists, but Ubuntu does not run the gate: its settings carry no gate entry, and the Ubuntu restore below leaves the entries out of the copied hooks.
-- Checked 21.10.2026: the files below are the live copies on Windows and the Ubuntu folder is byte-identical for `gate.py`. They hold no key, token or personal path; the only user-specific text is the German override sentence, which is not secret. Gap: `test_gate.py` (121 lines) is not backed up here; rewrite it from the behaviour above if it is lost.
+- Checked 21.10.2026 (`install.py` as fixed that day: unique backups, atomic write, `CLAUDE_CONFIG_DIR`): the files below are the live copies on Windows and the Ubuntu folder is byte-identical for `gate.py`. They hold no key, token or personal path; the only user-specific text is the German override sentence, which is not secret. Gap: `test_gate.py` (121 lines) is not backed up here; rewrite it from the behaviour above if it is lost.
 
 `~/.claude/usage_gate/gate.py`:
 
@@ -621,15 +638,20 @@ else in settings.json stays. A backup is written next to settings.json first.
 import json
 import os
 import shlex
-import shutil
 import sys
+import tempfile
 import time
 
 CLAUDE = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 SETTINGS = os.path.join(CLAUDE, "settings.json")
 PREVIOUS = os.path.join(CLAUDE, "usage_gate", "previous_statusline.json")
 PY = "python" if os.name == "nt" else "python3"
-GATE = f"{PY} ~/.claude/usage_gate/gate.py"
+# In a config folder moved by CLAUDE_CONFIG_DIR the hooks call the gate there: quoted,
+# with forward slashes, because the hooks run in bash, also on Windows (Git Bash).
+if os.environ.get("CLAUDE_CONFIG_DIR"):
+    GATE = f"{PY} " + shlex.quote(CLAUDE.replace("\\", "/") + "/usage_gate/gate.py")
+else:
+    GATE = f"{PY} ~/.claude/usage_gate/gate.py"
 EVENTS = ("SessionStart", "UserPromptSubmit")
 
 
@@ -681,16 +703,41 @@ def remove(settings):
             settings.pop("statusLine")
 
 
+def backup():
+    """Copy settings.json to a name no earlier run has taken: an install and a remove
+    in the same second each keep their own backup."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for n in range(100):
+        path = f"{SETTINGS}.{stamp}{f'-{n}' if n else ''}.bak"
+        try:
+            with open(SETTINGS, "rb") as src, open(path, "xb") as dst:
+                dst.write(src.read())
+            return path
+        except FileExistsError:
+            continue
+    sys.exit(f"no free backup name for {SETTINGS}")
+
+
+def write(settings):
+    """Write next to settings.json and swap it in: a failed write leaves the old file."""
+    fd, tmp = tempfile.mkstemp(dir=CLAUDE, prefix="settings.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, SETTINGS)
+    except BaseException:
+        os.remove(tmp)
+        raise
+
+
 def main():
     with open(SETTINGS, encoding="utf-8") as f:
         settings = json.load(f)
-    backup = f"{SETTINGS}.{time.strftime('%Y%m%d-%H%M%S')}.bak"
-    shutil.copyfile(SETTINGS, backup)
+    saved = backup()
     (remove if sys.argv[1:2] == ["remove"] else install)(settings)
-    with open(SETTINGS, "w", encoding="utf-8") as f:
-        json.dump(settings, f, indent=2, ensure_ascii=False)
-        f.write("\n")
-    print(f"done; backup at {backup}")
+    write(settings)
+    print(f"done; backup at {saved}")
 
 
 if __name__ == "__main__":
@@ -807,4 +854,4 @@ What the run of 2026-10-20 showed about the hook in the desktop app:
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 15.10.2026 (`claude-rc`, `usage_gate`, backed up 21.10.2026), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 06.10.2026 (the others).
