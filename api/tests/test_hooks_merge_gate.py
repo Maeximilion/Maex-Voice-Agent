@@ -128,7 +128,7 @@ def gate(tmp_path):
     def comments(*items: dict) -> None:
         (fake / "comments.json").write_text(json.dumps(list(items)), encoding="utf-8")
 
-    def codex(sha: str, open_findings: bool = False) -> dict:
+    def codex(sha: str, open_findings: bool = False, at: str = "08:00") -> dict:
         state = {
             "code_review": {
                 "commit_sha": sha,
@@ -137,7 +137,12 @@ def gate(tmp_path):
             }
         }
         body = f"<!-- codex-review-state:v1 {json.dumps(state)} -->\n\n## Codex"
-        return {"user": {"login": CODEX}, "author_association": "NONE", "body": body}
+        return {
+            "user": {"login": CODEX},
+            "author_association": "NONE",
+            "updated_at": f"2026-10-21T{at}:00Z",
+            "body": body,
+        }
 
     def run(command: str | None = None):
         assert BASH is not None  # checked at the top of this fixture
@@ -200,6 +205,30 @@ def test_a_pending_or_failed_check_blocks(gate):
     assert "no check reported yet" in gate.run().stderr
 
 
+def test_a_check_that_ran_twice_counts_by_its_newest_run(gate):
+    def run(conclusion: str, at: str) -> dict:
+        return {
+            "name": "title",
+            "workflowName": "PR title",
+            "status": "COMPLETED",
+            "conclusion": conclusion,
+            "completedAt": f"2026-10-21T{at}:00Z",
+        }
+
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:02"), run("CANCELLED", "08:01")])
+    assert gate.run().returncode == 0
+
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:01"), run("FAILURE", "08:02")])
+    done = gate.run()
+    assert done.returncode == 2
+    assert "title: failure" in done.stderr
+
+    # The same job name in another workflow is a check of its own.
+    other = {**run("FAILURE", "08:00"), "workflowName": "Nightly"}
+    gate.pr(checks=[*GREEN, run("SUCCESS", "08:02"), other])
+    assert gate.run().returncode == 2
+
+
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
     done = gate.run("cd x && gh pr merge 7 --merge --match-head-commit {sha}")
@@ -244,6 +273,13 @@ def test_the_review_must_be_clean_on_the_head(gate):
     gate.comments(gate.codex(gate.head, open_findings=True))
     assert gate.run().returncode == 2
 
+    # Only Codex's newest state counts, whatever order the comments come in.
+    clean, later = gate.codex(gate.head), gate.codex(gate.head, True, at="09:00")
+    gate.comments(later, clean)
+    assert gate.run().returncode == 2
+    gate.comments({**clean, "updated_at": "2026-10-21T10:00:00Z"}, later)
+    assert gate.run().returncode == 0
+
 
 def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate):
     note = f"Merge gate: {gate.head[:7]}, own review: Codex is out of quota."
@@ -280,6 +316,18 @@ ONE_FORM = "the gate takes only"
         ("if gh pr merge 7 --merge --match-head-commit {sha}; then :; fi", ONE_FORM),
         ("command gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh pr \\\nmerge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        (
+            "cd .\ngh pr merge 8 --merge\ntrue && "
+            "gh pr merge 7 --merge --match-head-commit {sha}",
+            ONE_FORM,
+        ),
+        (
+            "gh pr merge https://github.com/other/repo/pull/7 "
+            "--merge --match-head-commit {sha}",
+            ONE_FORM,
+        ),
+        ("GH pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh.exe pr merge 7 --squash", ONE_FORM),
         ("gh pr merge 7 --merge --match-head-commit " + "0" * 40, "the PR's head is"),
     ],
 )

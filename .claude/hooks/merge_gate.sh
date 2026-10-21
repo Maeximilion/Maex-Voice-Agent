@@ -2,7 +2,7 @@
 # PreToolUse gate for `gh pr merge` (CLAUDE.md §6 "Merging a PR into main", /done step 7b).
 # It guards against a forgotten step, not against a session that tries to get around it.
 # Allowlist, not a parser: a command that mentions `gh pr merge` passes only in this form,
-#   [cd <dir> && ]gh pr merge <number or pull URL> --merge --match-head-commit <full sha> [--delete-branch]
+#   [cd <dir> && ]gh pr merge <number> --merge --match-head-commit <full sha> [--delete-branch]
 # so a wrapped call (if, command, env, a subshell, bash -c), another strategy, --auto, a
 # branch name or a mention in a commit message or search is blocked with the form to use.
 # --match-head-commit makes gh refuse the merge once the head moves after this check.
@@ -17,10 +17,11 @@
 # settings.json sets onFailure "block", so a timeout or a crash of this script blocks too.
 # Not checkable here: that /ponytail-review ran, green evals, the xhigh rule. Those stay
 # with /done and CLAUDE.md.
+# Detection ignores case (PowerShell finds GH as gh); the allowed form does not.
 # ponytail: `gh api .../merge`, gh aliases and quoting tricks are not caught.
 input=$(cat)
 # Cheap prefilter first: this runs before every shell command.
-grep -q 'merge' <<<"$input" || exit 0
+grep -qi 'merge' <<<"$input" || exit 0
 block() {
   printf 'Merge gate (.claude/hooks/merge_gate.sh) blocked the merge:\n%s\n' "$1" >&2
   exit 2
@@ -30,8 +31,8 @@ cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
 cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
 # A line continuation must not hide the words from the check.
 continuation=$'\\\n'
-grep -Eq 'gh[[:space:]]+pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
-form='^[[:space:]]*(cd [^;&|`$()<>]+ && )?gh pr merge ([0-9]+|https://github\.com/[^[:space:]]+/pull/[0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
+grep -Eqi 'gh(\.exe)?.?[[:space:]]+pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
+form='^[[:space:]]*(cd [^;&|`$()<>[:cntrl:]]+ && )?gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
 [[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (optionally \`cd <dir> && \` before it, --delete-branch after it). A wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
 target=${BASH_REMATCH[2]}
 want=${BASH_REMATCH[3]}
@@ -45,9 +46,12 @@ read -r n head branch base <<<"$(jq -r '[.number, .headRefOid, .headRefName, .ba
 [ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
 
+# A check that ran twice on one head (a cancelled run, then a new one) counts by its newest run.
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
   if (.statusCheckRollup | length) == 0 then "no check reported yet"
-  else .statusCheckRollup[] | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
+  else .statusCheckRollup | group_by([.workflowName // "", .name // .context])
+    | map(sort_by(.completedAt // .startedAt // "") | last)[]
+    | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
 
@@ -70,11 +74,13 @@ comments=$(gh api --paginate "repos/{owner}/{repo}/issues/$n/comments?per_page=1
   block "${fail}- the PR comments could not be read: $comments"
 clean=$(jq -rs --arg h "$head" '
   (add // []) as $c
-  | ([$c[] | select(.user.login == "chatgpt-codex-connector[bot]") | .body
-      | capture("codex-review-state:v1 (?<s>\\{.*\\}) -->").s | (try fromjson catch {}) | .code_review
-      | select(.commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)]
-    + [$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | .body
-      | select(startswith("Merge gate: " + $h[0:7]))]) | length > 0' <<<"$comments")
+  | ([$c[] | select(.user.login == "chatgpt-codex-connector[bot]")
+      | {t: .updated_at, s: (.body | capture("codex-review-state:v1 (?<s>\\{.*\\}) -->").s
+          | (try fromjson catch {}) | .code_review)}]
+    | sort_by(.t) | last | .s // {}
+    | .commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)
+  or ([$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | .body
+      | select(startswith("Merge gate: " + $h[0:7]))] | length > 0)' <<<"$comments")
 [ "$clean" = true ] ||
   fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: ${head:0:7}\""$'\n'
 
