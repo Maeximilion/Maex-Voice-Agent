@@ -201,7 +201,7 @@ python -m sim.replay evals/cases/<case>.json        # replay a transcript
 # with the stack up (make up): http://localhost:8000/gui/dev/console is the same text phone in the browser, ENV=dev only
 ```
 
-The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `.claude/commands/` holds `/start`, `/task`, `/done`, `/bug`, `/eval`, `/gate`, and `/handover` commands. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `.claude/commands/` holds `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate`, and `/handover` commands. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 ## Documentation
 

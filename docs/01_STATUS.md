@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.2
+> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.0
 
 ---
 
 ## Summary
+
+**A merge waits for its gate, and `/ship` drives a PR there (insights review, 21.10.2026).** The usage report of 18.09. to 20.10.2026 showed merges that skipped a step of `/done` 7b (PR #339), work that another session already covered, and real-model eval claims from single runs. The project hook `.claude/hooks/merge_gate.sh` now blocks `gh pr merge` until, on the head commit, CI passed, the branch contains `origin/main`, the status is bumped and a review is clean (a Codex state comment for that head, or a comment that opens with `Merge gate: <head sha>`); `/ponytail-review`, the evals and the `xhigh` rule stay Claude's to check. `/ship <PR>` runs 7b, the review rounds under the loop limits, the merge and the tidy-up. `CLAUDE.md` adds a check for parallel work before a task or fix and the rule that what Maxi wants kept lives in the repository; `docs/08_EVALS.md` §4 compares a real model only on the mean of two full runs per side. Not taken from the report: a second merge gate section (the rule and 7b exist), a headless cron for the daily review (it runs as a routine, same usage limit), an orchestrator with a task ledger, and the eval sweep on the workbench, which is a task of its own in Ubuntu. `api/tests/test_hooks_merge_gate.py`, 7 tests.
 
 **A team that does not pick up becomes a callback card, and the caller hears so (T-10.8, 20.10.2026).** Before, the dialplan rang `TEAM_PHONE` for 30 s and hung up without a word, and nothing told the team of the call. Maxi decided how the opening hours and the dial result share the work (D25): outside the opening hours nobody is rung and the agent writes the card at once, as before; inside them the call goes to the team, and the dial result decides. When nobody answers at `TEAM_PHONE`, the dialplan reports the call to `voice` (`POST /calls/{id}/missed`, media token), which writes the card through the new `callbacks.team_missed`: the call found by its line id after its log is closed, the number the guest named in the call or the caller id, the reason of the transfer, outcome `callback`. A caller the AI answered then hears from a file `voice` renders at its start that the restaurant calls back, or to call again when no card could be written, also with `voice` or the database down; a caller the AI never answered (paused, shadow, `voice` not reached) hears nothing. Whoever the AI answered heard it say who it is first (L1 of the legal check): the outage sentence, when it is the first of a call (the database down at the start), now begins with the AI notice (`SAY_OUTAGE_FIRST`; before, it went without one). Chosen by a design panel of three designs and three judges (ultracode): sentences from files over a second media leg into `voice`, because only files hold with `voice` down. No migration. Drill 26 of 26, six points new (docs/20 §5, §11); the core and the evals are unchanged. Open around it, Maxi's: a caller who hangs up while the team rings gets no card (docs/20 §12), and the open point of 12.10.2026 on a transfer the model asks for outside the opening hours.
 
@@ -593,6 +595,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.0 · 21.10.2026:** Merge gate hook, /ship command, parallel-work and eval comparison rules (insights review)
 - **v2.6.2 · 21.10.2026:** CLAUDE.md: review loop limits, Claude decides on P2-only PRs after 3 rounds (#351)
 - **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the three critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
 - **v2.6.0 · 20.10.2026:** T-10.8 done: a team leg nobody answers at TEAM_PHONE becomes a callback card, and a caller the AI answered hears so; outside the opening hours nobody is rung (D25)
