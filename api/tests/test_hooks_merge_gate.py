@@ -271,6 +271,20 @@ def test_a_check_that_ran_twice_counts_by_the_run_that_started_last(gate):
     gate.pr(checks=[*GREEN, unstarted, run("SUCCESS", "08:00", "08:01")])
     assert gate.run().returncode == 0
 
+    # Two runs that started in the same second go by their job id, in either order.
+    def job(conclusion: str, number: int) -> dict:
+        url = f"https://github.com/o/r/actions/runs/1/job/{number}"
+        return {**run(conclusion, "08:00", "08:02"), "detailsUrl": url}
+
+    for checks in (
+        [job("SUCCESS", 900), job("CANCELLED", 899)],
+        [job("CANCELLED", 899), job("SUCCESS", 900)],
+    ):
+        gate.pr(checks=[*GREEN, *checks])
+        assert gate.run().returncode == 0
+    gate.pr(checks=[*GREEN, job("SUCCESS", 899), job("FAILURE", 900)])
+    assert gate.run().returncode == 2
+
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")

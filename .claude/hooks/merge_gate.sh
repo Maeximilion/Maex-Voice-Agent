@@ -56,11 +56,12 @@ fail=""
 
 # A check that ran twice on one head counts by the run that started last: a cancelled run
 # can finish after the run that replaced it, and a queued run without a start time is the
-# newest of all.
+# newest of all. Runs that started in the same second go by their Actions job id.
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
   if (.statusCheckRollup | length) == 0 then "no check reported yet"
   else .statusCheckRollup | group_by([.workflowName // "", .name // .context])
-    | map(sort_by(.startedAt // (if (.status // "") == "COMPLETED" then "" else "9999" end)) | last)[]
+    | map(sort_by(.startedAt // (if (.status // "") == "COMPLETED" then "" else "9999" end),
+        ((.detailsUrl // "") | capture("/job/(?<j>[0-9]+)").j // "0" | tonumber)) | last)[]
     | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
