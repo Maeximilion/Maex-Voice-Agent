@@ -16,6 +16,7 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-20,2026-10-20T21:45:52+00:00,eval_20261020_214552_588544.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1714,9,22172,report,main baseline run 2
 2026-10-20,2026-10-20T21:55:36+00:00,eval_20261020_215536_048231.json,qwen3.6-35b-a3b,cases,43,23,0,0,0,0,2,0.2571,14,23521,report,"transfer, local times, booking guard; run 1"
 2026-10-21,2026-10-20T22:09:23+00:00,eval_20261020_220923_184732.json,qwen3.6-35b-a3b,cases,43,20,0,0,0,0,2,0.2286,15,23692,report,"transfer, local times, booking guard; run 2"
+2026-10-20,,,qwen3.6-35b-a3b,cases,43,19,0,0,0,0,3,0.1143,16,25264,status-note,"prompt variant with four more lines, not taken; report lost in the cleanup, numbers from the run output"
 2026-10-21,2026-10-20T22:42:29+00:00,eval_20261020_224229_924521.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,2,0.1429,15,23566,report,head with the refusal hints; run 1
 2026-10-21,2026-10-20T22:52:49+00:00,eval_20261020_225249_005888.json,qwen3.6-35b-a3b,targets,27,3,0,15,0,0,0,0.2963,9,27735,report,head with the refusal hints
 2026-10-21,2026-10-20T23:00:54+00:00,eval_20261020_230054_484816.json,qwen3.6-35b-a3b,cases,43,21,0,0,0,0,2,0.2000,15,23499,report,head with the refusal hints; run 2
