@@ -145,7 +145,7 @@ ruff check api scripts evals printbridge sim db && ruff format --check api scrip
 
 ## Configuration
 
-All settings come from `.env`. Template and description of all variables: `.env.example`.
+All settings come from `.env`. Template and description of all variables: `.env.example`. A container gets only the variables `docker-compose.yml` names for it, not the whole file: a new setting of `api/config.py` goes into the list `x-settings` there, a new secret into the service that reads it (`docs/13_DEPLOYMENT.md` §3).
 
 <details>
 <summary>The most important variables</summary>
