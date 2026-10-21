@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.8
+> Status: 21.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.6.9
 
 ---
 
@@ -596,7 +596,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.6.8 · 21.10.2026:** Number words: a cut number asks (#325, #328), one hesitation pattern (#327)
+- **v2.6.9 · 21.10.2026:** Number words: a cut number asks (#325, #328), one hesitation pattern (#327)
+- **v2.6.8 · 21.10.2026:** Backup test of a lost rename answer no longer depends on the runner's Postgres client: its stand-in client takes the server's image where the local client's major differs (CI runner image 20261012.601 ships client 18)
 - **v2.6.7 · 21.10.2026:** Audit of 15.10.2026 (#252): kitchen token checked like the agent token, the dispatcher refuses an empty or weak n8n password, security headers and a CSP for the operations view, a refused INVITE leaves no number (drill), backup refuses an open passphrase file, Ollama archive pinned by digest, view access user and hash shipped empty together
 - **v2.6.6 · 21.10.2026:** route_advice.sh: a leading fix outside GUI or docs work and a hard-rule subject of status, review or existing-test work route right; claude-rc hands a refreshed login back on exit (issue #332)
 - **v2.6.5 · 21.10.2026:** Container hardening from the audit of 15.10.2026 (#252 findings 7, 8, 9, 13): secrets by name per service, no-new-privileges everywhere, capabilities dropped and read-only roots in production, n8n telemetry off and an optional encryption key, hashed speech spike image.
