@@ -145,7 +145,7 @@ Mixed task: take the higher model and the higher effort. The `xhigh` triggers ar
 
 **Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests and Markdown, and `/gate` at every gate where something other than `.md` files changed since the last gate tag. No reminder for Markdown-only work.
 
-**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none. A critical or high alert is fixed before any task is picked (Maxi, 2026-10-21): `/start` suggests its fix first, in a PR of its own; the security audit of `docs/09_OPERATIONS_LEGAL.md` section 5 does not have to run before it.
+**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none. A critical or high alert is fixed before any task is picked (Maxi, 2026-10-21): while one is open and no open PR fixes it, `/start` suggests only its fix, in a PR of its own; the security audit of `docs/09_OPERATIONS_LEGAL.md` section 5 does not have to run before it.
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
@@ -177,7 +177,7 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
 
-**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. When the context fills up (long tool output, many iterations), Claude finishes the current step at a clean point, commits and pushes, writes the `/handover` block and tells Maxi to continue in a new session with it, instead of starting the next large step.
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. When the context fills up (long tool output, many iterations), Claude finishes the current step at a clean point, writes the `/handover` block, commits and pushes everything including the handover edits, and tells Maxi to continue in a new session with it, instead of starting the next large step.
 
 ---
 
@@ -211,7 +211,7 @@ A task is complete when **all** of these are true:
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
-- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own
+- One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own; the one exception is a version pin that fixes a critical or high security alert (section 6 "Security alerts")
 - `main` always stays runnable
 - **Nothing is edited on `main`, and nothing is left behind** (Maxi, 2026-10-14): every change, also one line in a doc, is made on a branch, in a worktree where the session has one, and reaches `main` through a PR. A session never ends with uncommitted changes or a stash: what is not finished is committed on its branch and pushed. Two uncommitted edits in the `main` folder of the Windows clone kept it from being pulled for two days (192 commits behind); the note in them existed on that PC only. Leftovers that are found (uncommitted files in a `main` folder, a stash, a `leftovers/*` branch) are reported, never stashed, reset or deleted without Maxi's word; `/start` lists them at every session start until they are gone
 - No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
