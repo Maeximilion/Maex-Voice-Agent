@@ -593,7 +593,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.6.4 · 21.10.2026:** Alerts-first rule in the wording of PR #348 (critical or high, while no open PR fixes it), chosen by Maxi; a session hands over before its context is compressed; /start step 5a lists open PRs to tell whether one fixes an alert, and the Codex start skill carries the same step (Codex reviews of 233f1ba and 176e0be; all open PRs, not the first 30); 2.6.1 counts two alerts, not three
+- **v2.6.4 · 21.10.2026:** Alerts-first rule in the wording of PR #348 (critical or high, while no open PR fixes it), chosen by Maxi; a session hands over before its context is compressed; scripts/alert_fixes.py decides whether an open PR into main fixes an alert (dependency-graph compare for Dependabot, a fixed instance on the PR head for code scanning), called by /start step 5a and the Codex start skill alike; a lower Dependabot alert is a pin for the next feature PR (Codex reviews of 233f1ba, 176e0be and 6d2cc1a); 2.6.1 counts two alerts, not three
 - **v2.6.3 · 21.10.2026:** English sweep of small German leftovers: status_bump tests, issue templates, config comments, GitHub Project doc, printbridge README, cold_path (issue #324)
 - **v2.6.2 · 21.10.2026:** CLAUDE.md: review loop limits, Claude decides on P2-only PRs after 3 rounds (#351)
 - **v2.6.1 · 21.10.2026:** certifi 2026.10.19 for the two critical Dependabot alerts (compromised emSign CAs); critical and security alerts come before tasks (CLAUDE.md, /start)
