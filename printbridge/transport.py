@@ -2,7 +2,7 @@
 
 `from_spec` liest die Angabe aus der Umgebung:
 - `tcp:192.168.1.50` oder `tcp:192.168.1.50:9100`
-- `windows:EPSON TM-T20II Küche` (Name wie in "Drucker und Scanner")
+- `windows:EPSON TM-T20II Kitchen` (Name wie in "Drucker und Scanner")
 
 Beide Wege pruefen vor dem Druck, ob der Drucker bereit ist, und werfen sonst:
 die Bruecke meldet den Fehler, und die Karte im Tablet wird rot, statt dass ein

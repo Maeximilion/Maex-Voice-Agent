@@ -1,28 +1,28 @@
-name: projektpflege
+name: project-maintenance
 
-# Das Board wird einmal taeglich gepflegt, nicht bei jedem Commit. Waehrend der Arbeit
-# fasst es niemand an: Status bewegen die eingebauten Project-Workflows beim Merge.
-# Was ihnen durchrutscht - abgeschlossen, aber nicht auf Done -, setzt dieser Lauf
-# nach; alles andere meldet er nur. Begruendung: docs/16_GITHUB_PROJECT.md
+# The board is maintained once a day, not on every commit. During work nobody
+# touches it: the built-in Project workflows move the status on merge.
+# What slips past them - closed, but not on Done - this run corrects
+# afterwards; everything else it only reports. Rationale: docs/16_GITHUB_PROJECT.md
 on:
   schedule:
-    # 03:00 UTC, also 05:00 im Sommer und 04:00 im Winter. Die Stunde ist egal,
-    # solange sie taeglich dieselbe ist; Cron kennt keine Zeitzonen.
+    # 03:00 UTC, so 05:00 in summer and 04:00 in winter. The hour does not matter
+    # as long as it is the same every day; cron has no time zones.
     - cron: "0 3 * * *"
   workflow_dispatch:
     inputs:
       archive:
-        description: "Zusaetzlich Done-Eintraege nach 14 Tagen archivieren (blendet sie aus der Roadmap aus)"
+        description: "Additionally archive Done entries after 14 days (hides them from the roadmap)"
         type: boolean
         default: false
 
-# Das Board schreibt der PAT. Der GITHUB_TOKEN schreibt nur das Entscheidungs-Issue -
-# bewusst er und nicht der PAT: eine Erwaehnung vom eigenen Konto benachrichtigt nicht.
+# The PAT writes the board. The GITHUB_TOKEN writes only the decision issue -
+# deliberately it and not the PAT: a mention from your own account does not notify.
 permissions:
   contents: read
   issues: write
-  # Assignee und Label an Pull Requests; die laufen ueber die Issue-Schnittstelle,
-  # GitHub verlangt fuer Pull Requests aber zusaetzlich dieses Recht.
+  # Assignee and label on pull requests; they go through the issue interface,
+  # but GitHub additionally requires this permission for pull requests.
   pull-requests: write
 
 concurrency:
@@ -52,34 +52,34 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: python scripts/readme_assets.py findings "$RUNNER_TEMP/images.json"
 
-      - name: Zugang pruefen
+      - name: Check access
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
         run: |
           if [ -z "$PROJECT_TOKEN" ] || [ -z "$PROJECT_NUMBER" ]; then
-            echo "::error::Secret PROJECT_TOKEN oder Variable PROJECT_NUMBER fehlt. Einrichtung: docs/16_GITHUB_PROJECT.md"
+            echo "::error::Secret PROJECT_TOKEN or variable PROJECT_NUMBER is missing. Setup: docs/16_GITHUB_PROJECT.md"
             exit 1
           fi
 
-      - name: Korrigieren und berichten
-        # Ausdruecklich bash: nur so setzt GitHub pipefail. Ohne das gewinnt der
-        # Exit-Code von tee, und ein gescheiterter Lauf stuende gruen im Verlauf.
+      - name: Correct and report
+        # Explicitly bash: only then does GitHub set pipefail. Without it the
+        # exit code of tee wins, and a failed run would show green in the history.
         shell: bash
         env:
           PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
           PROJECT_OWNER: ${{ github.repository_owner }}
           PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
         run: |
-          # Der Bericht landet in der Job-Zusammenfassung, nicht als Kommentar an jedem
-          # Eintrag. Ein Ort zum Nachsehen statt Rauschen auf dem Board.
+          # The report lands in the job summary, not as a comment on every
+          # entry. One place to look instead of noise on the board.
           python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
             --findings-json "$RUNNER_TEMP/befunde.json" \
             | tee "$GITHUB_STEP_SUMMARY"
 
-      - name: Entscheidungs-Issue pflegen
-        # Was die Pflege nicht selbst entscheiden kann, landet in genau einem Issue.
-        # Erwaehnt wird nur bei neuen Punkten; ist nichts mehr offen, schliesst es sich.
+      - name: Maintain the decision issue
+        # What the maintenance cannot decide itself lands in exactly one issue.
+        # It mentions only on new points; once nothing is open, it closes itself.
         # Also after a failed board step: a missing findings file makes the run
         # partial, which keeps the board's sections and never closes the issue.
         if: ${{ !cancelled() }}
@@ -89,9 +89,9 @@ jobs:
           python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
           --also "README images=$RUNNER_TEMP/images.json"
 
-      - name: Assignee und Label der Pull Requests ergaenzen
-        # Zuletzt, damit ein Fehler hier Board und Entscheidungs-Issue nicht aufhaelt.
-        # Setzt nur, was fehlt: Assignee = Eigentuemer, Label aus dem Titel.
+      - name: Fill in assignee and label of pull requests
+        # Last, so a failure here does not hold up the board and the decision issue.
+        # Sets only what is missing: assignee = owner, label from the title.
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/pr_metadata.py
