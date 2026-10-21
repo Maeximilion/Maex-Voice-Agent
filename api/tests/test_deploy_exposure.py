@@ -259,3 +259,18 @@ def test_htmx_does_not_insert_its_own_style_element():
     """htmx adds a <style> for indicators unless told not to; the CSP refuses it."""
     base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
     assert '"includeIndicatorStyles":false' in base
+
+
+def test_the_example_gives_each_access_its_user_and_hash_together():
+    """Caddy 2.11.7 does not start on a user without a hash or a hash without a
+    user ("username and password cannot be empty"): the whole proxy is down,
+    bridge and health included. Both empty parse and close the access for
+    everyone (checked 21.10.2026 with the pinned image)."""
+    example = dict(
+        line.split("=", 1)
+        for line in (REPO_ROOT / ".env.example").read_text().splitlines()
+        if "=" in line and not line.startswith("#")
+    )
+    for prefix in ("GUI_BASIC_AUTH", "N8N_EDITOR_AUTH"):
+        user, password_hash = example[f"{prefix}_USER"], example[f"{prefix}_HASH"]
+        assert bool(user) == bool(password_hash), prefix
