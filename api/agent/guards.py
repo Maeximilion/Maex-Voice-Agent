@@ -113,45 +113,25 @@ HINT_CALLBACK_PHONE = (
     "Nummer mit Vorwahl er erreichbar ist."
 )
 HINT_NOT_BOOKED = (
-    "Abgelehnt: in diesem Anruf ist nichts gebucht, `confirm` ist nicht "
-    "durchgegangen. Bis dahin sagst du die Wörter bestätigt, gebucht, "
-    "reserviert und Abholcode gar nicht, auch nicht verneint oder in einer "
-    "Frage. Nach `confirm` nennst du, was gebucht ist: die Bestellung oder die "
-    "Reservierung. Sonst sag, was als Nächstes geschieht: den readback vorlesen "
-    "und auf ein klares Ja warten."
+    "Abgelehnt: eine Buchung und den Abholcode sagt der Kern, nicht du. Die "
+    "Wörter bestätigt, gebucht, reserviert, Abholcode und einen Code sagst du "
+    "nie, auch nicht verneint oder in einer Frage. Fragt der Gast nach seiner "
+    "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
+    "readback vor und warte auf ein klares Ja."
 )
-# Words that tell a guest something is booked. The pickup code comes from
-# `confirm` only; a model that names one before it has made it up.
+# Words that tell a guest something is booked, with any ending ("Ihre
+# bestätigte Bestellung"; Codex PR #347).
 _BOOKING_CLAIM = re.compile(
-    # Any ending: "Ihre bestätigte Bestellung" claims as well (Codex PR #347).
     r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|abholcode|abholnummer)\w*",
     re.IGNORECASE,
 )
-# A sentence that speaks of a pickup code, and the tokens shaped like one:
-# the codes are A1, A2, ... (domain/ordering/confirm.py); a model made up 8842.
+# A sentence that speaks of a code and holds a token shaped like one (A1, s12,
+# 8842; "B 99" joined first). "Code" on its own, not inside "Gutscheincode" or
+# after "WLAN-"; a code word without such a token ("Den QR Code kann ich nicht
+# prüfen") names no code.
+_CODE_WORD = re.compile(r"(?<![\w-])code\b", re.IGNORECASE)
 _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
-# Shaped like a pickup code beyond doubt: counted anywhere in a sentence that
-# speaks of a code, also before the code word ("B99 ist Ihr Abholcode"; Codex
-# PR #347). Bare digits only after it, or a date before it would count.
-_LETTER_CODE = re.compile(r"\b[A-Za-z]\d{1,4}\b")
 _SPLIT_CODE = re.compile(r"\b([A-Za-z])[\s-]+(\d{1,4})\b")
-# What a code word presents: everything after it. A date before it ("für den
-# 21.10.2026") is no code; a period does not end the span, or "Abholcode
-# lautet Nr. B99" hid B99 behind "Nr." (Codex PR #347). Strict: a date after
-# the code counts and refuses the sentence. "Code" on its own, not inside
-# "Gutscheincode" or after "WLAN-" (Codex PR #347).
-_PRESENTED = re.compile(
-    r"(?:abholcode|abholnummer|(?<![\w-])code)\b(.*)", re.IGNORECASE | re.DOTALL
-)
-# What a sentence claims was booked: an order, a table, or, naming neither,
-# anything the call booked.
-_ABOUT = (
-    ("order", re.compile(r"abhol|bestellung", re.IGNORECASE)),
-    # Nouns only: "reserviert" is the claim, not what it is about ("Ihre
-    # Abholung ist für 18 Uhr reserviert" is about an order; Codex PR #347).
-    # At the start of a word: "automatisch" names no table (Codex PR #347).
-    ("reservation", re.compile(r"\btisch|reservierung", re.IGNORECASE)),
-)
 
 
 @dataclass(frozen=True)
@@ -215,57 +195,33 @@ def note_said(state: ConversationState, say: str) -> None:
 
 
 def false_booking(state: ConversationState, say: str) -> ToolResult | None:
-    """The failed result for a sentence that tells the guest something is
-    booked while no `confirm` went through in this call; None lets it through.
-    The hard metrics read the database and do not see such a sentence: on
-    "Ja, passt" with no draft a real model said "Ihre Abholung ist bestätigt.
-    Der Abholcode lautet 8842" (13.10.2026).
+    """The failed result for a model sentence that speaks of a booking or a
+    code; None lets it through. The core says every booking itself, from the
+    `confirm` result (`loop.py`), and keeps that sentence as `booking_say`;
+    the model may repeat it word for word and say nothing else of the kind.
+    On "Ja, passt" with no draft a real model said "Ihre Abholung ist
+    bestätigt. Der Abholcode lautet 8842" (13.10.2026), and the hard metrics,
+    which read the database, did not see it.
 
-    Strict on purpose, by word and not by meaning, with no reading of
-    sentences: a booking word passes only when no draft waits for its yes and
-    the text names what was booked, an order (Abholung, Bestellung) or a table
-    (Tisch, Reservierung), and all it names is booked. So a denial is refused
-    ("Es ist noch nichts gebucht"), a question too ("Haben Sie bereits
-    reserviert?"), a claim that names nothing ("Das ist gebucht") always, and
-    "Ihre Bestellung ist bestätigt, möchten Sie noch einen Tisch?" after an
-    order alone. Every rule that read the reach of a negation, a question or
-    a sentence let a claim through in a later review round ("nicht nur
-    reserviert, sondern ...", "Ihr Tisch Nr. 7 ist reserviert" split at
-    "Nr."; Codex PR #347). A refused sentence costs the model one hop, and
-    the hint says what to say instead.
+    No exemption is reasoned about: a denial ("Es ist noch nichts gebucht")
+    and a question ("Haben Sie bereits reserviert?") are refused too. Fifteen
+    Codex rounds on PR #347 showed that every rule that judged whether a model
+    sentence about a booking was true let a false one through somewhere
+    (negations, questions, abbreviations, a second order, codes written apart
+    or before their word). A refused sentence costs the model one hop, and the
+    hint says what to say instead.
 
     ponytail: a claim without these words ("Ihre Bestellung geht in die
     Küche") is not caught. More words if the call log shows them."""
-    if not _names_the_code(state, say):
+    rest = say.replace(state.booking_say, " ") if state.booking_say else say
+    if _BOOKING_CLAIM.search(rest) or _names_a_code(rest):
         return _NOT_BOOKED
-    if not _BOOKING_CLAIM.search(say):
-        return None
-    about = _about(say)
-    if state.stage != "readback_pending" and about and about <= state.booked:
-        return None
-    return _NOT_BOOKED
+    return None
 
 
-def _names_the_code(state: ConversationState, say: str) -> bool:
-    """A code word that presents a token shaped like a code presents the code
-    the confirmed order got and no other: "Ihr Abholcode ist B99" after A1
-    sends the guest to the counter with a code that finds no order (Codex PR
-    #347). One that presents none ("Den QR Code auf Ihrer Rechnung kann ich
-    nicht prüfen") is no pickup code; the booking words still apply. Strict:
-    a card number like "s12" after the code word is refused as well."""
-    # "B 99" or "B-99" is B99 (Codex PR #347).
-    say = _SPLIT_CODE.sub(r"\1\2", say)
-    tails = _PRESENTED.findall(say)
-    codes = {code.upper() for tail in tails for code in _CODE_SHAPED.findall(tail)}
-    if tails:
-        codes |= {code.upper() for code in _LETTER_CODE.findall(say)}
-    if not codes:
-        return True
-    return state.pickup_code is not None and codes == {state.pickup_code.upper()}
-
-
-def _about(text: str) -> set[str]:
-    return {kind for kind, words in _ABOUT if words.search(text)}
+def _names_a_code(text: str) -> bool:
+    joined = _SPLIT_CODE.sub(r"\1\2", text)
+    return bool(_CODE_WORD.search(joined) and _CODE_SHAPED.search(joined))
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:

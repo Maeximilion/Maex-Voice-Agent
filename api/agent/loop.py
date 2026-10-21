@@ -91,6 +91,16 @@ SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # checked with the announcement texts (docs/05 §6).
 SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
+# What the guest hears when `confirm` went through: the core says it, built from
+# the confirm result, never the model (`guards.false_booking`). Draft wording,
+# checked with the announcement texts (docs/05 §6).
+SAY_ORDER_PLACED = "Ihre Bestellung ist aufgegeben."
+SAY_ORDER_WAITS = "Ihre Bestellung ist aufgenommen, das Team bestätigt sie gleich noch."
+SAY_PICKUP_CODE = "Ihr Abholcode ist {code}."
+SAY_TABLE_BOOKED = "Ihre Reservierung ist bestätigt."
+# A confirmed call is closing (`outcome.CLOSING_STAGES`): the phone line hangs
+# up after this sentence and adds no second goodbye to it.
+SAY_BOOKED_GOODBYE = "Vielen Dank für Ihren Anruf und bis dann."
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
@@ -318,6 +328,17 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if turn.tool_call.name == "confirm" and result.ok:
+                # Booked: the core says so itself and ends the turn. A model
+                # that phrased it said what the database did not hold (a code
+                # it made up, a table never drafted), and every rule that
+                # judged its words let a false one through (Codex PR #347).
+                state.booking_say = _booked_say(state, result.data)
+                said = f"{state.booking_say} {SAY_BOOKED_GOODBYE}"
+                guards.note_said(state, said)
+                return TurnResult(
+                    state=state, say=[said], ended=state.stage in ENDED_STAGES
+                )
             if result is guards.CALLBACK_WITHOUT_NUMBER:
                 handed = self._callback_without_number(
                     state, turn.tool_call.args, user_text, reported_failures
@@ -594,6 +615,21 @@ def _order_lines(state: ConversationState, room: int) -> str:
         if len(text := ", ".join(parts)) <= room:
             return text
     return text[: max(room, 0)]
+
+
+def _booked_say(state: ConversationState, data: dict[str, Any]) -> str:
+    """The sentence of a confirm that went through: what was booked, from the
+    confirm result. An order that waits for the team says so (`handover`);
+    the pickup code is the one the database gave the order."""
+    if state.order_id is None:
+        return SAY_TABLE_BOOKED
+    placed = (
+        SAY_ORDER_WAITS
+        if data.get("handover") == "awaiting_approval"
+        else SAY_ORDER_PLACED
+    )
+    code = data.get("pickup_code")
+    return f"{placed} {SAY_PICKUP_CODE.format(code=code)}" if code else placed
 
 
 def _handoff_summary(reason: str, detail: str | None) -> str:

@@ -25,11 +25,16 @@ from api.agent.guards import (
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import (
     MAX_TOOL_HOPS,
+    SAY_BOOKED_GOODBYE,
     SAY_ESCALATION,
     SAY_NOBODY_REACHABLE,
     SAY_ORDER_NOT_PLACED,
+    SAY_ORDER_PLACED,
+    SAY_ORDER_WAITS,
+    SAY_TABLE_BOOKED,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
+    _booked_say,
     _local_times,
     _order_lines,
 )
@@ -1443,15 +1448,30 @@ def test_a_model_that_insists_on_a_booking_ends_with_the_team(session, state):
     assert "reserviert" not in " ".join(result.say)
 
 
-def test_after_a_confirm_the_booking_may_be_said(session, state):
+def test_after_a_confirm_the_core_says_the_booking(session, state):
+    """Booked: the core says so from the confirm result and ends the turn;
+    the model is not asked for the sentence (Codex PR #347)."""
     read_back_reservation(session, state)
-    llm = confirming(state, then_say="Ihre Reservierung ist bestätigt.")
+    llm = confirming(state, then_say="Ihre Reservierung ist ganz sicher gebucht.")
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
     result = loop.run_turn(state, "Ja, passt")
 
-    assert result.say == ["Ihre Reservierung ist bestätigt."]
-    assert state.booked == {"reservation"}
+    assert result.say == [f"{SAY_TABLE_BOOKED} {SAY_BOOKED_GOODBYE}"]
+    assert state.booking_say == SAY_TABLE_BOOKED
+    assert len(llm.calls) == 1
+
+
+def test_the_booked_order_sentence_names_the_code_the_database_gave():
+    state_data = {"handover": "queued", "pickup_code": "A7"}
+    waits = {"handover": "awaiting_approval", "pickup_code": "A8"}
+    order = ConversationState(
+        call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), order_id=uuid.uuid4()
+    )
+
+    assert _booked_say(order, state_data) == f"{SAY_ORDER_PLACED} Ihr Abholcode ist A7."
+    assert _booked_say(order, waits) == f"{SAY_ORDER_WAITS} Ihr Abholcode ist A8."
+    assert _booked_say(order, {"handover": "queued"}) == SAY_ORDER_PLACED
 
 
 def numberless(tenant_id, call_id):

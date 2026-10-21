@@ -25,6 +25,7 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.llm import LLMTurn, Usage
+from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
@@ -43,9 +44,11 @@ from api.telephony.handler import (
 )
 from evals.runner import menu_plan
 from scripts.seed import seed
-from sim.scripted_llm import QUESTIONS, SAY_CONFIRMED, ScriptedLLM
+from sim.scripted_llm import QUESTIONS, ScriptedLLM
 from sim.session import menu_numbers, resolve_tenant
 
+# The core says the booking after a confirm (agent/loop.py), not the stand-in.
+SAY_CONFIRMED = f"{SAY_TABLE_BOOKED} {SAY_BOOKED_GOODBYE}"
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Tuesday, evening service open
 CLOSED = datetime(2026, 9, 15, 15, 30, tzinfo=BERLIN)  # Tuesday, between the services

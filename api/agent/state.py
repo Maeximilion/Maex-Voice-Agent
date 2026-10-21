@@ -6,7 +6,6 @@ Gesprächsdauer, der Verlauf schon.
 """
 
 import json
-import re
 import uuid
 from contextlib import suppress
 from typing import Annotated, Any, Literal
@@ -75,17 +74,11 @@ class ConversationState(BaseModel):
     readback: str | None = None
     readback_heard: bool = False
     transferred: bool = False
-    # What a `confirm` booked in this call and no later draft of the same kind
-    # replaced: "order", "reservation". Memory of the core, never sent to the
-    # model: no sentence may tell the guest that something is booked that is
-    # not (`guards.false_booking`).
-    booked: set[str] = Field(default_factory=set)
-    # The pickup code the confirmed order got, the only one a sentence may
-    # name (`guards.false_booking`). Memory of the core, like `booked`.
-    pickup_code: str | None = None
-    # The lines of the confirmed order: a `cart` with other lines starts a
-    # new order, which nothing has booked yet (`replace_cart`).
-    booked_cart: list[dict[str, Any]] = Field(default_factory=list)
+    # The sentence the core said when `confirm` went through (`loop.py`), built
+    # from the confirm result: what was booked, the pickup code. The only
+    # booking sentence the model may say, and only word for word
+    # (`guards.false_booking`); a new draft takes it back.
+    booking_say: str | None = None
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -164,11 +157,10 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
-        if "order" in self.booked and self.pickup_code:
-            # The model keeps nothing between turns: asked for the code later,
-            # it could only make one up, and the guard refuses every guess
-            # (Codex PR #347). The code `confirm` returned, nothing more.
-            data["pickup_code"] = self.pickup_code
+        if self.booking_say:
+            # The model keeps nothing between turns: asked for the booking or
+            # the pickup code later, it repeats this sentence word for word.
+            data["booking_say"] = self.booking_say
         if (
             self.stage == "readback_pending"
             and self.readback
@@ -306,25 +298,6 @@ def note_guest_details(state: ConversationState, guest_text: str) -> None:
             state.slots["phone"] = number
 
 
-# "noch" and "auch" only before "ein/etwas/mal": "Ist mein Tisch noch
-# reserviert?" or "auch wirklich reserviert?" asks about the booked one
-# (Codex PR #347).
-_ANOTHER = re.compile(
-    r"\b(?:(?:noch|auch)\s+(?:ein\w*|etwas|was|mal|noch)|weitere[nmrs]?"
-    r"|zus(?:ä|ae)tzlich|zweite[nmrs]?)\b",
-    re.IGNORECASE,
-)
-
-
-# A request for one, not a word about the booked one: "Ich möchte eine Pizza
-# bestellen" asks for a new order (Codex PR #347), "Danke, ich hole es dann ab"
-# or "Ist mein Tisch reserviert?" does not.
-_REQUEST = re.compile(
-    r"\b(?:m(?:ö|oe)chte|h(?:ä|ae)tte\s+gern|will|bestellen|reservieren)\b",
-    re.IGNORECASE,
-)
-
-
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
     this one. It only fills an empty `intent`: a word in a later sentence
@@ -341,18 +314,7 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     thing after a booking, keeps the first wish in the state until a tool of
     the other flow drafts. The model reads the change in the sentence itself,
     and from the first menu search on the state carries the order (`cart`)."""
-    wish = heard(guest_text)
-    if wish is not None and (
-        _ANOTHER.search(guest_text) or _REQUEST.search(guest_text)
-    ):
-        # "Ich möchte noch eine Pizza bestellen" after a confirmed order: the
-        # first order's booking does not speak for the second (Codex PR #347).
-        # Only with a word for another one: "ich hole es dann ab" after the
-        # confirm is no new order.
-        state.booked.discard("order" if wish == "pickup" else "reservation")
-        if wish == "pickup":
-            state.pickup_code = None
-    if state.intent is not None or wish is None:
+    if state.intent is not None or (wish := heard(guest_text)) is None:
         return
     # An order outranks table details, and those a search that may have been
     # only a question about the menu.
@@ -400,12 +362,6 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     if same_order(lines, state.cart):
         # The state keeps the sequence that was read out (Codex PR #237, P2).
         return
-    if "order" in state.booked and lines and not same_order(lines, state.booked_cart):
-        # A second order in the call: the first one's booking and code do not
-        # speak for it (Codex PR #347). The confirmed order repeated as `cart`
-        # in the closing answer is none.
-        state.booked.discard("order")
-        state.pickup_code = None
     order_corrected(state)
     state.cart = lines
 
@@ -467,13 +423,10 @@ def apply_tool_result(
     status = result.data.get("status", "draft")
     if name in ("create_reservation", "draft_order") and status != "draft":
         # The same key replays a draft that was decided since: the confirmed
-        # order comes back as it is. It is no new draft, and taking it as one
-        # dropped the booking and its pickup code (Codex PR #347). A cancelled
-        # one takes the booking back (Codex PR #347).
+        # order comes back as it is, no new draft to read out (Codex PR #347).
+        # A cancelled one takes the booking sentence back (Codex PR #347).
         if status == "cancelled":
-            state.booked.discard("order" if name == "draft_order" else "reservation")
-            if name == "draft_order":
-                state.pickup_code = None
+            state.booking_say = None
         return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
     # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst
@@ -484,25 +437,20 @@ def apply_tool_result(
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
         state.order_id = None
         state.stage = "readback_pending"
-        state.booked.discard("reservation")
+        state.booking_say = None
         _to_read_out(state, result)
     elif name == "draft_order":
         state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
-        state.booked.discard("order")
-        state.pickup_code = None
+        state.booking_say = None
         _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
         # readback starts from these lines.
         with suppress(ValidationError):
             state.cart = cart_lines((args or {}).get("items"))
-    elif name == "check_slot":
-        # Another table asked for: the confirmed one does not speak for it
-        # until it is confirmed itself (Codex PR #347).
-        state.booked.discard("reservation")
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_service_status":
@@ -517,12 +465,8 @@ def apply_tool_result(
     elif name == "confirm":
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
-            state.booked_cart = state.cart
             state.cart = []
         state.stage = "confirmed"
-        state.booked.add("order" if state.order_id is not None else "reservation")
-        if state.order_id is not None:
-            state.pickup_code = result.data.get("pickup_code")
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
         # read a draft that no longer is one (Codex PR #258).

@@ -19,14 +19,12 @@ from api.agent.guards import (
     false_booking,
     note_said,
     refusal,
-    take_cart,
 )
 from api.agent.llm import ToolCall
 from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
-    note_intent,
 )
 
 ENTE = str(uuid.uuid4())
@@ -855,45 +853,6 @@ def test_a_sentence_without_a_booking_word_passes(say):
     assert false_booking(new_state(), say) is None
 
 
-def test_while_a_draft_waits_nothing_is_said_to_be_booked():
-    """After a confirmed order a new table draft waits for its yes: "Das ist
-    auch gebucht" may mean the table (Codex PR #347). Strict: also the true
-    claim about the order waits until the draft is decided."""
-    state = new_state(booked={"order"}, stage="readback_pending")
-
-    assert false_booking(state, "Das ist auch gebucht.") is not None
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
-
-
-def test_the_claim_verb_does_not_name_a_table():
-    """ "reserviert" is the claim: after a confirmed order this closing is
-    about the order alone (Codex PR #347)."""
-    state = new_state(booked={"order"})
-
-    assert false_booking(state, "Ihre Abholung ist für 18 Uhr reserviert.") is None
-    assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
-
-
-def test_a_booked_table_is_no_booked_order():
-    """After a confirmed table a pickup code is still made up (Codex PR #347)."""
-    state = new_state(booked={"reservation"})
-
-    assert false_booking(state, "Ihr Tisch ist reserviert.") is None
-    assert false_booking(state, "Ihre Abholung ist bestätigt, Code 8842.") is not None
-
-
-def test_a_new_draft_takes_back_the_booking_of_its_kind():
-    state = new_state(booked={"order", "reservation"})
-    apply_tool_result(
-        state,
-        "draft_order",
-        ToolResult(ok=True, data={"order_id": str(uuid.uuid4()), "readback": "x"}),
-    )
-
-    assert state.booked == {"reservation"}
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
-
-
 def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
     state = new_state(slots={"phone": "+4972215551234"})
     call = ToolCall("create_callback", {"phone": None, "reason": "out_of_scope"})
@@ -904,116 +863,8 @@ def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
     assert refused.hint == HINT_GUEST_PHONE
 
 
-def test_after_a_confirm_the_booking_may_be_named():
-    state = new_state(booked={"order"}, stage="confirmed", pickup_code="A12")
-
-    assert false_booking(state, "Ihr Abholcode ist A12.") is None
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        # Names nothing: always refused, also right after a confirm, since
-        # the same guest sentence may have asked for a table as well
-        # (Codex PR #347).
-        "Das ist gebucht.",
-        # Names a table that is not booked; the period after "Nr." does not
-        # hide the table (Codex PR #347).
-        "Ihr Tisch Nr. 7 ist reserviert.",
-        # Names an order and a table: both must be booked.
-        "Ihre Bestellung ist bestätigt, möchten Sie noch einen Tisch reservieren?",
-    ],
-)
-def test_after_an_order_alone_these_claims_are_refused(say):
-    state = new_state(booked={"order"}, stage="confirmed")
-
-    assert false_booking(state, say) is not None
-
-
-def confirmed_order(code="A1"):
-    state = new_state()
-    order_id = str(uuid.uuid4())
-    apply_tool_result(
-        state, "draft_order", ToolResult(ok=True, data={"order_id": order_id})
-    )
-    apply_tool_result(state, "confirm", ToolResult(ok=True, data={"pickup_code": code}))
-    return state
-
-
-def test_only_the_confirmed_pickup_code_may_be_named():
-    """After A1, "B99" sends the guest to the counter with a code that finds no
-    order (Codex PR #347)."""
-    state = confirmed_order("A1")
-
-    assert false_booking(state, "Ihr Abholcode ist A1.") is None
-    assert false_booking(state, "Ihr Abholcode ist B99.") is not None
-    assert false_booking(state, "Ihr Code ist A1 oder B99.") is not None
-    # Letter and digits apart are one code (Codex PR #347).
-    assert false_booking(state, "Ihr Abholcode ist B 99.") is not None
-    assert false_booking(state, "Ihr Abholcode ist A 1.") is None
-    # Before the code word as well (Codex PR #347).
-    assert false_booking(state, "B99 ist Ihr Abholcode.") is not None
-    assert false_booking(state, "A1 ist Ihr Abholcode.") is None
-    # A period after "Nr." does not hide the code (Codex PR #347).
-    assert false_booking(state, "Ihr Abholcode lautet Nr. B99.") is not None
-    assert false_booking(state, "Ihr Abholcode lautet Nr. A1.") is None
-
-
 def test_a_code_before_any_confirm_is_made_up():
     assert false_booking(new_state(), "Ihr Code lautet 8842.") is not None
-
-
-def test_a_new_draft_takes_back_the_pickup_code():
-    state = confirmed_order("A1")
-    apply_tool_result(
-        state, "draft_order", ToolResult(ok=True, data={"order_id": str(uuid.uuid4())})
-    )
-
-    assert state.pickup_code is None
-    assert false_booking(state, "Ihr Abholcode ist A1.") is not None
-
-
-def test_automatisch_names_no_table():
-    state = confirmed_order("A1")
-
-    assert false_booking(state, "Ihre Bestellung wurde automatisch bestätigt.") is None
-
-
-def test_a_replayed_confirmed_draft_keeps_the_booking():
-    """The same draft_order key after the confirm replays the confirmed order
-    (domain/ordering/draft.py `_replay`); it is no new draft (Codex PR #347)."""
-    state = confirmed_order("A1")
-    order_id = str(state.order_id)
-    apply_tool_result(
-        state,
-        "draft_order",
-        ToolResult(ok=True, data={"order_id": order_id, "status": "confirmed"}),
-    )
-
-    assert state.stage == "confirmed"
-    assert state.booked == {"order"}
-    assert false_booking(state, "Ihr Abholcode ist A1.") is None
-
-
-def test_a_new_cart_after_a_confirmed_order_is_not_booked():
-    """A second order in the call: the first one's booking does not speak for
-    it, while the confirmed order repeated as cart is no new one (Codex PR
-    #347)."""
-    first = [{"menu_item_id": PHO, "quantity": 1}]
-    state = new_state(known_item_ids={PHO, REIS}, cart=first)
-    apply_tool_result(
-        state, "draft_order", ToolResult(ok=True, data={"order_id": str(uuid.uuid4())})
-    )
-    state.cart = first
-    apply_tool_result(state, "confirm", ToolResult(ok=True, data={"pickup_code": "A1"}))
-
-    assert take_cart(state, first) is None
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is None
-
-    assert take_cart(state, [{"menu_item_id": REIS, "quantity": 2}]) is None
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
-    assert state.pickup_code is None
 
 
 @pytest.mark.parametrize(
@@ -1029,71 +880,58 @@ def test_other_codes_are_no_pickup_code(say):
     assert false_booking(new_state(), say) is None
 
 
-def test_a_new_table_request_after_a_confirmed_table_is_not_booked():
-    """After one confirmed table the guest asks for another: "Ihr Tisch ist
-    reserviert" must wait for that one's confirm (Codex PR #347)."""
-    state = new_state(booked={"reservation"}, stage="confirmed")
-    apply_tool_result(
-        state, "check_slot", ToolResult(ok=True, data={"available": True})
-    )
-
-    assert false_booking(state, "Ihr Tisch ist reserviert.") is not None
+BOOKED = "Ihre Bestellung ist aufgegeben. Ihr Abholcode ist A1."
 
 
-def test_a_date_next_to_the_code_is_no_code():
-    state = confirmed_order("A1")
-    say = "Ihre Bestellung für den 21.10.2026 ist bestätigt. Ihr Abholcode ist A1."
+def test_the_core_sentence_word_for_word_is_the_only_booking_a_model_says():
+    """The core says every booking from the confirm result (agent/loop.py)
+    and keeps it as booking_say; the model may repeat it, nothing else of the
+    kind (Codex PR #347, fifteen rounds of word rules)."""
+    state = new_state(stage="confirmed", booking_say=BOOKED)
 
-    assert false_booking(state, say) is None
+    assert false_booking(state, BOOKED) is None
+    assert false_booking(state, f"Gern noch einmal: {BOOKED} Bis gleich!") is None
+    # In its own words: refused, also when true.
+    assert false_booking(state, "Ihre Bestellung ist bestätigt, Code A1.") is not None
+    assert false_booking(state, "Ihr Abholcode ist A1.") is not None
+    # The core sentence plus a claim of its own.
+    assert false_booking(state, f"{BOOKED} Ihr Tisch ist reserviert.") is not None
+
+
+def test_without_a_booking_every_booking_word_is_refused():
+    assert false_booking(new_state(), "Ihre Bestellung ist bestätigt.") is not None
+    assert false_booking(new_state(), BOOKED) is not None
 
 
 @pytest.mark.parametrize(
-    ("said", "booked"),
+    ("tool", "data"),
     [
-        # A second order asked for: the first one's booking does not speak
-        # for it (Codex PR #347).
-        ("Ich möchte noch eine Pizza bestellen", False),
-        ("Und zusätzlich noch etwas zum Abholen", False),
-        # The closing of the first order is no new one.
-        ("Danke, ich hole es dann ab", True),
-        # "noch" as "still" asks about the booked one (Codex PR #347).
-        ("Ist meine Bestellung noch zum Abholen da?", True),
-        ("Ist meine Bestellung auch wirklich zum Abholen da?", True),
-        # A direct request is a new one too (Codex PR #347).
-        ("Ich möchte eine Pizza zum Abholen bestellen", False),
-        ("Ich möchte auch noch etwas zum Abholen bestellen", False),
-        ("Ja, passt", True),
+        ("draft_order", {"order_id": str(uuid.uuid4()), "readback": "x"}),
+        ("create_reservation", {"reservation_id": str(uuid.uuid4()), "readback": "x"}),
+        ("draft_order", {"order_id": str(uuid.uuid4()), "status": "cancelled"}),
     ],
 )
-def test_a_wish_for_another_order_takes_back_the_booking(said, booked):
-    state = confirmed_order("A1")
-    note_intent(state, said)
+def test_a_new_draft_or_a_cancelled_replay_takes_the_booking_sentence_back(tool, data):
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+    apply_tool_result(state, tool, ToolResult(ok=True, data=data))
 
-    assert ("order" in state.booked) is booked
-    assert (false_booking(state, "Ihr Abholcode ist A1.") is None) is booked
-
-
-def test_a_cancelled_replay_takes_the_booking_back():
-    """The team cancelled the order, the model repeats the draft: the replay
-    says so, and nothing may be said to be booked (Codex PR #347)."""
-    state = confirmed_order("A1")
-    apply_tool_result(
-        state,
-        "draft_order",
-        ToolResult(
-            ok=True, data={"order_id": str(state.order_id), "status": "cancelled"}
-        ),
-    )
-
-    assert "order" not in state.booked
-    assert false_booking(state, "Ihre Bestellung ist bestätigt.") is not None
+    assert state.booking_say is None
+    assert false_booking(state, BOOKED) is not None
 
 
-def test_the_model_reads_the_pickup_code_while_the_order_is_booked():
-    """Asked for the code later, a model that keeps nothing between turns
-    could only make one up (Codex PR #347)."""
-    state = confirmed_order("A1")
+def test_a_replayed_confirmed_draft_keeps_the_booking_sentence():
+    """The same draft key after the confirm replays the confirmed order; it
+    is no new draft (domain/ordering/draft.py `_replay`)."""
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+    data = {"order_id": str(uuid.uuid4()), "status": "confirmed"}
+    apply_tool_result(state, "draft_order", ToolResult(ok=True, data=data))
 
-    assert state.to_prompt_json()["pickup_code"] == "A1"
-    note_intent(state, "Ich möchte noch etwas bestellen")
-    assert "pickup_code" not in state.to_prompt_json()
+    assert state.stage == "confirmed"
+    assert state.booking_say == BOOKED
+
+
+def test_the_model_reads_the_booking_sentence_in_its_state():
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+
+    assert state.to_prompt_json()["booking_say"] == BOOKED
+    assert "booking_say" not in new_state().to_prompt_json()
