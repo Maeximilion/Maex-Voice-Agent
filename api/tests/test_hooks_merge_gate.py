@@ -91,6 +91,22 @@ def gate(tmp_path):
     git(work, "switch", "-q", "-c", "feature")
     head = commit("feature", "1.0.1")
     git(work, "push", "-q", "origin", "HEAD:refs/pull/7/head")
+
+    def side_branch(number: int, *files: str) -> str:
+        """A branch off main that changes only `files`, without a bump."""
+        git(work, "switch", "-q", "-c", f"side-{number}", "main")
+        for name in files:
+            (work / name).parent.mkdir(parents=True, exist_ok=True)
+            (work / name).write_text(f"{number}\n", encoding="utf-8")
+        git(work, "add", "-A")
+        git(work, "commit", "-q", "-m", f"side {number}")
+        git(work, "push", "-q", "origin", f"HEAD:refs/pull/{number}/head")
+        sha = git(work, "rev-parse", "HEAD")
+        git(work, "switch", "-q", "feature")
+        return sha
+
+    generated = side_branch(8, "README.md", ".github/assets/flow.svg")
+    code = side_branch(9, "README.md", "api/app.py")
     git(tmp_path, "clone", "-q", str(origin), str(checkout))
     hook = checkout / ".claude" / "hooks" / "merge_gate.sh"
     hook.parent.mkdir(parents=True)
@@ -98,12 +114,13 @@ def gate(tmp_path):
 
     current = {"sha": head}
 
-    def pr(checks=GREEN, branch="feature", sha=None) -> None:
+    def pr(checks=GREEN, branch="feature", sha=None, number=7, base="main") -> None:
         current["sha"] = sha or head
         body = {
-            "number": 7,
+            "number": number,
             "headRefOid": current["sha"],
             "headRefName": branch,
+            "baseRefName": base,
             "statusCheckRollup": checks,
         }
         (fake / "pr.json").write_text(json.dumps(body), encoding="utf-8")
@@ -144,6 +161,8 @@ def gate(tmp_path):
     return SimpleNamespace(
         base=base,
         head=head,
+        generated=generated,
+        code=code,
         pr=pr,
         comments=comments,
         codex=codex,
@@ -158,8 +177,11 @@ def test_a_ready_pr_passes(gate):
 
 
 def test_other_commands_pass_without_asking_github(gate):
-    for command in ("git status", 'git commit -m "docs: gh pr merge needs a gate"'):
+    for command in ("git status", "git merge origin/main"):
         assert gate.run(command).returncode == 0
+    mention = gate.run('git commit -m "docs: gh pr merge needs a gate"')
+    assert mention.returncode == 2
+    assert "gh pr merg[e]" in mention.stderr
     assert not gate.asked.exists()
 
 
@@ -180,7 +202,7 @@ def test_a_pending_or_failed_check_blocks(gate):
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
-    done = gate.run("cd x && gh pr merge 7 --merge --match-head-commit={sha}")
+    done = gate.run("cd x && gh pr merge 7 --merge --match-head-commit {sha}")
     assert done.returncode == 2
     assert "behind main" in done.stderr
 
@@ -193,8 +215,24 @@ def test_an_unbumped_head_blocks_except_on_the_weekly_readme_branch(gate):
     assert done.returncode == 2
     assert "not bumped (1.0.0 on main, 1.0.0" in done.stderr
 
-    gate.pr(sha=gate.base, branch="chore/readme-weekly-2026-10-25")
+    weekly = "chore/readme-weekly-2026-10-25"
+    gate.pr(sha=gate.generated, number=8, branch=weekly)
+    gate.comments(gate.codex(gate.generated))
     assert gate.run().returncode == 0
+
+    # The name alone does not exempt a branch that changes more than generated files.
+    gate.pr(sha=gate.code, number=9, branch=weekly)
+    gate.comments(gate.codex(gate.code))
+    done = gate.run()
+    assert done.returncode == 2
+    assert "not bumped" in done.stderr
+
+
+def test_a_pr_into_another_base_blocks(gate):
+    gate.pr(base="release")
+    done = gate.run()
+    assert done.returncode == 2
+    assert "targets release" in done.stderr
 
 
 def test_the_review_must_be_clean_on_the_head(gate):
@@ -226,14 +264,22 @@ def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate)
     assert gate.run().returncode == 2
 
 
+ONE_FORM = "the gate takes only"
+
+
 @pytest.mark.parametrize(
     ("command", "reason"),
     [
-        ("gh pr merge feature --merge --match-head-commit {sha}", "by number or URL"),
-        ("gh pr merge --merge 7 --match-head-commit {sha}", "by number or URL"),
-        ("gh pr merge 7 --merge", "--match-head-commit <full head sha>"),
-        ("gh pr merge 7 --merge --match-head-commit abc1234", "--match-head-commit"),
-        ("gh pr merge 7 --auto --merge --match-head-commit {sha}", "--auto"),
+        ("gh pr merge feature --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh pr merge --merge 7 --match-head-commit {sha}", ONE_FORM),
+        ("gh pr merge 7 --merge", ONE_FORM),
+        ("gh pr merge 7 --merge --match-head-commit abc1234", ONE_FORM),
+        ("gh pr merge 7 --auto --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh pr merge 7 --squash --match-head-commit {sha}", ONE_FORM),
+        ("gh pr merge 7 --merge --match-head-commit {sha} --rebase", ONE_FORM),
+        ("if gh pr merge 7 --merge --match-head-commit {sha}; then :; fi", ONE_FORM),
+        ("command gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh pr \\\nmerge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh pr merge 7 --merge --match-head-commit " + "0" * 40, "the PR's head is"),
     ],
 )

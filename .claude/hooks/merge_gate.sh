@@ -1,41 +1,47 @@
 #!/usr/bin/env bash
 # PreToolUse gate for `gh pr merge` (CLAUDE.md §6 "Merging a PR into main", /done step 7b).
-# Blocks the merge (exit 2, the reasons on stderr for Claude) unless, on the PR's head commit:
+# It guards against a forgotten step, not against a session that tries to get around it.
+# Allowlist, not a parser: a command that mentions `gh pr merge` passes only in this form,
+#   [cd <dir> && ]gh pr merge <number or pull URL> --merge --match-head-commit <full sha> [--delete-branch]
+# so a wrapped call (if, command, env, a subshell, bash -c), another strategy, --auto, a
+# branch name or a mention in a commit message or search is blocked with the form to use.
+# --match-head-commit makes gh refuse the merge once the head moves after this check.
+# Then, on that head commit of a PR into main:
 #   1. every check has finished and passed (success, skipped or neutral),
 #   2. the branch contains origin/main, so no merge from main is missing,
-#   3. the status version is higher than main's (exempt: chore/readme-weekly-*),
+#   3. the status version is higher than main's; exempt only chore/readme-weekly-* whose
+#      changes are all generated (README.md, .github/assets/*.svg, png-sources.json),
 #   4. a review is clean: the Codex state comment names this head without open findings,
 #      or a comment by the owner or a collaborator opens with "Merge gate: <head sha>"
 #      (Claude's own review when Codex is out of quota, or the review loop limits decision).
-# The command must name the PR by number or URL and carry --match-head-commit <full sha>:
-# the gate checks that head, and gh refuses the merge once the head has moved. --auto is
-# refused, it would merge later without this gate. settings.json sets onFailure "block",
-# so a timeout or a crash of this script blocks too.
+# settings.json sets onFailure "block", so a timeout or a crash of this script blocks too.
 # Not checkable here: that /ponytail-review ran, green evals, the xhigh rule. Those stay
-# with /done and CLAUDE.md. Every other command passes untouched.
-# ponytail: only `gh pr merge` at the start of a command is caught, `gh api .../merge` is not.
+# with /done and CLAUDE.md.
+# ponytail: `gh api .../merge`, gh aliases and quoting tricks are not caught.
 input=$(cat)
 # Cheap prefilter first: this runs before every shell command.
-grep -Eq 'gh[[:space:]]+pr[[:space:]]+merge' <<<"$input" || exit 0
+grep -q 'merge' <<<"$input" || exit 0
 block() {
   printf 'Merge gate (.claude/hooks/merge_gate.sh) blocked the merge:\n%s\n' "$1" >&2
   exit 2
 }
 command -v jq >/dev/null || block "- jq is missing, so the gate cannot read the command"
 cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
-merge=$(grep -Eo '(^|[;&|(])[[:space:]]*gh[[:space:]]+pr[[:space:]]+merge([[:space:]]+[^;&|[:space:]]+)*' <<<"$cmd" | head -1)
-[ -n "$merge" ] || exit 0
-args=$(tr -s '[:space:]' '\n' <<<"${merge#*merge}" | sed '/^$/d')
-target=$(head -1 <<<"$args" | grep -E '^([0-9]+|https://[^ ]+/pull/[0-9]+)$')
-[ -n "$target" ] || block "- name the PR by number or URL right after \`gh pr merge\`, so the gate checks the PR that gets merged"
-! grep -qx -- '--auto' <<<"$args" || block "- --auto merges later, without this gate: merge once the gate passes"
-want=$(sed -n -e '/^--match-head-commit$/{n;p;}' -e 's/^--match-head-commit=//p' <<<"$args" | head -1)
-[[ $want =~ ^[0-9a-f]{40}$ ]] || block "- add --match-head-commit <full head sha>, so gh refuses the merge if the head moves after this check"
+cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
+# A line continuation must not hide the words from the check.
+continuation=$'\\\n'
+grep -Eq 'gh[[:space:]]+pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
+form='^[[:space:]]*(cd [^;&|`$()<>]+ && )?gh pr merge ([0-9]+|https://github\.com/[^[:space:]]+/pull/[0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
+[[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (optionally \`cd <dir> && \` before it, --delete-branch after it). A wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
+target=${BASH_REMATCH[2]}
+want=${BASH_REMATCH[3]}
 
 cd "$(dirname "$0")/../.." || block "- the repository of the hook was not found"
-pr=$(gh pr view "$target" --json number,headRefOid,headRefName,statusCheckRollup 2>&1) ||
+pr=$(gh pr view "$target" --json number,headRefOid,headRefName,baseRefName,statusCheckRollup 2>&1) ||
   block "- gh pr view failed: $pr"
-read -r n head branch < <(jq -r '[.number, .headRefOid, .headRefName] | @tsv' <<<"$pr")
+# Through $(...), not < <(...): Git Bash drops the CR that jq on Windows ends lines with.
+read -r n head branch base <<<"$(jq -r '[.number, .headRefOid, .headRefName, .baseRefName] | @tsv' <<<"$pr")"
+[ "$base" = main ] || block "- the PR targets $base, the gate only merges into main"
 [ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
 
@@ -48,7 +54,8 @@ checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (
 if git fetch -q origin main "refs/pull/$n/head" 2>/dev/null && git cat-file -e "$head^{commit}" 2>/dev/null; then
   git merge-base --is-ancestor origin/main "$head" ||
     fail+="- the branch is behind main: merge origin/main into it, then get CI and the review on the new head"$'\n'
-  if [[ $branch != chore/readme-weekly-* ]]; then
+  generated='^(README\.md|\.github/assets/[^/]+\.svg|\.github/assets/png-sources\.json)$'
+  if [[ $branch != chore/readme-weekly-* ]] || git diff --name-only "origin/main...$head" | grep -Evq "$generated"; then
     v() { git show "$1:docs/01_STATUS.md" 2>/dev/null | grep -o 'Status version: [0-9.]*' | head -1 | cut -d' ' -f3; }
     m=$(v origin/main)
     b=$(v "$head")
