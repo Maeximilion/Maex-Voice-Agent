@@ -257,6 +257,11 @@ def test_a_check_that_ran_twice_counts_by_the_run_that_started_last(gate):
     assert done.returncode == 2
     assert "title: queued" in done.stderr
 
+    # A run cancelled before it started is the oldest, not the newest.
+    unstarted = {**queued, "status": "COMPLETED", "conclusion": "CANCELLED"}
+    gate.pr(checks=[*GREEN, unstarted, run("SUCCESS", "08:00", "08:01")])
+    assert gate.run().returncode == 0
+
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
@@ -382,6 +387,7 @@ ONE_FORM = "the gate takes only"
             ONE_FORM,
         ),
         ("GH pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
+        ("gh pr `\nmerge 7 --squash", ONE_FORM),
         ("gh -R someone/fork pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("gh --repo a/b pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),
         ("cd ../other && gh pr merge 7 --merge --match-head-commit {sha}", ONE_FORM),

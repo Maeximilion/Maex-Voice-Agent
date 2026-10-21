@@ -33,6 +33,7 @@ cmd=$(jq -r '.tool_input.command // empty' <<<"$input")
 cmd=${cmd//$'\r'/} # jq on Windows writes CRLF, also inside a multi-line command
 # A line continuation must not hide the words from the check.
 continuation=$'\\\n'
+cmd=${cmd//$'`\n'/ } # PowerShell's line continuation is a backtick
 # Flags may stand between gh and pr (gh -R owner/repo pr merge), but no command separator.
 grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]]pr[[:space:]]+merge' <<<"${cmd//"$continuation"/ }" || exit 0
 form='^[[:space:]]*gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
@@ -58,7 +59,7 @@ fail=""
 checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (.state // .status // "PENDING") end;
   if (.statusCheckRollup | length) == 0 then "no check reported yet"
   else .statusCheckRollup | group_by([.workflowName // "", .name // .context])
-    | map(sort_by(.startedAt // "9999") | last)[]
+    | map(sort_by(.startedAt // (if (.status // "") == "COMPLETED" then "" else "9999" end)) | last)[]
     | select(result | IN("SUCCESS", "SKIPPED", "NEUTRAL") | not)
     | "\(.name // .context): \(result | ascii_downcase)" end' <<<"$pr")
 [ -z "$checks" ] || fail+="- CI is not green on ${head:0:7}: ${checks//$'\n'/, }"$'\n'
