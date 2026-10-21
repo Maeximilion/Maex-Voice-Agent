@@ -92,14 +92,16 @@ fi
 
 comments=$(gh api --paginate "repos/{owner}/{repo}/issues/$n/comments?per_page=100" 2>&1) ||
   block "${fail}- the PR comments could not be read: $comments"
-# Codex's newest state decides, unless a "Merge gate:" comment came after it.
+# Codex's newest state decides, unless a "Merge gate:" comment came after it. A clean review
+# can leave the findings fields null ("Didn't find any major issues", PR #353 on d7caa9d), so
+# only true counts as open findings.
 clean=$(jq -rs --arg h "$head" '
   (add // []) as $c
   | ([$c[] | select(.user.login == "chatgpt-codex-connector[bot]")
       | {t: .updated_at, s: (.body | capture("codex-review-state:v1 (?<s>\\{.*\\}) -->").s
           | (try fromjson catch {}) | .code_review)}]
     | sort_by(.t) | last // {t: "", s: {}}) as $codex
-  | ($codex.s | .commit_sha == $h and .status == "completed" and .has_unresolved_findings == false)
+  | ($codex.s | .commit_sha == $h and .status == "completed" and .has_unresolved_findings != true)
   or ([$c[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR"))
       | select(.created_at > $codex.t and (.body | test("^Merge gate: " + $h + "([^0-9a-f]|$)")))]
     | length > 0)' <<<"$comments")

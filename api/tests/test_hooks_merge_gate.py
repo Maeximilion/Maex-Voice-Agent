@@ -142,7 +142,7 @@ def gate(tmp_path):
     def comments(*items: dict) -> None:
         (fake / "comments.json").write_text(json.dumps(list(items)), encoding="utf-8")
 
-    def codex(sha: str, open_findings: bool = False, at: str = "08:00") -> dict:
+    def codex(sha: str, open_findings: bool | None = False, at: str = "08:00") -> dict:
         state = {
             "code_review": {
                 "commit_sha": sha,
@@ -371,6 +371,10 @@ def test_the_review_must_be_clean_on_the_head(gate):
     gate.comments(later, clean)
     assert gate.run().returncode == 2
     gate.comments({**clean, "updated_at": "2026-10-21T10:00:00Z"}, later)
+    assert gate.run().returncode == 0
+
+    # A clean review can leave the findings field null, as Codex did on PR #353.
+    gate.comments(gate.codex(gate.head, open_findings=None))
     assert gate.run().returncode == 0
 
 
