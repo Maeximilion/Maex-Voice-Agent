@@ -949,6 +949,9 @@ def test_only_the_confirmed_pickup_code_may_be_named():
     assert false_booking(state, "Ihr Abholcode ist A1.") is None
     assert false_booking(state, "Ihr Abholcode ist B99.") is not None
     assert false_booking(state, "Ihr Code ist A1 oder B99.") is not None
+    # Letter and digits apart are one code (Codex PR #347).
+    assert false_booking(state, "Ihr Abholcode ist B 99.") is not None
+    assert false_booking(state, "Ihr Abholcode ist A 1.") is None
     # Before the code word as well (Codex PR #347).
     assert false_booking(state, "B99 ist Ihr Abholcode.") is not None
     assert false_booking(state, "A1 ist Ihr Abholcode.") is None
@@ -1056,6 +1059,8 @@ def test_a_date_next_to_the_code_is_no_code():
         # "noch" as "still" asks about the booked one (Codex PR #347).
         ("Ist meine Bestellung noch zum Abholen da?", True),
         ("Ist meine Bestellung auch wirklich zum Abholen da?", True),
+        # A direct request is a new one too (Codex PR #347).
+        ("Ich möchte eine Pizza zum Abholen bestellen", False),
         ("Ich möchte auch noch etwas zum Abholen bestellen", False),
         ("Ja, passt", True),
     ],

@@ -134,6 +134,7 @@ _CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
 # speaks of a code, also before the code word ("B99 ist Ihr Abholcode"; Codex
 # PR #347). Bare digits only after it, or a date before it would count.
 _LETTER_CODE = re.compile(r"\b[A-Za-z]\d{1,4}\b")
+_SPLIT_CODE = re.compile(r"\b([A-Za-z])[\s-]+(\d{1,4})\b")
 # What a code word presents: everything after it. A date before it ("für den
 # 21.10.2026") is no code; a period does not end the span, or "Abholcode
 # lautet Nr. B99" hid B99 behind "Nr." (Codex PR #347). Strict: a date after
@@ -252,6 +253,8 @@ def _names_the_code(state: ConversationState, say: str) -> bool:
     #347). One that presents none ("Den QR Code auf Ihrer Rechnung kann ich
     nicht prüfen") is no pickup code; the booking words still apply. Strict:
     a card number like "s12" after the code word is refused as well."""
+    # "B 99" or "B-99" is B99 (Codex PR #347).
+    say = _SPLIT_CODE.sub(r"\1\2", say)
     tails = _PRESENTED.findall(say)
     codes = {code.upper() for tail in tails for code in _CODE_SHAPED.findall(tail)}
     if tails:

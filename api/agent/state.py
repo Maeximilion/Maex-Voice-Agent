@@ -316,6 +316,15 @@ _ANOTHER = re.compile(
 )
 
 
+# A request for one, not a word about the booked one: "Ich möchte eine Pizza
+# bestellen" asks for a new order (Codex PR #347), "Danke, ich hole es dann ab"
+# or "Ist mein Tisch reserviert?" does not.
+_REQUEST = re.compile(
+    r"\b(?:m(?:ö|oe)chte|h(?:ä|ae)tte\s+gern|will|bestellen|reservieren)\b",
+    re.IGNORECASE,
+)
+
+
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
     this one. It only fills an empty `intent`: a word in a later sentence
@@ -333,7 +342,9 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     the other flow drafts. The model reads the change in the sentence itself,
     and from the first menu search on the state carries the order (`cart`)."""
     wish = heard(guest_text)
-    if wish is not None and _ANOTHER.search(guest_text):
+    if wish is not None and (
+        _ANOTHER.search(guest_text) or _REQUEST.search(guest_text)
+    ):
         # "Ich möchte noch eine Pizza bestellen" after a confirmed order: the
         # first order's booking does not speak for the second (Codex PR #347).
         # Only with a word for another one: "ich hole es dann ab" after the
