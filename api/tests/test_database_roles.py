@@ -115,14 +115,14 @@ def test_the_api_starts_as_before_on_the_workbench():
 
 
 def test_the_owners_credentials_stay_out_of_the_applications_containers():
-    """`env_file: .env` hands a container every line of .env. The owner's
+    """`env_file: .env` would hand a container every line of .env. The owner's
     password in the environment of the application would make its own role
     pointless: whoever reads the environment has the superuser."""
     base = _services(_load(BASE))
     production = _services(_load(PROD))
     for service in OWN_CODE:
-        environment = base[service].get("environment") or {}
-        override = production.get(service, {}).get("environment") or {}
-        for name in OWNER_ONLY:
-            assert environment.get(name) == "", f"{service} is handed {name}"
-            assert name not in override, f"production hands {service} {name} again"
+        for file in (base, production):
+            config = file.get(service, {})
+            assert "env_file" not in config, f"{service} gets all of .env"
+            for name in OWNER_ONLY:
+                assert name not in (config.get("environment") or {}), service

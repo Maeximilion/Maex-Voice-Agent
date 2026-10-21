@@ -22,7 +22,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.config import settings
+from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings, valid_production_token
 from api.core.logging import configure_logging, get_logger, log
 from api.db import SessionLocal
 from api.events.outbox import (
@@ -156,8 +156,28 @@ def dispatch_once(
     return result
 
 
+def require_n8n_credential() -> None:
+    """Outside dev and test, refuse a user without a strong password.
+
+    `send_to_n8n` sends the user with its password; an empty or short one is a
+    credential anyone can try, or every event fails on n8n's check and waits
+    in retries (#252 finding 5, Codex on PR #360). Only the dispatcher gets the
+    password (docker-compose.yml), so the check is here, not in Settings.
+    """
+    if settings.env in LOCAL_ENVS or not settings.n8n_basic_auth_user:
+        return
+    if not valid_production_token(settings.n8n_basic_auth_password):
+        # The value stays out of the message: it ends up in a log.
+        raise RuntimeError(
+            "N8N_BASIC_AUTH_PASSWORD is empty, the placeholder, contains whitespace "
+            f"or is shorter than {TOKEN_MIN_LENGTH} characters while "
+            "N8N_BASIC_AUTH_USER is set; set a random one (openssl rand -hex 32)"
+        )
+
+
 def run_forever(send: Sender = send_to_n8n) -> None:
     """Endlosschleife fuer den Containerbetrieb. SIGTERM beendet nach dem laufenden Ereignis."""
+    require_n8n_credential()
     stop = False
 
     def _stop(_signum: int, _frame: FrameType | None) -> None:

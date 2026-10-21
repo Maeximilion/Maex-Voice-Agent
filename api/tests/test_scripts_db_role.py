@@ -90,6 +90,7 @@ def db(role, migrated_db_url):
 def passphrase_file(tmp_path):
     path = tmp_path / "passphrase"
     path.write_text(PASSPHRASE + "\n", encoding="utf-8")
+    path.chmod(0o600)
     return path
 
 

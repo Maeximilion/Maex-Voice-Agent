@@ -145,7 +145,7 @@ ruff check api scripts evals printbridge sim db && ruff format --check api scrip
 
 ## Configuration
 
-All settings come from `.env`. Template and description of all variables: `.env.example`.
+All settings come from `.env`. Template and description of all variables: `.env.example`. A container gets only the variables `docker-compose.yml` names for it, not the whole file: a new setting of `api/config.py` goes into the list `x-settings` there, a new secret into the service that reads it (`docs/13_DEPLOYMENT.md` §3).
 
 <details>
 <summary>The most important variables</summary>
@@ -162,7 +162,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `MAX_CALL_SECONDS` | Maximum call duration a new tenant is seeded with. A call is ended by the tenant's own value (`service_config.max_call_seconds`) |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
-| `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'` |
+| `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'`. Set both or neither: one without the other stops Caddy from starting |
 
 </details>
 

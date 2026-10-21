@@ -15,6 +15,8 @@ services:
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ENV: prod
+      # The server's API calls no model; the key is for `voice` (base file).
+      LLM_API_KEY: ""
     # Not root, and the checkout read-only. The base file mounts the source
     # writable because development edits it and the tests write next to it. On
     # the server nothing in the container writes there, and the host runs
@@ -24,6 +26,11 @@ services:
     # container, so each line here replaces the writable one of the base file;
     # a mount added there has to be repeated here (api/tests/test_deploy_exposure.py).
     user: "10001:10001"
+    # No capability and a read-only root: the development layout of the base
+    # file keeps them for the tests that write into the checkout (#252 finding 8).
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
     volumes:
       - ./api:/app/api:ro
       - ./gui:/app/gui:ro
@@ -100,6 +107,14 @@ services:
       AGENT_DOMAIN: ${AGENT_DOMAIN:-agent.example.com}
       N8N_DOMAIN: ${N8N_DOMAIN:-n8n.example.com}
       PUSH_DOMAIN: ${PUSH_DOMAIN:-push.example.com}
+    # Hardened like the rest (#252 finding 8). It binds 80 and 443, and its
+    # binary carries that capability as a file capability, which `exec` refuses
+    # when the capability is not in the container's set.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    tmpfs: [/tmp]
     ports:
       - "80:80"
       - "443:443"
