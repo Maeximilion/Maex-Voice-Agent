@@ -145,7 +145,7 @@ Mixed task: take the higher model and the higher effort. The `xhigh` triggers ar
 
 **Ultrareview** (`/code-review ultra <PR>`: multi-agent cloud review, billed, started by Maxi only, Claude cannot launch it). Claude reminds in one line at two points and never waits for it: `/done` when the task's diff hits an `xhigh` trigger from the table above or changes more than 400 lines outside tests and Markdown, and `/gate` at every gate where something other than `.md` files changed since the last gate tag. No reminder for Markdown-only work.
 
-**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none.
+**Security alerts:** `/start` checks the open code-scanning and Dependabot alerts on GitHub and reports them in one line when there are any; a green `CodeQL` check on a PR only says the PR adds no new alert, not that `main` has none. A critical or high alert is fixed before any task is picked (Maxi, 2026-10-21): `/start` suggests its fix first, in a PR of its own; the security audit of `docs/09_OPERATIONS_LEGAL.md` section 5 does not have to run before it.
 
 ### Session Start
 1. Read `docs/01_STATUS.md` → current stage and open tasks
@@ -176,6 +176,8 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
+
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. When the context fills up (long tool output, many iterations), Claude finishes the current step at a clean point, commits and pushes, writes the `/handover` block and tells Maxi to continue in a new session with it, instead of starting the next large step.
 
 ---
 
