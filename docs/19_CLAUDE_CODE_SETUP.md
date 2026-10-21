@@ -703,7 +703,7 @@ if __name__ == "__main__":
 
 1. Save the three scripts from section 4 into `~/.claude/hooks/` under their names.
 2. Merge the block from section 3 into `~/.claude/settings.json` in an editor.
-2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` (Git Bash or PowerShell, any folder). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows `python ~/.claude/usage_gate/gate.py hook` as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove`.
+2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows `python ~/.claude/usage_gate/gate.py hook` as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove`.
 3. Check the result. Console: Git Bash, any folder.
 
 ```bash
