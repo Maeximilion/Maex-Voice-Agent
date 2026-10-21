@@ -37,7 +37,9 @@ one call per drill:
   listed, busy    `voice` hands the call to another number of the list, which
                   is busy: the team rings at TEAM_PHONE after it
   stranger        an INVITE from an address that is not the router, From user
-                  `access` (the endpoint's name), is refused by the ACL (403)
+                  `access` (the endpoint's name), is refused by the ACL (403);
+                  so is a second one from a caller's number, which no
+                  container's output may show afterwards
   team missed     the team telephone is busy after the core handed the call
                   over: a callback card under the caller's number, and the
                   caller hears that the restaurant calls back (T-10.8)
@@ -90,6 +92,9 @@ TEAM_PHONE = NUMBER_PREFIX + "900"
 # router's telephone there is busy. And a number on no list.
 LISTED_BUSY_NUMBER = NUMBER_PREFIX + "901"
 UNLISTED_NUMBER = NUMBER_PREFIX + "999"
+# The stranger's second INVITE comes from this number: a refused call must not
+# leave it in Asterisk's output (#252 finding 12).
+STRANGER_NUMBER = NUMBER_PREFIX + "114"
 # docs/20 §5: each row of the outage map within the limit Maxi sets (proposal).
 TEAM_LIMIT_SECONDS = 30.0
 # What a call may take at most before the drill gives up on it.
@@ -297,6 +302,7 @@ class Drill:
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
+                STRANGER_NUMBER,
             ]
             for form in (number, "%2B" + number[1:])
         ]
@@ -695,25 +701,33 @@ def plays(drill: Drill, name: str, sentence: str) -> bool:
 
 def drill_stranger(drill: Drill) -> list[Check]:
     """Sent from the container of `voice`, an address on the network that is
-    not the router's (#252 finding 2)."""
-    answers = drill.compose(
-        "exec",
-        "-T",
-        "voice",
-        "python",
-        "-c",
-        "from api.telephony.drill import stranger_invite; print(*stranger_invite())",
-    )
-    codes = [int(code) for code in answers.split()]
-    # Whatever got through ends here, so the next drill starts alone.
-    drill.cli("asterisk", "channel request hangup all")
-    return [
-        (
-            "stranger: an INVITE from another address as `access` is refused by the ACL",
-            refused(codes),
-            f"answers: {' '.join(map(str, codes)) or 'none'}",
+    not the router's (#252 finding 2): once as `access`, once from a caller's
+    number, which the log check of the run then looks for (finding 12)."""
+    checks: list[Check] = []
+    for user, what in (
+        ("access", "as `access`"),
+        (STRANGER_NUMBER, "from a caller's number"),
+    ):
+        answers = drill.compose(
+            "exec",
+            "-T",
+            "voice",
+            "python",
+            "-c",
+            "from api.telephony.drill import stranger_invite; "
+            f"print(*stranger_invite(user={user!r}))",
         )
-    ]
+        codes = [int(code) for code in answers.split()]
+        # Whatever got through ends here, so the next drill starts alone.
+        drill.cli("asterisk", "channel request hangup all")
+        checks.append(
+            (
+                f"stranger: an INVITE from another address {what} is refused by the ACL",
+                refused(codes),
+                f"answers: {' '.join(map(str, codes)) or 'none'}",
+            )
+        )
+    return checks
 
 
 def refused(codes: list[int]) -> bool:
@@ -724,7 +738,7 @@ def refused(codes: list[int]) -> bool:
 
 
 def stranger_invite(
-    host: str = "asterisk", port: int = 5060, timeout: float = 4.0
+    host: str = "asterisk", port: int = 5060, timeout: float = 4.0, user: str = "access"
 ) -> list[int]:
     """One INVITE as the access sends it, From user `access`: the name of the
     endpoint, which Asterisk's identification by user took from anywhere. The
@@ -745,7 +759,7 @@ def stranger_invite(
                 f"INVITE sip:ai@{address} SIP/2.0\r\n"
                 f"Via: SIP/2.0/UDP {me}:{my_port};branch=z9hG4bK{tag};rport\r\n"
                 "Max-Forwards: 70\r\n"
-                f"From: <sip:access@stranger.invalid>;tag={tag}\r\n"
+                f"From: <sip:{user}@stranger.invalid>;tag={tag}\r\n"
                 f"To: <sip:ai@{address}>\r\n"
                 f"Call-ID: {tag}@stranger.invalid\r\n"
                 "CSeq: 1 INVITE\r\n"

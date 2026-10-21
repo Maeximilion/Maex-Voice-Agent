@@ -103,6 +103,7 @@ def db(migrated_db_url):
 def passphrase_file(tmp_path):
     path = tmp_path / "passphrase"
     path.write_text(PASSPHRASE + "\n", encoding="utf-8")
+    path.chmod(0o600)
     return path
 
 
@@ -307,6 +308,40 @@ def test_restore_replace_recreates_a_database_that_is_gone(
     assert _databases_like(f"{name}_") == []
 
 
+# Security audit of 15.10.2026, #252 finding 10: whoever reads the passphrase
+# reads every dump. Windows has no such modes; the check is skipped there.
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX file modes on Windows")
+@pytest.mark.parametrize("mode", [0o644, 0o640, 0o604, 0o620])
+def test_backup_refuses_a_passphrase_file_others_can_open(
+    db, backup_dir, passphrase_file, mode
+):
+    passphrase_file.chmod(mode)
+
+    refused = _run(
+        "backup.sh", db_url=db, backup_dir=backup_dir, passphrase_file=passphrase_file
+    )
+
+    assert refused.returncode == 2
+    assert "chmod 600" in refused.stderr
+    assert not backup_dir.exists() or list(backup_dir.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="no POSIX file modes on Windows")
+def test_a_read_only_or_linked_passphrase_file_of_the_owner_is_taken(
+    db, backup_dir, passphrase_file, tmp_path
+):
+    """The mode of the file counts, not that of a link to it (always 777)."""
+    passphrase_file.chmod(0o400)
+    link = tmp_path / "link"
+    link.symlink_to(passphrase_file)
+
+    # A directory each: two dumps in the same second would share a name.
+    for path in (passphrase_file, link):
+        target = backup_dir / path.name
+        done = _run("backup.sh", db_url=db, backup_dir=target, passphrase_file=path)
+        assert done.returncode == 0, done.stderr
+
+
 def test_backup_refuses_to_write_plain_text_unless_told(db, backup_dir):
     refused = _run("backup.sh", db_url=db, backup_dir=backup_dir)
 
@@ -329,6 +364,7 @@ def test_restore_with_the_wrong_passphrase_changes_nothing(
     _sql(db, "update backup_probe set note = 'after'")
     wrong = tmp_path / "wrong"
     wrong.write_text("not the passphrase\n", encoding="utf-8")
+    wrong.chmod(0o600)
     name = make_url(db).database
 
     done = _run(
@@ -692,6 +728,7 @@ def test_passphrase_file_with_windows_line_ending_gives_the_same_key(
 ):
     crlf = tmp_path / "crlf"
     crlf.write_bytes(PASSPHRASE.encode() + b"\r\n")
+    crlf.chmod(0o600)
     dump = _backup(db, backup_dir, crlf)
 
     done = _run(
