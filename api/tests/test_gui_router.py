@@ -540,7 +540,10 @@ def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
     response = client.get("/gui/")
     token = client.cookies.get("csrf_token")
     assert token and len(token) >= 32
-    assert 'e.detail.headers["X-CSRF-Token"]' in response.text
+    # From a file: the proxy's CSP refuses inline scripts (#252 finding 11).
+    assert '<script src="/gui/static/base.js" defer>' in response.text
+    hook = client.get("/gui/static/base.js").text
+    assert 'e.detail.headers["X-CSRF-Token"]' in hook
     assert "SameSite=lax" in response.headers["set-cookie"]
     assert (
         client.post(

@@ -269,6 +269,59 @@ def test_each_secret_reaches_only_the_services_that_read_it():
     )
 
 
+# Security audit of 15.10.2026, #252 finding 11: headers that contain a future
+# XSS in the operations view, which would otherwise defeat the HX-Request guard.
+GUI_CSP = (
+    "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+TEMPLATES = REPO_ROOT / "api" / "gui" / "templates"
+
+
+def test_the_agent_site_sends_the_security_headers():
+    body = _without_comments(_site("api:8000"))
+    assert 'header X-Content-Type-Options "nosniff"' in body
+    assert 'header Referrer-Policy "no-referrer"' in body
+    assert f'header @gui Content-Security-Policy "{GUI_CSP}"' in body
+
+
+def _served_in_production(path) -> bool:
+    """The simulator console and its fragment exist in ENV=dev only, never behind Caddy."""
+    relative = path.relative_to(TEMPLATES)
+    return relative.parts[0] != "dev" and not relative.name.startswith("dev_")
+
+
+def test_the_view_needs_nothing_the_policy_forbids():
+    """`default-src 'self'` blocks inline code and styles and every other host."""
+    templates = [p for p in TEMPLATES.rglob("*.html") if _served_in_production(p)]
+    assert len(templates) > 5
+    for template in templates:
+        text = template.read_text(encoding="utf-8")
+        assert not re.search(r"<script(?![^>]*\bsrc=)", text), template
+        assert not re.search(r"<style\b|\sstyle=|\son[a-z]+=", text), template
+        assert not re.search(r"(src|href)=\"(https?:)?//", text), template
+
+
+def test_htmx_does_not_insert_its_own_style_element():
+    """htmx adds a <style> for indicators unless told not to; the CSP refuses it."""
+    base = (TEMPLATES / "base.html").read_text(encoding="utf-8")
+    assert '"includeIndicatorStyles":false' in base
+
+
+def test_the_example_gives_each_access_its_user_and_hash_together():
+    """Caddy 2.11.7 does not start on a user without a hash or a hash without a
+    user ("username and password cannot be empty"): the whole proxy is down,
+    bridge and health included. Both empty parse and close the access for
+    everyone (checked 21.10.2026 with the pinned image)."""
+    example = dict(
+        line.split("=", 1)
+        for line in (REPO_ROOT / ".env.example").read_text().splitlines()
+        if "=" in line and not line.startswith("#")
+    )
+    for prefix in ("GUI_BASIC_AUTH", "N8N_EDITOR_AUTH"):
+        user, password_hash = example[f"{prefix}_USER"], example[f"{prefix}_HASH"]
+        assert bool(user) == bool(password_hash), prefix
+
+
 def test_no_service_gains_rights_after_its_start():
     """#252 finding 8: no setuid binary or file capability raises a process,
     in development and in production."""

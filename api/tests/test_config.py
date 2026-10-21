@@ -70,3 +70,53 @@ def test_the_error_does_not_print_the_token():
     with pytest.raises(ValidationError) as failure:
         _settings(env="prod", agent_api_token="short-secret")
     assert "short-secret" not in str(failure.value)
+
+
+# Security audit of 15.10.2026, #252 finding 5: the proxy offers /v1/kitchen/*
+# to the internet, so the bridge token gets the agent token's strength rule.
+@pytest.mark.parametrize(
+    "token", [TOKEN_PLACEHOLDER, "short", "k" * 31, "k" * 16 + " " + "k" * 16]
+)
+def test_production_does_not_start_on_a_weak_kitchen_token(token):
+    with pytest.raises(ValidationError, match="KITCHEN_BRIDGE_TOKEN"):
+        _settings(env="prod", agent_api_token=LONG_ENOUGH, kitchen_bridge_token=token)
+
+
+def test_production_refuses_the_agent_token_as_kitchen_token():
+    """One leaked value must not open both the tools and the kitchen slips."""
+    with pytest.raises(ValidationError, match="KITCHEN_BRIDGE_TOKEN"):
+        _settings(
+            env="prod", agent_api_token=LONG_ENOUGH, kitchen_bridge_token=LONG_ENOUGH
+        )
+
+
+def test_production_starts_without_a_bridge_or_with_a_strong_kitchen_token():
+    """Empty keeps /v1/kitchen/* closed, as before."""
+    assert _settings(env="prod", agent_api_token=LONG_ENOUGH).kitchen_bridge_token == ""
+    other = "b" * 32
+    assert (
+        _settings(
+            env="prod", agent_api_token=LONG_ENOUGH, kitchen_bridge_token=other
+        ).kitchen_bridge_token
+        == other
+    )
+
+
+def test_the_api_and_voice_start_with_the_n8n_user_alone():
+    """Compose hands every service the user and only the dispatcher the
+    password (#359); the dispatcher checks it (test_events_dispatcher.py)."""
+    assert _settings(env="prod", agent_api_token=LONG_ENOUGH).env == "prod"
+    with_user_only = _settings(
+        env="prod", agent_api_token=LONG_ENOUGH, n8n_basic_auth_user="maex"
+    )
+    assert with_user_only.n8n_basic_auth_password == ""
+
+
+def test_development_keeps_short_kitchen_and_n8n_values():
+    values = _settings(
+        env="dev",
+        kitchen_bridge_token="bridge",
+        n8n_basic_auth_user="maex",
+        n8n_basic_auth_password="change_me",
+    )
+    assert values.kitchen_bridge_token == "bridge"
