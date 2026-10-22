@@ -517,6 +517,7 @@ def _until_new_clause(rest: str) -> str:
 
     kept: list[str] = []
     skip: set[int] = set()
+    listed = False
     i = -1
     while (word := word_at(i := i + 1)) is not None:
         piece = pieces[i]
@@ -548,7 +549,12 @@ def _until_new_clause(rest: str) -> str:
                 skip.add(k)
                 k += 1
                 nxt = after
-            if _ends_list(nxt):
+            # ", (sonst) keine weiteren Allergien" closes the list (Codex PR #361);
+            # "sonst auch gegen Sesam" goes on with it.
+            neg = k + (nxt in ("sonst", "ansonsten"))
+            if _ends_list(nxt) or (
+                word_at(neg) in _NEGATION and _allergy_at(word_at, neg + 1)
+            ):
                 break
             # "und moechte bestellen" goes on with the order; "und moechte
             # (auch) keine Zwiebeln" stays in, so the kitchen still reads it.
@@ -558,11 +564,29 @@ def _until_new_clause(rest: str) -> str:
             ):
                 break
         kept.append(piece)
+        if piece == "," or word in ("und", "sowie", "oder"):
+            listed = True
+        elif word_at(i + 1) in _CLAUSE_VERBS:
+            # "und Peter moechte bestellen": a clause of its own, whose subject
+            # may be in the list, so it is asked about (Codex PR #361). Behind
+            # a first item of one word the guest goes on: "gegen Erdnuesse
+            # moechte aber"; "gegen Erdnuesse Peter moechte" is asked about.
+            if listed or len(kept) > 1:
+                return ""
+            break
     text = ""
     for piece in kept:
         text += piece if piece == "," else f" {piece}"
     # No comma left at the end: "gegen Erdnuesse, und moechte ...".
     return text.strip().rstrip(",")
+
+
+def _allergy_at(word_at: Callable[[int], str | None], k: int) -> bool:
+    """Is the word at `k`, past the modifiers, an allergy word: the noun of
+    "keine (weiteren) Allergien"?"""
+    while (word := word_at(k)) in _MODIFIERS:
+        k += 1
+    return word is not None and _is_allergy(word)
 
 
 def _adds(words: list[str], i: int) -> bool:
@@ -640,6 +664,18 @@ _ORDER_VERBS = frozenset(
     | {"wuerden", "nehme", "nehmen", "bestelle", "bestellen", "hole", "holen"}
     | {"komme", "kommen"}
 )
+# Verbs whose subject may stand right before them in a list: "und Peter
+# moechte bestellen" (Codex PR #361).
+_CLAUSE_VERBS = _ORDER_VERBS | {
+    "nimmt",
+    "hat",
+    "isst",
+    "mag",
+    "kann",
+    "bekommt",
+    "kriegt",
+    "braucht",
+}
 # "Keine Allergien sind mir bekannt"
 _DENIAL_TRAIL = _DENIAL_VERBS | {"ich", "wir", "mir", "uns", "bekannt", "ist"}
 # Who has the allergy, in "habe ich nicht".
@@ -790,12 +826,17 @@ def _closing(words: list[str], n: int, at: int) -> bool:
     back = n
     while back > 0 and words[back - 1] in _DENIAL_LEAD:
         back -= 1
-    if back == 0 or words[back - 1] not in ("sonst", "ansonsten"):
+    # Also "aber (auch) keine weiteren Allergien" (Codex PR #361).
+    if "aber" not in words[back:n] and (
+        back == 0 or words[back - 1] not in ("sonst", "ansonsten")
+    ):
         return False
     end = _denial_end(words, back)
     return (
         end is not None
         and all(_generic(w) for w in words[back:end] if _allergy_word(w))
+        # "sonst keine Allergie gegen Sesam" denies an ingredient: no close.
+        and not _PREPOSITIONS & set(words[back:end])
         and all(w in _DENIAL_TRAIL or w in _AFTER_DENIAL for w in words[end:])
     )
 
@@ -1104,7 +1145,15 @@ def _removal_inside(words: list[str], named: list[int]) -> tuple[int, int, int] 
             j
             for j in range(named[0] + 1, len(words))
             if words[j] == "ohne"
-            or (words[j] in _KEIN and _asked_to_leave_out(words, j, named[0]))
+            or (
+                words[j] in _KEIN
+                and _asked_to_leave_out(words, j, named[0])
+                # "aber keine weiteren Allergien" leaves out no food (Codex
+                # PR #361).
+                and not _allergy_at(
+                    lambda m: words[m] if m < len(words) else None, j + 1
+                )
+            )
         ),
         None,
     )

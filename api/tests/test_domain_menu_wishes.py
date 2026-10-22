@@ -1822,3 +1822,85 @@ def test_a_new_subject_ends_the_list(said, ingredient):
 def test_no_list_goes_across_a_full_stop(said, ingredient):
     wish = classify_wish(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Codex PR #361, round 2: a subject and its verb after "aber auch".
+        "Pho Bo, ich bin allergisch gegen Erdnüsse, aber auch Peter möchte bestellen",
+        # The same, older than PR #361.
+        "ich bin allergisch gegen Erdnüsse und Peter möchte bestellen",
+        "ich bin allergisch gegen Erdnüsse und Sesam und Peter will die 13",
+        "ich bin allergisch gegen Erdnüsse und Sesam will mein Sohn nicht",
+    ],
+)
+def test_a_clause_with_its_own_verb_in_the_list_is_asked_about(said):
+    """A list item followed by a verb of its own may be a new subject ("Peter
+    möchte bestellen") or an allergen of someone else: nothing is noted from
+    such a tail, the agent asks "Wogegen?"."""
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient"),
+    [
+        # The guest's own verb after the item keeps it in the list.
+        (
+            "ich bin allergisch gegen Erdnüsse und Sesam habe ich auch",
+            "Erdnüsse und Sesam",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse und Sesam bin ich auch",
+            "Erdnüsse und Sesam",
+        ),
+        ("ich bin allergisch gegen Erdnüsse und möchte bestellen", "Erdnüsse"),
+    ],
+)
+def test_the_guests_own_verb_keeps_the_list(said, ingredient):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
+
+
+@pytest.mark.parametrize(
+    ("said", "text"),
+    [
+        # Codex PR #361, round 2: "keine" denies the allergy noun after it.
+        (
+            "ich bin allergisch gegen Erdnüsse, aber auch keine weiteren Allergien",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        # The same, older than PR #361.
+        (
+            "ich bin allergisch gegen Erdnüsse, aber keine weiteren Allergien",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        (
+            "ich bin allergisch gegen Erdnüsse, sonst keine weiteren Allergien",
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+        ),
+        (
+            "ich habe eine Erdnussallergie, aber auch keine anderen Unverträglichkeiten",
+            "WICHTIG: Keine Erdnuss. Grund: Allergie",
+        ),
+    ],
+)
+def test_a_closing_denial_adds_nothing(said, text):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.text, wish.note) == ("allergy", text, None)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # A denial that names an allergen is no closing one: never a
+        # removal "Keine", never the denied sesame on the note.
+        "ich bin allergisch gegen Erdnüsse, aber keine Sesamallergie",
+        "ich habe eine Erdnussallergie, aber keine Allergie gegen Sesam",
+        "ich habe eine Erdnussallergie, sonst keine Allergie gegen Sesam",
+    ],
+)
+def test_a_denial_that_names_an_allergen_is_asked_about(said):
+    wish = classify_wish(said, BEILAGE)
+    assert (wish.kind, wish.ingredient, wish.note) == ("allergy", None, None)
