@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
-from api.agent.dispatch import ToolResult, dispatch, log_refused
+from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
@@ -522,6 +522,9 @@ class ConversationLoop:
         zone is shown as the restaurant's clock shows it. A name only when the
         guest said it in this call: `check_slot` takes no name, so one a model
         wrote next to its arguments has passed no guard (Codex PR #280)."""
+        # Read the way the tool read it: a time without an offset is the
+        # restaurant's local time, or the card raised on it (Codex PR #347).
+        args = in_local_time(self._session, state.tenant_id, args)
         wish = CheckSlotRequest.model_validate(
             {
                 "call_id": state.call_id,

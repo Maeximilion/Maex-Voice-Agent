@@ -546,7 +546,17 @@ def test_a_time_without_an_offset_is_the_restaurants_local_time(
         assert reservation.reserved_for == local
 
 
-@pytest.mark.parametrize("when", ["9999-12-31T23:59:00", "morgen um sieben"])
+@pytest.mark.parametrize(
+    "when",
+    [
+        "9999-12-31T23:59:00",
+        "morgen um sieben",
+        # The local zone moves it before the first day: no crash (Codex PR #347).
+        "0001-01-01T00:00:00",
+        # A date without a time is no time: never midnight (Codex PR #347).
+        "2026-09-15",
+    ],
+)
 def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(
     session, tenant_id, call_id, when
 ):

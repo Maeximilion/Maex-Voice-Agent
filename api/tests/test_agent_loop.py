@@ -1231,6 +1231,18 @@ def test_a_name_nobody_said_does_not_reach_the_card(session, state):
     assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
 
 
+def test_a_team_table_with_a_time_without_an_offset_reaches_the_team(session, state):
+    """The tool reads such a time as the restaurant's local time; the card
+    must read it the same way, or the handoff raised on the naive value and
+    the wish never reached the team (Codex PR #347)."""
+    state.slots["phone"] = CALLER
+
+    result = _ask_for_nine(session, state, reserved_for="2026-09-19T19:00:00")
+
+    assert result.ended is True and state.stage == "callback"
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
 def test_a_time_in_seconds_reads_as_the_restaurants_clock_on_the_card(session, state):
     """The tool takes a time as seconds since 1970 too. The card shows what
     the tool read, in the restaurant's zone, not the raw number (Codex PR

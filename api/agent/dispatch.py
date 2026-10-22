@@ -75,7 +75,7 @@ def _status(
     return get_service_status(session, tenant_id, now=now)
 
 
-def _in_local_time(
+def in_local_time(
     session: Session, tenant_id: uuid.UUID, args: dict[str, Any]
 ) -> dict[str, Any]:
     """A `reserved_for` without an offset is the restaurant's local time, the
@@ -84,9 +84,11 @@ def _in_local_time(
     refused it for the missing time zone, the model asked the guest for one,
     and a table the team decides on never reached the team (eval
     reservierung_0035, 22.10.2026). Anything that is no such text is left to
-    the validation, which names the field."""
+    the validation, which names the field: a date without a time (never
+    midnight), and a moment the local zone moves off the calendar (Codex PR
+    #347)."""
     when = args.get("reserved_for")
-    if not isinstance(when, str):
+    if not isinstance(when, str) or not ("T" in when or " " in when.strip()):
         return args
     try:
         moment = datetime.fromisoformat(when)
@@ -96,7 +98,10 @@ def _in_local_time(
         return args
     tenant = session.get(Tenant, tenant_id)
     zone = tenant.timezone if tenant else settings.tenant_timezone
-    return {**args, "reserved_for": to_utc(moment, zone).isoformat()}
+    try:
+        return {**args, "reserved_for": to_utc(moment, zone).isoformat()}
+    except OverflowError:
+        return args
 
 
 def _check_slot(
@@ -106,7 +111,7 @@ def _check_slot(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
-    args = _in_local_time(session, tenant_id, args)
+    args = in_local_time(session, tenant_id, args)
     req = CheckSlotRequest(call_id=call_id, tenant_id=tenant_id, **args)
     return check_slot(
         session,
@@ -171,7 +176,7 @@ def _create_reservation(
     # identical details does not book twice. There is no key from the model -
     # invented or reused, it would fetch someone else's transaction (Codex PR
     # #127, P1).
-    local = _in_local_time(session, tenant_id, args)
+    local = in_local_time(session, tenant_id, args)
     rest = {k: v for k, v in local.items() if k != "idempotency_key"}
     req = _with_derived_key(
         CreateReservationRequest(
