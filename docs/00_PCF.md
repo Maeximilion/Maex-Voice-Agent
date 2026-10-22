@@ -260,7 +260,7 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 ## 8. Legal Check (C1, before first real call)
 
-> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision, and the question of the data protection officer (D9) stays open.
+> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision. The questions of the check were answered on 20.10.2026 (both rounds compared, D9 decided: Maxi himself); what is still open are the duties before the first real call, listed in `docs/09_OPERATIONS_LEGAL.md` §1.
 
 - [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Recording:** Consent from customer and team (§201 StGB); since the legal check of 20.10.2026 an explicit "ja" before the recording starts, a "nein" keeps the call going without it; the team's own calls in mode `shadow` need every team member's written consent (`docs/09_OPERATIONS_LEGAL.md` §1 L2, L11)

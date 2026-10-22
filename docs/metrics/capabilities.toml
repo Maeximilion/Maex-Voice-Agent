@@ -100,9 +100,9 @@ waits_for = '''the evals on target (G2)'''
 
 [[capability]]
 works = '''Team notifications reach the team's devices'''
-missing = '''Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)'''
+missing = '''Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)'''
 tasks = []
-waits_for = '''the workflow imported, the team's devices subscribed (`n8n/README.md`) and a relay for iPhones and iPads (D14)'''
+waits_for = '''the workflow imported, the team's devices subscribed (`n8n/README.md`) on the chosen devices (Android devices or the web page on the tablet, D14)'''
 
 [[capability]]
 works = '''The test config holds the real hours and capacity of the pilot operation'''

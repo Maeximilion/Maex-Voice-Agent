@@ -86,7 +86,7 @@ The server is closed by default: without users nobody can publish or read. Two u
 
 5. On each device of the team: subscribe to the topic `team` on that address with the user `team` and its password, in the app of the push server or in its web page.
 
-Locally the server listens on `http://localhost:8090`, loopback only. Android devices keep their own connection to our server. iPhones and iPads get a message at once only through a relay of the app's maker; that is not configured and an open decision (D14 in `docs/01_STATUS.md`).
+Locally the server listens on `http://localhost:8090`, loopback only. Android devices keep their own connection to our server. iPhones and iPads get a message at once only through a relay of the app's maker; that is not configured, and Maxi decided on 19.10.2026 to leave it so: the team's devices are Android devices or the web page on the tablet (D14, option A, in `docs/01_STATUS.md`).
 
 ## What the dispatcher gets back
 
