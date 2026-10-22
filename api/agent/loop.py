@@ -334,6 +334,14 @@ class ConversationLoop:
                 # it made up, a table never drafted), and every rule that
                 # judged its words let a false one through (Codex PR #347).
                 state.booking_say = _booked_say(state, result.data)
+                # A confirm that held the guest past a limit goes to the team
+                # like any slow tool on the next hop would; the booking stands
+                # (Codex PR #347).
+                if self._clock() - self._started > self._max_call_seconds:
+                    return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                left = self._left_in_turn(turn_started)
+                if left is not None and left <= 0:
+                    return self._too_slow(state, user_text)
                 said = f"{state.booking_say} {SAY_BOOKED_GOODBYE}"
                 guards.note_said(state, said)
                 return TurnResult(

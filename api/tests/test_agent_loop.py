@@ -1474,6 +1474,31 @@ def test_after_a_confirm_the_core_says_the_booking(session, state):
     assert len(llm.calls) == 1
 
 
+def test_a_confirm_past_the_call_limit_goes_to_the_team_like_any_slow_tool(
+    session, state
+):
+    """A confirm that held the guest past the limit: the next hop would have
+    handed over, so the booking sentence must not come late in its place
+    (Codex PR #347). The booking itself stands."""
+    read_back_reservation(session, state)
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=OPEN_NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 0, 0, 100]),
+    )
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert state.stage == "transferred"
+    assert result.say != [f"{SAY_TABLE_BOOKED} {SAY_BOOKED_GOODBYE}"]
+    assert session.get(Reservation, state.reservation_id).status == "confirmed"
+    assert state.booking_say == SAY_TABLE_BOOKED
+
+
 def test_the_booked_order_sentence_names_the_code_the_database_gave():
     state_data = {"handover": "queued", "pickup_code": "A7"}
     waits = {"handover": "awaiting_approval", "pickup_code": "A8"}

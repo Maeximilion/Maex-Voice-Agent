@@ -557,6 +557,8 @@ def test_a_time_without_an_offset_is_the_restaurants_local_time(
         "2026-09-15",
         # No such wall time in Berlin (spring forward): never another hour.
         "2026-03-29T02:30:00",
+        # Twice in Berlin (fall back): which one is not ours to guess.
+        "2026-10-25T02:30:00",
     ],
 )
 def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(

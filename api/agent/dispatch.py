@@ -24,7 +24,7 @@ from api.config import settings
 from api.core.errors import AppError, InvalidInput, TeamDecides
 from api.core.ids import idempotency_key
 from api.core.logging import get_logger, log
-from api.core.time import to_local, to_utc
+from api.core.time import to_utc, tz
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
@@ -86,8 +86,9 @@ def in_local_time(
     reservierung_0035, 22.10.2026). Anything that is no such text is left to
     the validation, which names the field: a date without a time (never
     midnight), a moment the local zone moves off the calendar, and a wall time
-    the zone does not have, as 02:30 on the night clocks go forward, which
-    would become another hour (Codex PR #347)."""
+    the zone does not have or has twice, as 02:30 on the nights the clocks
+    change: one would become another hour, the other is a guess between two
+    (Codex PR #347)."""
     when = args.get("reserved_for")
     if not isinstance(when, str) or not ("T" in when or " " in when.strip()):
         return args
@@ -99,13 +100,16 @@ def in_local_time(
         return args
     tenant = session.get(Tenant, tenant_id)
     zone = tenant.timezone if tenant else settings.tenant_timezone
+    local = tz(zone)
     try:
-        at = to_utc(moment, zone)
-        if to_local(at, zone).replace(tzinfo=None) != moment:
+        if (
+            moment.replace(tzinfo=local, fold=0).utcoffset()
+            != moment.replace(tzinfo=local, fold=1).utcoffset()
+        ):
             return args
+        return {**args, "reserved_for": to_utc(moment, zone).isoformat()}
     except OverflowError:
         return args
-    return {**args, "reserved_for": at.isoformat()}
 
 
 def _check_slot(
