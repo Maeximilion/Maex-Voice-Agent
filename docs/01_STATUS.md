@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.8
+> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.9
 
 ---
 
@@ -600,6 +600,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.9 · 22.10.2026:** PR #347: open order named after a confirmed table, readback read word for word; Qwen runs moved to 23.10.2026
 - **v2.7.8 · 22.10.2026:** PR #347: a reserved_for without an offset is the restaurant's local time (reservierung_0035), dead stand-in sentences after confirm removed
 - **v2.7.7 · 22.10.2026:** PR #347: eval runs on 33843ab, reservierung_0035 as an open point with its cause, handover of 22.10.2026
 - **v2.7.6 · 21.10.2026:** PR #347: the core says every booking from the confirm result, the model only repeats booking_say (Maxi's approval of 21.10.2026)

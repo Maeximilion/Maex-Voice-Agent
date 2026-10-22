@@ -482,6 +482,28 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 22.10.2026 (late morning) - PR #347 ready except the Qwen runs
+Status: PR #347 head pushed, CI and Codex on it pending at hand-over. Since the night runs
+       on 33843ab: a reserved_for without an offset is the restaurant's local time
+       (dispatch.in_local_time, also for the team card; a date alone, an off-calendar
+       moment and a wall time the zone lacks or has twice stay invalid input), the stand-in
+       lost its dead sentences after confirm, and four Codex rounds of fixes (aufgegeben and
+       aufgenommen are booking words, a late confirm keeps the booking in the guest's ear
+       and on the card, a confirmed table names an unplaced order, the pending readback may
+       be read word for word). Suite green except mount-only tests, stand-in 43/43, targets
+       1/27, number eval 249/249.
+Artifacts: PR #347, docs/metrics/eval_history.csv (no rows for the new code yet).
+Decisions: Maxi 22.10.: the GPU runs move to tomorrow (23.10.2026).
+Gate: G0 open; PR #347 waits for the Qwen runs on its head (rule 4, Codex eval thread open).
+Open: 1. In Maxi's GPU window: 2x regular cases and 1x targets on the PR head (about 33 min;
+       the script and the override are in the session scratchpad, recreate them from the
+       local test run recipe if it is gone), record them, close the Codex eval thread.
+       2. If reservierung_0035 passes and nothing new fails hard: post the comment
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md
+       section 6 (merge strategy, --match-head-commit with the full head sha).
+Lessons: a fix round right before a GPU window moves the head under the runs; batch the
+       review rounds first, then measure.
+
 ## Handover 22.10.2026 - PR #347: eval runs on Qwen, the core says every booking
 Status: PR #347 (dev/eval-qwen-optimization-8b4ad7) pushed, xhigh, Maxi merges. Final code
        33843ab measured on qwen3.6-35b-a3b: 24/43 and 25/43 (main 27, 24), targets 2/27,
