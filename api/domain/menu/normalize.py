@@ -13,7 +13,7 @@ the menu is already the wanted short form.
 import re
 import unicodedata
 
-from api.domain.menu.numberwords import CARD_SUFFIXES, parse_cardinal
+from api.domain.menu.numberwords import CARD_SUFFIXES, fold, hesitation, parse_cardinal
 
 _SPACE = re.compile(r"\s+")
 # Suffixes that belong to the number inside a name. Without g: next to a name
@@ -34,7 +34,8 @@ _EDGE_PUNCT = " \t\"'.,;:!?()[]{}\u201e\u201c\u201d\u201a\u2018\u2019\u00ab\u00b
 
 
 # What is said around the dish name on the phone and says nothing about the
-# dish. Short on purpose: no word in here can ever be part of a hit.
+# dish. Short on purpose: no word in here can ever be part of a hit. Every
+# hesitation goes as well, however the ear spelt it (numberwords.hesitation).
 #
 # Every word with an umlaut is in here twice, once with it and once in the
 # ae/oe/ue spelling: some speech recognition delivers "ich haette gern Pho"
@@ -45,14 +46,12 @@ _EDGE_PUNCT = " \t\"'.,;:!?()[]{}\u201e\u201c\u201d\u201a\u2018\u2019\u00ab\u00b
 FILLER = frozenset(
     {
         "ich", "wir", "hätte", "hätten", "möchte", "möchten", "nehme", "nehmen",
-        "gern", "gerne", "bitte", "dann", "noch", "und", "also", "ja", "äh", "ähm",
-        "hm", "mal", "einmal", "die", "der", "das", "den", "dem", "des", "ein",
+        "gern", "gerne", "bitte", "dann", "noch", "und", "also", "ja",
+        "mal", "einmal", "die", "der", "das", "den", "dem", "des", "ein",
         "eine", "einen", "einem", "einer", "nummer", "nr", "x", "portion",
         "portionen", "von", "vom",
-        # the same words as the recognition writes them without an umlaut,
-        # plus the remaining hesitations from numberwords._HESITATIONS
-        "haette", "haetten", "moechte", "moechten", "aeh", "aehm", "aehh",
-        "hmm", "ehm", "oehm",
+        # the same words as the recognition writes them without an umlaut
+        "haette", "haetten", "moechte", "moechten",
         # like numberwords._LEAD_FILLER (review PR #147)
         "würde", "würden", "würd", "wuerde", "wuerden", "wuerd", "hallo",
         "guten", "tag", "abend", "dazu", "bestellen", "bestelle",
@@ -109,7 +108,7 @@ def normalize_query(text: str) -> str:
         if weight:
             weights += 1
             kept.append(token)
-        elif token not in FILLER:
+        elif token not in FILLER and not hesitation(fold(token)):
             kept.append(token)
     # Without a name next to it, "25g" was the card number, not a weight.
     return "" if weights == len(kept) else " ".join(kept)
