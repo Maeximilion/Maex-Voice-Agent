@@ -482,6 +482,22 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 22.10.2026 (afternoon) - PR #347: one Qwen run on the final head left
+Status: Qwen runs on f0136c1 (16:01 to 16:27): 26/43 and 26/43 (main 27, 24), one missed
+       escalation each (allergie_0002, as on main), reservierung_0035 passes, targets 2/27,
+       hard violations 0, recorded in docs/metrics/eval_history.csv. After the runs one code
+       commit, 288fb26 ("Abhol-Code" with a hyphen is a booking word, Codex P1), covered by
+       unit tests only; Codex asks for a run on the final head (thread open).
+Artifacts: PR #347 (head with the status and handover of this block), README charts.
+Decisions: none new.
+Gate: G0 open; PR #347 needs one regular-cases run on its head, then the merge gate comment.
+Open: 1. In Maxi's next GPU window (about 13 min: server 1 min, one run of the 43 cases):
+       one regular-cases run on the PR head, record it, answer and resolve the Codex thread
+       on guards.py (the eval rerun). 2. If CI and Codex are clean on that head, post
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md section 6.
+Lessons: push the review fixes before the GPU window, not during it; a fix after the runs
+       always asks for one more run.
+
 ## Handover 22.10.2026 (late morning) - PR #347 ready except the Qwen runs
 Status: PR #347 head pushed, CI and Codex on it pending at hand-over. Since the night runs
        on 33843ab: a reserved_for without an offset is the restaurant's local time
