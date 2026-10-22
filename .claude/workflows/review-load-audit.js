@@ -11,7 +11,8 @@ export const meta = {
 
 // args: { since_pr?: number, max_prs?: number }. Default: PRs merged after #366, the PR that
 // changed the review rules, up to 25 of them.
-const SINCE = (args && args.since_pr) || 366
+// The baseline below covers #333 to #365, so a cutoff below #366 would count those PRs on both sides.
+const SINCE = Math.max(366, (args && args.since_pr) || 366)
 const MAX = (args && args.max_prs) || 25
 const REPO = 'Maeximilion/Maex-Voice-Agent'
 
@@ -58,7 +59,7 @@ ${JSON.stringify(measured.prs)}`, { label: 'recount', phase: 'Check', model: 'so
 
 phase('Compare')
 return await agent(`Compare the review load now with the baseline and write a short report in German for Maxi.
-For each rule changed in #366, say whether the numbers show the intended effect, no effect, or a side effect (for example a real defect that was no longer reported). Name the PRs behind each claim. Where the recount found differences, use the recounted numbers and say so. Where fewer than five PRs exist, say that the sample is too small to conclude. A rule the measurement marks "unmeasured" gets no verdict.
+For each rule changed in #366, say whether the numbers show the intended effect, no effect, or a side effect (for example a real defect that was no longer reported). Name the PRs behind each claim. Where the recount found differences, use the recounted numbers and say so. Where fewer than five PRs exist, say that the sample is too small to conclude. A rule gets a verdict only from direct evidence in the measurement (counts, listed violations, the recorded order); every other rule, including one the measurement marks "unmeasured", is reported as unmeasured with what would be needed to measure it.
 End with at most three concrete next steps (keep, adjust a named rule, or revert), and whether the model routing table can now be tied to outcomes ("Route:" trailers present or not).
 
 ${BASELINE}

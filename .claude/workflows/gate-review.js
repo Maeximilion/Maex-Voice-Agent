@@ -36,7 +36,7 @@ const VERDICTS = {
 // Severities follow AGENTS.md "Code Review Rules"; a finding needs a concrete failing scenario.
 const LENSES = [
   { key: 'hard-rules', prompt: `Check the code on main against hard rules 1, 2, 3, 5 and 6 of CLAUDE.md section 2: prices, zones, hours, availability and allergens only from the database; no order item without a definitive menu_item_id; draft leaves only through confirm after an explicit yes; every failure branch in the call path ends with the team or a callback; and rule 6, the full menu never in a prompt or model context. Look in api/domain, api/agent, api/tools, api/telephony and prompts/.` },
-  { key: 'security', model: 'sonnet', prompt: `Check security as AGENTS.md "Security and secrets", "Containers and deployment" and "CI and workflows" describe it, and run bash scripts/audit_due.sh --gate to see whether the audit of docs/09_OPERATIONS_LEGAL.md section 5 is due. That audit is a gate requirement only from G1 on (.claude/commands/gate.md step 1b): for G0 report its verdict as information, never as a finding. Also list open code-scanning and Dependabot alerts with python3 scripts/alert_fixes.py. A real pilot name, number or credential anywhere is P0.` },
+  { key: 'security', model: 'sonnet', prompt: `Check security as AGENTS.md "Security and secrets", "Containers and deployment" and "CI and workflows" describe it, and run bash scripts/audit_due.sh --gate to see whether the audit of docs/09_OPERATIONS_LEGAL.md section 5 is due. That audit is a gate requirement only from G1 on (.claude/commands/gate.md step 1b): for G0 report its verdict as information, never as a finding. From G1 on, also every open audit P1 in the hardening issue (#252 or its successor, gh issue view) is a P1 finding. Also list open code-scanning and Dependabot alerts with python3 scripts/alert_fixes.py. A real pilot name, number or credential anywhere is P0.` },
   { key: 'evals', model: 'sonnet', prompt: `Check hard rule 4 for this gate: which eval and measurement numbers exist (docs/metrics/, docs/08_EVALS.md, docs/20_VOICE_LAYER.md section 11), whether they were taken on the current main, and whether they meet the thresholds the gate names. A gate criterion that rests on a number without a recorded run is P1.` },
   { key: 'docs', model: 'sonnet', prompt: `Check that docs/01_STATUS.md, docs/07_WORKPACKAGES.md, README.md and CHANGELOG.md agree on what is done, open and blocked for this gate (docs/15_README_STRATEGY.md "Gate workflow"). A task marked done whose code or test is missing on main is P1.` },
 ]
@@ -59,19 +59,20 @@ ${JSON.stringify(serious)}`, { label: `verify:${l.key}`, phase: 'Verify', schema
   })
 
 const [crit, ...lenses] = await parallel([criteria, ...LENSES.map(l => () => lens(l))])
-const missing = LENSES.filter((l, i) => !lenses[i]).map(l => l.key)
-if (missing.length) log(`Lenses without a result: ${missing.join(', ')}`)
+const missing = LENSES.filter((l, i) => !lenses[i]).map(l => l.key).concat(crit ? [] : ['criteria'])
+// A check that did not run cannot pass: fail closed instead of letting the verdict guess.
+if (missing.length) return `Gate ${GATE} review incomplete, no verdict: no result from ${missing.join(', ')}. Run /gate-review ${GATE} again; until then the gate counts as not checked.`
 
 phase('Verdict')
 return await agent(`Write the gate ${GATE} review in German for Maxi.
 1. Per criterion: go, no-go or open, with its evidence.
 2. Blockers: every P0 and P1 a skeptic kept as real or left unverified (say which), with where and scenario. Findings a skeptic refuted are listed in one line each with the reason, not as blockers.
 3. P2 findings in one short list.
-4. What no lens covered${missing.length ? ` (lenses without a result: ${missing.join(', ')})` : ''}.
+4. What no lens covered.
 5. Recommendation: run /gate ${GATE} now, or what has to happen first. The decision is Maxi's.
 
 CRITERIA:
-${crit || 'not available'}
+${crit}
 
 LENSES:
 ${JSON.stringify(lenses.filter(Boolean))}`, { label: 'verdict', phase: 'Verdict' })
