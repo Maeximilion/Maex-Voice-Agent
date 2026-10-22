@@ -460,7 +460,7 @@ Blocks new Claude Code prompts once this week's usage reaches today's cap, so th
 - `gate.py hook` runs on `UserPromptSubmit` and `SessionStart`. At or above the cap it exits 2 with a message; a session start cannot be blocked, so there it only warns.
 - Override: a prompt containing the sentence held in `OVERRIDE_SENTENCE` goes through and writes `override.json`, which keeps the gate open until the weekly reset.
 - It never blocks on missing data, a finished week, unreadable files or any error. The status line runs only in the terminal UI; the desktop app, Remote Control and `claude -p` sessions are gated by the hook but do not refresh `state.json`, so they use the last number a terminal session saw. Usage only grows within a week, so an older number can let a prompt through late and never blocks one too early.
-- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively with owner-only permissions, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup; read back and compared with the settings before anything changes), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged; the write is refused with "changed meanwhile" when the file differs from the snapshot the backup was taken from, apart from a small check-then-replace gap that the code marks; `previous_statusline.json` is deleted only after the write succeeded, also when an install makes a stale one obsolete because there is no status line any more). Any argument other than none or `remove` prints a usage line and exits without touching anything, and puts `python ~/.claude/usage_gate/gate.py hook` (timeout 10; with `CLAUDE_CONFIG_DIR` set, the gate in that folder, quoted, with forward slashes) first in `SessionStart` and `UserPromptSubmit`, and sets the status line to `python ~/.claude/usage_gate/gate.py statusline`, followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line.
+- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively with owner-only permissions, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup; read back and compared with the settings before anything changes), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged; the write is refused with "changed meanwhile" when the file differs from the snapshot the backup was taken from, apart from a small check-then-replace gap that the code marks; `previous_statusline.json` is deleted only after the write succeeded, also when an install makes a stale one obsolete because there is no status line any more). Any argument other than none or `remove` prints a usage line and exits without touching anything, and puts the hook command first in `SessionStart` and `UserPromptSubmit`, and sets the status line likewise. Both commands name the gate by its full path in the config folder (the folder of `CLAUDE_CONFIG_DIR` when set, else `~/.claude`), quoted and with forward slashes, for example `python3 '/home/user/.claude/usage_gate/gate.py' hook` (`python` on Windows), so PowerShell without Git Bash and a moved config folder work alike. The status line command is followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line. A hook entry written by an earlier version of the installer keeps its old command form until `install.py` is run again; a status line already set by the gate also keeps its old command, so remove it with `install.py remove` and install again to get the full-path form. A stale `previous_statusline.json` is also recognised when the current status line is the gate's own without a wrapped command, so a rerun after a failed delete removes it.
 - Windows has it installed since 15.10.2026. The Ubuntu copy of the folder exists, but Ubuntu does not run the gate: its settings carry no gate entry, and the Ubuntu restore below leaves the entries out of the copied hooks.
 - Checked 21.10.2026 (`install.py` as fixed that day: unique backups, atomic write, `CLAUDE_CONFIG_DIR`): the files below are the live copies on Windows and the Ubuntu folder is byte-identical for `gate.py`. They hold no key, token or personal path; the only user-specific text is the German override sentence, which is not secret. Gap: `test_gate.py` (121 lines) is not backed up here; rewrite it from the behaviour above if it is lost.
 
@@ -647,12 +647,10 @@ CLAUDE = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
 SETTINGS = os.path.join(CLAUDE, "settings.json")
 PREVIOUS = os.path.join(CLAUDE, "usage_gate", "previous_statusline.json")
 PY = "python" if os.name == "nt" else "python3"
-# In a config folder moved by CLAUDE_CONFIG_DIR the hooks call the gate there: quoted,
-# with forward slashes, because the hooks run in bash, also on Windows (Git Bash).
-if os.environ.get("CLAUDE_CONFIG_DIR"):
-    GATE = f"{PY} " + shlex.quote(CLAUDE.replace("\\", "/") + "/usage_gate/gate.py")
-else:
-    GATE = f"{PY} ~/.claude/usage_gate/gate.py"
+# The full path, quoted, with forward slashes: also a config folder moved by
+# CLAUDE_CONFIG_DIR, and a Windows without Git Bash, where PowerShell runs the
+# command and hands "~" to Python as it is.
+GATE = f"{PY} " + shlex.quote(CLAUDE.replace("\\", "/") + "/usage_gate/gate.py")
 EVENTS = ("SessionStart", "UserPromptSubmit")
 
 
@@ -694,9 +692,11 @@ def install(settings):
     elif ours(old):
         line["command"] = old["command"]  # reinstall keeps the wrapped command
     settings["statusLine"] = line
-    # No status line before the gate: a restoration file left from an earlier install
-    # (the gate removed by hand) is stale; main deletes it after the write.
-    return not old and os.path.exists(PREVIOUS)
+    # No status line before the gate (none now, or the gate's own without a wrapped
+    # command): a restoration file left from an earlier install is stale; main deletes
+    # it after the write, and a rerun after a failed delete finds it again.
+    unwrapped = not old or (ours(old) and " bash -c " not in old["command"])
+    return unwrapped and os.path.exists(PREVIOUS)
 
 
 def remove(settings):
@@ -776,7 +776,7 @@ if __name__ == "__main__":
 
 1. Save the three scripts from section 4 into `~/.claude/hooks/` under their names.
 2. Merge the block from section 3 into `~/.claude/settings.json` in an editor.
-2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows `python ~/.claude/usage_gate/gate.py hook` as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove` in Git Bash, or `python "$HOME\.claude\usage_gate\install.py" remove` in PowerShell.
+2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows the gate's `gate.py hook` command (full path) as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove` in Git Bash, or `python "$HOME\.claude\usage_gate\install.py" remove` in PowerShell.
 3. Check the result. Console: Git Bash, any folder.
 
 ```bash

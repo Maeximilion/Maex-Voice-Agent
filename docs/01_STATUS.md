@@ -599,7 +599,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.7.3 · 21.10.2026:** Doc sync: legal-check summaries refreshed, G1 prerequisites name T-11.1, request log retention proposed (assumption awaiting Maxi), usage gate backed up in docs/19 (installer fixed in the gate: unique backups, atomic write, CLAUDE_CONFIG_DIR), D14 decided A (#344, #323, #188); usage gate installer: owner-only verified backups, previous status line kept until the write; usage gate removal command for PowerShell, previous_statusline.json kept in the machine backup; installer refuses unknown arguments and a settings file changed meanwhile
+- **v2.7.3 · 21.10.2026:** Doc sync: legal-check summaries refreshed, G1 prerequisites name T-11.1, request log retention proposed (assumption awaiting Maxi), usage gate backed up in docs/19 (installer fixed in the gate: unique backups, atomic write, CLAUDE_CONFIG_DIR), D14 decided A (#344, #323, #188); usage gate installer: owner-only verified backups, previous status line kept until the write; usage gate removal command for PowerShell, previous_statusline.json kept in the machine backup; installer refuses unknown arguments and a settings file changed meanwhile; installer writes full-path gate commands
 - **v2.7.2 · 22.10.2026:** CLAUDE.md: folder tree in section 4 removed, docs/11_MODULE.md holds the layout (Claude Code doctor trim, about 600 tokens less per session).
 - **v2.7.1 · 22.10.2026:** Number words: a cut number asks (#325, #328), one hesitation pattern (#327)
 - **v2.7.0 · 21.10.2026:** Merge gate hook, /ship command, parallel-work and eval comparison rules (insights review)
