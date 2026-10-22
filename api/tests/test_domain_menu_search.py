@@ -94,6 +94,10 @@ KARTE = {
         ("ich haette gern Pho", "pho"),
         ("ich moechte Pho", "pho"),
         ("aeh Pho", "pho"),
+        # Every spelling of a hesitation (#327); "ah" can be the letter a.
+        ("öh Pho ähhh", "pho"),
+        ("Ähm, eh, die knusprige Ente", "knusprige ente"),
+        ("hmmm Pho", "pho"),
         # Dieselben Fuellwoerter wie im Nummernsatz, sonst sucht der Name nach
         # "wuerde pho" (Review PR #147).
         ("ich würde gern Pho", "pho"),
@@ -713,9 +717,12 @@ def test_dasselbe_gericht_zweimal_genannt_sind_zwei_positionen(
         "einmal Pho Bo, und 30",
         "einmal Pho Bo, und öhm 30",
         "zweimal die drei und äh zwanzig und Pho Bo",
-        "die drei, und zwanzig",
         "Pho Bo, und zwanzig und einer Sesamallergie",
         "die Nummer 48 Ente süß und sauer",
+        # A name that hits two dishes before the unclear number: kept whole,
+        # the name search stripped the 30 (#328).
+        "einmal Suppe, und 30",
+        "einmal Suppe, und eh 30",
     ],
 )
 def test_an_unclear_number_piece_makes_the_sentence_ask(session, tenant_id, said):
@@ -725,6 +732,23 @@ def test_an_unclear_number_piece_makes_the_sentence_ask(session, tenant_id, said
     the cut was taken as a dish, and an allergy hung on the wrong part."""
     with pytest.raises(Ambiguous):
         position_parts(session, tenant_id, said, now=NOW)
+    with pytest.raises(Ambiguous):
+        suche(session, tenant_id, said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die drei, und zwanzig",
+        "die drei, und zwanzig Frühlingsrollen",
+        "die drei und, zwanzig Frühlingsrollen",
+    ],
+)
+def test_a_comma_at_the_und_keeps_the_number_whole_and_asks(session, tenant_id, said):
+    """#328: a comma on either side of the "und" is a pause in "drei und
+    zwanzig". Cut there, "die drei" was taken as a dish and the 20 went on as
+    a quantity of Fruehlingsrollen; kept whole, the search asks."""
+    assert position_parts(session, tenant_id, said, now=NOW) == [said]
     with pytest.raises(Ambiguous):
         suche(session, tenant_id, said)
 

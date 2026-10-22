@@ -373,6 +373,15 @@ def _position_parts(
     # The same holds for compound dishes: "Fisch und Chips und Backfisch mit
     # Pommes" names the same dish with other words (Codex PR #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
+
+    def whole(rest: list[str]) -> list[str]:
+        """The sentence kept whole. The name search strips every number, so a
+        piece with an unclear number further on ("einmal Suppe, und 30", where
+        "Suppe" hits two dishes) makes the sentence ask for it instead (#328)."""
+        if any(sole_item_number(piece, piece_card)[1] for piece in rest):
+            raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
+        return [query]
+
     i = 0
     while i < len(pieces):
         for j in range(min(len(pieces), i + longest) - 1, i, -1):
@@ -400,7 +409,7 @@ def _position_parts(
                 # found Pho Bo alone and took it twice (eval abholung_0082).
                 # Any other piece that hits nothing is part of a name.
                 if sole_item_number(piece, piece_card)[0] is None:
-                    return [query]
+                    return whole(pieces[i + 1 :])
                 positions.append(piece)
                 i += 1
                 continue
@@ -411,7 +420,7 @@ def _position_parts(
                 # Pho Bo alone and drop the first dish (Codex PR #257).
                 ref, _ = sole_item_number(piece, piece_card)
                 if not (found.results and ref is not None and ref.heard):
-                    return [query]
+                    return whole(pieces[i + 1 :])
             else:
                 said.setdefault(found.results[0].menu_item_id, set()).add(
                     normalize_query(piece)

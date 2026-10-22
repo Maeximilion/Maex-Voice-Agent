@@ -128,6 +128,23 @@
 {"say": "die drei öhm und zwanzig", "expect": "?", "why": "a hesitation before the und is a pause as well"}
 {"say": "die drei und äh 20a", "expect": "?", "why": "a card letter behind the tens: 23a or 3 and 20a"}
 {"say": "eine äh und zwanzig Frühlingsrollen", "expect": "name", "why": "limit: eine is an article here, not the first half of a number, so the name search decides as on main"}
+{"say": "drei zwanzig", "expect": "?", "why": "a unit right before a tens word without und is two numbers or a cut 23; never joined into 23 (#325)"}
+{"say": "Nummer drei zwanzig", "expect": "?", "why": "the same after the marker (#325)"}
+{"say": "die 3 20", "expect": "?", "why": "the same in digits (#325)"}
+{"say": "ein zwanzig", "expect": "?", "why": "ein opens 21 when und follows; without the und the guest is asked (#325)"}
+{"say": "die eine zwanzig", "expect": "20", "why": "eine before the tens word is the article: one of item 20, not 21 (#325)"}
+{"say": "und noch eine zwanzig", "expect": "20", "why": "the same in a continuation (#325)"}
+{"say": "drei zwanzig Frühlingsrollen", "expect": "?", "why": "next to a name: 23 Fruehlingsrollen or item 3 and 20 of them, the guest is asked (#325)"}
+{"say": "zwei zwanzigmal die 13", "expect": "?", "why": "a unit before a tens quantity: 22 portions or item 2 and 20 portions (#325)"}
+{"say": "und öh zwanzig", "expect": "?", "why": "a hesitation however the ear spells it: oeh (#327)"}
+{"say": "und eh zwanzig", "expect": "?", "why": "the same with eh, the spelling Parakeet wrote for aeh (T-10.3, #327)"}
+{"say": "und äääh zwanzig", "expect": "?", "why": "the same with a long aeh (#327)"}
+{"say": "die 23 öh", "expect": "23", "why": "a trailing hesitation in another spelling is no dish name (#327)"}
+{"say": "die 26 eh", "expect": "26", "why": "the same with eh (#327)"}
+{"say": "die 23, öh, 24", "expect": "?", "why": "a self-correction with another spelling of aeh (#327)"}
+{"say": "die drei ähhh und zwanzig", "expect": "?", "why": "a pause before the und in another spelling (#327)"}
+{"say": "Nummer drei äh zwanzig Portionen", "expect": "?", "why": "a hesitation between unit and tens without und: item 3 with 20 portions or a cut 23, the guest is asked (Codex PR #362)"}
+{"say": "eine zwanzig Portionen Pho Bo", "expect": "?", "why": "eine cannot be the article of a plural quantity: 20 or a cut 21 portions, the guest is asked (Codex PR #362)"}
 {"say": "Und dann dazu noch die 24", "expect": "24", "why": "mehrere Einleitungswoerter vor der Zahl"}
 {"say": "Nummer hallo 23", "expect": "?", "why": "Begruessung ist kein Fuellwort zwischen Marker und Zahl (Review PR #147)"}
 {"say": "Nummer dazu 23", "expect": "?", "why": "dazu ist kein Fuellwort zwischen Marker und Zahl"}
