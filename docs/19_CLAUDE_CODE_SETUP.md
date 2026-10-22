@@ -460,7 +460,7 @@ Blocks new Claude Code prompts once this week's usage reaches today's cap, so th
 - `gate.py hook` runs on `UserPromptSubmit` and `SessionStart`. At or above the cap it exits 2 with a message; a session start cannot be blocked, so there it only warns.
 - Override: a prompt containing the sentence held in `OVERRIDE_SENTENCE` goes through and writes `override.json`, which keeps the gate open until the weekly reset.
 - It never blocks on missing data, a finished week, unreadable files or any error. The status line runs only in the terminal UI; the desktop app, Remote Control and `claude -p` sessions are gated by the hook but do not refresh `state.json`, so they use the last number a terminal session saw. Usage only grows within a week, so an older number can let a prompt through late and never blocks one too early.
-- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively with owner-only permissions, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup; read back and compared with the settings before anything changes), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged, and `remove` deletes `previous_statusline.json` only after the write succeeded), and puts `python ~/.claude/usage_gate/gate.py hook` (timeout 10; with `CLAUDE_CONFIG_DIR` set, the gate in that folder, quoted, with forward slashes) first in `SessionStart` and `UserPromptSubmit`, and sets the status line to `python ~/.claude/usage_gate/gate.py statusline`, followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line.
+- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively with owner-only permissions, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup; read back and compared with the settings before anything changes), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged; the write is refused with "changed meanwhile" when the file differs from the snapshot the backup was taken from, apart from a small check-then-replace gap that the code marks; `previous_statusline.json` is deleted only after the write succeeded, also when an install makes a stale one obsolete because there is no status line any more). Any argument other than none or `remove` prints a usage line and exits without touching anything, and puts `python ~/.claude/usage_gate/gate.py hook` (timeout 10; with `CLAUDE_CONFIG_DIR` set, the gate in that folder, quoted, with forward slashes) first in `SessionStart` and `UserPromptSubmit`, and sets the status line to `python ~/.claude/usage_gate/gate.py statusline`, followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line.
 - Windows has it installed since 15.10.2026. The Ubuntu copy of the folder exists, but Ubuntu does not run the gate: its settings carry no gate entry, and the Ubuntu restore below leaves the entries out of the copied hooks.
 - Checked 21.10.2026 (`install.py` as fixed that day: unique backups, atomic write, `CLAUDE_CONFIG_DIR`): the files below are the live copies on Windows and the Ubuntu folder is byte-identical for `gate.py`. They hold no key, token or personal path; the only user-specific text is the German override sentence, which is not secret. Gap: `test_gate.py` (121 lines) is not backed up here; rewrite it from the behaviour above if it is lost.
 
@@ -694,10 +694,13 @@ def install(settings):
     elif ours(old):
         line["command"] = old["command"]  # reinstall keeps the wrapped command
     settings["statusLine"] = line
+    # No status line before the gate: a restoration file left from an earlier install
+    # (the gate removed by hand) is stale; main deletes it after the write.
+    return not old and os.path.exists(PREVIOUS)
 
 
 def remove(settings):
-    """Returns True when PREVIOUS was restored; main deletes it only after the write,
+    """Returns True when PREVIOUS was used; main deletes it only after the write,
     so a failed write leaves it for the next try."""
     strip(settings)
     if ours(settings.get("statusLine")):
@@ -709,12 +712,10 @@ def remove(settings):
     return False
 
 
-def backup():
-    """Copy settings.json to a name no earlier run has taken (an install and a remove
-    in the same second each keep their own), readable by the owner only, as it may
-    hold a credential, and read back before it counts."""
-    with open(SETTINGS, "rb") as src:
-        data = src.read()
+def backup(data):
+    """Copy the settings.json that was read to a name no earlier run has taken (an
+    install and a remove in the same second each keep their own), readable by the
+    owner only, as it may hold a credential, and read back before it counts."""
     stamp = time.strftime("%Y%m%d-%H%M%S")
     for n in range(100):
         path = f"{SETTINGS}.{stamp}{f'-{n}' if n else ''}.bak"
@@ -731,8 +732,14 @@ def backup():
     sys.exit(f"no free backup name for {SETTINGS}")
 
 
-def write(settings):
-    """Write next to settings.json and swap it in: a failed write leaves the old file."""
+def write(settings, data):
+    """Write next to settings.json and swap it in: a failed write leaves the old file.
+    A settings.json changed since it was read is left alone, not overwritten."""
+    # ponytail: check, then replace; a write in the gap still wins. A lock if two
+    # writers ever race here.
+    with open(SETTINGS, "rb") as f:
+        if f.read() != data:
+            sys.exit(f"{SETTINGS} changed meanwhile; nothing changed, run again")
     fd, tmp = tempfile.mkstemp(dir=CLAUDE, prefix="settings.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -745,12 +752,16 @@ def write(settings):
 
 
 def main():
-    with open(SETTINGS, encoding="utf-8") as f:
-        settings = json.load(f)
-    saved = backup()
-    restored = (remove if sys.argv[1:2] == ["remove"] else install)(settings)
-    write(settings)
-    if restored:
+    args = sys.argv[1:]
+    if args not in ([], ["remove"]):
+        sys.exit(__doc__)
+    with open(SETTINGS, "rb") as f:
+        data = f.read()
+    settings = json.loads(data)
+    saved = backup(data)
+    drop_previous = (remove if args else install)(settings)
+    write(settings, data)
+    if drop_previous:
         os.remove(PREVIOUS)
     print(f"done; backup at {saved}")
 
