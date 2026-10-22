@@ -20,7 +20,7 @@
 
 Windows and Ubuntu each have their own copy of the hooks and of the settings. A change on one side has to be repeated on the other. Nothing in this file is secret: the scripts hold no keys, and the settings block below holds none either.
 
-Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable: it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
+Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable (the installer writes it owner-only, mode 0600, and tightens an older copy): it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
 
 ## 2. The hooks
 
@@ -685,7 +685,10 @@ def install(settings):
     line = dict(old or {"type": "command"})
     line["command"] = f"{GATE} statusline"
     if old and not ours(old):
-        with open(PREVIOUS, "w", encoding="utf-8") as f:
+        # Owner only: the old status line command may carry a credential.
+        fd = os.open(PREVIOUS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.chmod(PREVIOUS, 0o600)  # a file left from before keeps its mode
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(old, f, indent=2)
         line["command"] += " bash -c " + shlex.quote(old["command"])
     elif ours(old):
