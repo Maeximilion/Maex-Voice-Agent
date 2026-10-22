@@ -1227,3 +1227,179 @@ def test_a_prefixed_number_without_that_lettered_number_stays_as_it_was(text, ca
 )
 def test_a_heard_suffix_next_to_more_asks_back_as_before(text):
     assert sole_item_number(text, LETTERED) == (None, True)
+
+
+# --- A number the ear may have cut, and every spelling of a hesitation ---
+# (#325, #327, #328)
+
+from api.domain.menu.numberwords import fold, hesitation  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    ("text", "numbers"),
+    [
+        ("drei zwanzig", [3, 20]),
+        ("die 3 20", [3, 20]),
+        ("die eine zwanzig", [20]),
+        # Unchanged: the spoken "und", and tens before units.
+        ("drei und zwanzig", [23]),
+        ("vierzig sieben", [47]),
+        ("ein und zwanzig zwanzig", [21, 20]),
+    ],
+)
+def test_a_unit_joins_a_tens_word_only_across_a_spoken_und(text, numbers):
+    """#325: "drei zwanzig" was 23 and "die eine zwanzig" 21 without anybody
+    saying "und"."""
+    assert find_numbers(text) == numbers
+
+
+def test_parse_cardinal_needs_the_und_between_unit_and_tens():
+    assert parse_cardinal("drei zwanzig") is None
+    assert parse_cardinal("drei und zwanzig") == 23
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "drei zwanzig",
+        "Nummer drei zwanzig",
+        "ein zwanzig",
+        "drei zwanzig Frühlingsrollen",
+        "zwei zwanzigmal die 13",
+    ],
+)
+def test_a_unit_before_a_tens_word_without_und_asks(text):
+    """#325: two numbers or a 23 whose "und" the ear lost; the guest is asked,
+    also next to a name."""
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "drei und äh zwanzig Portionen Pho Bo",
+        "drei und äh zwanzig mal die 13",
+        "drei und, äh, zwanzigmal die 13",
+        "drei zwanzig Portionen Pho Bo",
+    ],
+)
+def test_the_half_of_a_cut_number_is_no_quantity(text):
+    """#328: find_quantity read the tens half as 20 portions; the sentence
+    asks, and the half is no quantity of its own."""
+    assert find_quantity(text) is None
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    ("text", "quantity"),
+    [
+        ("drei und zwanzig Portionen Pho Bo", 23),
+        ("zwanzig Portionen Pho Bo", 20),
+        ("die 23, zwanzig Portionen", 20),
+        ("die 3, zwanzig Portionen", 20),
+    ],
+)
+def test_a_whole_number_before_the_quantity_word_stays_the_quantity(text, quantity):
+    assert find_quantity(text) == quantity
+
+
+@pytest.mark.parametrize(
+    "spelling",
+    ["äh", "ähm", "ähh", "äääh", "öh", "öhm", "eh", "ehm", "hm", "hmmm", "ÄH"],
+)
+def test_every_spelling_of_a_hesitation_is_one(spelling):
+    """#327: the ear spells the sound in many ways (T-10.3)."""
+    assert hesitation(fold(spelling))
+
+
+@pytest.mark.parametrize(
+    "word", ["ah", "oh", "e", "em", "er", "ehe", "eher", "um", "mhm", "geh"]
+)
+def test_letters_and_words_are_no_hesitation(word):
+    """ "ah" and "oh" are what the ear writes for the letters a and o ("23, ah"
+    for 23a, T-10.3), "em" is the letter m."""
+    assert not hesitation(fold(word))
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("die 23 öh", 23),
+        ("Nummer 23, eh", 23),
+        ("äääh die 23", 23),
+    ],
+)
+def test_a_hesitation_in_any_spelling_leaves_the_number(text, expected):
+    """#327: "öh" and "eh" were left over as a dish name."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and ref.value == expected
+
+
+@pytest.mark.parametrize(
+    "text", ["die 23, öh, 24", "und eh zwanzig", "die drei ähhh und zwanzig"]
+)
+def test_a_pause_in_any_spelling_asks_as_before(text):
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    ("text", "cards"),
+    [
+        ("Die 26 eh", ("26", "26e")),
+        ("Die 26 äääh", ("26", "26e")),
+        ("Die 26 ähh der", ("26", "26e", "26d")),
+    ],
+)
+def test_an_e_like_hesitation_in_any_spelling_may_be_the_e(text, cards):
+    """Like "äh" (abholung_0080): "eh" may have been the letter e."""
+    ref, unclear = sole_item_number(text, LETTERED)
+    assert not unclear and ref is not None
+    assert ref.cards == cards
+
+
+def test_other_hesitations_are_no_letter():
+    ref, _ = sole_item_number("Die 26 öhm", LETTERED)
+    assert ref is not None and ref.cards == ("26",)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Nummer drei eh zwanzig Portionen",
+        "Nummer drei äh zwanzig Portionen",
+        "die 3, äh, zwanzig Portionen",
+        "drei ähm zwanzigmal die 13",
+        "eine zwanzig Portionen Pho",
+        "eine zwanzigmal die 13",
+    ],
+)
+def test_a_tens_quantity_after_a_unit_and_a_pause_or_after_eine_asks(text):
+    """Codex on PR #362: a hesitation between a unit and a tens word, without
+    an "und", left the tens as the quantity ("Nummer drei eh zwanzig Portionen"
+    was item 3 with 20 portions); and "eine" before a plural quantity cannot be
+    its article, so "eine zwanzig Portionen" is no 20 portions either."""
+    assert find_quantity(text) is None
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    ("text", "quantity"),
+    [
+        # A bare comma still separates the dish from the quantity.
+        ("die 3, zwanzig Portionen", 20),
+        ("die 13 äh zwanzig Portionen", 20),
+        ("eine Portion", 1),
+    ],
+)
+def test_a_quantity_after_a_comma_or_a_whole_number_stays(text, quantity):
+    assert find_quantity(text) == quantity
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["eine zwanzig äh Portionen Pho", "eine zwanzig, ähm, Portionen Pho"],
+)
+def test_a_pause_before_the_quantity_noun_still_asks_after_eine(text):
+    """Codex on PR #362 (cd49a14): the quantity noun after a pause was not
+    seen, so "eine zwanzig äh Portionen Pho" went to the name search as Pho."""
+    assert sole_item_number(text) == (None, True)

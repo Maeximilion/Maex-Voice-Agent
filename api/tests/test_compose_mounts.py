@@ -54,9 +54,14 @@ UNPRUEFBAR_OBEN = ("include",)
 # git, which the api image does not have, and skips there. Mounting `.claude/hooks`
 # for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
 # `/done` names the hook too: Claude runs it on the host after a merge, never in the
-# container. The routing hook test needs jq, which the image lacks as well.
+# container. The routing hook test needs jq, which the image lacks as well, and the
+# merge gate test needs both; `/ship` names that hook for the host.
 CHECKOUT_ONLY = frozenset(
-    {".claude/hooks/sync_main.sh", ".claude/hooks/route_advice.sh"}
+    {
+        ".claude/hooks/sync_main.sh",
+        ".claude/hooks/route_advice.sh",
+        ".claude/hooks/merge_gate.sh",
+    }
 )
 
 

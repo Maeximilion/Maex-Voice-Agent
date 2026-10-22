@@ -235,6 +235,9 @@ def test_restore_replace_brings_the_state_back_and_keeps_the_old_database(
 
 # Stands in for psql, pg_dump and pg_restore: runs the real client, but the answer to
 # a rename is lost after the server carried it out, as when the connection drops.
+# restore.sh sees this stand-in as a local client and refuses one of another major
+# than the server, so a local client of another major (a runner image ships a newer
+# one) is swapped for the image, the server's own.
 LOSSY_CLIENT = """#!/usr/bin/env bash
 tool="$(basename "$0")"
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -245,6 +248,9 @@ export PATH="${PATH%:}"
 source "$LIB"
 BACKUP_PG_CLIENT=auto
 pg_resolve_client
+if [ "$PG_CLIENT" = local ] && [ "$(pg_dump --version | pg_major)" != "$SERVER_MAJOR" ]; then
+    PG_CLIENT=docker
+fi
 pg "$tool" "$@"
 status=$?
 if [ "$tool" = psql ] && [[ "$*" == *"rename to"* ]]; then exit 2; fi
@@ -274,6 +280,7 @@ def test_restore_replace_asks_the_server_when_the_answer_to_the_swap_is_lost(
         passphrase_file=passphrase_file,
         PATH=f"{clients}{os.pathsep}{os.environ['PATH']}",
         LIB=(REPO_ROOT / "scripts" / "lib_pg.sh").as_posix(),
+        SERVER_MAJOR=str(int(_sql(db, "show server_version_num")[0][0]) // 10000),
         BACKUP_PG_CLIENT="local",
     )
 

@@ -28,11 +28,12 @@ Position, die Sauce ist Option und kein zweites Gericht.
 import re
 
 from api.domain.menu.numberwords import (
-    INSIDE_SPLIT,
-    PAUSE_BEFORE_UND,
     find_quantity,
     fold,
+    hesitation,
+    inside_split,
     parse_cardinal,
+    pause_before_und,
     tens_half,
 )
 
@@ -54,15 +55,9 @@ _QUANTITY_NOUNS = frozenset({"mal", "x", "portion", "portionen", "stueck", "stk"
 _MODIFIERS = frozenset({"ohne", "mit", "extra", "aber"})
 # The first half of "drei und zwanzig".
 _UNITS = range(1, 10)
+# Next to every hesitation (`_full_words`, numberwords.hesitation).
 _EMPTY_WORDS = frozenset(
     {
-        "aeh",
-        "aehm",
-        "aehh",
-        "hm",
-        "hmm",
-        "ehm",
-        "oehm",
         "bitte",
         "dann",
         "noch",
@@ -138,21 +133,42 @@ def _split(text: str, *, by_position: bool = True) -> list[str]:
         # or a name (Codex PR #147). The words here carry no punctuation; a
         # comma is a separator of its own (#328).
         a = len(left)
-        while a and left[a - 1] in PAUSE_BEFORE_UND:
+        while a and pause_before_und(left[a - 1]):
             a -= 1
         b = 0
-        while b < len(right) and right[b] in INSIDE_SPLIT:
+        while b < len(right) and inside_split(right[b]):
             b += 1
+        und = sep.strip().casefold() == "und"
+        # A comma next to the "und" is the same pause: "die drei, und
+        # zwanzig", "die drei und, zwanzig". A sentence that starts with the
+        # second ("und äh, zwanzig") is the same cut-off half. Kept whole,
+        # each asks instead of taking item 20 for a spoken 23 (#328).
+        cut_off = False
+        if not und and b < len(right) and right[b] == "und":
+            und = True
+            b += 1
+            while b < len(right) and inside_split(right[b]):
+                b += 1
+        elif not und and a and left[a - 1] == "und":
+            und = True
+            a -= 1
+            while a and pause_before_und(left[a - 1]):
+                a -= 1
+            cut_off = not a
         number_joined = (
-            sep.strip().casefold() == "und"
-            and a
+            und
             and b < len(right)
             and (
+                (cut_off and tens_half(right[b]))
                 # "hundert und eins": nur eine Zahl hängt an, keine neue
                 # Position ("die hundert und eine Cola", Codex PR #124).
-                (left[a - 1].endswith("hundert") and _only_number(piece))
+                or (a > 0 and left[a - 1].endswith("hundert") and _only_number(piece))
                 # "drei und zwanzig" is 23, "zwei und zwanzigmal" one number too.
-                or (parse_cardinal(left[a - 1]) in _UNITS and tens_half(right[b]))
+                or (
+                    a > 0
+                    and parse_cardinal(left[a - 1]) in _UNITS
+                    and tens_half(right[b])
+                )
             )
         )
         attached = not _opens_position(piece) if by_position else _modifies(piece)
@@ -173,7 +189,7 @@ def _opens_position(part: str) -> bool:
     Koriander" gehört zur Position davor (Codex PR #124). Besteht der Teil nur
     aus dem Präfix, muss eine Nummer darin sein ("die 13"), sonst ist er leer.
     """
-    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    words = _full_words(part)
     prefix = 0
     while prefix < len(words) and _is_prefix_word(words[prefix]):
         prefix += 1
@@ -190,7 +206,7 @@ def _opens_position(part: str) -> bool:
 def _modifies(part: str) -> bool:
     """Ein Hinweis zur Position davor: nach Artikel und Menge steht vorn "mit",
     "ohne", "extra" oder "aber" ("mit Reis", "2 x ohne Koriander")."""
-    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    words = _full_words(part)
     rest = words[next((i for i, w in enumerate(words) if not _is_prefix_word(w)), 0) :]
     return bool(rest) and rest[0] in _MODIFIERS
 
@@ -215,9 +231,18 @@ def _is_number(word: str) -> bool:
 
 
 def _content(part: str) -> bool:
-    return any(w not in _EMPTY_WORDS for w in _WORD.findall(fold(part)))
+    return bool(_full_words(part))
 
 
 def _only_number(part: str) -> bool:
-    words = [w for w in _WORD.findall(fold(part)) if w not in _EMPTY_WORDS]
+    words = _full_words(part)
     return len(words) == 1 and _is_number(words[0])
+
+
+def _full_words(part: str) -> list[str]:
+    """The words of the part without hesitations and empty words."""
+    return [
+        w
+        for w in _WORD.findall(fold(part))
+        if w not in _EMPTY_WORDS and not hesitation(w)
+    ]
