@@ -124,8 +124,8 @@ HINT_NOT_BOOKED = (
 _BOOKING_CLAIM = re.compile(
     # "aufgegeben", "aufgenommen": the core's own order sentences (Codex PR #347).
     r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|aufgegeben|aufgenommen"
-    # "Abhol-Code" with a hyphen is the same word (Codex PR #347, P1).
-    r"|abhol-?code|abhol-?nummer)\w*",
+    # "Abhol-Code" or "Abhol Code" is the same word (Codex PR #347, P1 twice).
+    r"|abhol[\s-]*code|abhol[\s-]*nummer)\w*",
     re.IGNORECASE,
 )
 # A sentence that speaks of a code and holds a token shaped like one (A1, s12,
