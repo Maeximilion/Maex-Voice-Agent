@@ -903,6 +903,9 @@ def test_without_a_booking_every_booking_word_is_refused():
     # The core's own wording, said by the model (Codex PR #347).
     assert false_booking(new_state(), "Ihre Bestellung ist aufgegeben.") is not None
     assert false_booking(new_state(), "Ihre Bestellung ist aufgenommen.") is not None
+    # Written with a hyphen it is the same word (Codex PR #347, P1).
+    assert false_booking(new_state(), "Ihr Abhol-Code ist 8842.") is not None
+    assert false_booking(new_state(), "Ihre Abhol-Nummer ist A1.") is not None
     assert false_booking(new_state(), BOOKED) is not None
 
 
