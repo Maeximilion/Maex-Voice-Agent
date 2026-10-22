@@ -1,7 +1,7 @@
 # 19 – Claude Code Setup
 
-> The personal Claude Code setup behind this repository: three user-level hooks, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
-> Version 1.1 · 14.10.2026
+> The personal Claude Code setup behind this repository: three user-level hooks, the usage gate, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
+> Version 1.2 · 21.10.2026
 
 ---
 
@@ -13,13 +13,14 @@
 | Project permission rule `"ask": ["Read(/**/.env)"]` | `.claude/settings.json`. Claude asks before its Read tool opens a file named `.env` at any depth; `.env.example` stays open. It guards the Read tool only: tested headless on 19.10.2026, the Grep tool and `cat .env` still read the file. A `deny` rule would block Read, Grep and `cat` too, but also every edit of `.env` by Claude; Maxi keeps it for after the next gates (`docs/01_STATUS.md`, D23). Not a protection against intent: scripts and `docker compose config` read `.env` on their own | yes, versioned |
 | User hooks `sync-main.sh`, `model-router.sh`, `session-title.sh` | `~/.claude/hooks/` on each machine | no, backed up in section 4 |
 | Launcher `claude-rc` (Ubuntu only) | `~/.local/bin/claude-rc` | no, backed up in section 4 |
+| Usage gate `gate.py`, `install.py` | `~/.claude/usage_gate/` on each machine (since 15.10.2026) | no, backed up in section 4 |
 | User settings | `~/.claude/settings.json` on each machine | no, the shared part is backed up in section 3 |
 | Hook state (stamps, notes already given) | `~/.claude/hook-state/` on each machine, under the home folder so no other local user can prepare it | no, rebuilt by the hooks |
 | Memory notes | `~/.claude/projects/` on Windows, linked into Ubuntu | no |
 
 Windows and Ubuntu each have their own copy of the hooks and of the settings. A change on one side has to be repeated on the other. Nothing in this file is secret: the scripts hold no keys, and the settings block below holds none either.
 
-Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy), the `autoMode` allow list, and the usage gate on Windows (`python ~/.claude/usage_gate/gate.py hook` on SessionStart and UserPromptSubmit, since 15.10.2026). Ubuntu has no `python` on its path, so the Ubuntu restore below leaves the usage gate entries out.
+Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable (the installer writes it owner-only, mode 0600, and tightens an older copy): it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
 
 ## 2. The hooks
 
@@ -30,6 +31,7 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `sync-main.sh --branch` | UserPromptSubmit | Tells Claude when the session's branch is behind `origin/main`, once per branch and state of `main`, and again after 30 minutes while the branch is still behind. Claude then merges `main` in. The hook never merges. Silent on `main` and on a branch whose remote is gone. Fetches at most every 10 minutes. |
 | `model-router.sh` | SessionStart, PostModelSwitch, UserPromptSubmit | Pauses a prompt that looks too big for the running model. Lets every machine-delivered prompt through (routines, background reports, CI events: anything that starts with a tag, except pasted text and a quoted reply, which come from a person), because nobody is there to switch the model and resend. The same goes for every prompt inside a subagent. Silent in any repository whose `CLAUDE.md` has a "Model Routing" heading, which includes this one. |
 | `route_advice.sh` (project hook, `.claude/hooks/`) | SessionStart, PostModelSwitch, UserPromptSubmit | Compares the session's model and effort with the Model Routing table in `CLAUDE.md` (keyword heuristic: migration, price, zone, hours, allergen, confirm, escalation and similar raise to Opus 5.5 `xhigh`; hooks, `domain/`, `agent/`, `deploy` and the rest to Opus 5.5 `high`; GUI, docs, seeds, imports to Sonnet 5.5 `medium`; a prompt that names only Markdown or `docs/` paths and no implementation area stays on Sonnet whatever its topic; a pure search or log read (also asked as "can you search ...") without a changing or debugging verb to Haiku 4.5, checked first so its subject does not count; doc file names such as `docs/13_DEPLOYMENT.md` do not count as code areas; a clause led by fix, implement, refactor or debug that names no GUI, docs or other Sonnet work keeps a mixed prompt off Sonnet in either order ("Fix authentication and update the GUI labels"); what a status update, review fix or run of existing tests is about stays its subject when it ends the prompt in up to three words ("Update the project status after the migration" stays on Sonnet); no keyword and four words or more to the default). It compares the exact model ID (`claude-opus-5-5`, a suffix such as `[1m]` allowed) and the effort from `CLAUDE_EFFORT` (the live level Claude Code hands to hooks), else the hook input's `effort` where an event carries it, else `CLAUDE_CODE_EFFORT_LEVEL` (the launch value); an unknown effort is only asked about when `xhigh` is wanted. Never blocks: it shows the user one line and tells Claude to open its reply with it. A session stronger than the prompt needs is pointed at a thread instead of a switch. A line `Route: <model-id> <effort>` as the prompt's first line, right after a wrapper tag, or as the first line after the desktop app's `Task:` line (the brief of a thread, `CLAUDE.md` section 6, "Threads") replaces the keywords: the hook then only checks that the thread runs on what the brief asks for, and a Route line without a valid effort is reported as such. On the first mismatch it tells the thread to do no work and answer only `ROUTE-MISMATCH want=<model> <effort> have=<model> <effort>`, so the coordinating chat can switch the thread and send the brief again; on the same mismatch after that resend it lets the thread carry on and report it; after that it is silent; the count is per requested route, so a switch that only half took also carries on. When the hook does not know the model yet (the desktop app's `SessionStart` omits it, so on every session's first prompt), it does not stop the thread: it is silent when the effort is the routed one and otherwise carries on and reports that the setting could not be checked. It never recommends Fable 5.1 (the table uses it only when Maxi asks); a Fable session whose prompt names Fable is left alone unless the prompt withdraws it ("off Fable", "not on Fable"). Transfer counts as xhigh except as a file or data transfer. It runs in a UTF-8 locale, so German umlauts match without `LANG`. A hook cannot switch a model itself. Silent when model and effort match, for `/task` and `/start` (they check the table themselves), a slash command without arguments, subagents, machine-delivered prompts and plain answers such as "ja" or "weiter", and it repeats the same advice only once per session. The user-level `model-router.sh` yields in this repository because `CLAUDE.md` has its own table, so this is the only router here. Since it is a project hook it also runs in threads that do not use `~/.claude` (cloud, Projects) |
+| `usage_gate/gate.py hook` | SessionStart, UserPromptSubmit (first entry of each event) | Exit 2 with a message when this week's usage has reached today's cap (Monday to Wednesday 80 percent, Thursday to Sunday 95), so a new prompt never reaches Claude. Details in section 4. |
 | `merge_gate.sh` (project hook, `.claude/hooks/`) | PreToolUse on shell commands | Guards against a forgotten step, not against a session that tries to get around it. Any command that names `gh pr merge` passes only as `gh pr merge <number> --merge --match-head-commit <full sha>`, with `--delete-branch` after it, checked in the folder the command runs in (the hook input's `cwd`, where gh resolves the PR too); a `cd` in front is refused, it could select another repository; the check for the words ignores case, since PowerShell runs `GH` as `gh`, sees flags on either side of `pr` (`gh -R owner/repo pr merge`, `gh pr -R owner/repo merge`) and joins Bash and PowerShell line continuations first; a wrapped call, another strategy, `--auto`, a branch name, and a commit message or search that names the command are blocked with that form (write such text to a file or as `gh pr merg[e]`). Then, for a PR into `main` whose head is that sha: every check passed (a check that ran twice on the head counts by the run that started last, a queued rerun without a start time counts as the newest, and a run cancelled before it started as the oldest), the branch contains the current `main`, the status version is higher than `main`'s (read from the `> Status:` header line only, exactly three numbers, compared as numbers, so `2.7.00` is no bump over `2.7.0`; `main` and the pull ref are fetched from the repository in the PR's URL, the one gh picked, which can differ from `origin`) (not for a `chore/readme-weekly-*` branch whose changes are all `README.md`, `.github/assets/*.svg` or `png-sources.json`), and a review is clean: Codex's newest state comment names that head without open findings, or a comment by the owner or a collaborator that opens with `Merge gate: <full head sha>` and came after Codex's newest state. `onFailure: "block"` makes a timeout or a crash block too; a missing script does not (the settings line checks for it), because a session whose `CLAUDE_PROJECT_DIR` points elsewhere, for example after a move to another folder, would otherwise have every shell command blocked (seen 21.10.2026). Other commands pass after one grep for `merge` (about 0.1 s on Windows). Needs `jq`, `git` and `gh`. Tests: `api/tests/test_hooks_merge_gate.py`. Known limits: `gh api .../merge`, gh aliases and quoting tricks are not caught. |
 | `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
 
@@ -450,12 +452,331 @@ while kill -0 "$child" 2>/dev/null; do wait "$child" || true; done
 wait "$child"
 ```
 
+### usage_gate (Windows; Ubuntu optional)
+
+Blocks new Claude Code prompts once this week's usage reaches today's cap, so the last share of the weekly limit stays for Claude chat and Cowork. Needs only Python 3 (`python` on Windows, `python3` on Ubuntu). Caps by local weekday: Monday to Wednesday 80 percent, Thursday to Sunday 95. No network and no model calls.
+
+- `gate.py statusline` is the status line: Claude Code hands it `rate_limits.seven_day`, it saves `used_percentage` and `resets_at` to `state.json` next to it and prints `week 41% / cap 80%`. A status line command that existed before is kept: `install.py` wraps it and `gate.py` prints its output instead.
+- `gate.py hook` runs on `UserPromptSubmit` and `SessionStart`. At or above the cap it exits 2 with a message; a session start cannot be blocked, so there it only warns.
+- Override: a prompt containing the sentence held in `OVERRIDE_SENTENCE` goes through and writes `override.json`, which keeps the gate open until the weekly reset.
+- It never blocks on missing data, a finished week, unreadable files or any error. The status line runs only in the terminal UI; the desktop app, Remote Control and `claude -p` sessions are gated by the hook but do not refresh `state.json`, so they use the last number a terminal session saw. Usage only grows within a week, so an older number can let a prompt through late and never blocks one too early.
+- `install.py` backs up `settings.json` to `settings.json.<timestamp>.bak` (created exclusively with owner-only permissions, with a `-1`, `-2` suffix when the name is taken, so runs within one second keep every backup; read back and compared with the settings before anything changes), writes the new settings to a temporary file in the same folder and swaps it in with `os.replace` (a failed write leaves `settings.json` unchanged; the write is refused with "changed meanwhile" when the file differs from the snapshot the backup was taken from, apart from a small check-then-replace gap that the code marks; `previous_statusline.json` is deleted only after the write succeeded, also when an install makes a stale one obsolete because there is no status line any more). Any argument other than none or `remove` prints a usage line and exits without touching anything, and puts the hook command first in `SessionStart` and `UserPromptSubmit`, and sets the status line likewise. Both commands name the gate by its full path in the config folder (the folder of `CLAUDE_CONFIG_DIR` when set, else `~/.claude`), quoted and with forward slashes, for example `python3 '/home/user/.claude/usage_gate/gate.py' hook` (`python` on Windows), so PowerShell without Git Bash and a moved config folder work alike. The status line command is followed by `bash -c '<the old command>'` when there was one. Running it twice changes nothing; `install.py remove` takes it out again and restores the old status line. A hook entry written by an earlier version of the installer keeps its old command form until `install.py` is run again; a status line already set by the gate also keeps its old command, so remove it with `install.py remove` and install again to get the full-path form. A stale `previous_statusline.json` is also recognised when the current status line is the gate's own without a wrapped command, so a rerun after a failed delete removes it.
+- Windows has it installed since 15.10.2026. The Ubuntu copy of the folder exists, but Ubuntu does not run the gate: its settings carry no gate entry, and the Ubuntu restore below leaves the entries out of the copied hooks.
+- Checked 21.10.2026 (`install.py` as fixed that day: unique backups, atomic write, `CLAUDE_CONFIG_DIR`): the files below are the live copies on Windows and the Ubuntu folder is byte-identical for `gate.py`. They hold no key, token or personal path; the only user-specific text is the German override sentence, which is not secret. Gap: `test_gate.py` (121 lines) is not backed up here; rewrite it from the behaviour above if it is lost.
+
+`~/.claude/usage_gate/gate.py`:
+
+```python
+"""Usage gate for Claude Code: blocks new prompts once this week's usage cap is reached.
+
+  gate.py statusline [command ...]  status line: save rate_limits.seven_day to state.json,
+                                    then print the wrapped command's output (stdin passed on)
+                                    or a short usage line when no command is given
+  gate.py hook                      UserPromptSubmit / SessionStart hook: exit 2 with a
+                                    message when this week's usage >= today's cap
+
+Caps by local weekday: Mon-Wed 80, Thu-Sun 95. The override sentence in a prompt lets it
+through and keeps the gate open until the weekly reset. Missing or stale data and any
+error never block. No network, no model calls.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+DIR = os.environ.get("USAGE_GATE_DIR") or os.path.dirname(os.path.abspath(__file__))
+OVERRIDE_SENTENCE = "Fahre fort, egal ob das Limit erreicht ist oder nicht."
+CAPS = [80, 80, 80, 95, 95, 95, 95]  # Monday first, local time
+WEEK = 7 * 86400
+
+
+def path(name):
+    return os.path.join(DIR, name)
+
+
+def load(name):
+    try:
+        with open(path(name), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
+def save(name, data):
+    tmp = f"{path(name)}.{os.getpid()}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    os.replace(tmp, path(name))
+
+
+def cap_for(now):
+    return CAPS[datetime.fromtimestamp(now).weekday()]
+
+
+def week(state, now):
+    """(used, resets_at) while the saved window is still current, else None."""
+    try:
+        used, resets = float(state["used_percentage"]), float(state["resets_at"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    # Usage only grows inside a window, so an older number is a lower bound and still
+    # valid; once resets_at passes it belongs to last week.
+    return (used, resets) if now < resets else None
+
+
+def override_active(override, now):
+    try:
+        return now < float(override["until"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def check(state, override, now):
+    """Block message, or None to let the prompt through."""
+    current = week(state, now)
+    if not current or override_active(override, now):
+        return None
+    used, resets = current
+    cap = cap_for(now)
+    if used < cap:
+        return None
+    reset = datetime.fromtimestamp(resets).strftime("%a %d.%m. %H:%M")
+    return (
+        f"Usage gate: weekly usage {used:.0f}% >= today's cap {cap}%. Prompt blocked; "
+        f"resets {reset}. To go on anyway, send: {OVERRIDE_SENTENCE}"
+    )
+
+
+def is_override(prompt):
+    norm = " ".join(prompt.split()).casefold()
+    return OVERRIDE_SENTENCE.rstrip(".").casefold() in norm
+
+
+def override_until(state, now):
+    try:
+        until = float(state["resets_at"])
+    except (KeyError, TypeError, ValueError):
+        return now + WEEK
+    while until <= now:  # saved window already over: roll on to the next reset
+        until += WEEK
+    return until
+
+
+def hook(data, now):
+    event = data.get("hook_event_name")
+    state = load("state.json")
+    if event == "UserPromptSubmit" and is_override(data.get("prompt") or ""):
+        save("override.json", {"until": override_until(state, now), "set_at": now})
+        return 0
+    msg = check(state, load("override.json"), now)
+    if not msg:
+        return 0
+    if event == "SessionStart":
+        msg += " A session start cannot be blocked; its prompts will be."
+    print(msg, file=sys.stderr)
+    return 2
+
+
+def statusline(raw, wrapped, now):
+    try:
+        w = json.loads(raw)["rate_limits"]["seven_day"]
+        save(
+            "state.json",
+            {
+                "used_percentage": float(w["used_percentage"]),
+                "resets_at": float(w["resets_at"]),
+                "updated_at": now,
+            },
+        )
+    except Exception:
+        pass  # no rate_limits yet (first response, API key, non-Pro/Max): keep old state
+    if wrapped:
+        # PATH lookup, so "bash" on Windows is Git Bash and not System32's WSL launcher
+        wrapped = [shutil.which(wrapped[0]) or wrapped[0], *wrapped[1:]]
+        out = subprocess.run(wrapped, input=raw, capture_output=True, text=True, timeout=10)
+        sys.stdout.write(out.stdout)
+        return
+    current = week(load("state.json"), now)
+    if current:
+        flag = " override" if override_active(load("override.json"), now) else ""
+        print(f"week {current[0]:.0f}% / cap {cap_for(now)}%{flag}")
+
+
+def main():
+    now = time.time()
+    raw = sys.stdin.buffer.read().decode("utf-8", "replace")
+    if sys.argv[1:2] == ["statusline"]:
+        statusline(raw, sys.argv[2:], now)
+        return 0
+    return hook(json.loads(raw), now)
+
+
+if __name__ == "__main__":
+    try:
+        code = main()
+    except Exception:
+        code = 0  # any error lets the prompt through
+    sys.exit(code)
+```
+
+`~/.claude/usage_gate/install.py`:
+
+```python
+"""Install or remove the usage gate in ~/.claude/settings.json.
+
+  python install.py            install (Windows; on Ubuntu: python3 install.py)
+  python install.py remove     remove again
+
+Adds gate.py to SessionStart and UserPromptSubmit and makes it the status line. An
+existing status line command is kept: gate.py runs it and prints its output. Everything
+else in settings.json stays. A backup is written next to settings.json first.
+"""
+
+import json
+import os
+import shlex
+import sys
+import tempfile
+import time
+
+CLAUDE = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+SETTINGS = os.path.join(CLAUDE, "settings.json")
+PREVIOUS = os.path.join(CLAUDE, "usage_gate", "previous_statusline.json")
+PY = "python" if os.name == "nt" else "python3"
+# The full path, quoted, with forward slashes: also a config folder moved by
+# CLAUDE_CONFIG_DIR, and a Windows without Git Bash, where PowerShell runs the
+# command and hands "~" to Python as it is.
+GATE = f"{PY} " + shlex.quote(CLAUDE.replace("\\", "/") + "/usage_gate/gate.py")
+EVENTS = ("SessionStart", "UserPromptSubmit")
+
+
+def ours(hook):
+    return "usage_gate/gate.py" in (hook or {}).get("command", "")
+
+
+def strip(settings):
+    """Remove every usage gate hook, drop groups that end up empty."""
+    hooks = settings.get("hooks", {})
+    for event in EVENTS:
+        groups = []
+        for group in hooks.get(event, []):
+            group["hooks"] = [h for h in group.get("hooks", []) if not ours(h)]
+            if group["hooks"]:
+                groups.append(group)
+        if groups:
+            hooks[event] = groups
+        else:
+            hooks.pop(event, None)
+
+
+def install(settings):
+    strip(settings)
+    hooks = settings.setdefault("hooks", {})
+    for event in EVENTS:
+        entry = {"type": "command", "command": f"{GATE} hook", "timeout": 10}
+        hooks.setdefault(event, []).insert(0, {"hooks": [entry]})
+    old = settings.get("statusLine")
+    line = dict(old or {"type": "command"})
+    line["command"] = f"{GATE} statusline"
+    if old and not ours(old):
+        # Owner only: the old status line command may carry a credential.
+        fd = os.open(PREVIOUS, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.chmod(PREVIOUS, 0o600)  # a file left from before keeps its mode
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(old, f, indent=2)
+        line["command"] += " bash -c " + shlex.quote(old["command"])
+    elif ours(old):
+        line["command"] = old["command"]  # reinstall keeps the wrapped command
+    settings["statusLine"] = line
+    # No status line before the gate (none now, or the gate's own without a wrapped
+    # command): a restoration file left from an earlier install is stale; main deletes
+    # it after the write, and a rerun after a failed delete finds it again.
+    unwrapped = not old or (ours(old) and " bash -c " not in old["command"])
+    return unwrapped and os.path.exists(PREVIOUS)
+
+
+def remove(settings):
+    """Returns True when PREVIOUS was used; main deletes it only after the write,
+    so a failed write leaves it for the next try."""
+    strip(settings)
+    if ours(settings.get("statusLine")):
+        if os.path.exists(PREVIOUS):
+            with open(PREVIOUS, encoding="utf-8") as f:
+                settings["statusLine"] = json.load(f)
+            return True
+        settings.pop("statusLine")
+    return False
+
+
+def backup(data):
+    """Copy the settings.json that was read to a name no earlier run has taken (an
+    install and a remove in the same second each keep their own), readable by the
+    owner only, as it may hold a credential, and read back before it counts."""
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    for n in range(100):
+        path = f"{SETTINGS}.{stamp}{f'-{n}' if n else ''}.bak"
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            continue
+        with os.fdopen(fd, "wb") as dst:
+            dst.write(data)
+        with open(path, "rb") as f:
+            if f.read() != data:
+                sys.exit(f"backup {path} does not match {SETTINGS}; nothing changed")
+        return path
+    sys.exit(f"no free backup name for {SETTINGS}")
+
+
+def write(settings, data):
+    """Write next to settings.json and swap it in: a failed write leaves the old file.
+    A settings.json changed since it was read is left alone, not overwritten."""
+    # ponytail: check, then replace; a write in the gap still wins. A lock if two
+    # writers ever race here.
+    with open(SETTINGS, "rb") as f:
+        if f.read() != data:
+            sys.exit(f"{SETTINGS} changed meanwhile; nothing changed, run again")
+    fd, tmp = tempfile.mkstemp(dir=CLAUDE, prefix="settings.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        os.replace(tmp, SETTINGS)
+    except BaseException:
+        os.remove(tmp)
+        raise
+
+
+def main():
+    args = sys.argv[1:]
+    if args not in ([], ["remove"]):
+        sys.exit(__doc__)
+    with open(SETTINGS, "rb") as f:
+        data = f.read()
+    settings = json.loads(data)
+    saved = backup(data)
+    drop_previous = (remove if args else install)(settings)
+    write(settings, data)
+    if drop_previous:
+        os.remove(PREVIOUS)
+    print(f"done; backup at {saved}")
+
+
+if __name__ == "__main__":
+    main()
+```
+
 ## 5. Restore
 
 ### Windows
 
 1. Save the three scripts from section 4 into `~/.claude/hooks/` under their names.
 2. Merge the block from section 3 into `~/.claude/settings.json` in an editor.
+2a. Usage gate, optional: save `gate.py` and `install.py` from section 4 into `~/.claude/usage_gate/`, then run `python ~/.claude/usage_gate/install.py` in Git Bash, any folder (in PowerShell write `python "$HOME\.claude\usage_gate\install.py"`, because PowerShell 5.1 passes `~` to a program literally). It writes the hook and status line entries itself and prints the path of the backup it made. Check with the command below: the output then also shows the gate's `gate.py hook` command (full path) as the first command of `SessionStart` and `UserPromptSubmit`, and `jq -c .statusLine ~/.claude/settings.json` shows the gate command. Remove it again with `python ~/.claude/usage_gate/install.py remove` in Git Bash, or `python "$HOME\.claude\usage_gate\install.py" remove` in PowerShell.
 3. Check the result. Console: Git Bash, any folder.
 
 ```bash
@@ -501,6 +822,14 @@ for f in sync-main.sh model-router.sh session-title.sh; do [ ! -f ~/.claude/hook
 ```
 
 Delete the backups once the check passed.
+
+Usage gate on Ubuntu, optional (Ubuntu runs without it today). Console: Ubuntu terminal, any folder; `WIN_CLAUDE` as in the block above.
+
+```bash
+mkdir -p ~/.claude/usage_gate && cp "$WIN_CLAUDE/usage_gate/gate.py" "$WIN_CLAUDE/usage_gate/install.py" ~/.claude/usage_gate/ && python3 ~/.claude/usage_gate/install.py
+```
+
+If the Windows copy is gone too, save the two files from section 4 into `~/.claude/usage_gate/` instead of the `cp`. `install.py` backs up the settings first, as on Windows. Remove it with `python3 ~/.claude/usage_gate/install.py remove`.
 
 `claude-rc`, same console: `mkdir -p ~/.local/bin`, save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`. Ubuntu's `~/.profile` puts `~/.local/bin` on `PATH` at the next login once the folder exists; until then call it as `~/.local/bin/claude-rc`.
 
@@ -551,4 +880,4 @@ What the run of 2026-10-20 showed about the hook in the desktop app:
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 06.10.2026 (the others).
