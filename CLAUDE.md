@@ -145,7 +145,7 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 - A P2 in code that hits an `xhigh` trigger from the Model Routing table (allergens, a booking, prices, the fate of a call) counts as P1.
 - Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets no reply of its own: it is listed with a one-line reason in the `Merge gate:` comment below.
 - After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green, and a PR with an `xhigh` trigger still goes to Maxi.
-- Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing is pushed until Maxi approves it; a P0 is fixed at once regardless.
+- Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing else is pushed until Maxi approves it; a confirmed P0 or P1 is still fixed and pushed at once.
 - The fixes for one review go out in one push (Maxi, 2026-10-22): every push moves the head and costs a review round. For the same reason `origin/main` is merged into the branch only when the merge needs it (`/done` step 7b), never during fix rounds.
 
 ### Session End
@@ -182,7 +182,7 @@ A task is complete when **all** of these are true:
 - Errors return structured JSON, never stack trace to the agent.
 - Everything written for the repo is English (Maxi, 04.10.2026): identifiers, comments, docstrings, error and log messages, docs, commit messages, PR titles and descriptions, review replies. German only where it is product content: what the agent says to callers (`say` texts, prompts), caller sentences in `evals/`, and caller sentences as test input in `api/tests/` for code that parses German speech (Maxi, 06.10.2026: escalation keywords, the yes detector, number words and the stand-in model only react to German, an English sentence would test nothing). Test names, docstrings and comments around that input stay English. Existing German text stays until its file is translated; new text in such a file is English.
 - No emojis in code, docs, commits, or UI. Status expressed in words.
-- Shell longer than a single command lives in `scripts/` with a test (Maxi, 2026-10-22); docs and `.claude/commands/` call it and do not embed it. Embedded scripts drew most of the review findings on #341 and #357.
+- New shell longer than a single command lives in `scripts/` with a test (Maxi, 2026-10-22); docs and `.claude/commands/` call it and do not embed it. Shell already embedded in a command stays valid until that command is next reworked. Embedded scripts drew most of the review findings on #341 and #357.
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
