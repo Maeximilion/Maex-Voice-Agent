@@ -29,3 +29,6 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-22,2026-10-21T22:02:20+00:00,eval_20261021_220220_667758.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,2,0.1714,10,22028,report,head 33843ab (core says the booking); run 1
 2026-10-22,2026-10-21T22:16:05+00:00,eval_20261021_221605_601846.json,qwen3.6-35b-a3b,cases,43,25,0,0,0,0,2,0.2286,13,22416,report,head 33843ab; run 2
 2026-10-22,2026-10-21T22:28:25+00:00,eval_20261021_222825_975140.json,qwen3.6-35b-a3b,targets,27,2,0,15,0,0,0,0.3333,12,26273,report,head 33843ab
+2026-10-22,2026-10-22T14:01:54+00:00,eval_20261022_140154_567365.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,8,21022,report,"head f0136c1 (local time fix, review fixes); run 1"
+2026-10-22,2026-10-22T14:11:20+00:00,eval_20261022_141120_335572.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,9,21600,report,head f0136c1; run 2
+2026-10-22,2026-10-22T14:20:56+00:00,eval_20261022_142056_408728.json,qwen3.6-35b-a3b,targets,27,2,0,16,0,0,0,0.2593,11,26331,report,head f0136c1
