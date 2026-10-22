@@ -1494,9 +1494,31 @@ def test_a_confirm_past_the_call_limit_goes_to_the_team_like_any_slow_tool(
     result = loop.run_turn(state, "Ja, passt")
 
     assert state.stage == "transferred"
-    assert result.say != [f"{SAY_TABLE_BOOKED} {SAY_BOOKED_GOODBYE}"]
+    # The guest still hears what was booked, before the handover sentence.
+    assert result.say[0] == SAY_TABLE_BOOKED and len(result.say) == 2
     assert session.get(Reservation, state.reservation_id).status == "confirmed"
     assert state.booking_say == SAY_TABLE_BOOKED
+
+
+def test_a_late_confirm_tells_the_callback_card_what_is_booked(session, state):
+    """With nobody to take the call, the card must say the booking stands, or
+    the team books a second time (Codex PR #347)."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 0, 0, 100]),
+    )
+
+    loop.run_turn(state, "Ja, passt")
+
+    card = session.scalars(select(Callback)).one()
+    assert f"Bereits gebucht: {SAY_TABLE_BOOKED}" in card.summary
 
 
 def test_the_booked_order_sentence_names_the_code_the_database_gave():

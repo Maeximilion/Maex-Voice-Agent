@@ -337,11 +337,18 @@ class ConversationLoop:
                 # A confirm that held the guest past a limit goes to the team
                 # like any slow tool on the next hop would; the booking stands
                 # (Codex PR #347).
+                # The guest still hears what was booked, and the handoff's card
+                # says so (`_handoff`), or the team books a second time.
+                late = None
                 if self._clock() - self._started > self._max_call_seconds:
-                    return self._handoff(state, SAY_TIMEOUT, detail=user_text)
-                left = self._left_in_turn(turn_started)
-                if left is not None and left <= 0:
-                    return self._too_slow(state, user_text)
+                    late = self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                elif (
+                    left := self._left_in_turn(turn_started)
+                ) is not None and left <= 0:
+                    late = self._too_slow(state, user_text)
+                if late is not None:
+                    late.say = [state.booking_say, *late.say]
+                    return late
                 said = f"{state.booking_say} {SAY_BOOKED_GOODBYE}"
                 guards.note_said(state, said)
                 return TurnResult(
@@ -586,7 +593,7 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": callback_reason,
-                    "summary": _handoff_summary(reason, detail),
+                    "summary": _handoff_summary(reason, detail, state.booking_say),
                 },
             )
             apply_tool_result(state, "create_callback", callback)
@@ -643,11 +650,13 @@ def _booked_say(state: ConversationState, data: dict[str, Any]) -> str:
     return f"{placed} {SAY_PICKUP_CODE.format(code=code)}" if code else placed
 
 
-def _handoff_summary(reason: str, detail: str | None) -> str:
+def _handoff_summary(reason: str, detail: str | None, booked: str | None = None) -> str:
     base = _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
-    if not detail:
-        return base
-    return f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
+    if detail:
+        base = f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
+    # A booking of this call stands whatever went wrong after it: the card says
+    # so, or the team books a second time (Codex PR #347).
+    return f"{base} Bereits gebucht: {booked}" if booked else base
 
 
 def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:

@@ -122,8 +122,9 @@ HINT_NOT_BOOKED = (
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
 _BOOKING_CLAIM = re.compile(
-    # "aufgegeben": the core's own order sentence (Codex PR #347).
-    r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|aufgegeben|abholcode|abholnummer)\w*",
+    # "aufgegeben", "aufgenommen": the core's own order sentences (Codex PR #347).
+    r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|aufgegeben|aufgenommen"
+    r"|abholcode|abholnummer)\w*",
     re.IGNORECASE,
 )
 # A sentence that speaks of a code and holds a token shaped like one (A1, s12,
