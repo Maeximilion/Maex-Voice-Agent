@@ -1,16 +1,19 @@
 """Saved workflows in .claude/workflows load as /<name> only with a literal meta block first."""
 
+import os
 import re
 from pathlib import Path
 
 import pytest
 
-WORKFLOWS = sorted(
-    (Path(__file__).resolve().parents[2] / ".claude" / "workflows").glob("*.js")
-)
+DIR = Path(__file__).resolve().parents[2] / ".claude" / "workflows"
+WORKFLOWS = sorted(DIR.glob("*.js"))
 
 
 def test_workflows_exist():
+    # The api container does not mount .claude/workflows (test_compose_mounts.py, CHECKOUT_ONLY).
+    if not DIR.is_dir() and not os.environ.get("CI"):
+        pytest.skip(".claude/workflows is read on the checkout only")
     assert {p.stem for p in WORKFLOWS} >= {"gate-review", "review-load-audit"}
 
 
