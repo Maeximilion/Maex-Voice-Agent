@@ -555,6 +555,8 @@ def test_a_time_without_an_offset_is_the_restaurants_local_time(
         "0001-01-01T00:00:00",
         # A date without a time is no time: never midnight (Codex PR #347).
         "2026-09-15",
+        # No such wall time in Berlin (spring forward): never another hour.
+        "2026-03-29T02:30:00",
     ],
 )
 def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(
