@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.1
+> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.2
 
 ---
 
@@ -598,6 +598,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.2 · 22.10.2026:** CLAUDE.md: folder tree in section 4 removed, docs/11_MODULE.md holds the layout (Claude Code doctor trim, about 600 tokens less per session).
 - **v2.7.1 · 22.10.2026:** Number words: a cut number asks (#325, #328), one hesitation pattern (#327)
 - **v2.7.0 · 21.10.2026:** Merge gate hook, /ship command, parallel-work and eval comparison rules (insights review)
 - **v2.6.8 · 21.10.2026:** Backup test of a lost rename answer no longer depends on the runner's Postgres client: its stand-in client takes the server's image where the local client's major differs (CI runner image 20261012.601 ships client 18)
