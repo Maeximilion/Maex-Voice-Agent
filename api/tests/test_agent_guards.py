@@ -938,3 +938,14 @@ def test_the_model_reads_the_booking_sentence_in_its_state():
 
     assert state.to_prompt_json()["booking_say"] == BOOKED
     assert "booking_say" not in new_state().to_prompt_json()
+
+
+def test_the_pending_readback_may_be_read_word_for_word():
+    """A guest's note can hold a booking word ("für die bereits gebuchte
+    Feier"); the readback the core built must still be read out (Codex PR
+    #347). Words of the model's own around it are checked as ever."""
+    readback = "Ein Tisch für vier, mit dem Hinweis: für die bereits gebuchte Feier."
+    state = new_state(stage="readback_pending", readback=readback)
+
+    assert false_booking(state, readback) is None
+    assert false_booking(state, f"{readback} Das ist gebucht.") is not None

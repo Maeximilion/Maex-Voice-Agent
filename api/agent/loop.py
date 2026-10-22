@@ -349,7 +349,19 @@ class ConversationLoop:
                 if late is not None:
                     late.say = [state.booking_say, *late.say]
                     return late
-                said = f"{state.booking_say} {SAY_BOOKED_GOODBYE}"
+                # A table booked while an order stands unplaced: the line
+                # hangs up after this sentence, so it says so, as the team
+                # path does (`_table_to_team`; Codex PR #347).
+                open_order = state.order_id is None and bool(state.cart)
+                said = " ".join(
+                    s
+                    for s in (
+                        state.booking_say,
+                        SAY_ORDER_NOT_PLACED if open_order else None,
+                        SAY_BOOKED_GOODBYE,
+                    )
+                    if s
+                )
                 guards.note_said(state, said)
                 return TurnResult(
                     state=state, say=[said], ended=state.stage in ENDED_STAGES

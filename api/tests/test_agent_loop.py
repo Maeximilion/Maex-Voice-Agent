@@ -1521,6 +1521,21 @@ def test_a_late_confirm_tells_the_callback_card_what_is_booked(session, state):
     assert f"Bereits gebucht: {SAY_TABLE_BOOKED}" in card.summary
 
 
+def test_a_confirmed_table_says_an_open_order_is_not_placed(session, state):
+    """A cart built before the table stays unplaced: the closing sentence
+    says so before the line hangs up (Codex PR #347)."""
+    read_back_reservation(session, state)
+    state.cart = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    llm = confirming(state)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == [
+        f"{SAY_TABLE_BOOKED} {SAY_ORDER_NOT_PLACED} {SAY_BOOKED_GOODBYE}"
+    ]
+
+
 def test_the_booked_order_sentence_names_the_code_the_database_gave():
     state_data = {"handover": "queued", "pickup_code": "A7"}
     waits = {"handover": "awaiting_approval", "pickup_code": "A8"}

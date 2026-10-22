@@ -215,7 +215,13 @@ def false_booking(state: ConversationState, say: str) -> ToolResult | None:
 
     ponytail: a claim without these words ("Ihre Bestellung geht in die
     Küche") is not caught. More words if the call log shows them."""
-    rest = say.replace(state.booking_say, " ") if state.booking_say else say
+    # The core's own sentences, word for word: the booking, and the readback
+    # of a draft, which may hold a guest's note such as "für die bereits
+    # gebuchte Feier" (Codex PR #347).
+    rest = say
+    for own in (state.booking_say, state.readback):
+        if own:
+            rest = rest.replace(own, " ")
     if _BOOKING_CLAIM.search(rest) or _names_a_code(rest):
         return _NOT_BOOKED
     return None
