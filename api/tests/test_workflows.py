@@ -24,7 +24,9 @@ def test_meta_is_first_literal_and_names_every_phase(path):
     meta = text[: text.index("\n}\n") + 2]
     # A variable, call, spread or template in meta drops the workflow from / autocomplete.
     assert "`" not in meta and "..." not in meta
-    assert not re.search(r"\w\(", meta), "function call in meta"
+    # Text inside string literals may hold parentheses; only code outside them counts.
+    code = re.sub(r"'[^'\n]*'", "''", meta)
+    assert not re.search(r"\w\s*\(", code), "function call in meta"
     assert re.search(rf"name: '{re.escape(path.stem)}'", meta)
     assert re.search(r"description: '[^']+'", meta)
     titles = set(re.findall(r"title: '([^']+)'", meta))
