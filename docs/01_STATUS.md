@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.9
+> Status: 22.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.10
 
 ---
 
@@ -600,12 +600,13 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.7.9 · 22.10.2026:** PR #347: open order named after a confirmed table, readback read word for word; Qwen runs moved to 23.10.2026
-- **v2.7.8 · 22.10.2026:** PR #347: a reserved_for without an offset is the restaurant's local time (reservierung_0035), dead stand-in sentences after confirm removed
-- **v2.7.7 · 22.10.2026:** PR #347: eval runs on 33843ab, reservierung_0035 as an open point with its cause, handover of 22.10.2026
-- **v2.7.6 · 21.10.2026:** PR #347: the core says every booking from the confirm result, the model only repeats booking_say (Maxi's approval of 21.10.2026)
-- **v2.7.5 · 21.10.2026:** PR #347 final: Codex rounds on the booking guard, numberless callback to the team, eval runs on the final heads recorded
-- **v2.7.4 · 21.10.2026:** Eval runs on qwen3.6-35b-a3b of 20./21.10.2026, no booking said before confirm, transfer ends the call, local times for the model (PR #347)
+- **v2.7.10 · 22.10.2026:** PR #347: open order named after a confirmed table, readback read word for word; Qwen runs moved to 23.10.2026
+- **v2.7.9 · 22.10.2026:** PR #347: a reserved_for without an offset is the restaurant's local time (reservierung_0035), dead stand-in sentences after confirm removed
+- **v2.7.8 · 22.10.2026:** PR #347: eval runs on 33843ab, reservierung_0035 as an open point with its cause, handover of 22.10.2026
+- **v2.7.7 · 21.10.2026:** PR #347: the core says every booking from the confirm result, the model only repeats booking_say (Maxi's approval of 21.10.2026)
+- **v2.7.6 · 21.10.2026:** PR #347 final: Codex rounds on the booking guard, numberless callback to the team, eval runs on the final heads recorded
+- **v2.7.5 · 21.10.2026:** Eval runs on qwen3.6-35b-a3b of 20./21.10.2026, no booking said before confirm, transfer ends the call, local times for the model (PR #347)
+- **v2.7.4 · 22.10.2026:** Review loop: Codex posts P2 only for api/, printbridge/ and deploy/ code, hooks guard a cooperative agent, one push per round, no main merges during fix rounds
 - **v2.7.3 · 21.10.2026:** Doc sync: legal-check summaries refreshed, G1 prerequisites name T-11.1, request log retention proposed (assumption awaiting Maxi), usage gate backed up in docs/19 (installer fixed in the gate: unique backups, atomic write, CLAUDE_CONFIG_DIR), D14 decided A (#344, #323, #188); usage gate installer: owner-only verified backups, previous status line kept until the write; usage gate removal command for PowerShell, previous_statusline.json kept in the machine backup; installer refuses unknown arguments and a settings file changed meanwhile; installer writes full-path gate commands
 - **v2.7.2 · 22.10.2026:** CLAUDE.md: folder tree in section 4 removed, docs/11_MODULE.md holds the layout (Claude Code doctor trim, about 600 tokens less per session).
 - **v2.7.1 · 22.10.2026:** Number words: a cut number asks (#325, #328), one hesitation pattern (#327)
