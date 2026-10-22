@@ -20,9 +20,11 @@ from typing import Any
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import AppError, InvalidInput, TeamDecides
 from api.core.ids import idempotency_key
 from api.core.logging import get_logger, log
+from api.core.time import to_utc
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
@@ -38,6 +40,7 @@ from api.domain.menu.search import (
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
+from api.models import Tenant
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest, SearchResult
@@ -72,6 +75,30 @@ def _status(
     return get_service_status(session, tenant_id, now=now)
 
 
+def _in_local_time(
+    session: Session, tenant_id: uuid.UUID, args: dict[str, Any]
+) -> dict[str, Any]:
+    """A `reserved_for` without an offset is the restaurant's local time, the
+    time the state gives the model (`now`), read the way `core/time.to_utc`
+    reads one from the GUI. A real model sent "2026-09-15T20:00:00", the tool
+    refused it for the missing time zone, the model asked the guest for one,
+    and a table the team decides on never reached the team (eval
+    reservierung_0035, 22.10.2026). Anything that is no such text is left to
+    the validation, which names the field."""
+    when = args.get("reserved_for")
+    if not isinstance(when, str):
+        return args
+    try:
+        moment = datetime.fromisoformat(when)
+    except ValueError:
+        return args
+    if moment.tzinfo is not None:
+        return args
+    tenant = session.get(Tenant, tenant_id)
+    zone = tenant.timezone if tenant else settings.tenant_timezone
+    return {**args, "reserved_for": to_utc(moment, zone).isoformat()}
+
+
 def _check_slot(
     session: Session,
     call_id: uuid.UUID,
@@ -79,6 +106,7 @@ def _check_slot(
     args: dict[str, Any],
     now: datetime | None,
 ) -> BaseModel:
+    args = _in_local_time(session, tenant_id, args)
     req = CheckSlotRequest(call_id=call_id, tenant_id=tenant_id, **args)
     return check_slot(
         session,
@@ -143,7 +171,8 @@ def _create_reservation(
     # identical details does not book twice. There is no key from the model -
     # invented or reused, it would fetch someone else's transaction (Codex PR
     # #127, P1).
-    rest = {k: v for k, v in args.items() if k != "idempotency_key"}
+    local = _in_local_time(session, tenant_id, args)
+    rest = {k: v for k, v in local.items() if k != "idempotency_key"}
     req = _with_derived_key(
         CreateReservationRequest(
             call_id=call_id, tenant_id=tenant_id, idempotency_key=_PENDING, **rest

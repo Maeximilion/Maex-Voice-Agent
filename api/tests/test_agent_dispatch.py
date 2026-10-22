@@ -520,3 +520,45 @@ def test_a_tool_log_whose_rollback_fails_too_still_answers(
     result = dispatch(session, call_id, tenant_id, "get_service_status", {}, now=NOW)
 
     assert result.ok
+
+
+@pytest.mark.parametrize("tool", ["check_slot", "create_reservation"])
+def test_a_time_without_an_offset_is_the_restaurants_local_time(
+    session, tenant_id, call_id, tool
+):
+    """A real model sent "2026-09-15T20:00:00": the tool refused it for the
+    missing time zone, the model asked the guest for one, and a table the team
+    decides on never reached the team (eval reservierung_0035, 22.10.2026).
+    The state gives the model the restaurant's local time, so a time without
+    an offset means that one, as core/time.to_utc reads one from the GUI."""
+    local = berlin(DIENSTAG, 18, 30)
+    args = {"reserved_for": local.replace(tzinfo=None).isoformat(), "party_size": 4}
+    if tool == "create_reservation":
+        args |= {"guest_name": "Müller", "phone": "+4972215551234"}
+
+    result = dispatch(session, call_id, tenant_id, tool, args, now=NOW)
+
+    assert result.ok, result.hint
+    if tool == "check_slot":
+        assert result.data["available"] is True
+    else:
+        reservation = session.get(Reservation, uuid.UUID(result.data["reservation_id"]))
+        assert reservation.reserved_for == local
+
+
+@pytest.mark.parametrize("when", ["9999-12-31T23:59:00", "morgen um sieben"])
+def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(
+    session, tenant_id, call_id, when
+):
+    result = dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_slot",
+        {"reserved_for": when, "party_size": 2},
+        now=NOW,
+    )
+
+    assert result.ok is False
+    assert result.error_code == "invalid_input"
+    assert "reserved_for" in result.hint
