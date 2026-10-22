@@ -41,14 +41,14 @@ const ROWS = {
 phase('Measure')
 const measured = await agent(`Read-only measurement in this repository with gh and git (repo ${REPO}). Change nothing.
 Take the PRs merged after #${SINCE}, newest first, at most ${MAX}, plus every open PR that has a Codex review. For each PR:
-commits, merges from main among them, Codex review rounds (a round is one review by an author whose login contains "codex" or "chatgpt", with findings or a "no major issues" receipt; do not count the owner's thread replies), Codex inline findings by severity badge (P0, P1, P2), changed lines without tests and Markdown, the area (process tooling, docs, product code by folder) and the route from a "Route:" commit trailer if one exists.
+commits, merges from main among them, Codex review rounds (a round is one review by the bot account chatgpt-codex-connector[bot] exactly, with findings or a "no major issues" receipt; never count another login that merely looks similar, nor the owner's thread replies), inline findings of that account by severity badge (P0, P1, P2), changed lines without tests and Markdown, the area (process tooling, docs, product code by folder) and the route from a "Route:" commit trailer if one exists.
 Then read about 15 findings in full with their replies and sort each into: independent in-scope defect, caused by an earlier fix, speculative or out of scope, cosmetic or repeat.
 List every P2 Codex posted for files outside api/, printbridge/ and deploy/, and every review with more than three P2s: the new AGENTS.md says neither should happen.
 Use gh api with --paginate only where a list is long. Report medians and totals in aggregates.`, { label: 'measure', phase: 'Measure', schema: ROWS })
 
 phase('Check')
 const check = measured && measured.prs.length
-  ? await agent(`Recount three PRs from this table independently with gh (repo ${REPO}), read-only: the one with the most findings, the one with the most commits, and one picked from the middle. For each, compare commits, Codex rounds and findings by severity with the table and name every difference.
+  ? await agent(`Recount three PRs from this table independently with gh (repo ${REPO}), read-only: the one with the most findings, the one with the most commits, and one picked from the middle. For each, compare commits, Codex rounds and findings by severity with the table and name every difference. Count only the account chatgpt-codex-connector[bot] as Codex.
 
 TABLE:
 ${JSON.stringify(measured.prs)}`, { label: 'recount', phase: 'Check', model: 'sonnet' })

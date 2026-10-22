@@ -53,7 +53,9 @@ const lens = l => agent(`Gate ${GATE} review, lens "${l.key}". ${l.prompt} Repor
 
 FINDINGS:
 ${JSON.stringify(serious)}`, { label: `verify:${l.key}`, phase: 'Verify', schema: VERDICTS })
-      .then(v => ({ lens: l.key, ...r, verdicts: v ? v.verdicts : [] }))
+      // Without a skeptic's answer a serious finding stays a blocker, marked unverified.
+      .then(v => ({ lens: l.key, ...r, verdicts: v ? v.verdicts
+        : serious.map(f => ({ title: f.title, real: true, reason: 'unverified: the skeptic returned no result' })) }))
   })
 
 const [crit, ...lenses] = await parallel([criteria, ...LENSES.map(l => () => lens(l))])
@@ -63,7 +65,7 @@ if (missing.length) log(`Lenses without a result: ${missing.join(', ')}`)
 phase('Verdict')
 return await agent(`Write the gate ${GATE} review in German for Maxi.
 1. Per criterion: go, no-go or open, with its evidence.
-2. Blockers: every P0 and P1 a skeptic kept as real, with where and scenario. Findings a skeptic refuted are listed in one line each with the reason, not as blockers.
+2. Blockers: every P0 and P1 a skeptic kept as real or left unverified (say which), with where and scenario. Findings a skeptic refuted are listed in one line each with the reason, not as blockers.
 3. P2 findings in one short list.
 4. What no lens covered${missing.length ? ` (lenses without a result: ${missing.join(', ')})` : ''}.
 5. Recommendation: run /gate ${GATE} now, or what has to happen first. The decision is Maxi's.
