@@ -52,43 +52,6 @@ These six rules override any convenience. If a task violates them: **stop and as
 
 The layout is modular, organized by layers with fixed dependency direction. Fully documented with rationale and blueprint: `docs/11_MODULE.md`. **Before creating any new file, check there to see where it belongs.**
 
-```text
-maex-voice-agent/
-├── CLAUDE.md              ← this file
-├── AGENTS.md              Review rules Codex reads ("Code Review Rules")
-├── README.md
-├── docker-compose.yml     Postgres · API · n8n (base, no host ports)
-├── docker-compose.override.yml  dev host ports, loopback only
-├── deploy/                Prod Compose, Caddyfile
-├── .claude/commands/      /start /task /done /ship /bug /eval /gate /project /handover
-├── .claude/skills/        Repo-specific rules Claude Code loads on demand
-├── .claude/settings.json  Project hooks: SessionStart syncs main, also where no folder has it checked out; PreToolUse gates gh pr merge
-├── .claude/hooks/         Hook scripts (sync_main.sh, route_advice.sh, merge_gate.sh)
-├── .github/workflows/     CI: ruff + pytest
-├── docs/                  Planning, specs, status  →  Section 5
-├── api/
-│   ├── main.py            App entry, router
-│   ├── config.py          Settings from .env
-│   ├── db.py              Engine, session
-│   ├── core/              Response envelope, errors, logging, auth, IDs, time
-│   ├── domain/            Business logic without HTTP: menu · ordering · reservations
-│   │                      · delivery · customers · status · callbacks
-│   ├── agent/             Conversation loop, state, ladder, escalation
-│   ├── telephony/         Port, call session, adapters (Asterisk, speech engines) – ONLY place that knows them
-│   ├── tools/             Thin HTTP wrapper /v1/tools/* around domain
-│   ├── events/            Outbox + dispatcher → n8n
-│   ├── jobs/              Cleanup, sync, daily report, holidays
-│   ├── gui/               Router, SSE, templates, static
-│   ├── models/  schemas/  SQLAlchemy · Pydantic
-│   └── tests/
-├── sim/                   Text telephone: conversations without phone
-├── db/migrations/         Alembic, versioned
-├── prompts/               System prompt per version
-├── evals/                 cases/ · runner.py · reports/ (ignored)
-├── n8n/                   Workflow exports
-└── scripts/               seed · import_menu · backup · restore
-```
-
 **Dependency direction, short:** `tools`/`gui`/`sim`/`telephony` → `agent` → `domain` → `models`/`core`. Never reversed. `domain/` imports no FastAPI, no HTTP, no provider.
 
 ---
