@@ -55,12 +55,14 @@ UNPRUEFBAR_OBEN = ("include",)
 # for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
 # `/done` names the hook too: Claude runs it on the host after a merge, never in the
 # container. The routing hook test needs jq, which the image lacks as well, and the
-# merge gate test needs both; `/ship` names that hook for the host.
+# merge gate test needs both; `/ship` names that hook for the host. The saved
+# workflows are run by Claude Code on the host; their test skips in the container.
 CHECKOUT_ONLY = frozenset(
     {
         ".claude/hooks/sync_main.sh",
         ".claude/hooks/route_advice.sh",
         ".claude/hooks/merge_gate.sh",
+        ".claude/workflows",
     }
 )
 
