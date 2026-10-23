@@ -59,6 +59,12 @@ HINT_CONFIRM = (
     "Entwurf. Erst den readback wörtlich vorlesen (steht im Zustand, solange er "
     "nicht vorgelesen ist), dann auf ein klares Ja warten."
 )
+HINT_NO_DRAFT = (
+    "Abgelehnt: es gibt keinen Entwurf, den der Gast bestätigen könnte. Erst "
+    "`draft_order` mit dem `cart` aus dem Zustand aufrufen, bei einem Tisch "
+    "`create_reservation`, dann dessen `readback` vorlesen und auf ein klares Ja "
+    "warten."
+)
 HINT_ITEM = (
     "Abgelehnt: eine menu_item_id stammt nicht aus einem eindeutigen Treffer von "
     "search_menu in diesem Anruf. Erst suchen; bei mehreren Treffern den Gast "
@@ -100,6 +106,35 @@ HINT_GUEST_PHONE = (
     "die er als seine Rufnummer genannt hat. Steht kein `phone` in `slots`, frag "
     "den Gast, unter welcher Rufnummer mit Vorwahl er erreichbar ist."
 )
+# The loop has tried the team before the model reads this (`loop.py`).
+HINT_CALLBACK_PHONE = (
+    "Abgelehnt: ein Rückruf braucht eine Rufnummer, und in `slots` steht kein "
+    "`phone`; das Team ist gerade nicht erreichbar. Frag den Gast, unter welcher "
+    "Nummer mit Vorwahl er erreichbar ist."
+)
+HINT_NOT_BOOKED = (
+    "Abgelehnt: eine Buchung und den Abholcode sagt der Kern, nicht du. Die "
+    "Wörter bestätigt, gebucht, reserviert, Abholcode und einen Code sagst du "
+    "nie, auch nicht verneint oder in einer Frage. Fragt der Gast nach seiner "
+    "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
+    "readback vor und warte auf ein klares Ja."
+)
+# Words that tell a guest something is booked, with any ending ("Ihre
+# bestätigte Bestellung"; Codex PR #347).
+_BOOKING_CLAIM = re.compile(
+    # "aufgegeben", "aufgenommen": the core's own order sentences (Codex PR #347).
+    r"\b(?:bestätigt|bestaetigt|gebucht|reserviert|aufgegeben|aufgenommen"
+    # "Abhol-Code" or "Abhol Code" is the same word (Codex PR #347, P1 twice).
+    r"|abhol[\s-]*code|abhol[\s-]*nummer)\w*",
+    re.IGNORECASE,
+)
+# A sentence that speaks of a code and holds a token shaped like one (A1, s12,
+# 8842; "B 99" joined first). "Code" on its own, not inside "Gutscheincode" or
+# after "WLAN-"; a code word without such a token ("Den QR Code kann ich nicht
+# prüfen") names no code.
+_CODE_WORD = re.compile(r"(?<![\w-])code\b", re.IGNORECASE)
+_CODE_SHAPED = re.compile(r"\b(?:[A-Za-z]\d{1,4}|\d{3,6})\b")
+_SPLIT_CODE = re.compile(r"\b([A-Za-z])[\s-]+(\d{1,4})\b")
 
 
 @dataclass(frozen=True)
@@ -160,6 +195,42 @@ def note_said(state: ConversationState, say: str) -> None:
         for item_id, label in state.offered_items.items()
         if item_id not in named
     }
+
+
+def false_booking(state: ConversationState, say: str) -> ToolResult | None:
+    """The failed result for a model sentence that speaks of a booking or a
+    code; None lets it through. The core says every booking itself, from the
+    `confirm` result (`loop.py`), and keeps that sentence as `booking_say`;
+    the model may repeat it word for word and say nothing else of the kind.
+    On "Ja, passt" with no draft a real model said "Ihre Abholung ist
+    bestätigt. Der Abholcode lautet 8842" (13.10.2026), and the hard metrics,
+    which read the database, did not see it.
+
+    No exemption is reasoned about: a denial ("Es ist noch nichts gebucht")
+    and a question ("Haben Sie bereits reserviert?") are refused too. Fifteen
+    Codex rounds on PR #347 showed that every rule that judged whether a model
+    sentence about a booking was true let a false one through somewhere
+    (negations, questions, abbreviations, a second order, codes written apart
+    or before their word). A refused sentence costs the model one hop, and the
+    hint says what to say instead.
+
+    ponytail: a claim without these words ("Ihre Bestellung geht in die
+    Küche") is not caught. More words if the call log shows them."""
+    # The core's own sentences, word for word: the booking, and the readback
+    # of a draft, which may hold a guest's note such as "für die bereits
+    # gebuchte Feier" (Codex PR #347).
+    rest = say
+    for own in (state.booking_say, state.readback):
+        if own:
+            rest = rest.replace(own, " ")
+    if _BOOKING_CLAIM.search(rest) or _names_a_code(rest):
+        return _NOT_BOOKED
+    return None
+
+
+def _names_a_code(text: str) -> bool:
+    joined = _SPLIT_CODE.sub(r"\1\2", text)
+    return bool(_CODE_WORD.search(joined) and _CODE_SHAPED.search(joined))
 
 
 def names_dish(heard: str, number: str, name: str) -> bool:
@@ -250,10 +321,25 @@ def refusal(
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
     which the core has taken by now."""
     if call.name == "confirm":
-        return None if _may_confirm(state, start, user_text, call) else _CONFIRM
+        if _may_confirm(state, start, user_text, call):
+            return None
+        # Without any draft "read it back first" points nowhere: a real model
+        # then answered the guest's yes with a `confirm` of an id it made up,
+        # turn after turn (eval run of 20.10.2026).
+        return _CONFIRM if _readback_id(state) else _NO_DRAFT
     name, phone = _guest_details(call)
     if name is not None and not name_said(name, state.said_words):
         return _GUEST_NAME
+    # A value that is no phone number ("unbekannt") is none either: it went
+    # past this branch and the transfer was never tried (Codex PR #347).
+    if not e164(phone) and _books_under_a_number(call):
+        # The validation would only say "phone: Input should be a valid
+        # string", and a real model sent `create_callback` without a number
+        # four times in a row instead of asking for one, also on a line that
+        # carried nothing but noise, where only the team can help (20.10.2026).
+        # With a number in `slots` the general hint names it.
+        nobody_known = call.name == "create_callback" and not state.slots.get("phone")
+        return CALLBACK_WITHOUT_NUMBER if nobody_known else _GUEST_PHONE
     if phone is not None and not _phone_counts(state, phone):
         return _GUEST_PHONE
     if call.name == "draft_order":
@@ -277,6 +363,14 @@ def _guest_details(call: ToolCall) -> tuple[Any, Any]:
     if isinstance(customer, dict):
         return customer.get("name"), customer.get("phone")
     return None, None
+
+
+def _books_under_a_number(call: ToolCall) -> bool:
+    """A call that cannot go through without a number. A `draft_order`
+    without a `customer` object is left to the validation, which names it."""
+    if call.name == "draft_order":
+        return isinstance(call.args.get("customer"), dict)
+    return call.name in ("create_reservation", "create_callback")
 
 
 def _phone_counts(state: ConversationState, phone: Any) -> bool:
@@ -308,6 +402,11 @@ def _drafts_the_cart(state: ConversationState, call: ToolCall) -> bool:
 
 
 _CONFIRM = ToolResult(ok=False, error_code="conflict", hint=HINT_CONFIRM)
+_NO_DRAFT = ToolResult(ok=False, error_code="conflict", hint=HINT_NO_DRAFT)
+# Public: the loop tries the team first on it (`loop.py`).
+CALLBACK_WITHOUT_NUMBER = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_CALLBACK_PHONE
+)
 _ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ITEM)
 _CART_ITEM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_ITEM)
 _CART_SOLD_OUT = ToolResult(ok=False, error_code="conflict", hint=HINT_CART_SOLD_OUT)
@@ -315,6 +414,7 @@ _CART_OPTION = ToolResult(ok=False, error_code="invalid_input", hint=HINT_CART_O
 _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIFFERS)
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
+_NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
 
 
 def unheard_readback(state: ConversationState) -> str | None:

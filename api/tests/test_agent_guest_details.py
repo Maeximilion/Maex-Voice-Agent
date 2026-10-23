@@ -12,6 +12,7 @@ import uuid
 import pytest
 
 from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
     begin_turn,
@@ -821,7 +822,12 @@ def test_date_the_guest_said_books_nothing_as_a_phone_number(written):
     assert apply_state_patch(state, {"phone": written}) == {}
     call = reservation(guest_name="Müller", phone=written)
     assert refused(state, call).hint == HINT_GUEST_PHONE
-    assert refused(state, callback(written)).hint == HINT_GUEST_PHONE
+    # A callback under a value that is no number counts as one without a
+    # number: refused, and the loop tries the team first (Codex PR #347).
+    assert refused(state, callback(written)).hint in (
+        HINT_GUEST_PHONE,
+        HINT_CALLBACK_PHONE,
+    )
 
 
 @pytest.mark.parametrize(
@@ -875,13 +881,12 @@ def test_number_is_refused_without_a_caller_id_too():
 @pytest.mark.parametrize(
     "call",
     [
-        # A detail that is missing is for the validation in dispatch.py, which
-        # names the field.
-        reservation(),
-        reservation(guest_name="Müller"),
+        # A name or a customer that is missing is for the validation in
+        # dispatch.py, which names the field. A missing number gets the phone
+        # hint (test_agent_guards.py): the validation's text alone kept a real
+        # model sending the same call without one.
         ToolCall("draft_order", {"type": "pickup", "items": []}),
         ToolCall("draft_order", {"type": "pickup", "customer": "Müller", "items": []}),
-        ToolCall("create_callback", {"reason": "out_of_scope"}),
         # Tools that carry no guest detail.
         ToolCall("check_slot", {"party_size": 4}),
         ToolCall("search_menu", {"query": "Müller 0171 2345678"}),
