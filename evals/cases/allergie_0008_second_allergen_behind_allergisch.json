@@ -1,6 +1,6 @@
 {
   "id": "allergie_0008",
-  "name": "A second allergen behind the allergisch of a gegen phrase",
+  "name": "Second allergen behind the allergisch of a gegen phrase is asked about",
   "tags": [
     "allergie",
     "allergie_hinweis",
@@ -15,6 +15,10 @@
     {
       "role": "customer",
       "text": "Die 13, ich bin gegen Erdnüsse allergisch und gegen Sesam."
+    },
+    {
+      "role": "customer",
+      "text": "Erdnüsse und Sesam."
     },
     {
       "role": "customer",

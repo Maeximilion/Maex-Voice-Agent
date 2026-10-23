@@ -609,11 +609,16 @@ class PickupScript:
         # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
         but = _BUT.search(text)
         nothing = _withdraws(text[: but.start()] if but else text)
-        behind = classify_wish(text[but.end() :], []) if nothing and but else None
-        if but is not None and behind is not None and behind.kind == "allergy":
-            # "Keine, aber ich bin gegen Sesam allergisch": the allergy behind
-            # "aber" is the answer (#207).
-            return self._answer_allergy(text[but.end() :], slots, patch)
+        behind = classify_wish(text[but.end() :], []) if but and nothing else None
+        if behind is not None and behind.kind == "allergy":
+            # "Keine, aber ich bin gegen Sesam allergisch", "Keine, aber meine
+            # Frau ...": whose allergy and for which dish is not clear, so
+            # the question is asked again (#207, Codex PR #361).
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
         if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
             # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
             # question is closed, nothing goes to the kitchen; a removal said

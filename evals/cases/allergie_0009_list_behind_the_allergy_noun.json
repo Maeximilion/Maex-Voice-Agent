@@ -1,6 +1,6 @@
 {
   "id": "allergie_0009",
-  "name": "A list carried on behind a compound allergy noun",
+  "name": "A list behind a compound allergy noun is asked about",
   "tags": [
     "allergie",
     "allergie_hinweis",
@@ -15,6 +15,10 @@
     {
       "role": "customer",
       "text": "Die 13, ich habe eine Erdnussallergie, außerdem gegen Sesam."
+    },
+    {
+      "role": "customer",
+      "text": "Erdnuss und Sesam."
     },
     {
       "role": "customer",
