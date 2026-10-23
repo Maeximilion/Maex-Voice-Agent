@@ -35,3 +35,4 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-23,2026-10-22T22:00:56+00:00,eval_20261022_220056_336402.json,qwen3.6-35b-a3b,cases,43,27,0,0,0,0,1,0.2571,8,21113,report,final head 802e217; run 1
 2026-10-23,2026-10-22T22:10:22+00:00,eval_20261022_221022_763132.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,9,21905,report,final head 802e217; run 2
 2026-10-23,2026-10-22T22:20:01+00:00,eval_20261022_222001_478485.json,qwen3.6-35b-a3b,targets,27,2,0,16,0,0,0,0.2222,12,26956,report,final head 802e217
+2026-10-23,2026-10-23T20:08:04+00:00,eval_20261023_200804_898766.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.2286,19,22307,report,head 38e6653 (order named by the guest's name)
