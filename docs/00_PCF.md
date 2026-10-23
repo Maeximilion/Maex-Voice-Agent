@@ -482,6 +482,66 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 22.10.2026 (afternoon) - PR #347: one Qwen run on the final head left
+Status: Qwen runs on f0136c1 (16:01 to 16:27): 26/43 and 26/43 (main 27, 24), one missed
+       escalation each (allergie_0002, as on main), reservierung_0035 passes, targets 2/27,
+       hard violations 0, recorded in docs/metrics/eval_history.csv. After the runs one code
+       commit, 288fb26 ("Abhol-Code" with a hyphen is a booking word, Codex P1), covered by
+       unit tests only; Codex asks for a run on the final head (thread open).
+Artifacts: PR #347 (head with the status and handover of this block), README charts.
+Decisions: none new.
+Gate: G0 open; PR #347 needs one regular-cases run on its head, then the merge gate comment.
+Open: 1. In Maxi's next GPU window (about 13 min: server 1 min, one run of the 43 cases):
+       one regular-cases run on the PR head, record it, answer and resolve the Codex thread
+       on guards.py (the eval rerun). 2. If CI and Codex are clean on that head, post
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md section 6.
+Lessons: push the review fixes before the GPU window, not during it; a fix after the runs
+       always asks for one more run.
+
+## Handover 22.10.2026 (late morning) - PR #347 ready except the Qwen runs
+Status: PR #347 head pushed, CI and Codex on it pending at hand-over. Since the night runs
+       on 33843ab: a reserved_for without an offset is the restaurant's local time
+       (dispatch.in_local_time, also for the team card; a date alone, an off-calendar
+       moment and a wall time the zone lacks or has twice stay invalid input), the stand-in
+       lost its dead sentences after confirm, and four Codex rounds of fixes (aufgegeben and
+       aufgenommen are booking words, a late confirm keeps the booking in the guest's ear
+       and on the card, a confirmed table names an unplaced order, the pending readback may
+       be read word for word). Suite green except mount-only tests, stand-in 43/43, targets
+       1/27, number eval 249/249.
+Artifacts: PR #347, docs/metrics/eval_history.csv (no rows for the new code yet).
+Decisions: Maxi 22.10.: the GPU runs move to tomorrow (23.10.2026).
+Gate: G0 open; PR #347 waits for the Qwen runs on its head (rule 4, Codex eval thread open).
+Open: 1. In Maxi's GPU window: 2x regular cases and 1x targets on the PR head (about 33 min;
+       the script and the override are in the session scratchpad, recreate them from the
+       local test run recipe if it is gone), record them, close the Codex eval thread.
+       2. If reservierung_0035 passes and nothing new fails hard: post the comment
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md
+       section 6 (merge strategy, --match-head-commit with the full head sha).
+Lessons: a fix round right before a GPU window moves the head under the runs; batch the
+       review rounds first, then measure.
+
+## Handover 22.10.2026 - PR #347: eval runs on Qwen, the core says every booking
+Status: PR #347 (dev/eval-qwen-optimization-8b4ad7) pushed, xhigh, Maxi merges. Final code
+       33843ab measured on qwen3.6-35b-a3b: 24/43 and 25/43 (main 27, 24), targets 2/27,
+       hard violations 0; two missed escalations: allergie_0002 (as on main) and
+       reservierung_0035 (new, see Open). Stand-in 43/43, suite green except mount-only tests.
+Artifacts: docs/metrics/eval_history.csv (every run of 20. to 22.10.), README charts, PR #347
+       description, docs/01_STATUS.md open points; issue #207 (cart repeated after confirm).
+Decisions: Maxi 21.10.: the core says every booking from the confirm result (booking_say),
+       the model repeats it word for word or not at all, after fifteen Codex rounds on word
+       rules. Maxi 21.10.: GPU runs on the llama-server start only in a window he names.
+Gate: G0 open; PR #347 open, blocked by reservierung_0035.
+Open: 1. reservierung_0035: Qwen sends reserved_for without an offset and check_slot refuses
+       it; read a time without an offset as the restaurant's local time (core/time.to_utc),
+       test, then two Qwen runs in Maxi's GPU window. 2. The stand-in's sentences after a
+       confirm (sim/scripted_llm.py SAY_CONFIRMED, sim/scripted_order.py pickup code and
+       approval) are never asked any more: delete them. 3. Codex review of the head and the
+       merge gate comment ("Merge gate: <sha>"), then Maxi merges.
+Lessons: a word guard on a model's German sentences does not converge under review; when
+       findings start to contradict each other, move the sentence to the core. Recreate the
+       eval container after a merge that replaces a bind-mounted file (README.md, CLAUDE.md),
+       or `docker exec` fails with "container is not running".
+
 ## Handover 05.10.2026 - demo run of the operations view, for local Claude Code
 Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migrations to
        005, `scripts.seed`, the test menu from `evals/menu` (32 dishes), API on port 8000,

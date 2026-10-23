@@ -69,8 +69,6 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
-SAY_THANKS = "Vielen Dank und bis gleich."
-SAY_APPROVAL = "Das Team bestätigt die Bestellung gleich noch."
 
 # Whoever says this is done with the dishes.
 DONE_PHRASES = ("nein", "das war", "das wars", "nichts mehr", "alles", "sonst nichts")
@@ -464,15 +462,6 @@ class PickupScript:
     def take_carry(self) -> str | None:
         carry, self._carry = self._carry, None
         return carry
-
-    def on_confirmed(self, data: dict[str, Any]) -> LLMTurn:
-        self.readback_for = None
-        code = data.get("pickup_code")
-        parts = [f"Ihr Abholcode ist {code}." if code else None]
-        if data.get("handover") == "awaiting_approval":
-            parts.append(SAY_APPROVAL)
-        parts.append(SAY_THANKS)
-        return LLMTurn(say=_join(*parts))
 
     # -- internal ----------------------------------------------------------
 

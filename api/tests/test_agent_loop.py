@@ -15,18 +15,26 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
     HINT_CONFIRM,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
     HINT_ITEM,
+    HINT_NOT_BOOKED,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import (
     MAX_TOOL_HOPS,
+    SAY_BOOKED_GOODBYE,
+    SAY_ESCALATION,
     SAY_NOBODY_REACHABLE,
     SAY_ORDER_NOT_PLACED,
+    SAY_ORDER_PLACED,
+    SAY_TABLE_BOOKED,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
+    _booked_say,
+    _local_times,
     _order_lines,
 )
 from api.agent.state import ConversationState, initial_state
@@ -169,7 +177,9 @@ def test_transfer_erfolgreich_beendet_das_gespraech(session, state):
                     name="transfer_to_team", args={"reason": "complaint"}
                 )
             ),
-            LLMTurn(say="Ich verbinde Sie."),
+            # Never asked for: a real model called transfer_to_team again on
+            # its own result until the hop limit (13.10.2026).
+            LLMTurn(tool_call=ToolCall(name="transfer_to_team", args={})),
         ]
     )
     loop = ConversationLoop(
@@ -181,7 +191,31 @@ def test_transfer_erfolgreich_beendet_das_gespraech(session, state):
     result = loop.run_turn(state, "Da gibt es leider ein Problem mit meiner Bestellung")
 
     assert result.ended is True
+    assert result.say == [SAY_ESCALATION]
     assert state.stage == "transferred"
+    assert len(llm.calls) == 1
+
+
+def test_transfer_without_a_reachable_team_goes_back_to_the_model(session, state):
+    """Before opening nobody takes the call: the model gets the result and can
+    take a callback instead, the call does not end on the tool."""
+    llm = FakeLLM(
+        [
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Unter welcher Nummer erreichen wir Sie?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.say == ["Unter welcher Nummer erreichen wir Sie?"]
+    assert result.ended is False
+    assert '"available": false' in llm.calls[1][2]
 
 
 def test_max_call_seconds_uebergibt_wirklich_statt_nur_anzukuendigen(session, state):
@@ -1196,6 +1230,18 @@ def test_a_name_nobody_said_does_not_reach_the_card(session, state):
     assert session.scalars(select(Callback)).one().summary == f"{WISH}, Name Müller."
 
 
+def test_a_team_table_with_a_time_without_an_offset_reaches_the_team(session, state):
+    """The tool reads such a time as the restaurant's local time; the card
+    must read it the same way, or the handoff raised on the naive value and
+    the wish never reached the team (Codex PR #347)."""
+    state.slots["phone"] = CALLER
+
+    result = _ask_for_nine(session, state, reserved_for="2026-09-19T19:00:00")
+
+    assert result.ended is True and state.stage == "callback"
+    assert session.scalars(select(Callback)).one().summary == f"{WISH}."
+
+
 def test_a_time_in_seconds_reads_as_the_restaurants_clock_on_the_card(session, state):
     """The tool takes a time as seconds since 1970 too. The card shows what
     the tool read, in the restaurant's zone, not the raw number (Codex PR
@@ -1338,3 +1384,274 @@ def test_options_and_the_note_of_a_line_reach_the_card(state):
     assert _order_lines(state, 70) == (
         "1x 12 (Größe: groß; ohne Zwiebeln), 2x 12 (Größe: klein)"
     )
+
+
+def test_times_in_a_tool_result_reach_the_model_in_local_time(session, state):
+    """closes_at is UTC in the tool and 22:00 in Berlin: the model read the
+    UTC hour and said "bis 21 Uhr" (13.10.2026)."""
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="get_service_status")),
+            LLMTurn(say="Wir haben geöffnet."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Habt ihr offen?")
+
+    data = json.loads(llm.calls[1][2])["data"]
+    closes = datetime.fromisoformat(data["closes_at"])
+    assert closes.utcoffset() == OPEN_NOW.utcoffset()
+    assert data["closes_at"].endswith("+02:00")
+
+
+def test_local_times_touch_only_points_in_time():
+    zone = BERLIN
+    data = {
+        "closes_at": "2026-09-15T20:00:00Z",
+        "alternatives": ["2026-09-15T17:30:00+00:00"],
+        "day": "2026-09-15",
+        "naive": "2026-09-15T20:00:00",
+        "name": "Tom Yam Talay",
+        "wait": 15,
+        "nothing": None,
+        # No zone can take it: left as it is (Codex PR #347).
+        "note": "9999-12-31T23:00:00-12:00",
+    }
+
+    local = _local_times(data, zone)
+
+    assert local["closes_at"] == "2026-09-15T22:00+02:00"
+    assert local["alternatives"] == ["2026-09-15T19:30+02:00"]
+    kept = ("day", "naive", "name", "wait", "nothing", "note")
+    assert {k: local[k] for k in kept} == {k: data[k] for k in kept}
+
+
+def test_a_booking_nobody_made_is_not_said(session, state):
+    """On "Ja, passt" with no draft a real model said the pickup was
+    confirmed and named a code it made up (13.10.2026)."""
+    llm = FakeLLM(
+        [
+            LLMTurn(say="Ihre Abholung ist bestätigt. Der Abholcode lautet 8842."),
+            LLMTurn(say="Was darf ich für Sie notieren?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == ["Was darf ich für Sie notieren?"]
+    refused = json.loads(llm.calls[1][2])
+    assert refused["ok"] is False
+    assert refused["hint"] == HINT_NOT_BOOKED
+    assert llm.calls[1][1]["called"] == ["say"]
+
+
+def test_a_model_that_insists_on_a_booking_ends_with_the_team(session, state):
+    llm = FakeLLM(
+        [LLMTurn(say="Ihr Tisch ist reserviert.") for _ in range(MAX_TOOL_HOPS)]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.ended is True
+    assert "reserviert" not in " ".join(result.say)
+
+
+def test_after_a_confirm_the_core_says_the_booking(session, state):
+    """Booked: the core says so from the confirm result and ends the turn;
+    the model is not asked for the sentence (Codex PR #347)."""
+    read_back_reservation(session, state)
+    llm = confirming(state, then_say="Ihre Reservierung ist ganz sicher gebucht.")
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == [f"{SAY_TABLE_BOOKED} {SAY_BOOKED_GOODBYE}"]
+    assert state.booking_say == SAY_TABLE_BOOKED
+    assert len(llm.calls) == 1
+
+
+def test_a_confirm_past_the_call_limit_goes_to_the_team_like_any_slow_tool(
+    session, state
+):
+    """A confirm that held the guest past the limit: the next hop would have
+    handed over, so the booking sentence must not come late in its place
+    (Codex PR #347). The booking itself stands."""
+    read_back_reservation(session, state)
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=OPEN_NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 0, 0, 100]),
+    )
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert state.stage == "transferred"
+    # The guest still hears what was booked, before the handover sentence.
+    assert result.say[0] == SAY_TABLE_BOOKED and len(result.say) == 2
+    assert session.get(Reservation, state.reservation_id).status == "confirmed"
+    assert state.booking_say == SAY_TABLE_BOOKED
+
+
+def test_a_late_confirm_tells_the_callback_card_what_is_booked(session, state):
+    """With nobody to take the call, the card must say the booking stands, or
+    the team books a second time (Codex PR #347)."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 0, 0, 100]),
+    )
+
+    loop.run_turn(state, "Ja, passt")
+
+    card = session.scalars(select(Callback)).one()
+    assert f"Bereits gebucht: {SAY_TABLE_BOOKED}" in card.summary
+
+
+def test_a_confirmed_table_says_an_open_order_is_not_placed(session, state):
+    """A cart built before the table stays unplaced: the closing sentence
+    says so before the line hangs up (Codex PR #347)."""
+    read_back_reservation(session, state)
+    state.cart = [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]
+    llm = confirming(state)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.say == [
+        f"{SAY_TABLE_BOOKED} {SAY_ORDER_NOT_PLACED} {SAY_BOOKED_GOODBYE}"
+    ]
+
+
+def test_the_booked_order_sentence_names_the_code_the_database_gave():
+    state_data = {"handover": "queued", "pickup_code": "A7"}
+    waits = {"handover": "awaiting_approval", "pickup_code": "A8"}
+    order = ConversationState(
+        call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), order_id=uuid.uuid4()
+    )
+
+    # The name the order runs under, never a pickup code (Maxi, 23.10.2026).
+    assert (
+        _booked_say(order, state_data, "Müller")
+        == "Ihre Bestellung auf den Namen Müller ist aufgegeben."
+    )
+    assert _booked_say(order, waits, "Müller") == (
+        "Ihre Bestellung auf den Namen Müller ist aufgenommen, "
+        "das Team bestätigt sie gleich noch."
+    )
+    assert _booked_say(order, state_data, None) == SAY_ORDER_PLACED
+    assert "A7" not in _booked_say(order, state_data, "Müller")
+
+
+def numberless(tenant_id, call_id):
+    """No caller ID and no number given: nobody to call back."""
+    return ConversationState(call_id=call_id, tenant_id=tenant_id)
+
+
+def wants_a_callback():
+    return LLMTurn(
+        tool_call=ToolCall(
+            name="create_callback",
+            args={"phone": None, "reason": "not_understood", "summary": "Rauschen"},
+        )
+    )
+
+
+def test_a_callback_without_a_number_goes_to_the_team_when_it_is_there(
+    session, tenant_id, call_id
+):
+    """`eskalation_0016`: a line with nothing but noise and no caller ID. The
+    model asked for the number on every turn and the call reached nobody
+    (Codex PR #347, P1)."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM([wants_a_callback(), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "... krrr ...")
+
+    assert result.ended is True
+    assert result.say == [SAY_ESCALATION]
+    assert state.stage == "transferred"
+    assert len(llm.calls) == 1
+
+
+def test_a_callback_without_a_number_asks_for_it_when_nobody_is_there(
+    session, tenant_id, call_id
+):
+    """Before opening the number is the only way left: the model asks."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM([wants_a_callback(), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert result.ended is False
+    assert result.say == ["Unter welcher Nummer?"]
+    assert json.loads(llm.calls[1][2])["hint"] == HINT_CALLBACK_PHONE
+
+
+def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
+    session, tenant_id, call_id
+):
+    """Nobody there and the number never understood: the ladder ends the call
+    honestly instead of asking forever."""
+    state = numberless(tenant_id, call_id)
+    asks = "Unter welcher Rufnummer erreichen wir Sie?"
+    turns = [t for _ in range(10) for t in (wants_a_callback(), LLMTurn(say=asks))]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    results = []
+    while not (results and results[-1].ended) and len(results) < 10:
+        results.append(loop.run_turn(state, "... chhh ..."))
+
+    assert results[-1].ended is True
+    assert results[-1].say == [SAY_NOBODY_REACHABLE]
+    assert len(results) < 10
+
+
+def test_a_callback_wish_before_the_question_for_the_number_counts_nothing(
+    session, tenant_id, call_id
+):
+    """Only an answer to the question for the number can fail: a model that
+    never asks for it does not run the ladder down (Codex PR #347)."""
+    state = numberless(tenant_id, call_id)
+    turns = [
+        t for _ in range(8) for t in (wants_a_callback(), LLMTurn(say="Wie bitte?"))
+    ]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    results = [loop.run_turn(state, "Rufen Sie mich zurück") for _ in range(8)]
+
+    assert not any(result.ended for result in results)
+
+
+def test_a_callback_reason_that_is_no_string_does_not_crash_the_turn(
+    session, tenant_id, call_id
+):
+    """`in` on a list raised TypeError before dispatch could refuse it
+    (Codex PR #347)."""
+    state = numberless(tenant_id, call_id)
+    call = ToolCall(name="create_callback", args={"phone": None, "reason": []})
+    llm = FakeLLM([LLMTurn(tool_call=call), LLMTurn(say="Unter welcher Nummer?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert result.ended is True
+    assert state.stage == "transferred"
