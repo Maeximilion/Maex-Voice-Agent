@@ -39,7 +39,7 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.reservations.spoken import WEEKDAYS
-from api.models import Tenant
+from api.models import Order, Tenant
 from api.schemas.callbacks import CallbackReason
 from api.schemas.reservations import CheckSlotRequest
 from api.schemas.transfer import TransferReason
@@ -94,9 +94,11 @@ SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # What the guest hears when `confirm` went through: the core says it, built from
 # the confirm result, never the model (`guards.false_booking`). Draft wording,
 # checked with the announcement texts (docs/05 §6).
+# The order is named by the name it runs under, not by its pickup code: the
+# name is what the guest gives at the counter (Maxi, 23.10.2026).
 SAY_ORDER_PLACED = "Ihre Bestellung ist aufgegeben."
 SAY_ORDER_WAITS = "Ihre Bestellung ist aufgenommen, das Team bestätigt sie gleich noch."
-SAY_PICKUP_CODE = "Ihr Abholcode ist {code}."
+SAY_FOR_NAME = "Ihre Bestellung auf den Namen {name} ist"
 SAY_TABLE_BOOKED = "Ihre Reservierung ist bestätigt."
 # A confirmed call is closing (`outcome.CLOSING_STAGES`): the phone line hangs
 # up after this sentence and adds no second goodbye to it.
@@ -333,7 +335,9 @@ class ConversationLoop:
                 # that phrased it said what the database did not hold (a code
                 # it made up, a table never drafted), and every rule that
                 # judged its words let a false one through (Codex PR #347).
-                state.booking_say = _booked_say(state, result.data)
+                state.booking_say = _booked_say(
+                    state, result.data, self._order_name(state)
+                )
                 # A confirm that held the guest past a limit goes to the team
                 # like any slow tool on the next hop would; the booking stands
                 # (Codex PR #347).
@@ -433,6 +437,11 @@ class ConversationLoop:
                     state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
                 )
         return None
+
+    def _order_name(self, state: ConversationState) -> str | None:
+        """The name the confirmed order runs under, from the database."""
+        order = self._session.get(Order, state.order_id) if state.order_id else None
+        return order.customer_name if order else None
 
     def _left_in_turn(self, turn_started: float | None) -> float | None:
         """Seconds the guest still waits for this turn; None without a deadline."""
@@ -647,10 +656,12 @@ def _order_lines(state: ConversationState, room: int) -> str:
     return text[: max(room, 0)]
 
 
-def _booked_say(state: ConversationState, data: dict[str, Any]) -> str:
+def _booked_say(
+    state: ConversationState, data: dict[str, Any], name: str | None
+) -> str:
     """The sentence of a confirm that went through: what was booked, from the
-    confirm result. An order that waits for the team says so (`handover`);
-    the pickup code is the one the database gave the order."""
+    confirm result and the order in the database. An order that waits for the
+    team says so (`handover`), and it is named by the name it runs under."""
     if state.order_id is None:
         return SAY_TABLE_BOOKED
     placed = (
@@ -658,8 +669,9 @@ def _booked_say(state: ConversationState, data: dict[str, Any]) -> str:
         if data.get("handover") == "awaiting_approval"
         else SAY_ORDER_PLACED
     )
-    code = data.get("pickup_code")
-    return f"{placed} {SAY_PICKUP_CODE.format(code=code)}" if code else placed
+    if not name:
+        return placed
+    return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
 
 
 def _handoff_summary(reason: str, detail: str | None, booked: str | None = None) -> str:

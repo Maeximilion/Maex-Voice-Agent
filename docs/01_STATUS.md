@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.13
+> Status: 23.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.14
 
 ---
 
@@ -600,6 +600,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.14 · 23.10.2026:** PR #347: the core names a confirmed order by the guest's name, not by its pickup code (Maxi)
 - **v2.7.13 · 23.10.2026:** PR #347: Qwen runs on the final head 802e217 (27/43, 26/43, targets 2/27)
 - **v2.7.12 · 22.10.2026:** PR #347: Qwen runs on f0136c1 (26/43 twice, reservierung_0035 passes), Abhol-Code with a hyphen is a booking word
 - **v2.7.11 · 22.10.2026:** PR #347: open order named after a confirmed table, readback read word for word; Qwen runs moved to 23.10.2026

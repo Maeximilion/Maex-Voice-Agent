@@ -30,7 +30,6 @@ from api.agent.loop import (
     SAY_NOBODY_REACHABLE,
     SAY_ORDER_NOT_PLACED,
     SAY_ORDER_PLACED,
-    SAY_ORDER_WAITS,
     SAY_TABLE_BOOKED,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
@@ -1543,9 +1542,17 @@ def test_the_booked_order_sentence_names_the_code_the_database_gave():
         call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), order_id=uuid.uuid4()
     )
 
-    assert _booked_say(order, state_data) == f"{SAY_ORDER_PLACED} Ihr Abholcode ist A7."
-    assert _booked_say(order, waits) == f"{SAY_ORDER_WAITS} Ihr Abholcode ist A8."
-    assert _booked_say(order, {"handover": "queued"}) == SAY_ORDER_PLACED
+    # The name the order runs under, never a pickup code (Maxi, 23.10.2026).
+    assert (
+        _booked_say(order, state_data, "Müller")
+        == "Ihre Bestellung auf den Namen Müller ist aufgegeben."
+    )
+    assert _booked_say(order, waits, "Müller") == (
+        "Ihre Bestellung auf den Namen Müller ist aufgenommen, "
+        "das Team bestätigt sie gleich noch."
+    )
+    assert _booked_say(order, state_data, None) == SAY_ORDER_PLACED
+    assert "A7" not in _booked_say(order, state_data, "Müller")
 
 
 def numberless(tenant_id, call_id):

@@ -92,7 +92,8 @@ def test_fall_aus_evals_landet_bestaetigt_mit_abholcode(session, tenant):
     text = said(turns)
     assert "KI-Assistent" in text
     assert "Welche Auswahl bei Fleisch möchten Sie zu Ente knusprig" in text
-    assert "Ihr Abholcode ist A1." in text
+    assert "Ihre Bestellung auf den Namen Mueller ist" in text
+    assert "Abholcode" not in text
     # Seed laeuft im Modus shadow: nichts geht ohne Freigabe an die Kueche.
     # The core says it after the confirm (agent/loop.py), not the stand-in.
     assert "das Team bestätigt sie gleich noch" in text
