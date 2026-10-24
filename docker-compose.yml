@@ -312,7 +312,7 @@ services:
     # Push server for team notifications (D13, n8n/README.md): the n8n workflow
     # publishes, the team's devices subscribe. Nothing is forwarded to an
     # upstream relay, the messages stay on this server.
-    image: binwiederhier/ntfy:v2.29.0
+    image: binwiederhier/ntfy:v2.31.1
     restart: unless-stopped
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
