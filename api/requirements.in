@@ -1,4 +1,4 @@
-fastapi==0.143.*
+fastapi==0.146.*
 uvicorn[standard]==0.54.*
 jinja2==3.*
 pydantic==2.*
