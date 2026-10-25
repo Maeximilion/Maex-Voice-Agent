@@ -1270,11 +1270,123 @@ def removal_with(wish: Wish) -> str | None:
         return wish.note
     if wish.ingredient is None:
         return None
+    if not wish.text.startswith(_REASON_HEAD):
+        # Another adult's allergy: the note is a plain removal, repeated whole.
+        return wish.text
     allergy = ALLERGY_NOTE.format(ingredient=wish.ingredient) + ". "
     if not wish.text.startswith(allergy):
         return None
     removal = wish.text[len(allergy) :]
     return removal[0].lower() + removal[1:]
+
+
+# The parts of the fixed wording around the ingredient: "WICHTIG: Keine " and
+# ". Grund: Allergie".
+_REASON_HEAD, _REASON_TAIL = ALLERGY_NOTE.split("{ingredient}")
+# Whose allergy it is (legal check L13). The caller's "ja" counts for themselves
+# and their own child; for another adult it is no consent of that person, so
+# that allergy is noted as a plain removal. Read on the words alone: a person
+# who is not the caller's child, after "mein", "unser" and the like ("meine
+# Frau"), on their own ("ein Freund", "jemand"), or as the subject of the
+# sentence ("er hat", "wir sind"). Anything else is the caller's own.
+# ponytail: closed lists; a person they do not name keeps the allergy as the
+# caller's own. Add the word when the call log shows it.
+_POSSESSIVES = frozenset(
+    {"mein", "meine", "meinem", "meinen", "meiner", "meines"}
+    | {"unser", "unsere", "unserem", "unseren", "unserer", "unseres"}
+    | {"sein", "seine", "seinem", "seinen", "seiner", "seines"}
+)
+_PERSONS = frozenset(
+    {"frau", "mann", "ehefrau", "ehemann", "partner", "partnerin", "verlobte"}
+    | {"verlobter", "lebensgefaehrte", "lebensgefaehrtin", "mutter", "vater"}
+    | {"mama", "papa", "mutti", "eltern", "oma", "opa", "schwester", "bruder"}
+    | {"schwager", "schwaegerin", "schwiegermutter", "schwiegervater", "tante"}
+    | {"onkel", "cousin", "cousine", "neffe", "nichte", "enkel", "enkelin"}
+    | {"nachbar", "nachbarin", "chef", "chefin", "gast", "gaeste", "besuch"}
+)
+# Persons that are someone else without a possessive in front.
+_OTHERS = frozenset(
+    {"freund", "freundin", "freunde", "kollege", "kollegin", "kollegen"}
+    | {"begleitung", "jemand", "jemanden", "jemandem"}
+)
+# "er hat", "sie ist", "wir sind": the allergy of someone the caller speaks of.
+# "wir" holds another adult too, and the caller cannot consent for them. Only
+# the singular verbs after "sie": "Sie haben" is how the caller addresses the
+# restaurant.
+_THIRD_SUBJECTS = frozenset(
+    {
+        (subject, verb)
+        for subject in ("er", "sie")
+        for verb in ("hat", "ist", "vertraegt", "reagiert")
+    }
+    | {("wir", verb) for verb in ("haben", "sind", "vertragen", "reagieren")}
+)
+
+
+def of_another_adult(text: str) -> bool:
+    """Does `text` speak of the allergy of an adult other than the caller?"""
+    words = _words(text)
+    for word, follows in zip(words, [*words[1:], ""], strict=True):
+        if word in _OTHERS or (word in _POSSESSIVES and follows in _PERSONS):
+            return True
+        if (word, follows) in _THIRD_SUBJECTS:
+            return True
+    return False
+
+
+def _split_reason(note: str) -> tuple[str, str | None] | None:
+    """The ingredient and the removal of a note in the fixed wording
+    (`kitchen_note`); None for any other note."""
+    if not note.startswith(_REASON_HEAD):
+        return None
+    at = note.find(_REASON_TAIL, len(_REASON_HEAD))
+    if at <= len(_REASON_HEAD):
+        return None
+    rest = note[at + len(_REASON_TAIL) :]
+    if rest and not rest.startswith(". "):
+        return None
+    return note[len(_REASON_HEAD) : at], rest[2:] or None
+
+
+def without_reason(ingredient: str, removal: str | None) -> str:
+    """The note without the allergy as its reason (legal check L13): what the
+    kitchen leaves out, "ohne Erdnuss, ohne Zwiebeln"."""
+    plain = f"ohne {ingredient}"
+    if removal:
+        plain += f", {removal[0].lower()}{removal[1:]}"
+    return plain
+
+
+def with_consent(note: str, consented: bool) -> str | None:
+    """The kitchen note as it may be stored (legal check L13, D24). With the
+    caller's explicit "ja" an allergy keeps the fixed wording "WICHTIG: Keine
+    <Zutat>. Grund: Allergie"; without it only "ohne <Zutat>" is stored.
+    Whatever names an allergy is brought into one of the two forms first, so
+    no other wording carries the reason: "Erdnussallergie" written as it was
+    said becomes the fixed wording. An allergy whose ingredient the words do
+    not give leaves only the removal said with it, None without one: a note
+    "Allergie" tells the kitchen nothing to leave out. A note without an
+    allergy, or one that only denies one, stays as it is."""
+    split = _split_reason(note)
+    if split is None:
+        if not mentions_allergy(note):
+            return note
+        wish = classify_wish(note, [])
+        if wish is None or wish.kind != "allergy":
+            return note
+        if not wish.ingredient:
+            return wish.note
+        note, split = wish.text, _split_reason(wish.text)
+        if split is None:
+            # Another adult's allergy, already without the reason.
+            return note
+    return note if consented else without_reason(*split)
+
+
+def asks_consent(note: str) -> bool:
+    """Would `note` carry the allergy as its reason with the caller's "ja"?"""
+    noted = with_consent(note, consented=True)
+    return noted is not None and _split_reason(noted) is not None
 
 
 def _with_allergy(
@@ -1302,6 +1414,9 @@ def _with_allergy(
     gives an allergy without an ingredient."""
     start = _clause_start(words, named[0], nearest=True)
     heard = words  # as said: `named` points into it
+    # Whose allergy: read in its clause, as said ("ohne Zwiebeln fuer meine
+    # Frau, ich habe eine Erdnussallergie" is the caller's own).
+    clause = text[tokens[start].start() :]
     head = _clean(_drop_trailing_glue(text[: tokens[start].start()]).strip())
     after = _denial(words, named, start)
     if after is not None:
@@ -1355,11 +1470,13 @@ def _with_allergy(
         if removal is None or len(removal) > NOTE_MAX:
             return Wish(text=text, kind="allergy")
         return Wish(text=text[tokens[start].start() :], kind="allergy", note=removal)
-    return Wish(
-        text=kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient)),
-        kind="allergy",
-        ingredient=ingredient,
-    )
+    note = kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient))
+    if of_another_adult(clause):
+        # Never with the reason, whatever the caller answers (L13).
+        split = _split_reason(note)
+        assert split is not None  # `kitchen_note` writes the fixed wording
+        note = without_reason(*split)
+    return Wish(text=note, kind="allergy", ingredient=ingredient)
 
 
 def _classify(text: str, groups: list[OptionGroup]) -> Wish:

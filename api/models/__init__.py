@@ -2,7 +2,7 @@
 
 from api.models.audit import AuditLog
 from api.models.base import Base
-from api.models.calls import Call, Callback
+from api.models.calls import Call, Callback, ConsentLog
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
@@ -15,6 +15,7 @@ __all__ = [
     "Call",
     "Callback",
     "Capacity",
+    "ConsentLog",
     "ItemAlias",
     "ItemAllergen",
     "ItemOption",
