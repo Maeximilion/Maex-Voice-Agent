@@ -40,6 +40,7 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.calls import record_consent
+from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.wishes import mentions_allergy, with_consent
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Tenant
@@ -93,6 +94,14 @@ SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # is not booked, and both the card and the guest say so (#207). Draft wording,
 # checked with the announcement texts (docs/05 §6).
 SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
+# The card when the guest asked about allergens beyond the maintained values
+# (L17). It names the question, never the guest's allergy (L13). Draft wording.
+SUMMARY_ALLERGENS = (
+    "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer "
+    "Bestellung zu klären."
+)
+# How a card names a booking made earlier in the call (`_handoff_summary`).
+_BOOKED = " Bereits gebucht: "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # What the guest hears when `confirm` went through: the core says it, built from
 # the confirm result, never the model (`guards.false_booking`). Draft wording,
@@ -172,6 +181,11 @@ class ConversationLoop:
             note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
+        if escalation.asks_beyond_the_allergens(user_text, state.allergy_talk):
+            # L17: before the model, which knows no more than the database.
+            return self._allergens_to_team(state)
+        if escalation.speaks_of_allergies(user_text):
+            state.allergy_talk = True
 
         start = guards.begin_turn(state)
         pending_input = user_text
@@ -352,6 +366,18 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, call.name, result, call.args)
+            if (
+                call.name == "get_item_details"
+                and result.ok
+                and result.say == SAY_ALLERGENS_UNKNOWN
+            ):
+                # Asked for allergens the database does not hold (L17): the
+                # team answers before any `confirm`, and the model is not
+                # asked again, as for a table the team decides on.
+                dish = " ".join(
+                    str(result.data[key]) for key in ("number", "name") if key in result.data
+                )
+                return self._allergens_to_team(state, dish or None)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):
                 # The draft the guest answered the question for: read out by
                 # the core, so the guest's next "Ja" is the yes to it.
@@ -584,10 +610,7 @@ class ConversationLoop:
         would need the wish to wait across turns, and every rule for when it
         still stands either lost a wish or sent a stale one (Codex PR #280).
         The same open point as for every handover (docs/01_STATUS.md)."""
-        wish = self._table_wish(state, args)
-        if state.cart:
-            head = f"{wish} {SUMMARY_OPEN_ORDER} "
-            wish = f"{head}{_order_lines(state, _SUMMARY_MAX - len(head) - 1)}."
+        wish = _with_open_order(state, self._table_wish(state, args))
         lead_say = [lead, SAY_ORDER_NOT_PLACED if state.cart else None]
         phone = state.slots.get("phone")
         if phone:
@@ -602,6 +625,28 @@ class ConversationLoop:
                 return TurnResult(state=state, say=said, ended=True)
         handed = self._handoff(state, SAY_ESCALATION, "out_of_scope", wish)
         handed.say = [s for s in (*lead_say, *handed.say) if s]
+        return handed
+
+    def _allergens_to_team(
+        self, state: ConversationState, dish: str | None = None
+    ) -> TurnResult:
+        """The guest asked about allergens beyond what the database holds
+        (legal check L17, D24): the call goes to a team member, or a callback
+        when nobody answers, and the call ends before any `confirm`. An order
+        that stands unplaced goes onto the card and the guest hears that it is
+        not placed. The card names the question and the dish, never the
+        guest's allergy (L13)."""
+        summary = SUMMARY_ALLERGENS + (f" Gericht: {dish}." if dish else "")
+        # Room for what `_handoff_summary` adds for a booking made earlier.
+        booked = len(_BOOKED + state.booking_say) if state.booking_say else 0
+        handed = self._handoff(
+            state,
+            SAY_ESCALATION,
+            "out_of_scope",
+            summary=_with_open_order(state, summary, reserve=booked),
+        )
+        lead = [SAY_ALLERGENS_UNKNOWN, SAY_ORDER_NOT_PLACED if state.cart else None]
+        handed.say = [s for s in (*lead, *handed.say) if s]
         return handed
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
@@ -636,6 +681,8 @@ class ConversationLoop:
         fallback_say: str,
         reason: str = "not_understood",
         detail: str | None = None,
+        *,
+        summary: str | None = None,
     ) -> TurnResult:
         """Übergabe wirklich ausführen statt nur anzukündigen: erst versuchen, live zu
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
@@ -672,7 +719,9 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": callback_reason,
-                    "summary": _handoff_summary(reason, detail, state.booking_say),
+                    "summary": _handoff_summary(
+                        reason, detail, state.booking_say, base=summary
+                    ),
                 },
             )
             apply_tool_result(state, "create_callback", callback)
@@ -683,6 +732,16 @@ class ConversationLoop:
 
         state.stage = "ended"
         return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
+
+
+def _with_open_order(state: ConversationState, summary: str, reserve: int = 0) -> str:
+    """The card's sentence with the order that stands unplaced, if any (#207),
+    fitted so the card stays inside what a callback takes, `reserve`
+    characters left for what follows it."""
+    if not state.cart:
+        return summary
+    head = f"{summary} {SUMMARY_OPEN_ORDER} "
+    return f"{head}{_order_lines(state, _SUMMARY_MAX - reserve - len(head) - 1)}."
 
 
 def _order_lines(state: ConversationState, room: int) -> str:
@@ -737,13 +796,20 @@ def _booked_say(
     return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
 
 
-def _handoff_summary(reason: str, detail: str | None, booked: str | None = None) -> str:
-    base = _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
+def _handoff_summary(
+    reason: str,
+    detail: str | None,
+    booked: str | None = None,
+    *,
+    base: str | None = None,
+) -> str:
+    """The card of a handover. `base` replaces the sentence of the reason."""
+    base = base or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
     if detail:
         base = f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
     # A booking of this call stands whatever went wrong after it: the card says
     # so, or the team books a second time (Codex PR #347).
-    return f"{base} Bereits gebucht: {booked}" if booked else base
+    return f"{base}{_BOOKED}{booked}" if booked else base
 
 
 def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:

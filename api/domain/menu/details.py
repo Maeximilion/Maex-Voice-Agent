@@ -27,8 +27,10 @@ from api.models import ItemAllergen, MenuItem, Tenant
 from api.models.menu import ALLERGEN_CODES
 from api.schemas.menu import Allergens, ItemDetails
 
+# Says what is missing and promises no next step: the own core hands the call
+# to the team or sets a callback after it and says so (`agent/loop.py`, L17).
 SAY_ALLERGENS_UNKNOWN = (
-    "Das kann ich Ihnen nicht sicher sagen. Das Team ruft Sie dazu zurück."
+    "Das kann ich Ihnen nicht sicher sagen, dazu ist bei uns nichts hinterlegt."
 )
 
 

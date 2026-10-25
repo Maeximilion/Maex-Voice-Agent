@@ -146,6 +146,10 @@ class ConversationState(BaseModel):
     # That draft, `draft_order` or `create_reservation` as the model called
     # it, while the question waits for its answer (`loop.py`). Never sent.
     held_call: dict[str, Any] | None = None
+    # The call has spoken of allergies: the guest's own, or the allergens of
+    # a dish. A later "Ist das wirklich sicher?" asks beyond the maintained
+    # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
+    allergy_talk: bool = False
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
@@ -340,6 +344,7 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
         state.intent = wish
 
 
+_FLAG: TypeAdapter[bool] = TypeAdapter(bool)
 _LINES: TypeAdapter[list[OrderItemIn]] = TypeAdapter(
     Annotated[list[OrderItemIn], Field(max_length=MAX_ITEMS)]
 )
@@ -463,6 +468,11 @@ def apply_tool_result(
             state.cart = cart_lines((args or {}).get("items"))
     elif name == "search_menu":
         _note_search(state, result.data)
+    elif name == "get_item_details":
+        # Read as the tool read it: "true" is a yes there too.
+        with suppress(ValidationError):
+            if _FLAG.validate_python((args or {}).get("allergen_question")):
+                state.allergy_talk = True
     elif name == "get_service_status":
         flags = {
             key: result.data[key]
