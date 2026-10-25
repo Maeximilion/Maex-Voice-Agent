@@ -152,7 +152,9 @@ Before the first draft whose note would carry the reason (T-11.1, L13):
    anything else     → no consent; the draft is dropped, the model reads the
                        sentence, and the next draft carries "ohne <Zutat>"
    asked once per call, the answer holds for every note of the call and is
-   logged (`consent_log`: call, time, question, answer)
+   logged (`consent_log`: call, time, question, answer); it counts only as
+   the answer to the question itself: after "Sind Sie noch da?" the
+   question is put again
 
 Another adult's allergy ("meine Frau hat eine Erdnussallergie")
    → "ohne Erdnuss" only, never the reason, never asked (L13);
@@ -162,7 +164,7 @@ Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
    → no note (#252)
 ```
 
-The consent is the core's, not the model's (`agent/guards.py` `consented_call`, `agent/loop.py`): whatever wording a model writes into a note, a note that names an allergy is brought into one of the two forms before anything is stored (`domain/menu/wishes.py` `with_consent`), a note in the guest's own words ("Erdnussallergie") included. A yes to the consent question is as strict as the yes to a read-back, with the words that say "note it" besides ("Ja, notieren Sie das"); "Ja, und noch eine Cola" is no explicit consent. A handover card never quotes a guest sentence that names an allergy. Whose allergy it is, is read on the words of its clause (`of_another_adult`): a person after "mein", "unser" ("meine Frau"), one on their own ("ein Freund", "jemand") or the subject "er", "sie", "wir"; a list of persons, closed, so a person it does not name keeps the allergy as the caller's own.
+The consent is the core's, not the model's (`agent/guards.py` `consented_call`, `agent/loop.py`): whatever wording a model writes into a note, a note that names an allergy is brought into one of the two forms before anything is stored (`domain/menu/wishes.py` `with_consent`), a note in the guest's own words ("Erdnussallergie") included, and every notice of a note keeps its ingredient. A yes to the consent question is as strict as the yes to a read-back, with the words that say "note it" besides ("Ja, notieren Sie das"); "Ja, und noch eine Cola" is no explicit consent. A handover card never quotes a guest sentence that names an allergy. Whose allergy it is, is read on the words from the comma or full stop before the allergy word to the end (`of_another_adult`): a person after "mein", "unser" ("meine Frau"), one on their own ("ein Freund", "jemand") or the subject "er", "sie", "wir"; a list of persons, closed, so a person it does not name keeps the allergy as the caller's own.
 
 ---
 

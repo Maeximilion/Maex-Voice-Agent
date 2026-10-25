@@ -233,6 +233,32 @@ def test_the_question_is_asked_once_per_call(session, state):
 
     assert said == ["Notiert."]
     assert len(logged(session)) == 1
+    # Codex PR #368: both allergens stay on the note.
+    assert reservations(session)[-1].note == f"{REASONED}. {sesame}"
+
+
+def test_an_answer_to_another_question_is_no_consent(session, state):
+    """Codex PR #368, P1: the phone line asks "Sind Sie noch da?" after a
+    silence. A "Ja" to that is no consent: the question is asked again."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+
+    said = turn(session, state, "Ja.")
+
+    assert said == [ALLERGY_QUESTION]
+    assert logged(session) == []
+    assert reservations(session) == []
+    assert state.held_call is not None
+
+    turn(session, state, "Nein.")
+    [reservation] = reservations(session)
+    assert reservation.note == "ohne Erdnuss"
+    assert logged(session) == [(ALLERGY_QUESTION, "no")]
 
 
 def test_a_note_in_the_guest_s_words_takes_the_fixed_wording(session, state):

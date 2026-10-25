@@ -161,6 +161,56 @@ def test_only_a_note_that_would_carry_the_reason_asks_for_consent(note, asks):
     assert asks_consent(note) is asks
 
 
+SESAME = "WICHTIG: Keine Sesam. Grund: Allergie"
+
+
+@pytest.mark.parametrize(
+    ("note", "consented", "stored"),
+    [
+        # Codex PR #368, P1: two notices in one note keep both ingredients.
+        (f"{REASONED}, {SESAME}", True, f"{REASONED}. {SESAME}"),
+        (f"{REASONED}, {SESAME}", False, "ohne Erdnuss, ohne Sesam"),
+        (
+            f"{REASONED}. Ohne Zwiebeln. {SESAME}",
+            False,
+            ("ohne Erdnuss, ohne Zwiebeln, ohne Sesam"),
+        ),
+        # A notice next to the guest's own words.
+        (f"{REASONED}, Sesamallergie", True, f"{REASONED}. {SESAME}"),
+        (f"Sesamallergie, {REASONED}", False, "ohne Sesam, ohne Erdnuss"),
+    ],
+)
+def test_every_allergen_of_a_note_is_kept(note, consented, stored):
+    assert with_consent(note, consented) == stored
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Codex PR #368, P1: the subject before the parser's phrase counts.
+        "er hat eine Nussallergie",
+        "sie ist allergisch gegen Nüsse",
+        "unsere Oma verträgt keine Nüsse",
+        "die 13 bitte, mein Mann hat eine Nussallergie",
+    ],
+)
+def test_another_adult_named_before_the_phrase_gets_no_reason(said):
+    wish = classify_wish(said, [])
+    assert wish is not None
+    assert wish.kind == "allergy"
+    assert wish.text.startswith("ohne ")
+    assert "Grund" not in wish.text
+
+
+def test_a_clause_with_its_own_subject_is_read_alone():
+    """Without a comma: "und ich" opens the caller's own clause."""
+    wish = classify_wish(
+        "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie", []
+    )
+    assert wish is not None
+    assert wish.text.startswith(REASONED)
+
+
 def test_without_reason_lowers_the_removal():
     assert without_reason("Erdnuss", "Keine Zwiebeln") == "ohne Erdnuss, keine Zwiebeln"
     assert without_reason("Erdnuss", None) == "ohne Erdnuss"

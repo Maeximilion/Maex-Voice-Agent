@@ -1348,6 +1348,23 @@ def _split_reason(note: str) -> tuple[str, str | None] | None:
     return note[len(_REASON_HEAD) : at], rest[2:] or None
 
 
+def _pieces(note: str) -> Iterator[tuple[str, bool]]:
+    """`note` cut at each notice in the fixed wording: (ingredient, True) for a
+    notice, (text, False) for what stands between, separators taken off. Read
+    with string functions: the note is what a guest said and a model wrote."""
+    pos = 0
+    while (head := note.find(_REASON_HEAD, pos)) != -1:
+        tail = note.find(_REASON_TAIL, head + len(_REASON_HEAD))
+        if tail <= head + len(_REASON_HEAD):
+            break
+        if between := note[pos:head].strip(" ,.;"):
+            yield between, False
+        yield note[head + len(_REASON_HEAD) : tail], True
+        pos = tail + len(_REASON_TAIL)
+    if rest := note[pos:].strip(" ,.;"):
+        yield rest, False
+
+
 def without_reason(ingredient: str, removal: str | None) -> str:
     """The note without the allergy as its reason (legal check L13): what the
     kitchen leaves out, "ohne Erdnuss, ohne Zwiebeln"."""
@@ -1366,27 +1383,41 @@ def with_consent(note: str, consented: bool) -> str | None:
     said becomes the fixed wording. An allergy whose ingredient the words do
     not give leaves only the removal said with it, None without one: a note
     "Allergie" tells the kitchen nothing to leave out. A note without an
-    allergy, or one that only denies one, stays as it is."""
-    split = _split_reason(note)
-    if split is None:
-        if not mentions_allergy(note):
-            return note
-        wish = classify_wish(note, [])
-        if wish is None or wish.kind != "allergy":
-            return note
-        if not wish.ingredient:
-            return wish.note
-        note, split = wish.text, _split_reason(wish.text)
-        if split is None:
+    allergy, or one that only denies one, stays as it is. Every notice of the
+    note keeps its ingredient (Codex PR #368)."""
+    parts: list[str] = []
+    allergy = False
+    for text, notice in _pieces(note):
+        wish = None if notice or not mentions_allergy(text) else classify_wish(text, [])
+        if notice:
+            parts.append(
+                ALLERGY_NOTE.format(ingredient=text) if consented else f"ohne {text}"
+            )
+        elif wish is None or wish.kind != "allergy":
+            parts.append(text)
+            continue
+        elif wish.ingredient and _REASON_HEAD in wish.text:
+            parts.extend(filter(None, [with_consent(wish.text, consented)]))
+        elif wish.ingredient:
             # Another adult's allergy, already without the reason.
-            return note
-    return note if consented else without_reason(*split)
+            parts.append(wish.text)
+        elif wish.note:
+            parts.append(wish.note)
+        allergy = True
+    if not allergy:
+        return note
+    if not parts:
+        return None
+    # As `kitchen_note` writes it with a notice, as `without_reason` without.
+    if any(_REASON_TAIL in part for part in parts):
+        return ". ".join(part[0].upper() + part[1:] for part in parts)
+    return ", ".join(part[0].lower() + part[1:] for part in parts)
 
 
 def asks_consent(note: str) -> bool:
     """Would `note` carry the allergy as its reason with the caller's "ja"?"""
     noted = with_consent(note, consented=True)
-    return noted is not None and _split_reason(noted) is not None
+    return noted is not None and _REASON_TAIL in noted
 
 
 def _with_allergy(
@@ -1415,8 +1446,14 @@ def _with_allergy(
     start = _clause_start(words, named[0], nearest=True)
     heard = words  # as said: `named` points into it
     # Whose allergy: read in its clause, as said ("ohne Zwiebeln fuer meine
-    # Frau, ich habe eine Erdnussallergie" is the caller's own).
+    # Frau und ich habe eine Erdnussallergie" is the caller's own). A clause
+    # that names no subject of its own is read from the comma or full stop
+    # before its first word, or "er hat eine Nussallergie" would lose the
+    # "er" (Codex PR #368).
     clause = text[tokens[start].start() :]
+    if not _CLAUSE_OPENERS & set(_words(clause)):
+        at = tokens[named[0]].start()
+        clause = text[max(text.rfind(mark, 0, at) for mark in ",.;!?") + 1 :]
     head = _clean(_drop_trailing_glue(text[: tokens[start].start()]).strip())
     after = _denial(words, named, start)
     if after is not None:
