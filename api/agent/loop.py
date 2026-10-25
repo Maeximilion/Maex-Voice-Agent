@@ -158,6 +158,10 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
+        # The answer to the question for the allergy (legal check L13), logged
+        # also when this sentence goes to the team: the draft that waited for
+        # it goes first, before the model is asked.
+        held = self._consent_answered(state, user_text)
         reason = escalation.check(user_text)
         if reason != "complaint":
             # Before the model and before a handoff: the request of this very
@@ -170,9 +174,6 @@ class ConversationLoop:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
         start = guards.begin_turn(state)
-        # The answer to the question for the allergy (legal check L13): the
-        # draft that waited for it goes first, before the model is asked.
-        held = self._consent_answered(state, user_text)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal

@@ -195,6 +195,24 @@ def test_an_unclear_answer_drops_the_draft_and_the_model_reads_it(session, state
     assert logged(session) == [(ALLERGY_QUESTION, "unclear")]
 
 
+def test_an_answer_that_goes_to_the_team_is_logged_and_stores_nothing(session, state):
+    """The question was asked, so its answer is logged, also when the sentence
+    hands the call over; the draft that waited is never carried out."""
+    state.slots["phone"] = CALLER
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+
+    turn(session, state, "Nein, ich will mit einem Menschen sprechen.")
+
+    assert reservations(session) == []
+    assert logged(session) == [(ALLERGY_QUESTION, "unclear")]
+    assert session.scalars(select(Callback)).one().reason == "human_requested"
+
+
 def test_the_question_is_asked_once_per_call(session, state):
     turn(
         session,

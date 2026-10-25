@@ -124,7 +124,10 @@ class RecordingLLM:
         *,
         timeout: float | None = None,
     ) -> LLMTurn:
-        self._read_out_by_the_core(state)
+        if _tool_result(user_input) is None:
+            # Only at a guest sentence: the core reads a waiting draft out
+            # at the start of a guest turn.
+            self._read_out_by_the_core(state)
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input, timeout=timeout)
         self._before_cart = None
