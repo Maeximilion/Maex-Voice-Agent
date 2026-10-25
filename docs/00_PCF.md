@@ -488,8 +488,8 @@ as the hour ("18", "18 Uhr"); a row with a minute passes and every run cuts it
 to the hour in the CSV (atomic, file rights kept). 174 script tests green (20
 new), each new mapping path red under a mutation of its guard; end to end on
 the template: minutes cut, 0600 kept, second run changes nothing. ruff, mypy,
-README asset check clean. Full suite not run here (no Postgres host `db` in
-this session); the diff touches no database code and no conversation path.
+README asset check clean. Full suite in /done against a throwaway Postgres:
+5,575 passed plus 40 latency tests; the diff touches no conversation path.
 Artifacts: branch task/11-4-call-log-hour, commit 53013de on top of the
 handover commit c2afa5b. scripts/call_log.py, api/tests/test_scripts_call_log.py,
 docs/17_ANRUFPROTOKOLL.md, docs/vorlagen/anrufprotokoll.csv and

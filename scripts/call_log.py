@@ -691,20 +691,10 @@ def write_cases(
 
 
 def _fingerprint(entry: Entry, salt: str) -> str:
-    """Inhalt der Zeile, nur fuer das lokale Verzeichnis. Die ID haengt an der
-    Reihenfolge in der Minute; ein nachgetragener Anruf davor verschiebt sie.
-    Aendert sich der Inhalt hinter einer durchgesehenen ID, faellt das so auf."""
-    body = json.dumps(
-        [
-            entry.intent,
-            entry.outcome,
-            entry.phrases,
-            entry.items,
-            entry.problems,
-            entry.duration_min,
-        ],
-        ensure_ascii=False,
-    )
+    """Content of the row, for the local directory only. The ID hangs on the
+    order within the hour; a call added before it shifts the ID. A change of
+    content behind a reviewed ID shows up this way."""
+    body = json.dumps(_body(entry), ensure_ascii=False)
     return hashlib.sha256(f"{salt}|{body}".encode()).hexdigest()[:10]
 
 
