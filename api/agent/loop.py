@@ -385,7 +385,13 @@ class ConversationLoop:
                 return self._allergens_to_team(state, dish or None)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):
                 # The draft the guest answered the question for: read out by
-                # the core, so the guest's next "Ja" is the yes to it.
+                # the core, so the guest's next "Ja" is the yes to it. Unless
+                # it took the guest past a limit: then to the team, as any
+                # slow tool on the next hop would (Codex PR #368).
+                if self._clock() - self._started > self._max_call_seconds:
+                    return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                if (left := self._left_in_turn(turn_started)) is not None and left <= 0:
+                    return self._too_slow(state, user_text)
                 guards.note_said(state, said)
                 return TurnResult(state=state, say=[said])
             if call.name == "confirm" and result.ok:

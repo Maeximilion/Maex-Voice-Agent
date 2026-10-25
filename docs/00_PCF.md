@@ -482,6 +482,83 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 25.10.2026 - T-11.4: the call log keeps the hour, not the minute
+Status: built and pushed, no pull request yet. scripts/call_log.py reads `time`
+as the hour ("18", "18 Uhr"); a row with a minute passes and every run cuts it
+to the hour in the CSV (atomic, file rights kept). 174 script tests green (20
+new), each new mapping path red under a mutation of its guard; end to end on
+the template: minutes cut, 0600 kept, second run changes nothing. ruff, mypy,
+README asset check clean. Full suite in /done against a throwaway Postgres:
+5,575 passed plus 40 latency tests; the diff touches no conversation path.
+Artifacts: branch task/11-4-call-log-hour, commit 53013de on top of the
+handover commit c2afa5b. scripts/call_log.py, api/tests/test_scripts_call_log.py,
+docs/17_ANRUFPROTOKOLL.md, docs/vorlagen/anrufprotokoll.csv and
+anrufprotokoll_druck.html (column "Stunde"), docs/metrics/capabilities.toml with
+README.md and .github/assets/progress.svg re-rendered, docs/07 (done), docs/01.
+Decisions: case ID from date, hour and order of rows in that hour. The cut
+changes the ID of an old row, so .call_log_ids.json keeps the old minute ID
+under the new one ("was") with the fingerprint at review; write_cases finds a
+reviewed case through it. No duplicate merge any more: without the minute a
+row typed twice and two calls with the same words look alike, so every row
+counts and the report names same-content rows of one hour by line number
+(rows with free text only). Recorded under assumptions in docs/01.
+Gate: G0 open, unchanged (waits for T-10.1 and T-10.2 at the pilot's router).
+Open: 1. /done on this branch (ponytail-review, PR, status bump already done
+by this handover), then CI and Codex on the head; no xhigh trigger, Claude
+may merge. 2. The T-11.1 finding ("Sesam vertrage ich auch nicht" lost) still
+goes as one comment to the T-11.1 PR once it is open. 3. Dependabot #354 to
+#356 once main is green.
+Lessons: readme_assets.py render rewrites README.md from
+docs/metrics/capabilities.toml; edit the toml, never the README line. The
+worktree has no own venv: use ~/Maex-Voice-Agent/.venv/bin/python. The app
+offered no session-title tool in this WSL session.
+```
+
+```text
+## Handover 25.10.2026 - issue sweep 21. to 25.10.2026: six PRs merged, next T-11.4
+Status: every PR this session opened is merged, one by one: #358 route_advice wording
+       (#332 closed), #359 container hardening and #360 token strength, security headers,
+       refused INVITE, archive pin (#252 findings 5, 7 to 9, 11 to 13 and part of 10),
+       #362 number words (#325, #327, #328 closed), #357 docs (#188, #323 closed, #344
+       points 2, 3, 5), #361 allergen wishes by option C (#207 and #331 stay open).
+       main fc250ec is green; open PRs are only Dependabot #354 to #356.
+Artifacts: branch task/11-4-call-log-hour (this handover only, no code yet). Outside
+       the repository: ~/.claude/usage_gate/install.py on Ubuntu and on Windows
+       (identical, CRLF, old version as install.py.bak-20261021 next to each), copied
+       into docs/19 section 4; ~/.claude/settings.json gained
+       skillOverrides "anthropic-skills:caveman": "off" and
+       env CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-5-5 (/doctor; copy before the change
+       in settings.json.doctor-20261022.bak); two memory notes removed, copies in
+       ~/.claude/doctor-removed-20261022/.
+Decisions: #361 option C (Maxi): where the parser cannot read a whole allergy it asks
+       "Wogegen?" instead of reading further; four rounds of extending the reading each
+       put new words on the kitchen note. 17,280 generated sentences: no word main does
+       not note, no allergen main notes is lost, 2,794 now ask. #357 merged under the
+       review loop limits: the P1 "encrypt the settings backup" does not apply (the rule
+       covers data backups in scripts/; the .bak is 0600, its source 0644), two
+       PowerShell points in #207. No new task while a PR of the session is open (Maxi,
+       22.10.2026, in memory).
+Gate: G0 open, unchanged: the telephony measurement (T-10.1 step 2 at the pilot's router).
+Open: 1. T-11.4 in a new session on task/11-4-call-log-hour, Opus 5.5 high: the hour of
+       a call instead of the minute, a new duplicate key, coarsening existing rows
+       (docs/07 row, docs/17, legal check L15). 2. "Pho Bo, Sesam vertrage ich auch
+       nicht" loses the intolerance: belongs to T-11.1, which another session works on
+       (task/11-1-allergy-consent); post it there as one comment once it has a PR.
+       3. Dependabot #354 to #356 when main is green. 4. The CLAUDE.md trim of /doctor
+       (stack table, Threads, Ultrareview, Security alerts paragraphs into docs/19,
+       /done, /start), about 1.1k tokens a session, in a PR of its own when Maxi wants it.
+       5. Proposal in #207: move the usage gate into the repository with its tests.
+Lessons: GitHub returns PR reviews in pages of 30: read them with
+       gh api --paginate ".../reviews?per_page=100", or a review with findings is missed
+       (#357 was reported clean once by that mistake). A Codex review on the head that
+       carries inline comments is findings, whatever its summary text says. Every merge
+       moves the status version line on main, so parallel PRs need a main merge each;
+       merge them in sequence. main went red on 21.10. when ubuntu-latest became 26.04
+       (Postgres client 18); #364 fixed the test. A session this long should have been
+       handed over earlier.
+```
+
+```text
 ## Handover 22.10.2026 (afternoon) - PR #347: one Qwen run on the final head left
 Status: Qwen runs on f0136c1 (16:01 to 16:27): 26/43 and 26/43 (main 27, 24), one missed
        escalation each (allergie_0002, as on main), reservierung_0035 passes, targets 2/27,

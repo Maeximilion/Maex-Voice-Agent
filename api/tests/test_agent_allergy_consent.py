@@ -195,6 +195,43 @@ def test_an_unclear_answer_drops_the_draft_and_the_model_reads_it(session, state
     assert logged(session) == [(ALLERGY_QUESTION, "unclear")]
 
 
+@pytest.mark.parametrize("limit", ["turn", "call"])
+def test_a_held_draft_that_ends_after_a_limit_goes_to_the_team(session, state, limit):
+    """Codex PR #368, P1: the draft carried out after the answer takes longer
+    than the guest may wait. As after any slow tool, the call goes to the team
+    instead of its read-back; the draft stays a draft."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+    now = [0.0]
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=NOW,
+        clock=lambda: now[0],
+        turn_deadline_seconds=10 if limit == "turn" else None,
+        max_call_seconds=10 if limit == "call" else 600,
+    )
+    dispatch = loop._dispatch
+
+    def slow(state, name, args):
+        if name == "create_reservation":
+            now[0] += 11
+        return dispatch(state, name, args)
+
+    loop._dispatch = slow  # type: ignore[method-assign]
+
+    result = loop.run_turn(state, "Ja.")
+
+    assert result.ended
+    assert state.readback not in result.say
+    assert [r.status for r in reservations(session)] == ["draft"]
+
+
 def test_an_answer_that_goes_to_the_team_is_logged_and_stores_nothing(session, state):
     """The question was asked, so its answer is logged, also when the sentence
     hands the call over; the draft that waited is never carried out."""
