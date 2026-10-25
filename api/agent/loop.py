@@ -39,6 +39,7 @@ from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
+from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.wishes import mentions_allergy, with_consent
@@ -645,13 +646,15 @@ class ConversationLoop:
         not placed. The card names the question and the dish, never the
         guest's allergy (L13)."""
         summary = SUMMARY_ALLERGENS + (f" Gericht: {dish}." if dish else "")
-        # Room for what `_handoff_summary` adds for a booking made earlier.
+        # Room for what `_handoff_summary` adds for a booking made earlier,
+        # and for the line's first sentence on a team leg nobody answered.
         booked = len(_BOOKED + state.booking_say) if state.booking_say else 0
+        reserve = max(booked, len(SUMMARY_MISSED) + 1)
         handed = self._handoff(
             state,
             SAY_ESCALATION,
             "out_of_scope",
-            summary=_with_open_order(state, summary, reserve=booked),
+            summary=_with_open_order(state, summary, reserve=reserve),
         )
         lead = [SAY_ALLERGENS_UNKNOWN, SAY_ORDER_NOT_PLACED if state.cart else None]
         handed.say = [s for s in (*lead, *handed.say) if s]
@@ -712,6 +715,10 @@ class ConversationLoop:
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
+            # A card of its own goes with the call: the phone line writes it
+            # if nobody answers the team leg (Codex PR #369). The others keep
+            # the line's card of the reason, as before.
+            state.handoff_summary = summary
             return TurnResult(
                 state=state, say=[transfer.say or fallback_say], ended=True
             )

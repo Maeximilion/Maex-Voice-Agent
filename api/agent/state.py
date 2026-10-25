@@ -150,6 +150,10 @@ class ConversationState(BaseModel):
     # a dish. A later "Ist das wirklich sicher?" asks beyond the maintained
     # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
     allergy_talk: bool = False
+    # The card the core wrote for a handover the team takes live, for the
+    # phone line to use when nobody answers the team leg
+    # (`domain/callbacks/transfer.team_missed`). Never sent.
+    handoff_summary: str | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
