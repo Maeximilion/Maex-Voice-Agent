@@ -83,15 +83,16 @@ SAY_WISH_UNKNOWN = (
     "wie es auf der Karte steht."
 )
 SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
-SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch? Das gebe ich an die Küche weiter."
+# No promise to pass the allergy on: whether it reaches the kitchen with its
+# reason is the caller's answer to the consent question the core asks before
+# the draft (T-11.1, legal check L13).
+SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch?"
 # Several dishes with an allergy but no ingredient: one question after the
 # other, each with its dish (Codex PR #139, P1).
-SAY_ALLERGY_WHICH_FOR = (
-    "Wogegen sind Sie bei {name} allergisch? Das gebe ich an die Küche weiter."
-)
+SAY_ALLERGY_WHICH_FOR = "Wogegen sind Sie bei {name} allergisch?"
 SAY_ALLERGY_NOTE = (
-    "Ihren Hinweis zur Allergie gebe ich an die Küche weiter. Ob {name} frei davon "
-    "ist, kann ich Ihnen nur sagen, wenn es bei uns hinterlegt ist."
+    "Ob {name} frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns "
+    "hinterlegt ist."
 )
 SAY_UNDERSTOOD = (
     "Gern, {items}.",

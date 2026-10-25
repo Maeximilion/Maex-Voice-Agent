@@ -105,6 +105,7 @@ Anruf, ganz gleich wie er ausgeht.
 - `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
 - `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11)
+- `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
 Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
@@ -123,7 +124,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
 | `guards.py` | what the core enforces whatever the model returns (05 §5): `confirm` only after an explicit yes to the draft read back before the turn, `draft_order` only with dishes from a clear match or from candidates the guest heard by name, no booking word or code from the model except the core's own `booking_say` word for word (`false_booking`; the core says the booking after `confirm` in `loop.py`). A refused call goes back to the model as a failed result with a `hint` |
 | `guest_details.py` | whether the guest said a name or a phone number (`name_said`, `number_known`, `names_a_phone_number`): whole words or a spelled name; the caller ID, or the last digits of a turn that names them as a number to call, in E.164. `state.py` keeps the words and numbers of the call, writes the number the guest gave into `slots` itself and drops an unsaid name or number a model writes; `guards.py` refuses `create_reservation`, `draft_order` and `create_callback` with one, or under another number than the one in `slots` |
-| `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py` |
+| `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py`; the question for the allergy as a kitchen note (`ALLERGY_QUESTION`) and its answer (`consent_answer`: `yes`, `no` or `unclear`, T-11.1). `guards.py` brings every note into the form the answer allows (`consented_call`), `loop.py` holds the first draft whose note would carry the reason until the question is answered |
 | `intent.py` | what the guest called for, pickup or table, heard in their own sentence **before** the model (`heard`); `state.py` keeps the first wish of a call as `intent` until a draft exists |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
 | `outcome.py` | outcome and intent of a call from the state, shared by `sim/session.py` and `telephony/handler.py` |

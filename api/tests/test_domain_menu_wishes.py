@@ -237,8 +237,9 @@ def test_allergie_kommt_als_hinweis_ohne_zusage(session, tenant_id):
     result = suche(session, tenant_id, "Pho Bo, ich habe eine Erdnussallergie")
     assert [h.number for h in result.results] == ["13"]
     assert result.wish.kind == "allergy"
-    assert "Küche" in result.say
     assert "frei" in result.say
+    # No promise to pass it on: the core asks for consent first (T-11.1, L13).
+    assert "Küche" not in result.say
 
 
 def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
@@ -250,7 +251,7 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
         "allergy",
         "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
     )
-    assert "Küche" in result.say
+    assert "frei davon" in result.say
 
 
 def test_search_finds_the_dish_before_gegen_x_bin_ich_allergisch(session, tenant_id):
