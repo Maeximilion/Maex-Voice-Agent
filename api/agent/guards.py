@@ -321,6 +321,9 @@ def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
     if call.name not in _NOTED:
         return call
     args = dict(call.args)
+    if call.name == "draft_order" and "note" not in args and state.order_note:
+        # The note of the whole order outlives a correction (`state.order_note`).
+        args["note"] = state.order_note
     if isinstance(args.get("note"), str):
         args["note"] = stored_note(state, args["note"])
     if isinstance(args.get("items"), list):

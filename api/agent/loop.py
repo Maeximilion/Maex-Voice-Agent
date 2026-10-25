@@ -189,7 +189,10 @@ class ConversationLoop:
         if escalation.speaks_of_allergies(user_text):
             state.allergy_talk = True
         if state.held_call is not None:
-            # The question was not what the guest heard last: put it again.
+            # The question was not what the guest heard last: put it again,
+            # unless the call is past its limit (Codex PR #368).
+            if self._clock() - self._started > self._max_call_seconds:
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
             guards.note_said(state, ALLERGY_QUESTION)
             return TurnResult(state=state, say=[ALLERGY_QUESTION])
 

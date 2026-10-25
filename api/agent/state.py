@@ -93,6 +93,10 @@ class ConversationState(BaseModel):
     # keeps nothing between turns, and without it a dish found in one turn is
     # gone in the next.
     cart: list[dict[str, Any]] = Field(default_factory=list)
+    # The note of the whole order (`draft_order` `note`, D24), kept like the
+    # cart: a correction drops the draft, never the guest's allergy on it.
+    # A draft that names no note gets this one (`guards.consented_call`).
+    order_note: str | None = None
     # What search_menu said about a dish: id to number, name and mandatory
     # option groups. Never sent as it is. The labels of the `cart` lines in the
     # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
@@ -194,6 +198,8 @@ class ConversationState(BaseModel):
             # the rules for that only when the state carries the field
             # (`agent/llm.py` `ORDER_FORMAT`). A call about a table never does.
             data["cart"] = [self._line(line) for line in self.cart]
+        if self.order_note:
+            data["order_note"] = self.order_note
         return data
 
     def _line(self, line: dict[str, Any]) -> dict[str, Any]:
@@ -470,6 +476,8 @@ def apply_tool_result(
         # readback starts from these lines.
         with suppress(ValidationError):
             state.cart = cart_lines((args or {}).get("items"))
+        note = (args or {}).get("note")
+        state.order_note = note.strip() or None if isinstance(note, str) else None
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_item_details":
@@ -490,6 +498,7 @@ def apply_tool_result(
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
             state.cart = []
+            state.order_note = None
         state.stage = "confirmed"
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to

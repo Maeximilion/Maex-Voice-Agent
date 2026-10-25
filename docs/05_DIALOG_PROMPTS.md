@@ -153,7 +153,9 @@ Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
    → a removal said with it stays, after it (#252):
      "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
    → on the dish when the guest ties it to that dish; said without a dish,
-     or unclear which: `note` of draft_order for the whole order (D24)
+     or unclear which: `note` of draft_order for the whole order (D24); the core keeps it as `order_note`
+     across a correction, a new draft without a note gets it, an empty note
+     clears it
 
 Before the first draft whose note would carry the reason (T-11.1, L13):
    the core holds draft_order or create_reservation and asks

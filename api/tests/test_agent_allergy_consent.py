@@ -232,6 +232,34 @@ def test_a_held_draft_that_ends_after_a_limit_goes_to_the_team(session, state, l
     assert [r.status for r in reservations(session)] == ["draft"]
 
 
+def test_the_call_limit_comes_before_the_question_is_put_again(session, state):
+    """Codex PR #368, P1: past the call limit, a "Ja" to "Sind Sie noch da?"
+    goes to the team instead of hearing the consent question again."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+    now = [0.0]
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=NOW,
+        clock=lambda: now[0],
+        max_call_seconds=10,
+    )
+    now[0] = 11
+
+    result = loop.run_turn(state, "Ja.")
+
+    assert result.ended
+    assert ALLERGY_QUESTION not in result.say
+    assert reservations(session) == []
+
+
 def test_an_answer_that_goes_to_the_team_is_logged_and_stores_nothing(session, state):
     """The question was asked, so its answer is logged, also when the sentence
     hands the call over; the draft that waited is never carried out."""
@@ -354,6 +382,34 @@ def test_a_callback_card_never_quotes_an_allergy(session, state):
     callback = session.scalars(select(Callback)).one()
     assert "Erdnuss" not in callback.summary
     assert "Allergie" not in callback.summary
+
+
+def test_the_note_of_the_whole_order_outlives_a_correction():
+    """Codex PR #368, P1: a correction drops the draft; the note of the whole
+    order stays in the state, goes back to the model, and a new draft that
+    does not name a note keeps it. A note named again replaces it."""
+    from api.agent.dispatch import ToolResult
+    from api.agent.state import apply_tool_result
+
+    state = ConversationState(
+        call_id=uuid.uuid4(), tenant_id=uuid.uuid4(), allergy_consent="yes"
+    )
+    item = {"menu_item_id": str(uuid.uuid4()), "quantity": 1}
+    drafted = {"type": "pickup", "items": [item], "note": REASONED}
+    data = {"order_id": str(uuid.uuid4()), "readback": "Passt das so?"}
+    apply_tool_result(state, "draft_order", ToolResult(ok=True, data=data), drafted)
+    # The guest changes a dish: the draft is gone.
+    apply_tool_result(state, "search_menu", ToolResult(ok=True, data={"results": []}))
+    assert state.stage == "collecting"
+    assert state.to_prompt_json()["order_note"] == REASONED
+
+    again = guards.consented_call(state, ToolCall("draft_order", {"items": [item]}))
+    assert again.args["note"] == REASONED
+
+    cleared = guards.consented_call(
+        state, ToolCall("draft_order", {"items": [item], "note": ""})
+    )
+    assert cleared.args["note"] == ""
 
 
 def test_an_order_draft_carries_its_notes_as_the_answer_allows():
