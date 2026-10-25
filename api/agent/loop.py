@@ -380,7 +380,9 @@ class ConversationLoop:
                 # team answers before any `confirm`, and the model is not
                 # asked again, as for a table the team decides on.
                 dish = " ".join(
-                    str(result.data[key]) for key in ("number", "name") if key in result.data
+                    str(result.data[key])
+                    for key in ("number", "name")
+                    if key in result.data
                 )
                 return self._allergens_to_team(state, dish or None)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):

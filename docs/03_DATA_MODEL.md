@@ -126,7 +126,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |
 
-A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1).
+A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17).
 
 ### `consent_log`
 One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 009). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.

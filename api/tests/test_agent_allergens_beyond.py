@@ -12,7 +12,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
 
 from api.agent.escalation import asks_beyond_the_allergens
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
@@ -21,14 +22,7 @@ from api.agent.state import ConversationState
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
 from api.models import Call, Callback, Order
-from api.tests.test_domain_draft_order import (  # noqa: F401
-    KARTE,
-    NOW,
-    _call,
-    _tenant,
-    item,
-    session,
-)
+from api.tests.test_domain_draft_order import KARTE, NOW, _call, _tenant, item
 
 BERLIN = ZoneInfo("Europe/Berlin")
 CLOSED = datetime(2026, 9, 15, 8, 0, tzinfo=BERLIN)  # before opening: no team
@@ -75,7 +69,15 @@ def test_ordinary_sentences_are_not_beyond(said):
 
 
 @pytest.fixture
-def known_tenant(session):  # noqa: F811
+def session(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def known_tenant(session):
     """The test menu with confirmed allergens for the 23."""
     tenant_id = _tenant(session, "Testbetrieb")
     card = {**KARTE, ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n23;A;Maxi\n"}
@@ -85,7 +87,7 @@ def known_tenant(session):  # noqa: F811
     return tenant_id
 
 
-def state_for(session, tenant_id, **slots) -> ConversationState:  # noqa: F811
+def state_for(session, tenant_id, **slots) -> ConversationState:
     return ConversationState(
         call_id=_call(session, tenant_id),
         tenant_id=tenant_id,
@@ -94,26 +96,32 @@ def state_for(session, tenant_id, **slots) -> ConversationState:  # noqa: F811
     )
 
 
-def details(session, tenant_id, number: str) -> LLMTurn:  # noqa: F811
+def details(session, tenant_id, number: str) -> LLMTurn:
     return LLMTurn(
         tool_call=ToolCall(
             "get_item_details",
-            {"menu_item_id": str(item(session, tenant_id, number)), "allergen_question": True},
+            {
+                "menu_item_id": str(item(session, tenant_id, number)),
+                "allergen_question": True,
+            },
         )
     )
 
 
-def run(session, state, said, *turns, now=NOW):  # noqa: F811
+def run(session, state, said, *turns, now=NOW):
     llm = FakeLLM(list(turns))
     result = ConversationLoop(session, llm, "system", now=now).run_turn(state, said)
     return result, llm
 
 
-def test_an_unmaintained_allergen_value_goes_to_the_team_at_once(session, known_tenant):  # noqa: F811
+def test_an_unmaintained_allergen_value_goes_to_the_team_at_once(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
-        session, state, "Ist in der Pho Bo Sellerie?", details(session, known_tenant, "13")
+        session,
+        state,
+        "Ist in der Pho Bo Sellerie?",
+        details(session, known_tenant, "13"),
     )
 
     # The model is not asked again: the core says it and hands over.
@@ -126,7 +134,7 @@ def test_an_unmaintained_allergen_value_goes_to_the_team_at_once(session, known_
     assert call.transfer_reason == "out_of_scope"
 
 
-def test_without_a_team_the_card_names_the_question_and_the_dish(session, known_tenant):  # noqa: F811
+def test_without_a_team_the_card_names_the_question_and_the_dish(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, _ = run(
@@ -146,7 +154,7 @@ def test_without_a_team_the_card_names_the_question_and_the_dish(session, known_
     assert "Sellerie" not in callback.summary
 
 
-def test_a_maintained_value_is_answered_and_the_call_goes_on(session, known_tenant):  # noqa: F811
+def test_a_maintained_value_is_answered_and_the_call_goes_on(session, known_tenant):
     state = state_for(session, known_tenant)
 
     result, llm = run(
@@ -163,7 +171,9 @@ def test_a_maintained_value_is_answered_and_the_call_goes_on(session, known_tena
     assert session.scalars(select(Callback)).all() == []
 
 
-def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(session, known_tenant):  # noqa: F811
+def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(
+    session, known_tenant
+):
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -181,7 +191,7 @@ def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(session, known
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
-def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenant):  # noqa: F811
+def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
     pho = str(item(session, known_tenant, "13"))
     run(
@@ -211,3 +221,36 @@ def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenan
     callback = session.scalars(select(Callback)).one()
     assert "Offene Bestellung, nicht aufgegeben: 1x 13 Pho Bo" in callback.summary
     assert "Erdnüss" not in callback.summary
+
+
+def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
+    session,
+    known_tenant,
+):
+    """The consent question waits with a draft; the guest asks about traces
+    instead. The question goes to the team, nothing is stored, and the
+    consent question is not put again."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 2,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+            "note": "WICHTIG: Keine Erdnuss. Grund: Allergie",
+        },
+    )
+    run(
+        session,
+        state,
+        "Tisch für zwei auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table),
+    )
+    assert state.held_call is not None
+
+    result, _ = run(session, state, "Gibt es bei Ihnen Spuren von Nüssen?", now=CLOSED)
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert session.scalars(select(Callback)).one().reason == "out_of_scope"

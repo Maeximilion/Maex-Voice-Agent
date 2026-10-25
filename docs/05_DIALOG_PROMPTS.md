@@ -130,7 +130,18 @@ Kein Beschwichtigen, kein Ausfragen, keine Zusagen. Der Agent nimmt auf und gibt
 ```text
 get_item_details mit allergen_question: true
    known: true  → Codes nennen, aber keine medizinische Aussage
-   known: false → say aus dem Code vorlesen → create_callback
+   known: false → the core says the say of the tool and hands the call to
+                  the team, a callback when nobody answers; the call ends,
+                  no confirm (T-11.1, L17)
+
+Gast fragt über die gepflegten Werte hinaus (L17, D24): Spuren,
+Kontamination, Kontakt, Fritteuse oder dasselbe Öl, in jedem Anruf; "wirklich
+sicher", "hundertprozentig", "garantieren" in einem Anruf, der von Allergien
+spricht
+   → the core, before the model: the same sentence, the same handover;
+     an order that stands unplaced goes onto the card and the guest hears
+     "Ihre Bestellung ist damit noch nicht aufgegeben."; the card names the
+     question and the dish, never the guest's allergy
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
@@ -175,7 +186,7 @@ Sofort und ohne Diskussion:
 - Änderung oder Storno einer laufenden Bestellung
 - Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte
-- Allergie ohne gepflegten DB-Wert
+- Allergie ohne gepflegten DB-Wert, and any allergen question beyond the maintained values (traces, contact, a promise of safety): the core hands over before the model and before any `confirm` (T-11.1, L17)
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
 - Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
 - The guest waits longer than `turn_deadline_seconds` for the answer to one sentence (#252; the tenant's value, read with the same routing; phone line only). The guest hears the outage sentence of §6, not a new one. Once the voice layer can say "Bitte warten Sie einen Moment" while a turn runs (T-1.11), the value goes from 10 to 15 in the database (Maxi, 12.10.2026); the code does not change for that

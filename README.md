@@ -46,7 +46,7 @@ There is no hosted voice platform: Asterisk, our own exchange, takes the call fr
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-10-20 |
+| As of | 2026-10-25 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -89,13 +89,13 @@ How the images stay current: a full eval run on a real model records itself (`ma
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
+- A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)
 
 **Not yet working:**
 
 - No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. The speech engines run inside `voice` since T-1.11 part 2 (Whisper and Piper, the model files of the speech kit). Missing: the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
 - The admin view (`docs/06_GUI.md` §4) is still only a mockup
 - Orders only for pickup: the menu can be imported, searched (`POST /v1/tools/search_menu`), asked about (`POST /v1/tools/get_item_details`) and ordered from (`POST /v1/tools/draft_order`); `confirm` gives a pickup code; in mode `primary` the ticket goes to the kitchen at once, in every other mode after "Passt" on the tablet (T-4.7). Delivery follows in T-6.5
-- A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call (`consent_log`); another adult's allergy is noted as a plain removal. Still missing: the handover to the team before `confirm` when the guest asks beyond the maintained allergen values (L17)
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). The first full runs on a local model (`qwen3.6-35b-a3b`, 13./14.10.2026) pass 26 of 41 regular cases and 2 of 27 target cases, far from the target of 99 % ("Measured state" above)
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)

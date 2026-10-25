@@ -48,7 +48,7 @@
 **Schreibend:** braucht `idempotency_key`. Ein zweiter Aufruf auf denselben Vorgang ist unschädlich.
 
 ## create_callback
-**Wann:** Verständnis-Leiter Stufe 6, `check_slot` findet nichts frei (nicht bei „geschlossen"), eine Allergenauskunft ist nicht gepflegt, oder ein Anliegen liegt außerhalb dessen, was das System heute kann (Lieferung).
+**Wann:** Verständnis-Leiter Stufe 6, `check_slot` findet nichts frei (nicht bei „geschlossen"), oder ein Anliegen liegt außerhalb dessen, was das System heute kann (Lieferung).
 **Eingabe:** `phone`, `reason` (`complaint` · `not_understood` · `human_requested` · `out_of_scope`), `summary` (ein Satz).
 **Liefert:** `callback_id`, Status `open`.
 **Schreibend:** kein `idempotency_key` nötig, ein Anruf hat höchstens einen offenen Rückruf.

@@ -1,0 +1,29 @@
+{
+  "id": "allergie_0018",
+  "name": "Asked whether it is really safe for an allergy, the team answers",
+  "tags": [
+    "allergie",
+    "allergie_ohne_wert",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte die 23 zum Abholen."
+    },
+    {
+      "role": "customer",
+      "text": "Ich bin allergisch gegen Gluten, ist das wirklich sicher?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true,
+    "consent": []
+  }
+}

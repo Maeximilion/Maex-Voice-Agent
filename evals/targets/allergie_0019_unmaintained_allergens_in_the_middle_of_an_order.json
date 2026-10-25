@@ -1,0 +1,43 @@
+{
+  "id": "allergie_0019",
+  "name": "An allergen question without a maintained value in the middle of an order: the order is not placed",
+  "tags": [
+    "allergie",
+    "allergie_ohne_wert",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Einmal die Pho Bo auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Welche Allergene sind in der Pho Bo?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true,
+    "consent": [],
+    "tools": [
+      {
+        "tool": "get_item_details",
+        "number": "13"
+      }
+    ]
+  }
+}
