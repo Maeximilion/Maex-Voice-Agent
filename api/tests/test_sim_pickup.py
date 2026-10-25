@@ -1184,6 +1184,64 @@ def test_answer_to_the_allergy_question(session, tenant, first, answers, note):
     assert _notes(session, order) == [note]
 
 
+LONG_REMOVAL = "Pho Bo ohne " + "Zwiebeln, " * 20 + "Koriander, ich habe eine Allergie."
+
+
+@pytest.mark.parametrize(
+    ("first", "answers", "note"),
+    [
+        # Issue #207: an allergy behind a withdrawal and "aber" was lost;
+        # the question is asked again, and the next answer is noted.
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Keine, aber ich bin gegen Sesam allergisch.", "Sesam."],
+            "WICHTIG: Keine Sesam. Grund: Allergie",
+        ),
+        (
+            "Pho Bo, ich habe eine Allergie.",
+            ["Gegen nichts, aber ich vertrage keine Laktose.", "Laktose."],
+            "WICHTIG: Keine Laktose. Grund: Allergie",
+        ),
+        # Still no ingredient behind it: the question stays open.
+        (
+            "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
+            ["Keine, aber ich habe eine Allergie.", "Erdnüsse."],
+            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        # Issue #331: a waiting removal too long for the order line.
+        (LONG_REMOVAL, ["Keine."], None),
+        (LONG_REMOVAL, ["Erdnüsse."], "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+    ],
+)
+def test_answer_after_a_withdrawal_and_a_long_removal(
+    session, tenant, first, answers, note
+):
+    """Issue #207: "Keine, aber ich bin gegen Sesam allergisch" closed the
+    question and dropped the sesame; it is asked again now. Issue #331: a
+    removal over 200 characters stayed on the cart and `draft_order` refused
+    the order."""
+    _bestellung(session, tenant, first, *answers)
+    [order] = orders(session)
+    assert order.status == "confirmed"
+    assert _notes(session, order) == [note]
+
+
+def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
+    """Codex PR #361, round 4: "Keine, aber meine Frau ist gegen Sesam
+    allergisch" put the wife's sesame on this dish. Whose allergy it is and
+    for which dish is not clear: the question is asked again."""
+    _, turns = _bestellung(
+        session,
+        tenant,
+        "Pho Bo, ich habe eine Allergie.",
+        "Keine, aber meine Frau ist gegen Sesam allergisch.",
+        "Erdnüsse.",
+    )
+    assert "Wogegen" in " ".join(turns[2].say)
+    [order] = orders(session)
+    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+
+
 def test_denial_with_another_dish_keeps_the_question(session, tenant):
     """Own review, round 6: the dish named with the denial was dropped and the
     question closed; it stays open, as before."""
