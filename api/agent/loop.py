@@ -379,11 +379,8 @@ class ConversationLoop:
                 # Asked for allergens the database does not hold (L17): the
                 # team answers before any `confirm`, and the model is not
                 # asked again, as for a table the team decides on.
-                dish = " ".join(
-                    str(result.data[key])
-                    for key in ("number", "name")
-                    if key in result.data
-                )
+                data = result.data
+                dish = f"{data.get('number') or ''} {data.get('name') or ''}".strip()
                 return self._allergens_to_team(state, dish or None)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):
                 # The draft the guest answered the question for: read out by
