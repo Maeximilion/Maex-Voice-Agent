@@ -87,6 +87,11 @@ missing = '''Orders only for pickup: the menu can be imported, searched (`POST /
 tasks = ["T-6.1", "T-6.2", "T-6.3", "T-6.5"]
 
 [[capability]]
+works = '''A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)'''
+missing = '''A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call (`consent_log`); another adult's allergy is noted as a plain removal. Still missing: the handover to the team before `confirm` when the guest asks beyond the maintained allergen values (L17)'''
+tasks = ["T-11.1"]
+
+[[capability]]
 works = '''Real menu data of the pilot operation is imported'''
 missing = '''No real menu data yet: the CSVs come from the chat digitization (C1)'''
 tasks = []

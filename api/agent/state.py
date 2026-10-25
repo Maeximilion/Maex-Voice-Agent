@@ -24,6 +24,7 @@ from api.agent.guest_details import (
 )
 from api.agent.intent import heard
 from api.core.errors import InvalidInput
+from api.domain.calls.consent import Answer
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
 from api.domain.menu.search import CLEAR_MATCHES
@@ -141,7 +142,7 @@ class ConversationState(BaseModel):
     # asked. Asked once per call, before the first draft whose note would
     # carry the allergy as its reason; the answer holds for every note of the
     # call (`guards.with_consent`). Memory of the core, never sent.
-    allergy_consent: Literal["yes", "no", "unclear"] | None = None
+    allergy_consent: Answer | None = None
     # That draft, `draft_order` or `create_reservation` as the model called
     # it, while the question waits for its answer (`loop.py`). Never sent.
     held_call: dict[str, Any] | None = None

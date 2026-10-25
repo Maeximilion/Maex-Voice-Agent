@@ -34,7 +34,8 @@ free text through.
 
 import re
 from itertools import pairwise
-from typing import Literal
+
+from api.domain.calls.consent import Answer
 
 _YES = frozenset(
     {
@@ -300,7 +301,7 @@ _NO = frozenset({"nein", "nee", "nö", "noe"})
 _NO_FILLER = (_FILLER - {"doch"}) | {"lieber", "besser", "nicht", "nötig", "noetig"}
 
 
-def consent_answer(text: str) -> Literal["yes", "no", "unclear"]:
+def consent_answer(text: str) -> Answer:
     """The answer to `ALLERGY_QUESTION`. A yes as strict as for a booking
     (`is_yes`), with the words that say "note it" besides: anything more, as
     in "Ja, und noch eine Cola", is no explicit consent. A no is a sentence of

@@ -315,13 +315,6 @@ def _line_with_consent(state: ConversationState, line: dict[str, Any]) -> dict:
     return {**rest, "note": stored} if stored else rest
 
 
-def settle_cart(state: ConversationState) -> None:
-    """The order in the state once the caller has answered: its notes as they
-    may be stored. Nothing waits to be read out at that point, so this is no
-    correction of a draft."""
-    state.cart = [_line_with_consent(state, line) for line in state.cart]
-
-
 def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
     """The call with each note it would store (`stored_note`). Arguments in a
     wrong form are left to the validation in dispatch."""

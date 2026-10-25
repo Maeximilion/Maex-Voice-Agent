@@ -36,6 +36,7 @@ from api.models import (
     Reservation,
     Tenant,
 )
+from api.models.calls import CONSENT_ANSWERS
 from api.models.orders import ORDER_TYPES
 from evals.recorder import DRAFT_TOOLS
 from sim.session import Turn
@@ -82,7 +83,6 @@ EXPECTED_KEYS = frozenset(
         "consent",
     }
 )
-CONSENT_ANSWERS = frozenset({"yes", "no", "unclear"})
 # What only a note with the caller's yes may carry (L13, `domain/menu/wishes.py`).
 ALLERGY_REASON = "Grund: Allergie"
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
@@ -167,7 +167,7 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     if note is not None and not (isinstance(note, str) and note.strip()):
         raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
     consent = case["expected"].get("consent", [])
-    if not isinstance(consent, list) or not set(consent) <= CONSENT_ANSWERS:
+    if not isinstance(consent, list) or not set(consent) <= set(CONSENT_ANSWERS):
         raise CaseError(
             f"{source}: consent ist eine Liste aus {sorted(CONSENT_ANSWERS)}"
         )

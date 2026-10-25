@@ -27,6 +27,7 @@ Reine Funktionen ohne Datenbank.
 import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator
+from itertools import pairwise
 
 from api.domain.menu.numberwords import fold, parse_cardinal
 from api.schemas.menu import OptionGroup, Wish
@@ -1325,8 +1326,7 @@ _THIRD_SUBJECTS = frozenset(
 
 def of_another_adult(text: str) -> bool:
     """Does `text` speak of the allergy of an adult other than the caller?"""
-    words = _words(text)
-    for word, follows in zip(words, [*words[1:], ""], strict=True):
+    for word, follows in pairwise([*_words(text), ""]):
         if word in _OTHERS or (word in _POSSESSIVES and follows in _PERSONS):
             return True
         if (word, follows) in _THIRD_SUBJECTS:

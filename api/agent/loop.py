@@ -487,7 +487,6 @@ class ConversationLoop:
             now=self._now,
         )
         state.allergy_consent = answer
-        guards.settle_cart(state)
         if answer == "unclear":
             return None
         return ToolCall(name=held["name"], args=held["args"])
