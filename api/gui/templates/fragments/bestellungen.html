@@ -22,6 +22,7 @@
       {% if o.pickup_code %}<span class="code" title="Abholcode">{{ o.pickup_code }}</span>{% endif %}
     </div>
     <div class="name">{{ o.name }} <span class="muted">&middot; {{ o.phone }}</span></div>
+    {% if o.note %}<div class="note">Für die ganze Bestellung: {{ o.note }}</div>{% endif %}
     <ul class="lines">
       {% for l in o.lines %}
       <li>

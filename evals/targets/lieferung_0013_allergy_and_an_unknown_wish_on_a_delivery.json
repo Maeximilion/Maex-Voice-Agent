@@ -78,6 +78,9 @@
     "tools": [
       "check_delivery"
     ],
-    "order_type": "delivery"
+    "order_type": "delivery",
+    "consent": [
+      "yes"
+    ]
   }
 }

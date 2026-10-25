@@ -75,6 +75,8 @@ class BoardOrder:
     # Grund der juengsten Korrektur im Tablet, sonst None.
     corrected: str | None
     lines: list[BoardLine]
+    # The note of the whole order (D24), such as the guest's allergy.
+    note: str | None = None
     # Since when the order waits for "Passt": the guest's yes. None once the
     # kitchen has, or should have had, its ticket.
     waiting_since: datetime | None = None
@@ -172,6 +174,7 @@ def list_new(
                 )
                 for row, (number, name) in zip(items[o.id], labels[o.id], strict=True)
             ],
+            note=o.note,
             waiting_since=waiting.get(o.id),
             overdue=o.id in overdue,
         )

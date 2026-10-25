@@ -48,6 +48,9 @@
         "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
       }
     ],
-    "customer_name": "Mueller"
+    "customer_name": "Mueller",
+    "consent": [
+      "yes"
+    ]
   }
 }

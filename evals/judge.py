@@ -73,6 +73,9 @@ EXPECTED_KEYS = frozenset(
         # The code writes that sentence and the agent has to read it out as it
         # is: it names the amount the guest says yes to (eval abholung_0076).
         "readback",
+        # The note of the confirmed order as a whole, or of the confirmed table,
+        # word for word; null says there is none (D24, T-11.1).
+        "note",
         # The answers to the question for the allergy as a kitchen note, in
         # the order of the consent log ("yes", "no", "unclear"); [] says it
         # was never asked (legal check L13, T-11.1).
@@ -160,6 +163,9 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         spoken = case["expected"]["readback"]
         if not (isinstance(spoken, str) and spoken.strip()):
             raise CaseError(f"{source}: readback is a piece of the read-back sentence")
+    note = case["expected"].get("note")
+    if note is not None and not (isinstance(note, str) and note.strip()):
+        raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
     consent = case["expected"].get("consent", [])
     if not isinstance(consent, list) or not set(consent) <= CONSENT_ANSWERS:
         raise CaseError(
@@ -294,6 +300,9 @@ class Observed:
     # slot would still be booked (review PR #162).
     extra_reservations: int = 0
     notes: list[str] = field(default_factory=list)
+    # The note of the last confirmed order as a whole, else of the last
+    # confirmed table.
+    note: str | None = None
     # The consent log of the call, answers in order.
     consent: list[str] = field(default_factory=list)
     # Notes of the call that carry the allergy as their reason, drafts
@@ -378,6 +387,7 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
         extra_reservations=max(0, len(done_res) - 1),
+        note=done[-1].note if done else None,
         consent=consent,
         reason_without_consent=0 if "yes" in consent else with_reason,
     )
@@ -542,6 +552,8 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diff = _address_diff(expected["address"], seen.address)
         if diff:
             diffs.append(diff)
+    if "note" in expected and not _same_text(expected["note"], seen.note):
+        diffs.append(f"note: erwartet {expected['note']!r}, gebucht {seen.note!r}")
     if "consent" in expected and expected["consent"] != seen.consent:
         diffs.append(
             f"consent: erwartet {expected['consent']!r}, geloggt {seen.consent!r}"

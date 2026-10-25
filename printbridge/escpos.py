@@ -176,6 +176,9 @@ def render(
         out += [BOLD_ON, _line(f"Fertig um {ready}"), BOLD_OFF]
     if ticket.get("customer_name"):
         out.append(_wrapped(f"Name: {ticket['customer_name']}", width))
+    if ticket.get("note"):
+        # The note of the whole order (an allergy), bold above the dishes.
+        out += [BOLD_ON, _wrapped(f"! {ticket['note']}", width), BOLD_OFF]
     out.append(_line("-" * width))
     for item in ticket.get("items") or []:
         label = f"{item.get('quantity', 1)}x {item.get('number') or ''} {item.get('name') or ''}"

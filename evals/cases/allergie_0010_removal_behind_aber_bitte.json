@@ -48,6 +48,9 @@
         "note": "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Zwiebeln"
       }
     ],
-    "customer_name": "Mueller"
+    "customer_name": "Mueller",
+    "consent": [
+      "yes"
+    ]
   }
 }

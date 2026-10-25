@@ -31,6 +31,10 @@
     },
     {
       "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -49,6 +53,10 @@
         "tool": "get_item_details",
         "number": "23"
       }
+    ],
+    "note": "WICHTIG: Keine Gluten. Grund: Allergie",
+    "consent": [
+      "yes"
     ]
   }
 }

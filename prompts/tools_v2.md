@@ -37,7 +37,7 @@
 
 ## draft_order
 **Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind. Nach jeder Änderung erneut.
-**Eingabe:** `idempotency_key`, `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`).
+**Eingabe:** `idempotency_key`, `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung: eine Allergie ohne Gericht oder unklar wozu, in den Worten des Gastes.
 **Liefert:** `order_id`, Summe, `ready_at`, `readback` — der Satz, der vorgelesen wird.
 **Schreibend:** über HTTP ist `idempotency_key` Pflicht — gleicher Schlüssel, gleiche Antwort. Im eigenen Gesprächskern bildet der Code ihn aus den Angaben des Anrufs, das Modell lässt ihn weg.
 

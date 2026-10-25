@@ -70,6 +70,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "pickup_code": order.pickup_code,
         "name": order.customer_name,
         "phone": order.phone,
+        "note": order.note,
         "lines": order.lines,
         "total": euro(order.total_cents),
         "ready": _clock(order.ready_at, tz_name) if order.ready_at else None,

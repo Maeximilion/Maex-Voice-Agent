@@ -537,13 +537,28 @@ COMMANDS = (b"\x1bp\x00\x19\xfa", b"\x1dV\x00", b"\x10\x04\x01", b"\x1b@")
 
 
 def _ticket_with(field: str, text: str) -> dict:
-    """The two fields a slip takes from the call: the name and a dish's note."""
-    if field == "customer_name":
-        return {**TICKET, "customer_name": text}
+    """The fields a slip takes from the call: the name, a dish's note and the
+    note of the whole order."""
+    if field in ("customer_name", "order_note"):
+        return {**TICKET, "customer_name" if field == "customer_name" else "note": text}
     return {**TICKET, "items": [{**TICKET["items"][0], "note": text}]}
 
 
-@pytest.mark.parametrize("field", ["customer_name", "note"])
+def test_note_of_the_whole_order_stands_bold_above_the_dishes():
+    """D24: an allergy not tied to a dish goes on the whole order; the kitchen
+    must not read past it."""
+    text = render(
+        _ticket_with("order_note", "WICHTIG: Keine Sesam. Grund: Allergie")
+    ).decode("cp858")
+    assert "\x1bE\x01! WICHTIG: Keine Sesam. Grund: Allergie" in text
+    assert text.index("Name: Müller") < text.index("Keine Sesam") < text.index("2x 23")
+
+
+def test_a_slip_without_a_note_of_the_whole_order_has_no_line_for_it():
+    assert "\x1bE\x01! " not in render(TICKET).decode("cp858")
+
+
+@pytest.mark.parametrize("field", ["customer_name", "note", "order_note"])
 @pytest.mark.parametrize("command", COMMANDS)
 def test_control_bytes_in_guest_text_never_reach_the_printer(field, command):
     """Name and note are what a caller said and a model wrote down. The slip

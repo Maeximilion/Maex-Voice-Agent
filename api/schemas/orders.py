@@ -42,6 +42,9 @@ class DraftOrderRequest(ToolRequest):
     type: Literal["pickup", "delivery"]
     customer: OrderCustomer
     items: list[OrderItemIn] = Field(min_length=1, max_length=MAX_ITEMS)
+    # A note for the whole order: the guest's allergy said without a dish, or
+    # when it is unclear which dish it belongs to (D24).
+    note: str | None = Field(default=None, max_length=NOTE_MAX)
 
 
 OrderStatus = Literal["draft", "confirmed", "approved", "handed_over", "cancelled"]

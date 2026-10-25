@@ -25,6 +25,7 @@ from evals.judge import (
     judge,
     observe,
     offered_alternatives,
+    validate_case,
 )
 from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
@@ -876,6 +877,33 @@ def _reservation_seen(**extra) -> Observed:
         party_size=7,
         **extra,
     )
+
+
+def test_consent_and_the_note_of_the_whole_order_are_judged():
+    """T-11.1: the consent log and the note on the order or table as a whole."""
+    seen = _reservation_seen(
+        consent=["yes"], note="WICHTIG: Keine Sesam. Grund: Allergie"
+    )
+    assert judge({"consent": ["yes"]}, seen) == []
+    assert judge({"note": "wichtig: keine sesam.  grund: allergie"}, seen) == []
+    assert judge({"consent": []}, seen)[0].startswith("consent")
+    assert judge({"note": None}, seen)[0].startswith("note")
+    assert judge({"note": None, "consent": []}, _reservation_seen()) == []
+
+
+def test_a_reason_stored_without_a_yes_is_always_red():
+    """Whatever the case expects: health data without consent is never right."""
+    diffs = judge({}, _reservation_seen(reason_without_consent=1))
+    assert diffs == ["Allergie als Grund ohne Einwilligung: 1"]
+
+
+@pytest.mark.parametrize(
+    "expected",
+    [{"consent": ["maybe"]}, {"consent": "yes"}, {"note": ""}, {"note": 3}],
+)
+def test_a_broken_consent_or_note_is_a_broken_case(expected):
+    with pytest.raises(CaseError):
+        validate_case({"id": "x", "transcript": [], "expected": expected}, "x")
 
 
 def test_corrected_slot_has_to_be_in_the_result():

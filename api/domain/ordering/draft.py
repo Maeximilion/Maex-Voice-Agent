@@ -86,6 +86,7 @@ def draft_order(
         delivery_fee_cents=0,
         total_cents=total,
         ready_at=ready_at,
+        note=(req.note or "").strip() or None,
         idempotency_key=req.idempotency_key,
         # Fester Bezugspunkt für den readback, damit ein Replay dieselbe Zahl sagt.
         created_at=now,

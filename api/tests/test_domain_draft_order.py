@@ -181,6 +181,32 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     )
 
 
+def test_note_of_the_whole_order_is_stored_and_read_back(session, tenant_id, call_id):
+    """D24: an allergy said without a dish goes on the whole order, repeated
+    after the dishes."""
+    note = "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    req = request(session, tenant_id, call_id, note=f"  {note} ")
+    draft = draft_order(session, req, now=NOW)
+
+    assert session.get(Order, draft.order_id).note == note
+    assert draft.readback.startswith(
+        f"Zweimal Nummer 23 Frühlingsrollen. Für die ganze Bestellung: {note}. Macht "
+    )
+    # The replay says the same.
+    assert draft_order(session, req, now=NOW) == draft
+
+
+@pytest.mark.parametrize("note", [None, "", "   "])
+def test_no_note_of_the_whole_order_says_nothing_of_it(
+    session, tenant_id, call_id, note
+):
+    draft = draft_order(
+        session, request(session, tenant_id, call_id, note=note), now=NOW
+    )
+    assert session.get(Order, draft.order_id).note is None
+    assert "ganze Bestellung" not in draft.readback
+
+
 def test_optionsnamen_ohne_gross_klein(session, tenant_id, call_id):
     items = [ente(session, tenant_id, ("fleisch", "  ENTE "))]
     draft = draft_order(session, request(session, tenant_id, call_id, items), now=NOW)

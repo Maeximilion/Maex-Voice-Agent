@@ -63,6 +63,9 @@
     ],
     "customer_name": "Krueger",
     "confirmed": true,
-    "escalated": false
+    "escalated": false,
+    "consent": [
+      "yes"
+    ]
   }
 }

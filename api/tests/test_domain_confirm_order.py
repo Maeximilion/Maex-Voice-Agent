@@ -122,6 +122,21 @@ def test_bestaetigt_mit_abholcode_audit_und_ereignis(session, tenant_id, call_id
             "note": "ohne Zwiebeln",
         }
     ]
+    # No note of the whole order was given.
+    assert event.payload["note"] is None
+
+
+def test_ticket_carries_the_note_of_the_whole_order(session, tenant_id, call_id):
+    """D24: the note of the whole order reaches the slip with the dishes."""
+    items = [{"menu_item_id": item(session, tenant_id, "23"), "quantity": 1}]
+    note = "WICHTIG: Keine Sesam. Grund: Allergie"
+    order_id = draft_order(
+        session, request(session, tenant_id, call_id, items, note=note), now=NOW
+    ).order_id
+    _confirm(session, tenant_id, call_id, order_id)
+
+    [event] = _events(session)
+    assert event.payload["note"] == note
 
 
 def test_abholcodes_zaehlen_je_betriebstag_hoch(session, tenant_id, call_id):
