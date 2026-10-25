@@ -361,8 +361,13 @@ class CallHandler:
         # are that number, and a dish that was named may enter the order. Such
         # a sentence is played to the end, or the guest would be measured
         # against words they talked over (Codex PR #286).
+        # The same for the question for the allergy as a kitchen note: its
+        # answer is consent only to a question heard to the end (L13; Codex
+        # PR #368).
         counted_as_heard = (
-            live.state.asked_for_phone or live.state.known_item_ids != known
+            live.state.asked_for_phone
+            or live.state.known_item_ids != known
+            or live.state.held_call is not None
         )
         interruptible = (
             not ending

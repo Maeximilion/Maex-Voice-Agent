@@ -447,7 +447,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
   ],
   "note": null }
 ```
-`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes („Für die ganze Bestellung: …."), sent on the kitchen ticket and printed bold above the dishes.
+`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes („Für die ganze Bestellung: …."), sent on the kitchen ticket and printed bold above the dishes. In the own core it outlives a correction: the state keeps it as `order_note`, shows it to the model, and a `draft_order` that names no `note` gets it; an empty `note` clears it.
 
 **Allergy notes in the own core (T-11.1, legal check L13):** before `draft_order` or `create_reservation` is dispatched, the core brings every note that names an allergy into one of two forms: „WICHTIG: Keine <Zutat>. Grund: Allergie" after the caller's explicit „ja" to the consent question, „ohne <Zutat>" otherwise (`agent/guards.py` `consented_call`, docs/05 §Allergie). The first draft whose note would carry the reason waits for that question. Over HTTP the tool stores the note as it comes; the consent is a step of the conversation, not of the tool.
 **Response**
