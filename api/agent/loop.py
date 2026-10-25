@@ -172,6 +172,10 @@ class ConversationLoop:
             note_intent(state, user_text)
         if reason is not None:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
+        if state.held_call is not None:
+            # The question was not what the guest heard last: put it again.
+            guards.note_said(state, ALLERGY_QUESTION)
+            return TurnResult(state=state, say=[ALLERGY_QUESTION])
 
         start = guards.begin_turn(state)
         pending_input = user_text
@@ -474,9 +478,13 @@ class ConversationLoop:
         as the answer allows. Unclear is no consent, and the sentence was
         likely about something else: the draft is dropped, the model reads
         the sentence, and the draft it makes again carries no reason."""
-        held, state.held_call = state.held_call, None
-        if held is None:
+        if state.held_call is None or state.last_say != ALLERGY_QUESTION:
+            # Another sentence came between, as "Sind Sie noch da?" after a
+            # silence on the phone line: a "Ja" answers that one. The draft
+            # stays held and the question is put again (`run_turn`; Codex
+            # PR #368).
             return None
+        held, state.held_call = state.held_call, None
         answer = consent_answer(user_text)
         record_consent(
             self._session,
