@@ -14,7 +14,8 @@ eigenen Worten nach, erst dann wandert der Fall nach evals/cases/.
 
 Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei (auch: nicht UTF-8),
 2 Datei nicht gefunden oder nicht lesbar, Zielordner in evals/cases/ oder
-ID-Verzeichnis (.call_log_ids.json) unlesbar.
+ID-Verzeichnis (.call_log_ids.json) oder Salz (.call_log_salt) unlesbar.
+Eine Uhrzeit mit Minute kuerzt der Lauf in der CSV auf die Stunde (docs/09 L15).
 Ohne Datenbank und ohne Netz.
 """
 
@@ -163,15 +164,19 @@ class Entry:
     line: int
     day: date
     hour: int
-    minute: int
+    # Only an old row still carries the minute; the run cuts it (L15, coarsen).
+    minute: int | None
     duration_min: float | None
     intent: str
     outcome: str
     phrases: list[str]
     items: str
     problems: str
-    # Reihenfolge unter verschiedenen Anrufen derselben Minute, fuer die ID.
+    # Order among the calls of the same hour, for the ID.
     ordinal: int = 0
+    # Order within the minute as the ID before T-11.4 counted it, for the
+    # mapping to the new ID; None once the minute is gone.
+    minute_ordinal: int | None = None
 
 
 def _norm(value: str) -> str:
@@ -259,9 +264,18 @@ def _parse_date(value: str) -> date:
     return date(year, month, day)
 
 
-def _parse_time(value: str) -> tuple[int, int]:
-    hour, minute = (int(part) for part in re.split(r"[:.]", value.strip()))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+_TIME = re.compile(r"(\d{1,2})(?:[:.](\d{1,2}))?(?:\s*uhr)?")
+
+
+def _parse_time(value: str) -> tuple[int, int | None]:
+    """The hour of the call ("18", "18 Uhr"). An old row with the minute
+    ("18:42") still passes; the run cuts it in the CSV (coarsen)."""
+    match = _TIME.fullmatch(_norm(value))
+    if not match:
+        raise ValueError(value)
+    hour = int(match[1])
+    minute = None if match[2] is None else int(match[2])
+    if hour > 23 or (minute is not None and minute > 59):
         raise ValueError(value)
     return hour, minute
 
@@ -341,7 +355,9 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         try:
             hour, minute = _parse_time(row["time"])
         except ValueError:
-            errors.append(f"Zeile {line}: Uhrzeit '{row['time']}' nicht HH:MM")
+            errors.append(
+                f"Zeile {line}: Uhrzeit '{row['time']}' ist keine Stunde (18 oder 18 Uhr)"
+            )
             continue
         duration: float | None = None
         if row["duration_min"]:
@@ -393,28 +409,42 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
     return _with_ordinals(entries), errors
 
 
+def _body(e: Entry) -> tuple:
+    return (e.intent, e.outcome, tuple(e.phrases), e.items, e.problems, e.duration_min)
+
+
 def _with_ordinals(entries: list[Entry]) -> list[Entry]:
-    """Zaehlt verschiedene Anrufe derselben Minute durch. Eine doppelt
-    abgetippte Zeile ist derselbe Anruf und faellt weg, sonst zaehlte die
-    Baseline ihn zweimal."""
-    seen: dict[tuple, list[tuple]] = {}
+    """Numbers the calls of one hour in the order of the CSV, for the ID. Every
+    row is a call: without the minute a row typed twice looks like two calls
+    with the same content, and merging them would lose the second real one;
+    the report names such rows instead (_twins)."""
+    hours: Counter[tuple] = Counter()
+    minutes: dict[tuple, list[tuple]] = {}
     out = []
     for e in entries:
-        minute = (e.day, e.hour, e.minute)
-        body = (
-            e.intent,
-            e.outcome,
-            tuple(e.phrases),
-            e.items,
-            e.problems,
-            e.duration_min,
+        minute_ordinal = None
+        if e.minute is not None:
+            # The ID before T-11.4 counted the distinct rows of a minute.
+            bodies = minutes.setdefault((e.day, e.hour, e.minute), [])
+            if _body(e) not in bodies:
+                bodies.append(_body(e))
+            minute_ordinal = bodies.index(_body(e))
+        hour = (e.day, e.hour)
+        out.append(
+            dataclasses.replace(e, ordinal=hours[hour], minute_ordinal=minute_ordinal)
         )
-        bodies = seen.setdefault(minute, [])
-        if body in bodies:
-            continue
-        out.append(dataclasses.replace(e, ordinal=len(bodies)))
-        bodies.append(body)
+        hours[hour] += 1
     return out
+
+
+def _twins(entries: list[Entry]) -> list[list[int]]:
+    """Lines with the same content in the same hour, maybe typed twice. Only
+    rows with free text: two bare rows ("frage", "erledigt") are common."""
+    groups: dict[tuple, list[int]] = {}
+    for e in entries:
+        if e.phrases or e.items or e.problems:
+            groups.setdefault((e.day, e.hour, _body(e)), []).append(e.line)
+    return [lines for lines in groups.values() if len(lines) > 1]
 
 
 def _share(counter: Counter[str], total: int) -> str:
@@ -459,24 +489,70 @@ def report(entries: list[Entry]) -> str:
             for d in range(7)
         )
     )
+    lines.extend(
+        "Gleiche Zeile in derselben Stunde, doppelt abgetippt? Dann eine loeschen: "
+        "Zeilen " + ", ".join(map(str, twin))
+        for twin in _twins(entries)
+    )
     noted = [e for e in entries if e.problems]
     lines.append(f"Probleme notiert: {len(noted)}")
     lines.extend(f"  Zeile {e.line}: {e.problems}" for e in noted)
     return "\n".join(lines)
 
 
+def _hashed(key: str, salt: str) -> str:
+    return "protokoll_" + hashlib.sha256(f"{salt}|{key}".encode()).hexdigest()[:10]
+
+
 def case_id(entry: Entry, salt: str = "") -> str:
-    """ID des Anrufs: Datum, Minute und Reihenfolge in dieser Minute. Nicht aus
-    der Zeilennummer (Zeile 2 kommt jede Woche wieder) und nicht aus dem
-    Wortlaut (ein korrigierter Tippfehler wuerde den durchgesehenen Fall
-    verwaisen lassen). Das lokale Salz verhindert, dass sich aus einer ID in
-    evals/cases/ die Anrufzeit zurueckrechnen und mit der Anrufliste des
-    Routers abgleichen laesst."""
-    key = (
-        f"{salt}|{entry.day.isoformat()} {entry.hour:02d}:{entry.minute:02d}"
-        f"|{entry.ordinal}"
-    )
-    return "protokoll_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
+    """ID of the call: date, hour and order within that hour. Not from the
+    line number (line 2 comes back every week) and not from the wording (a
+    corrected typo would orphan the reviewed case). The local salt keeps the
+    time of the call from being worked out of an ID in evals/cases/ and matched
+    with the router's call list."""
+    return _hashed(f"{entry.day.isoformat()} {entry.hour:02d}|{entry.ordinal}", salt)
+
+
+def _minute_id(entry: Entry, salt: str) -> str | None:
+    """The ID before T-11.4, from the minute and the order within it; only a
+    row that still carries its minute has one."""
+    if entry.minute is None:
+        return None
+    key = f"{entry.day.isoformat()} {entry.hour:02d}:{entry.minute:02d}"
+    return _hashed(f"{key}|{entry.minute_ordinal}", salt)
+
+
+def _remap(entries: list[Entry], salt: str, known: dict[str, dict[str, str]]) -> bool:
+    """The cut to the hour changes the ID of every old row. A reviewed case
+    keeps its old ID in its file name, so the directory notes it under the new
+    ID ("was"), with the fingerprint it had; write_cases looks the case up
+    through it. Without that the case loses its row and its draft comes back.
+    True when the directory changed."""
+    done = {p.name.split("_")[1] for p in EVAL_CASES.glob("protokoll_*.json")}
+    changed = False
+    mapped: set[str] = set()
+    for e in entries:
+        old = _minute_id(e, salt)
+        if old is None:
+            continue
+        old = old.removeprefix("protokoll_")
+        new = case_id(e, salt).removeprefix("protokoll_")
+        # The same row twice in one minute had one ID, for the first of them.
+        # Mapped already: a run that stopped before the cut of the CSV.
+        if (
+            old in mapped
+            or known.get(new, {}).get("was") == old
+            or (old not in known and old not in done)
+        ):
+            continue
+        mapped.add(old)
+        record = known.pop(old, None) or {
+            "day": e.day.isoformat(),
+            "fp": _fingerprint(e, salt),
+        }
+        known[new] = {**record, "was": old}
+        changed = True
+    return changed
 
 
 def to_case(entry: Entry, salt: str = "") -> dict | None:
@@ -565,6 +641,11 @@ def write_cases(
         if isinstance(draft, dict) and "review" in draft:
             stale.unlink()
     done = {p.name.split("_")[1]: p for p in EVAL_CASES.glob("protokoll_*.json")}
+    # A case reviewed under its minute ID, found through its new ID (_remap).
+    for cid, record in (known or {}).items():
+        was = record.get("was")
+        if was in done and cid not in done:
+            done[cid] = done.pop(was)
     written: set[Path] = set()
     for entry in entries:
         case = to_case(entry, salt)
@@ -578,11 +659,11 @@ def write_cases(
             if reviewed is not None and before is not None and before != fp:
                 print(
                     f"Zeile zu {reviewed} hat sich seit dem letzten Lauf geaendert: "
-                    "korrigiert, oder ein Anruf derselben Minute wurde eingefuegt "
+                    "korrigiert, oder ein Anruf derselben Stunde wurde eingefuegt "
                     "oder umsortiert. Zuordnung und Fall pruefen",
                     file=sys.stderr,
                 )
-            known[cid] = {"day": entry.day.isoformat(), "fp": fp}
+            known[cid] = {**known.get(cid, {}), "day": entry.day.isoformat(), "fp": fp}
         if reviewed is not None:
             if case is None:
                 print(
@@ -596,9 +677,8 @@ def write_cases(
         if case is None:
             continue
         path = folder / f"{case['id']}_{entry.intent}.json"
-        if path in written or path.exists():
-            # Doppelt: dieselbe Zeile zweimal abgetippt (gleiche Minute, gleicher
-            # Wortlaut). Vorhanden: nach dem Aufraeumen oben ein durchgesehener Fall.
+        if path.exists():
+            # After the clean-up above only a reviewed case is left here.
             continue
         path.write_text(
             json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
@@ -611,20 +691,10 @@ def write_cases(
 
 
 def _fingerprint(entry: Entry, salt: str) -> str:
-    """Inhalt der Zeile, nur fuer das lokale Verzeichnis. Die ID haengt an der
-    Reihenfolge in der Minute; ein nachgetragener Anruf davor verschiebt sie.
-    Aendert sich der Inhalt hinter einer durchgesehenen ID, faellt das so auf."""
-    body = json.dumps(
-        [
-            entry.intent,
-            entry.outcome,
-            entry.phrases,
-            entry.items,
-            entry.problems,
-            entry.duration_min,
-        ],
-        ensure_ascii=False,
-    )
+    """Content of the row, for the local directory only. The ID hangs on the
+    order within the hour; a call added before it shifts the ID. A change of
+    content behind a reviewed ID shows up this way."""
+    body = json.dumps(_body(entry), ensure_ascii=False)
     return hashlib.sha256(f"{salt}|{body}".encode()).hexdigest()[:10]
 
 
@@ -650,13 +720,13 @@ def _reconcile(
 
 
 def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> None:
-    """Die ID haengt an der Reihenfolge in der Minute. Faellt ein Anruf einer
-    Minute weg, rutscht der naechste nach vorn, und der durchgesehene Fall des
-    letzten Platzes hat keine Zeile mehr: fuer jede Minute im Protokoll die
-    Plaetze hinter dem letzten belegten pruefen und melden."""
+    """The ID hangs on the order within the hour. When a call of an hour
+    drops out, the next one moves up, and the reviewed case of the last place
+    has no row any more: check and report the places behind the last one taken
+    for every hour in the log."""
     last: dict[tuple, Entry] = {}
     for e in entries:
-        key = (e.day, e.hour, e.minute)
+        key = (e.day, e.hour)
         if key not in last or e.ordinal > last[key].ordinal:
             last[key] = e
     for e in last.values():
@@ -666,7 +736,7 @@ def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> N
             if orphan is not None:
                 print(
                     f"Durchgesehener Fall hat keine Protokollzeile mehr: {orphan}. "
-                    "Anrufe derselben Minute pruefen, Fall anpassen oder entfernen",
+                    "Anrufe derselben Stunde pruefen, Fall anpassen oder entfernen",
                     file=sys.stderr,
                 )
 
@@ -738,6 +808,8 @@ def _load_known(path: Path) -> dict[str, dict[str, str]]:
             entry["day"] = date.fromisoformat(entry["day"]).isoformat()
         except ValueError:
             raise ValueError(f"Eintrag {cid} mit ungueltigem Datum") from None
+        if not isinstance(entry.get("was", ""), str):
+            raise ValueError(f"Eintrag {cid} mit ungueltiger alter ID")
         known[cid] = entry
     return known
 
@@ -778,23 +850,43 @@ def _today() -> date:
     return datetime.now(ZoneInfo("Europe/Berlin")).date()
 
 
+def _rows(text: str) -> tuple[list[str], list[list[str]]]:
+    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";"))
+    return rows[0], rows[1:]
+
+
+def _csv(header: list[str], body: list[list[str]]) -> str:
+    out = io.StringIO()
+    writer = csv.writer(out, delimiter=";", lineterminator="\n")
+    writer.writerow(header)
+    writer.writerows(body)
+    return out.getvalue()
+
+
 def purge(text: str, cutoff: date) -> str:
     """Das Protokoll ohne Eintraege vor `cutoff` (Loeschfrist, DSFA D12).
 
     Arbeitet auf den Zeilen der CSV, damit alles andere unveraendert bleibt.
     Nur fuer eine Datei, die `parse` ohne Fehler gelesen hat."""
-    rows = list(csv.reader(io.StringIO(text.lstrip("\ufeff")), delimiter=";"))
-    header, body = rows[0], rows[1:]
+    header, body = _rows(text)
     at = [_norm(h) for h in header].index("date")
     # Leerzeilen, auch nur aus Leerzeichen, ueberspringt parse; hier ebenso.
     keep = [
         r for r in body if any(c.strip() for c in r) and _parse_date(r[at]) >= cutoff
     ]
-    out = io.StringIO()
-    writer = csv.writer(out, delimiter=";", lineterminator="\n")
-    writer.writerow(header)
-    writer.writerows(keep)
-    return out.getvalue()
+    return _csv(header, keep)
+
+
+def coarsen(text: str) -> str:
+    """The log with the hour in place of the minute (L15: a row then hardly
+    matches the router's call list). Every other cell stays as it is. Only for
+    a file that `parse` read without errors."""
+    header, body = _rows(text)
+    at = [_norm(h) for h in header].index("time")
+    for r in body:
+        if any(c.strip() for c in r):
+            r[at] = str(_parse_time(r[at])[0])
+    return _csv(header, body)
 
 
 def _retention_days(value: int | None) -> int | None:
@@ -887,8 +979,12 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+    legacy = [e for e in entries if e.minute is not None]
+    salt_path = args.file.with_name(".call_log_salt")
     salt = ""
-    if args.cases:
+    # Without a salt file no case ID was ever handed out, so the cut needs
+    # none; a plain run never makes one.
+    if args.cases or (legacy and salt_path.exists()):
         try:
             salt = _salt(args.file)
         except ValueError as exc:
@@ -899,6 +995,14 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 2
+    if legacy:
+        # Directory first: a run that stops in between finds the minutes still
+        # in the CSV and maps again, never a CSV without its mapping.
+        if salt and _remap(entries, salt, known):
+            _save_known(known_path, known)
+        text = coarsen(text)
+        _replace(args.file, text, encoding="utf-8-sig")
+        print(f"Uhrzeit auf die Stunde gekuerzt: {len(legacy)} Zeilen in {args.file}")
     if days is not None:
         cutoff = _today() - timedelta(days=days)
         old = [e for e in entries if e.day < cutoff]
