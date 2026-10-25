@@ -1275,6 +1275,8 @@ def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
         "Nein, das wars.",
         "Auf den Namen Mueller.",
         "Meine Nummer ist 0721 5551234.",
+        # The consent to the kitchen note (L13), then the yes to the order.
+        "Ja.",
         "Ja, passt so.",
     ]
     hinweis = "WICHTIG: Keine Erdnuss. Grund: Allergie"
@@ -1319,6 +1321,8 @@ def test_scripted_model_knows_the_menu_of_the_case(migrated_db_url, tmp_path):
             "Nein, das wars.",
             "Auf den Namen Mueller.",
             "Meine Nummer ist 0721 5551234.",
+            # The consent to the kitchen note (L13), then the yes to the order.
+            "Ja.",
             "Ja, passt so.",
         ]
 

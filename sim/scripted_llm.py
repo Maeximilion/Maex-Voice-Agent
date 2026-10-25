@@ -171,6 +171,14 @@ class ScriptedLLM:
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
+        if (
+            self._pickup is not None
+            and not self._pickup.readback_for
+            and _read_out_by_the_core(state)
+        ):
+            # The draft the stand-in asked for waited for the question for the
+            # allergy, and the core read it out after the answer (`loop.py`).
+            self._pickup.readback_for = state["order_id"]
         if self._pickup is not None and self._pickup.readback_for:
             yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
             return self._pickup.on_readback(yes, text)
@@ -571,6 +579,16 @@ def _mentions_stem(text: str, stems: tuple[str, ...]) -> bool:
     """Teilstueck-Treffer, gewollt: "liefer" deckt Lieferung, liefern, geliefert ab."""
     lowered = text.lower()
     return any(stem in lowered for stem in stems)
+
+
+def _read_out_by_the_core(state: dict[str, Any]) -> bool:
+    """An order draft waits for its yes and the guest heard it last: the state
+    carries its `readback` only while it was not read out."""
+    return (
+        state.get("stage") == "readback_pending"
+        and bool(state.get("order_id"))
+        and "readback" not in state
+    )
 
 
 def _mentions_word(text: str, words: tuple[str, ...]) -> bool:

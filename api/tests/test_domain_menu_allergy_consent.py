@@ -68,7 +68,11 @@ def test_the_own_child_s_allergy_keeps_the_fixed_wording():
 def test_another_adult_s_allergy_is_a_plain_removal():
     wish = classify_wish("meine Frau hat eine Erdnussallergie", [])
     assert wish is not None
-    assert (wish.kind, wish.ingredient, wish.text) == ("allergy", "Erdnuss", "ohne Erdnuss")
+    assert (wish.kind, wish.ingredient, wish.text) == (
+        "allergy",
+        "Erdnuss",
+        "ohne Erdnuss",
+    )
     # Repeated whole to the guest ("Nummer 13 Pho Bo, ohne Erdnuss").
     assert removal_with(wish) == "ohne Erdnuss"
 

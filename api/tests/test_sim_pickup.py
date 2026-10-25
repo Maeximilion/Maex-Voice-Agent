@@ -876,7 +876,9 @@ def _notes(session, order) -> list[str | None]:
     )
 
 
-def _bestellung(session, tenant, *zeilen):
+def _bestellung(session, tenant, *zeilen, consent=None):
+    """An order up to the yes. `consent`: the answer to the question for the
+    allergy as a kitchen note, which the core asks before the draft (L13)."""
     return replay(
         session,
         case(
@@ -885,6 +887,7 @@ def _bestellung(session, tenant, *zeilen):
             "Nein, das wars.",
             "Auf den Namen Mueller.",
             "0721 5551234",
+            *([consent] if consent else []),
             "Ja.",
         ),
         tenant,
@@ -932,7 +935,9 @@ def test_fall_mit_wuenschen_aus_evals(session, tenant):
 
 def test_allergie_steht_im_festen_wortlaut_in_der_bestellung(session, tenant):
     """E14: Hinweis an die Kueche im festen Wortlaut, beim Vorlesen wiederholt."""
-    _, turns = _bestellung(session, tenant, "Pho Bo, ich vertrage keine Erdnüsse.")
+    _, turns = _bestellung(
+        session, tenant, "Pho Bo, ich vertrage keine Erdnüsse.", consent="Ja."
+    )
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
@@ -1220,7 +1225,7 @@ def test_answer_after_a_withdrawal_and_a_long_removal(
     question and dropped the sesame; it is asked again now. Issue #331: a
     removal over 200 characters stayed on the cart and `draft_order` refused
     the order."""
-    _bestellung(session, tenant, first, *answers)
+    _bestellung(session, tenant, first, *answers, consent="Ja." if note else None)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == [note]
@@ -1906,6 +1911,8 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
             "Nein, das wars.",
             "Auf den Namen Mueller.",
             "0721 5551234",
+            # The consent to the kitchen note (L13), then the yes to the order.
+            "Ja.",
             "Ja.",
         ),
         tenant,

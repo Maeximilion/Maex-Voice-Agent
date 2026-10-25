@@ -34,6 +34,7 @@ free text through.
 
 import re
 from itertools import pairwise
+from typing import Literal
 
 _YES = frozenset(
     {
@@ -281,3 +282,42 @@ def read_out(say: str, readback: str) -> bool:
         if _neutral_start(said[:at]):
             return True
     return False
+
+
+# The question for the caller's consent to the allergy as a kitchen note, word
+# for word as Maxi decided it (legal check L13). The core asks it, never the
+# model, and the consent log stores it as the version that was asked.
+ALLERGY_QUESTION = "Darf ich die Allergie als Hinweis für die Küche notieren?"
+# Words a yes to that question may carry besides the assent and the filler of
+# `is_yes`: "Ja, notieren Sie das", "Ja, auf jeden Fall".
+_NOTE_IT = frozenset(
+    {"notieren", "aufschreiben", "weitergeben", "sie", "unbedingt", "auf"}
+    | {"jeden", "fall", "duerfen", "dürfen"}
+)
+_NO = frozenset({"nein", "nee", "nö", "noe"})
+# "Lieber nicht", "Nein, bitte nicht", "Nicht nötig". "doch" is no part of a
+# no: "Nein, doch" takes it back.
+_NO_FILLER = (_FILLER - {"doch"}) | {"lieber", "besser", "nicht", "nötig", "noetig"}
+
+
+def consent_answer(text: str) -> Literal["yes", "no", "unclear"]:
+    """The answer to `ALLERGY_QUESTION`. A yes as strict as for a booking
+    (`is_yes`), with the words that say "note it" besides: anything more, as
+    in "Ja, und noch eine Cola", is no explicit consent. A no is a sentence of
+    a no word or "nicht" and filler ("Nein, nicht notieren"). Anything else is
+    unclear, and unclear is no consent (L13: only an explicit "ja" stores the
+    reason)."""
+    lowered = text.lower()
+    rest = _WORD.sub(
+        lambda word: " " if word.group() in _NOTE_IT else word.group(), lowered
+    )
+    if is_yes(text) or is_yes(rest):
+        return "yes"
+    if "?" in lowered or any(char.isdigit() for char in lowered):
+        return "unclear"
+    words = _WORD.findall(lowered)
+    if (_NO & set(words) or "nicht" in words) and all(
+        word in _NO or word in _NO_FILLER or word in _NOTE_IT for word in words
+    ):
+        return "no"
+    return "unclear"

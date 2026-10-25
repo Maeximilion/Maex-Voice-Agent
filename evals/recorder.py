@@ -124,6 +124,7 @@ class RecordingLLM:
         *,
         timeout: float | None = None,
     ) -> LLMTurn:
+        self._read_out_by_the_core(state)
         self._observe_input(user_input)
         turn = self._inner.next_turn(system_prompt, state, user_input, timeout=timeout)
         self._before_cart = None
@@ -142,6 +143,23 @@ class RecordingLLM:
             rec = self.recording
             rec.read_out = rec.readback is not None and read_out(turn.say, rec.readback)
         return turn
+
+    def _read_out_by_the_core(self, state: dict[str, Any]) -> None:
+        """A draft whose note would carry the allergy waits for the question
+        for the caller's consent; after the answer the core carries it out and
+        reads it out itself, without the model (`agent/loop.py`). Its result
+        never comes back here: the state shows the draft waiting for its yes,
+        and without its `readback`, which it carries only while the guest has
+        not heard it."""
+        call = self._open_call
+        if (
+            call is not None
+            and call[0] in DRAFT_TOOLS
+            and state.get("stage") == "readback_pending"
+            and "readback" not in state
+        ):
+            self._open_call = None
+            self.recording.read_out = True
 
     def _observe_cart(self, cart: Any) -> None:
         """A `cart` next to the answer. The core checks it before it speaks or

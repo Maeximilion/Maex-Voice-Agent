@@ -23,10 +23,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
+from api.agent.consent import ALLERGY_QUESTION, consent_answer
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
-from api.agent.llm import LLMClient, LLMError
+from api.agent.llm import LLMClient, LLMError, LLMTurn, ToolCall
 from api.agent.state import (
     ConversationState,
     apply_state_patch,
@@ -38,6 +39,8 @@ from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
+from api.domain.calls import record_consent
+from api.domain.menu.wishes import mentions_allergy, with_consent
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Tenant
 from api.schemas.callbacks import CallbackReason
@@ -167,6 +170,9 @@ class ConversationLoop:
             return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
 
         start = guards.begin_turn(state)
+        # The answer to the question for the allergy (legal check L13): the
+        # draft that waited for it goes first, before the model is asked.
+        held = self._consent_answered(state, user_text)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal
@@ -189,36 +195,42 @@ class ConversationLoop:
             if left is not None and left <= 0:
                 return self._too_slow(state, user_text)
 
-            try:
-                turn = self._llm.next_turn(
-                    self._system_prompt,
-                    # On a tool hop the input is the tool result: the guest's
-                    # sentence of this turn rides along, or the model no
-                    # longer knows what the result is for.
-                    self._prompt_state(
-                        state,
-                        None if pending_input is user_text else user_text,
-                        called,
-                    ),
-                    pending_input,
-                    # Only what is left: a call that hangs is cut off there
-                    # instead of after the client's own, longer limit. Not
-                    # named at all without a deadline, so a client of the old
-                    # shape is called as before.
-                    **({} if left is None else {"timeout": left}),
-                )
-            except LLMError as exc:
-                # A model that is down or answers outside the contract is an
-                # outage: the call goes to the team, never into a retry loop
-                # with the guest waiting (CLAUDE.md §2 rule 5).
-                log(
-                    logger,
-                    logging.ERROR,
-                    "model failed, handing over to the team",
-                    call_id=str(state.call_id),
-                    error=str(exc),
-                )
-                return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
+            # The draft that waited for the guest's answer is carried out as
+            # the model called it, with its notes as the answer allows.
+            from_hold = held is not None
+            if held is not None:
+                turn, held = LLMTurn(tool_call=held), None
+            else:
+                try:
+                    turn = self._llm.next_turn(
+                        self._system_prompt,
+                        # On a tool hop the input is the tool result: the
+                        # guest's sentence of this turn rides along, or the
+                        # model no longer knows what the result is for.
+                        self._prompt_state(
+                            state,
+                            None if pending_input is user_text else user_text,
+                            called,
+                        ),
+                        pending_input,
+                        # Only what is left: a call that hangs is cut off
+                        # there instead of after the client's own, longer
+                        # limit. Not named at all without a deadline, so a
+                        # client of the old shape is called as before.
+                        **({} if left is None else {"timeout": left}),
+                    )
+                except LLMError as exc:
+                    # A model that is down or answers outside the contract is
+                    # an outage: the call goes to the team, never into a retry
+                    # loop with the guest waiting (CLAUDE.md §2 rule 5).
+                    log(
+                        logger,
+                        logging.ERROR,
+                        "model failed, handing over to the team",
+                        call_id=str(state.call_id),
+                        error=str(exc),
+                    )
+                    return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
             # Rule 3: a `confirm` on a yes for a draft the guest has not heard
             # last. The core puts the draft's question itself and ends the
             # turn (below, once the time limit is checked). Nothing that
@@ -310,27 +322,41 @@ class ConversationLoop:
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
                 )
 
+            # Every note as the caller's answer lets it be stored (L13).
+            call = guards.consented_call(state, turn.tool_call)
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
             refused = guards.refusal(
                 state,
                 start,
                 user_text,
-                turn.tool_call,
+                call,
                 cart_sent=turn.cart is not None,
             )
+            if refused is None and guards.waits_for_consent(state, call):
+                # The first note that would carry the allergy as its reason:
+                # the core asks before anything is stored, and the draft
+                # waits for the answer (`_consent_answered`).
+                state.held_call = {"name": call.name, "args": call.args}
+                guards.note_said(state, ALLERGY_QUESTION)
+                return TurnResult(state=state, say=[ALLERGY_QUESTION])
             if refused is not None:
                 log_refused(
                     self._session,
                     state.call_id,
                     state.tenant_id,
-                    turn.tool_call.name,
+                    call.name,
                     refused,
                 )
                 result = refused
             else:
-                result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
-            apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
-            if turn.tool_call.name == "confirm" and result.ok:
+                result = self._dispatch(state, call.name, call.args)
+            apply_tool_result(state, call.name, result, call.args)
+            if from_hold and result.ok and (said := guards.unheard_readback(state)):
+                # The draft the guest answered the question for: read out by
+                # the core, so the guest's next "Ja" is the yes to it.
+                guards.note_said(state, said)
+                return TurnResult(state=state, say=[said])
+            if call.name == "confirm" and result.ok:
                 # Booked: the core says so itself and ends the turn. A model
                 # that phrased it said what the database did not hold (a code
                 # it made up, a table never drafted), and every rule that
@@ -372,7 +398,7 @@ class ConversationLoop:
                 )
             if result is guards.CALLBACK_WITHOUT_NUMBER:
                 handed = self._callback_without_number(
-                    state, turn.tool_call.args, user_text, reported_failures
+                    state, call.args, user_text, reported_failures
                 )
                 if handed is not None:
                     return handed
@@ -382,8 +408,8 @@ class ConversationLoop:
                 # again: it answers with a sentence or a tool call, never
                 # both, so the tool's sentence would end its turn, and a guest
                 # who hangs up then would be lost (Codex PR #280).
-                return self._table_to_team(state, turn.tool_call.args, result.say)
-            if turn.tool_call.name == "transfer_to_team" and state.transferred:
+                return self._table_to_team(state, call.args, result.say)
+            if call.name == "transfer_to_team" and state.transferred:
                 # The model handed the call over itself, and the team takes it:
                 # the call ends here, as in `_handoff`. Asked again, a real
                 # model called transfer_to_team on its own result until the hop
@@ -391,8 +417,8 @@ class ConversationLoop:
                 return TurnResult(
                     state=state, say=[result.say or SAY_ESCALATION], ended=True
                 )
-            called.append(turn.tool_call.name)
-            pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
+            called.append(call.name)
+            pending_input = _tool_result_as_input(call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
 
@@ -437,6 +463,33 @@ class ConversationLoop:
                     state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
                 )
         return None
+
+    def _consent_answered(
+        self, state: ConversationState, user_text: str
+    ) -> ToolCall | None:
+        """Judges the guest's sentence as the answer to `ALLERGY_QUESTION`,
+        when that question ended the last turn, and logs it per call (L13).
+        Returns the draft that waited for it, to be carried out with its notes
+        as the answer allows. Unclear is no consent, and the sentence was
+        likely about something else: the draft is dropped, the model reads
+        the sentence, and the draft it makes again carries no reason."""
+        held, state.held_call = state.held_call, None
+        if held is None:
+            return None
+        answer = consent_answer(user_text)
+        record_consent(
+            self._session,
+            state.tenant_id,
+            state.call_id,
+            ALLERGY_QUESTION,
+            answer,
+            now=self._now,
+        )
+        state.allergy_consent = answer
+        guards.settle_cart(state)
+        if answer == "unclear":
+            return None
+        return ToolCall(name=held["name"], args=held["args"])
 
     def _order_name(self, state: ConversationState) -> str | None:
         """The name the confirmed order runs under, from the database."""
@@ -596,6 +649,11 @@ class ConversationLoop:
         eigentlichen Bitte ("Reservierung morgen 18 Uhr auf Müller stornieren"),
         obwohl sonst nirgends ein Transkript gespeichert ist (Codex-Review
         PR #102, P2)."""
+        if detail and mentions_allergy(detail):
+            # The guest's sentence names an allergy, which is health data: it
+            # is not written on a card. The caller agreed at most to a kitchen
+            # note (L13), and the team asks when it calls back.
+            detail = None
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
@@ -639,7 +697,12 @@ def _order_lines(state: ConversationState, room: int) -> str:
         seen = state.seen_items.get(line["menu_item_id"], {})
         number, name = seen.get("number"), seen.get("name")
         chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
-        extra = "; ".join([*chosen, *([line["note"]] if line.get("note") else [])])
+        # Stored on the card: the allergy as the caller's answer allows (L13),
+        # also where the question was never asked.
+        note = line.get("note") and with_consent(
+            line["note"], consented=state.allergy_consent == "yes"
+        )
+        extra = "; ".join([*chosen, *([note] if note else [])])
         tail = f" ({extra})" if extra else ""
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
         full.append(f"{line['quantity']}x {dish}{tail}")

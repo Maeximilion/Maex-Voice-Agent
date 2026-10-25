@@ -38,6 +38,10 @@
     },
     {
       "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
       "text": "Ja, passt so."
     }
   ],

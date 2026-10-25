@@ -136,6 +136,15 @@ class ConversationState(BaseModel):
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
+    # The caller's answer to the question for the allergy as a kitchen note
+    # (`consent.ALLERGY_QUESTION`, legal check L13), None while it was not
+    # asked. Asked once per call, before the first draft whose note would
+    # carry the allergy as its reason; the answer holds for every note of the
+    # call (`guards.with_consent`). Memory of the core, never sent.
+    allergy_consent: Literal["yes", "no", "unclear"] | None = None
+    # That draft, `draft_order` or `create_reservation` as the model called
+    # it, while the question waits for its answer (`loop.py`). Never sent.
+    held_call: dict[str, Any] | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""

@@ -45,7 +45,9 @@ def test_upgrade_logs_each_of_the_three_answers(scratch_db_url):
         with engine.begin() as conn:
             tenant, call = _call(conn)
             for answer in ("yes", "no", "unclear"):
-                conn.execute(_INSERT, {"t": tenant, "c": call, "q": QUESTION, "a": answer})
+                conn.execute(
+                    _INSERT, {"t": tenant, "c": call, "q": QUESTION, "a": answer}
+                )
         with engine.connect() as conn:
             assert conn.execute(text("SELECT count(*) FROM consent_log")).scalar() == 3
     finally:

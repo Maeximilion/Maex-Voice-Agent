@@ -26,6 +26,10 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
+- The caller's allergy (legal check L13): a note keeps "Grund: Allergie" only
+  after the caller's explicit "ja" to `consent.ALLERGY_QUESTION`, otherwise it
+  says "ohne <Zutat>" (`consented_call`). The first draft whose note would
+  carry the reason waits for that question (`waits_for_consent`, `loop.py`).
 """
 
 import re
@@ -52,6 +56,7 @@ from api.agent.state import (
     same_order,
 )
 from api.domain.menu.items import option_key
+from api.domain.menu.wishes import asks_consent, with_consent
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -264,6 +269,7 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             hint=f"{HINT_CART_FORM} {validation_hint(exc)}",
         )
     else:
+        lines = [_line_with_consent(state, line) for line in lines]
         ids = [line["menu_item_id"] for line in lines]
         if not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
@@ -282,6 +288,68 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             return None
     order_corrected(state)
     return refused
+
+
+# The calls that store a note: on an order line, on the whole order, on a table.
+_NOTED = frozenset({"draft_order", "create_reservation"})
+
+
+def stored_note(state: ConversationState, note: str) -> str | None:
+    """`note` as the caller's answer lets it be stored (L13): with their "ja"
+    an allergy keeps the fixed wording, without it only "ohne <Zutat>". While
+    the question was not asked, a note that would carry the reason stays as
+    it is: the draft with it waits for the question (`waits_for_consent`)."""
+    if state.allergy_consent is None and asks_consent(note):
+        return note
+    return with_consent(note, consented=state.allergy_consent == "yes")
+
+
+def _line_with_consent(state: ConversationState, line: dict[str, Any]) -> dict:
+    """An order line with its note as it may be stored; no note when none is
+    left."""
+    note = line.get("note")
+    if not isinstance(note, str):
+        return line
+    rest = {key: value for key, value in line.items() if key != "note"}
+    stored = stored_note(state, note)
+    return {**rest, "note": stored} if stored else rest
+
+
+def settle_cart(state: ConversationState) -> None:
+    """The order in the state once the caller has answered: its notes as they
+    may be stored. Nothing waits to be read out at that point, so this is no
+    correction of a draft."""
+    state.cart = [_line_with_consent(state, line) for line in state.cart]
+
+
+def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
+    """The call with each note it would store (`stored_note`). Arguments in a
+    wrong form are left to the validation in dispatch."""
+    if call.name not in _NOTED:
+        return call
+    args = dict(call.args)
+    if isinstance(args.get("note"), str):
+        args["note"] = stored_note(state, args["note"])
+    if isinstance(args.get("items"), list):
+        args["items"] = [
+            _line_with_consent(state, item) if isinstance(item, dict) else item
+            for item in args["items"]
+        ]
+    return ToolCall(name=call.name, args=args)
+
+
+def waits_for_consent(state: ConversationState, call: ToolCall) -> bool:
+    """A draft whose note would carry the allergy as its reason, before the
+    caller was asked: it is not dispatched, the core asks first (`loop.py`)."""
+    if state.allergy_consent is not None or call.name not in _NOTED:
+        return False
+    items = call.args.get("items")
+    lines = items if isinstance(items, list) else []
+    notes = [
+        call.args.get("note"),
+        *(line.get("note") for line in lines if isinstance(line, dict)),
+    ]
+    return any(isinstance(note, str) and asks_consent(note) for note in notes)
 
 
 def _options_fit(seen: dict[str, Any], line: dict[str, Any]) -> bool:
