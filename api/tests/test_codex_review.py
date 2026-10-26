@@ -77,7 +77,7 @@ def test_a_review_by_someone_else_on_the_head_is_no_codex_result():
     assert codex_review.state(HEAD, body, reviews, NOW) == "running"
 
 
-def _gh(summary, reviews, comments=()):
+def _gh(summary, reviews):
     answers = {
         f"{R}/pulls/371": [{"head": {"sha": HEAD}}],
         f"{R}/issues/371/comments?per_page=100": [
@@ -93,54 +93,75 @@ def _gh(summary, reviews, comments=()):
             },
         ],
         f"{R}/pulls/371/reviews?per_page=100": reviews,
-        f"{R}/pulls/371/comments?per_page=100": list(comments),
     }
     return lambda path: answers[path]
 
 
-def test_main_lists_the_findings_of_the_head_review(capsys):
-    comments = [
-        {
-            "id": 4376012463,
-            "pull_request_review_id": 7,
-            "path": "api/jobs/retention.py",
-            "line": 97,
-            "body": "**<sub>![P2 Badge](x)</sub>  Invalidate the callback stream token**\n\nWhy",
-        },
-        {
-            "id": 1,
-            "pull_request_review_id": 3,
-            "path": "old.py",
-            "line": 1,
-            "body": "**Old**",
-        },
-    ]
-    gh = _gh(_summary(HEAD, "completed", findings=True), [_review(HEAD)], comments)
+def _thread(comment_id, review_id, path="api/jobs/retention.py", line=97, title="Fix"):
+    return {
+        "databaseId": comment_id,
+        "path": path,
+        "line": line,
+        "originalLine": line,
+        "body": f"**<sub><sub>![P2 Badge](x)</sub></sub>  {title}**\n\nWhy",
+        "author": {"login": "chatgpt-codex-connector"},
+        "pullRequestReview": {"databaseId": review_id},
+    }
 
-    assert codex_review.main(["371"], gh=gh) == 1
+
+def _no_threads(pr):
+    raise AssertionError("threads read although Codex reported no finding")
+
+
+def test_main_lists_new_and_older_open_threads(capsys):
+    threads = [
+        _thread(4376012463, 7, title="Invalidate the callback stream token"),
+        _thread(4375519158, 3, line=164, title="Remove allergy notes from copies"),
+    ]
+    gh = _gh(_summary(HEAD, "completed", findings=True), [_review(HEAD)])
+
+    assert codex_review.main(["371"], gh=gh, gq=lambda pr: threads) == 1
 
     out = capsys.readouterr().out
     assert f"codex {HEAD[:7]}: findings" in out
     assert (
-        "4376012463 api/jobs/retention.py:97 P2 Invalidate the callback stream token"
+        "4376012463 api/jobs/retention.py:97 P2 Invalidate the callback stream token\n"
         in out
     )
-    assert "old.py" not in out
+    assert (
+        "4375519158 api/jobs/retention.py:164 P2 Remove allergy notes from copies (earlier head"
+        in out
+    )
+
+
+def test_only_older_threads_open_reads_open_threads(capsys):
+    """PR #371, 5748bd2: Codex found nothing new but reported findings, the
+    answered threads of earlier heads that were never resolved."""
+    gh = _gh(_summary(HEAD, "completed", findings=True), [])
+    old = [_thread(4375519158, 3)]
+
+    assert codex_review.main(["371"], gh=gh, gq=lambda pr: old) == 1
+    assert f"codex {HEAD[:7]}: open threads" in capsys.readouterr().out
+
+    assert codex_review.main(["371"], gh=gh, gq=lambda pr: []) == 0
+    out = capsys.readouterr().out
+    assert f"codex {HEAD[:7]}: clean, threads resolved" in out
+    assert f"`Merge gate: {HEAD}`" in out
 
 
 def test_main_says_clean_and_exits_0(capsys):
     gh = _gh(_summary(HEAD, "completed", findings=False), [])
-    assert codex_review.main(["371"], gh=gh) == 0
+    assert codex_review.main(["371"], gh=gh, gq=_no_threads) == 0
     assert capsys.readouterr().out.strip() == f"codex {HEAD[:7]}: clean"
 
 
 def test_main_names_the_single_retrigger_only_when_stalled(capsys):
     stalled = _summary(HEAD, "running", since=datetime.now(UTC) - timedelta(minutes=20))
-    assert codex_review.main(["371"], gh=_gh(stalled, [])) == 3
+    assert codex_review.main(["371"], gh=_gh(stalled, []), gq=_no_threads) == 3
     assert "one comment `@codex review`" in capsys.readouterr().out
 
     running = _summary(HEAD, "running", since=datetime.now(UTC))
-    assert codex_review.main(["371"], gh=_gh(running, [])) == 2
+    assert codex_review.main(["371"], gh=_gh(running, []), gq=_no_threads) == 2
     assert "@codex" not in capsys.readouterr().out
 
 
@@ -160,7 +181,10 @@ def test_main_waits_until_the_review_is_done(capsys):
             return []
         return _gh(current["body"], [])(path)
 
-    assert codex_review.main(["371", "--wait", "--interval", "0"], gh=gh) == 0
+    assert (
+        codex_review.main(["371", "--wait", "--interval", "0"], gh=gh, gq=_no_threads)
+        == 0
+    )
     assert "clean" in capsys.readouterr().out
 
 

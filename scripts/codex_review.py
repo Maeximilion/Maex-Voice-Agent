@@ -46,9 +46,39 @@ STALLED_AFTER = timedelta(minutes=15)
 _STATE = re.compile(r"codex-review-state:v1 (\{.*?\}\}) -->")
 _SINCE = re.compile(r'Running\*\* since <relative-time datetime="([^"]+)"')
 
-EXIT = {"clean": 0, "findings": 1, "running": 2, "not started": 2, "stalled": 3}
+EXIT = {
+    "clean": 0,
+    "clean, threads resolved": 0,
+    "findings": 1,
+    "open threads": 1,
+    "running": 2,
+    "not started": 2,
+    "stalled": 3,
+}
+# Unresolved review threads, first comment each (REST cannot tell resolved).
+THREADS = """
+query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 1) {
+            nodes {
+              databaseId path line originalLine body
+              author { login }
+              pullRequestReview { databaseId }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+"""
 
 Gh = Callable[[str], list]
+Gq = Callable[[int], list]
 
 
 class GhError(Exception):
@@ -74,6 +104,37 @@ def gh_api(path: str) -> list:
     return [json.loads(line) for line in res.stdout.splitlines() if line.strip()]
 
 
+def gh_threads(pr: int) -> list[dict]:
+    """The first comment of every unresolved review thread by Codex."""
+    res = subprocess.run(
+        [
+            "gh",
+            "api",
+            "graphql",
+            "-F",
+            "owner={owner}",
+            "-F",
+            "name={repo}",
+            "-F",
+            f"number={pr}",
+            "-f",
+            f"query={THREADS}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode != 0:
+        raise GhError(res.stderr.strip() or f"gh api graphql exited {res.returncode}")
+    nodes = json.loads(res.stdout)["data"]["repository"]["pullRequest"]
+    return [
+        t["comments"]["nodes"][0]
+        for t in nodes["reviewThreads"]["nodes"]
+        if not t["isResolved"]
+        and t["comments"]["nodes"]
+        and t["comments"]["nodes"][0]["author"]["login"] == BOT.removesuffix("[bot]")
+    ]
+
+
 def state(head: str, summary: str | None, reviews: list[dict], now: datetime) -> str:
     """Codex's state for `head` from its summary comment and its reviews."""
     if any(r["user"]["login"] == BOT and r["commit_id"] == head for r in reviews):
@@ -92,9 +153,17 @@ def state(head: str, summary: str | None, reviews: list[dict], now: datetime) ->
 
 
 def look(
-    pr: int, gh: Gh = gh_api, now: datetime | None = None
+    pr: int, gh: Gh = gh_api, gq: Gq = gh_threads, now: datetime | None = None
 ) -> tuple[str, str, list]:
-    """Head sha, state and the unresolved findings of the head."""
+    """Head sha, state and Codex's unresolved threads, each marked `new` when it
+    came with the review of this head.
+
+    Codex's "findings" also count threads of earlier heads that were answered
+    but never resolved (PR #371: a head without any new finding read
+    `has_any_findings: true`), and the merge gate refuses while the state says
+    unresolved. Such a head reads "open threads", or "clean, threads resolved"
+    once none is left: Codex does not update its state when a thread is
+    resolved, so the merge gate still needs a comment `Merge gate: <sha>`."""
     now = now or datetime.now(UTC)
     head = gh(f"{REPO}/pulls/{pr}")[0]["head"]["sha"]
     comments = [
@@ -105,19 +174,18 @@ def look(
     summary = max(comments, key=lambda c: c["updated_at"])["body"] if comments else None
     reviews = gh(f"{REPO}/pulls/{pr}/reviews?per_page=100")
     current = state(head, summary, reviews, now)
-    findings = []
-    if current == "findings":
-        ids = {
-            r["id"]
-            for r in reviews
-            if r["user"]["login"] == BOT and r["commit_id"] == head
-        }
-        findings = [
-            c
-            for c in gh(f"{REPO}/pulls/{pr}/comments?per_page=100")
-            if c.get("pull_request_review_id") in ids
-        ]
-    return head, current, findings
+    if current != "findings":
+        return head, current, []
+    ids = {
+        r["id"] for r in reviews if r["user"]["login"] == BOT and r["commit_id"] == head
+    }
+    threads = [
+        {**c, "new": (c.get("pullRequestReview") or {}).get("databaseId") in ids}
+        for c in gq(pr)
+    ]
+    if not any(t["new"] for t in threads):
+        current = "open threads" if threads else "clean, threads resolved"
+    return head, current, threads
 
 
 def _title(body: str) -> str:
@@ -129,7 +197,7 @@ def _title(body: str) -> str:
     return f"{badge.group(1)} {line}" if badge else line[:100]
 
 
-def main(argv: list[str] | None = None, gh: Gh = gh_api) -> int:
+def main(argv: list[str] | None = None, gh: Gh = gh_api, gq: Gq = gh_threads) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("pr", type=int)
     parser.add_argument(
@@ -143,24 +211,29 @@ def main(argv: list[str] | None = None, gh: Gh = gh_api) -> int:
     started = datetime.now(UTC)
     while True:
         try:
-            head, current, findings = look(args.pr, gh)
+            head, current, findings = look(args.pr, gh, gq)
         except (GhError, KeyError, IndexError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 4
         waited = datetime.now(UTC) - started
         if current == "not started" and waited > STALLED_AFTER:
             current = "stalled"
-        done = current in ("clean", "findings", "stalled")
+        done = current in EXIT and current not in ("running", "not started")
         if done or not args.wait or waited > timedelta(minutes=args.timeout):
             break
         time.sleep(args.interval)
     print(f"codex {head[:7]}: {current}")
     for c in findings:
-        print(
-            f"  {c['id']} {c['path']}:{c.get('line') or c.get('original_line')} {_title(c['body'])}"
-        )
+        where = f"{c['path']}:{c.get('line') or c.get('originalLine')}"
+        older = "" if c["new"] else " (earlier head: resolve it once answered)"
+        print(f"  {c['databaseId']} {where} {_title(c['body'])}{older}")
     if current == "stalled":
         print("  one comment `@codex review` (never a second one)")
+    if current == "clean, threads resolved":
+        print(
+            "  Codex's state still counts the resolved threads; the merge gate needs "
+            f"a comment that opens with `Merge gate: {head}`"
+        )
     return EXIT[current]
 
 
