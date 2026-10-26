@@ -246,3 +246,42 @@ def test_an_allergy_without_a_readable_ingredient_is_unread(note):
 )
 def test_a_read_allergy_or_none_is_not_unread(note):
     assert not unread_allergy(note)
+
+
+@pytest.mark.parametrize(
+    ("note", "consented", "stored"),
+    [
+        # Codex PR #368: the cutlery request was dropped with the rewording.
+        (
+            "Erdnussallergie. Bitte Besteck dazu",
+            True,
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Bitte Besteck dazu",
+        ),
+        (
+            "Erdnussallergie. Bitte Besteck dazu",
+            False,
+            "ohne Erdnuss, bitte Besteck dazu",
+        ),
+        (
+            "Bitte Besteck dazu. Erdnussallergie",
+            True,
+            "WICHTIG: Keine Erdnuss. Grund: Allergie. Bitte Besteck dazu",
+        ),
+        (
+            "Erdnussallergie, bitte Besteck dazu",
+            False,
+            "ohne Erdnuss, bitte Besteck dazu",
+        ),
+        ("Erdnussallergie und extra scharf", False, "ohne Erdnuss, extra scharf"),
+        # What the rewording keeps already is not written twice.
+        (
+            "Nussallergie, ohne Zwiebeln",
+            True,
+            "WICHTIG: Keine Nuss. Grund: Allergie. Ohne Zwiebeln",
+        ),
+        # An allergen list stays one allergy.
+        ("Milch, Ei und Nussallergie", False, "ohne Milch, Ei und Nuss"),
+    ],
+)
+def test_the_rest_of_a_note_survives_the_allergy_wording(note, consented, stored):
+    assert with_consent(note, consented=consented) == stored
