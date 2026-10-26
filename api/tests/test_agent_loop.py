@@ -28,9 +28,11 @@ from api.agent.loop import (
     SAY_BOOKED_GOODBYE,
     SAY_ESCALATION,
     SAY_NOBODY_REACHABLE,
+    SAY_NOT_A_PERSON,
     SAY_ORDER_NOT_PLACED,
     SAY_ORDER_PLACED,
     SAY_TABLE_BOOKED,
+    SAY_TEAM_OFFER,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
     _booked_say,
@@ -915,6 +917,97 @@ def test_wish_in_a_sentence_that_escalates_is_still_noted(session, state):
     assert result.ended
     assert llm.calls == []
     assert state.intent == "pickup"
+
+
+SAY_ANSWER = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
+
+
+def test_the_question_for_a_human_gets_the_truth_and_the_team_without_the_model(
+    session, state
+):
+    """docs/09 L1: a truthful answer every time, so the core gives it and not
+    the model; with the offer of the team (T-11.5)."""
+    llm = FakeLLM([])  # must not be asked
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Sind Sie ein Mensch?")
+
+    assert result.say == [SAY_ANSWER]
+    assert "KI-Assistent" in SAY_NOT_A_PERSON
+    assert result.ended is False
+    assert llm.calls == []
+    assert state.last_say == SAY_ANSWER
+    assert state.stage != "transferred"
+
+
+def test_a_yes_to_the_offer_hands_the_call_to_the_team(session, state):
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    loop.run_turn(state, "Sind Sie ein Mensch?")
+
+    result = loop.run_turn(state, "Ja, gerne.")
+
+    assert result.ended is True
+    assert result.say == [SAY_ESCALATION]
+    assert state.stage == "transferred"
+    assert llm.calls == []
+    call = session.get(Call, state.call_id)
+    assert call.transfer_reason == "human_requested"
+
+
+def test_a_no_to_the_offer_goes_on_with_the_model(session, state):
+    llm = FakeLLM([LLMTurn(say="Gern, für wie viele Personen?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    loop.run_turn(state, "Sind Sie ein Mensch?")
+
+    result = loop.run_turn(state, "Nein, schon gut. Ich möchte einen Tisch.")
+
+    assert result.say == ["Gern, für wie viele Personen?"]
+    assert result.ended is False
+    # The model knows what the guest answered.
+    [(_, state_json, text)] = llm.calls
+    assert state_json["last_say"] == SAY_ANSWER
+    assert text == "Nein, schon gut. Ich möchte einen Tisch."
+
+
+def test_a_later_yes_is_no_answer_to_the_offer(session, state):
+    """The offer counts for the very next sentence only: a "Ja" two turns on
+    answers the model's question."""
+    llm = FakeLLM([LLMTurn(say="Für wie viele Personen?"), LLMTurn(say="Gern.")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    loop.run_turn(state, "Sind Sie ein Mensch?")
+    loop.run_turn(state, "Nein. Einen Tisch bitte.")
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.say == ["Gern."]
+    assert state.stage != "transferred"
+
+
+def test_asking_with_the_words_of_the_wish_is_still_a_question(session, state):
+    """ "Spreche ich mit einem Menschen?" holds a word of the wish to talk to
+    one (`escalation.check`). It asks: the answer and the offer, no transfer
+    the guest did not ask for."""
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Spreche ich mit einem Menschen?")
+
+    assert result.say == [SAY_ANSWER]
+    assert result.ended is False
+
+
+def test_a_question_next_to_a_complaint_hears_the_truth_before_the_transfer(
+    session, state
+):
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Sind Sie ein Roboter? Ich will mich beschweren.")
+
+    assert result.ended is True
+    assert result.say == [SAY_NOT_A_PERSON, SAY_ESCALATION]
+    assert session.get(Call, state.call_id).transfer_reason == "complaint"
 
 
 def test_complaint_about_an_order_is_not_logged_as_a_pickup(session, state):

@@ -56,7 +56,10 @@ from api.telephony.speech_spike import spoken_name
 
 # docs/05 §6. Drafts until the legal check in docs/09; the greeting carries no
 # recording notice because nothing is recorded.
-GREETING = "Guten Tag, hier ist der KI-Assistent von {name}. Was kann ich für Sie tun?"
+GREETING = "Guten Tag, hier ist der KI-Assistent von {name}.{privacy} Was kann ich für Sie tun?"
+# Where the full privacy notice is (docs/09 L4), from service_config; left out
+# while the restaurant has set none.
+PRIVACY_POINTER = " Hinweise zum Datenschutz finden Sie unter {address}."
 SAY_OUTAGE = (
     "Bei mir gibt es gerade eine technische Störung. "
     "Ich verbinde Sie direkt mit dem Restaurant."
@@ -346,7 +349,7 @@ class CallHandler:
             clock=self._clock,
         )
         live.state.greeted = True
-        self._port.say(live.session_id, GREETING.format(name=routing.tenant_name))
+        self._port.say(live.session_id, greeting(routing))
 
     def _turn(self, live: _LiveCall, text: str) -> None:
         if live.loop is None:
@@ -580,6 +583,14 @@ class CallHandler:
             if self._clock() - kept_at <= NAMED_PHONE_SECONDS:
                 return
             self._named_phones.popitem(last=False)
+
+
+def greeting(routing: CallRouting) -> str:
+    """The first sentence of a call the AI answers: the AI notice, and where the
+    privacy notice is once the restaurant has set it (docs/09 L1, L4)."""
+    address = routing.privacy_notice_address
+    privacy = PRIVACY_POINTER.format(address=address) if address else ""
+    return GREETING.format(name=routing.tenant_name, privacy=privacy)
 
 
 def _close_quietly(session: Session | None) -> None:

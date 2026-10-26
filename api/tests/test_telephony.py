@@ -352,6 +352,61 @@ def test_keypad_without_digits_is_ignored(session, tenant):
     assert len(port.says("s-1")) == 1  # only the greeting
 
 
+def test_the_greeting_names_where_the_privacy_notice_is(session, tenant):
+    """docs/09 L4: in the call the AI notice and where the full notice is, the
+    address from service_config, never from the code."""
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(privacy_notice_address="testbetrieb.example/datenschutz")
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert port.says("s-1") == [
+        "Guten Tag, hier ist der KI-Assistent von Testbetrieb. "
+        "Hinweise zum Datenschutz finden Sie unter testbetrieb.example/datenschutz. "
+        "Was kann ich für Sie tun?"
+    ]
+
+
+def test_without_an_address_the_greeting_leaves_the_pointer_out(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert port.says("s-1") == [
+        "Guten Tag, hier ist der KI-Assistent von Testbetrieb. Was kann ich für Sie tun?"
+    ]
+
+
+def test_a_changed_address_is_said_from_the_next_call(session, tenant):
+    """Read with the routing at the start of every call, like the mode."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    with Session(session.get_bind()) as other:
+        other.execute(
+            update(ServiceConfig)
+            .where(ServiceConfig.tenant_id == tenant.id)
+            .values(privacy_notice_address="neu.example/datenschutz")
+        )
+        other.commit()
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+
+    assert "Datenschutz" not in port.says("s-1")[0]
+    assert "neu.example/datenschutz" in port.says("s-2")[0]
+
+
 def test_repeated_start_event_greets_once_and_logs_one_call(session, tenant):
     port = FakeTelephony()
     handler = handler_for(session, tenant, port)

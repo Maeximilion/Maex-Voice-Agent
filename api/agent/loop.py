@@ -23,6 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
+from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
@@ -53,6 +54,11 @@ MAX_TOOL_HOPS = 6
 SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter."
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
+# The answer to "Sind Sie ein Mensch?" (`escalation.asks_if_human`), truthful
+# every time (docs/09 L1), and the offer of the team; a yes to the offer hands
+# the call over. Draft wording, checked with the texts of docs/05 §6.
+SAY_NOT_A_PERSON = "Ich bin ein KI-Assistent, kein Mensch."
+SAY_TEAM_OFFER = "Möchten Sie lieber mit jemandem aus dem Team sprechen?"
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 # The last resort of `_handoff`: the team is not reachable and there is no number
 # for a callback. Every sentence above promises the team; here nobody takes
@@ -156,6 +162,16 @@ class ConversationLoop:
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
         reason = escalation.check(user_text)
+        asks = escalation.asks_if_human(user_text)
+        if asks and reason == "human_requested":
+            # "Spreche ich mit einem Menschen?" holds the words of the wish
+            # and asks: the answer and the offer, the guest's yes hands over.
+            reason = None
+        # The offer counts for the sentence right after it only.
+        offered, state.team_offered = state.team_offered, False
+        answered_offer = offered and reason is None and is_yes(user_text)
+        if answered_offer:
+            reason = "human_requested"
         if reason != "complaint":
             # Before the model and before a handoff: the request of this very
             # turn carries it already, and a call that goes to the team right
@@ -164,7 +180,21 @@ class ConversationLoop:
             # the transfer says what that call was.
             note_intent(state, user_text)
         if reason is not None:
-            return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
+            handed = self._handoff(
+                state,
+                SAY_ESCALATION,
+                reason=reason,
+                # A "Ja" tells the team nothing the reason does not say.
+                detail=None if answered_offer else user_text,
+            )
+            if asks:
+                handed.say.insert(0, SAY_NOT_A_PERSON)
+            return handed
+        if asks:
+            say = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
+            guards.note_said(state, say)
+            state.team_offered = True
+            return TurnResult(state=state, say=[say])
 
         start = guards.begin_turn(state)
         pending_input = user_text

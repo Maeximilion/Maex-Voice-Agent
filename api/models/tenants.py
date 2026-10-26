@@ -71,6 +71,10 @@ class ServiceConfig(Timestamps, Base):
             "order_approval_overdue_minutes >= 1",
             name="ck_service_config_order_approval_overdue_minutes",
         ),
+        CheckConstraint(
+            "btrim(privacy_notice_address) <> ''",
+            name="ck_service_config_privacy_notice_address",
+        ),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -128,6 +132,10 @@ class ServiceConfig(Timestamps, Base):
     order_approval_overdue_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="5"
     )
+    # Where the restaurant's privacy notice is, as the caller should hear it;
+    # the phone greeting names it (docs/09 L4, T-11.5, migration 009). Empty
+    # until the notice is online: the greeting then leaves the sentence out.
+    privacy_notice_address: Mapped[str | None] = mapped_column(Text)
 
 
 class OpeningHours(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
