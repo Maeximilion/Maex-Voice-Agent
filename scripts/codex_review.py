@@ -12,11 +12,15 @@ of this head started), 3 stalled, 4 an API call failed. Needs an authenticated
 `gh`, stdlib only.
 
 Codex starts by itself on "PR opened" and on every push ("New commits") and is
-done in 4 to 8 minutes. Never comment `@codex review` right after a push: the
-manual request replaces the running review, and on PR #371 (26.10.2026) the
-replaced one never finished. This script never comments; "stalled" (running
-for more than 15 minutes, or no review of the head started within 15 minutes
-of waiting) is the one case for a single `@codex review`.
+done in 4 to 8 minutes, so `@codex review` after a push only duplicates it. A
+run can hang without any sign: on PR #371 (26.10.2026) two runs stayed
+"running" with no review, comment or reaction, one of them with no manual
+request at all. Both had thread replies (each a review on the head) posted
+within seconds of the push; the runs without such replies finished. Hence:
+answer review threads before the push, and treat "stalled" (running for more
+than 15 minutes, or no review of the head started within 15 minutes of
+waiting) as the one case for a single `@codex review`. This script never
+comments.
 
 How the result shows (seen on #370 and #371): the bot's summary comment carries
 `codex-review-state:v1 {...}`; done is `"status":"completed"`, whose
