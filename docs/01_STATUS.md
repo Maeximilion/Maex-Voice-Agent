@@ -620,7 +620,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.9.0 · 26.10.2026:** Handover: T-11.1 taken over and merged with main, consent_log period in the deletion job, redesign decided (allergies never in free text)
+- **v2.8.4 · 26.10.2026:** filelock 4.2.1 in the voice image, closes Dependabot alerts 3 to 8 (#374)
 - **v2.8.3 · 26.10.2026:** T-11.1 first PR brought up to date with main: consent log as migration 010, its period (end of the 3rd calendar year after the answer) in the deletion job
+- **v2.8.3 · 26.10.2026:** T-11.7 done: container logs 14 days via journald, n8n 168 h, Asterisk without CDR
 - **v2.8.2 · 26.10.2026:** Codex watching: scripts/codex_review.py reads the review state of a head: stalled, declined, open threads
 - **v2.8.1 · 26.10.2026:** T-11.5 done: the greeting names the privacy notice, the core answers "Sind Sie ein Mensch?" with the offer of the team; README routine on python3.12
 - **v2.8.0 · 26.10.2026:** T-11.2 done: the daily deletion job keeps the periods of the legal check (L8, L13)

@@ -805,8 +805,9 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   it. Whether the pilot's router shows the guest's number when we also send it (P-Asserted-Identity)
   is a point for T-10.2. The team needs it to call a guest back.
 - **From T-1.11, container logs on the server:** no number is in them by design (the drill checks),
-  but they are kept as long as Docker keeps them; on the server they need a limit of their own
-  (rotation and age), like every other place that may hold call data (docs/17).
+  and on the server they are kept 14 days at most: production logs to the host's journald with
+  an age limit (`deploy/journald.conf`, T-11.7, docs/13 §3). Asterisk keeps no call detail records
+  and no queue log (`deploy/asterisk/conf/cdr.conf`, `logger.conf`).
   A refused INVITE (#252 finding 12, 21.10.2026) writes no number either: the ACL refuses it
   before identification and logs the sender's address and port. The line with the From URI
   (`log_failed_request`, a notice) comes only for a request that passed the ACL and matched no
@@ -814,7 +815,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   cannot be dropped from the log instead: the dialplan's own lines are notices, and the drills
   read them (`deploy/asterisk/conf/logger.conf`). A list that lets more through than `match`
   takes would bring the line back with the caller's number; the drill "stranger" shows it. The
-  address of a refused sender stays in the log until the rotation above.
+  address of a refused sender stays in the log until the 14 days above.
 - **From T-1.11, a stopped container's name:** in WSL the name lookup of a stopped container (`voice`,
   `db`) takes about 5 s before it fails ("Try again"), and that is most of the time to the team in
   those two drills. On the server it is measured again (T-10.2); a lookup that fails at once would
