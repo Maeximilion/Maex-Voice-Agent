@@ -482,6 +482,42 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 26.10.2026 - T-11.1 redesign built on #368
+Status: the redesign decided by Maxi is built on #368 and pushed. The core
+        reads the caller's allergy from the guest's sentence every turn into
+        state.allergies (agent/allergies.py: ingredient, whose, dish), asks
+        "Wogegen?" and the consent itself while it holds the draft, and writes
+        the allergy onto line, order or table; a cart or draft whose note names
+        an allergy is refused. with_consent, unread_allergy, keep_restrictions,
+        order_note and table_note are gone. The open P1 4378523387 and every
+        sentence shape of the earlier findings are tests; "Sesam vertrage ich
+        auch nicht" (#361) is read. Suite 6180 passed; evals against main case
+        by case: cases 54/54 (main 50/50, all of main's pass, 4 new), targets
+        1/28 (main 1/27, the same one passes, reservierung_0038 red as before),
+        numbers 249/249.
+Artifacts: #368 task/11-1-allergy-consent (redesign b52f686, main merged in,
+        status 2.10.0 and this handover). #369 task/11-1-allergen-beyond-db
+        6c58dc1, not touched.
+Decisions: none new by Maxi. Claude's readings, in docs/01 assumptions (h) to
+        (k): an allergy said with an unclear dish goes onto the whole order; a
+        sentence read whole and behind the dish with two different ingredients
+        is asked about ("Pho Bo und Sommerrollen, Erdnussallergie"); a later
+        denial takes no allergy back; an answer to "Wogegen?" that is a
+        sentence of its own or an order is not read.
+Gate: G0 open, unchanged.
+Open: 1. Codex on the head of #368, findings fixed in one push per round. Then
+        Maxi merges #368 (allergens, xhigh). Ultrareview recommended (xhigh
+        trigger, more than 400 lines outside tests).
+        2. After #368: merge main into #369, rerun suite and evals, Codex,
+        Maxi merges.
+Lessons: reading a whole guest sentence is not reading the wish behind the
+        dish: the list rule of the parser takes dish and guest names before a
+        compound ("Bo, Sommerrollen und Erdnuss"), and a bare answer to
+        "Wogegen?" is read up to its end. Prompt edits count against the token
+        budget tests (system prompt 800, core 2600).
+```
+
+```text
 ## Handover 26.10.2026 - T-11.2, T-11.1 taken over, redesign decided
 Status: merged today: #371 (T-11.2 deletion job, Maxi), #373 (scripts/codex_review.py,
         Claude). T-11.1 taken over from its idle session on Maxi's word: #368 and

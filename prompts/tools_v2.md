@@ -19,14 +19,14 @@
 
 ## create_reservation
 **Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet. Nach jeder Änderung erneut `check_slot`, dann `create_reservation` — nie `draft_order`.
-**Eingabe:** `idempotency_key`, `guest_name`, `phone`, `party_size`, `reserved_for`, optional `note` (nie eine Allergie: die schreibt der Kern selbst).
+**Eingabe:** `idempotency_key`, `guest_name`, `phone`, `party_size`, `reserved_for`, optional `note` (ohne Allergie).
 **Liefert:** `reservation_id`, Status `draft`, `readback` — der Satz, der vorgelesen wird.
 **Schreibend:** braucht `idempotency_key`.
 
 ## search_menu
 **Wann:** sofort, wenn der Gast ein Gericht oder eine Nummer nennt, mit seinem ganzen Satz: bevor du etwas dazu sagst, nachfragst oder es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam).
-**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (die Allergie des Gastes: der Kern notiert sie selbst, nie in `note`; keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`. Fragt `say` nach einer Allergie („Wogegen …?"), sprich die Frage; die Antwort liest der Kern selbst. Bei mehreren Gerichten ohne Zutat eines nach dem anderen.
+**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (notiert der Kern, keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`. Fragt `say` „Wogegen …?", liest der Kern die Antwort; bei mehreren Gerichten eines nach dem anderen.
 **Mehrere Gerichte in einem Satz:** über HTTP `ok: false`, `error.code: "ambiguous"`, `say` lässt den Gast warten („der Reihe nach"), `message` nennt die Teile — dann je Teil neu fragen. Nur im eigenen Gesprächskern (`agent/dispatch.py`) zerlegt das Tool selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).
 **Regel:** bei `ambiguous` nachfragen, nie selbst wählen. `not_found`: `say` sprechen. Im Gesprächskern wiederholt das `say` eines eindeutigen Treffers, was verstanden wurde (Nummer oder Name der Karte) — sprich es, dann weiter.
 
@@ -37,7 +37,7 @@
 
 ## draft_order
 **Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind. Nach jeder Änderung erneut.
-**Eingabe:** `idempotency_key`, `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung. Eine Allergie steht in keinem `note`: der Kern schreibt sie selbst auf die Position oder die ganze Bestellung.
+**Eingabe:** `idempotency_key`, `type: "pickup"`, `customer` (`name`, `phone`), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung (ohne Allergie).
 **Liefert:** `order_id`, Summe, `ready_at`, `readback` — der Satz, der vorgelesen wird.
 **Schreibend:** über HTTP ist `idempotency_key` Pflicht — gleicher Schlüssel, gleiche Antwort. Im eigenen Gesprächskern bildet der Code ihn aus den Angaben des Anrufs, das Modell lässt ihn weg.
 

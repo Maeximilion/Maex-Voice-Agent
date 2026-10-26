@@ -26,7 +26,7 @@ from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
-from api.domain.menu.wishes import denies_allergy, mentions_allergy, wish_candidates
+from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
@@ -193,7 +193,6 @@ class ScriptedLLM:
         # part with "Laktoseintoleranz" or "vertrage keine" next to a denial
         # was not judged, and the intolerance was lost (review of PR #330).
         mentioned = mentions_allergy(text)
-        clauses = wish_candidates(text) if mentioned else []
         # Also a denial in a part of its own, before the dish: "Ich habe keine
         # Allergie, ich moechte Pho Bo zum Abholen", "... keine Allergie und
         # moechte Pho Bo zum Abholen" (Codex PR #330).
@@ -211,9 +210,8 @@ class ScriptedLLM:
                     runs.append((n, n))
         named = {run: "".join(parts[run[0] : run[1] + 1]) for run in runs}
         denying = [run for run, said in named.items() if denies_allergy(said)]
-        denied = (bool(clauses) and denies_allergy(clauses[-1][1])) or (
-            bool(named) and len(denying) == len(named)
-        )
+        # As the core judges it (`wishes.only_denies`).
+        denied = only_denies(text)
         # The dish is searched without a denial said in a part of its own,
         # and without the separator in front of it (or behind it, first):
         # "Pho Bo und habe keine Allergie und die Sommerrollen" keeps one
