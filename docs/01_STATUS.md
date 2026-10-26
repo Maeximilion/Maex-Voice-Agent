@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.1
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.2
 
 ---
 
@@ -614,6 +614,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.8.2 · 26.10.2026:** Codex watching: scripts/codex_review.py reads the review state of a head: stalled, declined, open threads
 - **v2.8.1 · 26.10.2026:** T-11.5 done: the greeting names the privacy notice, the core answers "Sind Sie ein Mensch?" with the offer of the team; README routine on python3.12
 - **v2.8.0 · 26.10.2026:** T-11.2 done: the daily deletion job keeps the periods of the legal check (L8, L13)
 - **v2.7.21 · 26.10.2026:** FastAPI 0.146.0 and SQLAlchemy 2.1.5 (Dependabot #356)
