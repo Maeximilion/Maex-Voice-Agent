@@ -1087,3 +1087,23 @@ def test_the_search_order_never_decides_whose_allergy_a_dish_gets(
 
     assert [item.get("note") for item in noted["items"]] == [None, None]
     assert noted["note"] == f"{REASONED}. Ohne Erdnuss"
+
+
+@pytest.mark.parametrize(
+    ("said", "bare"),
+    [
+        ("Ja.", True),
+        ("Ja, ich bin noch da.", True),
+        ("Nein.", True),
+        # Codex PR #368, P1 4382730105: digits are always more than a yes.
+        ("Ja, bitte 20:00.", False),
+        ("Ja, 4 Personen.", False),
+        ("Ja, aber bitte erst um acht.", False),
+        ("Ja, und noch eine Cola.", False),
+        ("", False),
+    ],
+)
+def test_a_bare_answer_is_a_plain_yes_or_no(said, bare):
+    from api.agent.consent import bare_answer
+
+    assert bare_answer(said) is bare
