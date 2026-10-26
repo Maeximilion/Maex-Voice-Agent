@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.18
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.19
 
 ---
 
@@ -493,7 +493,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
-| 26.10.2026 | **T-11.5: the privacy pointer and the question for a human (docs/09 L1, L4).** Migration 009 adds `service_config.privacy_notice_address`; the phone greeting names it and leaves the sentence out while it is empty. "Sind Sie ein Mensch?" gets the core's truthful answer and the offer of the team before any model call; a yes hands over. Evals `eskalation_0017` and `eskalation_0018`, judged by the new `expected.said`. Also: the weekly README routine names `python3.12` |
+| 26.10.2026 | **T-11.5: the privacy pointer and the question for a human (docs/09 L1, L4).** Migration 009 adds `service_config.privacy_notice_address`; the phone greeting names it and leaves the sentence out while it is empty. "Sind Sie ein Mensch?" gets the core's truthful answer and the offer of the team before any model call; a yes hands over. Evals `eskalation_0017` and `eskalation_0018`, judged by the new `expected.said`. Also: the weekly README routine names `python3.12`, and `test_check_reports_a_stale_asset` renders into a copy of the README instead of rewriting the checkout's "As of" |
 | 25.10.2026 | **Handover, T-11.4:** the call log keeps the hour of a call, not the minute (L15); old rows are cut on the next run and reviewed cases keep their row through the ID directory. Built and pushed on `task/11-4-call-log-hour`, pull request through `/done` next |
 | 25.10.2026 | **Handover, the issue sweep of 21. to 25.10.2026:** six pull requests merged one by one: #358 (route advice wording, #332), #359 and #360 (container hardening, token strength, security headers, refused INVITE, archive pin; #252), #362 (number words, #325, #327, #328), #357 (docs: legal-check summaries, G1 prerequisites, usage gate backup, D14; #188, #323, part of #344), #361 (allergen wishes by option C, ask instead of read; part of #207 and #331). Next: T-11.4 |
 | 21.10.2026 | **A number the ear may have cut is asked about, never guessed (#325, #327, #328).** A unit joins a tens word only across a spoken "und": "drei zwanzig" and "die 3 20" ask instead of being 23, and "die eine zwanzig" is the 20 with its article instead of 21 (`numberwords._scan`, `_joined_without_und`); a hesitation between unit and tens asks as well, and "eine" before a tens quantity ("eine zwanzig Portionen") cannot be its article and asks (Codex PR #362). None of the 3,433 transcripts of the T-10.3 runs drops the "und" of a split number, so the question costs nothing on real speech. A hesitation is one pattern, read by `numberwords`, `split` and `normalize` alike (`numberwords.hesitation`): "öh", "eh", "äääh", "ähh", "hmm" are pauses as "äh" is; "ah" and "oh" are not, the ears wrote them for the letters a and o, and "eh" or "äääh" behind a number may be the e as "äh" may. The tens half of a cut number is no quantity (`find_quantity("drei und äh zwanzig Portionen Pho Bo")` was 20). A comma on either side of the "und" is the same pause for the splitter ("die drei und, zwanzig", "die drei, und zwanzig Frühlingsrollen", "und äh, zwanzig"), and a name that hits several dishes before an unclear number no longer lets the name search drop the number ("einmal Suppe, und 30", `search._position_parts`). A test menu with the dishes 3, 20 and 23 checks the order verdict where the eval menu, without dishes 1 to 9, could not. 17 new number eval lines (249 of 249) |
@@ -611,6 +611,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.19 · 26.10.2026:** T-11.5 done: the greeting names the privacy notice, the core answers "Sind Sie ein Mensch?" with the offer of the team; README routine on python3.12
 - **v2.7.18 · 25.10.2026:** Handover: T-11.4 built, the call log keeps the hour of a call and cuts minutes in old rows, PR through /done next
 - **v2.7.17 · 25.10.2026:** Handover of the issue sweep 21. to 25.10.2026: PRs #357 to #362 merged one by one, next T-11.4
 - **v2.7.16 · 23.10.2026:** Wish parser asks where more follows than it reads (#207, option C), aber bitte keine as a removal, waiting removal bounded, the stand-in asks again after a withdrawal (#331, PR #361)
