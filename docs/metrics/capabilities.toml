@@ -31,6 +31,10 @@ works = '''Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -
 tasks = []
 
 [[capability]]
+works = '''The deletion job of `docs/03_DATA_MODEL.md` "Löschkonzept" runs in the dispatcher once an hour: caller numbers after 90 days, guest details on orders, reservations and callbacks after 90 days, a caller's allergy note the night after the order, outbox payloads after 7 days (unsent 30), the audit log after 12 months; every period a setting, one log line per pass'''
+tasks = ["T-11.2"]
+
+[[capability]]
 works = '''Menu import from CSV per `docs/14_MENU_IMPORT_FORMAT.md`: `python -m scripts.import_menu imports/ --dry-run` checks and reports, without `--dry-run` it loads; idempotent, price changes only with `--apply-price-changes`, dishes missing from the file inactive only with `--deactivate-missing`. The CSVs live in `imports/`, which is git-ignored. From the register: `python -m scripts.kasse_to_csv imports/kasse --out imports` turns copies of the register `.dbf` files into these CSVs (docs/14 §Quelle Kasse)'''
 tasks = ["T-4.2", "T-4.11"]
 
