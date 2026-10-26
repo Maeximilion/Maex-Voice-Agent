@@ -615,7 +615,9 @@ def test_a_call_is_greeted_and_logged_when_the_caller_hangs_up(session, tenant):
         assert ending(client) == ""
 
     # The fake mouth's audio is the sentence itself, padded to whole frames.
-    assert audio.rstrip(b"\x00").decode() == GREETING.format(name=tenant.name)
+    assert audio.rstrip(b"\x00").decode() == GREETING.format(
+        name=tenant.name, privacy=""
+    )
     call = the_call(session, CALL)
     assert call.ended_at is not None and call.outcome == "abandoned"
 

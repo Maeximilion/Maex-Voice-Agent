@@ -45,6 +45,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | order_approval_above_cents | INT ≥ 0 | an order whose total is above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000, 0 holds every order (#252, migration 007). Read by `confirm` since 13.10.2026 (`domain/ordering/confirm.py`, docs/04 §confirm) |
 | turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
 | order_approval_overdue_minutes | INT ≥ 1 | how long an order may wait for "Passt" on the tablet before its card turns red; default 5 (#252, migration 008). Counted from the guest's yes, the audit entry `order.confirmed`. Read by the order board (`domain/ordering/board.py`); a changed value shows within the next poll of the tablet |
+| privacy_notice_address | TEXT NULL, not white space only | where the restaurant's privacy notice is, written the way a caller should hear it (`example.com/datenschutz` is only the repository placeholder); T-11.5, migration 009, docs/09 §1 L4. The phone greeting names it (`telephony/handler.py` `greeting`), read with the routing at the start of every call (`domain/calls/routing.py`); a change applies from the next call. Empty on every existing row: without it the greeting leaves the sentence out, and the duty of L4 stays open. The seed writes `PRIVACY_NOTICE_ADDRESS` into a new tenant; an existing one gets it by `UPDATE service_config SET privacy_notice_address = '…'` |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -352,5 +353,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
 | 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
 | 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
+| 009 | `service_config.privacy_notice_address`: where the privacy notice is, named in the phone greeting (T-11.5, docs/09 L4); empty on existing rows, a text of white space only refused; the downgrade drops the column |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |
