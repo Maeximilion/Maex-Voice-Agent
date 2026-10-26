@@ -967,3 +967,29 @@ def test_an_allergy_said_again_keeps_the_draft_that_carries_it(session, state):
 
     assert state.stage == "readback_pending"
     assert len(state.allergies) == 1
+
+
+def test_the_same_answer_for_two_dishes_keeps_both(session, state):
+    """Codex PR #368, P1 4380083176: two dishes with an allergy whose
+    ingredient is asked for, "Erdnuss" to each question: the second answer
+    was taken for the first and its dish lost the restriction."""
+    pho, ente = str(uuid.uuid4()), str(uuid.uuid4())
+    state.seen_items = {pho: {"name": "Pho Bo"}, ente: {"name": "Ente"}}
+    state.allergies = [Allergy(item=pho), Allergy(item=ente)]
+
+    guards.note_said(state, allergies.question(state) or "")
+    read(session, state, "Erdnuss.")
+    guards.note_said(state, allergies.question(state) or "")
+    read(session, state, "Erdnuss.")
+
+    assert allergies.question(state) == ALLERGY_QUESTION
+    state.allergy_consent = "no"
+    call = ToolCall(
+        "draft_order",
+        {"items": [{"menu_item_id": item, "quantity": 1} for item in (pho, ente)]},
+    )
+    noted = allergies.noted_call(state, call).args
+    assert [item.get("note") for item in noted["items"]] == [
+        "ohne Erdnuss",
+        "ohne Erdnuss",
+    ]
