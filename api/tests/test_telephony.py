@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMTurn, Usage
+from api.agent.llm import FakeLLM, LLMTurn, Usage
 from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED
 from api.agent.state import ConversationState
 from api.config import settings
@@ -350,6 +350,118 @@ def test_keypad_without_digits_is_ignored(session, tenant):
     handler.on_dtmf("s-1", "#*")
 
     assert len(port.says("s-1")) == 1  # only the greeting
+
+
+def test_the_greeting_names_where_the_privacy_notice_is(session, tenant):
+    """docs/09 L4: in the call the AI notice and where the full notice is, the
+    address from service_config, never from the code."""
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(privacy_notice_address="testbetrieb.example/datenschutz")
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert port.says("s-1") == [
+        "Guten Tag, hier ist der KI-Assistent von Testbetrieb. "
+        "Hinweise zum Datenschutz finden Sie unter testbetrieb.example/datenschutz. "
+        "Was kann ich für Sie tun?"
+    ]
+
+
+def test_spaces_around_the_address_are_not_read_out(session, tenant):
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(privacy_notice_address=" testbetrieb.example/datenschutz\n")
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert "unter testbetrieb.example/datenschutz. Was" in port.says("s-1")[0]
+
+
+def test_without_an_address_the_greeting_leaves_the_pointer_out(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert port.says("s-1") == [
+        "Guten Tag, hier ist der KI-Assistent von Testbetrieb. Was kann ich für Sie tun?"
+    ]
+
+
+def test_a_changed_address_is_said_from_the_next_call(session, tenant):
+    """Read with the routing at the start of every call, like the mode."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    with Session(session.get_bind()) as other:
+        other.execute(
+            update(ServiceConfig)
+            .where(ServiceConfig.tenant_id == tenant.id)
+            .values(privacy_notice_address="neu.example/datenschutz")
+        )
+        other.commit()
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+
+    assert "Datenschutz" not in port.says("s-1")[0]
+    assert "neu.example/datenschutz" in port.says("s-2")[0]
+
+
+def test_a_yes_to_are_you_still_there_does_not_take_the_offer_of_the_team(
+    session, tenant
+):
+    """Codex PR #372, P1: the guest asks "Sind Sie ein Mensch?", hears the
+    answer with the offer of the team, says nothing, and answers the line's
+    "Sind Sie noch da?" with "Ja". That yes is no wish for the team."""
+    port = FakeTelephony()
+    handler = handler_for(
+        session,
+        tenant,
+        port,
+        llm_factory=lambda s: FakeLLM([LLMTurn(say="Wie kann ich helfen?")]),
+    )
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_user_turn("s-1", "Sind Sie ein Mensch?")
+    handler.on_silence("s-1")
+    handler.on_user_turn("s-1", "Ja")
+
+    assert "Ich bin ein KI-Assistent, kein Mensch." in port.says("s-1")[1]
+    assert port.says("s-1")[2] == STILL_THERE[0]
+    assert port.says("s-1")[-1] == "Wie kann ich helfen?"
+    assert not port.transfers("s-1")
+
+
+def test_the_answer_to_the_question_for_a_human_is_played_to_the_end(session, tenant):
+    """Ultrareview of PR #372: the core counts the offer of the team as heard
+    (`last_say`), so the guest's talk over it must not cut it off; a yes to an
+    offer they never heard would hand the call over."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: NoLLM())
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_user_turn("s-1", "Sind Sie ein Mensch?")
+
+    assert "kein Mensch" in port.says("s-1")[1]
+    assert port.interruptible("s-1") == []
 
 
 def test_repeated_start_event_greets_once_and_logs_one_call(session, tenant):

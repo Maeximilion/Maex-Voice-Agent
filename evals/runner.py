@@ -52,6 +52,7 @@ from evals.judge import (
     observe,
     offered_alternatives,
     unchecked_address,
+    unsaid,
     validate_case,
 )
 from evals.recorder import RecordingLLM
@@ -234,6 +235,9 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
                 diffs.append(
                     f"readback: expected {expected['readback']!r} in {spoken!r}"
                 )
+        missed = unsaid(expected.get("said", []), turns)
+        if missed:
+            diffs.append(f"said: never heard {missed!r}")
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"

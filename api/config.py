@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     tenant_timezone: str = "Europe/Berlin"
     team_phone: str = "+49000000000"
     max_call_seconds: int = 420
+    # Written into a new tenant by the seed (service_config.privacy_notice_address,
+    # docs/09 L4). Empty: none, and the greeting leaves the sentence out.
+    privacy_notice_address: str = ""
 
     # Kalter Pfad: n8n und Dispatcher (docs/03 §outbox, docs/11 §events)
     n8n_webhook_url: str = "http://n8n:5678/webhook/maex"
