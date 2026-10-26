@@ -622,8 +622,9 @@ def test_an_answer_to_another_question_is_no_consent(session, state):
 def test_an_allergy_said_while_the_draft_waits_reaches_it(session, state):
     """Codex PR #368, P1 4378523387: "Ja, und ich bin auch gegen Sesam
     allergisch" after "Sind Sie noch da?" while the draft waits for the
-    consent lost the sesame. The sentence feeds the state like any other,
-    and the held draft takes its notes from the state when it goes out."""
+    consent lost the sesame. The sentence feeds the state like any other;
+    with more in it than a yes, it goes to the model, and the draft the model
+    makes again takes its notes from the state."""
     turn(
         session,
         state,
@@ -632,14 +633,65 @@ def test_an_allergy_said_while_the_draft_waits_reaches_it(session, state):
     )
     guards.note_said(state, "Sind Sie noch da?")
 
-    assert turn(session, state, "Ja, und ich bin auch gegen Sesam allergisch.") == [
-        ALLERGY_QUESTION
-    ]
+    assert turn(
+        session,
+        state,
+        "Ja, und ich bin auch gegen Sesam allergisch.",
+        LLMTurn(tool_call=table()),
+    ) == [ALLERGY_QUESTION]
     turn(session, state, "Ja.")
 
     [reservation] = reservations(session)
     assert reservation.note == f"{REASONED}. {SESAME}"
     assert logged(session) == [(ALLERGY_QUESTION, "yes")]
+
+
+@pytest.mark.parametrize(
+    "said", ["Ja.", "Ja, ich bin noch da.", "Bin noch dran.", "Nein."]
+)
+def test_a_bare_answer_to_another_question_puts_the_question_again(
+    session, state, said
+):
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+
+    assert turn(session, state, said) == [ALLERGY_QUESTION]
+    assert state.held_call is not None
+
+
+def test_a_correction_while_the_draft_waits_goes_to_the_model(session, state):
+    """Codex PR #368, P1 4382597031: "Ja, aber bitte erst am 17. September um
+    20 Uhr" after "Sind Sie noch da?" only had the consent question put
+    again, and the next "Ja" booked the old time. The held draft is dropped,
+    the model reads the sentence, and its new draft is held instead."""
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+    later = {**table().args, "reserved_for": "2026-09-17T20:00:00+02:00"}
+
+    said = turn(
+        session,
+        state,
+        "Ja, aber bitte erst am 17. September um 20 Uhr.",
+        LLMTurn(tool_call=ToolCall("create_reservation", later)),
+    )
+
+    assert said == [ALLERGY_QUESTION]
+    assert state.held_call is not None
+    assert state.held_call["args"]["reserved_for"] == later["reserved_for"]
+    turn(session, state, "Ja.")
+    [reservation] = reservations(session)
+    assert reservation.reserved_for.isoformat().startswith("2026-09-17T18:00")
+    assert reservation.note == REASONED
 
 
 def test_an_allergy_not_read_in_full_is_asked_for_before_the_consent(session, state):
@@ -785,9 +837,10 @@ def test_a_human_question_while_the_question_waits_is_answered_first(session, st
     assert logged(session) == [(ALLERGY_QUESTION, "yes")]
 
 
-def test_a_request_next_to_the_human_question_puts_the_question_again(session, state):
-    """The truthful sentence first, then the waiting question, never the
-    question alone: docs/09 L1 holds in every turn."""
+def test_a_request_next_to_the_human_question_hears_the_truth_first(session, state):
+    """The truthful sentence first, then the answer to the request: docs/09
+    L1 holds in every turn. A request is more than a yes, so the model reads
+    it and the held draft is dropped (Codex PR #368)."""
     turn(
         session,
         state,
@@ -796,10 +849,16 @@ def test_a_request_next_to_the_human_question_puts_the_question_again(session, s
     )
     guards.note_said(state, "Sind Sie noch da?")
 
-    said = turn(session, state, "Spreche ich mit einem Menschen? Ich will bestellen.")
+    said = turn(
+        session,
+        state,
+        "Spreche ich mit einem Menschen? Ich will bestellen.",
+        LLMTurn(say="Gern, was darf es sein?"),
+    )
 
-    assert said == [SAY_NOT_A_PERSON, ALLERGY_QUESTION]
-    assert state.held_call is not None
+    assert said == [SAY_NOT_A_PERSON, "Gern, was darf es sein?"]
+    assert state.held_call is None
+    assert [(a.ingredient, a.own) for a in state.allergies] == [("Erdnuss", True)]
 
 
 def test_a_held_replacement_takes_back_the_draft_read_out_before(session, state):

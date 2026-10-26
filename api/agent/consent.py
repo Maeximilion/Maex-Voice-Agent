@@ -322,3 +322,20 @@ def consent_answer(text: str) -> Answer:
     ):
         return "no"
     return "unclear"
+
+
+# Words of an answer to "Sind Sie noch da?" besides its yes: "Ja, ich bin noch
+# da", "Bin noch dran".
+_PRESENT = frozenset({"ich", "bin", "noch", "da", "hier", "dran", "am", "apparat"})
+
+
+def bare_answer(text: str) -> bool:
+    """Is the sentence a plain yes or no and nothing more ("Ja.", "Ja, ich
+    bin noch da", "Nein")? Then a question the core still has to put is put
+    again; anything more ("Ja, aber bitte erst am 17. um 20 Uhr") is for the
+    model to read (Codex PR #368)."""
+    words = _WORD.findall(text.lower())
+    rest = " ".join(word for word in words if word not in _PRESENT)
+    if not rest:
+        return bool(words)
+    return consent_answer(rest) in ("yes", "no")
