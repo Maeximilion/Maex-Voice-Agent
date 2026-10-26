@@ -70,6 +70,13 @@ SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team wei
 # for a callback. Every sentence above promises the team; here nobody takes
 # over, so the guest hears exactly that (Codex PR #208, P1). Draft wording,
 # checked with the announcement texts of docs/05 §6.
+# The team is not reachable and no number is known, after an allergen
+# question beyond the database (L17): the core asks for one before it gives
+# up (Codex PR #369). Draft wording, checked with the texts of docs/05 §6.
+SAY_CALLBACK_NUMBER = (
+    "Unser Team ist gerade nicht erreichbar. Unter welcher Telefonnummer mit "
+    "Vorwahl darf es Sie zurückrufen?"
+)
 SAY_NOBODY_REACHABLE = (
     "Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant "
     "niemanden. Bitte rufen Sie später noch einmal an."
@@ -175,6 +182,12 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
+        if state.callback_waits is not None:
+            # The answer to the question for the number (L17): with one the
+            # callback is made, without one the last resort; the call ends
+            # either way, before the model and before any `confirm`.
+            summary, state.callback_waits = state.callback_waits, None
+            return self._handoff(state, SAY_ESCALATION, "out_of_scope", summary=summary)
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
         noted = list(state.allergies)
@@ -766,9 +779,14 @@ class ConversationLoop:
             SAY_ESCALATION,
             "out_of_scope",
             summary=_with_open_order(state, summary, reserve=reserve),
+            ask_number=True,
         )
         lead = [SAY_ALLERGENS_UNKNOWN, SAY_ORDER_NOT_PLACED if state.cart else None]
         handed.say = [s for s in (*lead, *handed.say) if s]
+        if not handed.ended:
+            # The question for the number ends the turn: the guest's digits
+            # are a number to call (`state.note_guest_details`).
+            guards.note_said(state, " ".join(handed.say))
         return handed
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
@@ -805,6 +823,7 @@ class ConversationLoop:
         detail: str | None = None,
         *,
         summary: str | None = None,
+        ask_number: bool = False,
     ) -> TurnResult:
         """Übergabe wirklich ausführen statt nur anzukündigen: erst versuchen, live zu
         verbinden; ist niemand erreichbar und kennen wir eine Rufnummer, stattdessen
@@ -817,7 +836,11 @@ class ConversationLoop:
         Vorab-Eskalation (kein Modell-Aufruf) nur eine feste Floskel statt der
         eigentlichen Bitte ("Reservierung morgen 18 Uhr auf Müller stornieren"),
         obwohl sonst nirgends ein Transkript gespeichert ist (Codex-Review
-        PR #102, P2)."""
+        PR #102, P2).
+
+        `ask_number`: with neither a team nor a number, ask the guest for one
+        instead of the last resort; the next turn makes the callback with
+        `summary` (`state.callback_waits`, L17; Codex PR #369)."""
         if detail and mentions_allergy(detail):
             # The guest's sentence names an allergy, which is health data: it
             # is not written on a card. The caller agreed at most to a kitchen
@@ -856,6 +879,9 @@ class ConversationLoop:
                     state=state, say=[callback.say or fallback_say], ended=True
                 )
 
+        if ask_number and not phone and summary is not None:
+            state.callback_waits = summary
+            return TurnResult(state=state, say=[SAY_CALLBACK_NUMBER])
         state.stage = "ended"
         return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)
 

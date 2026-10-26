@@ -174,6 +174,10 @@ class ConversationState(BaseModel):
     # phone line to use when nobody answers the team leg
     # (`domain/callbacks/transfer.team_missed`). Never sent.
     handoff_summary: str | None = None
+    # The card of an allergen handover (L17) that reached no team while no
+    # number was known: the core asked for one, and the guest's answer makes
+    # the callback (`loop.run_turn`, Codex PR #369). Never sent.
+    callback_waits: str | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""

@@ -19,6 +19,8 @@ from api.agent.consent import ALLERGY_QUESTION
 from api.agent.escalation import asks_beyond_the_allergens
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
+    SAY_CALLBACK_NUMBER,
+    SAY_NOBODY_REACHABLE,
     SAY_NOT_A_PERSON,
     SAY_ORDER_NOT_PLACED,
     SUMMARY_ALLERGENS,
@@ -323,3 +325,44 @@ def test_a_human_question_next_to_traces_hears_the_truth_first(session, known_te
     assert llm.calls == []
     assert result.say[0] == SAY_NOT_A_PERSON
     assert result.say[1] == SAY_ALLERGENS_UNKNOWN
+
+
+def test_without_a_number_the_core_asks_for_one_before_it_gives_up(
+    session, known_tenant
+):
+    """Codex PR #369, P1: a caller who withheld the number asks about traces
+    while the team is not reachable. The call ended with neither the team nor
+    a callback; before the L17 path the model would have asked for a number.
+    The core asks itself, and the answer makes the callback."""
+    state = state_for(session, known_tenant)
+
+    result, llm = run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    assert not result.ended
+    assert result.say == [SAY_ALLERGENS_UNKNOWN, SAY_CALLBACK_NUMBER]
+    assert llm.calls == []
+    assert state.asked_for_phone
+    assert session.scalars(select(Callback)).all() == []
+
+    # The model is never asked: no turn is prepared for it.
+    result, llm = run(session, state, "07221 5551234", now=CLOSED)
+
+    assert result.ended
+    assert llm.calls == []
+    callback = session.scalars(select(Callback)).one()
+    assert callback.phone == CALLER
+    assert callback.reason == "out_of_scope"
+    assert callback.summary.startswith(SUMMARY_ALLERGENS)
+    assert "Erdnüss" not in callback.summary
+
+
+def test_without_a_number_in_the_answer_the_call_ends_honestly(session, known_tenant):
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    result, llm = run(session, state, "Nein, lieber nicht.", now=CLOSED)
+
+    assert result.ended
+    assert result.say == [SAY_NOBODY_REACHABLE]
+    assert llm.calls == []
+    assert session.scalars(select(Callback)).all() == []
