@@ -15,7 +15,6 @@ import logging
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
-    ColumnElement,
     Text,
     case,
     cast,
@@ -27,7 +26,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Session
 
-from api.config import Settings, settings
+from api.config import settings
 from api.core.logging import configure_logging, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, utcnow
 from api.db import SessionLocal
@@ -55,25 +54,25 @@ ALLERGY = "allergi|unvertr(ä|Ä|ae)glich|intoleran"
 # finds every slip of an order by them (domain/ordering/handover.py).
 OUTBOX_KEEP = ("order_id", "reservation_id", "callback_id", "call_id", "revision")
 UNSENT_EXPIRED = "payload removed after {days} days unsent, never sent"
+# The date of an order: the promised time, or its creation for a draft.
+ORDER_DAY = func.coalesce(Order.ready_at, Order.created_at)
 
 
-def purge(
-    session: Session, now: datetime, periods: Settings = settings
-) -> dict[str, int]:
+def purge(session: Session, now: datetime) -> dict[str, int]:
     """One pass over every period. Commits; returns what changed per period."""
     counts = {
         "allergy_notes": _allergy_notes(
-            session, now, periods.retention_allergy_note_days
+            session, now, settings.retention_allergy_note_days
         ),
         **_guest_details(
-            session, now - timedelta(days=periods.retention_guest_details_days)
+            session, now - timedelta(days=settings.retention_guest_details_days)
         ),
         "caller_ids": _run(
             session,
             update(Call)
             .where(
                 Call.started_at
-                < now - timedelta(days=periods.retention_caller_id_days),
+                < now - timedelta(days=settings.retention_caller_id_days),
                 Call.caller_id.is_not(None),
             )
             .values(caller_id=None),
@@ -85,23 +84,23 @@ def purge(
                 # Only "done" sets done_at (domain/callbacks/board.py); an open
                 # callback is still the team's to call back.
                 Callback.done_at
-                < now - timedelta(days=periods.retention_callback_days),
+                < now - timedelta(days=settings.retention_callback_days),
                 or_(Callback.phone != "", Callback.summary != ""),
             )
             .values(phone="", summary=""),
         ),
-        "outbox_payloads": _outbox_payloads(session, now, periods),
+        "outbox_payloads": _outbox_payloads(session, now),
         "outbox_rows": _run(
             session,
             delete(OutboxEvent).where(
                 OutboxEvent.created_at
-                < now - timedelta(days=periods.retention_outbox_row_days)
+                < now - timedelta(days=settings.retention_outbox_row_days)
             ),
         ),
         "audit_entries": _run(
             session,
             delete(AuditLog).where(
-                AuditLog.at < now - timedelta(days=periods.retention_audit_log_days)
+                AuditLog.at < now - timedelta(days=settings.retention_audit_log_days)
             ),
         ),
     }
@@ -114,11 +113,6 @@ def _run(session: Session, statement) -> int:
     return session.execute(statement).rowcount  # type: ignore[attr-defined]
 
 
-def _order_day() -> ColumnElement:
-    """The date of an order: the promised time, or its creation for a draft."""
-    return func.coalesce(Order.ready_at, Order.created_at)
-
-
 def _allergy_notes(session: Session, now: datetime, days: int) -> int:
     """L13: the night after the order or reservation, collected or not. The
     business day ends at 05:00 in the tenant's time zone (core/time.py)."""
@@ -127,7 +121,7 @@ def _allergy_notes(session: Session, now: datetime, days: int) -> int:
         day = business_day(now, zone) - timedelta(days=days)
         cutoff = business_day_bounds_utc(day, zone)[0]
         orders = select(Order.id).where(
-            Order.tenant_id == tenant_id, _order_day() < cutoff
+            Order.tenant_id == tenant_id, cutoff > ORDER_DAY
         )
         changed += _run(
             session,
@@ -157,7 +151,7 @@ def _allergy_notes(session: Session, now: datetime, days: int) -> int:
 def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
     """Name, phone, notes and the customer link, so the row cannot be traced
     through the customer record (docs/03). `address_id` joins here with T-6.1."""
-    old_orders = select(Order.id).where(_order_day() < cutoff)
+    old_orders = select(Order.id).where(cutoff > ORDER_DAY)
     item_notes = _run(
         session,
         update(OrderItem)
@@ -168,7 +162,7 @@ def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
         session,
         update(Order)
         .where(
-            _order_day() < cutoff,
+            cutoff > ORDER_DAY,
             or_(
                 Order.customer_name != "",
                 Order.phone != "",
@@ -198,7 +192,7 @@ def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
     }
 
 
-def _outbox_payloads(session: Session, now: datetime, periods: Settings) -> int:
+def _outbox_payloads(session: Session, now: datetime) -> int:
     """A sent payload goes RETENTION_OUTBOX_SENT_DAYS after dispatch, any other
     at most RETENTION_OUTBOX_UNSENT_DAYS after it was written. An unsent one is
     marked failed with it: the bridge or n8n must never get a guest-less slip."""
@@ -217,12 +211,12 @@ def _outbox_payloads(session: Session, now: datetime, periods: Settings) -> int:
         .where(
             OutboxEvent.status == "sent",
             OutboxEvent.sent_at
-            < now - timedelta(days=periods.retention_outbox_sent_days),
+            < now - timedelta(days=settings.retention_outbox_sent_days),
             OutboxEvent.payload != thin,
         )
         .values(payload=thin),
     )
-    days = periods.retention_outbox_unsent_days
+    days = settings.retention_outbox_unsent_days
     unsent = _run(
         session,
         update(OutboxEvent)

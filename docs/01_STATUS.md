@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.18
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.0
 
 ---
 
@@ -243,7 +243,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
     - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers; audit findings 4 (T-10.9), 6 (#320, Maxi decides) and the off-site part of 10 (#321, at the server order).
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). Dependabot works on the compiled lock file: its pull request #261 changes `api/requirements.in` and the hashed `api/requirements.txt`, checks green; no run had to be triggered. Not found: what "confirm the repository origin in the app" referred to.
-14. **T-11.4 merged 25.10.2026 (PR #370). T-11.2 built 26.10.2026** on `task/11-2-deletion-job` (summary above); it decides what happens to personal data, so after CI and the review Maxi merges it. Next after it: T-11.7 (log periods by age) or T-11.5 (privacy notice in the greeting). T-11.1 (the caller's own allergy with consent, D24) is in work in another session on `task/11-1-allergy-consent`; a finding of PR #361 belongs there: "Pho Bo, Sesam vertrage ich auch nicht" is not read as an allergy at all ("vertrage" counts only with a negation within two words), so the intolerance is lost.
+14. **T-11.4 merged 25.10.2026 (PR #370). T-11.2 built 26.10.2026** on `task/11-2-deletion-job` (summary above); it decides what happens to personal data, so after CI and the review Maxi merges it. Next after it: T-11.7 (log periods by age) or T-11.5 (privacy notice in the greeting). Open with T-11.1: its new table `consent_log` (PRs #368, #369) has no period in docs/03 yet; once it is on `main`, the period is Maxi's decision and the job gets one more update. T-11.1 (the caller's own allergy with consent, D24) is in work in another session on `task/11-1-allergy-consent`; a finding of PR #361 belongs there: "Pho Bo, Sesam vertrage ich auch nicht" is not read as an allergy at all ("vertrage" counts only with a negation within two words), so the intolerance is lost.
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -483,7 +483,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Blocker | Blocks | Resolution |
 |---|---|---|
-| Duties of the legal check open (questions answered 20.10.2026) | every real customer call (privacy notice, record of processing, DSFA, DPAs, deletion job, allergy consent); processing of real call recordings (C7 / T-7.x) | the table in `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties under "In Chat", the code in T-11.1 to T-11.8 |
+| Duties of the legal check open (questions answered 20.10.2026) | every real customer call (privacy notice, record of processing, DSFA, DPAs, allergy consent; the deletion job is built since T-11.2, 26.10.2026); processing of real call recordings (C7 / T-7.x) | the table in `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties under "In Chat", the code in T-11.1 to T-11.8 |
 | Own voice layer not built (decided 07.10.2026 instead of a vendor) | real test calls, G0 (waits for T-10.1 and T-10.2), G1 | Block 1c in `docs/07_WORKPACKAGES.md`; step 2 of T-10.1 needs access to the pilot's router |
 | <POS Provider> answer on order interface outstanding | Stage C of register integration (T-4.6 variant C) | send email, have license number ready; ask for test mode and whether the unused register at home may be a test system. Planned without it: manual entry from the input slip (D2) |
 | Menu data not structured | Stage 2 complete | converter built (T-4.11, 26.09.2026); the card number format takes `25G` and sushi `S12` since T-4.12 (50 dishes); the first real import with `--allergens-confirmed-by` is still open |
@@ -612,6 +612,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.8.0 · 26.10.2026:** T-11.2 done: the daily deletion job keeps the periods of the legal check (L8, L13)
 - **v2.7.18 · 25.10.2026:** Handover: T-11.4 built, the call log keeps the hour of a call and cuts minutes in old rows, PR through /done next
 - **v2.7.17 · 25.10.2026:** Handover of the issue sweep 21. to 25.10.2026: PRs #357 to #362 merged one by one, next T-11.4
 - **v2.7.16 · 23.10.2026:** Wish parser asks where more follows than it reads (#207, option C), aber bitte keine as a removal, waiting removal bounded, the stand-in asks again after a withdrawal (#331, PR #361)

@@ -410,11 +410,12 @@ def test_second_pass_changes_nothing_and_each_pass_logs_its_counts(
     assert [r.extra for r in lines] == [first, second]
 
 
-def test_periods_come_from_the_settings(session, tenant_id):
+def test_periods_come_from_the_settings(session, tenant_id, monkeypatch):
     call = _call(session, tenant_id, started_at=NOW - 31 * DAY)
     session.commit()
+    monkeypatch.setattr(settings, "retention_caller_id_days", 30)
 
-    purge(session, NOW, settings.model_copy(update={"retention_caller_id_days": 30}))
+    purge(session, NOW)
 
     assert _fresh(session, call).caller_id is None
 
