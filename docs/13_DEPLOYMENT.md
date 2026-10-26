@@ -274,4 +274,4 @@ for every Dependabot pull request, and new languages added by hand.
 | `--reload` | an | aus |
 | Test-Mandant | ja | ja, für Rauchtests nach Deploy |
 | Telephone access | test number via the pilot's router (docs/20 §3) | real number |
-| Löschjob | aus | an |
+| Löschjob | an (since T-11.2: the test calls of the workbench carry real caller numbers too) | an |
