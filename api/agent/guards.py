@@ -274,9 +274,17 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             hint=f"{HINT_CART_FORM} {validation_hint(exc)}",
         )
     else:
+        # Before the notes are brought into the form they may be stored in,
+        # which would lose an allergy not read in full (Codex PR #368).
+        unread = any(
+            isinstance(line.get("note"), str) and unread_allergy(line["note"])
+            for line in lines
+        )
         lines = [_line_with_consent(state, line) for line in lines]
         ids = [line["menu_item_id"] for line in lines]
-        if not all(item_id in state.known_item_ids for item_id in ids):
+        if unread:
+            refused = _ALLERGY_UNREAD
+        elif not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
         elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
             # A clear hit that is sold out is known, and draft_order would
