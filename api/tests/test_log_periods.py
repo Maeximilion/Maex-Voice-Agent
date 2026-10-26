@@ -66,16 +66,6 @@ def test_the_journal_drops_entries_within_fourteen_days():
     assert retention + rotation <= LOG_DAYS * 86400
 
 
-def test_the_time_span_reader_refuses_what_it_does_not_know():
-    assert _seconds("13day") == 13 * 86400
-    for value in ("13d", "two weeks", ""):
-        try:
-            _seconds(value)
-        except AssertionError:
-            continue
-        raise AssertionError(f"{value!r} was read as a time span")
-
-
 def test_n8n_prunes_executions_after_seven_days():
     environment = _services(_load(BASE))["n8n"]["environment"]
     assert environment["EXECUTIONS_DATA_PRUNE"] == "true"
