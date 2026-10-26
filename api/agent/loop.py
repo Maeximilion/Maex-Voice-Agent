@@ -801,11 +801,14 @@ def _order_lines(state: ConversationState, room: int) -> str:
     chosen options and the note of each line: two pizzas of different sizes
     are two lines (Codex PR #300). Longer than `room`: without the names, the
     team reads the dishes from the card; and what still does not fit is
-    counted, never dropped in silence. The guest's allergies as a draft
-    would carry them (`allergies.noted_call`), without the reason while the
-    caller did not say "ja" to it (L13)."""
+    counted, never dropped in silence. The guest's allergies as the kitchen
+    has to know them, "ohne <Zutat>", never with the reason: a card is kept
+    for the period of a callback, the allergy only until the night after its
+    order (L13; Codex PR #369, P1).
+    """
     noted = allergies.noted_call(
-        state, ToolCall("draft_order", {"items": state.cart})
+        state.model_copy(update={"allergy_consent": None}),
+        ToolCall("draft_order", {"items": state.cart}),
     ).args
     full, short = [], []
     for line in noted["items"]:
