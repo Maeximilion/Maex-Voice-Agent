@@ -141,7 +141,8 @@ get_item_details mit allergen_question: true
    known: true  → Codes nennen, aber keine medizinische Aussage
    known: false → the core says the say of the tool and hands the call to
                   the team, a callback when nobody answers; the call ends,
-                  no confirm (T-11.1, L17)
+                  no confirm (T-11.1, L17); with no number known, the core
+                  asks for one first, and the answer makes the callback
 
 Gast fragt über die gepflegten Werte hinaus (L17, D24): Spuren,
 Kontamination, Kontakt, Fritteuse oder dasselbe Öl, in jedem Anruf; "wirklich
