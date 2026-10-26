@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.3
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.9.0
 
 ---
 
@@ -245,7 +245,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
     - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers; audit findings 4 (T-10.9), 6 (#320, Maxi decides) and the off-site part of 10 (#321, at the server order).
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). Dependabot works on the compiled lock file: its pull request #261 changes `api/requirements.in` and the hashed `api/requirements.txt`, checks green; no run had to be triggered. Not found: what "confirm the repository origin in the app" referred to.
-14. **T-11.2 merged 26.10.2026 (PR #371). T-11.5 built 26.10.2026** on `task/11-5-greeting-privacy`: the phone greeting names where the privacy notice is, from the new field `service_config.privacy_notice_address` (migration 009), and the core answers "Sind Sie ein Mensch?" itself with the offer of the team (docs/09 L1, L4; docs/07 row T-11.5). It carries a migration and changes what callers hear, so the merge stays with Maxi. **Migration number:** PR #368 (T-11.1) also adds a migration 009; whichever of the two merges second renumbers its file to 010 on top of the other. Left for Maxi before the first real call: the privacy notice online and its address in `service_config` (`UPDATE service_config SET privacy_notice_address = '…'` on an existing tenant, `PRIVACY_NOTICE_ADDRESS` for a new one). The weekly README routine names `python3.12` since the same PR, in docs/15 and in the routine itself (its first run on 25.10.2026 hit the 3.11 `python3` of the cloud image). Next: T-11.7 (log periods by age). Open with T-11.1: its new table `consent_log` (PRs #368, #369) has no period in docs/03 yet; once it is on `main`, the period is Maxi's decision and the deletion job gets one more update. T-11.1 (the caller's own allergy with consent, D24) is in PRs #368 and #369 of another session; a finding of PR #361 belongs there: "Pho Bo, Sesam vertrage ich auch nicht" is not read as an allergy at all ("vertrage" counts only with a negation within two words), so the intolerance is lost.
+14. **Next (handover 26.10.2026): the T-11.1 redesign on #368**, Opus 5.5 at `xhigh`, in a new session: allergies never travel in free text; the core reads them from the guest's sentence into structured state, refuses model notes with allergy words and writes the allergy onto the line, order or table itself (decision by Maxi, design and the open finding in the comment of 26.10.2026 on #368). #369 waits for it and then takes it by a merge. T-11.2 (#371), T-11.5 (#372) and T-11.7 (#375) are merged.
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -499,6 +499,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 26.10.2026 | **Handover: T-11.1 taken over, redesign decided.** #368 and #369 merged with main (consent log migration 010, consent_log period in the deletion job), four Codex rounds of P1 fixes; Maxi chose a redesign before merge: allergies never travel in free text (design in the #368 comment) |
 | 26.10.2026 | **T-11.5: the privacy pointer and the question for a human (docs/09 L1, L4).** Migration 009 adds `service_config.privacy_notice_address`; the phone greeting names it and leaves the sentence out while it is empty. "Sind Sie ein Mensch?" gets the core's truthful answer and the offer of the team before any model call; a yes hands over. Evals `eskalation_0017` and `eskalation_0018`, judged by the new `expected.said`. Also: the weekly README routine names `python3.12`, and `test_check_reports_a_stale_asset` renders into a copy of the README instead of rewriting the checkout's "As of" |
 | 25.10.2026 | **T-11.1, first PR: consent to the allergy note** (summary above): the core asks before the first draft whose note would carry "Grund: Allergie", logs the answer in `consent_log` (migration 010), stores "ohne <Zutat>" without a yes and for another adult; `draft_order` takes a note for the whole order. 5,938 tests, 52/52 evals on the stand-in. T-11.1 stays in progress for the L17 part |
 | 25.10.2026 | **Handover, T-11.4:** the call log keeps the hour of a call, not the minute (L15); old rows are cut on the next run and reviewed cases keep their row through the ID directory. Built and pushed on `task/11-4-call-log-hour`, pull request through `/done` next |
@@ -618,6 +619,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.9.0 · 26.10.2026:** Handover: T-11.1 taken over and merged with main, consent_log period in the deletion job, redesign decided (allergies never in free text)
 - **v2.8.3 · 26.10.2026:** T-11.1 first PR brought up to date with main: consent log as migration 010, its period (end of the 3rd calendar year after the answer) in the deletion job
 - **v2.8.2 · 26.10.2026:** Codex watching: scripts/codex_review.py reads the review state of a head: stalled, declined, open threads
 - **v2.8.1 · 26.10.2026:** T-11.5 done: the greeting names the privacy notice, the core answers "Sind Sie ein Mensch?" with the offer of the team; README routine on python3.12

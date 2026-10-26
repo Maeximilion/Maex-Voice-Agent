@@ -482,6 +482,42 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 26.10.2026 - T-11.2, T-11.1 taken over, redesign decided
+Status: merged today: #371 (T-11.2 deletion job, Maxi), #373 (scripts/codex_review.py,
+        Claude). T-11.1 taken over from its idle session on Maxi's word: #368 and
+        #369 merged with main (migration 010 for the consent log, run_turn in
+        main's structure with the held draft and the answer to "Sind Sie ein
+        Mensch?"), the consent_log period in the deletion job, and four Codex
+        rounds of P1 fixes. #369 clean on 6c58dc1, #368 has one open P1
+        (4378523387) on 8275a6a. Neither is merged: Maxi chose the redesign (A).
+Artifacts: #368 task/11-1-allergy-consent 8275a6a (+ this handover), #369
+        task/11-1-allergen-beyond-db 6c58dc1. Design and the open finding: the
+        comment of 26.10.2026 on #368 ("Decision by Maxi ... redesign").
+Decisions: consent_log period: end of the third calendar year after the answer
+        (Maxi, option A; RETENTION_CONSENT_LOG_YEARS, in the deletion job on #368).
+        A callback never done loses phone and summary 90 days after creation
+        (Maxi, option A on #371). T-11.1 redesign (Maxi, A): allergies never
+        travel in free text; the core reads them from the guest's sentence into
+        structured state, refuses model notes with allergy words, writes the
+        allergy onto line, order or table itself.
+Gate: G0 open, unchanged.
+Open: 1. Build the T-11.1 redesign on #368 in a new session, Opus 5.5 xhigh:
+        the design in the #368 comment, the open P1 4378523387 covered by it,
+        every sentence shape of the findings as a test, suite, evals against
+        main, Codex. Then merge #368 into #369, check, both to Maxi.
+        2. The CodeQL jobs on #368's 8275a6a failed without an alert; check on
+        the next push. 3. The deletion job dies with the dispatcher's start
+        check (ultrareview of #371): a service of its own, for #207.
+Lessons: Codex reviews every push by itself; never write "@" plus codex in PR
+        text (it turned #373 into a task and stopped all reviews); read the
+        state with scripts/codex_review.py --wait (stalled after 10 min).
+        Resolve every answered review thread by comment id, or Codex counts it
+        on every later head. Start the CI wait a minute after a push. A
+        throwaway Postgres named t111-db (exited, from the first T-11.1
+        session) is left on Docker; not removed, not ours.
+```
+
+```text
 ## Handover 25.10.2026 - T-11.4: the call log keeps the hour, not the minute
 Status: built and pushed, no pull request yet. scripts/call_log.py reads `time`
 as the hour ("18", "18 Uhr"); a row with a minute passes and every run cuts it
