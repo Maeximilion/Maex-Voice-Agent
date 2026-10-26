@@ -44,7 +44,6 @@ GREETING = (
     "Guten Tag, hier ist der KI-Assistent des Restaurants. "
     "Ich kann einen Tisch für Sie reservieren oder eine Bestellung zum Abholen aufnehmen."
 )
-SAY_CONFIRMED = "Ist notiert. Vielen Dank für den Anruf und bis dann."
 SAY_ASK_AGAIN = "Was soll ich ändern?"
 SAY_HANDOVER = "Ich gebe an das Team weiter."
 # After a number the core did not take. Why it did not is not known here, the
@@ -378,8 +377,6 @@ class ScriptedLLM:
                 return self._pickup.on_search(self._last_query, data, slots, say)
             if name == "draft_order":
                 return self._pickup.on_draft(data)
-            if name == "confirm" and "pickup_code" in data:
-                return self._pickup.on_confirmed(data)
         if name == "check_slot":
             if data.get("available"):
                 # The state is what the core took. A detail this script read
@@ -396,8 +393,6 @@ class ScriptedLLM:
             return LLMTurn(say=say or "Zu der Zeit ist leider nichts frei.")
         if name == "create_reservation":
             return LLMTurn(say=data["readback"])
-        if name == "confirm":
-            return LLMTurn(say=SAY_CONFIRMED)
         return LLMTurn(say=say or SAY_HANDOVER)
 
     def _after_opening_search(

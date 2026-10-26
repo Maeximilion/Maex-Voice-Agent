@@ -52,43 +52,6 @@ These six rules override any convenience. If a task violates them: **stop and as
 
 The layout is modular, organized by layers with fixed dependency direction. Fully documented with rationale and blueprint: `docs/11_MODULE.md`. **Before creating any new file, check there to see where it belongs.**
 
-```text
-maex-voice-agent/
-├── CLAUDE.md              ← this file
-├── AGENTS.md              Review rules Codex reads ("Code Review Rules")
-├── README.md
-├── docker-compose.yml     Postgres · API · n8n (base, no host ports)
-├── docker-compose.override.yml  dev host ports, loopback only
-├── deploy/                Prod Compose, Caddyfile
-├── .claude/commands/      /start /task /done /bug /eval /gate /project /handover
-├── .claude/skills/        Repo-specific rules Claude Code loads on demand
-├── .claude/settings.json  Project hooks: SessionStart syncs main, also where no folder has it checked out
-├── .claude/hooks/         Hook scripts (sync_main.sh)
-├── .github/workflows/     CI: ruff + pytest
-├── docs/                  Planning, specs, status  →  Section 5
-├── api/
-│   ├── main.py            App entry, router
-│   ├── config.py          Settings from .env
-│   ├── db.py              Engine, session
-│   ├── core/              Response envelope, errors, logging, auth, IDs, time
-│   ├── domain/            Business logic without HTTP: menu · ordering · reservations
-│   │                      · delivery · customers · status · callbacks
-│   ├── agent/             Conversation loop, state, ladder, escalation
-│   ├── telephony/         Port, call session, adapters (Asterisk, speech engines) – ONLY place that knows them
-│   ├── tools/             Thin HTTP wrapper /v1/tools/* around domain
-│   ├── events/            Outbox + dispatcher → n8n
-│   ├── jobs/              Cleanup, sync, daily report, holidays
-│   ├── gui/               Router, SSE, templates, static
-│   ├── models/  schemas/  SQLAlchemy · Pydantic
-│   └── tests/
-├── sim/                   Text telephone: conversations without phone
-├── db/migrations/         Alembic, versioned
-├── prompts/               System prompt per version
-├── evals/                 cases/ · runner.py · reports/ (ignored)
-├── n8n/                   Workflow exports
-└── scripts/               seed · import_menu · backup · restore
-```
-
 **Dependency direction, short:** `tools`/`gui`/`sim`/`telephony` → `agent` → `domain` → `models`/`core`. Never reversed. `domain/` imports no FastAPI, no HTTP, no provider.
 
 ---
@@ -123,7 +86,7 @@ maex-voice-agent/
 ## 6. How You Work
 
 ### Slash Commands (`.claude/commands/`)
-`/start` begin session · `/task T-x.y` build task · `/done` close out · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+`/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 **Where a task runs:** a work package row with the note `Environment: Ubuntu (WSL) on the workbench` runs only in a session started in Ubuntu on Maxi's PC, never Windows-local and never in the cloud. `/task` checks this before it reads anything else. Start, kits and limits: `docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10.
 
@@ -139,7 +102,7 @@ Pick the model when the session starts. A model switch starts a cold cache, so e
 | Gate review, deep debugging when Opus 5.5 at `xhigh` also stalls | Fable 5.1 (`claude-fable-5-1`), only when Maxi asks | `high` |
 | File search, log reading | Haiku 4.5 (`claude-haiku-4-5`) or an Explore subagent | none (no effort setting) |
 
-Mixed task: take the higher model and the higher effort. The `xhigh` triggers are hard rules 1, 2, 3 and 5 in concrete form; rule 4 (evals) and rule 6 (token budget) are process rules and do not raise the effort on their own, so token counting or cost logging stays at `high`. Decide from the task row and its Spec column. A row that names no area stays on the default (`high`); a row that names an area but leaves open whether one of the triggers applies takes `xhigh`. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
+Mixed task: take the higher model and the higher effort. The `xhigh` triggers are hard rules 1, 2, 3 and 5 in concrete form; rule 4 (evals) and rule 6 (token budget) are process rules and do not raise the effort on their own, so token counting or cost logging stays at `high`. Decide from the task row and its Spec column. A row that names no area stays on the default (`high`); a row that names an area but leaves open whether one of the triggers applies takes `xhigh`. `low` is never used; `max` and multi-agent workflows (ultracode) only when Maxi asks, typically at a gate. Two saved workflows in `.claude/workflows/` run as commands when Maxi asks for them (Maxi, 2026-10-22): `/gate-review G0` before `/gate`, and `/review-load-audit` about two weeks or five PRs after a change to the review rules or this table. Both are read-only. `/start` names the effort next to the model; `/task` checks it through `printenv CLAUDE_EFFORT` and asks only where that variable is empty. Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`).
 
 **Threads** (Maxi, 2026-10-15): a coordinating chat (a project chat in the desktop app, or any session that hands work on) runs on Opus 5.5 at `xhigh` and gives each piece the model and effort of this table. It starts the thread with `context` "fresh" and sets `model` and `effort` on the start call; a session can only hand down its own level or lower, and a fork or a cloud thread ignores both. The brief's first line is `Route: <model-id> <effort>` (`Route: claude-sonnet-5-5 medium`; Haiku takes `none`). The project hook `route_advice.sh` checks that line in the thread. A thread on the wrong setting does no work and answers only `ROUTE-MISMATCH want=... have=...`; the coordinating chat then switches that thread with `set_session_model` and `set_session_effort` (they work on a thread it started, never on itself, and need no approval at its own level or lower) and sends the brief again. If the same mismatch comes back, the thread carries on and reports it: one switch attempt, never a loop. Test and results: `docs/19_CLAUDE_CODE_SETUP.md` section 6.
 
@@ -165,10 +128,12 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 **Findings for another open PR** (Maxi, 2026-10-06): a finding that belongs to an open PR of another session goes there as one comment: the finding, the evidence, the proposed change and where it is tracked. Never as an edit on that PR's branch from a different session.
 
-**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A general go-ahead for the task ("do it all", "let the AI finish it") does not cover this merge; only Maxi's word for that PR does (2026-10-19, #330). A new commit after the review needs a new review before the merge. Before Claude merges a PR of its own work, `/done` has run on the branch (Maxi, 2026-10-20): `/ponytail-review` on a diff with non-`.md` files and `scripts/status_bump.py` (the number in the "Status version" line of `docs/01_STATUS.md` is higher than the one on `origin/main`); `/ponytail-review` is skipped only where the skill is not installed in the session, and the report says so. Merging straight after a fix round skipped both once (PR #339); when either is missing, run it first, push, and get CI and the review on the new head. The PR of the weekly README routine is exempt: it only carries generated files. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
+**Check for parallel work first** (Maxi, 2026-10-21): before a task or a fix starts, `gh pr list --state open --limit 200` and, after `git fetch origin '+refs/heads/*:refs/remotes/origin/*'` (a single-branch clone fetches only its own branch otherwise), the branches whose newest commit is less than 24 hours old (`git for-each-ref --sort=-committerdate refs/remotes/origin --format='%(committerdate:relative) %(refname:short)'`; git keeps no push time, so this is commit time) show whether another session already covers it. If one does, a finding goes there as a comment (above) instead of a second PR, and a branch with another session's commit from the last 24 hours gets no push without Maxi's word.
+
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) stays with Maxi: prepare it, get CI and evals green, report it ready, Maxi merges. A general go-ahead for the task ("do it all", "let the AI finish it") does not cover this merge; only Maxi's word for that PR does (2026-10-19, #330). A new commit after the review needs a new review before the merge. Before Claude merges a PR of its own work, `/done` has run on the branch (Maxi, 2026-10-20): `/ponytail-review` on a diff with non-`.md` files and `scripts/status_bump.py` (the number in the "Status version" line of `docs/01_STATUS.md` is higher than the one on `origin/main`); `/ponytail-review` is skipped only where the skill is not installed in the session, and the report says so. Merging straight after a fix round skipped both once (PR #339); when either is missing, run it first, push, and get CI and the review on the new head. The PR of the weekly README routine is exempt: it only carries generated files. The project hook `merge_gate.sh` (Maxi, 2026-10-21) blocks `gh pr merge` until CI, the sync with `main`, the status bump and a clean review hold on the head commit, and takes only `gh pr merge <n> --merge --match-head-commit <full sha>` (`--delete-branch` after it is allowed, a `cd` in front is not) into `main`, checked in the folder the command runs in: any other command that names it, a commit message or a search included, is blocked, so such text goes into a file or reads `gh pr merg[e]`; it cannot see `/ponytail-review`, the evals or the `xhigh` rule, so those stay Claude's to check. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
 
 ### Reviews
-Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota), repeated after every commit that moves the head, a merge from `main` included. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test (P2 within the review loop limits below), a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06):
+Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota, posted as a PR comment that opens with `Merge gate: <full head sha>`), repeated after every commit that moves the head, a merge from `main` included. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test (P2 within the review loop limits below), a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06):
 
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
@@ -178,9 +143,10 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 
 - P0 and P1 are always fixed, however many rounds it takes. No merge while one is open.
 - A P2 in code that hits an `xhigh` trigger from the Model Routing table (allergens, a booking, prices, the fate of a call) counts as P1.
-- Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets a one-line reason on its review thread.
-- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green, and a PR with an `xhigh` trigger still goes to Maxi.
-- When the findings per round grow after 3 rounds, stop patching and propose a structural redesign to Maxi. Nothing is pushed until Maxi approves it.
+- Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets no reply of its own: it is listed with a one-line reason in the `Merge gate:` comment below.
+- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green, and a PR with an `xhigh` trigger still goes to Maxi.
+- Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing else is pushed until Maxi approves it; a confirmed P0 or P1 is still fixed and pushed at once.
+- The fixes for one review go out in one push (Maxi, 2026-10-22): every push moves the head and costs a review round. For the same reason `origin/main` is merged into the branch only when the merge needs it (`/done` step 7b), never during fix rounds.
 
 ### Session End
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
@@ -216,12 +182,14 @@ A task is complete when **all** of these are true:
 - Errors return structured JSON, never stack trace to the agent.
 - Everything written for the repo is English (Maxi, 04.10.2026): identifiers, comments, docstrings, error and log messages, docs, commit messages, PR titles and descriptions, review replies. German only where it is product content: what the agent says to callers (`say` texts, prompts), caller sentences in `evals/`, and caller sentences as test input in `api/tests/` for code that parses German speech (Maxi, 06.10.2026: escalation keywords, the yes detector, number words and the stand-in model only react to German, an English sentence would test nothing). Test names, docstrings and comments around that input stay English. Existing German text stays until its file is translated; new text in such a file is English.
 - No emojis in code, docs, commits, or UI. Status expressed in words.
+- New shell longer than a single command lives in `scripts/` with a test (Maxi, 2026-10-22); docs and `.claude/commands/` call it and do not embed it. Shell already embedded in a command stays valid until that command is next reworked. Embedded scripts drew most of the review findings on #341 and #357.
 
 **Git**
 - Conventional Commits: `feat(tools): check_delivery with polygon validation`
 - One PR = one coherent, reviewable behavior, however large the diff. No line-count rule, no splitting only to keep a diff small. Commits inside the PR may follow the tasks. Status notes, handover, version pins, and CI chores ride in the next feature PR and never get a PR of their own; the one exception is a version pin that fixes a critical or high security alert (section 6 "Security alerts")
 - `main` always stays runnable
 - **Nothing is edited on `main`, and nothing is left behind** (Maxi, 2026-10-14): every change, also one line in a doc, is made on a branch, in a worktree where the session has one, and reaches `main` through a PR. A session never ends with uncommitted changes or a stash: what is not finished is committed on its branch and pushed. Two uncommitted edits in the `main` folder of the Windows clone kept it from being pulled for two days (192 commits behind); the note in them existed on that PC only. Leftovers that are found (uncommitted files in a `main` folder, a stash, a `leftovers/*` branch) are reported, never stashed, reset or deleted without Maxi's word; `/start` lists them at every session start until they are gone
+- **What Maxi wants kept lives in the repository** (Maxi, 2026-10-21): a hook, setting, command or tool that Maxi asks to keep or merge goes into this repository (`.claude/`, `scripts/`) and reaches `main` through a PR. Where it has to stay user-level (`~/.claude`), its copy and restore steps go into `docs/19_CLAUDE_CODE_SETUP.md` in that PR. A usage gate once installed only in the home folder left nothing to merge
 - No "🤖 Generated with Claude Code" badge/footer in PR descriptions or elsewhere in repo (README, docs, files)
 
 **Security**

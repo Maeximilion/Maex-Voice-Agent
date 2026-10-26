@@ -56,6 +56,19 @@ from api.tests.test_domain_menu_search import (  # noqa: F401
         ("die 23 und äh die 13", ["die 23", "äh die 13"]),
         ("die 4 bitte und 20", ["die 4 bitte", "20"]),
         ("Pho Bo drei äh und zwanzig", ["Pho Bo drei äh und zwanzig"]),
+        # A comma right after the "und" is the same pause (#328), also at the
+        # start of the sentence; a number that is no unit before it still splits.
+        ("die drei und, zwanzig", ["die drei und, zwanzig"]),
+        ("die 3 und, 20", ["die 3 und, 20"]),
+        ("die drei und, äh, zwanzig", ["die drei und, äh, zwanzig"]),
+        ("und äh, zwanzig", ["und äh, zwanzig"]),
+        ("und, zwanzig", ["und, zwanzig"]),
+        ("die 13, und äh, zwanzig", ["die 13, und äh", "zwanzig"]),
+        ("einmal Pho Bo, und, 30", ["einmal Pho Bo, und", "30"]),
+        # Every spelling of a hesitation (#327).
+        ("die drei und öh zwanzig", ["die drei und öh zwanzig"]),
+        ("die 23, eh, 24", ["die 23, eh, 24"]),
+        ("die 23 und äääh die 13", ["die 23", "äääh die 13"]),
         # Korrektur und Alternative: im Zweifel ganz lassen
         ("Nummer 23, nein, 24", ["Nummer 23, nein, 24"]),
         ("die 23 oder die 24", ["die 23 oder die 24"]),
@@ -131,6 +144,22 @@ def test_jede_position_findet_ihr_gericht(session, tenant_id, gesagt, nummern): 
         ("die 23 und Pho Bo", ["die 23", "Pho Bo"]),
         # The menu check sees the paused number whole as well (Codex PR #147).
         ("die drei und äh zwanzig", ["die drei und äh zwanzig"]),
+        # A comma on either side of the "und" is the same pause (#328).
+        (
+            "die drei, und zwanzig Frühlingsrollen",
+            ["die drei, und zwanzig Frühlingsrollen"],
+        ),
+        ("die 3, und äh 20 mal die 13", ["die 3, und äh 20 mal die 13"]),
+        (
+            "die drei und, zwanzig Frühlingsrollen",
+            ["die drei und, zwanzig Frühlingsrollen"],
+        ),
+        # Not after a number that is no unit, nor after a name.
+        (
+            "die 13, und zwanzig Frühlingsrollen",
+            ["die 13", "und zwanzig Frühlingsrollen"],
+        ),
+        ("Pho Bo, und 30", ["Pho Bo", "und 30"]),
     ],
 )
 def test_raw_pieces_haengt_hinweise_an(gesagt, stuecke):

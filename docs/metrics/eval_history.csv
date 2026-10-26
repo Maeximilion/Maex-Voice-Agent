@@ -12,3 +12,27 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-14,,,scripted-stand-in,cases,41,41,,,,,,,,,status-note,reference
 2026-10-14,,,scripted-stand-in,targets,27,1,,,,,,,,,status-note,reference
 2026-10-15,2026-10-14T22:36:27+00:00,eval_20261014_223627_373401.json,qwen3.6-35b-a3b,cases,41,20,0,0,0,0,1,0.1515,11,21714,report,
+2026-10-20,2026-10-20T21:34:59+00:00,eval_20261020_213459_521019.json,qwen3.6-35b-a3b,cases,43,27,0,0,0,0,1,0.0857,13,22844,report,main baseline run 1
+2026-10-20,2026-10-20T21:45:52+00:00,eval_20261020_214552_588544.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1714,9,22172,report,main baseline run 2
+2026-10-20,2026-10-20T21:55:36+00:00,eval_20261020_215536_048231.json,qwen3.6-35b-a3b,cases,43,23,0,0,0,0,2,0.2571,14,23521,report,"transfer, local times, booking guard; run 1"
+2026-10-21,2026-10-20T22:09:23+00:00,eval_20261020_220923_184732.json,qwen3.6-35b-a3b,cases,43,20,0,0,0,0,2,0.2286,15,23692,report,"transfer, local times, booking guard; run 2"
+2026-10-20,,,qwen3.6-35b-a3b,cases,43,19,0,0,0,0,3,0.1143,16,25264,status-note,"prompt variant with four more lines, not taken; report lost in the cleanup, numbers from the run output"
+2026-10-21,2026-10-20T22:42:29+00:00,eval_20261020_224229_924521.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,2,0.1429,15,23566,report,head with the refusal hints; run 1
+2026-10-21,2026-10-20T22:52:49+00:00,eval_20261020_225249_005888.json,qwen3.6-35b-a3b,targets,27,3,0,15,0,0,0,0.2963,9,27735,report,head with the refusal hints
+2026-10-21,2026-10-20T23:00:54+00:00,eval_20261020_230054_484816.json,qwen3.6-35b-a3b,cases,43,21,0,0,0,0,2,0.2000,15,23499,report,head with the refusal hints; run 2
+2026-10-21,2026-10-21T09:02:12+00:00,eval_20261021_090212_512343.json,qwen3.6-35b-a3b,cases,43,23,0,0,0,0,1,0.2000,14,22455,report,"head 84bd789 (numberless callback to the team, strict booking guard); run 1"
+2026-10-21,2026-10-21T09:12:25+00:00,eval_20261021_091225_697771.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1429,14,22914,report,head 0277573 (plus second table and code word fixes); run 2
+2026-10-21,2026-10-21T09:23:35+00:00,eval_20261021_092335_473349.json,qwen3.6-35b-a3b,targets,27,1,0,16,0,0,0,0.2593,12,26701,report,head 0277573
+2026-10-21,2026-10-21T09:59:32+00:00,eval_20261021_095932_871926.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1429,13,22997,report,head 22f46fa (final guard of the review rounds); run 1
+2026-10-21,2026-10-21T10:10:02+00:00,eval_20261021_101002_258350.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.1714,16,22710,report,head 22f46fa; run 2
+2026-10-21,2026-10-21T10:20:18+00:00,eval_20261021_102018_067653.json,qwen3.6-35b-a3b,targets,27,1,0,16,0,0,0,0.3333,11,26507,report,head a1ffbbf
+2026-10-22,2026-10-21T22:02:20+00:00,eval_20261021_220220_667758.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,2,0.1714,10,22028,report,head 33843ab (core says the booking); run 1
+2026-10-22,2026-10-21T22:16:05+00:00,eval_20261021_221605_601846.json,qwen3.6-35b-a3b,cases,43,25,0,0,0,0,2,0.2286,13,22416,report,head 33843ab; run 2
+2026-10-22,2026-10-21T22:28:25+00:00,eval_20261021_222825_975140.json,qwen3.6-35b-a3b,targets,27,2,0,15,0,0,0,0.3333,12,26273,report,head 33843ab
+2026-10-22,2026-10-22T14:01:54+00:00,eval_20261022_140154_567365.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,8,21022,report,"head f0136c1 (local time fix, review fixes); run 1"
+2026-10-22,2026-10-22T14:11:20+00:00,eval_20261022_141120_335572.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,9,21600,report,head f0136c1; run 2
+2026-10-22,2026-10-22T14:20:56+00:00,eval_20261022_142056_408728.json,qwen3.6-35b-a3b,targets,27,2,0,16,0,0,0,0.2593,11,26331,report,head f0136c1
+2026-10-23,2026-10-22T22:00:56+00:00,eval_20261022_220056_336402.json,qwen3.6-35b-a3b,cases,43,27,0,0,0,0,1,0.2571,8,21113,report,final head 802e217; run 1
+2026-10-23,2026-10-22T22:10:22+00:00,eval_20261022_221022_763132.json,qwen3.6-35b-a3b,cases,43,26,0,0,0,0,1,0.2286,9,21905,report,final head 802e217; run 2
+2026-10-23,2026-10-22T22:20:01+00:00,eval_20261022_222001_478485.json,qwen3.6-35b-a3b,targets,27,2,0,16,0,0,0,0.2222,12,26956,report,final head 802e217
+2026-10-23,2026-10-23T20:08:04+00:00,eval_20261023_200804_898766.json,qwen3.6-35b-a3b,cases,43,24,0,0,0,0,1,0.2286,19,22307,report,head 38e6653 (order named by the guest's name)
