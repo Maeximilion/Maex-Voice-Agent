@@ -13,6 +13,7 @@ Periods are settings (api/config.py), decided by Maxi with the legal check on
 
 import logging
 import re
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
@@ -61,15 +62,19 @@ _ALLERGY_RE = re.compile(ALLERGY, re.IGNORECASE)
 
 
 def purge(session: Session, now: datetime) -> dict[str, int]:
-    """One pass over every period. Commits; returns what changed per period."""
-    counts = {
-        "allergy_notes": _allergy_notes(
+    """One pass over every period. Commits; returns what changed per period.
+
+    Each period runs in a savepoint of its own: one that fails (a broken time
+    zone of a tenant, say) is logged by name and rolled back, and the others
+    still delete (ultrareview PR #371)."""
+    steps: dict[str, Callable[[], int | dict[str, int]]] = {
+        "allergy_notes": lambda: _allergy_notes(
             session, now, settings.retention_allergy_note_days
         ),
-        **_guest_details(
+        "guest_details": lambda: _guest_details(
             session, now - timedelta(days=settings.retention_guest_details_days)
         ),
-        "caller_ids": _run(
+        "caller_ids": lambda: _run(
             session,
             update(Call)
             .where(
@@ -79,7 +84,7 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             )
             .values(caller_id=None),
         ),
-        "callbacks": _run(
+        "callbacks": lambda: _run(
             session,
             update(Callback)
             .where(
@@ -91,23 +96,46 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             )
             .values(phone="", summary=""),
         ),
-        "outbox_payloads": _outbox_payloads(session, now),
-        "outbox_rows": _run(
+        "outbox_payloads": lambda: _outbox_payloads(session, now),
+        "outbox_rows": lambda: _run(
             session,
             delete(OutboxEvent).where(
                 OutboxEvent.created_at
                 < now - timedelta(days=settings.retention_outbox_row_days)
             ),
         ),
-        "audit_entries": _run(
+        "audit_entries": lambda: _run(
             session,
             delete(AuditLog).where(
                 AuditLog.at < now - timedelta(days=settings.retention_audit_log_days)
             ),
         ),
     }
+    counts: dict[str, int] = {}
+    failed: list[str] = []
+    for name, step in steps.items():
+        try:
+            with session.begin_nested():
+                result = step()
+        except Exception as exc:  # noqa: BLE001 - one period must not stop the rest
+            failed.append(name)
+            log(
+                logger,
+                logging.ERROR,
+                "Retention step failed",
+                step=name,
+                error=str(exc),
+            )
+            continue
+        counts.update(result if isinstance(result, dict) else {name: result})
     session.commit()
-    log(logger, logging.INFO, "Retention pass", **counts)
+    log(
+        logger,
+        logging.INFO,
+        "Retention pass",
+        **counts,
+        **({"failed": failed} if failed else {}),
+    )
     return counts
 
 
@@ -117,7 +145,11 @@ def _run(session: Session, statement) -> int:
 
 def _allergy_notes(session: Session, now: datetime, days: int) -> int:
     """L13: the night after the order or reservation, collected or not. The
-    business day ends at 05:00 in the tenant's time zone (core/time.py)."""
+    business day ends at 05:00 in the tenant's time zone (core/time.py).
+
+    ponytail: no lower date bound, so each pass scans the whole order history
+    (kept for the tax adviser, L18) and catches up a missed pass; add a bound
+    or a partial index on notes not yet stripped if a pass gets slow."""
     changed = 0
     for tenant_id, zone in session.execute(select(Tenant.id, Tenant.timezone)).all():
         day = business_day(now, zone) - timedelta(days=days)

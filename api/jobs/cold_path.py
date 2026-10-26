@@ -41,6 +41,7 @@ def watch_forever(
     session_factory: Callable[[], Session] = SessionLocal,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     job: Callable[[Session, datetime], object] = sweep,
+    label: str = "Watchdog",
 ) -> None:
     """Loop of the watchdog or the deletion job. An error ends only the pass,
     never the thread."""
@@ -50,13 +51,7 @@ def watch_forever(
             job(session, clock())
         except Exception as exc:  # noqa: BLE001 - the watchdog must never die
             session.rollback()
-            log(
-                logger,
-                logging.ERROR,
-                "Watchdog pass aborted",
-                job=getattr(job, "__name__", str(job)),
-                error=str(exc),
-            )
+            log(logger, logging.ERROR, f"{label} pass aborted", error=str(exc))
         finally:
             session.close()
         stop.wait(interval)
@@ -73,7 +68,7 @@ if __name__ == "__main__":
     threading.Thread(
         target=watch_forever,
         args=(threading.Event(), settings.retention_interval_seconds),
-        kwargs={"job": purge},
+        kwargs={"job": purge, "label": "Retention"},
         name="retention",
         daemon=True,
     ).start()

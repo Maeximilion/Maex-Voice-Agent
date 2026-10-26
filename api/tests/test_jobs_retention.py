@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.config import Settings, settings
@@ -20,6 +20,7 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     Reservation,
+    Tenant,
 )
 from api.tests.test_domain_draft_order import _tenant, item
 
@@ -526,6 +527,45 @@ def test_a_period_of_zero_days_is_refused(name):
     """0 would strip the orders the kitchen is cooking right now."""
     with pytest.raises(ValidationError):
         Settings(**{name: 0})
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "retention_caller_id_days",
+        "retention_audit_log_days",
+        "retention_allergy_note_days",
+        "retention_interval_seconds",
+    ],
+)
+def test_a_period_beyond_ten_years_is_refused(name):
+    """Ultrareview PR #371: 999,999,999 days, the usual way to switch a period
+    off, overflowed the date arithmetic of start_call and of every pass."""
+    with pytest.raises(ValidationError):
+        Settings(**{name: 999_999_999})
+    Settings(**{name: 3660 if name.endswith("_days") else 86400})
+
+
+def test_one_failing_period_does_not_stop_the_others(session, tenant_id, caplog):
+    """Ultrareview PR #371: a tenant time zone Python does not know broke the
+    allergy step, the first, and with it every deletion of the pass."""
+    call = _call(session, tenant_id, started_at=NOW - 91 * DAY)
+    order = _order(session, tenant_id, YESTERDAY_EVENING, note=ALLERGY)
+    session.execute(
+        update(Tenant).where(Tenant.id == tenant_id).values(timezone="Mars/Base")
+    )
+    session.commit()
+
+    counts = purge(session, NOW)
+
+    assert _fresh(session, call).caller_id is None
+    assert _fresh(session, order).note == ALLERGY
+    assert "allergy_notes" not in counts
+    assert counts["caller_ids"] == 1
+    failed = [r for r in caplog.records if r.getMessage() == "Retention step failed"]
+    assert [r.extra["step"] for r in failed] == ["allergy_notes"]
+    passes = [r for r in caplog.records if r.getMessage() == "Retention pass"]
+    assert passes[-1].extra["failed"] == ["allergy_notes"]
 
 
 def test_cold_path_runs_the_job_in_its_own_loop(migrated_db_url, session, tenant_id):
