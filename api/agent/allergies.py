@@ -60,13 +60,20 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
     too many is the safe side."""
     asked = _ASKED_WHICH.search(state.last_say or "")
     if asked is not None:
-        # The first sentence answers the question; any sentence after it is
-        # read as any other, with its own owner ("Erdnüsse. Mein Mann hat
-        # eine Sesamallergie."; Codex PR #368, P1).
-        first, *rest = _SENTENCE.split(text.strip(), maxsplit=1)
-        _answer(session, state, first, asked.group("dish"))
-        if rest:
-            _note(state, rest[0])
+        # The first sentence answers the question; a later sentence with an
+        # allergy word of its own is read as any other, with its own owner
+        # ("Erdnüsse. Mein Mann hat eine Sesamallergie."; Codex PR #368, P1).
+        # A sentence without one carries on the one before it ("Erdnüsse.
+        # Und gegen Sesam.", Codex PR #368, P1).
+        said: list[str] = []
+        for sentence in _SENTENCE.split(text.strip()):
+            if said and not mentions_allergy(sentence):
+                said[-1] += f" {sentence}"
+            else:
+                said.append(sentence)
+        _answer(session, state, said[0], asked.group("dish"))
+        for sentence in said[1:]:
+            _note(state, sentence)
         return
     _note(state, text)
 
@@ -153,17 +160,20 @@ def _answer(
     numbers = frozenset(canonical_card(number) for number, _ in rows)
     if names_an_order(text, CardFormat.from_items(rows), numbers):
         return
-    answer, _ = which_answer(text)
+    answer, removals = which_answer(text)
     if isinstance(answer, Wish) and mentions_allergy(text):
         # A whole sentence, not a bare ingredient: read as any other, with
-        # both readings and the owner of each allergy in it. One that names
-        # more than it reads ("Erdnüsse, und mein Mann hat eine
-        # Sesamallergie" read as sesame) keeps the question open, and what
-        # it does read is noted with its owner (Codex PR #368).
+        # both readings and the owner of each allergy in it.
         answer = _read(text)
-        if answer is not None and not read_in_full(text, answer.ingredient or ""):
-            _note(state, text)
-            return
+    if isinstance(answer, Wish) and not read_in_full(
+        text, " ".join([answer.ingredient or "", *removals])
+    ):
+        # Names more than it reads ("Erdnüsse, und mein Mann hat eine
+        # Sesamallergie" read as sesame, "Erdnüsse. Und gegen Sesam." read
+        # as peanut): the question stays open, and what is read with an
+        # allergy word is noted with its owner (Codex PR #368).
+        _note(state, text)
+        return
     item = next(
         (
             id_

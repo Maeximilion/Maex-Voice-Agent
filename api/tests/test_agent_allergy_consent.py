@@ -289,6 +289,17 @@ def test_the_answer_to_wogegen_fills_the_open_allergy(session, state, answer, no
         ),
         ("Mein Mann ist gegen Sesam allergisch.", [("Sesam", False)]),
         ("Keine. Aber mein Mann hat eine Sesamallergie.", [("Sesam", False)]),
+        # Codex PR #368, P1 4379762029: a sentence without an allergy word
+        # carries the list of the one before it on.
+        ("Erdnüsse. Und gegen Sesam.", [("Erdnüsse und Sesam", True)]),
+        (
+            "Erdnüsse. Mein Mann hat eine Sesamallergie. Und gegen Milch.",
+            [("Erdnüsse", True), (None, False)],
+        ),
+        ("Erdnüsse. Danke.", [("Erdnüsse", True)]),
+        # More than the answer and not read in full: the question stays
+        # open, the model reads the sentence.
+        ("Erdnüsse und bitte um 20 Uhr.", [(None, True)]),
     ],
 )
 def test_every_sentence_of_an_answer_keeps_its_owner(session, state, answer, noted):
@@ -830,8 +841,10 @@ def test_a_held_replacement_takes_back_the_draft_read_out_before(session, state)
 def test_an_answer_to_wogegen_with_a_correction_goes_to_the_model(session, state):
     """Codex PR #368, P1 4379357300: "Erdnüsse, aber bitte erst übermorgen"
     answers the question and changes the date. The held draft would go out
-    with the old date: the model reads the sentence, and its new draft is
-    held for the consent question with the new date."""
+    with the old date: the model reads the sentence instead. Not read in full
+    (Codex PR #368, P1 4379762029), the answer leaves the allergy open, and
+    the model's new draft, with the new date, waits for "Wogegen?" again: one
+    question more, never an allergen guessed or lost."""
     turn(session, state, f"{TABLE}, ich habe eine Allergie", LLMTurn(tool_call=table()))
     later = {**table().args, "reserved_for": "2026-09-17T19:00:00+02:00"}
 
@@ -842,11 +855,16 @@ def test_an_answer_to_wogegen_with_a_correction_goes_to_the_model(session, state
         LLMTurn(tool_call=ToolCall("create_reservation", later)),
     )
 
-    assert said == [ALLERGY_QUESTION]
+    assert said == [SAY_ALLERGY_WHICH]
     assert reservations(session) == []
     assert state.held_call is not None
     assert state.held_call["args"]["reserved_for"] == later["reserved_for"]
-    assert [(a.ingredient, a.own) for a in state.allergies] == [("Erdnüsse", True)]
+
+    assert turn(session, state, "Erdnüsse.") == [ALLERGY_QUESTION]
+    turn(session, state, "Ja.")
+    [reservation] = reservations(session)
+    assert reservation.note == "WICHTIG: Keine Erdnüsse. Grund: Allergie"
+    assert reservation.reserved_for.isoformat().startswith("2026-09-17")
 
 
 def test_the_same_allergy_said_for_two_dishes_goes_onto_both(session, state):

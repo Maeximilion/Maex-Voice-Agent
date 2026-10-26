@@ -1435,7 +1435,7 @@ _ANSWER_WORDS = (
     | _NEGATION
     | _PREPOSITIONS
     | _AFFIRMATIONS
-    | frozenset({"und", "oder", "sowie", "nur"})
+    | frozenset({"und", "oder", "sowie", "nur", "ohne", "jeden", "fall"})
 )
 
 
