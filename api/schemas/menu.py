@@ -73,6 +73,10 @@ class Wish(_WithoutEmpty):
     # Bei `open` nach einem Gericht: die Gruppen, in denen die Option steht
     # (Reis als Beilage und als Extra) - der Agent fragt, welche.
     groups: list[str] | None = None
+    # With an allergy: True when it is another adult's, whom the caller's
+    # consent does not cover (legal check L13). For the core, which reads it
+    # from the guest's sentence (`agent/allergies.py`); never sent.
+    another_adult: bool | None = Field(default=None, exclude=True)
 
 
 class SearchResult(BaseModel):

@@ -150,13 +150,23 @@ Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
    → beim Vorlesen wiederholen, nie zusagen, das Gericht sei frei davon
    → a removal said with it stays, after it (#252):
      "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
-   → on the dish when the guest ties it to that dish; said without a dish,
-     or unclear which: `note` of draft_order for the whole order (D24); the core keeps it as `order_note`
-     across a correction, a new draft without a note gets it, an empty note
-     clears it
+   → the core reads it from the guest's own sentence, every turn, and
+     writes it onto the draft itself (T-11.1); the model never writes an
+     allergy into a note, a draft or cart with one is refused
+   → on the dish when a clear search found the dish of its sentence; said
+     without a dish, with an unclear one, or the dish no longer ordered:
+     `note` of draft_order for the whole order (D24); on a table: its `note`
+   → not read in full ("gegen Erdnüsse allergisch und gegen Sesam", or a dish
+     in front that read whole would count as an allergen): "Wogegen sind Sie
+     allergisch?"; the core reads the answer, "Keine." takes it back
 
-Before the first draft whose note would carry the reason (T-11.1, L13):
-   the core holds draft_order or create_reservation and asks
+Before the first draft that needs it (T-11.1, L13), the core holds
+draft_order or create_reservation and asks itself:
+   an allergy not read in full → "Wogegen sind Sie allergisch?"
+     an answer it reads  → on to the next question or the draft
+     anything else       → the draft is dropped, the model reads the
+                           sentence; the next draft is held again
+   an allergy of the caller or their child, consent not asked yet →
      "Darf ich die Allergie als Hinweis für die Küche notieren?"
    explicit "ja"     → the draft with the fixed wording, read out by the core
    "nein"            → the draft with "ohne <Zutat>" only, read out by the core
@@ -175,7 +185,7 @@ Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
    → no note (#252)
 ```
 
-The consent is the core's, not the model's (`agent/guards.py` `consented_call`, `agent/loop.py`): whatever wording a model writes into a note, a note that names an allergy is brought into one of the two forms before anything is stored (`domain/menu/wishes.py` `with_consent`), a note in the guest's own words ("Erdnussallergie") included, and every notice of a note keeps its ingredient. A yes to the consent question is as strict as the yes to a read-back, with the words that say "note it" besides ("Ja, notieren Sie das"); "Ja, und noch eine Cola" is no explicit consent. A handover card never quotes a guest sentence that names an allergy. Whose allergy it is, is read on the words from the comma or full stop before the allergy word to the end (`of_another_adult`): a person after "mein", "unser" ("meine Frau"), one on their own ("ein Freund", "jemand") or the subject "er", "sie", "wir"; a list of persons, closed, so a person it does not name keeps the allergy as the caller's own.
+The allergy and the consent are the core's, not the model's (`agent/allergies.py`, `agent/loop.py`, redesign of 26.10.2026 after five review rounds on PR #368 that each found another note wording which lost a restriction or put it on the wrong person): the core keeps each allergy as structured state (ingredient, whose, dish) read from the guest's sentence with the parser of the menu search, any sentence of the call, also one said while a draft waits for a question. The model's notes carry only other wishes. A yes to the consent question is as strict as the yes to a read-back, with the words that say "note it" besides ("Ja, notieren Sie das"); "Ja, und noch eine Cola" is no explicit consent. A handover card never quotes a guest sentence that names an allergy. Whose allergy it is, is read on the words of the allergy's clause (`of_another_adult`): a person after "mein", "unser" ("meine Frau"), one on their own ("ein Freund", "jemand") or the subject "er", "sie", "wir"; a list of persons, closed, so a person it does not name keeps the allergy as the caller's own.
 
 ---
 

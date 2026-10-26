@@ -60,6 +60,20 @@ def last_words(say: str) -> str:
 SERVICE_FLAGS = ("is_open", "pickup_enabled")
 
 
+class Allergy(BaseModel):
+    """An allergy the guest named (T-11.1)."""
+
+    # As the guest said it ("Erdnuss", "Milch, Ei und Nuss"). None while the
+    # words did not give it in full: the guest is asked "Wogegen?".
+    ingredient: str | None = None
+    # The caller's own or their own child's. Another adult's is never noted
+    # with its reason: the caller's "ja" is no consent of theirs (L13).
+    own: bool = True
+    # The dish it was said with (`menu_item_id` of a clear search hit); None
+    # for the whole order or the table.
+    item: str | None = None
+
+
 class ConversationState(BaseModel):
     call_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -93,14 +107,6 @@ class ConversationState(BaseModel):
     # keeps nothing between turns, and without it a dish found in one turn is
     # gone in the next.
     cart: list[dict[str, Any]] = Field(default_factory=list)
-    # The note of the whole order (`draft_order` `note`, D24), kept like the
-    # cart: a correction drops the draft, never the guest's allergy on it.
-    # A draft that names no note gets this one (`guards.consented_call`).
-    order_note: str | None = None
-    # The same for the note of a table draft the core dropped after an unclear
-    # answer to the allergy question (`guards.keep_restrictions`); gone once a
-    # table draft holds a note again.
-    table_note: str | None = None
     # What search_menu said about a dish: id to number, name and mandatory
     # option groups. Never sent as it is. The labels of the `cart` lines in the
     # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
@@ -145,14 +151,20 @@ class ConversationState(BaseModel):
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
+    # The allergies the guest named in this call, read by the core from the
+    # guest's own sentences (`agent/allergies.py`, T-11.1). The model never
+    # carries one in a note: the core writes them onto the draft itself.
+    # Memory of the core, never sent.
+    allergies: list[Allergy] = Field(default_factory=list)
     # The caller's answer to the question for the allergy as a kitchen note
     # (`consent.ALLERGY_QUESTION`, legal check L13), None while it was not
-    # asked. Asked once per call, before the first draft whose note would
-    # carry the allergy as its reason; the answer holds for every note of the
-    # call (`guards.with_consent`). Memory of the core, never sent.
+    # asked. Asked once per call, before the first draft that would carry an
+    # allergy as its reason; the answer holds for every note of the call.
+    # Memory of the core, never sent.
     allergy_consent: Answer | None = None
-    # That draft, `draft_order` or `create_reservation` as the model called
-    # it, while the question waits for its answer (`loop.py`). Never sent.
+    # The draft, `draft_order` or `create_reservation` as the model called it,
+    # while a question of the core about the allergy waits for its answer
+    # (`allergies.question`, `loop.py`). Never sent.
     held_call: dict[str, Any] | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
@@ -194,10 +206,6 @@ class ConversationState(BaseModel):
             # the rules for that only when the state carries the field
             # (`agent/llm.py` `ORDER_FORMAT`). A call about a table never does.
             data["cart"] = [self._line(line) for line in self.cart]
-        if self.order_note:
-            data["order_note"] = self.order_note
-        if self.table_note:
-            data["table_note"] = self.table_note
         return data
 
     def _line(self, line: dict[str, Any]) -> dict[str, Any]:
@@ -457,7 +465,6 @@ def apply_tool_result(
     if name == "create_reservation":
         state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
-        state.table_note = None
         state.order_id = None
         state.stage = "readback_pending"
         state.booking_say = None
@@ -474,8 +481,6 @@ def apply_tool_result(
         # readback starts from these lines.
         with suppress(ValidationError):
             state.cart = cart_lines((args or {}).get("items"))
-        note = (args or {}).get("note")
-        state.order_note = note.strip() or None if isinstance(note, str) else None
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_service_status":
@@ -491,7 +496,6 @@ def apply_tool_result(
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
             state.cart = []
-            state.order_note = None
         state.stage = "confirmed"
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
@@ -526,12 +530,28 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
             state.known_item_ids.update(str(h["menu_item_id"]) for h in hits)
         for h in hits:
             state.seen_items[str(h["menu_item_id"])] = _seen(h)
+        wish = part.get("wish") or {}
+        if clear and hits and wish.get("kind") == "allergy":
+            _to_dish(state, wish.get("ingredient"), str(hits[0]["menu_item_id"]))
         if not clear:
             for h in hits:
                 state.offered_items[str(h["menu_item_id"])] = (
                     str(h.get("number") or ""),
                     str(h.get("name") or ""),
                 )
+
+
+def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
+    """The search found the dish an allergy was said with: the first one the
+    guest named that is not tied to a dish yet, with the same ingredient or,
+    still asked for, none, goes onto that dish's line. Only what the core read
+    from the guest's own sentence: the search reads the model's query."""
+    said = ingredient.casefold() if isinstance(ingredient, str) else None
+    for allergy in state.allergies:
+        named = allergy.ingredient.casefold() if allergy.ingredient else None
+        if allergy.item is None and named == said:
+            allergy.item = item_id
+            return
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

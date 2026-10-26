@@ -22,7 +22,7 @@ from typing import Any, get_args
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent import escalation, guards
+from api.agent import allergies, escalation, guards
 from api.agent.consent import ALLERGY_QUESTION, consent_answer, is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
@@ -40,7 +40,8 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.calls import record_consent
-from api.domain.menu.wishes import mentions_allergy, with_consent
+from api.domain.menu.search import SAY_ALLERGY_WHICH
+from api.domain.menu.wishes import mentions_allergy
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Tenant
 from api.schemas.callbacks import CallbackReason
@@ -164,10 +165,13 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
-        # The answer to the question for the allergy (legal check L13), logged
-        # also when this sentence goes to the team: the draft that waited for
-        # it goes first, before the model is asked.
-        held = self._consent_answered(state, user_text)
+        # The same for an allergy: the core writes it onto the draft from what
+        # the guest said, never from a model's note (T-11.1).
+        allergies.note_allergies(self._session, state, user_text)
+        # The answer to a question of the core about the allergy, the consent
+        # logged also when this sentence goes to the team (L13): the draft
+        # that waited for it goes first, before the model is asked.
+        held = self._held_answered(state, user_text)
         # Read past the question whether a person is on the line: "Spreche ich
         # mit einem Menschen?" holds the words of the wish to talk to one and
         # only asks, what else the sentence says still counts.
@@ -214,11 +218,13 @@ class ConversationLoop:
             # unless the call is past its limit (Codex PR #368).
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
-            guards.note_said(state, ALLERGY_QUESTION)
-            say = [ALLERGY_QUESTION]
-            if asks:
-                say.insert(0, SAY_NOT_A_PERSON)
-            return TurnResult(state=state, say=say)
+            if (question := allergies.question(state)) is not None:
+                guards.note_said(state, question)
+                say = [question]
+                if asks:
+                    say.insert(0, SAY_NOT_A_PERSON)
+                return TurnResult(state=state, say=say)
+            state.held_call = None
         result = self._converse(state, user_text, turn_started, held)
         if asks:
             # A request next to the question ("Sind Sie ein Roboter? Ich
@@ -237,7 +243,7 @@ class ConversationLoop:
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `held` is the draft the
-        guest just answered the allergy question for (`_consent_answered`):
+        guest just answered a question of the core for (`_held_answered`):
         carried out first, in place of a model call."""
         start = guards.begin_turn(state)
         pending_input = user_text
@@ -389,36 +395,45 @@ class ConversationLoop:
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
                 )
 
-            # Every note as the caller's answer lets it be stored (L13).
-            call = guards.consented_call(state, turn.tool_call)
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
-            # An allergy the notes do not read in full is asked about first.
-            refused = guards.unread_refusal(turn.tool_call) or guards.refusal(
+            refused = guards.refusal(
                 state,
                 start,
                 user_text,
-                call,
+                turn.tool_call,
                 cart_sent=turn.cart is not None,
             )
-            if refused is None and guards.waits_for_consent(state, call):
-                # The first note that would carry the allergy as its reason:
-                # the core asks before anything is stored, and the draft
-                # waits for the answer (`_consent_answered`).
-                state.held_call = {"name": call.name, "args": call.args}
-                guards.note_said(state, ALLERGY_QUESTION)
-                return TurnResult(state=state, say=[ALLERGY_QUESTION])
+            question = (
+                allergies.question(state)
+                if turn.tool_call.name in allergies.NOTED
+                else None
+            )
+            if refused is None and question is not None:
+                # The core asks what the allergy note still lacks before
+                # anything is stored, and the draft waits for the answer
+                # (`_held_answered`).
+                state.held_call = {
+                    "name": turn.tool_call.name,
+                    "args": turn.tool_call.args,
+                }
+                guards.note_said(state, question)
+                return TurnResult(state=state, say=[question])
             if refused is not None:
                 log_refused(
                     self._session,
                     state.call_id,
                     state.tenant_id,
-                    call.name,
+                    turn.tool_call.name,
                     refused,
                 )
                 result = refused
             else:
+                # The guest's allergies onto the draft, as their answer lets
+                # them be stored (L13). The state keeps the call as the model
+                # wrote it: the cart goes back to the model without them.
+                call = allergies.noted_call(state, turn.tool_call)
                 result = self._dispatch(state, call.name, call.args)
-            apply_tool_result(state, call.name, result, call.args)
+            apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):
                 # The draft the guest answered the question for: read out by
                 # the core, so the guest's next "Ja" is the yes to it. Unless
@@ -430,7 +445,7 @@ class ConversationLoop:
                     return self._too_slow(state, user_text)
                 guards.note_said(state, said)
                 return TurnResult(state=state, say=[said])
-            if call.name == "confirm" and result.ok:
+            if turn.tool_call.name == "confirm" and result.ok:
                 # Booked: the core says so itself and ends the turn. A model
                 # that phrased it said what the database did not hold (a code
                 # it made up, a table never drafted), and every rule that
@@ -472,7 +487,7 @@ class ConversationLoop:
                 )
             if result is guards.CALLBACK_WITHOUT_NUMBER:
                 handed = self._callback_without_number(
-                    state, call.args, user_text, reported_failures
+                    state, turn.tool_call.args, user_text, reported_failures
                 )
                 if handed is not None:
                     return handed
@@ -482,8 +497,8 @@ class ConversationLoop:
                 # again: it answers with a sentence or a tool call, never
                 # both, so the tool's sentence would end its turn, and a guest
                 # who hangs up then would be lost (Codex PR #280).
-                return self._table_to_team(state, call.args, result.say)
-            if call.name == "transfer_to_team" and state.transferred:
+                return self._table_to_team(state, turn.tool_call.args, result.say)
+            if turn.tool_call.name == "transfer_to_team" and state.transferred:
                 # The model handed the call over itself, and the team takes it:
                 # the call ends here, as in `_handoff`. Asked again, a real
                 # model called transfer_to_team on its own result until the hop
@@ -491,8 +506,8 @@ class ConversationLoop:
                 return TurnResult(
                     state=state, say=[result.say or SAY_ESCALATION], ended=True
                 )
-            called.append(call.name)
-            pending_input = _tool_result_as_input(call.name, result, zone)
+            called.append(turn.tool_call.name)
+            pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
 
@@ -538,36 +553,43 @@ class ConversationLoop:
                 )
         return None
 
-    def _consent_answered(
+    def _held_answered(
         self, state: ConversationState, user_text: str
     ) -> ToolCall | None:
-        """Judges the guest's sentence as the answer to `ALLERGY_QUESTION`,
-        when that question ended the last turn, and logs it per call (L13).
-        Returns the draft that waited for it, to be carried out with its notes
-        as the answer allows. Unclear is no consent, and the sentence was
-        likely about something else: the draft is dropped, the model reads
-        the sentence, and the draft it makes again carries no reason."""
-        if state.held_call is None or state.last_say != ALLERGY_QUESTION:
+        """The guest's sentence as the answer to the question the core put for
+        the held draft (`allergies.question`), when that question ended the
+        last turn. The answer to "Wogegen?" is in the state already
+        (`allergies.note_allergies`); the one to the consent question is
+        judged here and logged per call (L13). Returns the draft, which goes
+        out with the notes the state now allows or waits for the next
+        question. An unclear answer drops it: the sentence was likely about
+        something else, the model reads it, and the draft it makes again
+        finds the allergies in the state."""
+        if state.held_call is None or state.last_say not in (
+            ALLERGY_QUESTION,
+            SAY_ALLERGY_WHICH,
+        ):
             # Another sentence came between, as "Sind Sie noch da?" after a
             # silence on the phone line: a "Ja" answers that one. The draft
             # stays held and the question is put again (`run_turn`; Codex
             # PR #368).
             return None
         held, state.held_call = state.held_call, None
-        answer = consent_answer(user_text)
-        record_consent(
-            self._session,
-            state.tenant_id,
-            state.call_id,
-            ALLERGY_QUESTION,
-            answer,
-            now=self._now,
-        )
-        state.allergy_consent = answer
-        if answer == "unclear":
-            # No consent: the restrictions of the dropped draft stay in the
-            # state without their reason, for the draft the model makes again.
-            guards.keep_restrictions(state, held)
+        if state.last_say == ALLERGY_QUESTION:
+            answer = consent_answer(user_text)
+            record_consent(
+                self._session,
+                state.tenant_id,
+                state.call_id,
+                ALLERGY_QUESTION,
+                answer,
+                now=self._now,
+            )
+            state.allergy_consent = answer
+            if answer == "unclear":
+                return None
+        elif allergies.question(state) == SAY_ALLERGY_WHICH:
+            # No ingredient in the answer: not read, the model reads it.
             return None
         return ToolCall(name=held["name"], args=held["args"])
 
@@ -771,22 +793,26 @@ def _order_lines(state: ConversationState, room: int) -> str:
     chosen options and the note of each line: two pizzas of different sizes
     are two lines (Codex PR #300). Longer than `room`: without the names, the
     team reads the dishes from the card; and what still does not fit is
-    counted, never dropped in silence."""
+    counted, never dropped in silence. The guest's allergies as a draft
+    would carry them (`allergies.noted_call`), without the reason while the
+    caller did not say "ja" to it (L13)."""
+    noted = allergies.noted_call(
+        state, ToolCall("draft_order", {"items": state.cart})
+    ).args
     full, short = [], []
-    for line in state.cart:
+    for line in noted["items"]:
         seen = state.seen_items.get(line["menu_item_id"], {})
         number, name = seen.get("number"), seen.get("name")
         chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
-        # Stored on the card: the allergy as the caller's answer allows (L13),
-        # also where the question was never asked.
-        note = line.get("note") and with_consent(
-            line["note"], consented=state.allergy_consent == "yes"
-        )
+        note = line.get("note")
         extra = "; ".join([*chosen, *([note] if note else [])])
         tail = f" ({extra})" if extra else ""
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
         full.append(f"{line['quantity']}x {dish}{tail}")
         short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
+    if noted.get("note"):
+        full.append(f"für die ganze Bestellung: {noted['note']}")
+        short.append(full[-1])
     if len(text := ", ".join(full)) <= room:
         return text
     for kept in range(len(short), -1, -1):

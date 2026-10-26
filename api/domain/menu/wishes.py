@@ -28,8 +28,15 @@ import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator
 from itertools import pairwise
+from typing import Literal
 
-from api.domain.menu.numberwords import fold, parse_cardinal
+from api.domain.menu.numberwords import (
+    CardFormat,
+    canonical_card,
+    fold,
+    parse_cardinal,
+    sole_item_number,
+)
 from api.schemas.menu import OptionGroup, Wish
 from api.schemas.orders import NOTE_MAX
 
@@ -153,8 +160,15 @@ def _mentions_allergy(words: list[str], i: int) -> bool:
     alles" (Review PR #139)."""
     word = words[i]
     if word.startswith(("vertrag", "vertraeg")):
+        # "Sesam vertrage ich auch nicht": the negation behind the subject and
+        # its adverbs (#361). Its ingredient stands before the verb and is
+        # not read, so the guest is asked "Wogegen?" (`_with_allergy`).
+        k = i + 1
+        if k < len(words) and words[k] in _PRONOUNS:
+            k = _skip(words, k + 1, _ADVERBS | {"leider"})
         return any(
-            w in _REMOVE or w in ("nicht", "weder") for w in words[i + 1 : i + 3]
+            w in _REMOVE or w in ("nicht", "weder")
+            for w in [*words[i + 1 : i + 3], *words[k : k + 1]]
         )
     return _is_allergy(word)
 
@@ -1271,9 +1285,6 @@ def removal_with(wish: Wish) -> str | None:
         return wish.note
     if wish.ingredient is None:
         return None
-    if not wish.text.startswith(_REASON_HEAD):
-        # Another adult's allergy: the note is a plain removal, repeated whole.
-        return wish.text
     allergy = ALLERGY_NOTE.format(ingredient=wish.ingredient) + ". "
     if not wish.text.startswith(allergy):
         return None
@@ -1281,12 +1292,9 @@ def removal_with(wish: Wish) -> str | None:
     return removal[0].lower() + removal[1:]
 
 
-# The parts of the fixed wording around the ingredient: "WICHTIG: Keine " and
-# ". Grund: Allergie".
-_REASON_HEAD, _REASON_TAIL = ALLERGY_NOTE.split("{ingredient}")
 # Whose allergy it is (legal check L13). The caller's "ja" counts for themselves
 # and their own child; for another adult it is no consent of that person, so
-# that allergy is noted as a plain removal. Read on the words alone: a person
+# that allergy is never noted with its reason. Read on the words alone: a person
 # who is not the caller's child, after "mein", "unser" and the like ("meine
 # Frau"), on their own ("ein Freund", "jemand"), or as the subject of the
 # sentence ("er hat", "wir sind"). Anything else is the caller's own.
@@ -1334,133 +1342,176 @@ def of_another_adult(text: str) -> bool:
     return False
 
 
-def _split_reason(note: str) -> tuple[str, str | None] | None:
-    """The ingredient and the removal of a note in the fixed wording
-    (`kitchen_note`); None for any other note."""
-    if not note.startswith(_REASON_HEAD):
-        return None
-    at = note.find(_REASON_TAIL, len(_REASON_HEAD))
-    if at <= len(_REASON_HEAD):
-        return None
-    rest = note[at + len(_REASON_TAIL) :]
-    if rest and not rest.startswith(". "):
-        return None
-    return note[len(_REASON_HEAD) : at], rest[2:] or None
+# Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
+# start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
+# Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),
+# "gegen" after a comma. An "auf" after a comma still ends the list
+# ("Erdnuesse, auf jeden Fall"), and "auf jeden/keinen Fall" is no "auf".
+_AGAINST = re.compile(
+    r"^\s*(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b|,\s*gegen\b"
+    r"|\b(?:und|aber|sondern)\s+(?:gegen|auf(?!\s+(?:jeden|keinen)\s+fall\b))\b",
+    re.IGNORECASE,
+)
+_BUT = re.compile(r"\baber\b", re.IGNORECASE)
+# Before a removal in an answer: "Bitte ohne Zwiebeln", "Und ohne Zwiebeln".
+_ANSWER_FILLERS = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
+# An answer to "Wogegen?" that names nothing: "Keine.", "Gar keine.", "Gegen
+# nichts." ("Nein." stays a question: no to what is unclear).
+_NOTHING = frozenset(
+    {"kein", "keine", "keinen", "keinem", "keiner", "keinerlei", "nichts"}
+)
+_NOTHING_FILL = frozenset(
+    {"gar", "gegen", "auf", "doch", "ueberhaupt", "nein", "danke"}
+)
 
 
-def _pieces(note: str) -> Iterator[tuple[str, bool]]:
-    """`note` cut at each notice in the fixed wording: (ingredient, True) for a
-    notice, (text, False) for what stands between, separators taken off. Read
-    with string functions: the note is what a guest said and a model wrote."""
-    pos = 0
-    while (head := note.find(_REASON_HEAD, pos)) != -1:
-        tail = note.find(_REASON_TAIL, head + len(_REASON_HEAD))
-        if tail <= head + len(_REASON_HEAD):
-            break
-        if between := note[pos:head].strip(" ,.;"):
-            yield between, False
-        yield note[head + len(_REASON_HEAD) : tail], True
-        pos = tail + len(_REASON_TAIL)
-    if rest := note[pos:].strip(" ,.;"):
-        yield rest, False
+def _withdraws(text: str) -> bool:
+    """ "Keine.", "Gar keine.", "Gegen nichts.": no allergy after all."""
+    words = set(_words(text))
+    return bool(words & _NOTHING) and words <= _NOTHING | _NOTHING_FILL
 
 
-def without_reason(ingredient: str, removal: str | None) -> str:
-    """The note without the allergy as its reason (legal check L13): what the
-    kitchen leaves out, "ohne Erdnuss, ohne Zwiebeln"."""
-    plain = f"ohne {ingredient}"
-    if removal:
-        plain += f", {removal[0].lower()}{removal[1:]}"
-    return plain
+def _ingredient_answer(text: str) -> tuple[str, str | None]:
+    """An answer to "Wogegen?" in its parts: the ingredient, and a removal
+    said with it. "Ohne Zwiebeln und gegen Erdnuesse" -> ("Erdnuesse", "Ohne
+    Zwiebeln"); "Erdnuesse und gegen Sesam" -> ("Erdnuesse und Sesam", None);
+    "Keine Erdnuesse" -> ("Erdnuesse", None)."""
+    parts = [part.strip(" ,.") for part in _AGAINST.split(text)]
+    parts = [part for part in parts if part]
+    # "Bitte ohne Zwiebeln": the removal behind a polite filler (Codex PR #330).
+    removals = [
+        p
+        for p in parts
+        if len(parts) > 1
+        and [w for w in _words(p) if w not in _ANSWER_FILLERS][:1] == ["ohne"]
+    ]
+    bare = " und ".join(p for p in parts if p not in removals)
+    # "Keine Erdnuesse", also "Ohne Zwiebeln." alone: the ingredient.
+    bare = re.sub(r"^\s*(?:keine[nm]?|kein|ohne)\s+", "", bare, flags=re.IGNORECASE)
+    return bare, ", ".join(removals) or None
 
 
-def with_consent(note: str, consented: bool) -> str | None:
-    """The kitchen note as it may be stored (legal check L13, D24). With the
-    caller's explicit "ja" an allergy keeps the fixed wording "WICHTIG: Keine
-    <Zutat>. Grund: Allergie"; without it only "ohne <Zutat>" is stored.
-    Whatever names an allergy is brought into one of the two forms first, so
-    no other wording carries the reason: "Erdnussallergie" written as it was
-    said becomes the fixed wording. An allergy whose ingredient the words do
-    not give leaves only the removal said with it, None without one: a note
-    "Allergie" tells the kitchen nothing to leave out. A note without an
-    allergy, or one that only denies one, stays as it is. Every notice of the
-    note keeps its ingredient (Codex PR #368)."""
-    parts: list[str] = []
-    allergy = False
-    for text, notice in _pieces(note):
-        wish = None if notice or not mentions_allergy(text) else classify_wish(text, [])
-        if notice:
-            parts.append(
-                ALLERGY_NOTE.format(ingredient=text) if consented else f"ohne {text}"
-            )
-        elif wish is None or wish.kind != "allergy":
-            parts.append(text)
-            continue
-        elif wish.ingredient and _REASON_HEAD in wish.text:
-            parts.extend(filter(None, [with_consent(wish.text, consented)]))
-            parts.extend(_beside_allergy(text, wish.ingredient, parts))
-        elif wish.ingredient:
-            # Another adult's allergy, already without the reason.
-            parts.append(wish.text)
-            parts.extend(_beside_allergy(text, wish.ingredient, parts))
-        elif wish.note:
-            parts.append(wish.note)
-        allergy = True
-    if not allergy:
-        return note
-    if not parts:
-        return None
-    # As `kitchen_note` writes it with a notice, as `without_reason` without.
-    if any(_REASON_TAIL in part for part in parts):
-        return ". ".join(part[0].upper() + part[1:] for part in parts)
-    return ", ".join(part[0].lower() + part[1:] for part in parts)
+# The parts of a sentence, with what joins them kept.
+_PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 
 
-# Where a note goes on to another wish: a sentence end, a comma, "und", "sowie".
-_CLAUSE = re.compile(r"[.;!?,]\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+def only_denies(text: str) -> bool:
+    """Does the sentence deny an allergy and name none ("Pho Bo, ich habe
+    keine Allergie", "Ich habe keine Allergie und moechte Pho Bo zum
+    Abholen")? Read on the wish behind the dish, or on every run of
+    neighbouring parts with allergy words, each judged whole: split at its
+    "und", "keine Allergien und Unvertraeglichkeiten gegen Laktose" would
+    leave a part that reads as an intolerance (Codex PR #330, #338). As the
+    stand-in model judges it (`sim/scripted_llm.py`)."""
+    clauses = wish_candidates(text)
+    if clauses and denies_allergy(clauses[-1][1]):
+        return True
+    parts = _PARTS.split(text)
+    runs: list[list[int]] = []
+    for n in range(0, len(parts), 2):
+        if mentions_allergy(parts[n]):
+            if runs and runs[-1][1] == n - 2:
+                runs[-1][1] = n
+            else:
+                runs.append([n, n])
+    return bool(runs) and all(
+        denies_allergy("".join(parts[first : last + 1])) for first, last in runs
+    )
 
 
-def _beside_allergy(text: str, ingredient: str, kept: list[str]) -> list[str]:
-    """The clauses of `text` beside its allergy: no allergy word, no word of
-    the ingredient read from it, not already in what is kept. The rewording of
-    the allergy keeps only the allergy and a removal, so "Bitte Besteck dazu"
-    behind "Erdnussallergie" would go missing (Codex PR #368). A clause of an
-    allergen list ("Milch, Ei und Nussallergie") is part of the ingredient and
-    stays inside it."""
-    read = set(_words(ingredient))
-    already = fold(" ".join(kept))
-    beside = []
-    for clause in _CLAUSE.split(text):
-        clause = clause.strip()
-        if (
-            clause
-            and not mentions_allergy(clause)
-            and not read & set(_words(clause))
-            and fold(clause) not in already
-        ):
-            beside.append(clause)
-    return beside
+# What an order starts with, never an ingredient ("eine Cola", "Nummer 12").
+_ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 
 
-def asks_consent(note: str) -> bool:
-    """Would `note` carry the allergy as its reason with the caller's "ja"?"""
-    noted = with_consent(note, consented=True)
-    return noted is not None and _REASON_TAIL in noted
+def names_an_order(text: str, card: CardFormat, numbers: frozenset[str]) -> bool:
+    """Is the answer to "Wogegen?" an order instead of an ingredient?
+
+    The active menu decides what a card number is, not the import grammar
+    (Codex PR #155, P2): `card` is its format, `numbers` its numbers as
+    `canonical_card` writes them. "S12" and "Sushi zwölf" are numbers only
+    where the menu has the prefix S, so "B12", "Vitamin B12" and the
+    additives "E621" and "E 621" stay the ingredient. An order is
+
+    - a sentence that names a number by rule A in the menu's card format
+      ("S12", "S zwölf", "Nummer 12", "die 25g", also one the menu lacks or a
+      number next to more: "S13", "12 oder 13", "S12 Lachs"),
+    - any word that is a number on the menu ("die 12 mit Reis", "Milch und
+      S12"), or
+    - a sentence that opens like an order ("Eine Cola bitte").
+
+    A number word or a number the menu does not have, next to another word,
+    belongs to the ingredient ("Fünf-Gewürze-Pulver", "Zwei Sachen: Milch",
+    "Gegen E 621").
+    """
+    words = re.findall(r"[^\W_]+", text.lower())
+    ref, unclear = sole_item_number(text, card)
+    return (
+        ref is not None
+        or unclear
+        or any(canonical_card(w) in numbers for w in words)
+        or (bool(words) and words[0] in _ORDER_LEADS)
+    )
 
 
-def unread_allergy(note: str) -> bool:
-    """Does `note` name an allergy whose ingredient the words do not give in
-    full ("gegen Erdnüsse allergisch und gegen Sesam", "eine Allergie")?
-    `with_consent` would store such a piece without the allergy, or drop it:
-    the guest is asked "Wogegen?" first, as in the search (#361; Codex PR
-    #368)."""
-    for text, notice in _pieces(note):
-        if notice or not mentions_allergy(text):
-            continue
-        wish = classify_wish(text, [])
-        if wish is not None and wish.kind == "allergy" and not wish.ingredient:
-            return True
-    return False
+# Words of an answer to "Wogegen?" that is a sentence of its own, not a list
+# of ingredients: someone speaks ("glaube ich", "muss ich ueberlegen"), or
+# asks the agent to wait.
+# ponytail: closed list as `_NO_INGREDIENT`; such an answer that slips
+# through is read back with the draft, where the guest hears it.
+_NOT_AN_INGREDIENT = frozenset(
+    {"ich", "wir", "du", "er", "sie", "es", "man", "mir", "mich", "uns"}
+    | {"moment", "augenblick", "sekunde", "warten", "ueberlegen", "nachschauen"}
+)
+# The answer to "Wogegen?" names no allergy after all.
+WITHDRAWN: Literal["withdrawn"] = "withdrawn"
+
+
+def which_answer(text: str) -> tuple[Wish | Literal["withdrawn"] | None, list[str]]:
+    """The answer to "Wogegen sind Sie allergisch?", and the removals said
+    with it ("Erdnuesse, aber ohne Zwiebeln"). Read as the stand-in model has
+    read it since PR #139 (`sim/scripted_order.py`), so the core and the
+    stand-in agree on it (T-11.1). A whole answer ("ich bin gegen Erdnuesse
+    allergisch") carries its ingredient itself; only the bare word
+    ("Erdnuesse", "gegen Erdnuesse") gets the sentence opening (Codex PR #139,
+    P1). `WITHDRAWN` for "Keine.", "Gegen nichts." or "Ich habe doch keine
+    Allergie" (#252); the allergy with its ingredient; None when the answer
+    gives none, and the question stays open.
+
+    Whether the answer orders something instead ("Eine Cola bitte") is for
+    the caller to judge first: what a card number is depends on the menu."""
+    wish = classify_wish(text, [])
+    # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
+    but = _BUT.search(text)
+    nothing = _withdraws(text[: but.start()] if but else text)
+    behind = classify_wish(text[but.end() :], []) if but and nothing else None
+    if behind is not None and behind.kind == "allergy":
+        # "Keine, aber ich bin gegen Sesam allergisch", "Keine, aber meine
+        # Frau ...": whose allergy and for which dish is not clear, so the
+        # question is asked again (#207, Codex PR #361).
+        return None, []
+    said: list[str | None] = []
+    if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
+        said = [removal_with(behind) if behind is not None else None]
+        if wish is not None and not nothing:
+            said.append(removal_with(wish))
+        return WITHDRAWN, [removal for removal in said if removal]
+    if wish.kind != "allergy":
+        # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse". A
+        # removal said with it is no ingredient ("Ohne Zwiebeln und gegen
+        # Erdnuesse"), nor is the "gegen" in front of one (#252).
+        bare, removal = _ingredient_answer(text)
+        said += [removal, wish.note]
+        wish = classify_wish(f"allergisch gegen {bare}", [])
+        if _NOT_AN_INGREDIENT & set(_words(bare)):
+            # A bare answer is read up to its end: "Moment, da muss ich kurz
+            # ueberlegen" would be an allergy against all of it (T-11.1).
+            wish = None
+    if wish is not None:
+        said.append(removal_with(wish))
+    removals = list(dict.fromkeys(removal for removal in said if removal))
+    if wish is None or wish.kind != "allergy" or not wish.ingredient:
+        return None, removals
+    return wish, removals
 
 
 def _with_allergy(
@@ -1549,20 +1600,26 @@ def _with_allergy(
         ingredient = _ingredient(
             text[tokens[start].start() :] if _negated(words[:start]) else text
         )
+    # Never noted with its reason, whatever the caller answers (L13).
+    other = of_another_adult(clause) or None
     if ingredient is None:
         # The removal waits for "Wogegen?" and goes on the order line as it is
         # when the allergy is withdrawn: one too long for the line is lost, as
         # in `kitchen_note` (#331).
         if removal is None or len(removal) > NOTE_MAX:
-            return Wish(text=text, kind="allergy")
-        return Wish(text=text[tokens[start].start() :], kind="allergy", note=removal)
-    note = kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient))
-    if of_another_adult(clause):
-        # Never with the reason, whatever the caller answers (L13).
-        split = _split_reason(note)
-        assert split is not None  # `kitchen_note` writes the fixed wording
-        note = without_reason(*split)
-    return Wish(text=note, kind="allergy", ingredient=ingredient)
+            return Wish(text=text, kind="allergy", another_adult=other)
+        return Wish(
+            text=text[tokens[start].start() :],
+            kind="allergy",
+            note=removal,
+            another_adult=other,
+        )
+    return Wish(
+        text=kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient)),
+        kind="allergy",
+        ingredient=ingredient,
+        another_adult=other,
+    )
 
 
 def _classify(text: str, groups: list[OptionGroup]) -> Wish:
