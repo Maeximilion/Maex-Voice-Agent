@@ -8,7 +8,7 @@ Interpretation. Feinere Fälle (Allergie ohne DB-Wert, große Bestellung, …)
 kommen erst mit Stufe 2/3, wenn es Bestellungen überhaupt gibt.
 
 Also checked here: the question whether a person is on the line
-(`asks_if_human`), whose answer is as fixed as a handoff (docs/09 L1).
+(`without_human_question`), whose answer is as fixed as a handoff (docs/09 L1).
 """
 
 import re
@@ -76,7 +76,7 @@ def check(text: str) -> EscalationReason | None:
 # it before the model and never depends on the model's wording (agent/loop.py).
 # Question order only: the verb before its subject, then at most filler words,
 # then what is asked about. "Ich will mit einem Menschen sprechen" is the wish
-# of `check`, not this question.
+# of `check`, not this question; "Kann ich mit einem Menschen sprechen?" too.
 _ASKING = frozenset(
     {
         ("sind", "sie"),
@@ -101,15 +101,25 @@ _PERSON_OR_MACHINE = frozenset(
 _WORD = re.compile(r"[a-zäöüß]+")
 
 
-def asks_if_human(text: str) -> bool:
-    """Whether the guest asks if a person or a machine is on the line."""
-    words = _WORD.findall(text.lower())
+def without_human_question(text: str) -> str | None:
+    """The guest's sentence without the question whether a person or a machine
+    is on the line, lowercased; None when it asks no such question. `check`
+    reads the rest: the question's own words ("mit einem Menschen") are those
+    of the wish to talk to one, and a wish or a cancellation next to the
+    question still counts (Codex PR #372)."""
+    lowered = text.lower()
+    words = list(_WORD.finditer(lowered))
+    found: list[tuple[int, int]] = []
     for at in range(len(words) - 1):
-        if (words[at], words[at + 1]) not in _ASKING:
+        if (words[at].group(), words[at + 1].group()) not in _ASKING:
             continue
         rest = at + 2
-        while rest < len(words) and words[rest] in _BETWEEN:
+        while rest < len(words) and words[rest].group() in _BETWEEN:
             rest += 1
-        if rest < len(words) and words[rest] in _PERSON_OR_MACHINE:
-            return True
-    return False
+        if rest < len(words) and words[rest].group() in _PERSON_OR_MACHINE:
+            found.append((words[at].start(), words[rest].end()))
+    if not found:
+        return None
+    for start, end in reversed(found):
+        lowered = lowered[:start] + lowered[end:]
+    return lowered

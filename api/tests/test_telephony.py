@@ -24,7 +24,7 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
-from api.agent.llm import LLMTurn, Usage
+from api.agent.llm import FakeLLM, LLMTurn, Usage
 from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED
 from api.agent.state import ConversationState
 from api.config import settings
@@ -405,6 +405,32 @@ def test_a_changed_address_is_said_from_the_next_call(session, tenant):
 
     assert "Datenschutz" not in port.says("s-1")[0]
     assert "neu.example/datenschutz" in port.says("s-2")[0]
+
+
+def test_a_yes_to_are_you_still_there_does_not_take_the_offer_of_the_team(
+    session, tenant
+):
+    """Codex PR #372, P1: the guest asks "Sind Sie ein Mensch?", hears the
+    answer with the offer of the team, says nothing, and answers the line's
+    "Sind Sie noch da?" with "Ja". That yes is no wish for the team."""
+    port = FakeTelephony()
+    handler = handler_for(
+        session,
+        tenant,
+        port,
+        llm_factory=lambda s: FakeLLM([LLMTurn(say="Wie kann ich helfen?")]),
+    )
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_user_turn("s-1", "Sind Sie ein Mensch?")
+    handler.on_silence("s-1")
+    handler.on_user_turn("s-1", "Ja")
+
+    assert "Ich bin ein KI-Assistent, kein Mensch." in port.says("s-1")[1]
+    assert port.says("s-1")[2] == STILL_THERE[0]
+    assert port.says("s-1")[-1] == "Wie kann ich helfen?"
+    assert not port.transfers("s-1")
 
 
 def test_repeated_start_event_greets_once_and_logs_one_call(session, tenant):

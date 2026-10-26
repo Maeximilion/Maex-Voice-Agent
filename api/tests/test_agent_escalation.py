@@ -2,7 +2,7 @@
 
 import pytest
 
-from api.agent.escalation import asks_if_human, check
+from api.agent.escalation import check, without_human_question
 
 
 def test_beschwerde_wird_erkannt():
@@ -36,7 +36,7 @@ def test_leerer_text_loest_nichts_aus():
     assert check("") is None
 
 
-# -- asks_if_human: the question whether a person is on the line (docs/09 L1) --
+# -- without_human_question: whether a person is on the line (docs/09 L1) ------
 
 
 @pytest.mark.parametrize(
@@ -57,7 +57,7 @@ def test_leerer_text_loest_nichts_aus():
     ],
 )
 def test_the_question_for_a_human_is_recognised(text):
-    assert asks_if_human(text)
+    assert without_human_question(text) is not None
 
 
 @pytest.mark.parametrize(
@@ -77,4 +77,22 @@ def test_the_question_for_a_human_is_recognised(text):
     ],
 )
 def test_other_sentences_are_no_question_for_a_human(text):
-    assert not asks_if_human(text)
+    assert without_human_question(text) is None
+
+
+def test_what_else_the_sentence_says_is_left_for_check():
+    """Codex PR #372: the words of the question ("mit einem Menschen") are
+    those of the wish to talk to one; read past them, a cancellation or the
+    wish itself in the same sentence still counts."""
+    rest = without_human_question(
+        "Spreche ich mit einem Menschen? Ich möchte meine Reservierung stornieren."
+    )
+    assert rest is not None and "mensch" not in rest
+    assert check(rest) == "cancellation"
+
+    rest = without_human_question(
+        "Sind Sie ein Mensch? Ich will mit einem Menschen sprechen."
+    )
+    assert check(rest) == "human_requested"
+
+    assert check(without_human_question("Spreche ich mit einem Menschen?")) is None

@@ -54,11 +54,12 @@ MAX_TOOL_HOPS = 6
 SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter."
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
-# The answer to "Sind Sie ein Mensch?" (`escalation.asks_if_human`), truthful
-# every time (docs/09 L1), and the offer of the team; a yes to the offer hands
-# the call over. Draft wording, checked with the texts of docs/05 §6.
+# The answer to "Sind Sie ein Mensch?" (`escalation.without_human_question`),
+# truthful every time (docs/09 L1), and the offer of the team; a yes to the
+# offer hands the call over. Draft wording, checked with the texts of docs/05 §6.
 SAY_NOT_A_PERSON = "Ich bin ein KI-Assistent, kein Mensch."
 SAY_TEAM_OFFER = "Möchten Sie lieber mit jemandem aus dem Team sprechen?"
+SAY_HUMAN_ANSWER = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 # The last resort of `_handoff`: the team is not reachable and there is no number
 # for a callback. Every sentence above promises the team; here nobody takes
@@ -161,15 +162,18 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
-        reason = escalation.check(user_text)
-        asks = escalation.asks_if_human(user_text)
-        if asks and reason == "human_requested":
-            # "Spreche ich mit einem Menschen?" holds the words of the wish
-            # and asks: the answer and the offer, the guest's yes hands over.
-            reason = None
-        # The offer counts for the sentence right after it only.
-        offered, state.team_offered = state.team_offered, False
-        answered_offer = offered and reason is None and is_yes(user_text)
+        # Read past the question whether a person is on the line: "Spreche ich
+        # mit einem Menschen?" holds the words of the wish to talk to one and
+        # only asks, what else the sentence says still counts.
+        rest = escalation.without_human_question(user_text)
+        asks = rest is not None
+        reason = escalation.check(user_text if rest is None else rest)
+        # The offer stands while it is the last thing the guest heard: any
+        # sentence after it, the phone line's "Sind Sie noch da?" too, takes
+        # it back (Codex PR #372).
+        answered_offer = (
+            reason is None and state.last_say == SAY_HUMAN_ANSWER and is_yes(user_text)
+        )
         if answered_offer:
             reason = "human_requested"
         if reason != "complaint":
@@ -179,6 +183,7 @@ class ConversationLoop:
             # about an order is no request for a pickup, and the reason of
             # the transfer says what that call was.
             note_intent(state, user_text)
+        escalated: TurnResult | None = None
         if reason is not None:
             escalated = self._handoff(
                 state,
@@ -187,14 +192,17 @@ class ConversationLoop:
                 # A "Ja" tells the team nothing the reason does not say.
                 detail=None if answered_offer else user_text,
             )
+        elif asks and self._clock() - self._started > self._max_call_seconds:
+            # The answer keeps no call open past its limit: asked again and
+            # again, it would (Codex PR #372).
+            escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
+        if escalated is not None:
             if asks:
                 escalated.say.insert(0, SAY_NOT_A_PERSON)
             return escalated
         if asks:
-            answer = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
-            guards.note_said(state, answer)
-            state.team_offered = True
-            return TurnResult(state=state, say=[answer])
+            guards.note_said(state, SAY_HUMAN_ANSWER)
+            return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
 
         start = guards.begin_turn(state)
         pending_input = user_text

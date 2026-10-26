@@ -21,6 +21,7 @@ from api.agent.guards import (
     HINT_GUEST_PHONE,
     HINT_ITEM,
     HINT_NOT_BOOKED,
+    note_said,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import (
@@ -1008,6 +1009,71 @@ def test_a_question_next_to_a_complaint_hears_the_truth_before_the_transfer(
     assert result.ended is True
     assert result.say == [SAY_NOT_A_PERSON, SAY_ESCALATION]
     assert session.get(Call, state.call_id).transfer_reason == "complaint"
+
+
+@pytest.mark.parametrize(
+    ("text", "reason"),
+    [
+        (
+            "Spreche ich mit einem Menschen? Ich möchte meine Reservierung stornieren.",
+            "cancellation",
+        ),
+        (
+            "Sind Sie ein Mensch? Ich will mit einem Menschen sprechen.",
+            "human_requested",
+        ),
+    ],
+)
+def test_a_wish_next_to_the_question_still_goes_to_the_team(
+    session, state, text, reason
+):
+    """Codex PR #372, P1: the question's own words were read as the wish to
+    talk to a human and then dropped, and with them a cancellation or the
+    wish itself in the same sentence."""
+    llm = FakeLLM([])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, text)
+
+    assert result.ended is True
+    assert result.say == [SAY_NOT_A_PERSON, SAY_ESCALATION]
+    assert session.get(Call, state.call_id).transfer_reason == reason
+
+
+def test_a_yes_to_a_later_sentence_is_no_yes_to_the_offer(session, state):
+    """Codex PR #372, P1: the phone line asks "Sind Sie noch da?" after a
+    silence (`telephony/handler.py`, through `note_said`). The guest's "Ja"
+    answers that question, not the offer before it."""
+    llm = FakeLLM([LLMTurn(say="Wie kann ich helfen?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    loop.run_turn(state, "Sind Sie ein Mensch?")
+    note_said(state, "Sind Sie noch da?")
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.say == ["Wie kann ich helfen?"]
+    assert state.stage != "transferred"
+
+
+def test_the_question_keeps_no_call_open_past_its_limit(session, state):
+    """Codex PR #372, P1: the answer came before the call limit was checked,
+    so a guest asking again and again kept the call open for good."""
+    llm = FakeLLM([])
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=OPEN_NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 100]),
+    )
+
+    result = loop.run_turn(state, "Sind Sie ein Mensch?")
+
+    assert result.ended is True
+    assert result.say[0] == SAY_NOT_A_PERSON
+    assert SAY_TEAM_OFFER not in " ".join(result.say)
+    assert state.stage == "transferred"
 
 
 def test_complaint_about_an_order_is_not_logged_as_a_pickup(session, state):

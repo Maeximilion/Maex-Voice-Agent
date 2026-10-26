@@ -115,10 +115,6 @@ class ConversationState(BaseModel):
     # The sentence that ended the last turn asked for the guest's number
     # (`guards.note_said`): the answer needs no word for what its digits are.
     asked_for_phone: bool = False
-    # The last sentence answered "Sind Sie ein Mensch?" and offered the team
-    # (agent/loop.py): a yes in the next sentence hands the call over. Core
-    # memory, never sent to the model; the model sees the offer in `last_say`.
-    team_offered: bool = False
     # The guest has heard a first sentence: the model must not greet a second
     # time. Set by the phone line (telephony/handler.py), which says the AI
     # disclosure before the first turn, and with the first sentence of a call
