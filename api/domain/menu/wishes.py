@@ -1398,9 +1398,11 @@ def with_consent(note: str, consented: bool) -> str | None:
             continue
         elif wish.ingredient and _REASON_HEAD in wish.text:
             parts.extend(filter(None, [with_consent(wish.text, consented)]))
+            parts.extend(_beside_allergy(text, wish.ingredient, parts))
         elif wish.ingredient:
             # Another adult's allergy, already without the reason.
             parts.append(wish.text)
+            parts.extend(_beside_allergy(text, wish.ingredient, parts))
         elif wish.note:
             parts.append(wish.note)
         allergy = True
@@ -1412,6 +1414,32 @@ def with_consent(note: str, consented: bool) -> str | None:
     if any(_REASON_TAIL in part for part in parts):
         return ". ".join(part[0].upper() + part[1:] for part in parts)
     return ", ".join(part[0].lower() + part[1:] for part in parts)
+
+
+# Where a note goes on to another wish: a sentence end, a comma, "und", "sowie".
+_CLAUSE = re.compile(r"[.;!?,]\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+
+
+def _beside_allergy(text: str, ingredient: str, kept: list[str]) -> list[str]:
+    """The clauses of `text` beside its allergy: no allergy word, no word of
+    the ingredient read from it, not already in what is kept. The rewording of
+    the allergy keeps only the allergy and a removal, so "Bitte Besteck dazu"
+    behind "Erdnussallergie" would go missing (Codex PR #368). A clause of an
+    allergen list ("Milch, Ei und Nussallergie") is part of the ingredient and
+    stays inside it."""
+    read = set(_words(ingredient))
+    already = fold(" ".join(kept))
+    beside = []
+    for clause in _CLAUSE.split(text):
+        clause = clause.strip()
+        if (
+            clause
+            and not mentions_allergy(clause)
+            and not read & set(_words(clause))
+            and fold(clause) not in already
+        ):
+            beside.append(clause)
+    return beside
 
 
 def asks_consent(note: str) -> bool:
