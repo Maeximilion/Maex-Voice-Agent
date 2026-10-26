@@ -290,7 +290,7 @@ services:
     # without anyone noticing. Dependabot proposes updates as pull requests.
     # 2.41.4 or newer is required: GHSA-3qcw-p65v-c7vq (unauthenticated, unbounded growth of
     # the database through the authorize endpoint) affects every older release.
-    image: n8nio/n8n:2.43.3
+    image: n8nio/n8n:2.44.3
     restart: unless-stopped
     environment:
       # No usage data to n8n (#252 finding 9).
