@@ -1416,10 +1416,13 @@ def test_mehrdeutige_position_mit_wunsch_fragt_einmal(session, tenant):
 
 def test_allergie_bleibt_wenn_die_wahl_neu_gesucht_wird(session, tenant):
     """Review PR #139: "Pho" statt der angebotenen "Pho Bo" wird neu gesucht - die
-    Allergie aus der Frage bleibt an diesem Gericht."""
+    Allergie aus der Frage geht nicht verloren. The core ties an allergy to a
+    line only when a clear search found the dish of its sentence; said with an
+    unclear one, it goes onto the whole order, the safe side (T-11.1)."""
     _bestellung(session, tenant, "Eine Suppe mit Erdnussallergie.", "Pho.")
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+    assert _notes(session, order) == [None]
+    assert order.note == "WICHTIG: Keine Erdnuss. Grund: Allergie"
 
 
 def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
@@ -1437,7 +1440,8 @@ def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
     assert erste.count("Meinen Sie") == 1
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+    # Said with an unclear dish: onto the whole order (T-11.1).
+    assert order.note == "WICHTIG: Keine Erdnüsse. Grund: Allergie"
 
 
 def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):

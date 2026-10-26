@@ -26,10 +26,10 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
-- The caller's allergy (legal check L13): a note keeps "Grund: Allergie" only
-  after the caller's explicit "ja" to `consent.ALLERGY_QUESTION`, otherwise it
-  says "ohne <Zutat>" (`consented_call`). The first draft whose note would
-  carry the reason waits for that question (`waits_for_consent`, `loop.py`).
+- The caller's allergy (T-11.1): the core reads it from the guest's own
+  sentence and writes it onto the draft itself (`agent/allergies.py`). A
+  note the model writes may not name one: a cart or a draft with such a note
+  is refused (`_ALLERGY_NOTE`), whatever else it says.
 """
 
 import re
@@ -38,6 +38,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.guest_details import (
@@ -56,7 +57,7 @@ from api.agent.state import (
     same_order,
 )
 from api.domain.menu.items import option_key
-from api.domain.menu.wishes import asks_consent, unread_allergy, with_consent
+from api.domain.menu.wishes import mentions_allergy
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -124,10 +125,11 @@ HINT_NOT_BOOKED = (
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
 )
-HINT_ALLERGY_UNREAD = (
-    "Abgelehnt: ein Hinweis nennt eine Allergie, deren Zutat nicht eindeutig "
-    "ist. Frag den Gast: „Wogegen sind Sie allergisch?“ Danach je Allergie "
-    "einen eigenen Hinweis mit ihrer Zutat, zum Beispiel „Erdnussallergie“."
+HINT_ALLERGY_NOTE = (
+    "Abgelehnt: ein `note` nennt eine Allergie. Die Allergie des Gastes notiert "
+    "der Kern selbst aus seinen Worten; schreib sie nie in ein `note`, auch "
+    "nicht verneint. Andere Wünsche („ohne Zwiebeln“, „Kinderstuhl“) bleiben im "
+    "`note`. Ruf denselben Schritt ohne die Allergie noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -274,16 +276,9 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             hint=f"{HINT_CART_FORM} {validation_hint(exc)}",
         )
     else:
-        # Before the notes are brought into the form they may be stored in,
-        # which would lose an allergy not read in full (Codex PR #368).
-        unread = any(
-            isinstance(line.get("note"), str) and unread_allergy(line["note"])
-            for line in lines
-        )
-        lines = [_line_with_consent(state, line) for line in lines]
         ids = [line["menu_item_id"] for line in lines]
-        if unread:
-            refused = _ALLERGY_UNREAD
+        if any(mentions_allergy(line.get("note") or "") for line in lines):
+            refused = _ALLERGY_NOTE
         elif not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
         elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
@@ -303,85 +298,10 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
     return refused
 
 
-# The calls that store a note: on an order line, on the whole order, on a table.
-_NOTED = frozenset({"draft_order", "create_reservation"})
-
-
-def stored_note(state: ConversationState, note: str) -> str | None:
-    """`note` as the caller's answer lets it be stored (L13): with their "ja"
-    an allergy keeps the fixed wording, without it only "ohne <Zutat>". While
-    the question was not asked, a note that would carry the reason stays as
-    it is: the draft with it waits for the question (`waits_for_consent`)."""
-    if state.allergy_consent is None and asks_consent(note):
-        return note
-    return with_consent(note, consented=state.allergy_consent == "yes")
-
-
-def _line_with_consent(state: ConversationState, line: dict[str, Any]) -> dict:
-    """An order line with its note as it may be stored; no note when none is
-    left."""
-    note = line.get("note")
-    if not isinstance(note, str):
-        return line
-    rest = {key: value for key, value in line.items() if key != "note"}
-    stored = stored_note(state, note)
-    return {**rest, "note": stored} if stored else rest
-
-
-def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
-    """The call with each note it would store (`stored_note`). Arguments in a
-    wrong form are left to the validation in dispatch."""
-    if call.name not in _NOTED:
-        return call
-    args = dict(call.args)
-    if call.name == "draft_order" and "note" not in args and state.order_note:
-        # The note of the whole order outlives a correction (`state.order_note`).
-        args["note"] = state.order_note
-    if call.name == "create_reservation" and "note" not in args and state.table_note:
-        args["note"] = state.table_note
-    if isinstance(args.get("note"), str):
-        args["note"] = stored_note(state, args["note"])
-    if isinstance(args.get("items"), list):
-        args["items"] = [
-            _line_with_consent(state, item) if isinstance(item, dict) else item
-            for item in args["items"]
-        ]
-    return ToolCall(name=call.name, args=args)
-
-
-def keep_restrictions(state: ConversationState, held: dict[str, Any]) -> None:
-    """The draft the core dropped after an unclear answer to the allergy
-    question (`loop._consent_answered`): its notes stay in the state, in the
-    form they may be stored in without consent, because the model reads
-    nothing of the old draft and could make a new one without them (Codex
-    PR #368). Lines in a wrong form are left out, as `take_cart` would."""
-    args = held["args"]
-    note = args.get("note")
-    kept = stored_note(state, note) if isinstance(note, str) else None
-    if held["name"] == "create_reservation":
-        state.table_note = kept
-        return
-    if kept:
-        state.order_note = kept
-    try:
-        lines = cart_lines(args.get("items"))
-    except ValidationError:
-        return
-    state.cart = [_line_with_consent(state, line) for line in lines]
-
-
-def waits_for_consent(state: ConversationState, call: ToolCall) -> bool:
-    """A draft whose note would carry the allergy as its reason, before the
-    caller was asked: it is not dispatched, the core asks first (`loop.py`)."""
-    if state.allergy_consent is not None:
-        return False
-    return any(asks_consent(note) for note in _notes(call))
-
-
 def _notes(call: ToolCall) -> list[str]:
     """The notes a draft would store: of the whole order or table, and of each
     order line."""
-    if call.name not in _NOTED:
+    if call.name not in NOTED:
         return []
     items = call.args.get("items")
     lines = items if isinstance(items, list) else []
@@ -427,7 +347,10 @@ def refusal(
 ) -> ToolResult | None:
     """None lets the call through to `dispatch`; otherwise the failed result
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
-    which the core has taken by now."""
+    which the core has taken by now. `call` as the model wrote it, before the
+    core writes the allergies onto it (`allergies.noted_call`)."""
+    if any(mentions_allergy(note) for note in _notes(call)):
+        return _ALLERGY_NOTE
     if call.name == "confirm":
         if _may_confirm(state, start, user_text, call):
             return None
@@ -455,15 +378,6 @@ def refusal(
             return _ITEM
         if cart_sent and not _drafts_the_cart(state, call):
             return _DRAFT_DIFFERS
-    return None
-
-
-def unread_refusal(call: ToolCall) -> ToolResult | None:
-    """A draft as the model wrote it, before `consented_call` turns its notes
-    into what may be stored: a note with an allergy whose ingredient is not
-    read in full would lose the allergy there (Codex PR #368)."""
-    if any(unread_allergy(note) for note in _notes(call)):
-        return _ALLERGY_UNREAD
     return None
 
 
@@ -532,9 +446,7 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
-_ALLERGY_UNREAD = ToolResult(
-    ok=False, error_code="invalid_input", hint=HINT_ALLERGY_UNREAD
-)
+_ALLERGY_NOTE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_NOTE)
 
 
 def unheard_readback(state: ConversationState) -> str | None:

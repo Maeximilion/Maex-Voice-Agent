@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult
 from api.agent.guards import (
-    HINT_ALLERGY_UNREAD,
+    HINT_ALLERGY_NOTE,
     HINT_CART_FORM,
     HINT_CART_ITEM,
     HINT_CART_OPTION,
@@ -917,28 +917,39 @@ def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
     assert state.cart == changed
 
 
-def test_a_cart_note_with_an_unread_allergy_is_refused_and_kept_out():
-    """Codex PR #368 (P1): `take_cart` brought each note into the form it may
-    be stored in and lost an allergy the note does not read in full; a draft
-    from that cart then passed every guard. The cart is refused as a whole and
-    the model asks "Wogegen?"; the order in the state stays as it was."""
+@pytest.mark.parametrize(
+    "note",
+    [
+        # Codex PR #368 (P1): not read in full, it was lost when the note was
+        # brought into the form it may be stored in.
+        "Ich bin gegen Erdnüsse allergisch und gegen Sesam",
+        "Erdnussallergie",
+        "WICHTIG: Keine Erdnuss. Grund: Allergie",
+        "meine Frau hat eine Erdnussallergie",
+        "ohne Zwiebeln, ich vertrage keine Milch",
+        # Denied, still about an allergy: the core keeps it out of notes.
+        "keine Allergie",
+    ],
+)
+def test_a_cart_note_with_an_allergy_is_refused_and_kept_out(note):
+    """T-11.1: an allergy never travels in a note the model writes; the core
+    notes it from the guest's own sentence. The cart is refused as a whole and
+    the order in the state stays as it was."""
     state = new_state()
     searched(state, ENTE)
     assert take_cart(state, [line(ENTE)]) is None
 
-    refused = take_cart(
-        state,
-        [line(ENTE, 2, note="Ich bin gegen Erdnüsse allergisch und gegen Sesam")],
-    )
+    refused = take_cart(state, [line(ENTE, 2, note=note)])
 
-    assert refused is not None and refused.hint == HINT_ALLERGY_UNREAD
+    assert refused is not None and refused.hint == HINT_ALLERGY_NOTE
     assert [(row["menu_item_id"], row["quantity"]) for row in state.cart] == [(ENTE, 1)]
     assert "note" not in state.cart[0]
 
 
-def test_a_cart_note_with_a_read_allergy_is_taken():
+@pytest.mark.parametrize("note", ["ohne Zwiebeln", "extra scharf", "Besteck dazu"])
+def test_a_cart_note_without_an_allergy_is_taken(note):
     state = new_state()
     searched(state, ENTE)
 
-    assert take_cart(state, [line(ENTE, note="Erdnussallergie")]) is None
-    assert state.cart[0]["note"] == "Erdnussallergie"
+    assert take_cart(state, [line(ENTE, note=note)]) is None
+    assert state.cart[0]["note"] == note

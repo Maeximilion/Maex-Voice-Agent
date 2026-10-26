@@ -60,6 +60,20 @@ def last_words(say: str) -> str:
 SERVICE_FLAGS = ("is_open", "pickup_enabled")
 
 
+class Allergy(BaseModel):
+    """An allergy the guest named (T-11.1)."""
+
+    # As the guest said it ("Erdnuss", "Milch, Ei und Nuss"). None while the
+    # words did not give it in full: the guest is asked "Wogegen?".
+    ingredient: str | None = None
+    # The caller's own or their own child's. Another adult's is never noted
+    # with its reason: the caller's "ja" is no consent of theirs (L13).
+    own: bool = True
+    # The dish it was said with (`menu_item_id` of a clear search hit); None
+    # for the whole order or the table.
+    item: str | None = None
+
+
 class ConversationState(BaseModel):
     call_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -93,14 +107,6 @@ class ConversationState(BaseModel):
     # keeps nothing between turns, and without it a dish found in one turn is
     # gone in the next.
     cart: list[dict[str, Any]] = Field(default_factory=list)
-    # The note of the whole order (`draft_order` `note`, D24), kept like the
-    # cart: a correction drops the draft, never the guest's allergy on it.
-    # A draft that names no note gets this one (`guards.consented_call`).
-    order_note: str | None = None
-    # The same for the note of a table draft the core dropped after an unclear
-    # answer to the allergy question (`guards.keep_restrictions`); gone once a
-    # table draft holds a note again.
-    table_note: str | None = None
     # What search_menu said about a dish: id to number, name and mandatory
     # option groups. Never sent as it is. The labels of the `cart` lines in the
     # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
@@ -145,14 +151,20 @@ class ConversationState(BaseModel):
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
+    # The allergies the guest named in this call, read by the core from the
+    # guest's own sentences (`agent/allergies.py`, T-11.1). The model never
+    # carries one in a note: the core writes them onto the draft itself.
+    # Memory of the core, never sent.
+    allergies: list[Allergy] = Field(default_factory=list)
     # The caller's answer to the question for the allergy as a kitchen note
     # (`consent.ALLERGY_QUESTION`, legal check L13), None while it was not
-    # asked. Asked once per call, before the first draft whose note would
-    # carry the allergy as its reason; the answer holds for every note of the
-    # call (`guards.with_consent`). Memory of the core, never sent.
+    # asked. Asked once per call, before the first draft that would carry an
+    # allergy as its reason; the answer holds for every note of the call.
+    # Memory of the core, never sent.
     allergy_consent: Answer | None = None
-    # That draft, `draft_order` or `create_reservation` as the model called
-    # it, while the question waits for its answer (`loop.py`). Never sent.
+    # The draft, `draft_order` or `create_reservation` as the model called it,
+    # while a question of the core about the allergy waits for its answer
+    # (`allergies.question`, `loop.py`). Never sent.
     held_call: dict[str, Any] | None = None
     # The call has spoken of allergies: the guest's own, or the allergens of
     # a dish. A later "Ist das wirklich sicher?" asks beyond the maintained
@@ -202,10 +214,6 @@ class ConversationState(BaseModel):
             # the rules for that only when the state carries the field
             # (`agent/llm.py` `ORDER_FORMAT`). A call about a table never does.
             data["cart"] = [self._line(line) for line in self.cart]
-        if self.order_note:
-            data["order_note"] = self.order_note
-        if self.table_note:
-            data["table_note"] = self.table_note
         return data
 
     def _line(self, line: dict[str, Any]) -> dict[str, Any]:
@@ -420,6 +428,16 @@ def _as_set(lines: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def draft_replaced(state: ConversationState, name: str) -> None:
+    """A new draft (`name`) waits for a question of the core about the
+    allergy, or the guest named an allergy the draft read out before does not
+    carry (`loop.py`): that draft is no longer what the guest wants, also
+    when the new one never goes out, and a yes must not confirm it (Codex PR
+    #368, P1)."""
+    if state.stage == "readback_pending":
+        _drop_readback(state, name)
+
+
 def order_corrected(state: ConversationState) -> None:
     """Drops the draft that waits for its yes, an order or a reservation. A
     reservation too: the guest who goes on with the order after a table was
@@ -466,7 +484,6 @@ def apply_tool_result(
     if name == "create_reservation":
         state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
-        state.table_note = None
         state.order_id = None
         state.stage = "readback_pending"
         state.booking_say = None
@@ -483,8 +500,6 @@ def apply_tool_result(
         # readback starts from these lines.
         with suppress(ValidationError):
             state.cart = cart_lines((args or {}).get("items"))
-        note = (args or {}).get("note")
-        state.order_note = note.strip() or None if isinstance(note, str) else None
     elif name == "search_menu":
         _note_search(state, result.data)
     elif name == "get_item_details":
@@ -505,7 +520,6 @@ def apply_tool_result(
         if state.order_id is not None:
             # Booked: no longer an order that is being put together.
             state.cart = []
-            state.order_note = None
         state.stage = "confirmed"
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
@@ -540,12 +554,46 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
             state.known_item_ids.update(str(h["menu_item_id"]) for h in hits)
         for h in hits:
             state.seen_items[str(h["menu_item_id"])] = _seen(h)
+        wish = part.get("wish") or {}
+        if clear and hits and wish.get("kind") == "allergy":
+            _to_dish(state, wish.get("ingredient"), str(hits[0]["menu_item_id"]))
         if not clear:
             for h in hits:
                 state.offered_items[str(h["menu_item_id"])] = (
                     str(h.get("number") or ""),
                     str(h.get("name") or ""),
                 )
+
+
+def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
+    """The search found the dish an allergy was said with: the first one the
+    guest named that is not tied to a dish yet, with the same ingredient or,
+    still asked for, none, goes onto that dish's line. Only what the core read
+    from the guest's own sentence: the search reads the model's query."""
+    said = ingredient.casefold() if isinstance(ingredient, str) else None
+    same = [
+        allergy
+        for allergy in state.allergies
+        if (allergy.ingredient.casefold() if allergy.ingredient else None) == said
+    ]
+    if not same or any(allergy.item == item_id for allergy in same):
+        return
+    free = [allergy for allergy in same if allergy.item is None]
+    if len({allergy.own for allergy in free}) > 1:
+        # The same allergen for the caller and for another adult: which dish
+        # is whose is not read, and the order of the searches must not
+        # decide it. Both stay on the whole order (Codex PR #368, P1).
+        return
+    if free:
+        free[0].item = item_id
+    else:
+        # The same allergy said for another dish as well ("Die 13 bitte, ich
+        # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
+        # Erdnussallergie"): read once from the sentence, it goes onto both
+        # lines (Codex PR #368). Whose it is there is the caller's only when
+        # every entry of it is.
+        own = all(allergy.own for allergy in same)
+        state.allergies.append(same[0].model_copy(update={"item": item_id, "own": own}))
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent.consent import ALLERGY_QUESTION
 from api.agent.escalation import asks_beyond_the_allergens
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
@@ -253,16 +254,18 @@ def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
             "phone": CALLER,
             "party_size": 2,
             "reserved_for": "2026-09-16T19:00:00+02:00",
-            "note": "WICHTIG: Keine Erdnuss. Grund: Allergie",
         },
     )
+    # The core reads the allergy from the guest's sentence and holds the
+    # draft for the consent question; the model writes no allergy (T-11.1).
     run(
         session,
         state,
-        "Tisch für zwei auf Müller, Erdnussallergie",
+        "Tisch für zwei auf Müller, ich habe eine Erdnussallergie",
         LLMTurn(tool_call=table),
     )
     assert state.held_call is not None
+    assert state.last_say == ALLERGY_QUESTION
 
     result, _ = run(session, state, "Gibt es bei Ihnen Spuren von Nüssen?", now=CLOSED)
 

@@ -310,6 +310,11 @@ services:
       GENERIC_TIMEZONE: Europe/Berlin
       # n8n lauscht standardmäßig auf "::" und stirbt auf Docker-Hosts ohne IPv6
       N8N_LISTEN_ADDRESS: 0.0.0.0
+      # An execution holds the event it carried, which can name a guest:
+      # kept 168 hours, n8n's own default would be 336 (T-11.7,
+      # docs/03 "Löschkonzept"; names checked in n8n 2.44.3).
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
     volumes:
       - n8ndata:/home/node/.n8n
       - ./n8n:/workflows

@@ -1,22 +1,24 @@
-"""The allergy note and the caller's consent (T-11.1, legal check L13, D24).
+"""What the parser tells the core about the guest's allergy (T-11.1, L13, D24).
 
-The kitchen note keeps the fixed wording "WICHTIG: Keine <Zutat>. Grund:
-Allergie" only with the caller's explicit "ja"; without it only "ohne <Zutat>"
-is stored. The caller's "ja" counts for themselves and their own child, never
-for another adult: that allergy is a plain removal from the start. Pure
-functions, no database. Caller sentences in German: the parser reads German.
+The core reads the allergy from the guest's own sentence (`agent/allergies.py`)
+and needs three things from the parser: the ingredient, whether it is another
+adult's (the caller's "ja" counts for themselves and their own child, never
+for another adult), and the answer to "Wogegen?". Pure functions, no database.
+Caller sentences in German: the parser reads German.
 """
 
 import pytest
 
+from api.domain.menu.numberwords import NO_PREFIXES
 from api.domain.menu.wishes import (
-    asks_consent,
+    WITHDRAWN,
     classify_wish,
+    mentions_allergy,
+    names_an_order,
     of_another_adult,
+    only_denies,
     removal_with,
-    unread_allergy,
-    with_consent,
-    without_reason,
+    which_answer,
 )
 
 REASONED = "WICHTIG: Keine Erdnuss. Grund: Allergie"
@@ -54,135 +56,27 @@ def test_the_caller_and_their_own_child_are_no_other_adult(said):
     assert not of_another_adult(said)
 
 
-def test_the_caller_s_own_allergy_keeps_the_fixed_wording():
+def test_the_caller_s_own_allergy_is_not_flagged():
     wish = classify_wish("ich habe eine Erdnussallergie", [])
     assert wish is not None
     assert (wish.kind, wish.ingredient, wish.text) == ("allergy", "Erdnuss", REASONED)
+    assert not wish.another_adult
 
 
-def test_the_own_child_s_allergy_keeps_the_fixed_wording():
-    wish = classify_wish("meine Tochter hat eine Erdnussallergie", [])
-    assert wish is not None
-    assert wish.text == REASONED
-
-
-def test_another_adult_s_allergy_is_a_plain_removal():
-    wish = classify_wish("meine Frau hat eine Erdnussallergie", [])
-    assert wish is not None
-    assert (wish.kind, wish.ingredient, wish.text) == (
-        "allergy",
-        "Erdnuss",
-        "ohne Erdnuss",
-    )
-    # Repeated whole to the guest ("Nummer 13 Pho Bo, ohne Erdnuss").
-    assert removal_with(wish) == "ohne Erdnuss"
-
-
-def test_another_adult_s_allergy_keeps_the_removal_said_with_it():
+def test_another_adult_s_allergy_is_flagged_and_never_sent():
     wish = classify_wish("ohne Zwiebeln, meine Frau hat eine Erdnussallergie", [])
     assert wish is not None
-    assert wish.text == "ohne Erdnuss, ohne Zwiebeln"
+    assert (wish.ingredient, wish.another_adult) == ("Erdnuss", True)
+    # The removal said with it is repeated to the guest as before.
+    assert removal_with(wish) == "ohne Zwiebeln"
+    # For the core only: the search result the model reads does not carry it.
+    assert "another_adult" not in wish.model_dump()
 
 
-def test_a_person_named_with_the_removal_only_leaves_the_allergy_the_caller_s():
-    wish = classify_wish(
-        "ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie", []
-    )
+def test_another_adult_without_an_ingredient_is_flagged_too():
+    wish = classify_wish("mein Mann hat eine Allergie", [])
     assert wish is not None
-    assert wish.text == f"{REASONED}. Ohne Zwiebeln für meine Frau"
-
-
-def test_with_consent_the_fixed_wording_stays():
-    assert with_consent(REASONED, consented=True) == REASONED
-    assert with_consent(f"{REASONED}. Ohne Zwiebeln", consented=True) == (
-        f"{REASONED}. Ohne Zwiebeln"
-    )
-
-
-def test_without_consent_only_the_removal_is_stored():
-    assert with_consent(REASONED, consented=False) == "ohne Erdnuss"
-    assert with_consent(f"{REASONED}. Ohne Zwiebeln", consented=False) == (
-        "ohne Erdnuss, ohne Zwiebeln"
-    )
-
-
-@pytest.mark.parametrize(
-    ("note", "consented", "stored"),
-    [
-        # As the guest said it: brought into one of the two forms.
-        ("Erdnussallergie", True, REASONED),
-        ("Erdnussallergie", False, "ohne Erdnuss"),
-        ("Tochter hat eine Erdnussallergie", True, REASONED),
-        # Another adult's: never with the reason, also after a "ja".
-        ("meine Frau hat eine Erdnussallergie", True, "ohne Erdnuss"),
-        # No ingredient: nothing for the kitchen to leave out, nothing stored.
-        ("Allergie", True, None),
-        ("ich habe eine Allergie", False, None),
-    ],
-)
-def test_a_free_allergy_note_takes_one_of_the_two_forms(note, consented, stored):
-    assert with_consent(note, consented) == stored
-
-
-@pytest.mark.parametrize(
-    "note",
-    [
-        "ohne Koriander",
-        "mit Hochstuhl",
-        # A denial names no allergy of the caller.
-        "keine Allergie",
-    ],
-)
-def test_a_note_without_an_allergy_stays_as_it_is(note):
-    assert with_consent(note, consented=False) == note
-
-
-def test_the_fixed_wording_without_an_ingredient_carries_no_reason():
-    """A broken copy of the wording names nothing to leave out: whatever is
-    left of it, the allergy is not stored."""
-    broken = "WICHTIG: Keine . Grund: Allergie"
-    assert not asks_consent(broken)
-    assert "Allergie" not in (with_consent(broken, consented=True) or "")
-
-
-@pytest.mark.parametrize(
-    ("note", "asks"),
-    [
-        (REASONED, True),
-        (f"{REASONED}. Ohne Zwiebeln", True),
-        ("Erdnussallergie", True),
-        ("meine Tochter verträgt keine Milch", True),
-        ("meine Frau hat eine Erdnussallergie", False),
-        ("ohne Erdnuss", False),
-        ("Allergie", False),
-        ("keine Allergie", False),
-    ],
-)
-def test_only_a_note_that_would_carry_the_reason_asks_for_consent(note, asks):
-    assert asks_consent(note) is asks
-
-
-SESAME = "WICHTIG: Keine Sesam. Grund: Allergie"
-
-
-@pytest.mark.parametrize(
-    ("note", "consented", "stored"),
-    [
-        # Codex PR #368, P1: two notices in one note keep both ingredients.
-        (f"{REASONED}, {SESAME}", True, f"{REASONED}. {SESAME}"),
-        (f"{REASONED}, {SESAME}", False, "ohne Erdnuss, ohne Sesam"),
-        (
-            f"{REASONED}. Ohne Zwiebeln. {SESAME}",
-            False,
-            ("ohne Erdnuss, ohne Zwiebeln, ohne Sesam"),
-        ),
-        # A notice next to the guest's own words.
-        (f"{REASONED}, Sesamallergie", True, f"{REASONED}. {SESAME}"),
-        (f"Sesamallergie, {REASONED}", False, "ohne Sesam, ohne Erdnuss"),
-    ],
-)
-def test_every_allergen_of_a_note_is_kept(note, consented, stored):
-    assert with_consent(note, consented) == stored
+    assert (wish.kind, wish.ingredient, wish.another_adult) == ("allergy", None, True)
 
 
 @pytest.mark.parametrize(
@@ -193,122 +87,150 @@ def test_every_allergen_of_a_note_is_kept(note, consented, stored):
         "sie ist allergisch gegen Nüsse",
         "unsere Oma verträgt keine Nüsse",
         "die 13 bitte, mein Mann hat eine Nussallergie",
+        # Codex PR #368, P1: the "ich" of a later request does not count.
+        "er hat eine Nussallergie, ich möchte Besteck dazu",
+        "meine Frau hat eine Nussallergie. Ich nehme die 23",
     ],
 )
-def test_another_adult_named_before_the_phrase_gets_no_reason(said):
+def test_another_adult_named_around_the_phrase_is_flagged(said):
+    wish = classify_wish(said, [])
+    assert wish is not None and wish.kind == "allergy"
+    assert wish.another_adult
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie",
+        # Without a comma: "und ich" opens the caller's own clause.
+        "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie",
+    ],
+)
+def test_a_person_named_with_the_removal_only_leaves_the_allergy_the_caller_s(said):
     wish = classify_wish(said, [])
     assert wish is not None
-    assert wish.kind == "allergy"
-    assert wish.text.startswith("ohne ")
-    assert "Grund" not in wish.text
+    assert wish.ingredient == "Erdnuss"
+    assert not wish.another_adult
 
 
-def test_a_clause_with_its_own_subject_is_read_alone():
-    """Without a comma: "und ich" opens the caller's own clause."""
-    wish = classify_wish(
-        "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie", []
-    )
+@pytest.mark.parametrize(
+    "said",
+    [
+        # #361: "vertrage" counted only with a negation right behind it.
+        "Pho Bo, Sesam vertrage ich auch nicht",
+        "Sesam vertrage ich leider nicht",
+        "Milch vertragen wir gar nicht",
+    ],
+)
+def test_a_negation_behind_the_subject_names_an_intolerance(said):
+    """Its ingredient stands before the verb and is not read: the guest is
+    asked "Wogegen?" rather than the allergen being lost."""
+    assert mentions_allergy(said)
+    wish = classify_wish(said, [])
     assert wish is not None
-    assert wish.text.startswith(REASONED)
-
-
-def test_without_reason_lowers_the_removal():
-    assert without_reason("Erdnuss", "Keine Zwiebeln") == "ohne Erdnuss, keine Zwiebeln"
-    assert without_reason("Erdnuss", None) == "ohne Erdnuss"
+    assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
 @pytest.mark.parametrize(
-    "note",
-    [
-        # Codex PR #368 (P1): more follows than the parser reads (#361).
-        "Ich bin gegen Erdnüsse allergisch und gegen Sesam",
-        "Erdnussallergie und Sesam auch nicht",
-        # The removal is read, the allergy behind it is not: only "ohne
-        # Zwiebeln" would be stored and both allergens lost.
-        "ohne Zwiebeln, gegen Erdnüsse allergisch und gegen Sesam",
-        "Ich habe eine Allergie",
-    ],
+    "said", ["ich vertrage alles", "vertrage ich gut", "das vertrage ich schon"]
 )
-def test_an_allergy_without_a_readable_ingredient_is_unread(note):
-    assert unread_allergy(note)
+def test_vertrage_without_a_negation_names_none(said):
+    assert not mentions_allergy(said)
 
 
 @pytest.mark.parametrize(
-    "note",
+    ("said", "denies"),
     [
-        "Erdnussallergie",
-        "Nussallergie, ohne Zwiebeln",
-        "WICHTIG: Keine Erdnuss. Grund: Allergie",
-        "meine Frau hat eine Nussallergie",
-        "Allergien habe ich keine",
-        "ohne Zwiebeln",
-    ],
-)
-def test_a_read_allergy_or_none_is_not_unread(note):
-    assert not unread_allergy(note)
-
-
-@pytest.mark.parametrize(
-    ("note", "consented", "stored"),
-    [
-        # Codex PR #368: the cutlery request was dropped with the rewording.
+        ("Pho Bo, ich habe keine Allergie.", True),
+        ("Ich habe keine Allergie und moechte Pho Bo zum Abholen.", True),
         (
-            "Erdnussallergie. Bitte Besteck dazu",
+            "Ich habe keine Allergien und Unverträglichkeiten gegen Laktose und "
+            "möchte Pho Bo zum Abholen.",
             True,
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Bitte Besteck dazu",
         ),
-        (
-            "Erdnussallergie. Bitte Besteck dazu",
-            False,
-            "ohne Erdnuss, bitte Besteck dazu",
-        ),
-        (
-            "Bitte Besteck dazu. Erdnussallergie",
-            True,
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Bitte Besteck dazu",
-        ),
-        (
-            "Erdnussallergie, bitte Besteck dazu",
-            False,
-            "ohne Erdnuss, bitte Besteck dazu",
-        ),
-        ("Erdnussallergie und extra scharf", False, "ohne Erdnuss, extra scharf"),
-        # What the rewording keeps already is not written twice.
-        (
-            "Nussallergie, ohne Zwiebeln",
-            True,
-            "WICHTIG: Keine Nuss. Grund: Allergie. Ohne Zwiebeln",
-        ),
-        # An allergen list stays one allergy.
-        ("Milch, Ei und Nussallergie", False, "ohne Milch, Ei und Nuss"),
+        ("Pho Bo, ich habe eine Allergie.", False),
+        ("Ich habe keine Nussallergie, aber eine Sesamallergie.", False),
+        ("Pho Bo bitte.", False),
     ],
 )
-def test_the_rest_of_a_note_survives_the_allergy_wording(note, consented, stored):
-    assert with_consent(note, consented=consented) == stored
+def test_only_denies(said, denies):
+    assert only_denies(said) is denies
 
 
 @pytest.mark.parametrize(
-    ("note", "stored"),
+    ("answer", "ingredient", "removals"),
     [
-        # Codex PR #368 (P1): the "ich" of a later request made the allergy
-        # look like the caller's own.
-        (
-            "er hat eine Nussallergie, ich möchte Besteck dazu",
-            "ohne Nuss, ich möchte Besteck dazu",
-        ),
-        (
-            "meine Frau hat eine Nussallergie. Ich nehme die 23",
-            "ohne Nuss, ich nehme die 23",
-        ),
+        ("Erdnüsse.", "Erdnüsse", []),
+        ("Gegen Erdnüsse und Sesam.", "Erdnüsse und Sesam", []),
+        ("Keine Erdnuesse", "Erdnuesse", []),
+        ("Ich bin gegen Sesam allergisch.", "Sesam", []),
+        ("Erdnüsse, aber ohne Zwiebeln.", "Erdnüsse", ["ohne Zwiebeln"]),
+        ("Ohne Zwiebeln und gegen Erdnuesse", "Erdnuesse", ["Ohne Zwiebeln"]),
+        ("Gegen E 621.", "E 621", []),
     ],
 )
-def test_a_later_clause_does_not_change_whose_allergy_it_is(note, stored):
-    assert not asks_consent(note)
-    assert with_consent(note, consented=True) == stored
+def test_the_answer_to_wogegen_gives_its_ingredient(answer, ingredient, removals):
+    read, said = which_answer(answer)
+    assert read is not None and read != WITHDRAWN
+    assert read.ingredient == ingredient
+    assert said == removals
 
 
-def test_the_callers_own_allergy_before_another_persons_request_is_asked_about():
-    """Not read in full (the "er" of the request leaves the ingredient open):
-    the draft is refused and the guest asked "Wogegen?" (`unread_allergy`),
-    never stored without the allergy or as another adult's."""
-    assert unread_allergy("ich habe eine Nussallergie, er möchte Besteck")
+@pytest.mark.parametrize(
+    "answer",
+    ["Keine.", "Gar keine.", "Gegen nichts.", "Ich habe doch keine Allergie."],
+)
+def test_an_answer_that_names_nothing_withdraws_the_allergy(answer):
+    assert which_answer(answer)[0] == WITHDRAWN
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Weiß ich nicht.",
+        "Nein.",
+        # Whose and for which dish is not clear (#207, Codex PR #361).
+        "Keine, aber ich bin gegen Sesam allergisch.",
+        # A sentence of its own is read up to its end, never as an allergy
+        # against all of it (T-11.1).
+        "Moment, da muss ich kurz überlegen.",
+        "Erdnüsse, glaube ich.",
+    ],
+)
+def test_an_answer_without_an_ingredient_leaves_the_question_open(answer):
+    assert which_answer(answer)[0] is None
+
+
+@pytest.mark.parametrize(
+    ("answer", "order"),
+    [
+        ("Eine Cola bitte.", True),
+        ("Nummer 12.", True),
+        ("Die 23 noch, ich habe keine Allergie.", True),
+        ("Erdnüsse.", False),
+        ("Vitamin B12", False),
+    ],
+)
+def test_an_order_is_no_answer_to_wogegen(answer, order):
+    assert names_an_order(answer, NO_PREFIXES, frozenset({"12", "23"})) is order
+
+
+@pytest.mark.parametrize(
+    ("answer", "only"),
+    [
+        ("Erdnüsse.", True),
+        ("Ich bin gegen Sesam allergisch.", True),
+        ("Gegen Erdnüsse und Sesam.", True),
+        ("Ich habe doch keine Allergie.", True),
+        ("Keine.", True),
+        # Codex PR #368, P1: more than the answer goes to the model.
+        ("Erdnüsse, aber bitte erst übermorgen.", False),
+        ("Erdnüsse und bitte um 20 Uhr.", False),
+        ("Erdnüsse, aber ohne Zwiebeln.", False),
+        ("Weiß ich nicht.", False),
+    ],
+)
+def test_an_answer_says_only_its_ingredient(answer, only):
+    from api.domain.menu.wishes import answers_only
+
+    assert answers_only(answer) is only
