@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 25.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.18
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.7.19
 
 ---
 
@@ -609,6 +609,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.7.19 · 26.10.2026:** n8n 2.44.3 (Dependabot #354)
 - **v2.7.18 · 25.10.2026:** Handover: T-11.4 built, the call log keeps the hour of a call and cuts minutes in old rows, PR through /done next
 - **v2.7.17 · 25.10.2026:** Handover of the issue sweep 21. to 25.10.2026: PRs #357 to #362 merged one by one, next T-11.4
 - **v2.7.16 · 23.10.2026:** Wish parser asks where more follows than it reads (#207, option C), aber bitte keine as a removal, waiting removal bounded, the stand-in asks again after a withdrawal (#331, PR #361)
