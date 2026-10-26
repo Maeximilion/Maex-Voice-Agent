@@ -28,13 +28,22 @@
 set -euo pipefail
 
 OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
-# The installer is pinned to one Ollama release and checked against its SHA-256 before
-# it runs (#252). OLLAMA_VERSION makes it fetch the same release's archive. To move
-# on: change both lines, take the new digest of install.sh from the release page
-# (github.com/ollama/ollama/releases) and check it against the downloaded file.
+# The installer and the archive it installs are pinned to one Ollama release and
+# checked against their SHA-256 before the installer runs (#252). The installer
+# streams the archive from the network into tar unchecked; this script fetches the
+# archive itself, checks it and hands the installer that file instead. To move on:
+# change the version and the three digests, take them from sha256sum.txt of the
+# release (github.com/ollama/ollama/releases) and check them against the downloads.
 OLLAMA_VERSION="0.35.1"
-INSTALLER_URL="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}/install.sh"
+RELEASE_URL="https://github.com/ollama/ollama/releases/download/v${OLLAMA_VERSION}"
+INSTALLER_URL="${RELEASE_URL}/install.sh"
 INSTALLER_SHA256="25f64b810b947145095956533e1bdf56eacea2673c55a7e586be4515fc882c9f"
+ARCHIVE_SHA256_AMD64="9fcd79ac4575b2bd31b992eee18b1000c8ad126b451627c8f8cd091714cfbb10"
+ARCHIVE_SHA256_ARM64="b1b1c85d25136b256d3740f6ecd2f7c0105e8ca71642fd6ff2fc199f3cefd69d"
+# The installer's line that downloads the archive for this machine, replaced by the
+# extraction of the checked file. Jetson and AMD machines get further archives the
+# installer fetches unchecked; the workbench is neither (docs/18 §4).
+DOWNLOAD_LINE='download_and_extract "https://ollama.com/download" "$OLLAMA_INSTALL_DIR" "ollama-linux-${ARCH}"'
 WARM_RUNS=3
 SLOW_WARM_SECONDS=2
 
@@ -200,16 +209,31 @@ else
         run "${sudo_cmd[@]}" apt-get update -qq
         run "${sudo_cmd[@]}" apt-get install -y -qq zstd
     fi
+    case "$(uname -m)" in
+        x86_64) arch=amd64 archive_sha256="$ARCHIVE_SHA256_AMD64" ;;
+        aarch64 | arm64) arch=arm64 archive_sha256="$ARCHIVE_SHA256_ARM64" ;;
+        *) die 2 "no Ollama archive pinned for $(uname -m)" ;;
+    esac
     installer_dir=$(mktemp -d)
     trap 'rm -rf "$installer_dir"' EXIT
-    run curl -fsSL "$INSTALLER_URL" -o "${installer_dir}/install.sh"
+    installer="${installer_dir}/install.sh"
+    archive="${installer_dir}/ollama-linux-${arch}.tar.zst"
+    run curl -fsSL "$INSTALLER_URL" -o "$installer"
+    run curl -fsSL "${RELEASE_URL}/ollama-linux-${arch}.tar.zst" -o "$archive"
     if [ "$dry_run" -eq 1 ]; then
-        say "   [dry-run] check SHA-256 ${INSTALLER_SHA256}"
+        say "   [dry-run] check SHA-256 ${INSTALLER_SHA256} and ${archive_sha256}"
     else
-        printf '%s  %s\n' "$INSTALLER_SHA256" "${installer_dir}/install.sh" | sha256sum -c --quiet - ||
+        printf '%s  %s\n' "$INSTALLER_SHA256" "$installer" | sha256sum -c --quiet - ||
             die 1 "the installer does not match the SHA-256 in this script, not running it"
+        printf '%s  %s\n' "$archive_sha256" "$archive" | sha256sum -c --quiet - ||
+            die 1 "the archive does not match the SHA-256 in this script, not installing it"
+        [ "$(grep -cxF "$DOWNLOAD_LINE" "$installer")" = 1 ] ||
+            die 1 "the installer has not exactly one download line to replace, not running it"
+        awk -v line="$DOWNLOAD_LINE" -v local="zstd -dc \"${archive}\" | \$SUDO tar -xf - -C \"\$OLLAMA_INSTALL_DIR\"" \
+            '$0 == line { print local; next } { print }' "$installer" >"${installer}.checked"
+        mv "${installer}.checked" "$installer"
     fi
-    run env OLLAMA_VERSION="$OLLAMA_VERSION" sh "${installer_dir}/install.sh"
+    run env OLLAMA_VERSION="$OLLAMA_VERSION" sh "$installer"
 fi
 
 if [ -n "${OLLAMA_HOST:-}" ] && [[ "${OLLAMA_HOST}" == 0.0.0.0* ]]; then

@@ -92,6 +92,17 @@ CASES = [
         lambda text: classify_wish(text, []),
         "ich bin allergisch gegen x" + " und gegen x" * (LENGTH // 12),
     ),
+    # wishes.py, the list behind a closing allergy word (issue #207)
+    (
+        "classify_wish, a chain of lists behind allergy words",
+        lambda text: classify_wish(text, []),
+        "gegen x allergisch und gegen x" * (LENGTH // 30),
+    ),
+    (
+        "classify_wish, a chain of allergy words with a list",
+        lambda text: classify_wish(text, []),
+        "allergie, auch gegen x " * (LENGTH // 23),
+    ),
     (
         "classify_wish, many gegen without a list",
         lambda text: classify_wish(text, []),

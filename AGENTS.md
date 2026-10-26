@@ -30,8 +30,19 @@ How to review:
 - Do not report style, naming, formatting or personal preference: `ruff` and the CI cover those.
 - A finding that was answered with a commit is not reported again in other words. If the same spot
   produces a new finding after a fix, check whether the root cause was fixed before reporting.
-- Severity: P0 and P1 are security, secrets, data loss, a broken hard rule, or a broken `main`.
-  P2 is a concrete defect with a scenario. Anything below that is not posted.
+- A finding is a defect in the diff: a wrong result, a crash or a broken rule in what the change
+  does. A missing feature, a design that could be extended, or work the pull request does not claim
+  is not a finding.
+- Severity: P0 and P1 are security, secrets, data loss, a broken hard rule, or a broken `main`. A
+  rule below that names no severity is P1 when broken. A concrete wrong outcome for a price or
+  total, an allergen, a booking or its `confirm`, or a transfer or outage fallback is P1, however
+  small. P2 is any other concrete defect with a scenario. Anything below that is not posted.
+- Post P2 findings only for code under `api/`, `printbridge/` and `deploy/`, at most three per
+  review, the most severe first. For `.claude/`, Markdown files and `.github/` post only P0 and P1.
+- The hooks and commands in `.claude/` guard a cooperative agent against slips. A deliberate bypass
+  by the agent itself (an unusual spelling, quoting or argument order of a command a hook checks) is
+  not a finding. A hook that blocks or passes the documented command wrongly is P1, and so is a
+  bypass that content from the repository, an issue or a pull request can trigger.
 
 ### Security and secrets (this repository is public)
 
@@ -85,7 +96,8 @@ How to review:
 - A backup counts only after it was read back to the end; it never overwrites an existing file and is
   encrypted unless the caller says otherwise.
 - Commands in docs and handovers must run as written: no `<placeholder>` inside a command, line
-  continuations where needed, example dates on an open day (Monday is closed in the seed data).
+  continuations where needed, example dates on an open day (Monday is closed in the seed data). A
+  slip here is P2.
 
 ### Containers and deployment (`docker-compose*.yml`, `deploy/`)
 
@@ -110,7 +122,8 @@ How to review:
 
 - A bug fix comes with a test that failed before it. A test that claims to prove a race or a timing
   case must be deterministic or say why it cannot be.
-- A hot-path tool states its measured response time (budget: under 300 ms with a local database).
+- A hot-path tool states its measured response time (budget: under 300 ms with a local database);
+  a missing measurement is P2.
 
 ### Docs and pull requests
 

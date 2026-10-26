@@ -95,8 +95,8 @@ jobs:
         run: pytest -q -m latency
       # The telephone line of the speech kit needs numpy, which the production
       # image must not carry: installed only here, after the full run, so that run
-      # stays as it was. The version is the one the speech image resolves
-      # (deploy/speech/Dockerfile pins no numpy itself); the hash is the cp312
+      # stays as it was. The version is the one api/requirements-voice.txt
+      # pins for the voice and speech images; the hash is the cp312
       # manylinux x86_64 wheel. A skip in this file fails the step (#207).
       - name: Speech kit tests with numpy
         shell: bash

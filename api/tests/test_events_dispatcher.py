@@ -223,3 +223,42 @@ def test_send_to_n8n_setzt_idempotenz_kopf_und_wirft_bei_5xx(session, tenant_id)
         pytest.raises(httpx.HTTPStatusError),
     ):
         send_to_n8n(event, client=client)
+
+
+# #252 finding 5, Codex on PR #360: the dispatcher sends the n8n user with its
+# password, so outside dev and test it needs a strong one before it starts.
+STRONG = "p" * 32
+
+
+@pytest.mark.parametrize("password", ["", "change_me", "k" * 31, " " * 32])
+def test_the_dispatcher_does_not_start_on_a_weak_n8n_password(monkeypatch, password):
+    from api.events import dispatcher
+
+    monkeypatch.setattr(dispatcher.settings, "env", "prod")
+    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_user", "maex")
+    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_password", password)
+    # Refused before the first pass: no session is ever opened.
+    monkeypatch.setattr(dispatcher, "SessionLocal", lambda: pytest.fail("ran"))
+
+    with pytest.raises(RuntimeError, match="N8N_BASIC_AUTH_PASSWORD") as refused:
+        dispatcher.run_forever(lambda event: None)
+    assert password.strip() == "" or password not in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("env", "user", "password"),
+    [
+        ("prod", "maex", STRONG),
+        ("prod", "", ""),
+        ("dev", "maex", ""),
+        ("test", "maex", "x"),
+    ],
+)
+def test_the_n8n_credential_check_lets_these_start(monkeypatch, env, user, password):
+    """A strong password, no user (no credentials sent), or dev and test."""
+    from api.events import dispatcher
+
+    monkeypatch.setattr(dispatcher.settings, "env", env)
+    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_user", user)
+    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_password", password)
+    dispatcher.require_n8n_credential()

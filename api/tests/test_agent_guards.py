@@ -10,9 +10,22 @@ import pytest
 
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult
-from api.agent.guards import begin_turn, note_said, refusal
+from api.agent.guards import (
+    HINT_CALLBACK_PHONE,
+    HINT_CONFIRM,
+    HINT_GUEST_PHONE,
+    HINT_NO_DRAFT,
+    begin_turn,
+    false_booking,
+    note_said,
+    refusal,
+)
 from api.agent.llm import ToolCall
-from api.agent.state import ConversationState, apply_state_patch, apply_tool_result
+from api.agent.state import (
+    ConversationState,
+    apply_state_patch,
+    apply_tool_result,
+)
 
 ENTE = str(uuid.uuid4())
 PHO = str(uuid.uuid4())
@@ -172,9 +185,23 @@ def test_confirm_after_a_failed_correction_is_refused():
 
 
 def test_confirm_without_any_draft_is_refused():
+    """With no draft at all the hint names the tool that makes one: "read it
+    back first" pointed nowhere, and a real model confirmed made-up ids."""
     state = new_state()
 
-    assert refusal(state, begin_turn(state), "Ja", confirm(str(uuid.uuid4())))
+    refused = refusal(state, begin_turn(state), "Ja", confirm(str(uuid.uuid4())))
+
+    assert refused is not None
+    assert refused.hint == HINT_NO_DRAFT
+
+
+def test_confirm_of_a_draft_not_read_back_keeps_the_readback_hint():
+    state, draft_id = drafted()
+
+    refused = refusal(state, begin_turn(state), "Ja", confirm(draft_id))
+
+    assert refused is not None
+    assert refused.hint == HINT_CONFIRM
 
 
 @pytest.mark.parametrize(
@@ -740,3 +767,191 @@ def test_state_patch_drops_facts_from_a_tool_result():
 
     assert applied == {"party_size": 4}
     assert state.slots == {"phone": "+4972215551234", "party_size": 4}
+
+
+@pytest.mark.parametrize(
+    ("call", "hint"),
+    [
+        (
+            ToolCall("create_callback", {"phone": None, "reason": "out_of_scope"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (
+            ToolCall("create_callback", {"phone": "", "reason": "out_of_scope"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (ToolCall("create_callback", {"reason": "out_of_scope"}), HINT_CALLBACK_PHONE),
+        (
+            ToolCall("create_callback", {"phone": "unbekannt", "reason": "x"}),
+            HINT_CALLBACK_PHONE,
+        ),
+        (
+            ToolCall("create_reservation", {"guest_name": None, "party_size": 2}),
+            HINT_GUEST_PHONE,
+        ),
+        (
+            ToolCall("draft_order", {"customer": {"name": None, "phone": None}}),
+            HINT_GUEST_PHONE,
+        ),
+    ],
+)
+def test_a_booking_without_a_number_gets_the_phone_hint(call, hint):
+    """The validation said only "phone: Input should be a valid string", and a
+    real model sent create_callback without a number four times in a row."""
+    state = new_state()
+
+    refused = refusal(state, begin_turn(state), "Bitte rufen Sie zurück", call)
+
+    assert refused is not None
+    assert refused.hint == hint
+
+
+def test_a_draft_without_a_customer_is_left_to_the_validation():
+    state = new_state()
+    call = ToolCall("draft_order", {"items": []})
+
+    assert refusal(state, begin_turn(state), "Das wars", call) is None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Ihre Abholung ist bestätigt. Der Abholcode lautet 8842.",
+        "Ihr Tisch ist reserviert.",
+        "Das ist gebucht.",
+        "Ihr Abholcode ist A12.",
+        # Any ending (Codex PR #347).
+        "Ihre bestätigte Bestellung wird jetzt vorbereitet.",
+        # Only the asking clause is exempt (Codex PR #347).
+        "Ihre Bestellung ist bestätigt, möchten Sie noch etwas?",
+        # A negation is not read: which words it reaches is grammar, and a
+        # word rule for it let these through (Codex PR #347).
+        "Das war nicht schwer, Ihr Tisch ist reserviert.",
+        "Sie müssen nicht mehr warten und Ihr Tisch ist reserviert.",
+        "Ihr Tisch ist nicht nur reserviert, sondern auch schon vorbereitet.",
+        # So a denial is refused too, and so is a question; it costs the
+        # model one hop.
+        "Es ist noch nichts gebucht.",
+        "Ihre Bestellung ist noch nicht bestätigt. Passt das so?",
+        "Haben Sie bereits reserviert?",
+        "Ihre Bestellung ist bestätigt und möchten Sie noch etwas?",
+        "Möchten Sie den Abholcode per SMS?",
+    ],
+)
+def test_a_claimed_booking_before_confirm_is_refused(say):
+    assert false_booking(new_state(), say) is not None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Möchten Sie einen Tisch reservieren?",
+        "Soll ich das so bestätigen?",
+    ],
+)
+def test_a_sentence_without_a_booking_word_passes(say):
+    assert false_booking(new_state(), say) is None
+
+
+def test_a_callback_without_a_number_points_to_the_one_in_the_slots():
+    state = new_state(slots={"phone": "+4972215551234"})
+    call = ToolCall("create_callback", {"phone": None, "reason": "out_of_scope"})
+
+    refused = refusal(state, begin_turn(state), "Rufen Sie mich zurück", call)
+
+    assert refused is not None
+    assert refused.hint == HINT_GUEST_PHONE
+
+
+def test_a_code_before_any_confirm_is_made_up():
+    assert false_booking(new_state(), "Ihr Code lautet 8842.") is not None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Einen Gutscheincode kann ich leider nicht prüfen.",
+        "Den WLAN-Code kenne ich nicht.",
+        # A code word that presents no code is no pickup code (Codex PR #347).
+        "Den QR Code auf Ihrer Rechnung kann ich nicht prüfen.",
+    ],
+)
+def test_other_codes_are_no_pickup_code(say):
+    assert false_booking(new_state(), say) is None
+
+
+BOOKED = "Ihre Bestellung ist aufgegeben. Ihr Abholcode ist A1."
+
+
+def test_the_core_sentence_word_for_word_is_the_only_booking_a_model_says():
+    """The core says every booking from the confirm result (agent/loop.py)
+    and keeps it as booking_say; the model may repeat it, nothing else of the
+    kind (Codex PR #347, fifteen rounds of word rules)."""
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+
+    assert false_booking(state, BOOKED) is None
+    assert false_booking(state, f"Gern noch einmal: {BOOKED} Bis gleich!") is None
+    # In its own words: refused, also when true.
+    assert false_booking(state, "Ihre Bestellung ist bestätigt, Code A1.") is not None
+    assert false_booking(state, "Ihr Abholcode ist A1.") is not None
+    # The core sentence plus a claim of its own.
+    assert false_booking(state, f"{BOOKED} Ihr Tisch ist reserviert.") is not None
+
+
+def test_without_a_booking_every_booking_word_is_refused():
+    assert false_booking(new_state(), "Ihre Bestellung ist bestätigt.") is not None
+    # The core's own wording, said by the model (Codex PR #347).
+    assert false_booking(new_state(), "Ihre Bestellung ist aufgegeben.") is not None
+    assert false_booking(new_state(), "Ihre Bestellung ist aufgenommen.") is not None
+    # Written with a hyphen it is the same word (Codex PR #347, P1).
+    assert false_booking(new_state(), "Ihr Abhol-Code ist 8842.") is not None
+    assert false_booking(new_state(), "Ihre Abhol-Nummer ist A1.") is not None
+    # And with a space (Codex PR #347, P1).
+    assert false_booking(new_state(), "Ihre Abhol Nummer ist 8842.") is not None
+    assert false_booking(new_state(), "Ihr Abhol Code ist B99.") is not None
+    assert false_booking(new_state(), BOOKED) is not None
+
+
+@pytest.mark.parametrize(
+    ("tool", "data"),
+    [
+        ("draft_order", {"order_id": str(uuid.uuid4()), "readback": "x"}),
+        ("create_reservation", {"reservation_id": str(uuid.uuid4()), "readback": "x"}),
+        ("draft_order", {"order_id": str(uuid.uuid4()), "status": "cancelled"}),
+    ],
+)
+def test_a_new_draft_or_a_cancelled_replay_takes_the_booking_sentence_back(tool, data):
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+    apply_tool_result(state, tool, ToolResult(ok=True, data=data))
+
+    assert state.booking_say is None
+    assert false_booking(state, BOOKED) is not None
+
+
+def test_a_replayed_confirmed_draft_keeps_the_booking_sentence():
+    """The same draft key after the confirm replays the confirmed order; it
+    is no new draft (domain/ordering/draft.py `_replay`)."""
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+    data = {"order_id": str(uuid.uuid4()), "status": "confirmed"}
+    apply_tool_result(state, "draft_order", ToolResult(ok=True, data=data))
+
+    assert state.stage == "confirmed"
+    assert state.booking_say == BOOKED
+
+
+def test_the_model_reads_the_booking_sentence_in_its_state():
+    state = new_state(stage="confirmed", booking_say=BOOKED)
+
+    assert state.to_prompt_json()["booking_say"] == BOOKED
+    assert "booking_say" not in new_state().to_prompt_json()
+
+
+def test_the_pending_readback_may_be_read_word_for_word():
+    """A guest's note can hold a booking word ("für die bereits gebuchte
+    Feier"); the readback the core built must still be read out (Codex PR
+    #347). Words of the model's own around it are checked as ever."""
+    readback = "Ein Tisch für vier, mit dem Hinweis: für die bereits gebuchte Feier."
+    state = new_state(stage="readback_pending", readback=readback)
+
+    assert false_booking(state, readback) is None
+    assert false_booking(state, f"{readback} Das ist gebucht.") is not None

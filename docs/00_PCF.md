@@ -260,7 +260,7 @@ Since 07.10.2026 (E1 flipped): "vendor selected for PoC" reads as the voice path
 
 ## 8. Legal Check (C1, before first real call)
 
-> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision, and the question of the data protection officer (D9) stays open.
+> Note: Not legal advice. Until 07.10.2026 this line asked for a review by a lawyer or data protection consultant before go-live. Maxi decided on 07.10.2026 (D20, `docs/01_STATUS.md`) to work through the check by cross-checking two AI models instead, without a professional; the limits of that are recorded with the decision. The questions of the check were answered on 20.10.2026 (both rounds compared, D9 decided: Maxi himself); what is still open are the duties before the first real call, listed in `docs/09_OPERATIONS_LEGAL.md` §1.
 
 - [ ] **EU AI Act Art. 50:** AI disclosure at call start, in effect since 02.08.2026 ([source](https://www.ai-ops-engine.com/blog/eu-ai-act-digital-omnibus-fristen))
 - [ ] **Recording:** Consent from customer and team (§201 StGB); since the legal check of 20.10.2026 an explicit "ja" before the recording starts, a "nein" keeps the call going without it; the team's own calls in mode `shadow` need every team member's written consent (`docs/09_OPERATIONS_LEGAL.md` §1 L2, L11)
@@ -482,6 +482,143 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 25.10.2026 - T-11.4: the call log keeps the hour, not the minute
+Status: built and pushed, no pull request yet. scripts/call_log.py reads `time`
+as the hour ("18", "18 Uhr"); a row with a minute passes and every run cuts it
+to the hour in the CSV (atomic, file rights kept). 174 script tests green (20
+new), each new mapping path red under a mutation of its guard; end to end on
+the template: minutes cut, 0600 kept, second run changes nothing. ruff, mypy,
+README asset check clean. Full suite in /done against a throwaway Postgres:
+5,575 passed plus 40 latency tests; the diff touches no conversation path.
+Artifacts: branch task/11-4-call-log-hour, commit 53013de on top of the
+handover commit c2afa5b. scripts/call_log.py, api/tests/test_scripts_call_log.py,
+docs/17_ANRUFPROTOKOLL.md, docs/vorlagen/anrufprotokoll.csv and
+anrufprotokoll_druck.html (column "Stunde"), docs/metrics/capabilities.toml with
+README.md and .github/assets/progress.svg re-rendered, docs/07 (done), docs/01.
+Decisions: case ID from date, hour and order of rows in that hour. The cut
+changes the ID of an old row, so .call_log_ids.json keeps the old minute ID
+under the new one ("was") with the fingerprint at review; write_cases finds a
+reviewed case through it. No duplicate merge any more: without the minute a
+row typed twice and two calls with the same words look alike, so every row
+counts and the report names same-content rows of one hour by line number
+(rows with free text only). Recorded under assumptions in docs/01.
+Gate: G0 open, unchanged (waits for T-10.1 and T-10.2 at the pilot's router).
+Open: 1. /done on this branch (ponytail-review, PR, status bump already done
+by this handover), then CI and Codex on the head; no xhigh trigger, Claude
+may merge. 2. The T-11.1 finding ("Sesam vertrage ich auch nicht" lost) still
+goes as one comment to the T-11.1 PR once it is open. 3. Dependabot #354 to
+#356 once main is green.
+Lessons: readme_assets.py render rewrites README.md from
+docs/metrics/capabilities.toml; edit the toml, never the README line. The
+worktree has no own venv: use ~/Maex-Voice-Agent/.venv/bin/python. The app
+offered no session-title tool in this WSL session.
+```
+
+```text
+## Handover 25.10.2026 - issue sweep 21. to 25.10.2026: six PRs merged, next T-11.4
+Status: every PR this session opened is merged, one by one: #358 route_advice wording
+       (#332 closed), #359 container hardening and #360 token strength, security headers,
+       refused INVITE, archive pin (#252 findings 5, 7 to 9, 11 to 13 and part of 10),
+       #362 number words (#325, #327, #328 closed), #357 docs (#188, #323 closed, #344
+       points 2, 3, 5), #361 allergen wishes by option C (#207 and #331 stay open).
+       main fc250ec is green; open PRs are only Dependabot #354 to #356.
+Artifacts: branch task/11-4-call-log-hour (this handover only, no code yet). Outside
+       the repository: ~/.claude/usage_gate/install.py on Ubuntu and on Windows
+       (identical, CRLF, old version as install.py.bak-20261021 next to each), copied
+       into docs/19 section 4; ~/.claude/settings.json gained
+       skillOverrides "anthropic-skills:caveman": "off" and
+       env CLAUDE_CODE_SUBAGENT_MODEL=claude-sonnet-5-5 (/doctor; copy before the change
+       in settings.json.doctor-20261022.bak); two memory notes removed, copies in
+       ~/.claude/doctor-removed-20261022/.
+Decisions: #361 option C (Maxi): where the parser cannot read a whole allergy it asks
+       "Wogegen?" instead of reading further; four rounds of extending the reading each
+       put new words on the kitchen note. 17,280 generated sentences: no word main does
+       not note, no allergen main notes is lost, 2,794 now ask. #357 merged under the
+       review loop limits: the P1 "encrypt the settings backup" does not apply (the rule
+       covers data backups in scripts/; the .bak is 0600, its source 0644), two
+       PowerShell points in #207. No new task while a PR of the session is open (Maxi,
+       22.10.2026, in memory).
+Gate: G0 open, unchanged: the telephony measurement (T-10.1 step 2 at the pilot's router).
+Open: 1. T-11.4 in a new session on task/11-4-call-log-hour, Opus 5.5 high: the hour of
+       a call instead of the minute, a new duplicate key, coarsening existing rows
+       (docs/07 row, docs/17, legal check L15). 2. "Pho Bo, Sesam vertrage ich auch
+       nicht" loses the intolerance: belongs to T-11.1, which another session works on
+       (task/11-1-allergy-consent); post it there as one comment once it has a PR.
+       3. Dependabot #354 to #356 when main is green. 4. The CLAUDE.md trim of /doctor
+       (stack table, Threads, Ultrareview, Security alerts paragraphs into docs/19,
+       /done, /start), about 1.1k tokens a session, in a PR of its own when Maxi wants it.
+       5. Proposal in #207: move the usage gate into the repository with its tests.
+Lessons: GitHub returns PR reviews in pages of 30: read them with
+       gh api --paginate ".../reviews?per_page=100", or a review with findings is missed
+       (#357 was reported clean once by that mistake). A Codex review on the head that
+       carries inline comments is findings, whatever its summary text says. Every merge
+       moves the status version line on main, so parallel PRs need a main merge each;
+       merge them in sequence. main went red on 21.10. when ubuntu-latest became 26.04
+       (Postgres client 18); #364 fixed the test. A session this long should have been
+       handed over earlier.
+```
+
+```text
+## Handover 22.10.2026 (afternoon) - PR #347: one Qwen run on the final head left
+Status: Qwen runs on f0136c1 (16:01 to 16:27): 26/43 and 26/43 (main 27, 24), one missed
+       escalation each (allergie_0002, as on main), reservierung_0035 passes, targets 2/27,
+       hard violations 0, recorded in docs/metrics/eval_history.csv. After the runs one code
+       commit, 288fb26 ("Abhol-Code" with a hyphen is a booking word, Codex P1), covered by
+       unit tests only; Codex asks for a run on the final head (thread open).
+Artifacts: PR #347 (head with the status and handover of this block), README charts.
+Decisions: none new.
+Gate: G0 open; PR #347 needs one regular-cases run on its head, then the merge gate comment.
+Open: 1. In Maxi's next GPU window (about 13 min: server 1 min, one run of the 43 cases):
+       one regular-cases run on the PR head, record it, answer and resolve the Codex thread
+       on guards.py (the eval rerun). 2. If CI and Codex are clean on that head, post
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md section 6.
+Lessons: push the review fixes before the GPU window, not during it; a fix after the runs
+       always asks for one more run.
+
+## Handover 22.10.2026 (late morning) - PR #347 ready except the Qwen runs
+Status: PR #347 head pushed, CI and Codex on it pending at hand-over. Since the night runs
+       on 33843ab: a reserved_for without an offset is the restaurant's local time
+       (dispatch.in_local_time, also for the team card; a date alone, an off-calendar
+       moment and a wall time the zone lacks or has twice stay invalid input), the stand-in
+       lost its dead sentences after confirm, and four Codex rounds of fixes (aufgegeben and
+       aufgenommen are booking words, a late confirm keeps the booking in the guest's ear
+       and on the card, a confirmed table names an unplaced order, the pending readback may
+       be read word for word). Suite green except mount-only tests, stand-in 43/43, targets
+       1/27, number eval 249/249.
+Artifacts: PR #347, docs/metrics/eval_history.csv (no rows for the new code yet).
+Decisions: Maxi 22.10.: the GPU runs move to tomorrow (23.10.2026).
+Gate: G0 open; PR #347 waits for the Qwen runs on its head (rule 4, Codex eval thread open).
+Open: 1. In Maxi's GPU window: 2x regular cases and 1x targets on the PR head (about 33 min;
+       the script and the override are in the session scratchpad, recreate them from the
+       local test run recipe if it is gone), record them, close the Codex eval thread.
+       2. If reservierung_0035 passes and nothing new fails hard: post the comment
+       "Merge gate: <full head sha>" and give Maxi the merge command of CLAUDE.md
+       section 6 (merge strategy, --match-head-commit with the full head sha).
+Lessons: a fix round right before a GPU window moves the head under the runs; batch the
+       review rounds first, then measure.
+
+## Handover 22.10.2026 - PR #347: eval runs on Qwen, the core says every booking
+Status: PR #347 (dev/eval-qwen-optimization-8b4ad7) pushed, xhigh, Maxi merges. Final code
+       33843ab measured on qwen3.6-35b-a3b: 24/43 and 25/43 (main 27, 24), targets 2/27,
+       hard violations 0; two missed escalations: allergie_0002 (as on main) and
+       reservierung_0035 (new, see Open). Stand-in 43/43, suite green except mount-only tests.
+Artifacts: docs/metrics/eval_history.csv (every run of 20. to 22.10.), README charts, PR #347
+       description, docs/01_STATUS.md open points; issue #207 (cart repeated after confirm).
+Decisions: Maxi 21.10.: the core says every booking from the confirm result (booking_say),
+       the model repeats it word for word or not at all, after fifteen Codex rounds on word
+       rules. Maxi 21.10.: GPU runs on the llama-server start only in a window he names.
+Gate: G0 open; PR #347 open, blocked by reservierung_0035.
+Open: 1. reservierung_0035: Qwen sends reserved_for without an offset and check_slot refuses
+       it; read a time without an offset as the restaurant's local time (core/time.to_utc),
+       test, then two Qwen runs in Maxi's GPU window. 2. The stand-in's sentences after a
+       confirm (sim/scripted_llm.py SAY_CONFIRMED, sim/scripted_order.py pickup code and
+       approval) are never asked any more: delete them. 3. Codex review of the head and the
+       merge gate comment ("Merge gate: <sha>"), then Maxi merges.
+Lessons: a word guard on a model's German sentences does not converge under review; when
+       findings start to contradict each other, move the sentence to the core. Recreate the
+       eval container after a merge that replaces a bind-mounted file (README.md, CLAUDE.md),
+       or `docker exec` fails with "container is not running".
+
 ## Handover 05.10.2026 - demo run of the operations view, for local Claude Code
 Status: Runs: the whole stack without a phone, re-checked on main ccd65cc. Migrations to
        005, `scripts.seed`, the test menu from `evals/menu` (32 dishes), API on port 8000,

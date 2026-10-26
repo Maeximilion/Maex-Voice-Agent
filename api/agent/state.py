@@ -74,6 +74,11 @@ class ConversationState(BaseModel):
     readback: str | None = None
     readback_heard: bool = False
     transferred: bool = False
+    # The sentence the core said when `confirm` went through (`loop.py`), built
+    # from the confirm result: what was booked, the pickup code. The only
+    # booking sentence the model may say, and only word for word
+    # (`guards.false_booking`); a new draft takes it back.
+    booking_say: str | None = None
     # Memory of the core, never sent to the model (guards.py, rule 2): the
     # dishes an order may name. `known` came from a clear match of search_menu,
     # or was a candidate the guest heard by name or card number. `offered` are
@@ -152,6 +157,10 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
+        if self.booking_say:
+            # The model keeps nothing between turns: asked for the booking or
+            # the pickup code later, it repeats this sentence word for word.
+            data["booking_say"] = self.booking_say
         if (
             self.stage == "readback_pending"
             and self.readback
@@ -411,6 +420,14 @@ def apply_tool_result(
         state.intent = intent
     if not result.ok:
         return
+    status = result.data.get("status", "draft")
+    if name in ("create_reservation", "draft_order") and status != "draft":
+        # The same key replays a draft that was decided since: the confirmed
+        # order comes back as it is, no new draft to read out (Codex PR #347).
+        # A cancelled one takes the booking sentence back (Codex PR #347).
+        if status == "cancelled":
+            state.booking_say = None
+        return
     # Aktiv ist der Vorgang, der zuletzt vorgelesen wurde: wechselt der Gast
     # zwischen Reservierung und Bestellung, faellt die andere ID heraus. Sonst
     # stuenden zwei bestaetigbare Vorgaenge im Prompt, und das naechste Ja
@@ -420,12 +437,14 @@ def apply_tool_result(
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
         state.order_id = None
         state.stage = "readback_pending"
+        state.booking_say = None
         _to_read_out(state, result)
     elif name == "draft_order":
         state.intent = "pickup"
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
+        state.booking_say = None
         _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
