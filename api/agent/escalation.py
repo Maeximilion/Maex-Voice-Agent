@@ -68,9 +68,14 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
 # to the team in any call. A phone order is distance selling, and the answer
 # has to come before the contract, so before `confirm`.
 # ponytail: closed word lists. Add the word when the call log shows it.
+# Frying only as shared or separate frying: "Wan-Tan frittiert" is a dish on
+# the menu, and a guest who orders it asks nothing (Codex PR #369).
 _BEYOND = re.compile(
     r"\bspuren|kontamin|verunreinig|kreuzkontakt|\bin kontakt|\bkontakt mit"
-    r"|ber(?:ü|ue)hrung|fritteuse|frittier|\b(?:selben|gleichen) (?:öl|oel|pfanne)"
+    r"|ber(?:ü|ue)hrung"
+    r"|\b(?:selben|gleichen|derselben|eigenen?|separaten?|getrennten?|extra)"
+    r" (?:öl|oel|pfanne|fritteuse)"
+    r"|\bzusammen\b[^.?!]{0,40}\bfrittier"
 )
 # Certainty asked for: only in a call that speaks of allergies ("Ist das
 # wirklich sicher?" after the allergens of a dish), not "Ist das sicher bis

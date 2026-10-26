@@ -42,6 +42,8 @@ CALLER = "+4972215551234"
         "Kommt das mit Sesam in Kontakt?",
         "Wird das in derselben Fritteuse gemacht?",
         "Wird das im selben Öl frittiert?",
+        "Haben Sie eine eigene Fritteuse?",
+        "Wird das zusammen mit den Garnelen frittiert?",
         "Ich bin allergisch gegen Gluten, ist das wirklich sicher?",
         "Können Sie garantieren, dass keine Allergene drin sind?",
     ],
@@ -67,6 +69,11 @@ def test_certainty_after_talk_of_allergies_is_beyond():
         "Ich habe eine Erdnussallergie.",
         # "Kontakt" alone is no contact with food.
         "Brauchen Sie meine Kontaktdaten?",
+        # A fried dish ordered by its name (Codex PR #369): the eval menu
+        # has "21;Wan-Tan frittiert".
+        "Ich hätte gern Wantan frittiert.",
+        "Einmal die 21, Wan-Tan frittiert, bitte.",
+        "Ist was Frittiertes dabei?",
     ],
 )
 def test_ordinary_sentences_are_not_beyond(said):
