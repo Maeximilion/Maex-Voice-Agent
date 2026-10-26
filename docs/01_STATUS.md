@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.3
+> Status: 26.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.8.4
 
 ---
 
@@ -621,6 +621,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.8.4 · 26.10.2026:** T-11.1 done: allergen questions beyond the database go to the team before confirm (L17), brought up to date with main and the first PR
 - **v2.8.3 · 26.10.2026:** T-11.1 first PR brought up to date with main: consent log as migration 010, its period (end of the 3rd calendar year after the answer) in the deletion job
 - **v2.8.2 · 26.10.2026:** Codex watching: scripts/codex_review.py reads the review state of a head: stalled, declined, open threads
 - **v2.8.1 · 26.10.2026:** T-11.5 done: the greeting names the privacy notice, the core answers "Sind Sie ein Mensch?" with the offer of the team; README routine on python3.12

@@ -17,7 +17,12 @@ from sqlalchemy.orm import Session
 
 from api.agent.escalation import asks_beyond_the_allergens
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
-from api.agent.loop import SAY_ORDER_NOT_PLACED, SUMMARY_ALLERGENS, ConversationLoop
+from api.agent.loop import (
+    SAY_NOT_A_PERSON,
+    SAY_ORDER_NOT_PLACED,
+    SUMMARY_ALLERGENS,
+    ConversationLoop,
+)
 from api.agent.state import ConversationState
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
@@ -254,3 +259,18 @@ def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
     assert session.scalars(select(Callback)).one().reason == "out_of_scope"
+
+
+def test_a_human_question_next_to_traces_hears_the_truth_first(session, known_tenant):
+    """Merge of T-11.5 into T-11.1: the question for traces goes to the team
+    before the model (L17); a "Sind Sie ein Mensch?" in the same sentence still
+    gets the truthful answer first, as on every handoff (docs/09 L1)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session, state, "Sind Sie ein Mensch? Sind da Spuren von Erdnüssen drin?"
+    )
+
+    assert llm.calls == []
+    assert result.say[0] == SAY_NOT_A_PERSON
+    assert result.say[1] == SAY_ALLERGENS_UNKNOWN
