@@ -194,3 +194,28 @@ def test_an_api_error_exits_4(capsys):
 
     assert codex_review.main(["371"], gh=gh) == 4
     assert "HTTP 502" in capsys.readouterr().err
+
+
+def test_codex_answering_instead_of_reviewing_is_declined(capsys):
+    """PR #373: the description named `@codex review`; Codex answered with
+    the environment message and reviewed nothing, not even later pushes."""
+    answers = {
+        f"{R}/pulls/373": [{"head": {"sha": HEAD}}],
+        f"{R}/issues/373/comments?per_page=100": [
+            {
+                "user": {"login": BOT},
+                "body": "To use Codex here, [create an environment for this repo](x).",
+                "created_at": "2026-10-26T10:16:33Z",
+                "updated_at": "2026-10-26T10:16:33Z",
+            }
+        ],
+    }
+
+    assert (
+        codex_review.main(["373"], gh=lambda path: answers[path], gq=_no_threads) == 3
+    )
+
+    out = capsys.readouterr().out
+    assert f"codex {HEAD[:7]}: declined" in out
+    assert "Codex answered: To use Codex here" in out
+    assert "remove the mention" in out

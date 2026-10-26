@@ -54,6 +54,7 @@ EXIT = {
     "running": 2,
     "not started": 2,
     "stalled": 3,
+    "declined": 3,
 }
 # Unresolved review threads, first comment each (REST cannot tell resolved).
 THREADS = """
@@ -166,12 +167,19 @@ def look(
     resolved, so the merge gate still needs a comment `Merge gate: <sha>`."""
     now = now or datetime.now(UTC)
     head = gh(f"{REPO}/pulls/{pr}")[0]["head"]["sha"]
-    comments = [
+    bot = [
         c
         for c in gh(f"{REPO}/issues/{pr}/comments?per_page=100")
-        if c["user"]["login"] == BOT and _STATE.search(c["body"])
+        if c["user"]["login"] == BOT
     ]
+    comments = [c for c in bot if _STATE.search(c["body"])]
     summary = max(comments, key=lambda c: c["updated_at"])["body"] if comments else None
+    if not comments and bot:
+        # Codex answered instead of reviewing (PR #373: the description named
+        # `@codex review`, Codex took it for a task and asked for an
+        # environment, then reviewed none of the pushes). Its words say why.
+        reply = max(bot, key=lambda c: c["created_at"])["body"]
+        return head, "declined", [{"reply": reply.strip().split("\n", 1)[0]}]
     reviews = gh(f"{REPO}/pulls/{pr}/reviews?per_page=100")
     current = state(head, summary, reviews, now)
     if current != "findings":
@@ -223,6 +231,13 @@ def main(argv: list[str] | None = None, gh: Gh = gh_api, gq: Gq = gh_threads) ->
             break
         time.sleep(args.interval)
     print(f"codex {head[:7]}: {current}")
+    if current == "declined":
+        print(f"  Codex answered: {findings[0]['reply']}")
+        print(
+            "  A PR description or comment that names `@codex` makes it a task; "
+            "remove the mention, then one comment `@codex review`"
+        )
+        return EXIT[current]
     for c in findings:
         where = f"{c['path']}:{c.get('line') or c.get('originalLine')}"
         older = "" if c["new"] else " (earlier head: resolve it once answered)"
