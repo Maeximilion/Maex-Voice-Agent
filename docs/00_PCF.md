@@ -492,8 +492,8 @@ Status: the redesign decided by Maxi is built on #368 and pushed. The core
         order_note and table_note are gone. The open P1 4378523387, the three
         Codex P1s on d1ad1e0 (4378680652, 4378680664, 4378680687), the two on
         f3e997f (4379357300, 4379357317), those on 2844b82 (4379622793) and
-        94f1fa8 (4379762029), 3ac0383 (4379960053), 6f94f73 (4380083176) and
-        every
+        94f1fa8 (4379762029), 3ac0383 (4379960053), 6f94f73 (4380083176),
+        3c4cc6a (4380178537) and every
         sentence shape of the earlier findings are tests; "Sesam vertrage ich
         auch nicht" (#361) is read. Suite 6180 passed; evals against main case
         by case: cases 54/54 (main 50/50, all of main's pass, 4 new), targets

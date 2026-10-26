@@ -564,15 +564,22 @@ def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
     ]
     if not same or any(allergy.item == item_id for allergy in same):
         return
-    free = next((allergy for allergy in same if allergy.item is None), None)
-    if free is not None:
-        free.item = item_id
+    free = [allergy for allergy in same if allergy.item is None]
+    if len({allergy.own for allergy in free}) > 1:
+        # The same allergen for the caller and for another adult: which dish
+        # is whose is not read, and the order of the searches must not
+        # decide it. Both stay on the whole order (Codex PR #368, P1).
+        return
+    if free:
+        free[0].item = item_id
     else:
         # The same allergy said for another dish as well ("Die 13 bitte, ich
         # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
         # Erdnussallergie"): read once from the sentence, it goes onto both
-        # lines (Codex PR #368).
-        state.allergies.append(same[0].model_copy(update={"item": item_id}))
+        # lines (Codex PR #368). Whose it is there is the caller's only when
+        # every entry of it is.
+        own = all(allergy.own for allergy in same)
+        state.allergies.append(same[0].model_copy(update={"item": item_id, "own": own}))
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

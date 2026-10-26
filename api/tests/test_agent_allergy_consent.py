@@ -993,3 +993,38 @@ def test_the_same_answer_for_two_dishes_keeps_both(session, state):
         "ohne Erdnuss",
         "ohne Erdnuss",
     ]
+
+
+@pytest.mark.parametrize("order", [("13", "23"), ("23", "13")])
+def test_the_search_order_never_decides_whose_allergy_a_dish_gets(
+    session, state, order
+):
+    """Codex PR #368, P1 4380178537: the caller's and the wife's peanut
+    allergy, each said with a dish. Tied by the order of the searches, the
+    wife's dish could get the caller's reason. Neither is tied to a dish:
+    both go onto the whole order, the wife's without the reason."""
+    items = {"13": str(uuid.uuid4()), "23": str(uuid.uuid4())}
+    allergies.note_allergies(
+        session,
+        state,
+        "Die 13 bitte, ich habe eine Erdnussallergie. "
+        "Die 23 bitte, meine Frau hat eine Erdnussallergie.",
+    )
+    wish = {"kind": "allergy", "ingredient": "Erdnuss", "text": REASONED}
+    for number in order:
+        found = {
+            "match_type": "exact_number",
+            "results": [{"menu_item_id": items[number], "number": number}],
+            "wish": wish,
+        }
+        apply_tool_result(state, "search_menu", ToolResult(ok=True, data=found))
+    state.allergy_consent = "yes"
+
+    call = ToolCall(
+        "draft_order",
+        {"items": [{"menu_item_id": item, "quantity": 1} for item in items.values()]},
+    )
+    noted = allergies.noted_call(state, call).args
+
+    assert [item.get("note") for item in noted["items"]] == [None, None]
+    assert noted["note"] == f"{REASONED}. Ohne Erdnuss"
