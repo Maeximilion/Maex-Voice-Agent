@@ -556,11 +556,22 @@ def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
     still asked for, none, goes onto that dish's line. Only what the core read
     from the guest's own sentence: the search reads the model's query."""
     said = ingredient.casefold() if isinstance(ingredient, str) else None
-    for allergy in state.allergies:
-        named = allergy.ingredient.casefold() if allergy.ingredient else None
-        if allergy.item is None and named == said:
-            allergy.item = item_id
-            return
+    same = [
+        allergy
+        for allergy in state.allergies
+        if (allergy.ingredient.casefold() if allergy.ingredient else None) == said
+    ]
+    if not same or any(allergy.item == item_id for allergy in same):
+        return
+    free = next((allergy for allergy in same if allergy.item is None), None)
+    if free is not None:
+        free.item = item_id
+    else:
+        # The same allergy said for another dish as well ("Die 13 bitte, ich
+        # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
+        # Erdnussallergie"): read once from the sentence, it goes onto both
+        # lines (Codex PR #368).
+        state.allergies.append(same[0].model_copy(update={"item": item_id}))
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

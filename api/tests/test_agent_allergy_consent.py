@@ -794,3 +794,74 @@ def test_a_held_replacement_takes_back_the_draft_read_out_before(session, state)
         LLMTurn(say="Gern."),
     )
     assert [r.status for r in reservations(session)] == ["draft"]
+
+
+def test_an_answer_to_wogegen_with_a_correction_goes_to_the_model(session, state):
+    """Codex PR #368, P1 4379357300: "Erdnüsse, aber bitte erst übermorgen"
+    answers the question and changes the date. The held draft would go out
+    with the old date: the model reads the sentence, and its new draft is
+    held for the consent question with the new date."""
+    turn(session, state, f"{TABLE}, ich habe eine Allergie", LLMTurn(tool_call=table()))
+    later = {**table().args, "reserved_for": "2026-09-17T19:00:00+02:00"}
+
+    said = turn(
+        session,
+        state,
+        "Erdnüsse, aber bitte erst übermorgen.",
+        LLMTurn(tool_call=ToolCall("create_reservation", later)),
+    )
+
+    assert said == [ALLERGY_QUESTION]
+    assert reservations(session) == []
+    assert state.held_call is not None
+    assert state.held_call["args"]["reserved_for"] == later["reserved_for"]
+    assert [(a.ingredient, a.own) for a in state.allergies] == [("Erdnüsse", True)]
+
+
+def test_the_same_allergy_said_for_two_dishes_goes_onto_both(session, state):
+    """Codex PR #368, P1 4379357317: read once from the sentence, the allergy
+    was tied to the first dish only, and the child's dish lost it."""
+    pho, ente = str(uuid.uuid4()), str(uuid.uuid4())
+    allergies.note_allergies(
+        session,
+        state,
+        "Die 13 bitte, ich habe eine Erdnussallergie und die 23 bitte, "
+        "mein Sohn hat eine Erdnussallergie",
+    )
+    wish = {"kind": "allergy", "ingredient": "Erdnuss", "text": REASONED}
+    found = {
+        "match_type": "positions",
+        "positions": [
+            {
+                "match_type": "exact_number",
+                "results": [{"menu_item_id": item, "number": number, "name": name}],
+                "wish": wish,
+            }
+            for item, number, name in ((pho, "13", "Pho Bo"), (ente, "23", "Ente"))
+        ],
+    }
+    apply_tool_result(state, "search_menu", ToolResult(ok=True, data=found))
+    # Searched again, the dish gets no second copy.
+    apply_tool_result(state, "search_menu", ToolResult(ok=True, data=found))
+    state.allergy_consent = "yes"
+
+    call = ToolCall(
+        "draft_order",
+        {"items": [{"menu_item_id": item, "quantity": 1} for item in (pho, ente)]},
+    )
+    noted = allergies.noted_call(state, call).args
+
+    assert [item.get("note") for item in noted["items"]] == [REASONED, REASONED]
+    assert "note" not in noted
+    assert len(state.allergies) == 2
+
+
+def test_two_open_allergies_are_asked_for_with_their_dish():
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    pho, ente = str(uuid.uuid4()), str(uuid.uuid4())
+    state.seen_items = {pho: {"name": "Pho Bo"}, ente: {"name": "Ente"}}
+    state.allergies = [Allergy(item=pho), Allergy(item=ente)]
+
+    assert allergies.question(state) == "Wogegen sind Sie bei Pho Bo allergisch?"
+    state.allergies[0].ingredient = "Erdnuss"
+    assert allergies.question(state) == SAY_ALLERGY_WHICH

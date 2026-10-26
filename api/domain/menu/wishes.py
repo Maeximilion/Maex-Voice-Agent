@@ -1425,6 +1425,35 @@ def only_denies(text: str) -> bool:
     )
 
 
+# What an answer to "Wogegen?" may say besides its ingredient: "Ich bin gegen
+# Sesam allergisch", "Ja, Erdnüsse", "Ich habe doch keine Allergie".
+_ANSWER_WORDS = (
+    _FILLERS
+    | _NOTHING
+    | _NOTHING_FILL
+    | _ARTICLES
+    | _NEGATION
+    | _PREPOSITIONS
+    | _AFFIRMATIONS
+    | frozenset({"und", "oder", "sowie", "nur"})
+)
+
+
+def answers_only(text: str) -> bool:
+    """Does the answer to "Wogegen?" give its ingredient, or that there is
+    none, and nothing else? "Erdnüsse, aber bitte erst übermorgen" changes the
+    booking as well, and "Erdnüsse, aber ohne Zwiebeln" the dish: the model
+    has to read such a sentence (Codex PR #368)."""
+    answer, removals = which_answer(text)
+    if answer is None or removals:
+        return False
+    read = set(_words(answer.ingredient or "")) if isinstance(answer, Wish) else set()
+    return all(
+        word in read or word in _ANSWER_WORDS or _is_allergy(word)
+        for word in _words(text)
+    )
+
+
 # What an order starts with, never an ingredient ("eine Cola", "Nummer 12").
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 

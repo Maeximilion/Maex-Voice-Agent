@@ -41,7 +41,6 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.calls import record_consent
-from api.domain.menu.search import SAY_ALLERGY_WHICH
 from api.domain.menu.wishes import mentions_allergy
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Tenant
@@ -567,9 +566,8 @@ class ConversationLoop:
         question. An unclear answer drops it: the sentence was likely about
         something else, the model reads it, and the draft it makes again
         finds the allergies in the state."""
-        if state.held_call is None or state.last_say not in (
-            ALLERGY_QUESTION,
-            SAY_ALLERGY_WHICH,
+        if state.held_call is None or not (
+            state.last_say == ALLERGY_QUESTION or allergies.asked_which(state.last_say)
         ):
             # Another sentence came between, as "Sind Sie noch da?" after a
             # silence on the phone line: a "Ja" answers that one. The draft
@@ -590,8 +588,9 @@ class ConversationLoop:
             state.allergy_consent = answer
             if answer == "unclear":
                 return None
-        elif allergies.question(state) == SAY_ALLERGY_WHICH:
-            # No ingredient in the answer: not read, the model reads it.
+        elif not allergies.answered(state, user_text):
+            # No ingredient in the answer, or more than one ("Erdnüsse, aber
+            # bitte erst übermorgen"): the model reads the sentence.
             return None
         return ToolCall(name=held["name"], args=held["args"])
 

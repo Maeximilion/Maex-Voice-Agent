@@ -24,10 +24,11 @@ from api.agent.llm import ToolCall
 from api.agent.state import Allergy, ConversationState
 from api.domain.menu.items import active_numbers
 from api.domain.menu.numberwords import CardFormat, canonical_card
-from api.domain.menu.search import SAY_ALLERGY_WHICH
+from api.domain.menu.search import SAY_ALLERGY_WHICH, SAY_ALLERGY_WHICH_FOR
 from api.domain.menu.wishes import (
     ALLERGY_NOTE,
     allergies_named,
+    answers_only,
     classify_wish,
     mentions_allergy,
     names_an_order,
@@ -164,6 +165,21 @@ def _answer(
     _add(state, Allergy(ingredient=answer.ingredient, own=own, item=item))
 
 
+def asked_which(say: str | None) -> bool:
+    """Did the sentence the guest heard last ask "Wogegen?"?"""
+    return _ASKED_WHICH.search(say or "") is not None
+
+
+def answered(state: ConversationState, text: str) -> bool:
+    """Was the guest's sentence the answer to "Wogegen?" and nothing else,
+    with no allergy left open? Then the draft held for it goes out; any
+    other sentence goes to the model (Codex PR #368: "Erdnüsse, aber bitte
+    erst übermorgen")."""
+    if any(allergy.ingredient is None for allergy in state.allergies):
+        return False
+    return answers_only(text)
+
+
 def _add(state: ConversationState, allergy: Allergy) -> None:
     if allergy not in state.allergies:
         state.allergies.append(allergy)
@@ -171,9 +187,14 @@ def _add(state: ConversationState, allergy: Allergy) -> None:
 
 def question(state: ConversationState) -> str | None:
     """What the core asks before a draft goes out, None when nothing: "Wogegen
-    sind Sie allergisch?" for an allergy the words did not give in full, then
-    the consent to note an allergy with its reason, once per call (L13)."""
-    if any(allergy.ingredient is None for allergy in state.allergies):
+    sind Sie allergisch?" for an allergy the words did not give in full, with
+    its dish while another one is open too, then the consent to note an
+    allergy with its reason, once per call (L13)."""
+    still_open = [allergy for allergy in state.allergies if allergy.ingredient is None]
+    if still_open:
+        dish = state.seen_items.get(still_open[0].item or "", {}).get("name")
+        if len(still_open) > 1 and dish:
+            return SAY_ALLERGY_WHICH_FOR.format(name=dish)
         return SAY_ALLERGY_WHICH
     if state.allergy_consent is None and any(a.own for a in state.allergies):
         return ALLERGY_QUESTION

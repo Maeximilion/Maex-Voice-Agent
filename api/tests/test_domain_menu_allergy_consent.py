@@ -213,3 +213,24 @@ def test_an_answer_without_an_ingredient_leaves_the_question_open(answer):
 )
 def test_an_order_is_no_answer_to_wogegen(answer, order):
     assert names_an_order(answer, NO_PREFIXES, frozenset({"12", "23"})) is order
+
+
+@pytest.mark.parametrize(
+    ("answer", "only"),
+    [
+        ("Erdnüsse.", True),
+        ("Ich bin gegen Sesam allergisch.", True),
+        ("Gegen Erdnüsse und Sesam.", True),
+        ("Ich habe doch keine Allergie.", True),
+        ("Keine.", True),
+        # Codex PR #368, P1: more than the answer goes to the model.
+        ("Erdnüsse, aber bitte erst übermorgen.", False),
+        ("Erdnüsse und bitte um 20 Uhr.", False),
+        ("Erdnüsse, aber ohne Zwiebeln.", False),
+        ("Weiß ich nicht.", False),
+    ],
+)
+def test_an_answer_says_only_its_ingredient(answer, only):
+    from api.domain.menu.wishes import answers_only
+
+    assert answers_only(answer) is only
