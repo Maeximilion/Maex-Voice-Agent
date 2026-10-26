@@ -1454,6 +1454,28 @@ def answers_only(text: str) -> bool:
     )
 
 
+# Who speaks of an allergy in an answer: "Mein Mann hat eine Sesamallergie",
+# "Mein Sohn verträgt keine Milch".
+_SPEAKERS = (
+    _POSSESSIVES
+    | _PERSONS
+    | _OTHERS
+    | frozenset({"sohn", "tochter", "kind", "kinder", "baby", "er", "sie"})
+    | frozenset({"hat", "ist", "vertraegt", "vertragen", "reagiert", "reagieren"})
+)
+
+
+def read_in_full(text: str, ingredient: str) -> bool:
+    """Does `ingredient` hold every word of the answer to "Wogegen?" that may
+    name one? "Erdnüsse, und mein Mann hat eine Sesamallergie" read as
+    "Sesam" leaves the caller's peanut out (Codex PR #368)."""
+    read = set(_words(ingredient))
+    return all(
+        word in read or word in _ANSWER_WORDS or word in _SPEAKERS or _is_allergy(word)
+        for word in _words(text)
+    )
+
+
 # What an order starts with, never an ingredient ("eine Cola", "Nummer 12").
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 

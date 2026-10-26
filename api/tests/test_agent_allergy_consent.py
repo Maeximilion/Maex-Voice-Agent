@@ -267,6 +267,37 @@ def test_the_answer_to_wogegen_fills_the_open_allergy(session, state, answer, no
     assert read(session, state, answer) == noted
 
 
+@pytest.mark.parametrize(
+    ("answer", "noted"),
+    [
+        # Codex PR #368, P1 4379622793: each sentence of the answer with its
+        # own owner; the caller's peanut was lost, or the husband's sesame
+        # kept the caller's reason.
+        (
+            "Erdnüsse. Mein Mann hat eine Sesamallergie.",
+            [("Erdnüsse", True), ("Sesam", False)],
+        ),
+        (
+            "Ich bin gegen Erdnüsse allergisch. Mein Mann hat eine Sesamallergie.",
+            [("Erdnüsse", True), ("Sesam", False)],
+        ),
+        # One sentence that names more than it reads: the husband's allergy
+        # is noted, the question for the caller's stays open.
+        (
+            "Erdnüsse, und mein Mann hat eine Sesamallergie.",
+            [(None, True), ("Sesam", False)],
+        ),
+        ("Mein Mann ist gegen Sesam allergisch.", [("Sesam", False)]),
+        ("Keine. Aber mein Mann hat eine Sesamallergie.", [("Sesam", False)]),
+    ],
+)
+def test_every_sentence_of_an_answer_keeps_its_owner(session, state, answer, noted):
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(session, state, answer) == noted
+
+
 def test_the_answer_for_another_adult_keeps_the_reason_off(session, state):
     read(session, state, "Mein Mann hat eine Allergie.")
     guards.note_said(state, SAY_ALLERGY_WHICH)

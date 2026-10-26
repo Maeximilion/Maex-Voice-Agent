@@ -491,7 +491,7 @@ Status: the redesign decided by Maxi is built on #368 and pushed. The core
         an allergy is refused. with_consent, unread_allergy, keep_restrictions,
         order_note and table_note are gone. The open P1 4378523387, the three
         Codex P1s on d1ad1e0 (4378680652, 4378680664, 4378680687), the two on
-        f3e997f (4379357300, 4379357317) and every
+        f3e997f (4379357300, 4379357317), the one on 2844b82 (4379622793) and every
         sentence shape of the earlier findings are tests; "Sesam vertrage ich
         auch nicht" (#361) is read. Suite 6180 passed; evals against main case
         by case: cases 54/54 (main 50/50, all of main's pass, 4 new), targets

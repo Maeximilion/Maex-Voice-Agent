@@ -34,6 +34,7 @@ from api.domain.menu.wishes import (
     names_an_order,
     of_another_adult,
     only_denies,
+    read_in_full,
     which_answer,
     wish_candidates,
 )
@@ -59,8 +60,19 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
     too many is the safe side."""
     asked = _ASKED_WHICH.search(state.last_say or "")
     if asked is not None:
-        _answer(session, state, text, asked.group("dish"))
+        # The first sentence answers the question; any sentence after it is
+        # read as any other, with its own owner ("Erdnüsse. Mein Mann hat
+        # eine Sesamallergie."; Codex PR #368, P1).
+        first, *rest = _SENTENCE.split(text.strip(), maxsplit=1)
+        _answer(session, state, first, asked.group("dish"))
+        if rest:
+            _note(state, rest[0])
         return
+    _note(state, text)
+
+
+def _note(state: ConversationState, text: str) -> None:
+    """An allergy said without a question of the core (`note_allergies`)."""
     if not mentions_allergy(text):
         return
     whole = _read(text)
@@ -142,6 +154,16 @@ def _answer(
     if names_an_order(text, CardFormat.from_items(rows), numbers):
         return
     answer, _ = which_answer(text)
+    if isinstance(answer, Wish) and mentions_allergy(text):
+        # A whole sentence, not a bare ingredient: read as any other, with
+        # both readings and the owner of each allergy in it. One that names
+        # more than it reads ("Erdnüsse, und mein Mann hat eine
+        # Sesamallergie" read as sesame) keeps the question open, and what
+        # it does read is noted with its owner (Codex PR #368).
+        answer = _read(text)
+        if answer is not None and not read_in_full(text, answer.ingredient or ""):
+            _note(state, text)
+            return
     item = next(
         (
             id_
