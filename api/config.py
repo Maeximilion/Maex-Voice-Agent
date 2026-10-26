@@ -107,6 +107,25 @@ class Settings(BaseSettings):
     # Anrufprotokoll (docs/17): Loeschfrist der CSV in Tagen, D10
     call_log_retention_days: int | None = None
 
+    # Deletion periods in days (docs/03 "Loeschkonzept", decided by Maxi with
+    # the legal check on 20.10.2026, L8, L13), kept by api/jobs/retention.py.
+    # At least one day: 0 would strip the orders the kitchen is cooking.
+    retention_caller_id_days: int = Field(default=90, ge=1)
+    # Name, phone, notes and customer link on orders and reservations.
+    retention_guest_details_days: int = Field(default=90, ge=1)
+    # Phone and summary of a callback, counted from when it was done.
+    retention_callback_days: int = Field(default=90, ge=1)
+    retention_outbox_sent_days: int = Field(default=7, ge=1)
+    retention_outbox_unsent_days: int = Field(default=30, ge=1)
+    retention_outbox_row_days: int = Field(default=90, ge=1)
+    retention_audit_log_days: int = Field(default=365, ge=1)
+    # A caller's allergy note goes this many business days after the one of the
+    # order or reservation; 0 is the night after (L13).
+    retention_allergy_note_days: int = Field(default=0, ge=0)
+    # How often the dispatcher process runs the job. Each pass only does what is
+    # due, so a restart or a missed pass is caught up by the next one.
+    retention_interval_seconds: float = Field(default=3600.0, gt=0)
+
     @model_validator(mode="after")
     def _production_needs_real_tokens(self) -> Self:
         """Refuse to start outside dev and test on a token anyone can know.

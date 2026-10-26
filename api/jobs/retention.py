@@ -1,0 +1,250 @@
+"""Deletion job (docs/03 "Loeschkonzept", T-11.2): personal data goes when its period ends.
+
+`python -m api.jobs.retention` runs one pass; the dispatcher process
+(`api/jobs/cold_path.py`) runs one every RETENTION_INTERVAL_SECONDS. A pass
+only does what is due, so passes can repeat and a missed one is caught up.
+
+Rows stay and lose their personal fields: the statistics of calls, the items,
+prices and times of orders (L18), the reason of a callback. Required text
+fields become empty strings, so no column changes and no migration is needed.
+Periods are settings (api/config.py), decided by Maxi with the legal check on
+20.10.2026 (docs/09 §1 L8, L13). One log line per pass names what it changed.
+"""
+
+import logging
+from datetime import datetime, timedelta
+
+from sqlalchemy import (
+    ColumnElement,
+    Text,
+    case,
+    cast,
+    delete,
+    func,
+    or_,
+    select,
+    update,
+)
+from sqlalchemy.orm import Session
+
+from api.config import Settings, settings
+from api.core.logging import configure_logging, get_logger, log
+from api.core.time import business_day, business_day_bounds_utc, utcnow
+from api.db import SessionLocal
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Reservation,
+    Tenant,
+)
+
+logger = get_logger("api.jobs.retention")
+
+# A caller's allergy in a note: the kitchen wording "Grund: Allergie"
+# (domain/menu/wishes.py ALLERGY_NOTE) and what the team types by hand
+# ("Nussallergie", "Laktoseintoleranz"). The whole note goes; "ohne Zwiebeln"
+# alone stays until the guest details go. Whether ~* folds an umlaut depends
+# on the locale of the database, hence both cases.
+ALLERGY = "allergi|unvertr(ä|Ä|ae)glich|intoleran"
+
+# What an outbox payload keeps once its period is over: the ids. The kitchen
+# finds every slip of an order by them (domain/ordering/handover.py).
+OUTBOX_KEEP = ("order_id", "reservation_id", "callback_id", "call_id", "revision")
+UNSENT_EXPIRED = "payload removed after {days} days unsent, never sent"
+
+
+def purge(
+    session: Session, now: datetime, periods: Settings = settings
+) -> dict[str, int]:
+    """One pass over every period. Commits; returns what changed per period."""
+    counts = {
+        "allergy_notes": _allergy_notes(
+            session, now, periods.retention_allergy_note_days
+        ),
+        **_guest_details(
+            session, now - timedelta(days=periods.retention_guest_details_days)
+        ),
+        "caller_ids": _run(
+            session,
+            update(Call)
+            .where(
+                Call.started_at
+                < now - timedelta(days=periods.retention_caller_id_days),
+                Call.caller_id.is_not(None),
+            )
+            .values(caller_id=None),
+        ),
+        "callbacks": _run(
+            session,
+            update(Callback)
+            .where(
+                # Only "done" sets done_at (domain/callbacks/board.py); an open
+                # callback is still the team's to call back.
+                Callback.done_at
+                < now - timedelta(days=periods.retention_callback_days),
+                or_(Callback.phone != "", Callback.summary != ""),
+            )
+            .values(phone="", summary=""),
+        ),
+        "outbox_payloads": _outbox_payloads(session, now, periods),
+        "outbox_rows": _run(
+            session,
+            delete(OutboxEvent).where(
+                OutboxEvent.created_at
+                < now - timedelta(days=periods.retention_outbox_row_days)
+            ),
+        ),
+        "audit_entries": _run(
+            session,
+            delete(AuditLog).where(
+                AuditLog.at < now - timedelta(days=periods.retention_audit_log_days)
+            ),
+        ),
+    }
+    session.commit()
+    log(logger, logging.INFO, "Retention pass", **counts)
+    return counts
+
+
+def _run(session: Session, statement) -> int:
+    return session.execute(statement).rowcount  # type: ignore[attr-defined]
+
+
+def _order_day() -> ColumnElement:
+    """The date of an order: the promised time, or its creation for a draft."""
+    return func.coalesce(Order.ready_at, Order.created_at)
+
+
+def _allergy_notes(session: Session, now: datetime, days: int) -> int:
+    """L13: the night after the order or reservation, collected or not. The
+    business day ends at 05:00 in the tenant's time zone (core/time.py)."""
+    changed = 0
+    for tenant_id, zone in session.execute(select(Tenant.id, Tenant.timezone)).all():
+        day = business_day(now, zone) - timedelta(days=days)
+        cutoff = business_day_bounds_utc(day, zone)[0]
+        orders = select(Order.id).where(
+            Order.tenant_id == tenant_id, _order_day() < cutoff
+        )
+        changed += _run(
+            session,
+            update(OrderItem)
+            .where(OrderItem.order_id.in_(orders), OrderItem.note.op("~*")(ALLERGY))
+            .values(note=None),
+        )
+        changed += _run(
+            session,
+            update(Order)
+            .where(Order.id.in_(orders), Order.note.op("~*")(ALLERGY))
+            .values(note=None),
+        )
+        changed += _run(
+            session,
+            update(Reservation)
+            .where(
+                Reservation.tenant_id == tenant_id,
+                Reservation.reserved_for < cutoff,
+                Reservation.note.op("~*")(ALLERGY),
+            )
+            .values(note=None),
+        )
+    return changed
+
+
+def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
+    """Name, phone, notes and the customer link, so the row cannot be traced
+    through the customer record (docs/03). `address_id` joins here with T-6.1."""
+    old_orders = select(Order.id).where(_order_day() < cutoff)
+    item_notes = _run(
+        session,
+        update(OrderItem)
+        .where(OrderItem.order_id.in_(old_orders), OrderItem.note.is_not(None))
+        .values(note=None),
+    )
+    orders = _run(
+        session,
+        update(Order)
+        .where(
+            _order_day() < cutoff,
+            or_(
+                Order.customer_name != "",
+                Order.phone != "",
+                Order.note.is_not(None),
+                Order.customer_id.is_not(None),
+            ),
+        )
+        .values(customer_name="", phone="", note=None, customer_id=None),
+    )
+    reservations = _run(
+        session,
+        update(Reservation)
+        .where(
+            Reservation.reserved_for < cutoff,
+            or_(
+                Reservation.guest_name != "",
+                Reservation.phone != "",
+                Reservation.note.is_not(None),
+            ),
+        )
+        .values(guest_name="", phone="", note=None),
+    )
+    return {
+        "orders": orders,
+        "order_item_notes": item_notes,
+        "reservations": reservations,
+    }
+
+
+def _outbox_payloads(session: Session, now: datetime, periods: Settings) -> int:
+    """A sent payload goes RETENTION_OUTBOX_SENT_DAYS after dispatch, any other
+    at most RETENTION_OUTBOX_UNSENT_DAYS after it was written. An unsent one is
+    marked failed with it: the bridge or n8n must never get a guest-less slip."""
+    thin = func.jsonb_strip_nulls(
+        func.jsonb_build_object(
+            *(
+                arg
+                for key in OUTBOX_KEEP
+                for arg in (cast(key, Text), OutboxEvent.payload[key])
+            )
+        )
+    )
+    sent = _run(
+        session,
+        update(OutboxEvent)
+        .where(
+            OutboxEvent.status == "sent",
+            OutboxEvent.sent_at
+            < now - timedelta(days=periods.retention_outbox_sent_days),
+            OutboxEvent.payload != thin,
+        )
+        .values(payload=thin),
+    )
+    days = periods.retention_outbox_unsent_days
+    unsent = _run(
+        session,
+        update(OutboxEvent)
+        .where(
+            OutboxEvent.status != "sent",
+            OutboxEvent.created_at < now - timedelta(days=days),
+            OutboxEvent.payload != thin,
+        )
+        .values(
+            payload=thin,
+            status="failed",
+            # A failed event keeps the error it failed with.
+            last_error=case(
+                (OutboxEvent.status == "pending", UNSENT_EXPIRED.format(days=days)),
+                else_=OutboxEvent.last_error,
+            ),
+        ),
+    )
+    return sent + unsent
+
+
+if __name__ == "__main__":
+    configure_logging(settings.log_level)
+    with SessionLocal() as session:
+        purge(session, utcnow())
