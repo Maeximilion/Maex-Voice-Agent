@@ -1493,10 +1493,16 @@ def _with_allergy(
     # that names no subject of its own is read from the comma or full stop
     # before its first word, or "er hat eine Nussallergie" would lose the
     # "er" (Codex PR #368).
-    clause = text[tokens[start].start() :]
+    # The clause ends at the first comma or sentence end behind the allergy
+    # word: "er hat eine Nussallergie, ich möchte Besteck dazu" stays his
+    # allergy, the later "ich" is another request (Codex PR #368).
+    word_at, word_end = tokens[named[0]].start(), tokens[named[0]].end()
+    ends = [i for i in (text.find(mark, word_end) for mark in ",.;!?") if i != -1]
+    clause_end = min(ends, default=len(text))
+    clause = text[tokens[start].start() : clause_end]
     if not _CLAUSE_OPENERS & set(_words(clause)):
-        at = tokens[named[0]].start()
-        clause = text[max(text.rfind(mark, 0, at) for mark in ",.;!?") + 1 :]
+        before = max(text.rfind(mark, 0, word_at) for mark in ",.;!?")
+        clause = text[before + 1 : clause_end]
     head = _clean(_drop_trailing_glue(text[: tokens[start].start()]).strip())
     after = _denial(words, named, start)
     if after is not None:

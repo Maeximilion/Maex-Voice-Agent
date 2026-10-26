@@ -565,6 +565,9 @@ class ConversationLoop:
         )
         state.allergy_consent = answer
         if answer == "unclear":
+            # No consent: the restrictions of the dropped draft stay in the
+            # state without their reason, for the draft the model makes again.
+            guards.keep_restrictions(state, held)
             return None
         return ToolCall(name=held["name"], args=held["args"])
 
