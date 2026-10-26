@@ -1,6 +1,11 @@
 # The three names come from .env on the server (AGENT_DOMAIN, N8N_DOMAIN,
 # PUSH_DOMAIN), so going live changes no tracked file. The defaults are
 # placeholders (CLAUDE.md §1).
+#
+# No `log` directive on purpose: Caddy writes no access log, and its own
+# messages go to the container log, which the server keeps 14 days
+# (deploy/journald.conf, T-11.7). An access log, if one is ever needed, goes
+# there too, never to a file (api/tests/test_log_periods.py).
 (transport) {
     # A browser that reached the site once never falls back to plain HTTP,
     # where the shared access of the tablet could be read off the line.
