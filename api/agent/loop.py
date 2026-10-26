@@ -180,7 +180,7 @@ class ConversationLoop:
             # the transfer says what that call was.
             note_intent(state, user_text)
         if reason is not None:
-            handed = self._handoff(
+            escalated = self._handoff(
                 state,
                 SAY_ESCALATION,
                 reason=reason,
@@ -188,13 +188,13 @@ class ConversationLoop:
                 detail=None if answered_offer else user_text,
             )
             if asks:
-                handed.say.insert(0, SAY_NOT_A_PERSON)
-            return handed
+                escalated.say.insert(0, SAY_NOT_A_PERSON)
+            return escalated
         if asks:
-            say = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
-            guards.note_said(state, say)
+            answer = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
+            guards.note_said(state, answer)
             state.team_offered = True
-            return TurnResult(state=state, say=[say])
+            return TurnResult(state=state, say=[answer])
 
         start = guards.begin_turn(state)
         pending_input = user_text
