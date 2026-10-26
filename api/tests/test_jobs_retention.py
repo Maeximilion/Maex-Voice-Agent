@@ -289,6 +289,96 @@ def test_other_words_for_an_allergy_count_as_well(session, tenant_id, note):
     assert _fresh(session, order).note is None
 
 
+def _copy(session, tenant_id, event_type, payload, status="sent"):
+    """The copy confirm writes into the outbox (domain/ordering/confirm.py,
+    domain/confirm.py), sent yesterday evening."""
+    event = OutboxEvent(
+        tenant_id=tenant_id,
+        event_type=event_type,
+        payload=payload,
+        status=status,
+        sent_at=YESTERDAY_EVENING if status == "sent" else None,
+    )
+    session.add(event)
+    session.flush()
+    return event
+
+
+def test_allergy_note_goes_from_the_outbox_copies_the_same_night(session, tenant_id):
+    """Codex PR #371: confirm copies the notes into the outbox payload, where
+    they would stay 7 days after dispatch; L13 says the night after."""
+    order = _order(
+        session, tenant_id, YESTERDAY_EVENING, note=ALLERGY, item_note=ALLERGY
+    )
+    ticket = _copy(
+        session,
+        tenant_id,
+        "order.confirmed",
+        {
+            "order_id": str(order.id),
+            "customer_name": "Mueller",
+            "note": ALLERGY,
+            "items": [
+                {"number": "23", "note": ALLERGY},
+                {"number": "12", "note": "ohne Zwiebeln"},
+            ],
+        },
+        status="pending",
+    )
+    table = _reservation(session, tenant_id, YESTERDAY_EVENING, note="Nussallergie")
+    confirmed = _copy(
+        session,
+        tenant_id,
+        "reservation.confirmed",
+        {
+            "reservation_id": str(table.id),
+            "guest_name": "Mueller",
+            "note": "Nussallergie",
+        },
+    )
+    session.commit()
+
+    counts = purge(session, NOW)
+
+    assert _fresh(session, ticket).payload == {
+        "order_id": str(order.id),
+        "customer_name": "Mueller",
+        "note": None,
+        "items": [
+            {"number": "23", "note": None},
+            {"number": "12", "note": "ohne Zwiebeln"},
+        ],
+    }
+    assert _fresh(session, confirmed).payload == {
+        "reservation_id": str(table.id),
+        "guest_name": "Mueller",
+        "note": None,
+    }
+    # Two notes on the order, the reservation's, and the two copies.
+    assert counts["allergy_notes"] == 5
+    assert set(purge(session, NOW).values()) == {0}
+
+
+def test_outbox_copy_of_a_coming_order_keeps_its_allergy(session, tenant_id):
+    """The kitchen still needs the note of today's order; before 05:00 the
+    copy of yesterday evening's stays as well."""
+    today = _order(session, tenant_id, NOW + timedelta(hours=12), item_note=ALLERGY)
+    copy = {"order_id": str(today.id), "items": [{"number": "23", "note": ALLERGY}]}
+    ticket = _copy(session, tenant_id, "order.confirmed", copy, status="pending")
+    evening = _order(session, tenant_id, YESTERDAY_EVENING, item_note=ALLERGY)
+    late = {"order_id": str(evening.id), "items": [{"number": "23", "note": ALLERGY}]}
+    sent = _copy(session, tenant_id, "order.confirmed", late)
+    session.commit()
+    before_five = datetime(2026, 10, 15, 4, 59, tzinfo=BERLIN).astimezone(UTC)
+
+    purge(session, before_five)
+    assert _fresh(session, sent).payload == late
+
+    purge(session, NOW)
+    assert _fresh(session, ticket).payload == copy
+    assert _fresh(session, sent).payload["items"][0]["note"] is None
+
+
 # --- callbacks: 90 days after the callback is done ----------------------------------
 
 

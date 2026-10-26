@@ -12,6 +12,7 @@ Periods are settings (api/config.py), decided by Maxi with the legal check on
 """
 
 import logging
+import re
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
@@ -56,6 +57,7 @@ OUTBOX_KEEP = ("order_id", "reservation_id", "callback_id", "call_id", "revision
 UNSENT_EXPIRED = "payload removed after {days} days unsent, never sent"
 # The date of an order: the promised time, or its creation for a draft.
 ORDER_DAY = func.coalesce(Order.ready_at, Order.created_at)
+_ALLERGY_RE = re.compile(ALLERGY, re.IGNORECASE)
 
 
 def purge(session: Session, now: datetime) -> dict[str, int]:
@@ -135,17 +137,69 @@ def _allergy_notes(session: Session, now: datetime, days: int) -> int:
             .where(Order.id.in_(orders), Order.note.op("~*")(ALLERGY))
             .values(note=None),
         )
+        tables = select(Reservation.id).where(
+            Reservation.tenant_id == tenant_id, Reservation.reserved_for < cutoff
+        )
         changed += _run(
             session,
             update(Reservation)
-            .where(
-                Reservation.tenant_id == tenant_id,
-                Reservation.reserved_for < cutoff,
-                Reservation.note.op("~*")(ALLERGY),
-            )
+            .where(Reservation.id.in_(tables), Reservation.note.op("~*")(ALLERGY))
             .values(note=None),
         )
+        changed += _outbox_allergy_notes(session, tenant_id, orders, tables)
     return changed
+
+
+def _outbox_allergy_notes(session: Session, tenant_id, orders, tables) -> int:
+    """confirm copies the notes into the outbox payload (`note`, `items[].note`;
+    domain/ordering/confirm.py, domain/confirm.py), where they would stay until
+    the payload is cut days later (Codex PR #371). The copies of the same
+    orders and reservations lose their allergy notes in the same pass; every
+    other key stays until its own period. SKIP LOCKED: an event the bridge or
+    the dispatcher holds right now is caught by the next pass."""
+    events = session.scalars(
+        select(OutboxEvent)
+        .where(
+            OutboxEvent.tenant_id == tenant_id,
+            or_(
+                OutboxEvent.payload["order_id"].astext.in_(
+                    orders.with_only_columns(cast(Order.id, Text))
+                ),
+                OutboxEvent.payload["reservation_id"].astext.in_(
+                    tables.with_only_columns(cast(Reservation.id, Text))
+                ),
+            ),
+            cast(OutboxEvent.payload, Text).op("~*")(ALLERGY),
+        )
+        .with_for_update(skip_locked=True)
+    ).all()
+    changed = 0
+    for event in events:
+        payload = _without_allergy(event.payload)
+        if payload != event.payload:
+            event.payload = payload
+            changed += 1
+    session.flush()
+    return changed
+
+
+def _without_allergy(payload: dict) -> dict:
+    """The payload with every allergy note set to None, the rest as it was."""
+
+    def clean(note: object) -> object:
+        return None if isinstance(note, str) and _ALLERGY_RE.search(note) else note
+
+    out = dict(payload)
+    if "note" in out:
+        out["note"] = clean(out["note"])
+    if isinstance(out.get("items"), list):
+        out["items"] = [
+            {**item, "note": clean(item["note"])}
+            if isinstance(item, dict) and "note" in item
+            else item
+            for item in out["items"]
+        ]
+    return out
 
 
 def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
