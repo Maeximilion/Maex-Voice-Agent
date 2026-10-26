@@ -74,6 +74,9 @@ def test_certainty_after_talk_of_allergies_is_beyond():
         "Ich hätte gern Wantan frittiert.",
         "Einmal die 21, Wan-Tan frittiert, bitte.",
         "Ist was Frittiertes dabei?",
+        # "extra" is more of it, not separate frying (Codex PR #369).
+        "Bitte mit extra Öl.",
+        "Die 21 mit extra Pfanne gebraten.",
     ],
 )
 def test_ordinary_sentences_are_not_beyond(said):

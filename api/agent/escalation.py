@@ -73,7 +73,7 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
 _BEYOND = re.compile(
     r"\bspuren|kontamin|verunreinig|kreuzkontakt|\bin kontakt|\bkontakt mit"
     r"|ber(?:ü|ue)hrung"
-    r"|\b(?:selben|gleichen|derselben|eigenen?|separaten?|getrennten?|extra)"
+    r"|\b(?:selben|gleichen|derselben|eigenen?|separaten?|getrennten?)"
     r" (?:öl|oel|pfanne|fritteuse)"
     r"|\bzusammen\b[^.?!]{0,40}\bfrittier"
 )
