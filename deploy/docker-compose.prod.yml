@@ -6,11 +6,20 @@
 # `ports: []` here would not remove one (Compose merges the lists). Naming the
 # files with -f also keeps docker-compose.override.yml, the dev ports, out.
 # Docker publishes past ufw: a port set here is open whatever the host firewall says.
+# Every container logs to the host's journald, which deploy/journald.conf limits
+# to 14 days (T-11.7, docs/03 "Löschkonzept"). Docker's own drivers limit a log
+# by size and file count only, never by age. `docker compose logs` reads it as
+# before; api/tests/test_log_periods.py checks that no service is left out.
+x-logging: &journald
+  driver: journald
+
 services:
   db:
+    logging: *journald
     restart: always
 
   api:
+    logging: *journald
     restart: always
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
@@ -43,6 +52,7 @@ services:
       - ./docs:/app/docs:ro
 
   dispatcher:
+    logging: *journald
     environment:
       # As for api: .env may still say ENV=dev, and the check of the token
       # in api/config.py asks ENV.
@@ -55,6 +65,7 @@ services:
 
   # The AI telephone, still behind the profile `voice` of the base file.
   voice:
+    logging: *journald
     restart: always
     environment:
       ENV: prod
@@ -70,24 +81,28 @@ services:
     deploy: !reset {}
 
   asterisk:
+    logging: *journald
     restart: always
     # No host port. The media range of rtp.conf is published with the trunk,
     # together with the public media address Asterisk has to announce for it;
     # published without that address it would carry nothing (docs/20 §3, §12).
 
   n8n:
+    logging: *journald
     restart: always
     volumes:
       # The workflow exports are read for the import, never written back here.
       - ./n8n:/workflows:ro
 
   push:
+    logging: *journald
     restart: always
     environment:
       # Caddy stands in front: take the visitor address from its header.
       - NTFY_BEHIND_PROXY=true
 
   caddy:
+    logging: *journald
     # Pinned like n8n and ntfy: a floating tag changes the proxy on the next pull. Dependabot proposes updates.
     image: caddy:2.11.7-alpine
     restart: always
