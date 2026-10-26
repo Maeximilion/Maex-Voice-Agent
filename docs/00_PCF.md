@@ -489,7 +489,8 @@ Status: the redesign decided by Maxi is built on #368 and pushed. The core
         "Wogegen?" and the consent itself while it holds the draft, and writes
         the allergy onto line, order or table; a cart or draft whose note names
         an allergy is refused. with_consent, unread_allergy, keep_restrictions,
-        order_note and table_note are gone. The open P1 4378523387 and every
+        order_note and table_note are gone. The open P1 4378523387, the three
+        Codex P1s on d1ad1e0 (4378680652, 4378680664, 4378680687) and every
         sentence shape of the earlier findings are tests; "Sesam vertrage ich
         auch nicht" (#361) is read. Suite 6180 passed; evals against main case
         by case: cases 54/54 (main 50/50, all of main's pass, 4 new), targets

@@ -32,6 +32,7 @@ from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
+    draft_replaced,
     note_guest_details,
     note_intent,
 )
@@ -416,6 +417,7 @@ class ConversationLoop:
                     "name": turn.tool_call.name,
                     "args": turn.tool_call.args,
                 }
+                draft_replaced(state, turn.tool_call.name)
                 guards.note_said(state, question)
                 return TurnResult(state=state, say=[question])
             if refused is not None:

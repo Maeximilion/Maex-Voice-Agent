@@ -419,6 +419,15 @@ def _as_set(lines: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def draft_replaced(state: ConversationState, name: str) -> None:
+    """A new draft (`name`) waits for a question of the core about the
+    allergy (`loop.py`): the one read out before is no longer what the guest
+    wants, also when the new one never goes out, and a yes must not confirm
+    it (Codex PR #368, P1)."""
+    if state.stage == "readback_pending":
+        _drop_readback(state, name)
+
+
 def order_corrected(state: ConversationState) -> None:
     """Drops the draft that waits for its yes, an order or a reservation. A
     reservation too: the guest who goes on with the order after a table was

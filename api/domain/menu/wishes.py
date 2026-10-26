@@ -1028,6 +1028,12 @@ def mentions_allergy(text: str) -> bool:
     return bool(_allergy_words(_tokens(_clean(text))[1]))
 
 
+def allergies_named(text: str) -> int:
+    """How many allergy words the guest says ("Erdnussallergie, meine Frau
+    eine Sesamallergie": two; "Nuss- und Sesamallergie": one)."""
+    return len(_allergy_words(_tokens(_clean(text))[1]))
+
+
 def denies_allergy(text: str) -> bool:
     """Does the guest only deny an allergy of their own ("ich habe keine
     Allergie", "nicht allergisch")? As `classify_wish` decides without the

@@ -170,6 +170,28 @@ def test_anything_else_is_unclear(said):
             [("Milch, Ei und Nüsse", True)],
         ),
         ("Die 13 bitte, Erdnussallergie", [("Erdnuss", True)]),
+        ("Nuss- und Sesamallergie", [("Nuss und Sesam", True)]),
+        # Codex PR #368, P1 4378680664: each sentence with its own owner.
+        (
+            "Ich habe eine Erdnussallergie. Meine Frau hat eine Sesamallergie.",
+            [("Erdnuss", True), ("Sesam", False)],
+        ),
+        # In one sentence, which is whose is not read: neither keeps the
+        # reason, the safe side for the other adult.
+        (
+            "Ich habe eine Erdnussallergie, meine Frau eine Sesamallergie.",
+            [("Erdnuss und Sesam", False)],
+        ),
+        (
+            "Ich habe eine Erdnussallergie. Sonst keine Allergien.",
+            [("Erdnuss", True)],
+        ),
+        # Codex PR #368, P1 4378680652: the second sentence is not dropped;
+        # not read in full, it is asked about.
+        (
+            "Erdnussallergie. Keine Milch wegen Unverträglichkeit.",
+            [("Erdnuss", True), (None, True)],
+        ),
     ],
 )
 def test_the_core_reads_the_allergy_and_whose_it_is(session, state, said, noted):
@@ -194,6 +216,8 @@ def test_the_core_reads_the_allergy_and_whose_it_is(session, state, said, noted)
         "Pho Bo und Sommerrollen, Erdnussallergie",
         "Tisch für vier auf Müller, Erdnussallergie",
         "Milch, Ei und Nussallergie",
+        # A sentence without an allergy word carries the list on.
+        "Erdnussallergie. Und gegen Sesam.",
     ],
 )
 def test_an_allergy_not_read_in_full_waits_for_wogegen(session, state, said):
@@ -734,3 +758,39 @@ def test_a_request_next_to_the_human_question_puts_the_question_again(session, s
 
     assert said == [SAY_NOT_A_PERSON, ALLERGY_QUESTION]
     assert state.held_call is not None
+
+
+def test_a_held_replacement_takes_back_the_draft_read_out_before(session, state):
+    """Codex PR #368, P1 4378680687: draft A waits for its yes, the guest adds
+    an allergy, and the model's new draft waits for the consent question. A
+    is no longer what the guest wants: it is dropped at once, so after an
+    unclear answer no yes can confirm it without the restriction."""
+    turn(session, state, TABLE, LLMTurn(tool_call=table()), LLMTurn(say="Passt das?"))
+    [first] = reservations(session)
+    assert state.stage == "readback_pending" and state.reservation_id == first.id
+
+    said = turn(
+        session,
+        state,
+        "Ich habe übrigens eine Erdnussallergie.",
+        LLMTurn(tool_call=table()),
+    )
+
+    assert said == [ALLERGY_QUESTION]
+    assert state.stage == "collecting"
+    assert state.reservation_id is None
+    assert state.readback is None
+
+    turn(session, state, "Wie bitte?", LLMTurn(say="Passt das so?"))
+    said = turn(
+        session,
+        state,
+        "Ja.",
+        LLMTurn(
+            tool_call=ToolCall(
+                "confirm", {"entity": "reservation", "entity_id": str(first.id)}
+            )
+        ),
+        LLMTurn(say="Gern."),
+    )
+    assert [r.status for r in reservations(session)] == ["draft"]

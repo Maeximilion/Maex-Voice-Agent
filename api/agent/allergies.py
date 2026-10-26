@@ -27,9 +27,11 @@ from api.domain.menu.numberwords import CardFormat, canonical_card
 from api.domain.menu.search import SAY_ALLERGY_WHICH
 from api.domain.menu.wishes import (
     ALLERGY_NOTE,
+    allergies_named,
     classify_wish,
     mentions_allergy,
     names_an_order,
+    of_another_adult,
     only_denies,
     which_answer,
     wish_candidates,
@@ -42,6 +44,7 @@ NOTED = frozenset({"draft_order", "create_reservation"})
 # The question for the ingredient as the search, the stand-in or the core puts
 # it, at the end of what the guest heard last ("Gern, Nummer 13 Pho Bo.
 # Wogegen sind Sie allergisch?", "Wogegen sind Sie bei Pho Bo allergisch?").
+_SENTENCE = re.compile(r"(?<=[.;!?])\s+")
 _ASKED_WHICH = re.compile(r"Wogegen sind Sie(?: bei (?P<dish>.+?))? allergisch\?\s*$")
 
 
@@ -59,9 +62,24 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
         return
     if not mentions_allergy(text):
         return
-    wish = _read(text)
-    if wish is not None:
-        _add(state, Allergy(ingredient=wish.ingredient, own=not wish.another_adult))
+    whole = _read(text)
+    said = [part for part in _SENTENCE.split(text) if mentions_allergy(part)]
+    readings = [whole]
+    if len(said) > 1:
+        # Each sentence on its own, with its own owner: read whole, the
+        # parser takes the first allergy's owner and phrase for all of them
+        # ("Ich habe eine Erdnussallergie. Meine Frau hat eine Sesamallergie",
+        # "Erdnussallergie. Keine Milch wegen Unverträglichkeit"; Codex PR
+        # #368, P1). What the whole leaves unread is still asked about: a
+        # sentence without an allergy word may carry the list on ("Und gegen
+        # Sesam").
+        readings = [_read(part) for part in said]
+        if whole is not None and whole.ingredient is None:
+            others = any(r is not None and r.another_adult for r in readings)
+            readings.append(whole.model_copy(update={"another_adult": others}))
+    for wish in readings:
+        if wish is not None:
+            _add(state, Allergy(ingredient=wish.ingredient, own=not wish.another_adult))
 
 
 def _read(text: str) -> Wish | None:
@@ -77,11 +95,26 @@ def _read(text: str) -> Wish | None:
     whole = classify_wish(text, [])
     if whole is None or whole.kind != "allergy":
         return None
+    if allergies_named(text) > 1 and of_another_adult(text):
+        # Two allergies in one sentence, one of them another adult's ("Ich
+        # habe eine Erdnussallergie, meine Frau eine Sesamallergie"): which
+        # one is whose is not read, so neither carries the reason (Codex PR
+        # #368, P1), the safe side for the other adult.
+        whole = whole.model_copy(update={"another_adult": True})
     if whole.ingredient is None:
         # A dish in front keeps a denial from counting when read whole:
         # "Pho Bo, ich habe keine Allergie" would ask "Wogegen?".
         return None if only_denies(text) else whole
-    said = next((w for _, w, _ in wish_candidates(text) if mentions_allergy(w)), None)
+    # A part that ends in a hyphen carries a list on, no dish is called so
+    # ("Nuss- und Sesamallergie").
+    said = next(
+        (
+            wish
+            for dish, wish, _ in wish_candidates(text)
+            if mentions_allergy(wish) and not dish.endswith("-")
+        ),
+        None,
+    )
     behind = classify_wish(said, []) if said is not None else None
     if behind is None or behind.ingredient in (None, whole.ingredient):
         # Nothing behind the dish to compare with: a list cut in two ("Ich
