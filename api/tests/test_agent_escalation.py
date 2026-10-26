@@ -2,7 +2,7 @@
 
 import pytest
 
-from api.agent.escalation import check, without_human_question
+from api.agent.escalation import asks_more, check, without_human_question
 
 
 def test_beschwerde_wird_erkannt():
@@ -54,6 +54,15 @@ def test_leerer_text_loest_nichts_aus():
         "Sind Sie eine künstliche Intelligenz?",
         "Sind Sie ein Mensch oder eine Maschine?",
         "Ist das ein Chatbot? Ich wollte bestellen.",
+        # Ultrareview of PR #372: phrasings the first list missed.
+        "Sind Sie überhaupt ein Mensch?",
+        "Sind Sie tatsächlich ein Mensch?",
+        "Ist da ein Mensch?",
+        "Ist hier ein Mensch dran?",
+        "Bin ich bei einem Roboter?",
+        "Sind Sie eine K.I.?",
+        "Sie sind ein Roboter, oder?",
+        "Du bist doch eine Maschine?",
     ],
 )
 def test_the_question_for_a_human_is_recognised(text):
@@ -96,3 +105,32 @@ def test_what_else_the_sentence_says_is_left_for_check():
     assert check(rest) == "human_requested"
 
     assert check(without_human_question("Spreche ich mit einem Menschen?")) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Spreche ich mit einer Maschine oder mit einem Menschen?",
+        "Spreche ich hier mit einem Roboter oder mit einem Menschen?",
+        "Bin ich mit einem Computer oder mit einem Menschen verbunden?",
+    ],
+)
+def test_both_halves_of_an_either_or_question_are_the_question(text):
+    """Ultrareview of PR #372: the half after "oder" holds the words of the
+    wish ("mit einem Menschen") and is still the question."""
+    assert check(without_human_question(text)) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "more"),
+    [
+        ("Sind Sie ein Mensch?", False),
+        ("Hallo, sagen Sie mal, sind Sie ein Mensch?", False),
+        ("Guten Tag, ist das ein Roboter? Ehrlich jetzt?", False),
+        ("Sind Sie ein Roboter? Ich möchte einen Tisch für vier.", True),
+        ("Ist das ein Computer? Morgen um 19 Uhr bitte.", True),
+        ("Sind Sie ein Mensch? 2 mal die 13", True),
+    ],
+)
+def test_asks_more_tells_a_request_from_greeting_words(text, more):
+    assert asks_more(without_human_question(text)) is more

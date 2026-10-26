@@ -1055,6 +1055,28 @@ def test_a_yes_to_a_later_sentence_is_no_yes_to_the_offer(session, state):
     assert state.stage != "transferred"
 
 
+def test_a_request_next_to_the_question_goes_to_the_model_after_the_truth(
+    session, state
+):
+    """Ultrareview of PR #372: the answer alone dropped the rest of the
+    sentence, and the guest had to say the table again. The truthful sentence
+    comes first, then the model answers the request; no offer of the team
+    then, the guest has said what they want."""
+    llm = FakeLLM([LLMTurn(say="Gern, auf welchen Namen?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    text = (
+        "Hallo, sind Sie ein Roboter? Ich möchte einen Tisch für vier morgen um 19 Uhr."
+    )
+
+    result = loop.run_turn(state, text)
+
+    assert result.say == [SAY_NOT_A_PERSON, "Gern, auf welchen Namen?"]
+    assert result.ended is False
+    [(_, _, heard)] = llm.calls
+    assert heard == text
+    assert state.last_say == "Gern, auf welchen Namen?"
+
+
 def test_the_question_keeps_no_call_open_past_its_limit(session, state):
     """Codex PR #372, P1: the answer came before the call limit was checked,
     so a guest asking again and again kept the call open for good."""

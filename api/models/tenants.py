@@ -72,7 +72,7 @@ class ServiceConfig(Timestamps, Base):
             name="ck_service_config_order_approval_overdue_minutes",
         ),
         CheckConstraint(
-            "btrim(privacy_notice_address) <> ''",
+            r"privacy_notice_address ~ '\S'",
             name="ck_service_config_privacy_notice_address",
         ),
     )

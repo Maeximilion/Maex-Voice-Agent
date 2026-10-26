@@ -200,10 +200,23 @@ class ConversationLoop:
             if asks:
                 escalated.say.insert(0, SAY_NOT_A_PERSON)
             return escalated
-        if asks:
+        if rest is not None and not escalation.asks_more(rest):
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
+        result = self._converse(state, user_text, turn_started)
+        if asks:
+            # A request next to the question ("Sind Sie ein Roboter? Ich
+            # möchte einen Tisch ..."): the truthful sentence first, then the
+            # model's answer to the request; the guest has said what they
+            # want, so no offer of the team (ultrareview of PR #372).
+            result.say.insert(0, SAY_NOT_A_PERSON)
+        return result
 
+    def _converse(
+        self, state: ConversationState, user_text: str, turn_started: float | None
+    ) -> TurnResult:
+        """The model's part of a guest turn: model calls and tools until a
+        sentence for the guest, a handoff or a limit."""
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,

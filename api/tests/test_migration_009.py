@@ -47,9 +47,10 @@ def test_upgrade_leaves_an_existing_tenant_without_an_address(scratch_db_url):
         engine.dispose()
 
 
-@pytest.mark.parametrize("blank", ["", "   "])
+@pytest.mark.parametrize("blank", ["", "   ", "\n", "\t", " \r\n "])
 def test_a_blank_address_is_refused_and_a_real_one_is_kept(scratch_db_url, blank):
-    """A blank one would make the greeting say "finden Sie unter ."."""
+    """A blank one would make the greeting say "finden Sie unter ."; a line
+    break or a tab is as blank as a space (ultrareview of PR #372)."""
     command.upgrade(_config(scratch_db_url), "009")
     engine = create_engine(scratch_db_url)
     insert = text(

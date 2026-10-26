@@ -10,7 +10,8 @@ rule 1): `privacy_notice_address`, written the way the caller should hear it
 Empty (NULL) on every existing row: no address is invented. Without one the
 greeting leaves the sentence out (`telephony/handler.py`), and the duty of L4
 stays open until the restaurant's notice is online and its address is set
-here. A blank text is refused, it would be read out as "unter .".
+here. A blank text, white space only, is refused: it would be read out as
+"unter .".
 
 On a database that holds a restaurant's data: backup first, with
 `bash scripts/backup.sh --label before_migration_009` (CLAUDE.md §8, docs/13
@@ -38,7 +39,9 @@ CHECK = f"ck_service_config_{COLUMN}"
 
 def upgrade() -> None:
     op.add_column("service_config", sa.Column(COLUMN, sa.Text(), nullable=True))
-    op.create_check_constraint(CHECK, "service_config", f"btrim({COLUMN}) <> ''")
+    # Something besides white space: a line break or a tab is as blank as a
+    # space, and btrim() only strips spaces.
+    op.create_check_constraint(CHECK, "service_config", rf"{COLUMN} ~ '\S'")
 
 
 def downgrade() -> None:

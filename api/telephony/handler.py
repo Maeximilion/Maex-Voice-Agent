@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 
 from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient, cost_cents
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_HUMAN_ANSWER, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import ConversationState, initial_state
@@ -364,8 +364,12 @@ class CallHandler:
         # are that number, and a dish that was named may enter the order. Such
         # a sentence is played to the end, or the guest would be measured
         # against words they talked over (Codex PR #286).
+        # So is the answer to "Sind Sie ein Mensch?": a yes to the offer in it
+        # hands the call over (agent/loop.py, ultrareview of PR #372).
         counted_as_heard = (
-            live.state.asked_for_phone or live.state.known_item_ids != known
+            live.state.asked_for_phone
+            or live.state.known_item_ids != known
+            or live.state.last_say == SAY_HUMAN_ANSWER
         )
         interruptible = (
             not ending
@@ -588,7 +592,7 @@ class CallHandler:
 def greeting(routing: CallRouting) -> str:
     """The first sentence of a call the AI answers: the AI notice, and where the
     privacy notice is once the restaurant has set it (docs/09 L1, L4)."""
-    address = routing.privacy_notice_address
+    address = (routing.privacy_notice_address or "").strip()
     privacy = PRIVACY_POINTER.format(address=address) if address else ""
     return GREETING.format(name=routing.tenant_name, privacy=privacy)
 

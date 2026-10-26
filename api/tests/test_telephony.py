@@ -374,6 +374,22 @@ def test_the_greeting_names_where_the_privacy_notice_is(session, tenant):
     ]
 
 
+def test_spaces_around_the_address_are_not_read_out(session, tenant):
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(privacy_notice_address=" testbetrieb.example/datenschutz\n")
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert "unter testbetrieb.example/datenschutz. Was" in port.says("s-1")[0]
+
+
 def test_without_an_address_the_greeting_leaves_the_pointer_out(session, tenant):
     port = FakeTelephony()
     handler = handler_for(session, tenant, port)
@@ -431,6 +447,21 @@ def test_a_yes_to_are_you_still_there_does_not_take_the_offer_of_the_team(
     assert port.says("s-1")[2] == STILL_THERE[0]
     assert port.says("s-1")[-1] == "Wie kann ich helfen?"
     assert not port.transfers("s-1")
+
+
+def test_the_answer_to_the_question_for_a_human_is_played_to_the_end(session, tenant):
+    """Ultrareview of PR #372: the core counts the offer of the team as heard
+    (`last_say`), so the guest's talk over it must not cut it off; a yes to an
+    offer they never heard would hand the call over."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: NoLLM())
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_user_turn("s-1", "Sind Sie ein Mensch?")
+
+    assert "kein Mensch" in port.says("s-1")[1]
+    assert port.interruptible("s-1") == []
 
 
 def test_repeated_start_event_greets_once_and_logs_one_call(session, tenant):
