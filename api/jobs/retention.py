@@ -88,9 +88,9 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             session,
             update(Callback)
             .where(
-                # Only "done" sets done_at (domain/callbacks/board.py); an open
-                # callback is still the team's to call back.
-                Callback.done_at
+                # From "done"; a callback never done from its creation
+                # (Maxi, 26.10.2026): nobody calls back after the period.
+                func.coalesce(Callback.done_at, Callback.created_at)
                 < now - timedelta(days=settings.retention_callback_days),
                 or_(Callback.phone != "", Callback.summary != ""),
             )

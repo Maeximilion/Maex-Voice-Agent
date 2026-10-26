@@ -385,17 +385,42 @@ def test_outbox_copy_of_a_coming_order_keeps_its_allergy(session, tenant_id):
 
 def test_callback_loses_phone_and_summary_90_days_after_done(session, tenant_id):
     old = _callback(session, tenant_id, done_at=NOW - 91 * DAY)
+    old.created_at = NOW - 95 * DAY
     young = _callback(session, tenant_id, done_at=NOW - 89 * DAY)
-    still_open = _callback(session, tenant_id, status="open")
-    still_open.created_at = NOW - 200 * DAY
+    young.created_at = NOW - 120 * DAY
     session.commit()
 
     counts = purge(session, NOW)
 
     old = _fresh(session, old)
     assert (old.phone, old.summary, old.reason) == ("", "", "human_requested")
+    # Done 89 days ago: the period counts from "done", not from the creation.
     assert _fresh(session, young).phone == "+497215551234"
-    assert _fresh(session, still_open).summary == "Moechte den Chef sprechen"
+    assert counts["callbacks"] == 1
+
+
+def test_open_callback_loses_phone_and_summary_90_days_after_creation(
+    session, tenant_id
+):
+    """Ultrareview PR #371, decided by Maxi on 26.10.2026 (option A): a
+    callback the team never marked done keeps nothing past 90 days; nobody
+    calls back after three months. The card stays open with its reason."""
+    old = _callback(session, tenant_id, status="open")
+    old.created_at = NOW - 91 * DAY
+    young = _callback(session, tenant_id, status="open")
+    young.created_at = NOW - 89 * DAY
+    session.commit()
+
+    counts = purge(session, NOW)
+
+    old = _fresh(session, old)
+    assert (old.phone, old.summary, old.status, old.reason) == (
+        "",
+        "",
+        "open",
+        "human_requested",
+    )
+    assert _fresh(session, young).summary == "Moechte den Chef sprechen"
     assert counts["callbacks"] == 1
 
 
@@ -549,6 +574,7 @@ def test_a_period_beyond_ten_years_is_refused(name):
 def test_one_failing_period_does_not_stop_the_others(session, tenant_id, caplog):
     """Ultrareview PR #371: a tenant time zone Python does not know broke the
     allergy step, the first, and with it every deletion of the pass."""
+    caplog.set_level(logging.INFO, logger="api.jobs.retention")
     call = _call(session, tenant_id, started_at=NOW - 91 * DAY)
     order = _order(session, tenant_id, YESTERDAY_EVENING, note=ALLERGY)
     session.execute(
