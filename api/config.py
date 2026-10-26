@@ -129,6 +129,10 @@ class Settings(BaseSettings):
     # A caller's allergy note goes this many business days after the one of the
     # order or reservation; 0 is the night after (L13).
     retention_allergy_note_days: int = Field(default=0, ge=0, le=MAX_RETENTION_DAYS)
+    # An answer to a consent question goes at the end of this many calendar
+    # years after the year it was given (Maxi, 26.10.2026): the proof of a
+    # stored allergy note for as long as a claim can arise (§§ 195, 199 BGB).
+    retention_consent_log_years: int = Field(default=3, ge=1, le=10)
     # How often the dispatcher process runs the job. Each pass only does what is
     # due, so a restart or a missed pass is caught up by the next one.
     retention_interval_seconds: float = Field(default=3600.0, gt=0, le=86400)

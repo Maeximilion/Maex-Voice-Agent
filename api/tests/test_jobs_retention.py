@@ -16,6 +16,7 @@ from api.models import (
     AuditLog,
     Call,
     Callback,
+    ConsentLog,
     Order,
     OrderItem,
     OutboxEvent,
@@ -502,6 +503,85 @@ def test_audit_entries_go_after_12_months(session, tenant_id):
     assert counts["audit_entries"] == 1
 
 
+# --- consent_log: end of the third calendar year after the answer --------------------
+
+
+def _consent(session, tenant_id, answered_at, answer="yes") -> ConsentLog:
+    row = ConsentLog(
+        tenant_id=tenant_id,
+        call_id=_call(session, tenant_id).id,
+        question="Darf ich die Allergie als Hinweis für die Küche notieren?",
+        answer=answer,
+        answered_at=answered_at,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _berlin(
+    year: int, month: int, day: int, hour: int = 0, minute: int = 0
+) -> datetime:
+    return datetime(year, month, day, hour, minute, tzinfo=BERLIN).astimezone(UTC)
+
+
+def test_consent_answer_goes_at_the_end_of_the_third_year_after(session, tenant_id):
+    """Maxi, 26.10.2026: an answer from 2026 stays through 31.12.2029 and goes
+    on 01.01.2030, the proof of a stored note for as long as a claim can arise
+    (§§ 195, 199 BGB)."""
+    old = _consent(session, tenant_id, _berlin(2026, 6, 1, 18, 0))
+    young = _consent(session, tenant_id, _berlin(2027, 3, 1, 12, 0), answer="no")
+    old_id, young_id = old.id, young.id
+    session.commit()
+
+    counts = purge(session, _berlin(2029, 12, 31, 23, 59))
+    assert session.get(ConsentLog, old_id) is not None
+    assert counts["consent_answers"] == 0
+
+    counts = purge(session, _berlin(2030, 1, 1, 0, 1))
+    session.expire_all()
+    assert session.get(ConsentLog, old_id) is None
+    assert session.get(ConsentLog, young_id) is not None
+    assert counts["consent_answers"] == 1
+
+
+def test_the_year_of_an_answer_is_the_restaurants_not_utc(session, tenant_id):
+    """00:30 on New Year's Day in Berlin is still the old year in UTC: the
+    answer belongs to the new year and stays a year longer."""
+    late = _consent(session, tenant_id, _berlin(2026, 12, 31, 23, 30))
+    early = _consent(session, tenant_id, _berlin(2027, 1, 1, 0, 30))
+    assert early.answered_at.astimezone(UTC).year == 2026
+    late_id, early_id = late.id, early.id
+    session.commit()
+
+    purge(session, _berlin(2030, 1, 1, 6, 0))
+
+    session.expire_all()
+    assert session.get(ConsentLog, late_id) is None
+    assert session.get(ConsentLog, early_id) is not None
+
+
+def test_consent_years_come_from_the_setting(session, tenant_id, monkeypatch):
+    row = _consent(session, tenant_id, _berlin(2028, 5, 1, 12, 0))
+    row_id = row.id
+    session.commit()
+    monkeypatch.setattr(settings, "retention_consent_log_years", 1)
+
+    purge(session, _berlin(2030, 1, 1, 6, 0))
+
+    session.expire_all()
+    assert session.get(ConsentLog, row_id) is None
+
+
+@pytest.mark.parametrize("years", [0, 11])
+def test_consent_years_are_bounded(years):
+    """0 would delete the proof of tonight's notes; past ten years the
+    period has no reason left."""
+    with pytest.raises(ValidationError):
+        Settings(retention_consent_log_years=years)
+    Settings(retention_consent_log_years=10)
+
+
 # --- the run as a whole -------------------------------------------------------------
 
 
@@ -589,9 +669,9 @@ def test_one_failing_period_does_not_stop_the_others(session, tenant_id, caplog)
     assert "allergy_notes" not in counts
     assert counts["caller_ids"] == 1
     failed = [r for r in caplog.records if r.getMessage() == "Retention step failed"]
-    assert [r.extra["step"] for r in failed] == ["allergy_notes"]
+    assert [r.extra["step"] for r in failed] == ["allergy_notes", "consent_answers"]
     passes = [r for r in caplog.records if r.getMessage() == "Retention pass"]
-    assert passes[-1].extra["failed"] == ["allergy_notes"]
+    assert passes[-1].extra["failed"] == ["allergy_notes", "consent_answers"]
 
 
 def test_cold_path_runs_the_job_in_its_own_loop(migrated_db_url, session, tenant_id):
