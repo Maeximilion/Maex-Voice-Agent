@@ -167,7 +167,14 @@ class ConversationLoop:
         note_guest_details(state, user_text)
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
+        noted = list(state.allergies)
         allergies.note_allergies(self._session, state, user_text)
+        if state.allergies != noted:
+            # The draft read out before does not carry what the guest just
+            # said: a yes must not confirm it (Codex PR #368, P1).
+            draft_replaced(
+                state, "create_reservation" if state.reservation_id else "draft_order"
+            )
         # The answer to a question of the core about the allergy, the consent
         # logged also when this sentence goes to the team (L13): the draft
         # that waited for it goes first, before the model is asked.

@@ -213,7 +213,12 @@ def answered(state: ConversationState, text: str) -> bool:
 
 
 def _add(state: ConversationState, allergy: Allergy) -> None:
-    if allergy not in state.allergies:
+    """Notes `allergy` once: said again, with or without its dish, it is the
+    same restriction, and the draft that carries it stays (`loop.py`)."""
+    said = (allergy.ingredient or "").casefold(), allergy.own
+    if allergy.ingredient is None or all(
+        ((a.ingredient or "").casefold(), a.own) != said for a in state.allergies
+    ):
         state.allergies.append(allergy)
 
 

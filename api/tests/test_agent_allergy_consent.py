@@ -914,3 +914,56 @@ def test_two_open_allergies_are_asked_for_with_their_dish():
     assert allergies.question(state) == "Wogegen sind Sie bei Pho Bo allergisch?"
     state.allergies[0].ingredient = "Erdnuss"
     assert allergies.question(state) == SAY_ALLERGY_WHICH
+
+
+def test_an_allergy_said_after_the_read_back_takes_the_draft_back(session, state):
+    """Codex PR #368, P1 4379960053: draft A was read out, then the guest
+    names an allergy. A does not carry it: it is dropped at once, so a model
+    that only repeats A's read-back cannot have it confirmed."""
+    turn(session, state, TABLE, LLMTurn(tool_call=table()), LLMTurn(say="Passt das?"))
+    [first] = reservations(session)
+    read_back = state.readback
+    guards.note_said(state, read_back)
+
+    turn(
+        session,
+        state,
+        "Ich habe übrigens eine Erdnussallergie.",
+        LLMTurn(say=read_back),
+    )
+
+    assert state.stage == "collecting"
+    assert state.reservation_id is None
+    turn(
+        session,
+        state,
+        "Ja.",
+        LLMTurn(
+            tool_call=ToolCall(
+                "confirm", {"entity": "reservation", "entity_id": str(first.id)}
+            )
+        ),
+        LLMTurn(say="Einen Moment."),
+    )
+    assert [r.status for r in reservations(session)] == ["draft"]
+
+
+def test_an_allergy_said_again_keeps_the_draft_that_carries_it(session, state):
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+    turn(session, state, "Ja.")
+    assert state.stage == "readback_pending"
+
+    turn(
+        session,
+        state,
+        "Wie gesagt, ich habe eine Erdnussallergie.",
+        LLMTurn(say=state.readback),
+    )
+
+    assert state.stage == "readback_pending"
+    assert len(state.allergies) == 1
