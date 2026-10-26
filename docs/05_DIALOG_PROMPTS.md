@@ -126,6 +126,15 @@ sofort → transfer_to_team
 ```
 Kein Beschwichtigen, kein Ausfragen, keine Zusagen. Der Agent nimmt auf und gibt ab.
 
+### "Sind Sie ein Mensch?"
+```text
+question for a human alone → fixed sentence of the core, no model call: "Ich bin ein KI-Assistent, kein Mensch. Möchten Sie lieber mit jemandem aus dem Team sprechen?"
+   yes in the next sentence → transfer_to_team (human_requested)
+   anything else            → the call goes on, the model sees the offer in last_say
+question with a request   → "Ich bin ein KI-Assistent, kein Mensch." and the model's answer to the request, no offer
+```
+The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v2.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
+
 ### Allergie
 ```text
 get_item_details mit allergen_question: true
@@ -438,9 +447,12 @@ model learns of the rule from the hint of a refused call.
 ## 6. Ansagetexte (Entwurf, C1 prüft rechtlich)
 
 **Begrüßung**
-> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Was kann ich für Sie tun?"
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Hinweise zum Datenschutz finden Sie unter example.com/datenschutz. Was kann ich für Sie tun?"
 
-On the phone the code says this sentence before the first turn (`telephony/handler.py`, name from `tenants.name`), so the disclosure never depends on the model. The state then carries `greeted: true`, and the model does not greet a second time (T-1.13).
+On the phone the code says this sentence before the first turn (`telephony/handler.py`, name from `tenants.name`), so the disclosure never depends on the model. The state then carries `greeted: true`, and the model does not greet a second time (T-1.13). The middle sentence names where the full privacy notice is (docs/09 §1 L4, T-11.5): the address comes from `service_config.privacy_notice_address`, never from the code; `example.com/datenschutz` is the repository placeholder. While the field is empty the greeting leaves that sentence out. The text phone and the evals keep the model's own first sentence.
+
+**Answer to „Sind Sie ein Mensch?"** (`agent/loop.py` `SAY_NOT_A_PERSON`, `SAY_TEAM_OFFER`, draft; §3)
+> „Ich bin ein KI-Assistent, kein Mensch. Möchten Sie lieber mit jemandem aus dem Team sprechen?"
 
 **Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
 > „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"

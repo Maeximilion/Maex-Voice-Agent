@@ -256,6 +256,11 @@ def test_check_reports_a_stale_asset(
     for name in (*ra.PNGS, ra.PNG_SOURCES):
         (tmp_path / name).write_bytes((real / name).read_bytes())
     monkeypatch.setattr(ra, "ASSETS", tmp_path)
+    # A copy: `render` rewrites the README's regions, and the checkout's own
+    # file is no test's to change (it rewrote "As of" in a worktree run).
+    readme = tmp_path / "README.md"
+    readme.write_bytes(ra.README.read_bytes())
+    monkeypatch.setattr(ra, "README", readme)
     assert ra.render() == 0
     assert ra.render(check=True) == 0
     (tmp_path / "progress.svg").write_text("<svg/>", encoding="utf-8")

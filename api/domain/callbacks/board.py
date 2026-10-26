@@ -81,7 +81,11 @@ def open_change_token(session: Session, tenant_id: uuid.UUID) -> str:
     ORM, ein rohes UPDATE in der Datenbank bliebe sonst auf den Tablets
     unsichtbar (Befund Codex PR #111 an der Kopfzeile).
     """
-    ids = cast(Callback.id, Text)
+    # The id, and whether the deletion job emptied the card (T-11.2): it clears
+    # number and summary without changing the set of ids (Codex PR #371).
+    ids = func.concat(
+        cast(Callback.id, Text), case((Callback.phone == "", ":gone"), else_="")
+    )
     count, digest = session.execute(
         select(
             func.count(Callback.id),

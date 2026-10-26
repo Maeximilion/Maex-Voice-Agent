@@ -76,3 +76,15 @@ def test_routing_carries_the_tenants_call_limit(session, tenant):
     set_config(session, tenant.id, max_call_seconds=30)
 
     assert call_routing(session, tenant.id).max_call_seconds == 30
+
+
+def test_routing_carries_where_the_privacy_notice_is(session, tenant):
+    """The greeting names it (docs/09 L4); None until the restaurant sets it."""
+    assert call_routing(session, tenant.id).privacy_notice_address is None
+
+    set_config(session, tenant.id, privacy_notice_address="example.com/datenschutz")
+
+    assert (
+        call_routing(session, tenant.id).privacy_notice_address
+        == "example.com/datenschutz"
+    )

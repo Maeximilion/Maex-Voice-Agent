@@ -25,6 +25,7 @@ from evals.judge import (
     judge,
     observe,
     offered_alternatives,
+    unsaid,
 )
 from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
@@ -324,6 +325,21 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"readback": None},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"said": "kein Mensch"},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"said": []},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"said": ["kein Mensch", " "]},
         },
     ],
 )
@@ -1512,6 +1528,32 @@ def test_readback_piece_is_checked_against_what_the_caller_heard(
         "said": True,
         "other": False,
         "none": False,
+    }, report.to_markdown()
+
+
+# --- What the caller must hear (expected.said) ---------------------------------
+
+
+def test_unsaid_names_the_pieces_no_turn_said():
+    turns = [_turn("Guten Tag."), _turn("Ich bin ein KI-Assistent, kein Mensch.")]
+    assert unsaid(["kein Mensch", "Guten Tag"], turns) == []
+    assert unsaid(["kein Mensch", "aus dem Team"], turns) == ["aus dem Team"]
+    assert unsaid(["kein Mensch"], []) == ["kein Mensch"]
+
+
+def test_said_pieces_are_checked_against_the_whole_call(migrated_db_url, tmp_path):
+    """The core's answer to the question for a human is heard; a piece nobody
+    said is red."""
+    question = ["Sind Sie ein Mensch?", "Nein danke."]
+    cases = write_cases(
+        tmp_path / "c",
+        fall("heard", question, {"said": ["kein Mensch", "aus dem Team"]}),
+        fall("never", ["Hallo."], {"said": ["kein Mensch"]}),
+    )
+    report = run(migrated_db_url, cases, tmp_path / "r")
+    assert {c.id: c.passed for c in report.cases} == {
+        "heard": True,
+        "never": False,
     }, report.to_markdown()
 
 

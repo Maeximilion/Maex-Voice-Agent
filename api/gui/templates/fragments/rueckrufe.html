@@ -16,6 +16,7 @@
       <span class="when"><span class="muted">Annahme</span> <b class="time">{{ c.time }}</b></span>
       <span class="badge {{ c.tone }}">{{ c.label }}</span>
     </div>
+    {% if c.phone %}
     <div class="phone">{{ c.phone }}</div>
     {# The guest named this number; the line does not back it (#252). #}
     {% if c.number_note %}
@@ -24,9 +25,13 @@
       {% if c.caller_id %}<span class="muted">Anruf kam von {{ c.caller_id }}</span>{% endif %}
     </div>
     {% endif %}
-    <p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>
+    {% else %}
+    {# The deletion job took number and summary of a callback never done (T-11.2). #}
+    <div class="muted">Nummer nach der L&ouml;schfrist entfernt</div>
+    {% endif %}
+    {% if c.summary %}<p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>{% endif %}
     <div class="cb-actions">
-      <a class="button" href="tel:{{ c.phone }}">Anrufen</a>
+      {% if c.phone %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
       {# Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6). #}
       <button class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/erledigt"
               hx-target="#rueckrufe-liste" hx-swap="innerHTML">Erledigt</button>

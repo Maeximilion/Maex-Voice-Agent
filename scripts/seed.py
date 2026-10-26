@@ -53,6 +53,8 @@ def seed(session: Session, tenant_name: str, timezone: str) -> SeedResult:
                 call_mode="shadow",
                 team_phone=settings.team_phone,
                 max_call_seconds=settings.max_call_seconds,
+                # Blank means none: the column refuses a blank text.
+                privacy_notice_address=settings.privacy_notice_address.strip() or None,
             )
         )
 
