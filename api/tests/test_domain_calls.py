@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import InvalidInput, NotFound
 from api.domain.calls import end_call, start_call
 from api.domain.calls.start import _delete_after
@@ -52,7 +53,7 @@ def test_anruf_beginnt_mit_normalisierter_nummer_und_loeschfrist(session, tenant
     assert call.caller_id == "+497215551234"
     assert call.started_at == NOW
     assert call.ended_at is None
-    assert call.delete_after == date(2028, 9, 15)
+    assert call.delete_after == date(2026, 12, 14)
 
 
 def test_unterdrueckte_nummer_bleibt_null(session, tenant_id):
@@ -223,17 +224,19 @@ def test_anruf_eines_anderen_mandanten_ist_not_found(session, tenant_id):
 @pytest.mark.parametrize(
     ("start_date", "expected"),
     [
-        (date(2026, 9, 15), date(2028, 9, 15)),
-        (date(2026, 1, 31), date(2028, 1, 31)),
-        (date(2026, 12, 31), date(2028, 12, 31)),
-        # Schaltjahr-Rand: 24 Monate nach dem 29. Februar 2028 gibt es keinen 29.
-        # Februar 2030, der Tag wird auf den letzten Tag des Zielmonats begrenzt.
-        (date(2028, 2, 29), date(2030, 2, 28)),
+        (date(2026, 9, 15), date(2026, 12, 14)),
+        # Across the turn of the year and a leap day: plain days, no month rule.
+        (date(2026, 12, 31), date(2027, 3, 31)),
+        (date(2028, 2, 29), date(2028, 5, 29)),
     ],
 )
-def test_loeschfrist_24_monate_mit_tagesbegrenzung(start_date, expected):
-    result = _delete_after(
-        datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
-    )
+def test_caller_number_period_is_90_days_from_the_setting(start_date, expected):
+    """docs/03 Loeschkonzept, legal check L8: the caller number goes 90 days
+    after the call (was 24 months); the period is RETENTION_CALLER_ID_DAYS."""
+    started = datetime.combine(start_date, datetime.min.time(), tzinfo=UTC)
+    assert _delete_after(started) == expected
 
-    assert result == expected
+
+def test_caller_number_period_follows_a_changed_setting(monkeypatch):
+    monkeypatch.setattr(settings, "retention_caller_id_days", 30)
+    assert _delete_after(NOW) == date(2026, 10, 15)

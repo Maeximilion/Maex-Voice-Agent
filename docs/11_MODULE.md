@@ -178,7 +178,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 
 ### `jobs/`
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
-- `retention.py` — täglicher Löschjob nach 03
+- `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — Kennzahlen des Tages als Outbox-Ereignis
 - `holidays.py` — Feiertage Baden-Württemberg jährlich in `special_days` vorschlagen

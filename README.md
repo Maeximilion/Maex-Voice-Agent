@@ -46,7 +46,7 @@ There is no hosted voice platform: Asterisk, our own exchange, takes the call fr
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-10-20 |
+| As of | 2026-10-26 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -79,6 +79,7 @@ How the images stay current: a full eval run on a real model records itself (`ma
 - Database access with one session per request (`api/db.py`), logs as JSON lines with `request_id` and `call_id`
 - `make migrate` creates the stage-1 tables and the stage-2 tables for menu and orders (Alembic in `db/`, models in `api/models/`), `make seed` fills stage 1 idempotently with test config
 - Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -m scripts.call_log imports/anrufprotokoll.csv` prints the C1 baseline (volume, intent mix, outcomes, peak hours), `--cases <dir>` writes eval case skeletons without real customer sentences, `--frist-tage N --loeschen` enforces the deletion period; keeps only the hour of a call and cuts a minute in older rows; rejects files with phone numbers, e-mail, street addresses or a person's allergy
+- The deletion job of `docs/03_DATA_MODEL.md` "Löschkonzept" runs in the dispatcher once an hour: caller numbers after 90 days, guest details on orders, reservations and callbacks after 90 days, a caller's allergy note the night after the order, outbox payloads after 7 days (unsent 30), the audit log after 12 months; every period a setting, one log line per pass
 - Menu import from CSV per `docs/14_MENU_IMPORT_FORMAT.md`: `python -m scripts.import_menu imports/ --dry-run` checks and reports, without `--dry-run` it loads; idempotent, price changes only with `--apply-price-changes`, dishes missing from the file inactive only with `--deactivate-missing`. The CSVs live in `imports/`, which is git-ignored. From the register: `python -m scripts.kasse_to_csv imports/kasse --out imports` turns copies of the register `.dbf` files into these CSVs (docs/14 §Quelle Kasse)
 - Reservation flows end-to-end, every tool latency-tested against 300 ms budget: `POST /v1/tools/get_service_status` answers from DB whether and what's available (hours, special days, wait times, mode); `POST /v1/tools/check_slot` checks a request against capacity and hours, offers up to two alternatives; `POST /v1/tools/create_reservation` creates draft with read-aloud text; `POST /v1/tools/confirm` makes it final, logs it, puts event for cold path in outbox
 - Kitchen ticket (T-4.6): the print bridge (`printbridge/`, stdlib only) runs on a machine in the restaurant, fetches confirmed orders over HTTPS from `POST /v1/kitchen/claim` and prints them as ESC/POS on the receipt printer, over the network (TCP 9100) or the Windows print queue (USB). Nothing needs to be opened in the restaurant's router. The tablet card turns red at once on a print error or when no ticket was fetched for 60 s, and back to normal once it prints; a lost acknowledgement never prints a second slip, an outdated revision never prints after a newer one. Setup: `printbridge/README.md`, server side `KITCHEN_BRIDGE_TOKEN` and `KITCHEN_BRIDGE_TENANT_ID` (one bridge per restaurant)
