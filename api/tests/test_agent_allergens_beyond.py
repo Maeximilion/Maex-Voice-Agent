@@ -239,6 +239,42 @@ def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenan
     assert "Erdnüss" not in callback.summary
 
 
+def test_a_consented_allergy_reaches_the_card_only_as_a_removal(session, known_tenant):
+    """Codex PR #369, P1: the caller said "ja" to the kitchen note, the order
+    is open, and a traces question goes to a callback card. The card is kept
+    for the period of a callback, the allergy only until the night after its
+    order (L13): it says what to leave out, never why."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    pho = str(item(session, known_tenant, "13"))
+    draft = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "customer": {"name": "Müller", "phone": CALLER},
+            "items": [{"menu_item_id": pho, "quantity": 1}],
+        },
+    )
+    run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller, ich habe eine Erdnussallergie.",
+        LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
+        LLMTurn(tool_call=draft),
+    )
+    assert state.last_say == ALLERGY_QUESTION
+    run(session, state, "Ja.")
+    assert state.stage == "readback_pending"
+
+    result, _ = run(session, state, "Sind da Spuren von Sesam drin?", now=CLOSED)
+
+    assert result.ended
+    callback = session.scalars(select(Callback)).one()
+    assert "1x 13 Pho Bo" in callback.summary
+    assert "ohne Erdnuss" in callback.summary
+    assert "Allergie" not in callback.summary
+    assert "WICHTIG" not in callback.summary
+
+
 def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
     session,
     known_tenant,
