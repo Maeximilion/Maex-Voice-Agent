@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import allergies, escalation, guards
-from api.agent.consent import ALLERGY_QUESTION, consent_answer, is_yes
+from api.agent.consent import ALLERGY_QUESTION, bare_answer, consent_answer, is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
@@ -221,11 +221,18 @@ class ConversationLoop:
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         if state.held_call is not None:
-            # The question was not what the guest heard last: put it again,
-            # unless the call is past its limit (Codex PR #368).
+            # The question was not what the guest heard last: put it again
+            # after a plain yes or no ("Sind Sie noch da?" - "Ja"), unless the
+            # call is past its limit (Codex PR #368). A sentence with more in
+            # it ("Ja, aber bitte erst am 17. um 20 Uhr") goes to the model,
+            # and the held draft with its old arguments is dropped; the
+            # allergies stay in the state for the draft the model makes again.
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
-            if (question := allergies.question(state)) is not None:
+            question = allergies.question(state)
+            if question is not None and bare_answer(
+                user_text if rest is None else rest
+            ):
                 guards.note_said(state, question)
                 say = [question]
                 if asks:
