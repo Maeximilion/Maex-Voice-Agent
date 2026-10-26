@@ -167,10 +167,12 @@ def look(
     resolved, so the merge gate still needs a comment `Merge gate: <sha>`."""
     now = now or datetime.now(UTC)
     head = gh(f"{REPO}/pulls/{pr}")[0]["head"]["sha"]
-    bot = [
-        c
-        for c in gh(f"{REPO}/issues/{pr}/comments?per_page=100")
-        if c["user"]["login"] == BOT
+    every = gh(f"{REPO}/issues/{pr}/comments?per_page=100")
+    bot = [c for c in every if c["user"]["login"] == BOT]
+    requests = [
+        c["created_at"]
+        for c in every
+        if c["user"]["login"] != BOT and "@codex review" in c["body"]
     ]
     comments = [c for c in bot if _STATE.search(c["body"])]
     summary = max(comments, key=lambda c: c["updated_at"])["body"] if comments else None
@@ -178,8 +180,11 @@ def look(
         # Codex answered instead of reviewing (PR #373: the description named
         # `@codex review`, Codex took it for a task and asked for an
         # environment, then reviewed none of the pushes). Its words say why.
-        reply = max(bot, key=lambda c: c["created_at"])["body"]
-        return head, "declined", [{"reply": reply.strip().split("\n", 1)[0]}]
+        reply = max(bot, key=lambda c: c["created_at"])
+        if requests and max(requests) > reply["created_at"]:
+            return head, "not started", []  # asked again after the answer
+        first = reply["body"].strip().split("\n", 1)[0]
+        return head, "declined", [{"reply": first}]
     reviews = gh(f"{REPO}/pulls/{pr}/reviews?per_page=100")
     current = state(head, summary, reviews, now)
     if current != "findings":

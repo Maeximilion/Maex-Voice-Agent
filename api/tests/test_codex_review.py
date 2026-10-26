@@ -84,11 +84,13 @@ def _gh(summary, reviews):
             {
                 "user": {"login": "Maeximilion"},
                 "body": "@codex review",
-                "updated_at": "z",
+                "created_at": "2026-10-26T10:01:14Z",
+                "updated_at": "2026-10-26T10:01:14Z",
             },
             {
                 "user": {"login": BOT},
                 "body": summary,
+                "created_at": "2026-10-26T08:56:24Z",
                 "updated_at": "2026-10-26T10:05:13Z",
             },
         ],
@@ -219,3 +221,30 @@ def test_codex_answering_instead_of_reviewing_is_declined(capsys):
     assert f"codex {HEAD[:7]}: declined" in out
     assert "Codex answered: To use Codex here" in out
     assert "remove the mention" in out
+
+
+def test_a_review_request_after_the_answer_is_waited_for(capsys):
+    """PR #373: after the mention was removed, one `@codex review`; Codex
+    reacted with eyes, so the wait must go on instead of reading declined."""
+    answers = {
+        f"{R}/pulls/373": [{"head": {"sha": HEAD}}],
+        f"{R}/issues/373/comments?per_page=100": [
+            {
+                "user": {"login": BOT},
+                "body": "To use Codex here, create an environment.",
+                "created_at": "2026-10-26T10:16:33Z",
+                "updated_at": "2026-10-26T10:16:33Z",
+            },
+            {
+                "user": {"login": "Maeximilion"},
+                "body": "@codex review",
+                "created_at": "2026-10-26T12:10:18Z",
+                "updated_at": "2026-10-26T12:10:18Z",
+            },
+        ],
+    }
+
+    assert (
+        codex_review.main(["373"], gh=lambda path: answers[path], gq=_no_threads) == 2
+    )
+    assert f"codex {HEAD[:7]}: not started" in capsys.readouterr().out
