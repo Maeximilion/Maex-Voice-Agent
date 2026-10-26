@@ -333,7 +333,10 @@ def bare_answer(text: str) -> bool:
     """Is the sentence a plain yes or no and nothing more ("Ja.", "Ja, ich
     bin noch da", "Nein")? Then a question the core still has to put is put
     again; anything more ("Ja, aber bitte erst am 17. um 20 Uhr") is for the
-    model to read (Codex PR #368)."""
+    model to read (Codex PR #368). A digit is always more: `_WORD` would
+    drop it, and "Ja, bitte 20:00" would be a bare yes (Codex PR #368)."""
+    if any(char.isdigit() for char in text):
+        return False
     words = _WORD.findall(text.lower())
     rest = " ".join(word for word in words if word not in _PRESENT)
     if not rest:
