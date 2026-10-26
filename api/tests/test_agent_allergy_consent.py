@@ -512,3 +512,55 @@ def test_a_draft_with_an_unread_allergy_is_refused_and_asked_about(session, stat
     assert reservations(session) == []
     assert logged(session) == []
     assert state.held_call is None
+
+
+def test_after_an_unclear_answer_a_new_table_draft_keeps_the_restriction(
+    session, state
+):
+    """Codex PR #368 (P1): an unclear answer dropped the held draft, and with
+    it the only copy of the allergy; the model, which reads nothing of the old
+    draft, could make a new one without it. The restriction stays in the
+    state, without its reason, and a new draft without a note gets it."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+
+    turn(
+        session,
+        state,
+        "Moment, wir sind doch fünf.",
+        LLMTurn(tool_call=table(None)),
+        LLMTurn(say="Gern."),
+    )
+
+    [reservation] = reservations(session)
+    assert reservation.note == "ohne Erdnuss"
+    assert state.table_note is None  # the new draft holds it now
+    assert logged(session) == [(ALLERGY_QUESTION, "unclear")]
+
+
+def test_after_an_unclear_answer_an_order_keeps_its_restrictions():
+    """The same for an order: the note of the whole order and the notes of
+    its lines stay, in the form they may be stored in without consent."""
+    state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+    item = str(uuid.uuid4())
+    held = {
+        "name": "draft_order",
+        "args": {
+            "items": [{"menu_item_id": item, "quantity": 2, "note": REASONED}],
+            "note": "Sesamallergie",
+        },
+    }
+    state.allergy_consent = "unclear"
+
+    guards.keep_restrictions(state, held)
+
+    assert state.order_note == "ohne Sesam"
+    assert [(line["menu_item_id"], line.get("note")) for line in state.cart] == [
+        (item, "ohne Erdnuss")
+    ]
+    again = guards.consented_call(state, ToolCall("draft_order", {"items": []}))
+    assert again.args["note"] == "ohne Sesam"

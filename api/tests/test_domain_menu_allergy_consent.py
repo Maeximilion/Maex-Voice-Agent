@@ -285,3 +285,30 @@ def test_a_read_allergy_or_none_is_not_unread(note):
 )
 def test_the_rest_of_a_note_survives_the_allergy_wording(note, consented, stored):
     assert with_consent(note, consented=consented) == stored
+
+
+@pytest.mark.parametrize(
+    ("note", "stored"),
+    [
+        # Codex PR #368 (P1): the "ich" of a later request made the allergy
+        # look like the caller's own.
+        (
+            "er hat eine Nussallergie, ich möchte Besteck dazu",
+            "ohne Nuss, ich möchte Besteck dazu",
+        ),
+        (
+            "meine Frau hat eine Nussallergie. Ich nehme die 23",
+            "ohne Nuss, ich nehme die 23",
+        ),
+    ],
+)
+def test_a_later_clause_does_not_change_whose_allergy_it_is(note, stored):
+    assert not asks_consent(note)
+    assert with_consent(note, consented=True) == stored
+
+
+def test_the_callers_own_allergy_before_another_persons_request_is_asked_about():
+    """Not read in full (the "er" of the request leaves the ingredient open):
+    the draft is refused and the guest asked "Wogegen?" (`unread_allergy`),
+    never stored without the allergy or as another adult's."""
+    assert unread_allergy("ich habe eine Nussallergie, er möchte Besteck")

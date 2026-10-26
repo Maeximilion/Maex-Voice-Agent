@@ -337,6 +337,8 @@ def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
     if call.name == "draft_order" and "note" not in args and state.order_note:
         # The note of the whole order outlives a correction (`state.order_note`).
         args["note"] = state.order_note
+    if call.name == "create_reservation" and "note" not in args and state.table_note:
+        args["note"] = state.table_note
     if isinstance(args.get("note"), str):
         args["note"] = stored_note(state, args["note"])
     if isinstance(args.get("items"), list):
@@ -345,6 +347,27 @@ def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
             for item in args["items"]
         ]
     return ToolCall(name=call.name, args=args)
+
+
+def keep_restrictions(state: ConversationState, held: dict[str, Any]) -> None:
+    """The draft the core dropped after an unclear answer to the allergy
+    question (`loop._consent_answered`): its notes stay in the state, in the
+    form they may be stored in without consent, because the model reads
+    nothing of the old draft and could make a new one without them (Codex
+    PR #368). Lines in a wrong form are left out, as `take_cart` would."""
+    args = held["args"]
+    note = args.get("note")
+    kept = stored_note(state, note) if isinstance(note, str) else None
+    if held["name"] == "create_reservation":
+        state.table_note = kept
+        return
+    if kept:
+        state.order_note = kept
+    try:
+        lines = cart_lines(args.get("items"))
+    except ValidationError:
+        return
+    state.cart = [_line_with_consent(state, line) for line in lines]
 
 
 def waits_for_consent(state: ConversationState, call: ToolCall) -> bool:

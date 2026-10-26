@@ -97,6 +97,10 @@ class ConversationState(BaseModel):
     # cart: a correction drops the draft, never the guest's allergy on it.
     # A draft that names no note gets this one (`guards.consented_call`).
     order_note: str | None = None
+    # The same for the note of a table draft the core dropped after an unclear
+    # answer to the allergy question (`guards.keep_restrictions`); gone once a
+    # table draft holds a note again.
+    table_note: str | None = None
     # What search_menu said about a dish: id to number, name and mandatory
     # option groups. Never sent as it is. The labels of the `cart` lines in the
     # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
@@ -200,6 +204,8 @@ class ConversationState(BaseModel):
             data["cart"] = [self._line(line) for line in self.cart]
         if self.order_note:
             data["order_note"] = self.order_note
+        if self.table_note:
+            data["table_note"] = self.table_note
         return data
 
     def _line(self, line: dict[str, Any]) -> dict[str, Any]:
@@ -460,6 +466,7 @@ def apply_tool_result(
     if name == "create_reservation":
         state.intent = "reservation"
         state.reservation_id = uuid.UUID(result.data["reservation_id"])
+        state.table_note = None
         state.order_id = None
         state.stage = "readback_pending"
         state.booking_say = None
