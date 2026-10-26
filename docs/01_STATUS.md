@@ -613,6 +613,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.8.0 · 26.10.2026:** T-11.2 done: the daily deletion job keeps the periods of the legal check (L8, L13)
+- **v2.7.21 · 26.10.2026:** FastAPI 0.146.0 and SQLAlchemy 2.1.5 (Dependabot #356)
+- **v2.7.20 · 26.10.2026:** ntfy v2.31.1 (Dependabot #355), .env.example names the same version
 - **v2.7.19 · 26.10.2026:** n8n 2.44.3 (Dependabot #354)
 - **v2.7.18 · 25.10.2026:** Handover: T-11.4 built, the call log keeps the hour of a call and cuts minutes in old rows, PR through /done next
 - **v2.7.17 · 25.10.2026:** Handover of the issue sweep 21. to 25.10.2026: PRs #357 to #362 merged one by one, next T-11.4
