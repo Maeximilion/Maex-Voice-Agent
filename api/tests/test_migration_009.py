@@ -1,4 +1,4 @@
-"""Migration 009: the consent log (T-11.1, legal check L13), up and down."""
+"""Migration 009: where the privacy notice is, said in the greeting (T-11.5), up and down."""
 
 import pytest
 from alembic import command
@@ -7,91 +7,78 @@ from sqlalchemy.exc import IntegrityError
 
 from api.tests.conftest import alembic_config as _config
 
-QUESTION = "Darf ich die Allergie als Hinweis für die Küche notieren?"
+FIELD = "privacy_notice_address"
 
 
-def _tables(url: str) -> set[str]:
+def _config_columns(url: str) -> set[str]:
     engine = create_engine(url)
     try:
-        return set(inspect(engine).get_table_names())
+        return {c["name"] for c in inspect(engine).get_columns("service_config")}
     finally:
         engine.dispose()
 
 
-def _call(conn) -> tuple:
-    tenant = conn.execute(
-        text("INSERT INTO tenants (name) VALUES ('T') RETURNING id")
+def _tenant(conn, name: str):
+    return conn.execute(
+        text("INSERT INTO tenants (name) VALUES (:n) RETURNING id"), {"n": name}
     ).scalar_one()
-    call = conn.execute(
-        text(
-            "INSERT INTO calls (tenant_id, external_session_id, started_at, "
-            "delete_after) VALUES (:t, 's', now(), current_date) RETURNING id"
-        ),
-        {"t": tenant},
-    ).scalar_one()
-    return tenant, call
 
 
-_INSERT = text(
-    "INSERT INTO consent_log (tenant_id, call_id, question, answer, answered_at) "
-    "VALUES (:t, :c, :q, :a, now())"
-)
-
-
-def test_upgrade_logs_each_of_the_three_answers(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "009")
+def test_upgrade_leaves_an_existing_tenant_without_an_address(scratch_db_url):
+    """No address is invented: `example.com` is only the repository's
+    placeholder, the real one comes from the restaurant."""
+    command.upgrade(_config(scratch_db_url), "008")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
-            tenant, call = _call(conn)
-            for answer in ("yes", "no", "unclear"):
-                conn.execute(
-                    _INSERT, {"t": tenant, "c": call, "q": QUESTION, "a": answer}
-                )
-        with engine.connect() as conn:
-            assert conn.execute(text("SELECT count(*) FROM consent_log")).scalar() == 3
-    finally:
-        engine.dispose()
-
-
-def test_an_answer_outside_the_three_is_refused(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "009")
-    engine = create_engine(scratch_db_url)
-    try:
-        with engine.begin() as conn:
-            tenant, call = _call(conn)
-        with pytest.raises(IntegrityError), engine.begin() as conn:
-            conn.execute(_INSERT, {"t": tenant, "c": call, "q": QUESTION, "a": "maybe"})
-    finally:
-        engine.dispose()
-
-
-def test_a_row_needs_a_call_that_exists(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "009")
-    engine = create_engine(scratch_db_url)
-    try:
-        with engine.begin() as conn:
-            tenant, _ = _call(conn)
-        with pytest.raises(IntegrityError), engine.begin() as conn:
             conn.execute(
-                _INSERT,
-                {
-                    "t": tenant,
-                    "c": "00000000-0000-0000-0000-000000000000",
-                    "q": QUESTION,
-                    "a": "yes",
-                },
+                text(
+                    "INSERT INTO service_config (tenant_id, team_phone) "
+                    "VALUES (:t, '+4900000000')"
+                ),
+                {"t": _tenant(conn, "Old")},
+            )
+        command.upgrade(_config(scratch_db_url), "009")
+        with engine.connect() as conn:
+            assert conn.execute(text(f"SELECT {FIELD} FROM service_config")).one() == (
+                None,
             )
     finally:
         engine.dispose()
 
 
-def test_downgrade_removes_only_this_table(scratch_db_url):
+@pytest.mark.parametrize("blank", ["", "   ", "\n", "\t", " \r\n "])
+def test_a_blank_address_is_refused_and_a_real_one_is_kept(scratch_db_url, blank):
+    """A blank one would make the greeting say "finden Sie unter ."; a line
+    break or a tab is as blank as a space (ultrareview of PR #372)."""
     command.upgrade(_config(scratch_db_url), "009")
-    assert "consent_log" in _tables(scratch_db_url)
+    engine = create_engine(scratch_db_url)
+    insert = text(
+        f"INSERT INTO service_config (tenant_id, team_phone, {FIELD}) "
+        "VALUES (:t, '+4900000000', :v)"
+    )
+    try:
+        with engine.begin() as conn:
+            empty, real = _tenant(conn, "Blank"), _tenant(conn, "Real")
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert, {"t": empty, "v": blank})
+        with engine.begin() as conn:
+            conn.execute(insert, {"t": real, "v": "example.com/datenschutz"})
+            kept = conn.execute(
+                text(f"SELECT {FIELD} FROM service_config WHERE tenant_id = :t"),
+                {"t": real},
+            ).scalar_one()
+        assert kept == "example.com/datenschutz"
+    finally:
+        engine.dispose()
+
+
+def test_downgrade_removes_only_this_column(scratch_db_url):
+    command.upgrade(_config(scratch_db_url), "009")
+    assert FIELD in _config_columns(scratch_db_url)
     command.downgrade(_config(scratch_db_url), "008")
-    tables = _tables(scratch_db_url)
-    assert "consent_log" not in tables
-    assert {"calls", "orders", "reservations"} <= tables
+    columns = _config_columns(scratch_db_url)
+    assert FIELD not in columns
+    assert "order_approval_overdue_minutes" in columns
     command.upgrade(_config(scratch_db_url), "head")
-    assert "consent_log" in _tables(scratch_db_url)
+    assert FIELD in _config_columns(scratch_db_url)

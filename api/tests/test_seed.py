@@ -112,3 +112,39 @@ def test_cli_seedet_und_gibt_json_aus(migrated_db_url, monkeypatch, capsys):
             assert s.scalar(select(Tenant.name)) == "CLI-Betrieb"
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize(
+    ("setting", "stored"),
+    [
+        ("example.com/datenschutz", "example.com/datenschutz"),
+        ("", None),
+        ("   ", None),
+    ],
+)
+def test_seed_writes_the_privacy_notice_address_into_a_new_tenant(
+    session, monkeypatch, setting, stored
+):
+    """From `PRIVACY_NOTICE_ADDRESS`; a blank setting is no address, the column
+    refuses a blank text (migration 009)."""
+    monkeypatch.setattr(seed_module.settings, "privacy_notice_address", setting)
+
+    result = seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
+
+    assert session.get(ServiceConfig, result.tenant_id).privacy_notice_address == (
+        stored
+    )
+
+
+def test_seed_keeps_an_address_the_restaurant_set(session, monkeypatch):
+    result = seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
+    session.get(ServiceConfig, result.tenant_id).privacy_notice_address = "eigene.de"
+    session.commit()
+    monkeypatch.setattr(seed_module.settings, "privacy_notice_address", "andere.de")
+
+    seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
+    session.expire_all()
+
+    assert session.get(ServiceConfig, result.tenant_id).privacy_notice_address == (
+        "eigene.de"
+    )

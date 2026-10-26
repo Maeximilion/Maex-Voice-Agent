@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
-from api.agent.consent import ALLERGY_QUESTION, consent_answer
+from api.agent.consent import ALLERGY_QUESTION, consent_answer, is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
@@ -58,6 +58,12 @@ MAX_TOOL_HOPS = 6
 SAY_TIMEOUT = "Wir sind jetzt schon eine Weile dran. Ich gebe an das Team weiter."
 SAY_STUCK = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 SAY_ESCALATION = "Ich verbinde Sie sofort mit dem Team."
+# The answer to "Sind Sie ein Mensch?" (`escalation.without_human_question`),
+# truthful every time (docs/09 L1), and the offer of the team; a yes to the
+# offer hands the call over. Draft wording, checked with the texts of docs/05 §6.
+SAY_NOT_A_PERSON = "Ich bin ein KI-Assistent, kein Mensch."
+SAY_TEAM_OFFER = "Möchten Sie lieber mit jemandem aus dem Team sprechen?"
+SAY_HUMAN_ANSWER = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
 # The last resort of `_handoff`: the team is not reachable and there is no number
 # for a callback. Every sentence above promises the team; here nobody takes
@@ -172,7 +178,20 @@ class ConversationLoop:
         # also when this sentence goes to the team: the draft that waited for
         # it goes first, before the model is asked.
         held = self._consent_answered(state, user_text)
-        reason = escalation.check(user_text)
+        # Read past the question whether a person is on the line: "Spreche ich
+        # mit einem Menschen?" holds the words of the wish to talk to one and
+        # only asks, what else the sentence says still counts.
+        rest = escalation.without_human_question(user_text)
+        asks = rest is not None
+        reason = escalation.check(user_text if rest is None else rest)
+        # The offer stands while it is the last thing the guest heard: any
+        # sentence after it, the phone line's "Sind Sie noch da?" too, takes
+        # it back (Codex PR #372).
+        answered_offer = (
+            reason is None and state.last_say == SAY_HUMAN_ANSWER and is_yes(user_text)
+        )
+        if answered_offer:
+            reason = "human_requested"
         if reason != "complaint":
             # Before the model and before a handoff: the request of this very
             # turn carries it already, and a call that goes to the team right
@@ -180,22 +199,64 @@ class ConversationLoop:
             # about an order is no request for a pickup, and the reason of
             # the transfer says what that call was.
             note_intent(state, user_text)
+        escalated: TurnResult | None = None
         if reason is not None:
-            return self._handoff(state, SAY_ESCALATION, reason=reason, detail=user_text)
-        if escalation.asks_beyond_the_allergens(user_text, state.allergy_talk):
+            escalated = self._handoff(
+                state,
+                SAY_ESCALATION,
+                reason=reason,
+                # A "Ja" tells the team nothing the reason does not say.
+                detail=None if answered_offer else user_text,
+            )
+        elif asks and self._clock() - self._started > self._max_call_seconds:
+            # The answer keeps no call open past its limit: asked again and
+            # again, it would (Codex PR #372).
+            escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
+        if escalated is None and escalation.asks_beyond_the_allergens(
+            user_text, state.allergy_talk
+        ):
             # L17: before the model, which knows no more than the database,
             # and before the consent question is put again.
-            return self._allergens_to_team(state)
+            escalated = self._allergens_to_team(state)
+        if escalated is not None:
+            if asks:
+                escalated.say.insert(0, SAY_NOT_A_PERSON)
+            return escalated
         if escalation.speaks_of_allergies(user_text):
             state.allergy_talk = True
+        if held is None and rest is not None and not escalation.asks_more(rest):
+            guards.note_said(state, SAY_HUMAN_ANSWER)
+            return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         if state.held_call is not None:
             # The question was not what the guest heard last: put it again,
             # unless the call is past its limit (Codex PR #368).
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
             guards.note_said(state, ALLERGY_QUESTION)
-            return TurnResult(state=state, say=[ALLERGY_QUESTION])
+            say = [ALLERGY_QUESTION]
+            if asks:
+                say.insert(0, SAY_NOT_A_PERSON)
+            return TurnResult(state=state, say=say)
+        result = self._converse(state, user_text, turn_started, held)
+        if asks:
+            # A request next to the question ("Sind Sie ein Roboter? Ich
+            # möchte einen Tisch ..."): the truthful sentence first, then the
+            # model's answer to the request; the guest has said what they
+            # want, so no offer of the team (ultrareview of PR #372).
+            result.say.insert(0, SAY_NOT_A_PERSON)
+        return result
 
+    def _converse(
+        self,
+        state: ConversationState,
+        user_text: str,
+        turn_started: float | None,
+        held: ToolCall | None = None,
+    ) -> TurnResult:
+        """The model's part of a guest turn: model calls and tools until a
+        sentence for the guest, a handoff or a limit. `held` is the draft the
+        guest just answered the allergy question for (`_consent_answered`):
+        carried out first, in place of a model call."""
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,

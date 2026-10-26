@@ -12,6 +12,8 @@ TOKEN_MIN_LENGTH = 32
 # Where a short or known token is fine. Every other value of ENV counts as
 # production, a misspelled one included.
 LOCAL_ENVS = frozenset({"dev", "test"})
+# Upper limit of every deletion period in days (api/jobs/retention.py).
+MAX_RETENTION_DAYS = 3660
 
 
 def valid_production_token(token: str) -> bool:
@@ -44,6 +46,9 @@ class Settings(BaseSettings):
     tenant_timezone: str = "Europe/Berlin"
     team_phone: str = "+49000000000"
     max_call_seconds: int = 420
+    # Written into a new tenant by the seed (service_config.privacy_notice_address,
+    # docs/09 L4). Empty: none, and the greeting leaves the sentence out.
+    privacy_notice_address: str = ""
 
     # Kalter Pfad: n8n und Dispatcher (docs/03 §outbox, docs/11 §events)
     n8n_webhook_url: str = "http://n8n:5678/webhook/maex"
@@ -106,6 +111,31 @@ class Settings(BaseSettings):
 
     # Anrufprotokoll (docs/17): Loeschfrist der CSV in Tagen, D10
     call_log_retention_days: int | None = None
+
+    # Deletion periods in days (docs/03 "Loeschkonzept", decided by Maxi with
+    # the legal check on 20.10.2026, L8, L13), kept by api/jobs/retention.py.
+    # At least one day: 0 would strip the orders the kitchen is cooking. At most
+    # ten years: a larger value overflows the date arithmetic of start_call
+    # and of every pass (ultrareview PR #371).
+    retention_caller_id_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
+    # Name, phone, notes and customer link on orders and reservations.
+    retention_guest_details_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
+    # Phone and summary of a callback, counted from when it was done.
+    retention_callback_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
+    retention_outbox_sent_days: int = Field(default=7, ge=1, le=MAX_RETENTION_DAYS)
+    retention_outbox_unsent_days: int = Field(default=30, ge=1, le=MAX_RETENTION_DAYS)
+    retention_outbox_row_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
+    retention_audit_log_days: int = Field(default=365, ge=1, le=MAX_RETENTION_DAYS)
+    # A caller's allergy note goes this many business days after the one of the
+    # order or reservation; 0 is the night after (L13).
+    retention_allergy_note_days: int = Field(default=0, ge=0, le=MAX_RETENTION_DAYS)
+    # An answer to a consent question goes at the end of this many calendar
+    # years after the year it was given (Maxi, 26.10.2026): the proof of a
+    # stored allergy note for as long as a claim can arise (§§ 195, 199 BGB).
+    retention_consent_log_years: int = Field(default=3, ge=1, le=10)
+    # How often the dispatcher process runs the job. Each pass only does what is
+    # due, so a restart or a missed pass is caught up by the next one.
+    retention_interval_seconds: float = Field(default=3600.0, gt=0, le=86400)
 
     @model_validator(mode="after")
     def _production_needs_real_tokens(self) -> Self:

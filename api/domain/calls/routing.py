@@ -31,6 +31,9 @@ class CallRouting:
     # The longest a guest waits in silence for the answer to one sentence
     # before the call goes to the team (#252).
     turn_deadline_seconds: int
+    # Where the privacy notice is, for the greeting; None until it is set
+    # (docs/09 L4, T-11.5).
+    privacy_notice_address: str | None
 
 
 def tenant_named(session: Session, name: str) -> uuid.UUID:
@@ -55,4 +58,5 @@ def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
         tenant_name=tenant.name,
         max_call_seconds=config.max_call_seconds,
         turn_deadline_seconds=config.turn_deadline_seconds,
+        privacy_notice_address=config.privacy_notice_address,
     )

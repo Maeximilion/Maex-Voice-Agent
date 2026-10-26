@@ -6,6 +6,9 @@ kommen (CLAUDE.md §2 Regel 6). Reine Stichwort-Erkennung auf dem rohen
 Kundentext, kein Sprachverständnis — eindeutige Signalwörter, keine
 Interpretation. Feinere Fälle (Allergie ohne DB-Wert, große Bestellung, …)
 kommen erst mit Stufe 2/3, wenn es Bestellungen überhaupt gibt.
+
+Also checked here: the question whether a person is on the line
+(`without_human_question`), whose answer is as fixed as a handoff (docs/09 L1).
 """
 
 import re
@@ -103,3 +106,97 @@ def check(text: str) -> EscalationReason | None:
         if any(keyword in lowered for keyword in keywords):
             return reason
     return None
+
+
+# The question whether a person is on the line ("Sind Sie ein Mensch?"). The
+# AI Act asks for a truthful answer every time (docs/09 L1), so the core gives
+# it before the model and never depends on the model's wording (agent/loop.py).
+# Question order only: the verb before its subject, then at most filler words,
+# then what is asked about. "Ich will mit einem Menschen sprechen" is the wish
+# of `check`, not this question; "Kann ich mit einem Menschen sprechen?" too.
+_ASKING = frozenset(
+    {
+        ("sind", "sie"),
+        ("bist", "du"),
+        ("ist", "das"),
+        ("ist", "da"),
+        ("ist", "hier"),
+        ("spreche", "ich"),
+        ("rede", "ich"),
+        ("bin", "ich"),
+        ("telefoniere", "ich"),
+        # Statement order with "oder?" behind it, or said as a guess: the
+        # truthful answer fits it as well (ultrareview of PR #372).
+        ("sie", "sind"),
+        ("du", "bist"),
+    }
+)
+_BETWEEN = frozenset(
+    {"hier", "da", "gerade", "jetzt", "denn", "eigentlich", "wirklich", "mit"}
+    | {"überhaupt", "ueberhaupt", "tatsächlich", "tatsaechlich", "doch", "bei"}
+    | {"ein", "eine", "einem", "einer", "echt", "echte", "echter", "echten"}
+    | {"richtig", "richtige", "richtiger", "richtigen"}
+    | {"künstliche", "kuenstliche", "künstlichen", "kuenstlichen"}
+)
+_PERSON_OR_MACHINE = frozenset(
+    {"mensch", "menschen", "person", "roboter", "bot", "chatbot", "maschine"}
+    | {"computer", "sprachcomputer", "ki", "intelligenz", "automat", "assistent"}
+)
+# What may stand around the question without asking anything else: greetings
+# and the words of the question itself. Any other word, or a digit, is a
+# request the model answers after the truthful sentence (agent/loop.py).
+_NOTHING_ELSE = (
+    frozenset({"hallo", "guten", "tag", "abend", "morgen", "moin", "servus"})
+    | {"sagen", "sie", "mal", "kurz", "eine", "frage", "darf", "ich", "fragen"}
+    | {"entschuldigung", "also", "ja", "nein", "äh", "ähm", "hm", "ehrlich", "oder"}
+    | _BETWEEN
+)
+_WORD = re.compile(r"[a-zäöüß]+")
+
+
+def without_human_question(text: str) -> str | None:
+    """The guest's sentence without the question whether a person or a machine
+    is on the line, lowercased; None when it asks no such question. `check`
+    reads the rest: the question's own words ("mit einem Menschen") are those
+    of the wish to talk to one, and a wish or a cancellation next to the
+    question still counts (Codex PR #372). An either-or ("mit einer Maschine
+    oder mit einem Menschen") is one question, both halves are cut."""
+    lowered = text.lower().replace("k.i.", "ki")
+    words = list(_WORD.finditer(lowered))
+    found: list[tuple[int, int]] = []
+    for at in range(len(words) - 1):
+        if (words[at].group(), words[at + 1].group()) not in _ASKING:
+            continue
+        noun = _person_or_machine(words, at + 2)
+        while noun is not None and noun + 1 < len(words):
+            if words[noun + 1].group() != "oder":
+                break
+            other = _person_or_machine(words, noun + 2)
+            if other is None:
+                break
+            noun = other
+        if noun is not None:
+            found.append((words[at].start(), words[noun].end()))
+    if not found:
+        return None
+    for start, end in reversed(found):
+        lowered = lowered[:start] + lowered[end:]
+    return lowered
+
+
+def _person_or_machine(words: list[re.Match[str]], at: int) -> int | None:
+    """Where the person or machine asked about stands, from `at` on past the
+    words in between; None when none follows."""
+    while at < len(words) and words[at].group() in _BETWEEN:
+        at += 1
+    if at < len(words) and words[at].group() in _PERSON_OR_MACHINE:
+        return at
+    return None
+
+
+def asks_more(rest: str) -> bool:
+    """Whether the sentence asks for more than the question whether a person
+    is on the line: `rest` is what `without_human_question` left of it."""
+    if any(char.isdigit() for char in rest):
+        return True
+    return any(word not in _NOTHING_ELSE for word in _WORD.findall(rest))

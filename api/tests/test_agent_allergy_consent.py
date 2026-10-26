@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from api.agent import guards
 from api.agent.consent import ALLERGY_QUESTION, consent_answer
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_HUMAN_ANSWER, SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.state import ConversationState
 from api.models import Call, Callback, ConsentLog, Reservation
 from scripts.seed import seed
@@ -440,3 +440,46 @@ def test_an_order_draft_carries_its_notes_as_the_answer_allows():
     stored = guards.consented_call(state, call).args
     assert stored["items"][0]["note"] == REASONED
     assert stored["note"] == "WICHTIG: Keine Sesam. Grund: Allergie"
+
+
+def test_a_human_question_while_the_question_waits_is_answered_first(session, state):
+    """Merge of T-11.5 into T-11.1: "Sind Sie ein Mensch?" gets the truthful
+    answer and the offer of the team (docs/09 L1) also while a draft waits for
+    the allergy question. The draft stays held; after a no to the offer the
+    question is put again, and only its own answer is consent."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+
+    assert turn(session, state, "Sind Sie ein Mensch?") == [SAY_HUMAN_ANSWER]
+    assert state.held_call is not None
+    assert logged(session) == []
+
+    assert turn(session, state, "Nein.") == [ALLERGY_QUESTION]
+    assert logged(session) == []
+
+    turn(session, state, "Ja.")
+    [reservation] = reservations(session)
+    assert reservation.note == REASONED
+    assert logged(session) == [(ALLERGY_QUESTION, "yes")]
+
+
+def test_a_request_next_to_the_human_question_puts_the_question_again(session, state):
+    """The truthful sentence first, then the waiting question, never the
+    question alone: docs/09 L1 holds in every turn."""
+    turn(
+        session,
+        state,
+        "Tisch für vier auf Müller, Erdnussallergie",
+        LLMTurn(tool_call=table(REASONED)),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+
+    said = turn(session, state, "Spreche ich mit einem Menschen? Ich will bestellen.")
+
+    assert said == [SAY_NOT_A_PERSON, ALLERGY_QUESTION]
+    assert state.held_call is not None
