@@ -18,7 +18,7 @@ run can hang without any sign: on PR #371 (26.10.2026) two runs stayed
 request at all. Both had thread replies (each a review on the head) posted
 within seconds of the push; the runs without such replies finished. Hence:
 answer review threads before the push, and treat "stalled" (running for more
-than 15 minutes, or no review of the head started within 15 minutes of
+than 10 minutes, or no review of the head started within 10 minutes of
 waiting) as the one case for a single `@codex review`. This script never
 comments.
 
@@ -42,7 +42,9 @@ from datetime import UTC, datetime, timedelta
 
 BOT = "chatgpt-codex-connector[bot]"
 REPO = "repos/{owner}/{repo}"  # gh fills in the repository of the checkout
-STALLED_AFTER = timedelta(minutes=15)
+# Measured runs took 0:54, 1:56, 3:50 and 6:38 minutes (#370, #371): 1.5 times
+# the slowest, so a hung run is named within minutes, not after a long wait.
+STALLED_AFTER = timedelta(minutes=10)
 _STATE = re.compile(r"codex-review-state:v1 (\{.*?\}\}) -->")
 _SINCE = re.compile(r'Running\*\* since <relative-time datetime="([^"]+)"')
 
@@ -217,7 +219,7 @@ def main(argv: list[str] | None = None, gh: Gh = gh_api, gq: Gq = gh_threads) ->
         "--wait", action="store_true", help="poll until done or stalled"
     )
     parser.add_argument(
-        "--timeout", type=float, default=30.0, help="minutes, with --wait"
+        "--timeout", type=float, default=12.0, help="minutes, with --wait"
     )
     parser.add_argument("--interval", type=float, default=30.0, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
