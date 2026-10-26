@@ -60,10 +60,11 @@ EXIT = {
 }
 # Unresolved review threads, first comment each (REST cannot tell resolved).
 THREADS = """
-query($owner: String!, $name: String!, $number: Int!) {
+query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
     pullRequest(number: $number) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $endCursor) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           isResolved
           comments(first: 1) {
@@ -108,12 +109,17 @@ def gh_api(path: str) -> list:
 
 
 def gh_threads(pr: int) -> list[dict]:
-    """The first comment of every unresolved review thread by Codex."""
+    """The first comment of every unresolved review thread by Codex, over all
+    pages: past the first 100 threads a new finding must not go unseen (Codex
+    PR #373)."""
     res = subprocess.run(
         [
             "gh",
             "api",
             "graphql",
+            "--paginate",
+            "--jq",
+            ".data.repository.pullRequest.reviewThreads.nodes[]",
             "-F",
             "owner={owner}",
             "-F",
@@ -128,31 +134,40 @@ def gh_threads(pr: int) -> list[dict]:
     )
     if res.returncode != 0:
         raise GhError(res.stderr.strip() or f"gh api graphql exited {res.returncode}")
-    nodes = json.loads(res.stdout)["data"]["repository"]["pullRequest"]
+    nodes = [json.loads(line) for line in res.stdout.splitlines() if line.strip()]
     return [
         t["comments"]["nodes"][0]
-        for t in nodes["reviewThreads"]["nodes"]
+        for t in nodes
         if not t["isResolved"]
         and t["comments"]["nodes"]
         and t["comments"]["nodes"][0]["author"]["login"] == BOT.removesuffix("[bot]")
     ]
 
 
-def state(head: str, summary: str | None, reviews: list[dict], now: datetime) -> str:
-    """Codex's state for `head` from its summary comment and its reviews."""
-    if any(r["user"]["login"] == BOT and r["commit_id"] == head for r in reviews):
-        return "findings"
+def _code(summary: str | None) -> dict:
     match = _STATE.search(summary or "")
-    code = json.loads(match.group(1))["code_review"] if match else {}
-    if code.get("commit_sha") != head:
-        # A completed state with no sha belongs to the head of a review with
-        # findings, and that review is checked above.
-        return "not started"
-    if code.get("status") == "completed":
+    return json.loads(match.group(1))["code_review"] if match else {}
+
+
+def state(head: str, summary: str | None, reviews: list[dict], now: datetime) -> str:
+    """Codex's state for `head` from its summary comment and its reviews.
+
+    The state comment decides. A review by the bot on the head only stands in
+    for the commit a completed state left out (`commit_sha: null`, PR #371): a
+    reply of Codex to an old thread is a review on the head too, also while the
+    run is going on (Codex PR #373)."""
+    code = _code(summary)
+    sha, status = code.get("commit_sha"), code.get("status")
+    if sha == head and status == "running":
+        since = _SINCE.search(summary or "")
+        started = datetime.fromisoformat(since.group(1)) if since else now
+        return "stalled" if now - started > STALLED_AFTER else "running"
+    if status == "completed" and sha == head:
         return "findings" if code.get("has_any_findings") else "clean"
-    since = _SINCE.search(summary or "")
-    started = datetime.fromisoformat(since.group(1)) if since else now
-    return "stalled" if now - started > STALLED_AFTER else "running"
+    on_head = any(r["user"]["login"] == BOT and r["commit_id"] == head for r in reviews)
+    if status == "completed" and sha is None and on_head:
+        return "findings"
+    return "not started"
 
 
 def look(
@@ -199,6 +214,10 @@ def look(
         for c in gq(pr)
     ]
     if not any(t["new"] for t in threads):
+        if _code(summary).get("commit_sha") != head:
+            # The bot's review on the head made no thread of its own: a reply,
+            # not a result. Nothing says this head was reviewed.
+            return head, "not started", []
         current = "open threads" if threads else "clean, threads resolved"
     return head, current, threads
 

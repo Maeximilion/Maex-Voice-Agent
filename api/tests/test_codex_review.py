@@ -3,6 +3,7 @@
 The summary bodies are trimmed copies of what Codex wrote on PR #371."""
 
 import importlib.util
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -248,3 +249,58 @@ def test_a_review_request_after_the_answer_is_waited_for(capsys):
         codex_review.main(["373"], gh=lambda path: answers[path], gq=_no_threads) == 2
     )
     assert f"codex {HEAD[:7]}: not started" in capsys.readouterr().out
+
+
+def test_a_codex_reply_on_the_head_does_not_finish_a_running_review():
+    """Codex PR #373 (P1): a reply of Codex to an old thread is a review on
+    the new head; while the run goes on it must not read as a result."""
+    body = _summary(HEAD, "running")
+    assert codex_review.state(HEAD, body, [_review(HEAD)], NOW) == "running"
+
+
+def test_a_reply_without_a_thread_of_its_own_is_no_clean_result(capsys):
+    """A completed state without a commit plus a bot review on the head that
+    opened no thread: the review was a reply, so the head is not reviewed."""
+    gh = _gh(_summary(None, "completed", findings=True), [_review(HEAD, review_id=9)])
+    old = [_thread(4375519158, 3)]
+
+    assert codex_review.main(["371"], gh=gh, gq=lambda pr: old) == 2
+    assert f"codex {HEAD[:7]}: not started" in capsys.readouterr().out
+    assert codex_review.main(["371"], gh=gh, gq=lambda pr: []) == 2
+
+
+def test_threads_are_read_over_every_page(monkeypatch):
+    """Codex PR #373 (P1): past 100 threads a new finding must still be seen.
+    gh pages through them (--paginate with the end cursor) and --jq prints one
+    thread per line; every line counts."""
+    seen = {}
+
+    def first(login, resolved, cid):
+        return {
+            "isResolved": resolved,
+            "comments": {"nodes": [{"databaseId": cid, "author": {"login": login}}]},
+        }
+
+    lines = [first("chatgpt-codex-connector", True, n) for n in range(100)]
+    lines.append(first("chatgpt-codex-connector", False, 4377160321))
+    lines.append(first("Maeximilion", False, 5))
+
+    class Done:
+        returncode = 0
+        stdout = "\n".join(json.dumps(line) for line in lines) + "\n"
+        stderr = ""
+
+    def run(args, **kwargs):
+        seen["args"] = args
+        return Done()
+
+    monkeypatch.setattr(codex_review.subprocess, "run", run)
+
+    found = codex_review.gh_threads(373)
+
+    assert [c["databaseId"] for c in found] == [4377160321]
+    assert "--paginate" in seen["args"]
+    query = next(a for a in seen["args"] if a.startswith("query="))
+    assert (
+        "after: $endCursor" in query and "pageInfo { hasNextPage endCursor }" in query
+    )
