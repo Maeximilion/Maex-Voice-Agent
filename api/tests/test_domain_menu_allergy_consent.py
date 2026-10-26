@@ -14,6 +14,7 @@ from api.domain.menu.wishes import (
     classify_wish,
     of_another_adult,
     removal_with,
+    unread_allergy,
     with_consent,
     without_reason,
 )
@@ -214,3 +215,34 @@ def test_a_clause_with_its_own_subject_is_read_alone():
 def test_without_reason_lowers_the_removal():
     assert without_reason("Erdnuss", "Keine Zwiebeln") == "ohne Erdnuss, keine Zwiebeln"
     assert without_reason("Erdnuss", None) == "ohne Erdnuss"
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        # Codex PR #368 (P1): more follows than the parser reads (#361).
+        "Ich bin gegen Erdnüsse allergisch und gegen Sesam",
+        "Erdnussallergie und Sesam auch nicht",
+        # The removal is read, the allergy behind it is not: only "ohne
+        # Zwiebeln" would be stored and both allergens lost.
+        "ohne Zwiebeln, gegen Erdnüsse allergisch und gegen Sesam",
+        "Ich habe eine Allergie",
+    ],
+)
+def test_an_allergy_without_a_readable_ingredient_is_unread(note):
+    assert unread_allergy(note)
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "Erdnussallergie",
+        "Nussallergie, ohne Zwiebeln",
+        "WICHTIG: Keine Erdnuss. Grund: Allergie",
+        "meine Frau hat eine Nussallergie",
+        "Allergien habe ich keine",
+        "ohne Zwiebeln",
+    ],
+)
+def test_a_read_allergy_or_none_is_not_unread(note):
+    assert not unread_allergy(note)

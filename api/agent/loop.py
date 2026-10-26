@@ -392,7 +392,8 @@ class ConversationLoop:
             # Every note as the caller's answer lets it be stored (L13).
             call = guards.consented_call(state, turn.tool_call)
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
-            refused = guards.refusal(
+            # An allergy the notes do not read in full is asked about first.
+            refused = guards.unread_refusal(turn.tool_call) or guards.refusal(
                 state,
                 start,
                 user_text,

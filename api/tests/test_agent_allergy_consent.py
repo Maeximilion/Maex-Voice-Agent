@@ -483,3 +483,32 @@ def test_a_request_next_to_the_human_question_puts_the_question_again(session, s
 
     assert said == [SAY_NOT_A_PERSON, ALLERGY_QUESTION]
     assert state.held_call is not None
+
+
+def test_a_draft_with_an_unread_allergy_is_refused_and_asked_about(session, state):
+    """Codex PR #368 (P1): a note the parser cannot read in full ("gegen
+    Erdnüsse allergisch und gegen Sesam") was stored without the allergy, or
+    not at all. The draft is refused, the model asks "Wogegen?", nothing is
+    stored and nobody is asked for consent yet."""
+    loop = ConversationLoop(
+        session,
+        FakeLLM(
+            [
+                LLMTurn(
+                    tool_call=table(
+                        "ohne Zwiebeln, gegen Erdnüsse allergisch und gegen Sesam"
+                    )
+                ),
+                LLMTurn(say="Wogegen sind Sie allergisch?"),
+            ]
+        ),
+        "system",
+        now=NOW,
+    )
+
+    said = loop.run_turn(state, "Tisch für vier auf Müller").say
+
+    assert said == ["Wogegen sind Sie allergisch?"]
+    assert reservations(session) == []
+    assert logged(session) == []
+    assert state.held_call is None
