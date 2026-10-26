@@ -1420,6 +1420,21 @@ def asks_consent(note: str) -> bool:
     return noted is not None and _REASON_TAIL in noted
 
 
+def unread_allergy(note: str) -> bool:
+    """Does `note` name an allergy whose ingredient the words do not give in
+    full ("gegen Erdnüsse allergisch und gegen Sesam", "eine Allergie")?
+    `with_consent` would store such a piece without the allergy, or drop it:
+    the guest is asked "Wogegen?" first, as in the search (#361; Codex PR
+    #368)."""
+    for text, notice in _pieces(note):
+        if notice or not mentions_allergy(text):
+            continue
+        wish = classify_wish(text, [])
+        if wish is not None and wish.kind == "allergy" and not wish.ingredient:
+            return True
+    return False
+
+
 def _with_allergy(
     text: str,
     tokens: list[re.Match[str]],

@@ -56,7 +56,7 @@ from api.agent.state import (
     same_order,
 )
 from api.domain.menu.items import option_key
-from api.domain.menu.wishes import asks_consent, with_consent
+from api.domain.menu.wishes import asks_consent, unread_allergy, with_consent
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -123,6 +123,11 @@ HINT_NOT_BOOKED = (
     "nie, auch nicht verneint oder in einer Frage. Fragt der Gast nach seiner "
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
+)
+HINT_ALLERGY_UNREAD = (
+    "Abgelehnt: ein Hinweis nennt eine Allergie, deren Zutat nicht eindeutig "
+    "ist. Frag den Gast: „Wogegen sind Sie allergisch?“ Danach je Allergie "
+    "einen eigenen Hinweis mit ihrer Zutat, zum Beispiel „Erdnussallergie“."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -337,15 +342,23 @@ def consented_call(state: ConversationState, call: ToolCall) -> ToolCall:
 def waits_for_consent(state: ConversationState, call: ToolCall) -> bool:
     """A draft whose note would carry the allergy as its reason, before the
     caller was asked: it is not dispatched, the core asks first (`loop.py`)."""
-    if state.allergy_consent is not None or call.name not in _NOTED:
+    if state.allergy_consent is not None:
         return False
+    return any(asks_consent(note) for note in _notes(call))
+
+
+def _notes(call: ToolCall) -> list[str]:
+    """The notes a draft would store: of the whole order or table, and of each
+    order line."""
+    if call.name not in _NOTED:
+        return []
     items = call.args.get("items")
     lines = items if isinstance(items, list) else []
     notes = [
         call.args.get("note"),
         *(line.get("note") for line in lines if isinstance(line, dict)),
     ]
-    return any(isinstance(note, str) and asks_consent(note) for note in notes)
+    return [note for note in notes if isinstance(note, str)]
 
 
 def _options_fit(seen: dict[str, Any], line: dict[str, Any]) -> bool:
@@ -414,6 +427,15 @@ def refusal(
     return None
 
 
+def unread_refusal(call: ToolCall) -> ToolResult | None:
+    """A draft as the model wrote it, before `consented_call` turns its notes
+    into what may be stored: a note with an allergy whose ingredient is not
+    read in full would lose the allergy there (Codex PR #368)."""
+    if any(unread_allergy(note) for note in _notes(call)):
+        return _ALLERGY_UNREAD
+    return None
+
+
 def _guest_details(call: ToolCall) -> tuple[Any, Any]:
     """Name and phone number a call books under, None for what it does not
     carry. A detail that is missing is left to the validation in dispatch,
@@ -479,6 +501,9 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
+_ALLERGY_UNREAD = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_ALLERGY_UNREAD
+)
 
 
 def unheard_readback(state: ConversationState) -> str | None:
