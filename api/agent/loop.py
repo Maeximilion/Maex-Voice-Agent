@@ -14,15 +14,16 @@ import json
 import logging
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, tzinfo
 from typing import Any, get_args
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards
-from api.agent.dispatch import ToolResult, dispatch, log_refused
+from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMClient, LLMError
@@ -38,9 +39,10 @@ from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.reservations.spoken import WEEKDAYS
-from api.models import Tenant
+from api.models import Order, Tenant
 from api.schemas.callbacks import CallbackReason
 from api.schemas.reservations import CheckSlotRequest
+from api.schemas.transfer import TransferReason
 
 logger = get_logger("api.agent.loop")
 
@@ -65,8 +67,11 @@ ENDED_STAGES = frozenset({"transferred", "ended"})
 # Name under which a refused order of the model (`LLMTurn.cart`) goes back to
 # it and into `calls.tool_calls`. No tool: nothing is dispatched under it.
 CART = "cart"
+# The same for a sentence the core did not let through (`guards.false_booking`).
+SAY = "say"
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
+_TRANSFER_REASONS = frozenset(get_args(TransferReason))
 # Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
 # in CallbackReason gar nicht existiert (docs/03: Storno ist nur ein
 # Transfer-Grund, kein Rückruf-Grund — siehe api/schemas/transfer.py).
@@ -86,6 +91,18 @@ SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
 # checked with the announcement texts (docs/05 §6).
 SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
+# What the guest hears when `confirm` went through: the core says it, built from
+# the confirm result, never the model (`guards.false_booking`). Draft wording,
+# checked with the announcement texts (docs/05 §6).
+# The order is named by the name it runs under, not by its pickup code: the
+# name is what the guest gives at the counter (Maxi, 23.10.2026).
+SAY_ORDER_PLACED = "Ihre Bestellung ist aufgegeben."
+SAY_ORDER_WAITS = "Ihre Bestellung ist aufgenommen, das Team bestätigt sie gleich noch."
+SAY_FOR_NAME = "Ihre Bestellung auf den Namen {name} ist"
+SAY_TABLE_BOOKED = "Ihre Reservierung ist bestätigt."
+# A confirmed call is closing (`outcome.CLOSING_STAGES`): the phone line hangs
+# up after this sentence and adds no second goodbye to it.
+SAY_BOOKED_GOODBYE = "Vielen Dank für Ihren Anruf und bis dann."
 # Deckelt die Rohtext-Beigabe zur Zusammenfassung (CreateCallbackRequest.summary
 # erlaubt bis zu 1000 Zeichen) - großzügig für eine gesprochene Äußerung, aber
 # eine harte Grenze statt eines ungeprüften Anhängens.
@@ -160,6 +177,8 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
+        zone = self._local_now(state).tzinfo
+        assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
                 return self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -267,12 +286,23 @@ class ConversationLoop:
                         self._session, state.call_id, state.tenant_id, CART, refused
                     )
                     called.append(CART)
-                    pending_input = _tool_result_as_input(CART, refused)
+                    pending_input = _tool_result_as_input(CART, refused, zone)
                     continue
 
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                refused = guards.false_booking(state, say)
+                if refused is not None:
+                    # Rule 3 for what the guest hears: "Ihre Abholung ist
+                    # bestätigt, der Abholcode lautet 8842" with nothing booked
+                    # sends a guest away who will find no order (13.10.2026).
+                    log_refused(
+                        self._session, state.call_id, state.tenant_id, SAY, refused
+                    )
+                    called.append(SAY)
+                    pending_input = _tool_result_as_input(SAY, refused, zone)
+                    continue
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -300,6 +330,52 @@ class ConversationLoop:
             else:
                 result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if turn.tool_call.name == "confirm" and result.ok:
+                # Booked: the core says so itself and ends the turn. A model
+                # that phrased it said what the database did not hold (a code
+                # it made up, a table never drafted), and every rule that
+                # judged its words let a false one through (Codex PR #347).
+                state.booking_say = _booked_say(
+                    state, result.data, self._order_name(state)
+                )
+                # A confirm that held the guest past a limit goes to the team
+                # like any slow tool on the next hop would; the booking stands
+                # (Codex PR #347).
+                # The guest still hears what was booked, and the handoff's card
+                # says so (`_handoff`), or the team books a second time.
+                late = None
+                if self._clock() - self._started > self._max_call_seconds:
+                    late = self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                elif (
+                    left := self._left_in_turn(turn_started)
+                ) is not None and left <= 0:
+                    late = self._too_slow(state, user_text)
+                if late is not None:
+                    late.say = [state.booking_say, *late.say]
+                    return late
+                # A table booked while an order stands unplaced: the line
+                # hangs up after this sentence, so it says so, as the team
+                # path does (`_table_to_team`; Codex PR #347).
+                open_order = state.order_id is None and bool(state.cart)
+                said = " ".join(
+                    s
+                    for s in (
+                        state.booking_say,
+                        SAY_ORDER_NOT_PLACED if open_order else None,
+                        SAY_BOOKED_GOODBYE,
+                    )
+                    if s
+                )
+                guards.note_said(state, said)
+                return TurnResult(
+                    state=state, say=[said], ended=state.stage in ENDED_STAGES
+                )
+            if result is guards.CALLBACK_WITHOUT_NUMBER:
+                handed = self._callback_without_number(
+                    state, turn.tool_call.args, user_text, reported_failures
+                )
+                if handed is not None:
+                    return handed
             if result.data.get("team_callback"):
                 # A table that is free, but the team decides (#252). The core
                 # hands the wish over here and now, and the model is not asked
@@ -307,10 +383,65 @@ class ConversationLoop:
                 # both, so the tool's sentence would end its turn, and a guest
                 # who hangs up then would be lost (Codex PR #280).
                 return self._table_to_team(state, turn.tool_call.args, result.say)
+            if turn.tool_call.name == "transfer_to_team" and state.transferred:
+                # The model handed the call over itself, and the team takes it:
+                # the call ends here, as in `_handoff`. Asked again, a real
+                # model called transfer_to_team on its own result until the hop
+                # limit, and the call went to the team as stuck (13.10.2026).
+                return TurnResult(
+                    state=state, say=[result.say or SAY_ESCALATION], ended=True
+                )
             called.append(turn.tool_call.name)
-            pending_input = _tool_result_as_input(turn.tool_call.name, result)
+            pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
+
+    def _callback_without_number(
+        self,
+        state: ConversationState,
+        args: dict[str, Any],
+        user_text: str,
+        reported_failures: set[str],
+    ) -> TurnResult | None:
+        """The model wants the team to call back, and nobody's number is known.
+        The team takes the call instead where it is reachable. Otherwise only
+        the number is left, so the model asks for it, and the turn counts on
+        the ladder for `phone` like a failed answer: on a line with nothing but
+        noise a real model asked for the number on every turn, and the call
+        ended with neither a callback nor the team (`eskalation_0016`, Codex
+        PR #347, P1). It counts only once the model asked for the number: the
+        guest's first "Rufen Sie mich zurück" is no failed answer (Codex PR
+        #347). None lets the model ask."""
+        reason = args.get("reason")
+        transfer = self._dispatch(
+            state,
+            "transfer_to_team",
+            # A reason that is no string is no reason: `in` on a list or a
+            # dict would raise before dispatch could refuse it (Codex PR #347).
+            {
+                "reason": reason
+                if isinstance(reason, str) and reason in _TRANSFER_REASONS
+                else "not_understood"
+            },
+        )
+        apply_tool_result(state, "transfer_to_team", transfer)
+        if state.transferred:
+            return TurnResult(
+                state=state, say=[transfer.say or SAY_ESCALATION], ended=True
+            )
+        if state.asked_for_phone and "phone" not in reported_failures:
+            reported_failures.add("phone")
+            self._ladder.record_failure("phone")
+            if self._ladder.should_end_call("phone"):
+                return self._handoff(
+                    state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
+                )
+        return None
+
+    def _order_name(self, state: ConversationState) -> str | None:
+        """The name the confirmed order runs under, from the database."""
+        order = self._session.get(Order, state.order_id) if state.order_id else None
+        return order.customer_name if order else None
 
     def _left_in_turn(self, turn_started: float | None) -> float | None:
         """Seconds the guest still waits for this turn; None without a deadline."""
@@ -427,6 +558,9 @@ class ConversationLoop:
         zone is shown as the restaurant's clock shows it. A name only when the
         guest said it in this call: `check_slot` takes no name, so one a model
         wrote next to its arguments has passed no guard (Codex PR #280)."""
+        # Read the way the tool read it: a time without an offset is the
+        # restaurant's local time, or the card raised on it (Codex PR #347).
+        args = in_local_time(self._session, state.tenant_id, args)
         wish = CheckSlotRequest.model_validate(
             {
                 "call_id": state.call_id,
@@ -480,7 +614,7 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": callback_reason,
-                    "summary": _handoff_summary(reason, detail),
+                    "summary": _handoff_summary(reason, detail, state.booking_say),
                 },
             )
             apply_tool_result(state, "create_callback", callback)
@@ -522,17 +656,38 @@ def _order_lines(state: ConversationState, room: int) -> str:
     return text[: max(room, 0)]
 
 
-def _handoff_summary(reason: str, detail: str | None) -> str:
+def _booked_say(
+    state: ConversationState, data: dict[str, Any], name: str | None
+) -> str:
+    """The sentence of a confirm that went through: what was booked, from the
+    confirm result and the order in the database. An order that waits for the
+    team says so (`handover`), and it is named by the name it runs under."""
+    if state.order_id is None:
+        return SAY_TABLE_BOOKED
+    placed = (
+        SAY_ORDER_WAITS
+        if data.get("handover") == "awaiting_approval"
+        else SAY_ORDER_PLACED
+    )
+    if not name:
+        return placed
+    return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
+
+
+def _handoff_summary(reason: str, detail: str | None, booked: str | None = None) -> str:
     base = _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
-    if not detail:
-        return base
-    return f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
+    if detail:
+        base = f"{base} Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}"
+    # A booking of this call stands whatever went wrong after it: the card says
+    # so, or the team books a second time (Codex PR #347).
+    return f"{base} Bereits gebucht: {booked}" if booked else base
 
 
-def _tool_result_as_input(name: str, result: ToolResult) -> str:
-    """Ergebnis dem Modell als nächster Zug zurückgeben, ohne echten Kundeninput."""
+def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:
+    """Ergebnis dem Modell als nächster Zug zurückgeben, ohne echten Kundeninput.
+    Times in the restaurant's local time (`zone`), like `now` in the state."""
     if result.ok:
-        payload = {"tool": name, "ok": True, "data": result.data}
+        payload = {"tool": name, "ok": True, "data": _local_times(result.data, zone)}
     else:
         payload = {"tool": name, "ok": False, "error_code": result.error_code}
     if result.hint:
@@ -546,3 +701,23 @@ def _tool_result_as_input(name: str, result: ToolResult) -> str:
         # selbst improvisieren.
         payload["say"] = result.say
     return json.dumps(payload, default=str, ensure_ascii=False)
+
+
+def _local_times(value: Any, zone: tzinfo) -> Any:
+    """Every point in time of a tool result in local time. The tools answer in
+    UTC (`closes_at` 20:00Z for 22:00), and a real model read the UTC hour as
+    the restaurant's and said "bis 21 Uhr" and "bis 22 Uhr" for the same 22:00
+    (13.10.2026). Only text with a date, a time and an offset is one; a bare
+    date or a number stays as it is."""
+    if isinstance(value, dict):
+        return {key: _local_times(item, zone) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_local_times(item, zone) for item in value]
+    if isinstance(value, str) and "T" in value:
+        # A free text such as a note can look like a time at the edge of the
+        # calendar, which no zone can take (Codex PR #347).
+        with suppress(ValueError, OverflowError):
+            moment = datetime.fromisoformat(value)
+            if moment.tzinfo is not None:
+                return moment.astimezone(zone).isoformat(timespec="minutes")
+    return value

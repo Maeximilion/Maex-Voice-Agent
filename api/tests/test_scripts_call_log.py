@@ -1,5 +1,6 @@
 """Anrufprotokoll ohne Tonaufnahme (scripts/call_log.py, docs/17). Ohne Datenbank."""
 
+import hashlib
 import json
 import sys
 from datetime import date
@@ -22,7 +23,7 @@ posix_mode = pytest.mark.skipif(
 def _row(**kw: str) -> str:
     base = {
         "date": "24.09.2026",
-        "time": "18:42",
+        "time": "18",
         "duration_min": "3",
         "intent": "abholung",
         "outcome": "erledigt",
@@ -226,9 +227,16 @@ def test_gleicher_wortlaut_in_derselben_stunde_bleibt_getrennt(tmp_path):
     assert len(list(tmp_path.iterdir())) == 2
 
 
-def test_doppelt_abgetippte_zeile_wird_nicht_doppelt_gezaehlt(tmp_path):
-    entries, _ = parse(HEADER + _row() + _row())
-    assert write_cases(entries, tmp_path) == 1
+def test_same_row_twice_in_one_hour_is_two_calls_and_named(tmp_path):
+    """T-11.4: without the minute a row typed twice and two calls with the same
+    content look alike. Both count, the report names the lines to check."""
+    entries, errors = parse(HEADER + _row() + _row())
+    assert errors == []
+    assert len(entries) == 2
+    text = report(entries)
+    assert "Anrufe: 2 an 1 Tagen" in text
+    assert "doppelt abgetippt? Dann eine loeschen: Zeilen 2, 3" in text
+    assert write_cases(entries, tmp_path) == 2
 
 
 def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
@@ -859,7 +867,7 @@ def test_eingefuegter_anruf_derselben_minute_wird_gemeldet(
     assert main([str(csv_file), "--cases", str(entw)]) == 0
     err = capsys.readouterr().err
     assert all(n in err for n in namen), err
-    assert "derselben Minute" in err
+    assert "derselben Stunde" in err
 
 
 def test_unveraenderter_anruf_meldet_keine_verschiebung(tmp_path, eval_cases, capsys):
@@ -1047,12 +1055,9 @@ def test_nummer_der_karte_nach_praeposition_ist_keine_adresse(text):
     assert errors == [], text
 
 
-def test_doppelt_abgetippte_zeile_zaehlt_einmal():
-    """Codex PR #135: dieselbe Zeile zweimal ist ein Anruf, auch in der Baseline."""
-    entries, errors = parse(HEADER + _row() + _row())
-    assert errors == []
-    assert len(entries) == 1
-    assert "Anrufe: 1 an 1 Tagen" in report(entries)
+def test_same_content_in_other_hours_is_not_named():
+    entries, _ = parse(HEADER + _row() + _row(time="19") + _row(date="25.09.2026"))
+    assert "doppelt abgetippt" not in report(entries)
 
 
 @pytest.mark.parametrize("day", ["2026", "kein-datum", 20260924])
@@ -1087,3 +1092,183 @@ def test_salz_und_verzeichnis_nur_fuer_den_eigentuemer(tmp_path, eval_cases):
     assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 0
     for name in (".call_log_salt", ".call_log_ids.json"):
         assert (tmp_path / name).stat().st_mode & 0o777 == 0o600, name
+
+
+# T-11.4 (docs/09 §1 L15): the log keeps the hour of a call, not the minute.
+
+SALT = "ab" * 16
+
+
+def _minute_id(minute: str, ordinal: int = 0) -> str:
+    """The case ID as the script built it before T-11.4, from the minute."""
+    key = f"{SALT}|2026-09-24 {minute}|{ordinal}"
+    return "protokoll_" + hashlib.sha256(key.encode("utf-8")).hexdigest()[:10]
+
+
+@pytest.mark.parametrize(
+    ("value", "hour"),
+    [("18", 18), ("18 Uhr", 18), ("9", 9), ("09 uhr", 9), ("18:42", 18), ("9.05", 9)],
+)
+def test_time_is_read_as_the_hour(value, hour):
+    entries, errors = parse(HEADER + _row(time=value))
+    assert errors == []
+    assert entries[0].hour == hour
+
+
+@pytest.mark.parametrize("value", ["24", "18:60", "abends", "18 Uhr 42", "-1"])
+def test_impossible_time_is_rejected(value):
+    _, errors = parse(HEADER + _row(time=value))
+    assert len(errors) == 1
+    assert "Uhrzeit" in errors[0]
+
+
+def test_two_bare_calls_in_one_hour_count_twice():
+    """Without the minute two rows without free text look alike; they are two
+    calls ("frage", "erledigt"), not one typed twice."""
+    bare = _row(intent="frage", phrases="", items="", problems="")
+    entries, errors = parse(HEADER + bare + bare)
+    assert errors == []
+    assert len(entries) == 2
+    text = report(entries)
+    assert "Anrufe: 2 an 1 Tagen" in text
+    assert "doppelt abgetippt" not in text
+
+
+def test_minute_is_cut_to_the_hour_in_the_csv(tmp_path, capsys):
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(
+        HEADER + _row(time="18:42") + _row(time="9.05", intent="frage"),
+        encoding="utf-8",
+    )
+    assert main([str(csv_file)]) == 0
+    assert csv_file.read_text(encoding="utf-8-sig") == (
+        HEADER + _row(time="18") + _row(time="9", intent="frage")
+    )
+    assert "auf die Stunde gekuerzt: 2" in capsys.readouterr().out
+    # A plain run makes no salt: without one no case ID was ever handed out.
+    assert not (tmp_path / ".call_log_salt").exists()
+    before = csv_file.stat().st_mtime_ns
+    assert main([str(csv_file)]) == 0
+    assert csv_file.stat().st_mtime_ns == before
+    assert "gekuerzt" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("with_known", [True, False])
+def test_cut_keeps_the_row_of_a_reviewed_case(tmp_path, eval_cases, capsys, with_known):
+    """A case reviewed under its minute ID keeps its row once the minute is
+    gone: no second draft, no orphan report, on this run or the next. Also when
+    the ID directory never saw it."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    (tmp_path / ".call_log_salt").write_text(SALT, encoding="utf-8")
+    other = _row(time="18:05", intent="reservierung", phrases="Tisch fuer zwei")
+    csv_file.write_text(HEADER + other + _row(time="18:42"), encoding="utf-8")
+    entry = parse(HEADER + _row(time="18:42"))[0][0]
+    old = _minute_id("18:42")
+    case = to_case(entry, SALT)
+    case["id"] = old
+    del case["review"]
+    (eval_cases / f"{old}_abholung.json").write_text(json.dumps(case), encoding="utf-8")
+    if with_known:
+        known = {
+            old.removeprefix("protokoll_"): {
+                "day": "2026-09-24",
+                "fp": call_log._fingerprint(entry, SALT),
+            }
+        }
+        (tmp_path / ".call_log_ids.json").write_text(
+            json.dumps(known), encoding="utf-8"
+        )
+    for _ in range(2):
+        assert main([str(csv_file), "--cases", str(entw)]) == 0
+        assert capsys.readouterr().err == ""
+        drafts = [p.name for p in entw.iterdir()]
+        assert len(drafts) == 1
+        assert drafts[0].endswith("_reservierung.json")
+    ids = json.loads((tmp_path / ".call_log_ids.json").read_text(encoding="utf-8"))
+    assert old.removeprefix("protokoll_") not in ids
+    assert [v["was"] for v in ids.values() if "was" in v] == [
+        old.removeprefix("protokoll_")
+    ]
+
+
+def test_cut_still_reports_a_row_changed_since_review(tmp_path, eval_cases, capsys):
+    """The mapping keeps the fingerprint of the reviewed row: a correction made
+    before the cut still shows up."""
+    csv_file = tmp_path / "protokoll.csv"
+    (tmp_path / ".call_log_salt").write_text(SALT, encoding="utf-8")
+    csv_file.write_text(HEADER + _row(time="18:42"), encoding="utf-8")
+    old = _minute_id("18:42")
+    case = to_case(parse(HEADER + _row(time="18:42"))[0][0], SALT)
+    del case["review"]
+    name = f"{old}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
+    known = {old.removeprefix("protokoll_"): {"day": "2026-09-24", "fp": "0" * 10}}
+    (tmp_path / ".call_log_ids.json").write_text(json.dumps(known), encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(tmp_path / "entwuerfe")]) == 0
+    err = capsys.readouterr().err
+    assert name in err
+    assert "geaendert" in err
+
+
+def test_cut_keeps_two_calls_of_one_hour_with_the_same_content(
+    tmp_path, eval_cases, capsys
+):
+    """Codex PR #135 under the hour: two calls at 18:05 and 18:50 with the same
+    wording stay two after the cut, and the second keeps its reviewed case."""
+    csv_file = tmp_path / "protokoll.csv"
+    (tmp_path / ".call_log_salt").write_text(SALT, encoding="utf-8")
+    csv_file.write_text(
+        HEADER + _row(time="18:05") + _row(time="18:50"), encoding="utf-8"
+    )
+    old = _minute_id("18:50")
+    case = to_case(parse(HEADER + _row(time="18:50"))[0][0], SALT)
+    del case["review"]
+    name = f"{old}_abholung.json"
+    (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
+    entw = tmp_path / "entwuerfe"
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    assert capsys.readouterr().err == ""
+    # The first call has no reviewed case and gets its draft; the second none.
+    assert len(list(entw.iterdir())) == 1
+
+
+def test_broken_salt_stops_the_cut(tmp_path, capsys):
+    csv_file = tmp_path / "protokoll.csv"
+    csv_file.write_text(HEADER + _row(time="18:42"), encoding="utf-8")
+    (tmp_path / ".call_log_salt").write_text("kaputt", encoding="utf-8")
+    assert main([str(csv_file)]) == 2
+    assert "Salz" in capsys.readouterr().err
+    assert csv_file.read_text(encoding="utf-8") == HEADER + _row(time="18:42")
+
+
+def test_cut_maps_the_second_call_of_a_minute(tmp_path, eval_cases, capsys):
+    """The old ID counted the calls within the minute: the second call of 18:42
+    was place 1, and its reviewed case must be found under that ID."""
+    csv_file = tmp_path / "protokoll.csv"
+    entw = tmp_path / "entwuerfe"
+    (tmp_path / ".call_log_salt").write_text(SALT, encoding="utf-8")
+    first = _row(time="18:42", phrases="die 7 bitte")
+    second = _row(time="18:42")
+    csv_file.write_text(HEADER + first + second, encoding="utf-8")
+    old = _minute_id("18:42", 1)
+    case = to_case(parse(HEADER + second)[0][0], SALT)
+    del case["review"]
+    (eval_cases / f"{old}_abholung.json").write_text(json.dumps(case), encoding="utf-8")
+    assert main([str(csv_file), "--cases", str(entw)]) == 0
+    assert capsys.readouterr().err == ""
+    entries, _ = parse(csv_file.read_text(encoding="utf-8-sig"))
+    first_id = call_log.case_id(entries[0], SALT)
+    assert [p.name for p in entw.iterdir()] == [f"{first_id}_abholung.json"]
+
+
+def test_mapping_again_after_a_stopped_run_keeps_the_fingerprint(eval_cases):
+    """A run that saved the directory but stopped before the cut of the CSV
+    maps the same rows again; the fingerprint of the review must survive."""
+    entry = parse(HEADER + _row(time="18:42"))[0][0]
+    old = _minute_id("18:42").removeprefix("protokoll_")
+    (eval_cases / f"protokoll_{old}_abholung.json").write_text("{}", encoding="utf-8")
+    known = {old: {"day": "2026-09-24", "fp": "0" * 10}}
+    assert call_log._remap([entry], SALT, known) is True
+    assert call_log._remap([entry], SALT, known) is False
+    assert [v["fp"] for v in known.values()] == ["0" * 10]

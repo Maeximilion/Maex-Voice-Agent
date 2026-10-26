@@ -285,3 +285,29 @@ def test_judge_writes_an_order_row_with_what_was_said_and_taken():
     assert asked["verdict"] == "asked" and asked["on_card"] is False
     assert asked["got"] == "2x13, 1x26|26d?"
     assert wrong["as_said"] == asked["as_said"] == "right"
+
+
+# A menu with both halves of a number as dishes (#328): the eval menu has no
+# dish 1 to 9, so a 23 cut into the 3 and the 20 never took a wrong dish there.
+HALVES_MENU = Menu.from_rows(
+    [("3", "Vorspeisen"), ("20", "Suppen"), ("23", "Vorspeisen")]
+)
+
+
+@pytest.mark.parametrize(
+    "heard",
+    [
+        "die drei und, zwanzig",
+        "die 3 und, 20",
+        "die drei zwanzig",
+        "die drei und äh zwanzig",
+        "die drei und öh, zwanzig",
+    ],
+)
+def test_a_number_that_may_be_cut_asks_on_a_menu_with_both_halves(heard):
+    assert order_verdict([["23", 1]], heard, HALVES_MENU)["verdict"] == "asked"
+
+
+def test_a_number_said_whole_stays_right_on_a_menu_with_both_halves():
+    for heard in ("die drei und zwanzig", "die dreiundzwanzig", "die 23"):
+        assert order_verdict([["23", 1]], heard, HALVES_MENU)["verdict"] == "right"

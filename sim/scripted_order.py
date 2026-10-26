@@ -69,8 +69,6 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
-SAY_THANKS = "Vielen Dank und bis gleich."
-SAY_APPROVAL = "Das Team bestätigt die Bestellung gleich noch."
 
 # Whoever says this is done with the dishes.
 DONE_PHRASES = ("nein", "das war", "das wars", "nichts mehr", "alles", "sonst nichts")
@@ -465,15 +463,6 @@ class PickupScript:
         carry, self._carry = self._carry, None
         return carry
 
-    def on_confirmed(self, data: dict[str, Any]) -> LLMTurn:
-        self.readback_for = None
-        code = data.get("pickup_code")
-        parts = [f"Ihr Abholcode ist {code}." if code else None]
-        if data.get("handover") == "awaiting_approval":
-            parts.append(SAY_APPROVAL)
-        parts.append(SAY_THANKS)
-        return LLMTurn(say=_join(*parts))
-
     # -- internal ----------------------------------------------------------
 
     def _take(self, query: str, found: dict[str, Any]) -> str | None:
@@ -620,15 +609,23 @@ class PickupScript:
         # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
         but = _BUT.search(text)
         nothing = _withdraws(text[: but.start()] if but else text)
+        behind = classify_wish(text[but.end() :], []) if but and nothing else None
+        if behind is not None and behind.kind == "allergy":
+            # "Keine, aber ich bin gegen Sesam allergisch", "Keine, aber meine
+            # Frau ...": whose allergy and for which dish is not clear, so
+            # the question is asked again (#207, Codex PR #361).
+            return LLMTurn(
+                say=self._allergy_question(),
+                state_patch=patch or None,
+                understanding_failure="allergy",
+            )
         if wish is None or nothing or (wish.kind != "allergy" and denies_allergy(text)):
             # "Ich habe doch keine Allergie", "Keine.", "Gegen nichts.": the
             # question is closed, nothing goes to the kitchen; a removal said
             # with it is noted (issue #252).
             item = self._allergy_for.pop(0)
-            if nothing and but:
-                behind = classify_wish(text[but.end() :], [])
-                if behind is not None:
-                    item.note = _with_removal(item.note, removal_with(behind))
+            if behind is not None:
+                item.note = _with_removal(item.note, removal_with(behind))
             if wish is not None and not nothing:
                 # A removal said with it is noted. An addition is not taken:
                 # the answer is read without the dish's options (stand-in

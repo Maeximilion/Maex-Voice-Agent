@@ -27,7 +27,7 @@ works = '''`make migrate` creates the stage-1 tables and the stage-2 tables for 
 tasks = ["T-1.1", "T-1.2", "T-4.1"]
 
 [[capability]]
-works = '''Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -m scripts.call_log imports/anrufprotokoll.csv` prints the C1 baseline (volume, intent mix, outcomes, peak hours), `--cases <dir>` writes eval case skeletons without real customer sentences, `--frist-tage N --loeschen` enforces the deletion period; rejects files with phone numbers, e-mail, street addresses or a person's allergy'''
+works = '''Call log without recording per `docs/17_ANRUFPROTOKOLL.md`: `python -m scripts.call_log imports/anrufprotokoll.csv` prints the C1 baseline (volume, intent mix, outcomes, peak hours), `--cases <dir>` writes eval case skeletons without real customer sentences, `--frist-tage N --loeschen` enforces the deletion period; keeps only the hour of a call and cuts a minute in older rows; rejects files with phone numbers, e-mail, street addresses or a person's allergy'''
 tasks = []
 
 [[capability]]
@@ -100,9 +100,9 @@ waits_for = '''the evals on target (G2)'''
 
 [[capability]]
 works = '''Team notifications reach the team's devices'''
-missing = '''Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured (D14)'''
+missing = '''Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)'''
 tasks = []
-waits_for = '''the workflow imported, the team's devices subscribed (`n8n/README.md`) and a relay for iPhones and iPads (D14)'''
+waits_for = '''the workflow imported, the team's devices subscribed (`n8n/README.md`) on the chosen devices (Android devices or the web page on the tablet, D14)'''
 
 [[capability]]
 works = '''The test config holds the real hours and capacity of the pilot operation'''
