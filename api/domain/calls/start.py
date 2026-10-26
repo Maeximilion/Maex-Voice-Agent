@@ -7,19 +7,17 @@ bestehende call_id zurück, statt eine zweite Zeile zu schreiben.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.models import Call, Tenant
 from api.schemas.calls import CallStarted, StartCallRequest
-
-# docs/03 §Löschfristen: "calls ohne personenbezogene Felder | 24 Monate".
-RETENTION_MONTHS = 24
 
 
 def start_call(
@@ -86,16 +84,8 @@ def _caller_id(raw: str | None) -> str | None:
 
 
 def _delete_after(started_at: datetime) -> date:
-    """24 Monate ab Anrufbeginn. Tag wird aufs Zielmonat begrenzt, z. B. 31. Januar
-    plus 24 Monate ergibt 31. Januar (kein Schaltproblem), 31. Dezember plus 26
-    Monate würde auf den 28./29. Februar begrenzt."""
-    day = started_at.date()
-    month_index = day.month - 1 + RETENTION_MONTHS
-    year = day.year + month_index // 12
-    month = month_index % 12 + 1
-    return date(year, month, min(day.day, _days_in_month(year, month)))
-
-
-def _days_in_month(year: int, month: int) -> int:
-    next_month = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
-    return (next_month - date(year, month, 1)).days
+    """The day the caller number goes: RETENTION_CALLER_ID_DAYS after the call
+    (docs/03 "Loeschkonzept", 90 days since the legal check, L8). The job itself
+    goes by `started_at` (api/jobs/retention.py), so a shortened period also
+    reaches calls whose row still carries the older date."""
+    return (started_at + timedelta(days=settings.retention_caller_id_days)).date()

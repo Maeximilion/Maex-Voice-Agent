@@ -45,6 +45,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | order_approval_above_cents | INT ≥ 0 | an order whose total is above this amount waits for the team's approval on the tablet before a slip prints, whatever the mode; default 15000, 0 holds every order (#252, migration 007). Read by `confirm` since 13.10.2026 (`domain/ordering/confirm.py`, docs/04 §confirm) |
 | turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
 | order_approval_overdue_minutes | INT ≥ 1 | how long an order may wait for "Passt" on the tablet before its card turns red; default 5 (#252, migration 008). Counted from the guest's yes, the audit entry `order.confirmed`. Read by the order board (`domain/ordering/board.py`); a changed value shows within the next poll of the tablet |
+| privacy_notice_address | TEXT NULL, not white space only | where the restaurant's privacy notice is, written the way a caller should hear it (`example.com/datenschutz` is only the repository placeholder); T-11.5, migration 009, docs/09 §1 L4. The phone greeting names it (`telephony/handler.py` `greeting`), read with the routing at the start of every call (`domain/calls/routing.py`); a change applies from the next call. Empty on every existing row: without it the greeting leaves the sentence out, and the duty of L4 stays open. The seed writes `PRIVACY_NOTICE_ADDRESS` into a new tenant; an existing one gets it by `UPDATE service_config SET privacy_notice_address = '…'` |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -113,7 +114,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
 | tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
-| delete_after | DATE | Löschfrist |
+| delete_after | DATE | the day the caller number goes, `RETENTION_CALLER_ID_DAYS` (90) after `started_at` (T-11.2; 24 months before). Informational: the deletion job goes by `started_at`, so a shortened period also reaches older rows |
 
 ### `callbacks`
 | Feld | Typ | Bemerkung |
@@ -129,7 +130,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1).
 
 ### `consent_log`
-One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 009). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
+One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -331,24 +332,24 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 
 ## Löschkonzept
 
-Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md` §1, L8, L13, L15). Every period is a setting (`.env` or `service_config`), never a number in the code. Built so far: the call log deletion only; the rest is T-11.2, T-11.7, T-6.7 and T-9.3.
+Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md` §1, L8, L13, L15). Every period is a setting (`.env` or `service_config`), never a number in the code. **Built:** the call log deletion (`scripts/call_log.py`) and, since T-11.2 (26.10.2026), the daily deletion job `api/jobs/retention.py` for every row below that names it. It runs in the dispatcher process once an hour (`RETENTION_INTERVAL_SECONDS`, first pass at the start of the process) or by hand with `python -m api.jobs.retention`; a pass only does what is due, writes one log line "Retention pass" with a count per period, and repeating it changes nothing. Rows stay and lose their personal fields: required text columns become empty strings, so no migration was needed. The periods are the settings `RETENTION_*_DAYS` (`.env.example`), each at least one day and at most 3,660 (a larger value overflows the date arithmetic). Each period runs in a savepoint of its own: one that fails is rolled back and logged as "Retention step failed" with its name, the others still delete, and the pass line lists it under `failed`. Open: T-11.7, T-6.7 and T-9.3.
 
 | Data | Period | How |
 |---|---|---|
 | Call recordings | 30 days; at once on withdrawal | daily job, hard delete (T-11.3) |
 | Transcripts | 90 days; no real wording ever goes into the repository, eval cases are synthetic (L14) | daily job (T-7.1) |
 | Call log without audio (`imports/anrufprotokoll.csv`, docs/17) | 90 days (D10); the hour of the call only, not the minute (L15) | weekly `scripts/call_log.py --frist-tage 90 --loeschen`; paper sheets destroyed after typing |
-| `calls.caller_id` | 90 days after the call (was 24 months) | daily job nulls it; the statistics in `calls` stay |
-| Name, phone, address, notes and the links `customer_id` and `address_id` on orders and reservations | 90 days after the order or reservation date | daily job strips the fields and nulls the links, so the row cannot be traced through the customer record; items, prices, times and `call_id` stay |
-| A caller's allergy in `order_items.note`, `orders.note` or `reservations.note` | end of the business day of the order (the night after `ready_at`), collected or not; for a reservation the night after its date | daily job empties the note text (L13) |
-| `consent_log` | **Assumption, awaiting Maxi (25.10.2026):** no period of its own; the row holds no allergy and no number, only the call it belongs to, and stays as long as the `calls` row (RESTRICT, like `callbacks` and `orders`). It proves that a note was stored lawfully, also after the note is emptied | kept with the call |
-| `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it) | daily job strips both fields (T-11.2) |
+| `calls.caller_id` | 90 days after the call (was 24 months), `RETENTION_CALLER_ID_DAYS` | daily job nulls it; the statistics in `calls` stay |
+| Name, phone, address, notes and the links `customer_id` and `address_id` on orders and reservations | 90 days after the order or reservation date (`ready_at` of an order, its creation while it has none; `reserved_for`), `RETENTION_GUEST_DETAILS_DAYS` | daily job strips the fields and nulls the links, so the row cannot be traced through the customer record; items, prices, times and `call_id` stay. The notes of the positions (`order_items.note`) go with them. `address_id` joins with T-6.1 |
+| A caller's allergy in `order_items.note`, `orders.note` or `reservations.note` | end of the business day of the order (the night after `ready_at`, 05:00 local time, `core/time.py`), collected or not; for a reservation the night after its date; `RETENTION_ALLERGY_NOTE_DAYS` business days later (0) | daily job empties the note text (L13), also its copies in the outbox payloads of the same orders and reservations (`note`, `items[].note`; Codex PR #371), so it does not wait for the payload period. A note counts as an allergy when it contains "Allergi…" (the kitchen wording "Grund: Allergie" included), "Unverträglich…" or "Intoleran…", the words the call log refuses too; the whole note goes. Any other note stays until the guest details go |
+| `consent_log` | end of the third calendar year after the year of the answer (Maxi, 26.10.2026), `RETENTION_CONSENT_LOG_YEARS` (3): the row holds no allergy and no number, but it shows that the caller named one of their own; it is the proof of the "ja" behind a stored allergy note (Art. 7(1)) for as long as a claim can arise (§§ 195, 199 BGB), the reasoning of the request log (U2). Not with the `calls` row: that one is never deleted | daily job deletes the row (T-11.1) |
+| `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it), `RETENTION_CALLBACK_DAYS` | daily job strips both fields (T-11.2). A callback never marked done loses them 90 days after its creation (Maxi, 26.10.2026, after the ultrareview of PR #371): nobody calls back after three months. Its card stays open with its reason and says "Nummer nach der Löschfrist entfernt" instead of offering a call |
 | Customers and their addresses | 24 months after the last contact | daily job (T-6.7) |
-| Outbox payloads | 7 days after a successful dispatch; a failed event at most 30 days | daily job nulls the payload, the event row stays 90 days |
+| Outbox payloads | 7 days after a successful dispatch (`RETENTION_OUTBOX_SENT_DAYS`); any event not sent at most 30 days after it was written (`RETENTION_OUTBOX_UNSENT_DAYS`) | daily job cuts the payload to its ids (`order_id`, `reservation_id`, `callback_id`, `call_id`, `revision`): the column is not nullable, and the kitchen finds every slip of an order by id and revision. An event still pending at 30 days becomes `failed` with it, so a slip without the guest is never printed or sent. The event row goes after 90 days (`RETENTION_OUTBOX_ROW_DAYS`) |
 | Container and Caddy logs | 14 days | cleanup by age, size limits alone do not hold the period (T-11.7) |
 | n8n executions | 7 days | `EXECUTIONS_DATA_PRUNE`, `EXECUTIONS_DATA_MAX_AGE=168` (T-11.7) |
 | Backups | rolling 30 days | retention of `scripts/backup.sh` and a lifecycle rule on the storage; an erasure ledger outside the database and its backups is replayed after a restore (T-9.3) |
-| `audit_log` | 12 months | daily job |
+| `audit_log` | 12 months, `RETENTION_AUDIT_LOG_DAYS` (365) | daily job deletes the entries; they carry no names, phone numbers or notes |
 | Request log of data subjects (`docs/09_OPERATIONS_LEGAL.md` §1 U2) | **Assumption, awaiting Maxi (21.10.2026):** the verification details (name, order or reservation date, delivery address as the requester gave them) are stripped 3 months after the request is answered; the row without them (request id, received and answered date, kind, outcome) stays until the end of the third calendar year after the year of the answer, then the row is deleted. Reasoning: the details are needed only to answer and to defend the answer if the requester complains; the thin row is the proof of the one-month deadline (Art. 12(3), accountability Art. 5(2)) for as long as a claim can arise (regular limitation of 3 years, § 195 BGB, which under § 199(1) BGB starts at the end of the year in which the claim arose). A legal choice: Maxi confirms or changes it | Place: table `data_subject_requests`, planned with T-11.8 (id, `tenant_id` (business table, so every lookup and the cleanup are scoped by it), `received_at`, `answered_at`, `kind`, `verification_note`, `outcome`, `delete_after`); until it exists the manual procedure keeps the log in a file outside the repository (no customer data in the repo), cleaned by hand in the monthly routine (docs/09 §3). Cleanup once the table exists: the daily job of T-11.2 (it strips `verification_note` and deletes expired rows, a log line per run). The erasure ledger (U7) is a separate list of row ids without personal data and is not touched by this period |
 | Order rows without personal fields | as long as the tax adviser asks (L18); the register is the master | kept |
 
@@ -366,6 +367,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 006 | CHECK on `capacity.slot_minutes`, `capacity.max_guests`, `reservations.party_size` (#252) |
 | 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
 | 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
-| 009 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
+| 009 | `service_config.privacy_notice_address`: where the privacy notice is, named in the phone greeting (T-11.5, docs/09 L4); empty on existing rows, a text of white space only refused; the downgrade drops the column |
+| 010 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

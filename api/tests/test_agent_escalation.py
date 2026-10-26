@@ -1,6 +1,8 @@
 """agent/escalation.py: Sofort-Auslöser aus docs/05 §4, geprüft vor dem Modell."""
 
-from api.agent.escalation import check
+import pytest
+
+from api.agent.escalation import asks_more, check, without_human_question
 
 
 def test_beschwerde_wird_erkannt():
@@ -32,3 +34,103 @@ def test_erkennung_ist_gross_klein_unabhaengig():
 
 def test_leerer_text_loest_nichts_aus():
     assert check("") is None
+
+
+# -- without_human_question: whether a person is on the line (docs/09 L1) ------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sind Sie ein Mensch?",
+        "sind sie ein echter mensch",
+        "Bist du eine KI?",
+        "Ist das ein Roboter?",
+        "Spreche ich mit einem Menschen?",
+        "Spreche ich da gerade mit einer Maschine?",
+        "Rede ich hier mit einem Computer?",
+        "Bin ich mit einem echten Menschen verbunden?",
+        "Moment, sind Sie ein Bot?",
+        "Sind Sie eine künstliche Intelligenz?",
+        "Sind Sie ein Mensch oder eine Maschine?",
+        "Ist das ein Chatbot? Ich wollte bestellen.",
+        # Ultrareview of PR #372: phrasings the first list missed.
+        "Sind Sie überhaupt ein Mensch?",
+        "Sind Sie tatsächlich ein Mensch?",
+        "Ist da ein Mensch?",
+        "Ist hier ein Mensch dran?",
+        "Bin ich bei einem Roboter?",
+        "Sind Sie eine K.I.?",
+        "Sie sind ein Roboter, oder?",
+        "Du bist doch eine Maschine?",
+    ],
+)
+def test_the_question_for_a_human_is_recognised(text):
+    assert without_human_question(text) is not None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # The wish, not the question: escalation, not an answer.
+        "Kann ich bitte mit einem Menschen sprechen?",
+        "Ich will mit einem Menschen sprechen.",
+        # The words, but no question about the agent.
+        "Ist das Gericht auch für Menschen mit Nussallergie?",
+        "Ist das automatisch mit Reis?",
+        "Sind Sie echt schon ausgebucht?",
+        "Ich bin ein Mensch, der gern scharf isst.",
+        "Ist das Problem mit dem Computer gelöst?",
+        "Ich hätte gerne einen Tisch für vier Personen",
+        "",
+    ],
+)
+def test_other_sentences_are_no_question_for_a_human(text):
+    assert without_human_question(text) is None
+
+
+def test_what_else_the_sentence_says_is_left_for_check():
+    """Codex PR #372: the words of the question ("mit einem Menschen") are
+    those of the wish to talk to one; read past them, a cancellation or the
+    wish itself in the same sentence still counts."""
+    rest = without_human_question(
+        "Spreche ich mit einem Menschen? Ich möchte meine Reservierung stornieren."
+    )
+    assert rest is not None and "mensch" not in rest
+    assert check(rest) == "cancellation"
+
+    rest = without_human_question(
+        "Sind Sie ein Mensch? Ich will mit einem Menschen sprechen."
+    )
+    assert check(rest) == "human_requested"
+
+    assert check(without_human_question("Spreche ich mit einem Menschen?")) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Spreche ich mit einer Maschine oder mit einem Menschen?",
+        "Spreche ich hier mit einem Roboter oder mit einem Menschen?",
+        "Bin ich mit einem Computer oder mit einem Menschen verbunden?",
+    ],
+)
+def test_both_halves_of_an_either_or_question_are_the_question(text):
+    """Ultrareview of PR #372: the half after "oder" holds the words of the
+    wish ("mit einem Menschen") and is still the question."""
+    assert check(without_human_question(text)) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "more"),
+    [
+        ("Sind Sie ein Mensch?", False),
+        ("Hallo, sagen Sie mal, sind Sie ein Mensch?", False),
+        ("Guten Tag, ist das ein Roboter? Ehrlich jetzt?", False),
+        ("Sind Sie ein Roboter? Ich möchte einen Tisch für vier.", True),
+        ("Ist das ein Computer? Morgen um 19 Uhr bitte.", True),
+        ("Sind Sie ein Mensch? 2 mal die 13", True),
+    ],
+)
+def test_asks_more_tells_a_request_from_greeting_words(text, more):
+    assert asks_more(without_human_question(text)) is more

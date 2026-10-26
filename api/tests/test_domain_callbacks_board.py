@@ -153,3 +153,21 @@ def test_token_folgt_der_menge_auch_bei_rohem_update(session, tenant_id):
     session.commit()
 
     assert open_change_token(session, tenant_id) == leer
+
+
+def test_token_changes_when_the_deletion_job_empties_a_card(session, tenant_id):
+    """Codex PR #371: the deletion job (T-11.2) clears number and summary of an
+    open callback without changing the set of open ids. The tablet must still
+    reload the card, or it keeps showing the deleted number."""
+    cb_id = rueckruf(session, tenant_id)
+    before = open_change_token(session, tenant_id)
+
+    session.execute(
+        text("UPDATE callbacks SET phone = '', summary = '' WHERE id = :id"),
+        {"id": cb_id},
+    )
+    session.commit()
+
+    after = open_change_token(session, tenant_id)
+    assert after != before
+    assert open_change_token(session, tenant_id) == after

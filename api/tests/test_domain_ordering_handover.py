@@ -506,3 +506,7 @@ def test_waechter_faden_ueberlebt_einen_fehler(caplog):
 
     watch_forever(Once(), 0, session_factory=Broken)
     assert "Watchdog pass aborted" in caplog.text
+    # The deletion job runs in the same loop and is named as itself.
+    Once.done = False
+    watch_forever(Once(), 0, session_factory=Broken, label="Retention")
+    assert "Retention pass aborted" in caplog.text

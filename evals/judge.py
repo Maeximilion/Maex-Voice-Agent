@@ -74,6 +74,10 @@ EXPECTED_KEYS = frozenset(
         # The code writes that sentence and the agent has to read it out as it
         # is: it names the amount the guest says yes to (eval abholung_0076).
         "readback",
+        # Pieces the caller must hear somewhere in the call, each word for
+        # word: the truthful answer to "Sind Sie ein Mensch?" is no booking,
+        # it is a sentence the core says (docs/09 L1, T-11.5).
+        "said",
         # The note of the confirmed order as a whole, or of the confirmed table,
         # word for word; null says there is none (D24, T-11.1).
         "note",
@@ -163,6 +167,14 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         spoken = case["expected"]["readback"]
         if not (isinstance(spoken, str) and spoken.strip()):
             raise CaseError(f"{source}: readback is a piece of the read-back sentence")
+    if "said" in case["expected"]:
+        pieces = case["expected"]["said"]
+        if not (
+            isinstance(pieces, list)
+            and pieces
+            and all(isinstance(p, str) and p.strip() for p in pieces)
+        ):
+            raise CaseError(f"{source}: said is a list of pieces of what is said")
     note = case["expected"].get("note")
     if note is not None and not (isinstance(note, str) and note.strip()):
         raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
@@ -274,6 +286,12 @@ def heard_readback(turns: Sequence[Turn]) -> str | None:
         if any(t.get("ok") and t.get("name") in DRAFT_TOOLS for t in turn.tools)
     ]
     return said[-1] if said else None
+
+
+def unsaid(pieces: Sequence[str], turns: Sequence[Turn]) -> list[str]:
+    """The pieces of `expected.said` the caller never heard in the call."""
+    heard = " ".join(say for turn in turns for say in turn.say)
+    return [piece for piece in pieces if piece not in heard]
 
 
 @dataclass

@@ -49,7 +49,14 @@ def tenant_id(engine) -> uuid.UUID:
         )
 
 
-def callback(engine, tenant_id, *, caller_id: str | None) -> None:
+def callback(
+    engine,
+    tenant_id,
+    *,
+    caller_id: str | None,
+    phone=PHONE,
+    summary="Bitte zurueckrufen",
+) -> None:
     with Session(engine) as s:
         call = Call(
             tenant_id=tenant_id,
@@ -64,9 +71,9 @@ def callback(engine, tenant_id, *, caller_id: str | None) -> None:
             Callback(
                 tenant_id=tenant_id,
                 call_id=call.id,
-                phone=PHONE,
+                phone=phone,
                 reason="human_requested",
-                summary="Bitte zurueckrufen",
+                summary=summary,
             )
         )
         s.commit()
@@ -130,3 +137,18 @@ def test_raw_caller_id_is_escaped_on_the_card(client, engine, tenant_id):
 
     assert NOTE_OTHER in body and "&lt;script&gt;" in body
     assert "<script>alert(1)" not in body
+
+
+def test_card_after_the_deletion_period_offers_no_call(client, engine, tenant_id):
+    """T-11.2: 90 days after its creation an open callback has lost number and
+    summary (api/jobs/retention.py). The card says so, offers no empty call
+    link and no empty quote, and can still be closed."""
+    callback(engine, tenant_id, caller_id=None, phone="", summary="")
+
+    body = client.get("/gui/fragments/rueckrufe").text
+
+    assert "Nummer nach der L&ouml;schfrist entfernt" in body
+    assert 'href="tel:' not in body
+    assert NOTE_WITHHELD not in body
+    assert "&bdquo;" not in body
+    assert "Erledigt" in body and "Will Mitarbeiter sprechen" in body

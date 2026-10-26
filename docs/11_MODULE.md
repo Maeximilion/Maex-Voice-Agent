@@ -121,7 +121,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `loop.py` | Kundenzug → Modell → Tool-Aufrufe → Antwort; Abbruch bei `max_call_seconds`, and on the phone line when one guest turn takes longer than `turn_deadline_seconds` |
 | `dispatch.py` | Tool-Name → `domain`-Funktion, mit Zeitmessung. `search_menu` zerlegt hier einen Satz mit mehreren Positionen (`split_positions`) und sucht je Teil; `draft_order` bekommt den Schlüssel aus den Angaben des Anrufs |
 | `ladder.py` | die Verständnis-Leiter als Zustandsmaschine: zählt Fehlversuche, steigt die Stufe |
-| `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell |
+| `escalation.py` | die Auslöser aus 05 §4, prüft **vor** dem Modell; also the question "Sind Sie ein Mensch?" (`without_human_question`), whose truthful answer the loop gives without the model (docs/09 L1, T-11.5) |
 | `guards.py` | what the core enforces whatever the model returns (05 §5): `confirm` only after an explicit yes to the draft read back before the turn, `draft_order` only with dishes from a clear match or from candidates the guest heard by name, no booking word or code from the model except the core's own `booking_say` word for word (`false_booking`; the core says the booking after `confirm` in `loop.py`). A refused call goes back to the model as a failed result with a `hint` |
 | `guest_details.py` | whether the guest said a name or a phone number (`name_said`, `number_known`, `names_a_phone_number`): whole words or a spelled name; the caller ID, or the last digits of a turn that names them as a number to call, in E.164. `state.py` keeps the words and numbers of the call, writes the number the guest gave into `slots` itself and drops an unsaid name or number a model writes; `guards.py` refuses `create_reservation`, `draft_order` and `create_callback` with one, or under another number than the one in `slots` |
 | `consent.py` | the yes detector (`is_yes`), shared by `guards.py` and `evals/recorder.py`; the question for the allergy as a kitchen note (`ALLERGY_QUESTION`) and its answer (`consent_answer`: `yes`, `no` or `unclear`, T-11.1). `guards.py` brings every note into the form the answer allows (`consented_call`), `loop.py` holds the first draft whose note would carry the reason until the question is answered |
@@ -179,7 +179,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 
 ### `jobs/`
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
-- `retention.py` — täglicher Löschjob nach 03
+- `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — Kennzahlen des Tages als Outbox-Ereignis
 - `holidays.py` — Feiertage Baden-Württemberg jährlich in `special_days` vorschlagen

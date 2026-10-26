@@ -11,11 +11,11 @@ in the row. Written by the conversation core (`api/agent/loop.py`) through
 
 A new table, nothing existing changes. The downgrade drops it with every logged
 answer: on a database that holds a restaurant's data, backup first with
-`bash scripts/backup.sh --label before_migration_009` (CLAUDE.md §8, docs/13
+`bash scripts/backup.sh --label before_migration_010` (CLAUDE.md §8, docs/13
 §4).
 
-Revision: 009
-Revises: 008
+Revision: 010
+Revises: 009
 Created: 2026-10-25
 """
 
@@ -24,8 +24,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "009"
-down_revision: str | None = "008"
+revision: str = "010"
+down_revision: str | None = "009"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

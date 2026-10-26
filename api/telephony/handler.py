@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 
 from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient, cost_cents
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_HUMAN_ANSWER, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import ConversationState, initial_state
@@ -56,7 +56,10 @@ from api.telephony.speech_spike import spoken_name
 
 # docs/05 §6. Drafts until the legal check in docs/09; the greeting carries no
 # recording notice because nothing is recorded.
-GREETING = "Guten Tag, hier ist der KI-Assistent von {name}. Was kann ich für Sie tun?"
+GREETING = "Guten Tag, hier ist der KI-Assistent von {name}.{privacy} Was kann ich für Sie tun?"
+# Where the full privacy notice is (docs/09 L4), from service_config; left out
+# while the restaurant has set none.
+PRIVACY_POINTER = " Hinweise zum Datenschutz finden Sie unter {address}."
 SAY_OUTAGE = (
     "Bei mir gibt es gerade eine technische Störung. "
     "Ich verbinde Sie direkt mit dem Restaurant."
@@ -346,7 +349,7 @@ class CallHandler:
             clock=self._clock,
         )
         live.state.greeted = True
-        self._port.say(live.session_id, GREETING.format(name=routing.tenant_name))
+        self._port.say(live.session_id, greeting(routing))
 
     def _turn(self, live: _LiveCall, text: str) -> None:
         if live.loop is None:
@@ -361,12 +364,15 @@ class CallHandler:
         # are that number, and a dish that was named may enter the order. Such
         # a sentence is played to the end, or the guest would be measured
         # against words they talked over (Codex PR #286).
+        # So is the answer to "Sind Sie ein Mensch?": a yes to the offer in it
+        # hands the call over (agent/loop.py, ultrareview of PR #372).
         # The same for the question for the allergy as a kitchen note: its
         # answer is consent only to a question heard to the end (L13; Codex
         # PR #368).
         counted_as_heard = (
             live.state.asked_for_phone
             or live.state.known_item_ids != known
+            or live.state.last_say == SAY_HUMAN_ANSWER
             or live.state.held_call is not None
         )
         interruptible = (
@@ -585,6 +591,14 @@ class CallHandler:
             if self._clock() - kept_at <= NAMED_PHONE_SECONDS:
                 return
             self._named_phones.popitem(last=False)
+
+
+def greeting(routing: CallRouting) -> str:
+    """The first sentence of a call the AI answers: the AI notice, and where the
+    privacy notice is once the restaurant has set it (docs/09 L1, L4)."""
+    address = (routing.privacy_notice_address or "").strip()
+    privacy = PRIVACY_POINTER.format(address=address) if address else ""
+    return GREETING.format(name=routing.tenant_name, privacy=privacy)
 
 
 def _close_quietly(session: Session | None) -> None:

@@ -31,6 +31,7 @@ x-settings: &settings
   TENANT_TIMEZONE:
   TEAM_PHONE:
   MAX_CALL_SECONDS:
+  PRIVACY_NOTICE_ADDRESS:
   N8N_WEBHOOK_URL:
   N8N_BASIC_AUTH_USER:
   N8N_TIMEOUT_SECONDS:
@@ -53,6 +54,15 @@ x-settings: &settings
   MENU_FUZZY_THRESHOLD_HIGH:
   MENU_FUZZY_THRESHOLD_LOW:
   CALL_LOG_RETENTION_DAYS:
+  RETENTION_CALLER_ID_DAYS:
+  RETENTION_GUEST_DETAILS_DAYS:
+  RETENTION_CALLBACK_DAYS:
+  RETENTION_OUTBOX_SENT_DAYS:
+  RETENTION_OUTBOX_UNSENT_DAYS:
+  RETENTION_OUTBOX_ROW_DAYS:
+  RETENTION_AUDIT_LOG_DAYS:
+  RETENTION_ALLERGY_NOTE_DAYS:
+  RETENTION_INTERVAL_SECONDS:
 
 services:
   db:
@@ -281,7 +291,7 @@ services:
     # without anyone noticing. Dependabot proposes updates as pull requests.
     # 2.41.4 or newer is required: GHSA-3qcw-p65v-c7vq (unauthenticated, unbounded growth of
     # the database through the authorize endpoint) affects every older release.
-    image: n8nio/n8n:2.43.3
+    image: n8nio/n8n:2.44.3
     restart: unless-stopped
     environment:
       # No usage data to n8n (#252 finding 9).
@@ -312,7 +322,7 @@ services:
     # Push server for team notifications (D13, n8n/README.md): the n8n workflow
     # publishes, the team's devices subscribe. Nothing is forwarded to an
     # upstream relay, the messages stay on this server.
-    image: binwiederhier/ntfy:v2.29.0
+    image: binwiederhier/ntfy:v2.31.1
     restart: unless-stopped
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
