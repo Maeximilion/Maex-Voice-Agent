@@ -226,6 +226,12 @@ def test_an_order_is_no_answer_to_wogegen(answer, order):
         # Codex PR #368, P1: more than the answer goes to the model.
         ("Erdnüsse, aber bitte erst übermorgen.", False),
         ("Erdnüsse und bitte um 20 Uhr.", False),
+        # Codex PR #368, P1 4382914460: a time or a day read as part of the
+        # ingredient let the held draft go out with the old time.
+        ("Erdnüsse, um 20:00.", False),
+        ("Erdnüsse, um acht.", False),
+        ("Erdnüsse, aber erst morgen.", False),
+        ("Gegen E 621.", True),
         ("Erdnüsse, aber ohne Zwiebeln.", False),
         ("Weiß ich nicht.", False),
     ],
@@ -234,3 +240,20 @@ def test_an_answer_says_only_its_ingredient(answer, only):
     from api.domain.menu.wishes import answers_only
 
     assert answers_only(answer) is only
+
+
+@pytest.mark.parametrize(
+    "answer", ["Erdnüsse, um 20:00.", "Erdnüsse, um acht.", "Sesam, für vier Personen."]
+)
+def test_a_time_or_a_number_is_never_part_of_an_ingredient(answer):
+    """Codex PR #368: "Erdnüsse, um 20 00" was the ingredient."""
+    assert which_answer(answer)[0] is None
+
+
+@pytest.mark.parametrize(
+    ("answer", "code"), [("Gegen E 621.", "E 621"), ("Vitamin B12.", "Vitamin B12")]
+)
+def test_an_additive_code_is_an_ingredient(answer, code):
+    read, _ = which_answer(answer)
+    assert read is not None and read != WITHDRAWN
+    assert read.ingredient == code

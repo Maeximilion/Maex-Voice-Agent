@@ -1107,3 +1107,27 @@ def test_a_bare_answer_is_a_plain_yes_or_no(said, bare):
     from api.agent.consent import bare_answer
 
     assert bare_answer(said) is bare
+
+
+def test_a_time_in_the_answer_to_wogegen_goes_to_the_model(session, state):
+    """Codex PR #368, P1 4382914460: "Erdnüsse, um 20:00." resumed the held
+    draft with 19:00. The model reads it, its new draft waits for "Wogegen?"
+    again, and the answer then goes out with the new time."""
+    turn(session, state, f"{TABLE}, ich habe eine Allergie", LLMTurn(tool_call=table()))
+    later = {**table().args, "reserved_for": "2026-09-16T20:00:00+02:00"}
+
+    said = turn(
+        session,
+        state,
+        "Erdnüsse, um 20:00.",
+        LLMTurn(tool_call=ToolCall("create_reservation", later)),
+    )
+
+    assert said == [SAY_ALLERGY_WHICH]
+    assert state.held_call is not None
+    assert state.held_call["args"]["reserved_for"] == later["reserved_for"]
+    assert turn(session, state, "Erdnüsse.") == [ALLERGY_QUESTION]
+    turn(session, state, "Ja.")
+    [reservation] = reservations(session)
+    assert reservation.reserved_for.isoformat().startswith("2026-09-16T18:00")
+    assert reservation.note == "WICHTIG: Keine Erdnüsse. Grund: Allergie"
