@@ -475,19 +475,25 @@ def test_backup_of_a_database_without_tables_fails(
     assert list(backup_dir.iterdir()) == []
 
 
-def test_retention_removes_only_old_scheduled_backups_of_this_database(
+def test_retention_removes_old_backups_of_this_database_labelled_or_not(
     db, backup_dir, passphrase_file
 ):
+    """Repo audit 27.10.2026, finding 7: a labelled dump holds the same
+    customer data and follows the same period (docs/03 "Loeschkonzept")."""
     backup_dir.mkdir()
     name = make_url(db).database
-    old_scheduled = f"maex_{name}_20200101T000000Z.dump.gpg"
-    kept = [
+    old = [
+        f"maex_{name}_20200101T000000Z.dump.gpg",
         f"maex_{name}_20200101T000000Z_before_import.dump.gpg",
+    ]
+    kept = [
+        f"maex_{name}_x_20200101T000000Z.dump.gpg",
         "maex_otherdb_20200101T000000Z.dump.gpg",
+        "maex_otherdb_20200101T000000Z_before_import.dump.gpg",
         "notes.txt",
     ]
     long_ago = time.time() - 30 * 86400
-    for filename in [old_scheduled, *kept]:
+    for filename in [*old, *kept]:
         (backup_dir / filename).write_bytes(b"old")
         os.utime(backup_dir / filename, (long_ago, long_ago))
 
@@ -501,10 +507,10 @@ def test_retention_removes_only_old_scheduled_backups_of_this_database(
 
     assert done.returncode == 0, done.stderr
     names = {path.name for path in backup_dir.iterdir()}
-    assert old_scheduled not in names
+    assert not set(old) & names
     assert set(kept) <= names
     assert len(names) == len(kept) + 1
-    assert old_scheduled in done.stdout
+    assert all(filename in done.stdout for filename in old)
 
 
 def test_two_backups_in_the_same_second_never_share_a_file(

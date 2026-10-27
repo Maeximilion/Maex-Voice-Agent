@@ -11,7 +11,8 @@
 #
 # The dump always goes into a new database first. --replace then renames the current
 # database to <name>_before_restore_<time> and the new one into its place: nothing is
-# dropped, the way back is a rename. Stop api and dispatcher before, a database with
+# dropped, the way back is a rename. That copy is dropped by hand within
+# BACKUP_KEEP_DAYS days (docs/13 §4). Stop api and dispatcher before, a database with
 # open sessions cannot be renamed.
 #
 # Exit codes: 0 done, 1 failed and nothing changed, 2 wrong call or configuration.
@@ -76,7 +77,7 @@ tables="$(dump_table_count "$file")"
 # expires them, so each run names them until somebody drops them.
 kept="$(pg_sql "$maintenance" "select string_agg(datname, ', ' order by datname) from pg_database where datname like '${PGDATABASE}\_before\_restore\_%'")"
 if [ -n "$kept" ]; then
-    echo "kept from earlier restores, with customer data, drop them once they are not needed: $kept"
+    echo "kept from earlier restores, with customer data, drop them within BACKUP_KEEP_DAYS days of their restore (docs/13 §4): $kept"
 fi
 
 scratch_exists=0

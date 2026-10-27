@@ -29,7 +29,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.logging import configure_logging, get_logger, log
+from api.core.logging import configure_logging, error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
 from api.models import (
@@ -128,7 +128,7 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
                 logging.ERROR,
                 "Retention step failed",
                 step=name,
-                error=str(exc),
+                error=error_text(exc),
             )
             continue
         counts.update(result if isinstance(result, dict) else {name: result})

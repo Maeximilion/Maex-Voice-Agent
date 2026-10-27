@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.5
+> Status: 27.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.6
 
 ---
 
@@ -624,6 +624,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.6 · 27.10.2026:** Audit findings 7, 10 and 11: labelled dumps follow the backup retention, a deadline for restore copies, outbox row period checked, database errors logged without row values
 - **v2.11.5 · 27.10.2026:** A model-written callback summary that names an allergy is replaced by the sentence of its reason (repo audit finding 2, L13)
 - **v2.11.4 · 27.10.2026:** Tablet errors keep an error status: a database error no longer swaps JSON over the pause button (repo audit finding 1)
 - **v2.11.3 · 27.10.2026:** T-10.2 limit set by Maxi: the team telephone rings within 30 s of each outage

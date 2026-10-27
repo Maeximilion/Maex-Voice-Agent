@@ -23,7 +23,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings, valid_production_token
-from api.core.logging import configure_logging, get_logger, log
+from api.core.logging import configure_logging, error_text, get_logger, log
 from api.db import SessionLocal
 from api.events.outbox import (
     BACKOFF_SECONDS,
@@ -211,7 +211,7 @@ def run_forever(send: Sender = send_to_n8n) -> None:
                 logger,
                 logging.ERROR,
                 "Dispatcher-Durchlauf abgebrochen",
-                error=str(exc),
+                error=error_text(exc),
             )
         finally:
             session.close()
