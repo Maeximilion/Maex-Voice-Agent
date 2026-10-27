@@ -246,6 +246,11 @@ def test_a_claim_of_the_model_about_allergens_goes_to_the_team(
         "Ist sicher notiert.",
         "Das ist sicher bis sieben fertig.",
         "Die Pho Bo ohne Zwiebeln, gern.",
+        # Codex PR #369: absence of something that is no allergen.
+        "Die Bestellung enthält keine Getränke.",
+        "Der Preis enthält keine Liefergebühr.",
+        "Der Tisch ist frei von 18 bis 20 Uhr.",
+        "Da ist kein Besteck dabei.",
     ],
 )
 def test_an_answer_without_a_claim_reaches_the_guest(session, known_tenant, answer):
@@ -629,3 +634,36 @@ def test_a_table_read_back_survives_a_new_allergy_in_the_same_turn(
     callback = session.scalars(select(Callback)).one()
     assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
     assert "Erdnuss" not in callback.summary
+
+
+def test_the_fixed_sentence_hands_over_in_any_call(session, known_tenant):
+    """Codex PR #369: "Kommt das bei der Zubereitung mit anderen Speisen in
+    Kontakt?" names no allergen; the model answers with the fixed sentence of
+    the prompt, and the core hands over although the call spoke of no
+    allergy before."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Kommt das bei der Zubereitung mit anderen Speisen in Kontakt?",
+        LLMTurn(say=SAY_ALLERGENS_BEYOND),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert result.say.count(SAY_ALLERGENS_BEYOND) == 1
+
+
+def test_an_absence_of_an_allergen_is_a_claim_in_any_call(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Was ist in der Pho Bo?",
+        LLMTurn(say="Die Pho Bo enthält keine Nüsse."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
