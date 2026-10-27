@@ -49,6 +49,7 @@ from api.agent.guest_details import (
 )
 from api.agent.llm import ToolCall
 from api.agent.state import (
+    _FLAG,
     ConversationState,
     cart_lines,
     last_words,
@@ -408,6 +409,8 @@ def refusal(
     core writes the allergies onto it (`allergies.noted_call`)."""
     if any(mentions_allergy(note) for note in _notes(call)):
         return _ALLERGY_NOTE
+    if call.name == "get_item_details" and _states_an_allergy(user_text, call):
+        return _STATED_ALLERGY
     if call.name == "confirm":
         if _may_confirm(state, start, user_text, call):
             return None
@@ -436,6 +439,23 @@ def refusal(
         if cart_sent and not _drafts_the_cart(state, call):
             return _DRAFT_DIFFERS
     return None
+
+
+def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
+    """An allergen lookup on a guest sentence that names an allergy of their
+    own and asks nothing ("Die 13, ich habe eine Erdnussallergie."). The
+    core notes the allergy for the kitchen whatever the dish contains (Maxi,
+    27.10.2026); the lookup would find nothing maintained for most dishes and
+    end the order with the team (L17), though the guest asked no question
+    (real-model run of 27.10.2026).
+    ponytail: a question is read by its question mark, as the speech engine
+    writes it; read the words if the call log shows questions without one."""
+    try:
+        # Read as the tool reads it (`state.apply_tool_result`).
+        asked = _FLAG.validate_python(call.args.get("allergen_question"))
+    except ValidationError:
+        return False
+    return asked and mentions_allergy(user_text) and "?" not in user_text
 
 
 def _guest_details(call: ToolCall) -> tuple[Any, Any]:
@@ -503,6 +523,14 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
+HINT_STATED_ALLERGY = (
+    "Abgelehnt: der Gast hat nur seine Allergie genannt und nichts gefragt. "
+    "Der Kern notiert sie für die Küche; prüf keine Allergene und mach mit der "
+    "Bestellung weiter."
+)
+_STATED_ALLERGY = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_STATED_ALLERGY
+)
 _ALLERGY_NOTE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_NOTE)
 
 

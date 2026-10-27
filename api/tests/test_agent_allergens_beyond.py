@@ -667,3 +667,74 @@ def test_an_absence_of_an_allergen_is_a_claim_in_any_call(session, known_tenant)
 
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Die 13, ich habe eine Erdnussallergie.",
+        "Die 13, mein Sohn hat eine Erdnussallergie.",
+        "Die 13, ich habe keine Erdnussallergie.",
+        "Die 13, ich habe eine Allergie.",
+    ],
+)
+def test_a_stated_allergy_is_no_allergen_question(session, known_tenant, said):
+    """Real-model run of 27.10.2026: after "Die 13, ich habe eine
+    Erdnussallergie." the model looked up the 13's allergens itself, nothing
+    was maintained, and the L17 handover ended the order. A guest who only
+    names an allergy asked nothing (Maxi, 27.10.2026: the note stays, the
+    kitchen works with it): the lookup is refused, the order goes on."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        said,
+        details(session, known_tenant, "13"),
+        LLMTurn(say="Gern. Darf es noch etwas sein?"),
+    )
+
+    assert not result.ended
+    assert result.say == ["Gern. Darf es noch etwas sein?"]
+    assert session.scalars(select(Callback)).all() == []
+    assert state.stage != "transferred"
+
+
+def test_an_allergen_question_with_an_own_allergy_still_goes_to_the_team(
+    session, known_tenant
+):
+    """The question itself keeps L17: asked about the dish, nothing
+    maintained, the team answers."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie, ist in der Pho Bo Erdnuss?",
+        details(session, known_tenant, "13"),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+@pytest.mark.parametrize("flag", [True, "true", 1, "yes"])
+def test_the_lookup_flag_is_read_as_the_tool_reads_it(session, known_tenant, flag):
+    state = state_for(session, known_tenant, phone=CALLER)
+    lookup = ToolCall(
+        "get_item_details",
+        {
+            "menu_item_id": str(item(session, known_tenant, "13")),
+            "allergen_question": flag,
+        },
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13, ich habe eine Erdnussallergie.",
+        LLMTurn(tool_call=lookup),
+        LLMTurn(say="Gern."),
+    )
+
+    assert not result.ended
