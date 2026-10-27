@@ -144,13 +144,9 @@ get_item_details mit allergen_question: true
                   no confirm (T-11.1, L17); with no number known, the core
                   asks for one first, and the answer makes the callback
 
-The guest asks beyond the maintained values (L17, D24): traces, contamination,
-the same oil, pan or fryer, or shared frying, in any call; contact with food
-("Kommt das mit Sesam in Kontakt?") where the call speaks of allergies or the
-sentence names an allergen, never contact with a person; a question for
-certainty ("Ist das sicher?", "wirklich sicher", "hundertprozentig",
-"garantieren") in a call that speaks of allergies, never a statement ("Ja,
-ganz sicher")
+The guest asks beyond the maintained values (L17, D24), in words that say
+nothing else: traces, contamination, the same oil, pan or fryer, or shared
+frying, in any call
    → the core, before the model: "Dazu kann ich Ihnen keine verlässliche
      Auskunft geben." and the same handover; an order that stands unplaced
      goes onto the card and the guest hears "Ihre Bestellung ist damit noch
@@ -158,6 +154,18 @@ ganz sicher")
      Reservierung ist damit noch nicht bestätigt."); the card names the
      question and the dish, never the guest's allergy; with no number known
      the core asks for one, at most three times
+
+Contact, certainty and "frei von" (redesign of 27.10.2026, Maxi): the model
+reads the question and answers only with that fixed sentence; the core reads
+every model sentence in a call that speaks of allergies (or names an
+allergen) and hands over the same way when it claims what no database value
+answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
+"garantiert", separate preparation) or is the fixed sentence
+(`guards.allergen_claim`)
+
+An allergy note stays on the order whatever the dish contains (Maxi,
+27.10.2026): the kitchen works with it, also where the allergen is in no
+dish of the order
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false

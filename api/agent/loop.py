@@ -43,6 +43,7 @@ from api.core.time import to_local, utcnow
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
+from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import mentions_allergy
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -248,8 +249,15 @@ class ConversationLoop:
             # The answer keeps no call open past its limit: asked again and
             # again, it would (Codex PR #372).
             escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
-        talk = state.allergy_talk or escalation.speaks_of_allergies(user_text)
-        if escalated is None and escalation.asks_beyond_the_allergens(user_text, talk):
+        # The call speaks of allergies: the guest's own, the allergens of a
+        # dish, or an allergen named ("Ist das glutenfrei?"). The model's
+        # answers are then checked for a claim (`guards.allergen_claim`).
+        talk = (
+            state.allergy_talk
+            or escalation.speaks_of_allergies(user_text)
+            or names_an_allergen(user_text)
+        )
+        if escalated is None and escalation.asks_beyond_the_allergens(user_text):
             # L17: before the model, which knows no more than the database,
             # and before the consent question is put again.
             escalated = self._allergens_to_team(
@@ -434,6 +442,19 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
+                if guards.allergen_claim(state, say):
+                    # L17: the model answered what no database value answers
+                    # ("Das ist sicher", "glutenfrei", "keine Spuren"), or
+                    # said it cannot: the guest hears neither from it, the
+                    # team answers before any `confirm` (redesign of PR #369).
+                    log_refused(
+                        self._session,
+                        state.call_id,
+                        state.tenant_id,
+                        SAY,
+                        guards.ALLERGEN_CLAIM,
+                    )
+                    return self._allergens_to_team(state, lead=SAY_ALLERGENS_BEYOND)
                 refused = guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist

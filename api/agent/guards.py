@@ -57,6 +57,7 @@ from api.agent.state import (
     same_order,
 )
 from api.domain.menu.items import option_key
+from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import mentions_allergy
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
@@ -207,6 +208,53 @@ def note_said(state: ConversationState, say: str) -> None:
         for item_id, label in state.offered_items.items()
         if item_id not in named
     }
+
+
+# What a model may never claim about allergens, read in a call that speaks
+# of allergies (L17, E14): freedom ("frei von", "glutenfrei", "keine Spuren",
+# "kein Gluten drin", "enthält keine"), safety ("das ist sicher",
+# "unbedenklich", "garantiert", "hundertprozentig") and separate preparation.
+# And the fixed sentence the prompt gives the model for such a question.
+# ponytail: closed list; add the wording when the call log shows it. A
+# sentence it misses reaches the guest, so the prompt forbids the claim too.
+_ALLERGEN_CLAIM = re.compile(
+    r"\bfrei von\b"
+    r"|(?:allergen|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch|sellerie"
+    r"|senf|lupinen|sulfit|weizen|fisch|ei)frei\b"
+    r"|\b(?:keine|ohne) (?:spuren|kontamination|kreuzkontakt|kontakt)\b"
+    r"|unbedenklich|bedenkenlos|garantier|hundertprozentig|\b100 ?(?:%|prozent)"
+    r"|\b(?:ist|sind|wäre|waere|bleibt)\b(?:\s+\w+){0,3}\s+sicher"
+    r"\s*(?:[.!?,]|$|f(?:ü|ue)r\b|zu essen)"
+    r"|\b(?:enthält|enthaelt|enthalten)\b(?:\s+\w+){0,3}\s+kein|\bnicht enthalten"
+    r"|\bkein\w* \w+ (?:drin|darin|dabei)\b"
+    r"|getrennt (?:zubereitet|frittiert|gekocht|gelagert)"
+    r"|eigene[nmrs]? (?:fritteuse|pfanne|öl|oel)"
+    r"|keine verl(?:ä|ae)ssliche auskunft"
+)
+HINT_ALLERGEN_CLAIM = (
+    "Abgelehnt: eine Aussage zu Allergenen über die hinterlegten Werte hinaus. "
+    "Der Kern gibt das Gespräch ans Team."
+)
+ALLERGEN_CLAIM = ToolResult(
+    ok=False, error_code="out_of_scope", hint=HINT_ALLERGEN_CLAIM
+)
+
+
+def allergen_claim(state: ConversationState, say: str) -> bool:
+    """Does the model's sentence claim about allergens what no database value
+    answers, or say it cannot answer such a question? Read only in a call
+    that speaks of allergies, or where the sentence names an allergen itself;
+    the core's own sentences (read-back, booking) are left out, as in
+    `false_booking`. The loop hands the call to the team instead of saying
+    it (L17, redesign of PR #369)."""
+    rest = say
+    for own in (state.booking_say, state.readback):
+        if own:
+            rest = rest.replace(own, " ")
+    lowered = rest.lower()
+    if not (state.allergy_talk or names_an_allergen(rest) or "allerg" in lowered):
+        return False
+    return _ALLERGEN_CLAIM.search(lowered) is not None
 
 
 def false_booking(state: ConversationState, say: str) -> ToolResult | None:

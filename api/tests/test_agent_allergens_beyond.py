@@ -32,7 +32,7 @@ from api.agent.loop import (
 from api.agent.state import ConversationState
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
-from api.models import Call, Callback, Order
+from api.models import Call, Callback, Order, OrderItem
 from api.tests.test_domain_draft_order import KARTE, NOW, _call, _tenant, item
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -45,13 +45,10 @@ CALLER = "+4972215551234"
     [
         "Sind da Spuren von Erdnüssen drin?",
         "Kann da eine Kontamination mit Nüssen sein?",
-        "Kommt das mit Sesam in Kontakt?",
         "Wird das in derselben Fritteuse gemacht?",
         "Wird das im selben Öl frittiert?",
         "Haben Sie eine eigene Fritteuse?",
         "Wird das zusammen mit den Garnelen frittiert?",
-        "Ich bin allergisch gegen Gluten, ist das wirklich sicher?",
-        "Können Sie garantieren, dass keine Allergene drin sind?",
         # Own review of PR #369: the forms the list missed.
         "Ist das dasselbe Öl wie beim Fleisch?",
         "Wird das in demselben Öl frittiert?",
@@ -62,72 +59,41 @@ CALLER = "+4972215551234"
         "Wird das mit Fisch zusammen frittiert?",
     ],
 )
-def test_traces_contact_and_a_promise_of_safety_are_beyond(said):
-    assert asks_beyond_the_allergens(said, allergy_talk=False)
-
-
-def test_certainty_after_talk_of_allergies_is_beyond():
-    assert asks_beyond_the_allergens("Ist das wirklich sicher?", allergy_talk=True)
-    assert asks_beyond_the_allergens("Hundertprozentig?", allergy_talk=True)
-    # Own review of PR #369: the plain question, as said and as transcribed.
-    assert asks_beyond_the_allergens("Ist das sicher?", allergy_talk=True)
-    assert asks_beyond_the_allergens("Ist das auch sicher für mich", allergy_talk=True)
+def test_traces_and_shared_frying_are_beyond(said):
+    assert asks_beyond_the_allergens(said)
 
 
 @pytest.mark.parametrize(
     "said",
     [
-        # Own review of PR #369: stated, not asked. "Ja, ganz sicher" answers
-        # the consent question, and the order must not go to the team.
+        # Contact and certainty are read on the model's answer since the
+        # redesign of PR #369 (`guards.allergen_claim`), never on the
+        # guest's question: as questions, every round found a sentence about
+        # payment, persons or time.
+        "Kommt das mit Sesam in Kontakt?",
+        "Ist das wirklich sicher?",
+        "Können Sie garantieren, dass keine Allergene drin sind?",
+        "Kann ich berührungslos bezahlen?",
+        "Kann ich mit dem Chef in Kontakt kommen?",
+        "Ist das wirklich sicher bis sieben fertig?",
         "Ja, ganz sicher.",
-        "Ja, hundertprozentig.",
-        "Ich komme ganz sicher um sieben.",
-        "Ist das sicher bis sieben fertig?",
-        # Codex PR #369, P1: certainty about time, in an allergy call.
-        "Ist das wirklich sicher bis sieben fertig?",
-        "Können Sie garantieren, dass die Bestellung um 19 Uhr fertig ist?",
-        "Ist das ganz sicher pünktlich zum Abholen da?",
-    ],
-)
-def test_certainty_stated_in_an_allergy_call_asks_nothing(said):
-    assert not asks_beyond_the_allergens(said, allergy_talk=True)
-
-
-@pytest.mark.parametrize(
-    "said",
-    [
-        # Certainty in a call that never spoke of allergies is about something else.
-        "Ist das wirklich sicher bis sieben fertig?",
-        "Ganz sicher, auf den Namen Müller.",
         # A question the database answers.
         "Ist in den Frühlingsrollen Gluten?",
         "Welche Allergene hat die 23?",
         "Ich habe eine Erdnussallergie.",
-        # "Kontakt" alone is no contact with food.
-        "Brauchen Sie meine Kontaktdaten?",
-        # Codex PR #369, P1: contact with a person, not with food.
-        "Ich gebe Ihnen meine Nummer, damit Sie mit mir in Kontakt bleiben können.",
-        "Wie kann ich mit Ihnen in Kontakt treten?",
-        "Ich setze mich morgen mit Ihnen in Kontakt.",
-        # Own review of PR #369: contact with a person, no allergen named.
-        "Kann ich mit dem Chef in Kontakt kommen?",
-        "Ich hatte schon Kontakt mit Ihrem Kollegen.",
-        "Wir haben schon in Kontakt gestanden, wegen der Bestellung.",
-        "Ich nehme alles zusammen, einmal die 21, Wan-Tan frittiert.",
-        # Codex PR #369: a payment, not touch of food.
-        "Kann ich berührungslos bezahlen?",
         # A fried dish ordered by its name (Codex PR #369): the eval menu
         # has "21;Wan-Tan frittiert".
         "Ich hätte gern Wantan frittiert.",
         "Einmal die 21, Wan-Tan frittiert, bitte.",
+        "Ich nehme alles zusammen, einmal die 21, Wan-Tan frittiert.",
         "Ist was Frittiertes dabei?",
         # "extra" is more of it, not separate frying (Codex PR #369).
         "Bitte mit extra Öl.",
         "Die 21 mit extra Pfanne gebraten.",
     ],
 )
-def test_ordinary_sentences_are_not_beyond(said):
-    assert not asks_beyond_the_allergens(said, allergy_talk=False)
+def test_other_sentences_are_not_beyond(said):
+    assert not asks_beyond_the_allergens(said)
 
 
 @pytest.fixture
@@ -233,9 +199,25 @@ def test_a_maintained_value_is_answered_and_the_call_goes_on(session, known_tena
     assert session.scalars(select(Callback)).all() == []
 
 
-def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(
-    session, known_tenant
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Ja, das ist sicher.",
+        "Die Pho Bo ist glutenfrei.",
+        "Da sind keine Spuren von Nüssen drin.",
+        "Die Pho Bo enthält keine Nüsse.",
+        "Das kann ich Ihnen garantieren.",
+        # The fixed sentence of the prompt for such a question.
+        "Dazu kann ich Ihnen keine verlässliche Auskunft geben.",
+    ],
+)
+def test_a_claim_of_the_model_about_allergens_goes_to_the_team(
+    session, known_tenant, answer
 ):
+    """L17, redesign of PR #369: a question for safety or contact goes to the
+    model; the core reads its answer. A claim no database value answers, or
+    the fixed sentence for such a question, never reaches the guest from the
+    model: the core hands the call to the team."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -245,12 +227,99 @@ def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(
         LLMTurn(say="Die Frühlingsrollen enthalten laut unseren Angaben Gluten."),
     )
 
-    # Never shown to the model: no turn is prepared for it.
-    result, llm = run(session, state, "Und die Pho Bo, ist die wirklich sicher?")
+    result, _ = run(
+        session, state, "Und die Pho Bo, ist die wirklich sicher?", LLMTurn(say=answer)
+    )
 
-    assert llm.calls == []
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_BEYOND
+    # The claim itself never reaches the guest; the fixed sentence is the
+    # core's lead, said once.
+    assert result.say.count(answer) == (answer == SAY_ALLERGENS_BEYOND)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Die Frühlingsrollen enthalten laut unseren Angaben Gluten.",
+        "Sicher, gern. Was darf es noch sein?",
+        "Ist sicher notiert.",
+        "Das ist sicher bis sieben fertig.",
+        "Die Pho Bo ohne Zwiebeln, gern.",
+    ],
+)
+def test_an_answer_without_a_claim_reaches_the_guest(session, known_tenant, answer):
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.allergy_talk = True
+
+    result, _ = run(session, state, "Und sonst?", LLMTurn(say=answer))
+
+    assert not result.ended
+    assert result.say == [answer]
+
+
+def test_without_talk_of_allergies_a_promise_is_no_claim(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ist der Tisch am Fenster frei?",
+        LLMTurn(say="Das kann ich Ihnen nicht garantieren, ich notiere den Wunsch."),
+    )
+
+    assert not result.ended
+
+
+def test_an_allergen_named_by_the_guest_makes_it_an_allergy_call(session, known_tenant):
+    """ "Ist das glutenfrei?" names no allergy of the guest's own, but an
+    allergen: the model's "Ja, das ist glutenfrei" is a claim."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ist die Pho Bo glutenfrei?",
+        LLMTurn(say="Ja, die Pho Bo ist glutenfrei."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_an_allergy_note_stays_whatever_the_dish_contains(session, known_tenant):
+    """Maxi, 27.10.2026: an allergy note is taken whatever the dish contains;
+    the kitchen works with it. The 23 has gluten maintained and no sesame:
+    the sesame note stays on its line."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    item_23 = str(item(session, known_tenant, "23"))
+    draft = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "customer": {"name": "Müller", "phone": CALLER},
+            "items": [{"menu_item_id": item_23, "quantity": 1}],
+        },
+    )
+    run(
+        session,
+        state,
+        "Die 23 auf Müller, ich habe eine Sesamallergie.",
+        LLMTurn(
+            tool_call=ToolCall(
+                "search_menu", {"query": "Die 23, ich habe eine Sesamallergie"}
+            )
+        ),
+        LLMTurn(tool_call=draft),
+    )
+    assert state.last_say == ALLERGY_QUESTION
+    run(session, state, "Ja.")
+
+    [order] = session.scalars(select(Order)).all()
+    [note] = session.scalars(
+        select(OrderItem.note).where(OrderItem.order_id == order.id)
+    ).all()
+    assert note == "WICHTIG: Keine Sesam. Grund: Allergie"
 
 
 def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenant):
@@ -523,13 +592,6 @@ def test_the_number_is_asked_for_at_most_three_times(session, known_tenant):
 
     assert result.ended
     assert result.say == [SAY_NOBODY_REACHABLE]
-
-
-def test_contactless_payment_in_an_allergy_call_is_no_question():
-    """Codex PR #369: "berührungslos" matched touch of food."""
-    assert not asks_beyond_the_allergens(
-        "Kann ich berührungslos bezahlen?", allergy_talk=True
-    )
 
 
 def test_a_table_read_back_survives_a_new_allergy_in_the_same_turn(

@@ -14,7 +14,6 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
-from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import mentions_allergy
 
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
@@ -82,40 +81,6 @@ _BEYOND = re.compile(
     # frittiert" in an order (own review of PR #369).
     r"|\bzusammen mit\b[^.?!]{0,40}\bfrittier|\bmit\b[^.?!]{0,40}\bzusammen (?:ge)?frittier"
 )
-# Contact or touch of food ("Kommt das mit Sesam in Kontakt?"): only where the
-# call speaks of allergies or the sentence names an allergen, and never as
-# contact with a person ("damit Sie mit mir in Kontakt bleiben", "Ich hatte
-# schon Kontakt mit Ihrem Kollegen"; Codex and own review of PR #369).
-# "berührungslos bezahlen" is a payment (Codex PR #369).
-_CONTACT = re.compile(r"\bin kontakt|\bkontakt mit|ber(?:ü|ue)hr(?!ungslos)")
-_WITH_A_PERSON = re.compile(
-    r"\bmit (?:mir|uns|ihnen|dir|euch|jemandem|dem team)\b"
-    r"|\bkontakt (?:bleiben|aufnehmen|halten)|\bin kontakt (?:bleiben|treten|setzen)"
-)
-# Certainty asked for: only in a call that speaks of allergies ("Ist das
-# wirklich sicher?" after the allergens of a dish), not "Ist das sicher bis
-# sieben fertig?" in a call about a table.
-_CERTAIN = re.compile(
-    r"\b(?:wirklich|ganz|absolut) sicher|hundertprozentig"
-    r"|\b100 ?(?:%|prozent)|garantier|versprechen"
-    # "Ist das sicher?", "sicher für mich"; not "sicher bis sieben fertig".
-    r"|\bsicher\b(?=\s*(?:\?|$|f(?:ü|ue)r\b))"
-)
-# Certainty about time or readiness is no allergen question: "Ist das wirklich
-# sicher bis sieben fertig?", "Können Sie garantieren, dass die Bestellung um
-# 19 Uhr fertig ist?" (Codex PR #369).
-_TIMING = re.compile(
-    r"\bfertig|\bbis\b|\buhr\b|p(?:ü|ue)nktlich|rechtzeitig|\babhol|\bminuten?\b"
-    r"|\b(?:um|ab|gegen) (?:\d|halb|viertel|ein|zwei|drei|vier|fünf|fuenf|sechs"
-    r"|sieben|acht|neun|zehn|elf|zw(?:ö|oe)lf)"
-)
-# Asked, not stated: "Ja, ganz sicher" answers the consent question and "Ich
-# komme ganz sicher um sieben" says when (own review of PR #369).
-_QUESTION = re.compile(
-    r"\?|^\W*(?:(?:und|aber|also|okay|ok)\W+)?"
-    r"(?:ist|sind|kann|können|koennen|könnten|koennten|garantier\w*|versprech\w*"
-    r"|wirklich|bestimmt|sicher)\b"
-)
 
 
 def speaks_of_allergies(text: str) -> bool:
@@ -124,26 +89,14 @@ def speaks_of_allergies(text: str) -> bool:
     return mentions_allergy(text) or "allergen" in text.lower()
 
 
-def asks_beyond_the_allergens(text: str, allergy_talk: bool) -> bool:
-    """Does the guest ask about allergens what no database value answers?
-    `allergy_talk`: the call has spoken of allergies before this sentence;
-    the sentence itself is read here (`speaks_of_allergies`), only where the
-    call has not."""
-    lowered = text.lower()
-    talk = allergy_talk or speaks_of_allergies(text)
-    if _BEYOND.search(lowered):
-        return True
-    if (
-        _CONTACT.search(lowered)
-        and (talk or names_an_allergen(text))
-        and not _WITH_A_PERSON.search(lowered)
-    ):
-        return True
-    return talk and bool(
-        _QUESTION.search(lowered)
-        and _CERTAIN.search(lowered)
-        and not _TIMING.search(lowered)
-    )
+def asks_beyond_the_allergens(text: str) -> bool:
+    """Does the guest ask about allergens what no database value answers, in
+    words that say nothing else: traces, contamination, the same oil, pan or
+    fryer, shared frying? Contact and certainty are read on the model's
+    answer instead (`guards.allergen_claim`): as questions, word lists kept
+    finding sentences about payment, persons or time (redesign of PR #369,
+    Maxi, 27.10.2026)."""
+    return _BEYOND.search(text.lower()) is not None
 
 
 def check(text: str) -> EscalationReason | None:
