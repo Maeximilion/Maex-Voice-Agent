@@ -45,7 +45,7 @@ from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.wishes import mentions_allergy
 from api.domain.reservations.spoken import WEEKDAYS
-from api.models import Order, Tenant
+from api.models import Order, Reservation, Tenant
 from api.schemas.callbacks import CallbackReason
 from api.schemas.reservations import CheckSlotRequest
 from api.schemas.transfer import TransferReason
@@ -66,10 +66,6 @@ SAY_NOT_A_PERSON = "Ich bin ein KI-Assistent, kein Mensch."
 SAY_TEAM_OFFER = "Möchten Sie lieber mit jemandem aus dem Team sprechen?"
 SAY_HUMAN_ANSWER = f"{SAY_NOT_A_PERSON} {SAY_TEAM_OFFER}"
 SAY_NOT_UNDERSTOOD = "Da komme ich gerade nicht weiter. Ich gebe an das Team weiter."
-# The last resort of `_handoff`: the team is not reachable and there is no number
-# for a callback. Every sentence above promises the team; here nobody takes
-# over, so the guest hears exactly that (Codex PR #208, P1). Draft wording,
-# checked with the announcement texts of docs/05 §6.
 # The team is not reachable and no number is known, after an allergen
 # question beyond the database (L17): the core asks for one before it gives
 # up (Codex PR #369). Draft wording, checked with the texts of docs/05 §6.
@@ -77,6 +73,13 @@ SAY_CALLBACK_NUMBER = (
     "Unser Team ist gerade nicht erreichbar. Unter welcher Telefonnummer mit "
     "Vorwahl darf es Sie zurückrufen?"
 )
+# How often the core asks for the callback number once more, after an answer
+# without one ("Moment, ich schaue nach", a "Ja" to "Sind Sie noch da?").
+CALLBACK_NUMBER_ASKS = 2
+# The last resort of `_handoff`: the team is not reachable and there is no number
+# for a callback. Every sentence above promises the team; here nobody takes
+# over, so the guest hears exactly that (Codex PR #208, P1). Draft wording,
+# checked with the announcement texts of docs/05 §6.
 SAY_NOBODY_REACHABLE = (
     "Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant "
     "niemanden. Bitte rufen Sie später noch einmal an."
@@ -118,6 +121,14 @@ SUMMARY_ALLERGENS = (
 # How a card names a booking made earlier in the call (`_handoff_summary`).
 _BOOKED = " Bereits gebucht: "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
+# The same for a table read back and not yet confirmed (own review of PR #369).
+SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
+SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# The lead of the handover for a question beyond the database (traces,
+# contact, a promise of safety, L17): nothing about what is stored, which may
+# be maintained for that dish (own review of PR #369). Draft wording, checked
+# with the texts of docs/05 §6.
+SAY_ALLERGENS_BEYOND = "Dazu kann ich Ihnen keine verlässliche Auskunft geben."
 # What the guest hears when `confirm` went through: the core says it, built from
 # the confirm result, never the model (`guards.false_booking`). Draft wording,
 # checked with the announcement texts (docs/05 §6).
@@ -182,32 +193,10 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         if state.callback_waits is not None:
-            # Still the answer to the question for the number, also after the
-            # phone line's "Sind Sie noch da?" came between (Codex PR #369).
-            state.asked_for_phone = True
+            # The answer to the question for the callback number (L17),
+            # before the model and before any `confirm`.
+            return self._callback_answered(state, user_text)
         note_guest_details(state, user_text)
-        if (
-            state.callback_waits is not None
-            and not state.slots.get("phone")
-            and not (state.last_say or "").endswith(SAY_CALLBACK_NUMBER)
-        ):
-            # Another sentence came between and the answer gives no number:
-            # the question is put again rather than ending without one.
-            guards.note_said(state, SAY_CALLBACK_NUMBER)
-            return TurnResult(state=state, say=[SAY_CALLBACK_NUMBER])
-        if state.callback_waits is not None:
-            # The answer to the question for the number (L17): with one the
-            # callback is made, without one the last resort; the call ends
-            # either way, before the model and before any `confirm`.
-            summary, state.callback_waits = state.callback_waits, None
-            handed = self._handoff(
-                state, SAY_ESCALATION, "out_of_scope", summary=summary
-            )
-            if escalation.without_human_question(user_text) is not None:
-                # The truthful answer first, in every turn (docs/09 L1;
-                # Codex PR #369).
-                handed.say.insert(0, SAY_NOT_A_PERSON)
-            return handed
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
         noted = list(state.allergies)
@@ -256,18 +245,16 @@ class ConversationLoop:
             # The answer keeps no call open past its limit: asked again and
             # again, it would (Codex PR #372).
             escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
-        if escalated is None and escalation.asks_beyond_the_allergens(
-            user_text, state.allergy_talk
-        ):
+        talk = state.allergy_talk or escalation.speaks_of_allergies(user_text)
+        if escalated is None and escalation.asks_beyond_the_allergens(user_text, talk):
             # L17: before the model, which knows no more than the database,
             # and before the consent question is put again.
-            escalated = self._allergens_to_team(state)
+            escalated = self._allergens_to_team(state, lead=SAY_ALLERGENS_BEYOND)
         if escalated is not None:
             if asks:
                 escalated.say.insert(0, SAY_NOT_A_PERSON)
             return escalated
-        if escalation.speaks_of_allergies(user_text):
-            state.allergy_talk = True
+        state.allergy_talk = talk
         if held is None and rest is not None and not escalation.asks_more(rest):
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
@@ -781,7 +768,10 @@ class ConversationLoop:
         return handed
 
     def _allergens_to_team(
-        self, state: ConversationState, dish: str | None = None
+        self,
+        state: ConversationState,
+        dish: str | None = None,
+        lead: str = SAY_ALLERGENS_UNKNOWN,
     ) -> TurnResult:
         """The guest asked about allergens beyond what the database holds
         (legal check L17, D24): the call goes to a team member, or a callback
@@ -790,6 +780,9 @@ class ConversationLoop:
         not placed. The card names the question and the dish, never the
         guest's allergy (L13)."""
         summary = SUMMARY_ALLERGENS + (f" Gericht: {dish}." if dish else "")
+        table = self._open_table(state)
+        if table:
+            summary += f" {SUMMARY_OPEN_TABLE} {table}."
         # Room for what `_handoff_summary` adds for a booking made earlier,
         # and for the line's first sentence on a team leg nobody answered.
         booked = len(_BOOKED + state.booking_say) if state.booking_say else 0
@@ -801,13 +794,58 @@ class ConversationLoop:
             summary=_with_open_order(state, summary, reserve=reserve),
             ask_number=True,
         )
-        lead = [SAY_ALLERGENS_UNKNOWN, SAY_ORDER_NOT_PLACED if state.cart else None]
-        handed.say = [s for s in (*lead, *handed.say) if s]
+        not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
+        not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
+        handed.say = [s for s in (lead, not_booked, *handed.say) if s]
         if not handed.ended:
             # The question for the number ends the turn: the guest's digits
             # are a number to call (`state.note_guest_details`).
             guards.note_said(state, " ".join(handed.say))
         return handed
+
+    def _open_table(self, state: ConversationState) -> str | None:
+        """The table read back and not yet confirmed, as the team reads it on
+        a card: party size, time in the restaurant's clock, the name."""
+        if state.stage != "readback_pending" or state.reservation_id is None:
+            return None
+        reservation = self._session.get(Reservation, state.reservation_id)
+        if reservation is None:
+            return None
+        when = reservation.reserved_for.astimezone(self._local_now(state).tzinfo)
+        return (
+            f"{reservation.party_size} Personen, {when:%d.%m.%Y %H:%M} Uhr, "
+            f"Name {reservation.guest_name}"
+        )
+
+    def _callback_answered(
+        self, state: ConversationState, user_text: str
+    ) -> TurnResult:
+        """The answer to the question for the callback number (L17). With a
+        number the callback is made. Without one the question is put once
+        more, up to `CALLBACK_NUMBER_ASKS` times ("Moment, ich schaue nach",
+        a "Ja" to the phone line's "Sind Sie noch da?"; Codex and own review
+        of PR #369), unless the guest declines; then the last resort. The
+        call ends before the model and before any `confirm`."""
+        # The digits are a number to call, whatever came between.
+        state.asked_for_phone = True
+        note_guest_details(state, user_text)
+        if (
+            not state.slots.get("phone")
+            and state.callback_asks < CALLBACK_NUMBER_ASKS
+            and consent_answer(user_text) != "no"
+        ):
+            state.callback_asks += 1
+            guards.note_said(state, SAY_CALLBACK_NUMBER)
+            result = TurnResult(state=state, say=[SAY_CALLBACK_NUMBER])
+        else:
+            summary, state.callback_waits = state.callback_waits, None
+            result = self._handoff(
+                state, SAY_ESCALATION, "out_of_scope", summary=summary
+            )
+        if escalation.without_human_question(user_text) is not None:
+            # The truthful answer first, in every turn (docs/09 L1).
+            result.say.insert(0, SAY_NOT_A_PERSON)
+        return result
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
         """The wish as the team reads it on the card. Party size and time are

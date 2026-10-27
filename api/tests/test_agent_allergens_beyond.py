@@ -20,10 +20,12 @@ from api.agent.escalation import asks_beyond_the_allergens
 from api.agent.guards import note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
+    SAY_ALLERGENS_BEYOND,
     SAY_CALLBACK_NUMBER,
     SAY_NOBODY_REACHABLE,
     SAY_NOT_A_PERSON,
     SAY_ORDER_NOT_PLACED,
+    SAY_TABLE_NOT_BOOKED,
     SUMMARY_ALLERGENS,
     ConversationLoop,
 )
@@ -50,6 +52,14 @@ CALLER = "+4972215551234"
         "Wird das zusammen mit den Garnelen frittiert?",
         "Ich bin allergisch gegen Gluten, ist das wirklich sicher?",
         "Können Sie garantieren, dass keine Allergene drin sind?",
+        # Own review of PR #369: the forms the list missed.
+        "Ist das dasselbe Öl wie beim Fleisch?",
+        "Wird das in demselben Öl frittiert?",
+        "Ist das das gleiche Öl?",
+        "Haben Sie ein eigenes Öl dafür?",
+        "Sind Erdnussspuren drin?",
+        "Ist das spurenfrei?",
+        "Wird das mit Fisch zusammen frittiert?",
     ],
 )
 def test_traces_contact_and_a_promise_of_safety_are_beyond(said):
@@ -59,6 +69,24 @@ def test_traces_contact_and_a_promise_of_safety_are_beyond(said):
 def test_certainty_after_talk_of_allergies_is_beyond():
     assert asks_beyond_the_allergens("Ist das wirklich sicher?", allergy_talk=True)
     assert asks_beyond_the_allergens("Hundertprozentig?", allergy_talk=True)
+    # Own review of PR #369: the plain question, as said and as transcribed.
+    assert asks_beyond_the_allergens("Ist das sicher?", allergy_talk=True)
+    assert asks_beyond_the_allergens("Ist das auch sicher für mich", allergy_talk=True)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Own review of PR #369: stated, not asked. "Ja, ganz sicher" answers
+        # the consent question, and the order must not go to the team.
+        "Ja, ganz sicher.",
+        "Ja, hundertprozentig.",
+        "Ich komme ganz sicher um sieben.",
+        "Ist das sicher bis sieben fertig?",
+    ],
+)
+def test_certainty_stated_in_an_allergy_call_asks_nothing(said):
+    assert not asks_beyond_the_allergens(said, allergy_talk=True)
 
 
 @pytest.mark.parametrize(
@@ -77,6 +105,11 @@ def test_certainty_after_talk_of_allergies_is_beyond():
         "Ich gebe Ihnen meine Nummer, damit Sie mit mir in Kontakt bleiben können.",
         "Wie kann ich mit Ihnen in Kontakt treten?",
         "Ich setze mich morgen mit Ihnen in Kontakt.",
+        # Own review of PR #369: contact with a person, no allergen named.
+        "Kann ich mit dem Chef in Kontakt kommen?",
+        "Ich hatte schon Kontakt mit Ihrem Kollegen.",
+        "Wir haben schon in Kontakt gestanden, wegen der Bestellung.",
+        "Ich nehme alles zusammen, einmal die 21, Wan-Tan frittiert.",
         # A fried dish ordered by its name (Codex PR #369): the eval menu
         # has "21;Wan-Tan frittiert".
         "Ich hätte gern Wantan frittiert.",
@@ -211,7 +244,7 @@ def test_a_promise_of_safety_after_the_allergens_goes_to_the_team(
 
     assert llm.calls == []
     assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
 
 
 def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenant):
@@ -239,7 +272,7 @@ def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenan
     result, _ = run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
 
     assert result.ended
-    assert result.say[:2] == [SAY_ALLERGENS_UNKNOWN, SAY_ORDER_NOT_PLACED]
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_ORDER_NOT_PLACED]
     assert session.scalars(select(Order)).one().status == "draft"
     callback = session.scalars(select(Callback)).one()
     assert "Offene Bestellung, nicht aufgegeben: 1x 13 Pho Bo" in callback.summary
@@ -313,7 +346,7 @@ def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
     result, _ = run(session, state, "Gibt es bei Ihnen Spuren von Nüssen?", now=CLOSED)
 
     assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
     assert session.scalars(select(Callback)).one().reason == "out_of_scope"
 
 
@@ -329,7 +362,7 @@ def test_a_human_question_next_to_traces_hears_the_truth_first(session, known_te
 
     assert llm.calls == []
     assert result.say[0] == SAY_NOT_A_PERSON
-    assert result.say[1] == SAY_ALLERGENS_UNKNOWN
+    assert result.say[1] == SAY_ALLERGENS_BEYOND
 
 
 def test_without_a_number_the_core_asks_for_one_before_it_gives_up(
@@ -344,7 +377,7 @@ def test_without_a_number_the_core_asks_for_one_before_it_gives_up(
     result, llm = run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
 
     assert not result.ended
-    assert result.say == [SAY_ALLERGENS_UNKNOWN, SAY_CALLBACK_NUMBER]
+    assert result.say == [SAY_ALLERGENS_BEYOND, SAY_CALLBACK_NUMBER]
     assert llm.calls == []
     assert state.asked_for_phone
     assert session.scalars(select(Callback)).all() == []
@@ -423,3 +456,64 @@ def test_a_yes_to_a_silence_prompt_puts_the_number_question_again(
     result, _ = run(session, state, "07221 5551234", now=CLOSED)
     assert result.ended
     assert session.scalars(select(Callback)).one().phone == CALLER
+
+
+def test_a_table_read_back_is_named_unbooked_on_the_card(session, known_tenant):
+    """Own review of PR #369: a table waits for its yes when the guest asks
+    about traces. The guest hears that it is not confirmed, and the card
+    carries the table, as for an open order."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+        },
+    )
+    run(
+        session,
+        state,
+        "Tisch für vier auf Müller.",
+        LLMTurn(tool_call=table),
+        LLMTurn(say="Passt das?"),
+    )
+    assert state.stage == "readback_pending"
+
+    result, _ = run(session, state, "Sind da Spuren von Nüssen im Essen?", now=CLOSED)
+
+    assert result.ended
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
+    callback = session.scalars(select(Callback)).one()
+    assert (
+        "Offene Reservierung, nicht bestätigt: 4 Personen, 16.09.2026 19:00 Uhr, Name Müller"
+        in callback.summary
+    )
+
+
+def test_a_wait_for_the_number_is_asked_once_more(session, known_tenant):
+    """Own review of PR #369: "Moment, ich muss kurz nachschauen" after the
+    question for the number ended the call; it is asked once more."""
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    result, _ = run(session, state, "Moment, ich muss kurz nachschauen.", now=CLOSED)
+    assert result.say == [SAY_CALLBACK_NUMBER]
+    result, _ = run(session, state, "07221 5551234", now=CLOSED)
+
+    assert result.ended
+    assert session.scalars(select(Callback)).one().phone == CALLER
+
+
+def test_the_number_is_asked_for_at_most_three_times(session, known_tenant):
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    for _ in range(2):
+        result, _ = run(session, state, "Moment.", now=CLOSED)
+        assert result.say == [SAY_CALLBACK_NUMBER]
+    result, _ = run(session, state, "Moment.", now=CLOSED)
+
+    assert result.ended
+    assert result.say == [SAY_NOBODY_REACHABLE]

@@ -14,6 +14,7 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
+from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import mentions_allergy
 
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
@@ -71,14 +72,20 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
 # Frying only as shared or separate frying: "Wan-Tan frittiert" is a dish on
 # the menu, and a guest who orders it asks nothing (Codex PR #369).
 _BEYOND = re.compile(
-    r"\bspuren|kontamin|verunreinig|kreuzkontakt"
-    r"|\b(?:selben|gleichen|derselben|eigenen?|separaten?|getrennten?)"
-    r" (?:öl|oel|pfanne|fritteuse)"
-    r"|\bzusammen\b[^.?!]{0,40}\bfrittier"
+    # "Spuren", also inside a word: "Erdnussspuren", "spurenfrei".
+    r"spuren|kontamin|verunreinig|kreuzkontakt"
+    # "dasselbe Öl", "in demselben Öl", "das gleiche Öl", "ein eigenes Öl".
+    r"|\b(?:(?:das|dem|den|der|die)?selben?|gleich(?:e[nmrs]?)?|eigene[nmrs]?"
+    r"|separate[nmrs]?|getrennte[nmrs]?) (?:öl|oel|pfanne|fritteuse|friteuse)"
+    # Shared frying with something: "zusammen mit den Garnelen frittiert",
+    # "mit Fisch zusammen frittiert"; not "alles zusammen, ... Wan-Tan
+    # frittiert" in an order (own review of PR #369).
+    r"|\bzusammen mit\b[^.?!]{0,40}\bfrittier|\bmit\b[^.?!]{0,40}\bzusammen (?:ge)?frittier"
 )
-# Contact or touch of food ("Kommt das mit Sesam in Kontakt?"), never contact
-# with a person: "damit Sie mit mir in Kontakt bleiben" gives a number, it
-# asks nothing about allergens (Codex PR #369).
+# Contact or touch of food ("Kommt das mit Sesam in Kontakt?"): only where the
+# call speaks of allergies or the sentence names an allergen, and never as
+# contact with a person ("damit Sie mit mir in Kontakt bleiben", "Ich hatte
+# schon Kontakt mit Ihrem Kollegen"; Codex and own review of PR #369).
 _CONTACT = re.compile(r"\bin kontakt|\bkontakt mit|ber(?:ü|ue)hr")
 _WITH_A_PERSON = re.compile(
     r"\bmit (?:mir|uns|ihnen|dir|euch|jemandem|dem team)\b"
@@ -90,6 +97,15 @@ _WITH_A_PERSON = re.compile(
 _CERTAIN = re.compile(
     r"\b(?:wirklich|ganz|absolut) sicher|hundertprozentig"
     r"|\b100 ?(?:%|prozent)|garantier|versprechen"
+    # "Ist das sicher?", "sicher für mich"; not "sicher bis sieben fertig".
+    r"|\bsicher\b(?=\s*(?:\?|$|f(?:ü|ue)r\b))"
+)
+# Asked, not stated: "Ja, ganz sicher" answers the consent question and "Ich
+# komme ganz sicher um sieben" says when (own review of PR #369).
+_QUESTION = re.compile(
+    r"\?|^\W*(?:(?:und|aber|also|okay|ok)\W+)?"
+    r"(?:ist|sind|kann|können|koennen|könnten|koennten|garantier\w*|versprech\w*"
+    r"|wirklich|bestimmt|sicher)\b"
 )
 
 
@@ -101,15 +117,20 @@ def speaks_of_allergies(text: str) -> bool:
 
 def asks_beyond_the_allergens(text: str, allergy_talk: bool) -> bool:
     """Does the guest ask about allergens what no database value answers?
-    `allergy_talk`: the call has spoken of allergies before this sentence."""
+    `allergy_talk`: the call has spoken of allergies before this sentence;
+    the sentence itself is read here (`speaks_of_allergies`), only where the
+    call has not."""
     lowered = text.lower()
+    talk = allergy_talk or speaks_of_allergies(text)
     if _BEYOND.search(lowered):
         return True
-    if _CONTACT.search(lowered) and not _WITH_A_PERSON.search(lowered):
+    if (
+        _CONTACT.search(lowered)
+        and (talk or names_an_allergen(text))
+        and not _WITH_A_PERSON.search(lowered)
+    ):
         return True
-    return (allergy_talk or speaks_of_allergies(text)) and bool(
-        _CERTAIN.search(lowered)
-    )
+    return talk and bool(_QUESTION.search(lowered) and _CERTAIN.search(lowered))
 
 
 def check(text: str) -> EscalationReason | None:

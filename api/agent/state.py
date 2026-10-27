@@ -178,6 +178,8 @@ class ConversationState(BaseModel):
     # number was known: the core asked for one, and the guest's answer makes
     # the callback (`loop.run_turn`, Codex PR #369). Never sent.
     callback_waits: str | None = None
+    # How often the core put that question again (`loop._callback_answered`).
+    callback_asks: int = 0
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""

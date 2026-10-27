@@ -144,14 +144,20 @@ get_item_details mit allergen_question: true
                   no confirm (T-11.1, L17); with no number known, the core
                   asks for one first, and the answer makes the callback
 
-Gast fragt über die gepflegten Werte hinaus (L17, D24): Spuren,
-Kontamination, Kontakt, Fritteuse oder dasselbe Öl, in jedem Anruf; "wirklich
-sicher", "hundertprozentig", "garantieren" in einem Anruf, der von Allergien
-spricht
-   → the core, before the model: the same sentence, the same handover;
-     an order that stands unplaced goes onto the card and the guest hears
-     "Ihre Bestellung ist damit noch nicht aufgegeben."; the card names the
-     question and the dish, never the guest's allergy
+The guest asks beyond the maintained values (L17, D24): traces, contamination,
+the same oil, pan or fryer, or shared frying, in any call; contact with food
+("Kommt das mit Sesam in Kontakt?") where the call speaks of allergies or the
+sentence names an allergen, never contact with a person; a question for
+certainty ("Ist das sicher?", "wirklich sicher", "hundertprozentig",
+"garantieren") in a call that speaks of allergies, never a statement ("Ja,
+ganz sicher")
+   → the core, before the model: "Dazu kann ich Ihnen keine verlässliche
+     Auskunft geben." and the same handover; an order that stands unplaced
+     goes onto the card and the guest hears "Ihre Bestellung ist damit noch
+     nicht aufgegeben.", a table read back and not confirmed likewise ("Ihre
+     Reservierung ist damit noch nicht bestätigt."); the card names the
+     question and the dish, never the guest's allergy; with no number known
+     the core asks for one, at most three times
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
