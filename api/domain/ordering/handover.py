@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Integer, cast, or_, select
+from sqlalchemy import Integer, cast, exists, or_, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
@@ -77,6 +77,26 @@ def _newest_revision(session: Session, event: OutboxEvent) -> int | None:
             cast(OutboxEvent.payload["revision"].astext, Integer).desc().nulls_last()
         )
         .limit(1)
+    )
+
+
+def may_hold_a_slip(session: Session, order: Order) -> bool:
+    """May the bridge have printed a slip of this order? A ticket it picked up
+    whose pickup got no error back: acked as printed, or never answered (the
+    network went down after the print). A reported print error, a ticket never
+    picked up and one superseded before its print are no slip. The card's
+    state cannot tell: the watchdog turns it red after a lost ack, and a newer
+    ticket's error turns it red while an older slip is at the register."""
+    return session.scalar(
+        select(
+            exists().where(
+                OutboxEvent.tenant_id == order.tenant_id,
+                OutboxEvent.event_type.in_(KITCHEN),
+                OutboxEvent.payload["order_id"].astext == str(order.id),
+                OutboxEvent.attempts > 0,
+                OutboxEvent.last_error.is_(None),
+            )
+        )
     )
 
 
@@ -220,6 +240,9 @@ def claim_tickets(
             _supersede(event, newest, now)
             continue
         event.attempts += 1
+        # The answer to this pickup is still open: without one the bridge may
+        # have printed it (`may_hold_a_slip`).
+        event.last_error = None
         event.next_attempt_at = now + timedelta(seconds=LEASE_SECONDS)
         ready_at = event.payload.get("ready_at")
         tickets.append(

@@ -35,6 +35,7 @@ from api.domain.menu.items import is_sold_out, option_groups, option_key
 # The same number lookup as search_menu ("7" finds "07", "23A" finds "23a").
 # Imported privately until PR #139 no longer touches search.py.
 from api.domain.menu.search import _by_number
+from api.domain.ordering.handover import may_hold_a_slip
 from api.domain.ordering.labels import ACTION_CORRECTED, labels_for_rows
 from api.domain.ordering.pricing import row_cents
 from api.domain.ordering.ticket import send_ticket
@@ -287,9 +288,10 @@ def apply_correction(
     )
     session.flush()
     if order.handover_state is not None:
-        # The new state goes to the kitchen (ticket.py). "KORREKTUR" only if it
-        # already has a ticket or gets one; after "failed" it has none.
-        reached = order.handover_state in ("pending", "sent")
+        # The new state goes to the kitchen (ticket.py). "KORREKTUR" whenever
+        # the bridge may hold a slip of it, also on a red card (repo audit
+        # 27.10.2026); a ticket not yet picked up is overwritten as it is.
+        reached = may_hold_a_slip(session, order)
         send_ticket(session, order, correction_reason=reason if reached else None)
         order.handover_state = "pending"
     session.commit()
