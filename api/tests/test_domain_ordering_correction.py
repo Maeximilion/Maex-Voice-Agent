@@ -21,7 +21,14 @@ from api.domain.ordering.correction import (
     preview_correction,
 )
 from api.events.types import ORDER_CONFIRMED
-from api.models import AuditLog, MenuItem, Order, OrderItem, OutboxEvent
+from api.models import (
+    AuditLog,
+    ItemOption,
+    MenuItem,
+    Order,
+    OrderItem,
+    OutboxEvent,
+)
 from api.tests.test_domain_confirm_order import (
     _confirm,
     _mode,
@@ -206,6 +213,57 @@ def test_dazunehmen_mit_pflichtauswahl(session, tenant_id, call_id):
     assert [o["option"] for o in rows[1].options] == ["Huhn", "Erdnuss"]
     # 13,80 + (15,50 - 1,00 + 0,50)
     assert _order_row(session, order_id).total_cents == 2880
+
+
+def _chili(session, tenant_id) -> None:
+    """A second choice in the optional group Sauce of dish 47."""
+    session.add(
+        ItemOption(
+            menu_item_id=item(session, tenant_id, "47"),
+            group_name="Sauce",
+            option_name="Chili",
+            price_delta_cents=30,
+        )
+    )
+    session.commit()
+
+
+def test_two_choices_of_an_optional_group_are_both_kept(session, tenant_id, call_id):
+    """Repo audit of 27.10.2026, finding 8: draft_order takes Erdnuss and
+    Chili from the optional group Sauce; a correction kept only the last one,
+    and the paid extra was gone without a word."""
+    _chili(session, tenant_id)
+    order_id = _order(session, tenant_id, call_id)
+    ente = item(session, tenant_id, "47")
+    choices = (
+        Choice("Fleisch", "Ente"),
+        Choice("Sauce", "Erdnuss"),
+        Choice("Sauce", "Chili"),
+    )
+
+    _fix(
+        session, tenant_id, order_id, reason="other", added=(AddEdit(ente, 1, choices),)
+    )
+
+    added = _rows(session, order_id)[1]
+    assert [o["option"] for o in added.options] == ["Ente", "Erdnuss", "Chili"]
+    # 13,80 + (15,50 + 0,50 + 0,30)
+    assert _order_row(session, order_id).total_cents == 3010
+
+
+def test_two_choices_of_a_required_group_are_refused(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    ente = item(session, tenant_id, "47")
+    choices = (Choice("Fleisch", "Ente"), Choice("Fleisch", "Huhn"))
+
+    with pytest.raises(InvalidInput, match="Fleisch"):
+        _fix(
+            session,
+            tenant_id,
+            order_id,
+            reason="other",
+            added=(AddEdit(ente, 1, choices),),
+        )
 
 
 def test_kartenpreis_geaendert_behaltene_position_bleibt_eingefroren(
