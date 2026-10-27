@@ -1518,7 +1518,26 @@ def names_an_order(text: str, card: CardFormat, numbers: frozenset[str]) -> bool
 _NOT_AN_INGREDIENT = frozenset(
     {"ich", "wir", "du", "er", "sie", "es", "man", "mir", "mich", "uns"}
     | {"moment", "augenblick", "sekunde", "warten", "ueberlegen", "nachschauen"}
+    # A time or a day goes with the booking, never with an allergen:
+    # "Erdnüsse, um 20:00" (Codex PR #368).
+    | {"um", "uhr", "heute", "morgen", "uebermorgen", "abend", "mittag", "erst"}
+    | {"montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"}
+    | {"sonntag", "personen", "leute", "tisch", "statt", "lieber", "spaeter"}
 )
+# An additive or vitamin code ("E 621", "B12") is an ingredient with digits;
+# any other digit in an answer is a time, a date or a quantity.
+_CODE = re.compile(r"\b[a-z] ?\d{1,4}\b", re.IGNORECASE)
+
+
+def _not_an_ingredient(bare: str) -> bool:
+    """Does a bare answer to "Wogegen?" say more than its ingredients: a
+    speaker, a pause, a time, a day, digits? A number word alone stays with
+    the ingredient ("Fünf-Gewürze-Pulver"); "um acht" has its "um"."""
+    return bool(_NOT_AN_INGREDIENT & set(_words(bare))) or any(
+        char.isdigit() for char in _CODE.sub(" ", bare)
+    )
+
+
 # The answer to "Wogegen?" names no allergy after all.
 WITHDRAWN: Literal["withdrawn"] = "withdrawn"
 
@@ -1559,9 +1578,10 @@ def which_answer(text: str) -> tuple[Wish | Literal["withdrawn"] | None, list[st
         bare, removal = _ingredient_answer(text)
         said += [removal, wish.note]
         wish = classify_wish(f"allergisch gegen {bare}", [])
-        if _NOT_AN_INGREDIENT & set(_words(bare)):
+        if _not_an_ingredient(bare):
             # A bare answer is read up to its end: "Moment, da muss ich kurz
-            # ueberlegen" would be an allergy against all of it (T-11.1).
+            # ueberlegen" would be an allergy against all of it (T-11.1), and
+            # "Erdnüsse, um 20:00" one against the time (Codex PR #368).
             wish = None
     if wish is not None:
         said.append(removal_with(wish))
