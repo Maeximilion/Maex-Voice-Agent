@@ -538,10 +538,10 @@ def _new_line(
 def _options(
     item: MenuItem, offered: list[OptionGroup], choices: tuple[Choice, ...]
 ) -> list[dict]:
-    """Gewaehlte Optionen in der Form von order_items.options: in einer
-    Pflichtgruppe eine, in einer freien Gruppe jede hoechstens einmal - die
-    Regel von draft_order (validation.py). Overwriting a second extra of the
-    same group dropped a paid one in silence (repo audit 27.10.2026)."""
+    """The chosen options in the form of order_items.options: one in a
+    required group, each choice of an optional group at most once - the rule
+    of draft_order (validation.py). Overwriting a second extra of the same
+    group dropped a paid one in silence (repo audit 27.10.2026)."""
     by_group = {option_key(g.group): g for g in offered}
     picked: dict[str, list[dict]] = {}
     for choice in choices:
