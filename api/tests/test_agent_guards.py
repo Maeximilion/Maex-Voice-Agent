@@ -1007,3 +1007,14 @@ def test_a_short_dish_name_never_hides_a_claim(name, say):
     state.allergy_talk = True
 
     assert allergen_claim(state, say) is True
+
+
+def test_a_safety_promise_about_a_frei_dish_still_counts():
+    """Codex on PR #388 (P1): the name was the only allergen word, so taking
+    it out let a promise of separate preparation through."""
+    state = _found("Nudeln (glutenfrei)")
+
+    assert (
+        allergen_claim(state, "Die Nudeln (glutenfrei) werden getrennt zubereitet.")
+        is True
+    )

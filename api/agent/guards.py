@@ -254,17 +254,21 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     a call that speaks of allergies or a sentence that names an allergen,
     absence only where the sentence names one, the fixed sentence anywhere;
     the core's own sentences (read-back, booking) and the names of the dishes
-    the search delivered are left out, as in `false_booking`. The loop hands the call to the team instead of saying
-    it (L17, redesign of PR #369)."""
+    the search delivered are left out of the claim, as in `false_booking`.
+    The loop hands the call to the team instead of saying it (L17, redesign
+    of PR #369)."""
     rest = say
     for own in (state.booking_say, state.readback):
         if own:
             rest = rest.replace(own, " ")
+    # Whether the sentence names an allergen is read with the dish names in
+    # it: "Die Nudeln (glutenfrei) werden getrennt zubereitet." is a safety
+    # promise about gluten (Codex PR #388, P1).
+    named = names_an_allergen(rest) or "allerg" in rest.lower()
     # A dish name the search delivered is menu data, not the model's claim:
     # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
     # audit 27.10.2026). Only a name that itself says "...frei", and only as
     # a whole: a dish "Milch" must not cut "milchfrei" (Codex PR #388, P1).
-    # What the model says around the name still counts.
     names = [seen.get("name") for seen in state.seen_items.values()]
     names += [name for _, name in state.offered_items.values()]
     for name in names:
@@ -272,7 +276,6 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
             whole = rf"(?<!\w){re.escape(name)}(?!\w)"
             rest = re.sub(whole, " ", rest, flags=re.IGNORECASE)
     lowered = rest.lower()
-    named = names_an_allergen(rest) or "allerg" in lowered
     if _ALWAYS.search(lowered) or (named and _ABSENT.search(lowered)):
         return True
     return (state.allergy_talk or named) and _SAFE.search(lowered) is not None
