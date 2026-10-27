@@ -200,6 +200,9 @@ class ConversationLoop:
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
         noted = list(state.allergies)
+        # The table read back, before a new allergy takes its draft back: a
+        # handover in this very turn still names it (Codex PR #369).
+        open_table = self._open_table(state)
         allergies.note_allergies(self._session, state, user_text)
         if state.allergies != noted:
             # The draft read out before does not carry what the guest just
@@ -249,7 +252,9 @@ class ConversationLoop:
         if escalated is None and escalation.asks_beyond_the_allergens(user_text, talk):
             # L17: before the model, which knows no more than the database,
             # and before the consent question is put again.
-            escalated = self._allergens_to_team(state, lead=SAY_ALLERGENS_BEYOND)
+            escalated = self._allergens_to_team(
+                state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+            )
         if escalated is not None:
             if asks:
                 escalated.say.insert(0, SAY_NOT_A_PERSON)
@@ -772,6 +777,7 @@ class ConversationLoop:
         state: ConversationState,
         dish: str | None = None,
         lead: str = SAY_ALLERGENS_UNKNOWN,
+        table: str | None = None,
     ) -> TurnResult:
         """The guest asked about allergens beyond what the database holds
         (legal check L17, D24): the call goes to a team member, or a callback
@@ -780,7 +786,7 @@ class ConversationLoop:
         not placed. The card names the question and the dish, never the
         guest's allergy (L13)."""
         summary = SUMMARY_ALLERGENS + (f" Gericht: {dish}." if dish else "")
-        table = self._open_table(state)
+        table = table or self._open_table(state)
         if table:
             summary += f" {SUMMARY_OPEN_TABLE} {table}."
         # Room for what `_handoff_summary` adds for a booking made earlier,

@@ -86,7 +86,8 @@ _BEYOND = re.compile(
 # call speaks of allergies or the sentence names an allergen, and never as
 # contact with a person ("damit Sie mit mir in Kontakt bleiben", "Ich hatte
 # schon Kontakt mit Ihrem Kollegen"; Codex and own review of PR #369).
-_CONTACT = re.compile(r"\bin kontakt|\bkontakt mit|ber(?:ü|ue)hr")
+# "berührungslos bezahlen" is a payment (Codex PR #369).
+_CONTACT = re.compile(r"\bin kontakt|\bkontakt mit|ber(?:ü|ue)hr(?!ungslos)")
 _WITH_A_PERSON = re.compile(
     r"\bmit (?:mir|uns|ihnen|dir|euch|jemandem|dem team)\b"
     r"|\bkontakt (?:bleiben|aufnehmen|halten)|\bin kontakt (?:bleiben|treten|setzen)"

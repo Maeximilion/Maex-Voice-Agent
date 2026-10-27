@@ -110,6 +110,8 @@ def test_certainty_stated_in_an_allergy_call_asks_nothing(said):
         "Ich hatte schon Kontakt mit Ihrem Kollegen.",
         "Wir haben schon in Kontakt gestanden, wegen der Bestellung.",
         "Ich nehme alles zusammen, einmal die 21, Wan-Tan frittiert.",
+        # Codex PR #369: a payment, not touch of food.
+        "Kann ich berührungslos bezahlen?",
         # A fried dish ordered by its name (Codex PR #369): the eval menu
         # has "21;Wan-Tan frittiert".
         "Ich hätte gern Wantan frittiert.",
@@ -517,3 +519,47 @@ def test_the_number_is_asked_for_at_most_three_times(session, known_tenant):
 
     assert result.ended
     assert result.say == [SAY_NOBODY_REACHABLE]
+
+
+def test_contactless_payment_in_an_allergy_call_is_no_question():
+    """Codex PR #369: "berührungslos" matched touch of food."""
+    assert not asks_beyond_the_allergens(
+        "Kann ich berührungslos bezahlen?", allergy_talk=True
+    )
+
+
+def test_a_table_read_back_survives_a_new_allergy_in_the_same_turn(
+    session, known_tenant
+):
+    """Codex PR #369: "Ich habe eine Erdnussallergie. Sind da Spuren ...?"
+    after the read-back took the draft back before the handover read it, and
+    the card had no table. The table is read before."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+        },
+    )
+    run(
+        session,
+        state,
+        "Tisch für vier auf Müller.",
+        LLMTurn(tool_call=table),
+        LLMTurn(say="Passt das?"),
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie. Sind da Spuren von Erdnüssen im Essen?",
+        now=CLOSED,
+    )
+
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
+    callback = session.scalars(select(Callback)).one()
+    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
+    assert "Erdnuss" not in callback.summary
