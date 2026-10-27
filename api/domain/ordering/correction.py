@@ -288,10 +288,13 @@ def apply_correction(
     )
     session.flush()
     if order.handover_state is not None:
-        # The new state goes to the kitchen (ticket.py). "KORREKTUR" whenever
-        # the bridge may hold a slip of it, also on a red card (repo audit
-        # 27.10.2026); a ticket not yet picked up is overwritten as it is.
-        reached = may_hold_a_slip(session, order)
+        # The new state goes to the kitchen (ticket.py). "KORREKTUR" if it
+        # has a ticket or gets one (send_ticket drops the reason on a first
+        # ticket not yet picked up), and on a red card whenever the bridge may
+        # hold a slip of it (repo audit 27.10.2026).
+        reached = order.handover_state in ("pending", "sent") or may_hold_a_slip(
+            session, order
+        )
         send_ticket(session, order, correction_reason=reason if reached else None)
         order.handover_state = "pending"
     session.commit()
