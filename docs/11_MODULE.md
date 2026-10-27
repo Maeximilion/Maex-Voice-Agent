@@ -44,7 +44,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `logging.py` | JSON-Logs, jede Zeile trägt `call_id` und `request_id` |
 | `tool_log.py` | Middleware: jeder `/v1/tools/*`-Aufruf mit Dauer und Ergebnis in `calls.tool_calls`, best-effort |
 | `auth.py` | Token-Prüfung als FastAPI-Dependency |
-| `ids.py` | UUID, Idempotenz-Schlüssel, Abholcode („A17") |
+| `ids.py` | Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
 
 **Regel:** Fachcode wirft `core.errors`, nie `HTTPException`. Die Übersetzung passiert einmal, in `tools/`.
@@ -116,7 +116,7 @@ braucht.
 Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | Datei | Verantwortung |
 |---|---|
-| `prompt.py` | System-Prompt aus `prompts/system_vN.md` plus Menü-Index bauen |
+| `prompt.py` | System-Prompt aus `prompts/system_vN.md` plus tool reference (`prompts/tools_vN.md`) bauen |
 | `state.py` | kompakter Gesprächszustand (05 §5) statt wachsendem Verlauf |
 | `loop.py` | Kundenzug → Modell → Tool-Aufrufe → Antwort; Abbruch bei `max_call_seconds`, and on the phone line when one guest turn takes longer than `turn_deadline_seconds` |
 | `dispatch.py` | Tool-Name → `domain`-Funktion, mit Zeitmessung. `search_menu` zerlegt hier einen Satz mit mehreren Positionen (`split_positions`) und sucht je Teil; `draft_order` bekommt den Schlüssel aus den Angaben des Anrufs |

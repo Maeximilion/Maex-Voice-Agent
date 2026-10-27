@@ -8,25 +8,12 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.time import utcnow
-from api.domain.status.hours import (
-    HoursData,
-    all_services,
-    load_hours,
-    next_opening,
-    open_window_at,
-)
+from api.domain.reservations.spoken import WEEKDAYS
+from api.domain.status.hours import load_hours, next_opening, open_window_at
 from api.models import ServiceConfig, Tenant
+from api.models.tenants import SERVICES
 from api.schemas.status import ServiceStatus
 
-WEEKDAYS = (
-    "Montag",
-    "Dienstag",
-    "Mittwoch",
-    "Donnerstag",
-    "Freitag",
-    "Samstag",
-    "Sonntag",
-)
 DELIVERY = "delivery"
 PICKUP = "pickup"
 
@@ -44,8 +31,8 @@ def get_service_status(
     data = load_hours(session, tenant_id, now.astimezone(zone).date())
 
     # Ein pausierter Service zählt nicht als offen, auch wenn sein Fenster läuft.
-    enabled = [s for s in all_services() if s != DELIVERY or config.delivery_enabled]
-    windows = {s: open_window_at(data, now, s, zone) for s in all_services()}
+    enabled = [s for s in SERVICES if s != DELIVERY or config.delivery_enabled]
+    windows = {s: open_window_at(data, now, s, zone) for s in SERVICES}
     active = [w for w in (windows[s] for s in enabled) if w is not None]
     is_open = bool(active)
     closes_at = max(closes for _, closes in active).astimezone(UTC) if is_open else None
@@ -89,6 +76,3 @@ def _say_closed(opening: datetime | None, now: datetime, zone: ZoneInfo) -> str:
 
 def _clock(dt: datetime) -> str:
     return f"{dt.hour} Uhr" if dt.minute == 0 else f"{dt.hour}:{dt.minute:02d} Uhr"
-
-
-__all__ = ["HoursData", "get_service_status"]
