@@ -150,3 +150,4 @@ Kinds of audit: **full** covers every exposed area and **scoped** every exposed 
 |---|---|---|---|---|
 | 12.10.2026 | full, by hand | `141d412` | whole repository | hardening list in issue #252 |
 | 15.10.2026 | component | `a717ccc` | voice layer (`api/telephony/`, Asterisk), deployment (Compose, Caddy, backups, CI), agent and kitchen token paths, GUI auth, n8n | 1 P1, 6 P2, 6 P3 ([#252, comment of 15.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6188330460)); the P1 and the SIP points are T-10.13 |
+| 27.10.2026 | component | `b7c8c36` | T-10.1 step 2: the call path at the pilot's router (Asterisk configuration and `render.sh`, the `asterisk` and `voice` services, the voice service's token, `/ending` and `/missed`) | no P1, no P2; one note on address translation for the step itself ([#252, comment of 27.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6452068463)) |
