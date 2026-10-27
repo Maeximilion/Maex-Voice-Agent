@@ -22,6 +22,8 @@
 
 The envelope also carries what the framework answers itself (#252): an unknown path is `not_found` with status 404, a wrong method `invalid_input` with 405. A `reserved_for` that no calendar holds (the first and last days of the year range, where adding a time zone or a day overflows) is `invalid_input` like any other malformed field, in the tools and in the conversation core.
 
+Below `/gui/` the same envelope keeps an error status (repo audit, 27.10.2026): an unhandled error is 500, a malformed path or field 422, an `AppError` no view catches 500. The tablet's htmx swaps every answer below 400 into the page, so a 200 put the JSON where the header and its pause button stood (`api/main.py` `_status`, `api/gui/static/app.js`). The agent's paths keep 200.
+
 - `say` ist ein **Vorschlag**, kein Zwang. Es hält die Formulierung heikler Fälle (ausverkauft, außerhalb der Zone, Allergene) im Code statt im Modell.
 - **Fehlercodes:** `invalid_input` · `not_found` · `ambiguous` · `closed` · `out_of_zone` · `below_minimum` · `conflict` · `service_unavailable`
 - **Nie** ein Stacktrace, nie ein HTTP 500 ohne JSON-Körper. Der Agent muss jede Antwort vorlesen können.
