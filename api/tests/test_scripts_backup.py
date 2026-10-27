@@ -488,6 +488,9 @@ def test_retention_removes_old_backups_of_this_database_labelled_or_not(
     ]
     kept = [
         f"maex_{name}_x_20200101T000000Z.dump.gpg",
+        # Database "<name>_20200101T000000Z", scheduled and labelled (Codex #386).
+        f"maex_{name}_20200101T000000Z_20200101T000000Z.dump.gpg",
+        f"maex_{name}_20200101T000000Z_20200101T000000Z_before_import.dump.gpg",
         "maex_otherdb_20200101T000000Z.dump.gpg",
         "maex_otherdb_20200101T000000Z_before_import.dump.gpg",
         "notes.txt",

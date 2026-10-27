@@ -87,11 +87,14 @@ if ! ln "$partial" "$final" 2>/dev/null; then
 fi
 echo "written: $final ($(wc -c <"$final" | tr -d ' ') bytes, $tables tables)"
 
-# Only after a good run, and only dumps of this database, labelled ones included:
-# the time stamp sits at a fixed place behind the name, so the dumps of a database
-# whose name only starts with this one never match.
+# Only after a good run, and only dumps of this database, labelled ones included.
+# A label is lower case; another database whose name starts with this one and a
+# stamp (shop_20260101T000000Z next to shop) has its own stamp, with upper-case
+# T and Z, behind the part that matches here, so an upper-case letter after the
+# stamp means the dump is not ours (Codex PR #386).
 if [ "$keep_days" -gt 0 ]; then
     find "$backup_dir" -maxdepth 1 -type f \
-        -name "maex_${PGDATABASE}_????????T??????Z*.dump*" -mtime "+$keep_days" \
+        -name "maex_${PGDATABASE}_????????T??????Z*.dump*" \
+        ! -name "maex_${PGDATABASE}_????????T??????Z?*[[:upper:]]*" -mtime "+$keep_days" \
         -print -delete | sed "s/^/removed, older than $keep_days days: /"
 fi
