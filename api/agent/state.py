@@ -24,6 +24,7 @@ from api.agent.guest_details import (
 )
 from api.agent.intent import heard
 from api.core.errors import InvalidInput
+from api.domain.calls.consent import Answer
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
 from api.domain.menu.search import CLEAR_MATCHES
@@ -57,6 +58,20 @@ def last_words(say: str) -> str:
 # What the state keeps of get_service_status: whether the restaurant is open,
 # and whether it takes pickups, which can be off while it is open.
 SERVICE_FLAGS = ("is_open", "pickup_enabled")
+
+
+class Allergy(BaseModel):
+    """An allergy the guest named (T-11.1)."""
+
+    # As the guest said it ("Erdnuss", "Milch, Ei und Nuss"). None while the
+    # words did not give it in full: the guest is asked "Wogegen?".
+    ingredient: str | None = None
+    # The caller's own or their own child's. Another adult's is never noted
+    # with its reason: the caller's "ja" is no consent of theirs (L13).
+    own: bool = True
+    # The dish it was said with (`menu_item_id` of a clear search hit); None
+    # for the whole order or the table.
+    item: str | None = None
 
 
 class ConversationState(BaseModel):
@@ -136,6 +151,21 @@ class ConversationState(BaseModel):
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
+    # The allergies the guest named in this call, read by the core from the
+    # guest's own sentences (`agent/allergies.py`, T-11.1). The model never
+    # carries one in a note: the core writes them onto the draft itself.
+    # Memory of the core, never sent.
+    allergies: list[Allergy] = Field(default_factory=list)
+    # The caller's answer to the question for the allergy as a kitchen note
+    # (`consent.ALLERGY_QUESTION`, legal check L13), None while it was not
+    # asked. Asked once per call, before the first draft that would carry an
+    # allergy as its reason; the answer holds for every note of the call.
+    # Memory of the core, never sent.
+    allergy_consent: Answer | None = None
+    # The draft, `draft_order` or `create_reservation` as the model called it,
+    # while a question of the core about the allergy waits for its answer
+    # (`allergies.question`, `loop.py`). Never sent.
+    held_call: dict[str, Any] | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
@@ -389,6 +419,16 @@ def _as_set(lines: list[dict[str, Any]]) -> list[str]:
     )
 
 
+def draft_replaced(state: ConversationState, name: str) -> None:
+    """A new draft (`name`) waits for a question of the core about the
+    allergy, or the guest named an allergy the draft read out before does not
+    carry (`loop.py`): that draft is no longer what the guest wants, also
+    when the new one never goes out, and a yes must not confirm it (Codex PR
+    #368, P1)."""
+    if state.stage == "readback_pending":
+        _drop_readback(state, name)
+
+
 def order_corrected(state: ConversationState) -> None:
     """Drops the draft that waits for its yes, an order or a reservation. A
     reservation too: the guest who goes on with the order after a table was
@@ -500,12 +540,46 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
             state.known_item_ids.update(str(h["menu_item_id"]) for h in hits)
         for h in hits:
             state.seen_items[str(h["menu_item_id"])] = _seen(h)
+        wish = part.get("wish") or {}
+        if clear and hits and wish.get("kind") == "allergy":
+            _to_dish(state, wish.get("ingredient"), str(hits[0]["menu_item_id"]))
         if not clear:
             for h in hits:
                 state.offered_items[str(h["menu_item_id"])] = (
                     str(h.get("number") or ""),
                     str(h.get("name") or ""),
                 )
+
+
+def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
+    """The search found the dish an allergy was said with: the first one the
+    guest named that is not tied to a dish yet, with the same ingredient or,
+    still asked for, none, goes onto that dish's line. Only what the core read
+    from the guest's own sentence: the search reads the model's query."""
+    said = ingredient.casefold() if isinstance(ingredient, str) else None
+    same = [
+        allergy
+        for allergy in state.allergies
+        if (allergy.ingredient.casefold() if allergy.ingredient else None) == said
+    ]
+    if not same or any(allergy.item == item_id for allergy in same):
+        return
+    free = [allergy for allergy in same if allergy.item is None]
+    if len({allergy.own for allergy in free}) > 1:
+        # The same allergen for the caller and for another adult: which dish
+        # is whose is not read, and the order of the searches must not
+        # decide it. Both stay on the whole order (Codex PR #368, P1).
+        return
+    if free:
+        free[0].item = item_id
+    else:
+        # The same allergy said for another dish as well ("Die 13 bitte, ich
+        # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
+        # Erdnussallergie"): read once from the sentence, it goes onto both
+        # lines (Codex PR #368). Whose it is there is the caller's only when
+        # every entry of it is.
+        own = all(allergy.own for allergy in same)
+        state.allergies.append(same[0].model_copy(update={"item": item_id, "own": own}))
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

@@ -31,6 +31,10 @@
     },
     {
       "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -45,6 +49,9 @@
         "note": "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
       }
     ],
-    "customer_name": "Mueller"
+    "customer_name": "Mueller",
+    "consent": [
+      "yes"
+    ]
   }
 }

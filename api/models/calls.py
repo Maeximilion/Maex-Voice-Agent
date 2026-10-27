@@ -59,3 +59,25 @@ class Callback(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
     done_by: Mapped[str | None] = mapped_column(Text)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+CONSENT_ANSWERS = ("yes", "no", "unclear")
+
+
+class ConsentLog(UUIDPrimaryKey, TenantScoped, Base):
+    """One answer to a consent question of the agent (legal check L13): the
+    call, when it was answered, the question word for word as it was asked
+    (its version), and the answer. Proof of the consent a stored allergy note
+    rests on; the allergy itself is not in it."""
+
+    __tablename__ = "consent_log"
+    __table_args__ = (_in("answer", CONSENT_ANSWERS, "ck_consent_log_answer"),)
+
+    call_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("calls.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    question: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str] = mapped_column(Text, nullable=False)
+    answered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )

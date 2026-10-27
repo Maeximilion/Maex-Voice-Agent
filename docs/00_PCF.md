@@ -482,6 +482,82 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 26.10.2026 - T-11.1 redesign built on #368
+Status: the redesign decided by Maxi is built on #368 and pushed. The core
+        reads the caller's allergy from the guest's sentence every turn into
+        state.allergies (agent/allergies.py: ingredient, whose, dish), asks
+        "Wogegen?" and the consent itself while it holds the draft, and writes
+        the allergy onto line, order or table; a cart or draft whose note names
+        an allergy is refused. with_consent, unread_allergy, keep_restrictions,
+        order_note and table_note are gone. The open P1 4378523387, the three
+        Codex P1s on d1ad1e0 (4378680652, 4378680664, 4378680687), the two on
+        f3e997f (4379357300, 4379357317), those on 2844b82 (4379622793) and
+        94f1fa8 (4379762029), 3ac0383 (4379960053), 6f94f73 (4380083176),
+        3c4cc6a (4380178537) and every
+        sentence shape of the earlier findings are tests; "Sesam vertrage ich
+        auch nicht" (#361) is read. Suite 6180 passed; evals against main case
+        by case: cases 54/54 (main 50/50, all of main's pass, 4 new), targets
+        1/28 (main 1/27, the same one passes, reservierung_0038 red as before),
+        numbers 249/249.
+Artifacts: #368 task/11-1-allergy-consent (redesign b52f686, main merged in,
+        status 2.10.0 and this handover). #369 task/11-1-allergen-beyond-db
+        6c58dc1, not touched.
+Decisions: none new by Maxi. Claude's readings, in docs/01 assumptions (h) to
+        (k): an allergy said with an unclear dish goes onto the whole order; a
+        sentence read whole and behind the dish with two different ingredients
+        is asked about ("Pho Bo und Sommerrollen, Erdnussallergie"); a later
+        denial takes no allergy back; an answer to "Wogegen?" that is a
+        sentence of its own or an order is not read.
+Gate: G0 open, unchanged.
+Open: 1. Codex on the head of #368, findings fixed in one push per round. Then
+        Maxi merges #368 (allergens, xhigh). Ultrareview recommended (xhigh
+        trigger, more than 400 lines outside tests).
+        2. After #368: merge main into #369, rerun suite and evals, Codex,
+        Maxi merges.
+Lessons: reading a whole guest sentence is not reading the wish behind the
+        dish: the list rule of the parser takes dish and guest names before a
+        compound ("Bo, Sommerrollen und Erdnuss"), and a bare answer to
+        "Wogegen?" is read up to its end. Prompt edits count against the token
+        budget tests (system prompt 800, core 2600).
+```
+
+```text
+## Handover 26.10.2026 - T-11.2, T-11.1 taken over, redesign decided
+Status: merged today: #371 (T-11.2 deletion job, Maxi), #373 (scripts/codex_review.py,
+        Claude). T-11.1 taken over from its idle session on Maxi's word: #368 and
+        #369 merged with main (migration 010 for the consent log, run_turn in
+        main's structure with the held draft and the answer to "Sind Sie ein
+        Mensch?"), the consent_log period in the deletion job, and four Codex
+        rounds of P1 fixes. #369 clean on 6c58dc1, #368 has one open P1
+        (4378523387) on 8275a6a. Neither is merged: Maxi chose the redesign (A).
+Artifacts: #368 task/11-1-allergy-consent 8275a6a (+ this handover), #369
+        task/11-1-allergen-beyond-db 6c58dc1. Design and the open finding: the
+        comment of 26.10.2026 on #368 ("Decision by Maxi ... redesign").
+Decisions: consent_log period: end of the third calendar year after the answer
+        (Maxi, option A; RETENTION_CONSENT_LOG_YEARS, in the deletion job on #368).
+        A callback never done loses phone and summary 90 days after creation
+        (Maxi, option A on #371). T-11.1 redesign (Maxi, A): allergies never
+        travel in free text; the core reads them from the guest's sentence into
+        structured state, refuses model notes with allergy words, writes the
+        allergy onto line, order or table itself.
+Gate: G0 open, unchanged.
+Open: 1. Build the T-11.1 redesign on #368 in a new session, Opus 5.5 xhigh:
+        the design in the #368 comment, the open P1 4378523387 covered by it,
+        every sentence shape of the findings as a test, suite, evals against
+        main, Codex. Then merge #368 into #369, check, both to Maxi.
+        2. The CodeQL jobs on #368's 8275a6a failed without an alert; check on
+        the next push. 3. The deletion job dies with the dispatcher's start
+        check (ultrareview of #371): a service of its own, for #207.
+Lessons: Codex reviews every push by itself; never write "@" plus codex in PR
+        text (it turned #373 into a task and stopped all reviews); read the
+        state with scripts/codex_review.py --wait (stalled after 10 min).
+        Resolve every answered review thread by comment id, or Codex counts it
+        on every later head. Start the CI wait a minute after a push. A
+        throwaway Postgres named t111-db (exited, from the first T-11.1
+        session) is left on Docker; not removed, not ours.
+```
+
+```text
 ## Handover 25.10.2026 - T-11.4: the call log keeps the hour, not the minute
 Status: built and pushed, no pull request yet. scripts/call_log.py reads `time`
 as the hour ("18", "18 Uhr"); a row with a minute passes and every run cuts it

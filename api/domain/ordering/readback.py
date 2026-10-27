@@ -26,6 +26,10 @@ def readback(order: Order, lines: Sequence[SpokenLine]) -> str:
     """Bezug für "in etwa N Minuten" ist der Anlagezeitpunkt, nicht die Uhr:
     derselbe Schlüssel liefert denselben Satz."""
     satz = " ".join(_spoken_line(line) for line in lines)
+    if order.note:
+        # The note of the whole order after its dishes (D24), repeated like
+        # the note of a line.
+        satz += f" Für die ganze Bestellung: {order.note}."
     satz += f" Macht {spoken_euro(order.total_cents)}"
     if order.ready_at is not None:
         # Abrunden: ready_at ist aufgerundet, die Differenz liegt in

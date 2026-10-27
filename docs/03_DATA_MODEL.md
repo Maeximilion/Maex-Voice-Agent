@@ -127,6 +127,19 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |
 
+A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1).
+
+### `consent_log`
+One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id / call_id | UUID FK | |
+| question | TEXT | the question word for word as it was asked, its version (`agent/consent.py` `ALLERGY_QUESTION`) |
+| answer | TEXT | `yes` / `no` / `unclear`; only `yes` lets a note keep the reason, `unclear` is no consent |
+| answered_at | TIMESTAMPTZ | |
+
 ### `outbox`
 Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorgang geschrieben.
 
@@ -223,7 +236,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | delivery_fee_cents | INT | |
 | total_cents | INT | |
 | ready_at | TIMESTAMPTZ | zugesagte Zeit |
-| note | TEXT | |
+| note | TEXT | the note of the whole order (`draft_order` `note`, T-11.1): the guest's allergy said without a dish or when it is unclear which dish it belongs to (D24), in the same two forms as `order_items.note` |
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
 | handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
@@ -244,7 +257,7 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 | quantity | INT | |
 | unit_price_cents | INT | Preis zum Bestellzeitpunkt, eingefroren |
 | options | JSONB | gewählte Optionen mit Preisdifferenz |
-| note | TEXT | „ohne Zwiebeln", „WICHTIG: Keine Erdnüsse. Grund: Allergie" (E14) |
+| note | TEXT | „ohne Zwiebeln", „WICHTIG: Keine Erdnüsse. Grund: Allergie" (E14) only after the caller's "ja" to the consent question, otherwise „ohne Erdnüsse" (L13, T-11.1) |
 
 ---
 
@@ -329,6 +342,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | `calls.caller_id` | 90 days after the call (was 24 months), `RETENTION_CALLER_ID_DAYS` | daily job nulls it; the statistics in `calls` stay |
 | Name, phone, address, notes and the links `customer_id` and `address_id` on orders and reservations | 90 days after the order or reservation date (`ready_at` of an order, its creation while it has none; `reserved_for`), `RETENTION_GUEST_DETAILS_DAYS` | daily job strips the fields and nulls the links, so the row cannot be traced through the customer record; items, prices, times and `call_id` stay. The notes of the positions (`order_items.note`) go with them. `address_id` joins with T-6.1 |
 | A caller's allergy in `order_items.note`, `orders.note` or `reservations.note` | end of the business day of the order (the night after `ready_at`, 05:00 local time, `core/time.py`), collected or not; for a reservation the night after its date; `RETENTION_ALLERGY_NOTE_DAYS` business days later (0) | daily job empties the note text (L13), also its copies in the outbox payloads of the same orders and reservations (`note`, `items[].note`; Codex PR #371), so it does not wait for the payload period. A note counts as an allergy when it contains "Allergi…" (the kitchen wording "Grund: Allergie" included), "Unverträglich…" or "Intoleran…", the words the call log refuses too; the whole note goes. Any other note stays until the guest details go |
+| `consent_log` | end of the third calendar year after the year of the answer (Maxi, 26.10.2026), `RETENTION_CONSENT_LOG_YEARS` (3): the row holds no allergy and no number, but it shows that the caller named one of their own; it is the proof of the "ja" behind a stored allergy note (Art. 7(1)) for as long as a claim can arise (§§ 195, 199 BGB), the reasoning of the request log (U2). Not with the `calls` row: that one is never deleted | daily job deletes the row (T-11.1) |
 | `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it), `RETENTION_CALLBACK_DAYS` | daily job strips both fields (T-11.2). A callback never marked done loses them 90 days after its creation (Maxi, 26.10.2026, after the ultrareview of PR #371): nobody calls back after three months. Its card stays open with its reason and says "Nummer nach der Löschfrist entfernt" instead of offering a call |
 | Customers and their addresses | 24 months after the last contact | daily job (T-6.7) |
 | Outbox payloads | 7 days after a successful dispatch (`RETENTION_OUTBOX_SENT_DAYS`); any event not sent at most 30 days after it was written (`RETENTION_OUTBOX_UNSENT_DAYS`) | daily job cuts the payload to its ids (`order_id`, `reservation_id`, `callback_id`, `call_id`, `revision`): the column is not nullable, and the kitchen finds every slip of an order by id and revision. An event still pending at 30 days becomes `failed` with it, so a slip without the guest is never printed or sent. The event row goes after 90 days (`RETENTION_OUTBOX_ROW_DAYS`) |
@@ -355,5 +369,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 007 | `service_config.reservation_max_days_ahead`, `reservation_max_party_size`, `reservation_max_party_size_same_day`: limits for a reservation by phone; `order_approval_above_cents` (read by `confirm` since 13.10.2026) and `turn_deadline_seconds` (read by the phone line since 13.10.2026): the two other limits of #252, in the same migration |
 | 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
 | 009 | `service_config.privacy_notice_address`: where the privacy notice is, named in the phone greeting (T-11.5, docs/09 L4); empty on existing rows, a text of white space only refused; the downgrade drops the column |
+| 010 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

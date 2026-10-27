@@ -34,6 +34,10 @@
     },
     {
       "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -48,6 +52,9 @@
         "note": "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie"
       }
     ],
-    "customer_name": "Mueller"
+    "customer_name": "Mueller",
+    "consent": [
+      "yes"
+    ]
   }
 }

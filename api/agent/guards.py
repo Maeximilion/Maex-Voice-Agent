@@ -26,6 +26,10 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
+- The caller's allergy (T-11.1): the core reads it from the guest's own
+  sentence and writes it onto the draft itself (`agent/allergies.py`). A
+  note the model writes may not name one: a cart or a draft with such a note
+  is refused (`_ALLERGY_NOTE`), whatever else it says.
 """
 
 import re
@@ -34,6 +38,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.guest_details import (
@@ -52,6 +57,7 @@ from api.agent.state import (
     same_order,
 )
 from api.domain.menu.items import option_key
+from api.domain.menu.wishes import mentions_allergy
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -118,6 +124,12 @@ HINT_NOT_BOOKED = (
     "nie, auch nicht verneint oder in einer Frage. Fragt der Gast nach seiner "
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
+)
+HINT_ALLERGY_NOTE = (
+    "Abgelehnt: ein `note` nennt eine Allergie. Die Allergie des Gastes notiert "
+    "der Kern selbst aus seinen Worten; schreib sie nie in ein `note`, auch "
+    "nicht verneint. Andere Wünsche („ohne Zwiebeln“, „Kinderstuhl“) bleiben im "
+    "`note`. Ruf denselben Schritt ohne die Allergie noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -265,7 +277,9 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
         )
     else:
         ids = [line["menu_item_id"] for line in lines]
-        if not all(item_id in state.known_item_ids for item_id in ids):
+        if any(mentions_allergy(line.get("note") or "") for line in lines):
+            refused = _ALLERGY_NOTE
+        elif not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
         elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
             # A clear hit that is sold out is known, and draft_order would
@@ -282,6 +296,20 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             return None
     order_corrected(state)
     return refused
+
+
+def _notes(call: ToolCall) -> list[str]:
+    """The notes a draft would store: of the whole order or table, and of each
+    order line."""
+    if call.name not in NOTED:
+        return []
+    items = call.args.get("items")
+    lines = items if isinstance(items, list) else []
+    notes = [
+        call.args.get("note"),
+        *(line.get("note") for line in lines if isinstance(line, dict)),
+    ]
+    return [note for note in notes if isinstance(note, str)]
 
 
 def _options_fit(seen: dict[str, Any], line: dict[str, Any]) -> bool:
@@ -319,7 +347,10 @@ def refusal(
 ) -> ToolResult | None:
     """None lets the call through to `dispatch`; otherwise the failed result
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
-    which the core has taken by now."""
+    which the core has taken by now. `call` as the model wrote it, before the
+    core writes the allergies onto it (`allergies.noted_call`)."""
+    if any(mentions_allergy(note) for note in _notes(call)):
+        return _ALLERGY_NOTE
     if call.name == "confirm":
         if _may_confirm(state, start, user_text, call):
             return None
@@ -415,6 +446,7 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
+_ALLERGY_NOTE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_NOTE)
 
 
 def unheard_readback(state: ConversationState) -> str | None:

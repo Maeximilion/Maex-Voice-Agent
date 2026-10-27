@@ -22,16 +22,17 @@ from typing import Any, get_args
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent import escalation, guards
-from api.agent.consent import is_yes
+from api.agent import allergies, escalation, guards
+from api.agent.consent import ALLERGY_QUESTION, bare_answer, consent_answer, is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import UnderstandingLadder
-from api.agent.llm import LLMClient, LLMError
+from api.agent.llm import LLMClient, LLMError, LLMTurn, ToolCall
 from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
+    draft_replaced,
     note_guest_details,
     note_intent,
 )
@@ -39,6 +40,8 @@ from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
+from api.domain.calls import record_consent
+from api.domain.menu.wishes import mentions_allergy
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Tenant
 from api.schemas.callbacks import CallbackReason
@@ -162,6 +165,20 @@ class ConversationLoop:
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         note_guest_details(state, user_text)
+        # The same for an allergy: the core writes it onto the draft from what
+        # the guest said, never from a model's note (T-11.1).
+        noted = list(state.allergies)
+        allergies.note_allergies(self._session, state, user_text)
+        if state.allergies != noted:
+            # The draft read out before does not carry what the guest just
+            # said: a yes must not confirm it (Codex PR #368, P1).
+            draft_replaced(
+                state, "create_reservation" if state.reservation_id else "draft_order"
+            )
+        # The answer to a question of the core about the allergy, the consent
+        # logged also when this sentence goes to the team (L13): the draft
+        # that waited for it goes first, before the model is asked.
+        held = self._held_answered(state, user_text)
         # Read past the question whether a person is on the line: "Spreche ich
         # mit einem Menschen?" holds the words of the wish to talk to one and
         # only asks, what else the sentence says still counts.
@@ -200,10 +217,29 @@ class ConversationLoop:
             if asks:
                 escalated.say.insert(0, SAY_NOT_A_PERSON)
             return escalated
-        if rest is not None and not escalation.asks_more(rest):
+        if held is None and rest is not None and not escalation.asks_more(rest):
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
-        result = self._converse(state, user_text, turn_started)
+        if state.held_call is not None:
+            # The question was not what the guest heard last: put it again
+            # after a plain yes or no ("Sind Sie noch da?" - "Ja"), unless the
+            # call is past its limit (Codex PR #368). A sentence with more in
+            # it ("Ja, aber bitte erst am 17. um 20 Uhr") goes to the model,
+            # and the held draft with its old arguments is dropped; the
+            # allergies stay in the state for the draft the model makes again.
+            if self._clock() - self._started > self._max_call_seconds:
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+            question = allergies.question(state)
+            if question is not None and bare_answer(
+                user_text if rest is None else rest
+            ):
+                guards.note_said(state, question)
+                say = [question]
+                if asks:
+                    say.insert(0, SAY_NOT_A_PERSON)
+                return TurnResult(state=state, say=say)
+            state.held_call = None
+        result = self._converse(state, user_text, turn_started, held)
         if asks:
             # A request next to the question ("Sind Sie ein Roboter? Ich
             # möchte einen Tisch ..."): the truthful sentence first, then the
@@ -213,10 +249,16 @@ class ConversationLoop:
         return result
 
     def _converse(
-        self, state: ConversationState, user_text: str, turn_started: float | None
+        self,
+        state: ConversationState,
+        user_text: str,
+        turn_started: float | None,
+        held: ToolCall | None = None,
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
-        sentence for the guest, a handoff or a limit."""
+        sentence for the guest, a handoff or a limit. `held` is the draft the
+        guest just answered a question of the core for (`_held_answered`):
+        carried out first, in place of a model call."""
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
@@ -240,36 +282,42 @@ class ConversationLoop:
             if left is not None and left <= 0:
                 return self._too_slow(state, user_text)
 
-            try:
-                turn = self._llm.next_turn(
-                    self._system_prompt,
-                    # On a tool hop the input is the tool result: the guest's
-                    # sentence of this turn rides along, or the model no
-                    # longer knows what the result is for.
-                    self._prompt_state(
-                        state,
-                        None if pending_input is user_text else user_text,
-                        called,
-                    ),
-                    pending_input,
-                    # Only what is left: a call that hangs is cut off there
-                    # instead of after the client's own, longer limit. Not
-                    # named at all without a deadline, so a client of the old
-                    # shape is called as before.
-                    **({} if left is None else {"timeout": left}),
-                )
-            except LLMError as exc:
-                # A model that is down or answers outside the contract is an
-                # outage: the call goes to the team, never into a retry loop
-                # with the guest waiting (CLAUDE.md §2 rule 5).
-                log(
-                    logger,
-                    logging.ERROR,
-                    "model failed, handing over to the team",
-                    call_id=str(state.call_id),
-                    error=str(exc),
-                )
-                return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
+            # The draft that waited for the guest's answer is carried out as
+            # the model called it, with its notes as the answer allows.
+            from_hold = held is not None
+            if held is not None:
+                turn, held = LLMTurn(tool_call=held), None
+            else:
+                try:
+                    turn = self._llm.next_turn(
+                        self._system_prompt,
+                        # On a tool hop the input is the tool result: the
+                        # guest's sentence of this turn rides along, or the
+                        # model no longer knows what the result is for.
+                        self._prompt_state(
+                            state,
+                            None if pending_input is user_text else user_text,
+                            called,
+                        ),
+                        pending_input,
+                        # Only what is left: a call that hangs is cut off
+                        # there instead of after the client's own, longer
+                        # limit. Not named at all without a deadline, so a
+                        # client of the old shape is called as before.
+                        **({} if left is None else {"timeout": left}),
+                    )
+                except LLMError as exc:
+                    # A model that is down or answers outside the contract is
+                    # an outage: the call goes to the team, never into a retry
+                    # loop with the guest waiting (CLAUDE.md §2 rule 5).
+                    log(
+                        logger,
+                        logging.ERROR,
+                        "model failed, handing over to the team",
+                        call_id=str(state.call_id),
+                        error=str(exc),
+                    )
+                    return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
             # Rule 3: a `confirm` on a yes for a draft the guest has not heard
             # last. The core puts the draft's question itself and ends the
             # turn (below, once the time limit is checked). Nothing that
@@ -369,6 +417,22 @@ class ConversationLoop:
                 turn.tool_call,
                 cart_sent=turn.cart is not None,
             )
+            question = (
+                allergies.question(state)
+                if turn.tool_call.name in allergies.NOTED
+                else None
+            )
+            if refused is None and question is not None:
+                # The core asks what the allergy note still lacks before
+                # anything is stored, and the draft waits for the answer
+                # (`_held_answered`).
+                state.held_call = {
+                    "name": turn.tool_call.name,
+                    "args": turn.tool_call.args,
+                }
+                draft_replaced(state, turn.tool_call.name)
+                guards.note_said(state, question)
+                return TurnResult(state=state, say=[question])
             if refused is not None:
                 log_refused(
                     self._session,
@@ -379,8 +443,23 @@ class ConversationLoop:
                 )
                 result = refused
             else:
-                result = self._dispatch(state, turn.tool_call.name, turn.tool_call.args)
+                # The guest's allergies onto the draft, as their answer lets
+                # them be stored (L13). The state keeps the call as the model
+                # wrote it: the cart goes back to the model without them.
+                call = allergies.noted_call(state, turn.tool_call)
+                result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            if from_hold and result.ok and (said := guards.unheard_readback(state)):
+                # The draft the guest answered the question for: read out by
+                # the core, so the guest's next "Ja" is the yes to it. Unless
+                # it took the guest past a limit: then to the team, as any
+                # slow tool on the next hop would (Codex PR #368).
+                if self._clock() - self._started > self._max_call_seconds:
+                    return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                if (left := self._left_in_turn(turn_started)) is not None and left <= 0:
+                    return self._too_slow(state, user_text)
+                guards.note_said(state, said)
+                return TurnResult(state=state, say=[said])
             if turn.tool_call.name == "confirm" and result.ok:
                 # Booked: the core says so itself and ends the turn. A model
                 # that phrased it said what the database did not hold (a code
@@ -488,6 +567,46 @@ class ConversationLoop:
                     state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
                 )
         return None
+
+    def _held_answered(
+        self, state: ConversationState, user_text: str
+    ) -> ToolCall | None:
+        """The guest's sentence as the answer to the question the core put for
+        the held draft (`allergies.question`), when that question ended the
+        last turn. The answer to "Wogegen?" is in the state already
+        (`allergies.note_allergies`); the one to the consent question is
+        judged here and logged per call (L13). Returns the draft, which goes
+        out with the notes the state now allows or waits for the next
+        question. An unclear answer drops it: the sentence was likely about
+        something else, the model reads it, and the draft it makes again
+        finds the allergies in the state."""
+        if state.held_call is None or not (
+            state.last_say == ALLERGY_QUESTION or allergies.asked_which(state.last_say)
+        ):
+            # Another sentence came between, as "Sind Sie noch da?" after a
+            # silence on the phone line: a "Ja" answers that one. The draft
+            # stays held and the question is put again (`run_turn`; Codex
+            # PR #368).
+            return None
+        held, state.held_call = state.held_call, None
+        if state.last_say == ALLERGY_QUESTION:
+            answer = consent_answer(user_text)
+            record_consent(
+                self._session,
+                state.tenant_id,
+                state.call_id,
+                ALLERGY_QUESTION,
+                answer,
+                now=self._now,
+            )
+            state.allergy_consent = answer
+            if answer == "unclear":
+                return None
+        elif not allergies.answered(state, user_text):
+            # No ingredient in the answer, or more than one ("Erdnüsse, aber
+            # bitte erst übermorgen"): the model reads the sentence.
+            return None
+        return ToolCall(name=held["name"], args=held["args"])
 
     def _order_name(self, state: ConversationState) -> str | None:
         """The name the confirmed order runs under, from the database."""
@@ -647,6 +766,11 @@ class ConversationLoop:
         eigentlichen Bitte ("Reservierung morgen 18 Uhr auf Müller stornieren"),
         obwohl sonst nirgends ein Transkript gespeichert ist (Codex-Review
         PR #102, P2)."""
+        if detail and mentions_allergy(detail):
+            # The guest's sentence names an allergy, which is health data: it
+            # is not written on a card. The caller agreed at most to a kitchen
+            # note (L13), and the team asks when it calls back.
+            detail = None
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
@@ -684,17 +808,29 @@ def _order_lines(state: ConversationState, room: int) -> str:
     chosen options and the note of each line: two pizzas of different sizes
     are two lines (Codex PR #300). Longer than `room`: without the names, the
     team reads the dishes from the card; and what still does not fit is
-    counted, never dropped in silence."""
+    counted, never dropped in silence. The guest's allergies as the kitchen
+    has to know them, "ohne <Zutat>", never with the reason: a card is kept
+    for the period of a callback, the allergy only until the night after its
+    order (L13; Codex PR #369, P1).
+    """
+    noted = allergies.noted_call(
+        state.model_copy(update={"allergy_consent": None}),
+        ToolCall("draft_order", {"items": state.cart}),
+    ).args
     full, short = [], []
-    for line in state.cart:
+    for line in noted["items"]:
         seen = state.seen_items.get(line["menu_item_id"], {})
         number, name = seen.get("number"), seen.get("name")
         chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
-        extra = "; ".join([*chosen, *([line["note"]] if line.get("note") else [])])
+        note = line.get("note")
+        extra = "; ".join([*chosen, *([note] if note else [])])
         tail = f" ({extra})" if extra else ""
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
         full.append(f"{line['quantity']}x {dish}{tail}")
         short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
+    if noted.get("note"):
+        full.append(f"für die ganze Bestellung: {noted['note']}")
+        short.append(full[-1])
     if len(text := ", ".join(full)) <= room:
         return text
     for kept in range(len(short), -1, -1):

@@ -483,7 +483,7 @@ def test_allergie_wiederholt_das_gericht_und_sagt_den_hinweis(
         {"query": "Pho Bo, ich habe eine Erdnussallergie"},
     )
     assert "Nummer 13 Pho Bo" in result.say
-    assert "an die Küche weiter" in result.say
+    assert "frei davon" in result.say
     assert "Erdnussallergie" not in result.say
 
 
@@ -539,7 +539,7 @@ def test_hinweise_der_teile_stehen_im_satz_der_antwort(session, tenant_id, call_
         {"query": "Pho Bo, ich habe eine Erdnussallergie und die 23"},
     )
     assert allergy.data["match_type"] == "positions"
-    assert "an die Küche weiter" in allergy.data["say"]
+    assert "frei davon" in allergy.data["say"]
 
 
 def test_ausverkauft_mit_wunsch_nur_einmal(session, tenant_id, call_id):

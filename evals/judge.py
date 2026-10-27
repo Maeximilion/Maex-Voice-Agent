@@ -28,6 +28,7 @@ from api.models import (
     AuditLog,
     Call,
     Callback,
+    ConsentLog,
     MenuItem,
     Order,
     OrderItem,
@@ -35,6 +36,7 @@ from api.models import (
     Reservation,
     Tenant,
 )
+from api.models.calls import CONSENT_ANSWERS
 from api.models.orders import ORDER_TYPES
 from evals.recorder import DRAFT_TOOLS
 from sim.session import Turn
@@ -76,8 +78,17 @@ EXPECTED_KEYS = frozenset(
         # word: the truthful answer to "Sind Sie ein Mensch?" is no booking,
         # it is a sentence the core says (docs/09 L1, T-11.5).
         "said",
+        # The note of the confirmed order as a whole, or of the confirmed table,
+        # word for word; null says there is none (D24, T-11.1).
+        "note",
+        # The answers to the question for the allergy as a kitchen note, in
+        # the order of the consent log ("yes", "no", "unclear"); [] says it
+        # was never asked (legal check L13, T-11.1).
+        "consent",
     }
 )
+# What only a note with the caller's yes may carry (L13, `domain/menu/wishes.py`).
+ALLERGY_REASON = "Grund: Allergie"
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
 # Free text ("2. OG, Klingel Müller"): every expected word has to occur, the
 # wording around it is free (Codex PR #162).
@@ -164,6 +175,14 @@ def validate_case(case: dict[str, Any], source: str) -> None:
             and all(isinstance(p, str) and p.strip() for p in pieces)
         ):
             raise CaseError(f"{source}: said is a list of pieces of what is said")
+    note = case["expected"].get("note")
+    if note is not None and not (isinstance(note, str) and note.strip()):
+        raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
+    consent = case["expected"].get("consent", [])
+    if not isinstance(consent, list) or not set(consent) <= set(CONSENT_ANSWERS):
+        raise CaseError(
+            f"{source}: consent ist eine Liste aus {sorted(CONSENT_ANSWERS)}"
+        )
     if not isinstance(case.get("repeat_confirm", False), bool):
         raise CaseError(f"{source}: repeat_confirm ist true oder false")
     pending = case.get("pending")
@@ -299,6 +318,15 @@ class Observed:
     # slot would still be booked (review PR #162).
     extra_reservations: int = 0
     notes: list[str] = field(default_factory=list)
+    # The note of the last confirmed order as a whole, else of the last
+    # confirmed table.
+    note: str | None = None
+    # The consent log of the call, answers in order.
+    consent: list[str] = field(default_factory=list)
+    # Notes of the call that carry the allergy as their reason, drafts
+    # included, while no "yes" stands in its consent log: stored health data
+    # without consent (L13).
+    reason_without_consent: int = 0
 
 
 def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
@@ -340,6 +368,23 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         ]
 
     duplicates = _duplicate_confirms(session, orders, reservations)
+    consent = list(
+        session.scalars(
+            select(ConsentLog.answer)
+            .where(ConsentLog.call_id == call_id)
+            .order_by(ConsentLog.answered_at)
+        )
+    )
+    stored = [
+        *session.scalars(
+            select(OrderItem.note).where(
+                OrderItem.order_id.in_([order.id for order in orders])
+            )
+        ),
+        *(order.note for order in orders),
+        *(reservation.note for reservation in reservations),
+    ]
+    with_reason = sum(ALLERGY_REASON in (note or "") for note in stored)
 
     name = None
     if done_orders:
@@ -360,6 +405,9 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,
         extra_reservations=max(0, len(done_res) - 1),
+        note=done[-1].note if done else None,
+        consent=consent,
+        reason_without_consent=0 if "yes" in consent else with_reason,
     )
 
 
@@ -522,6 +570,17 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diff = _address_diff(expected["address"], seen.address)
         if diff:
             diffs.append(diff)
+    if "note" in expected and not _same_text(expected["note"], seen.note):
+        diffs.append(f"note: erwartet {expected['note']!r}, gebucht {seen.note!r}")
+    if "consent" in expected and expected["consent"] != seen.consent:
+        diffs.append(
+            f"consent: erwartet {expected['consent']!r}, geloggt {seen.consent!r}"
+        )
+    # Always, not only when expected: the reason without a yes is never right.
+    if seen.reason_without_consent:
+        diffs.append(
+            f"Allergie als Grund ohne Einwilligung: {seen.reason_without_consent}"
+        )
     # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
     if seen.duplicate_confirms:
         diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")

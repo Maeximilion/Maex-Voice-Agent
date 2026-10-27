@@ -61,11 +61,12 @@ def tenant_id(db) -> uuid.UUID:
     return _tenant(db, "Testbetrieb")
 
 
-def _order(db, tenant_id, mode="overflow", note=None) -> uuid.UUID:
+def _order(db, tenant_id, mode="overflow", note=None, order_note=None) -> uuid.UUID:
     _mode(db, tenant_id, mode)
     call_id = _call(db, tenant_id)
     items = [{"menu_item_id": item(db, tenant_id, "23"), "quantity": 2, "note": note}]
-    order_id = draft_order(db, request(db, tenant_id, call_id, items), now=NOW).order_id
+    req = request(db, tenant_id, call_id, items, note=order_note)
+    order_id = draft_order(db, req, now=NOW).order_id
     _confirm(db, tenant_id, call_id, order_id)
     return order_id
 
@@ -200,6 +201,21 @@ def test_korrektur_pflichtauswahl_per_tap(client, db, tenant_id):
     assert "Gewählt: Huhn" in html
     assert "Fehlt noch" not in html
     assert json.loads(_state(html))["a"][0]["o"] == [["Fleisch", "Huhn"]]
+
+
+def test_card_shows_the_note_of_the_whole_order(client, db, tenant_id):
+    """D24: an allergy not tied to a dish stands on the card above the dishes."""
+    _order(db, tenant_id, order_note="WICHTIG: Keine Sesam. Grund: Allergie")
+    html = client.get("/gui").text
+    assert "Für die ganze Bestellung: WICHTIG: Keine Sesam. Grund: Allergie" in html
+    assert html.index("ganze Bestellung") < html.index("Frühlingsrollen")
+
+
+def test_card_without_a_note_of_the_whole_order_has_no_line_for_it(
+    client, db, tenant_id
+):
+    _order(db, tenant_id)
+    assert "ganze Bestellung" not in client.get("/gui").text
 
 
 def test_hinweis_zeile_faellt_nicht_mit_minus_weg(client, db, tenant_id):

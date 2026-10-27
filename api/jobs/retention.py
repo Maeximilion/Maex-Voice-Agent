@@ -30,12 +30,13 @@ from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core.logging import configure_logging, get_logger, log
-from api.core.time import business_day, business_day_bounds_utc, utcnow
+from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
 from api.models import (
     AuditLog,
     Call,
     Callback,
+    ConsentLog,
     Order,
     OrderItem,
     OutboxEvent,
@@ -109,6 +110,9 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             delete(AuditLog).where(
                 AuditLog.at < now - timedelta(days=settings.retention_audit_log_days)
             ),
+        ),
+        "consent_answers": lambda: _consent_answers(
+            session, now, settings.retention_consent_log_years
         ),
     }
     counts: dict[str, int] = {}
@@ -232,6 +236,24 @@ def _without_allergy(payload: dict) -> dict:
             for item in out["items"]
         ]
     return out
+
+
+def _consent_answers(session: Session, now: datetime, years: int) -> int:
+    """An answer to a consent question (L13, T-11.1) goes at the end of the
+    `years`-th calendar year after the year it was given (Maxi, 26.10.2026):
+    on any day of year Y, every answer from before 1 January of Y - years. The
+    year is the restaurant's: 00:30 on New Year's Day in Berlin is still the
+    old year in UTC."""
+    deleted = 0
+    for tenant_id, zone in session.execute(select(Tenant.id, Tenant.timezone)).all():
+        cutoff = datetime(to_local(now, zone).year - years, 1, 1, tzinfo=tz(zone))
+        deleted += _run(
+            session,
+            delete(ConsentLog).where(
+                ConsentLog.tenant_id == tenant_id, ConsentLog.answered_at < cutoff
+            ),
+        )
+    return deleted
 
 
 def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:

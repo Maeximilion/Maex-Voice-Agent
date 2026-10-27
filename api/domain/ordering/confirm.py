@@ -206,6 +206,8 @@ def order_event_payload(
         "customer_name": order.customer_name,
         "phone": order.phone,
         "ready_at": order.ready_at.isoformat() if order.ready_at else None,
+        # The note of the whole order (D24), such as the guest's allergy.
+        "note": order.note,
         "revision": revision,
         "correction_reason": correction_reason,
         "items_total_cents": order.items_total_cents,

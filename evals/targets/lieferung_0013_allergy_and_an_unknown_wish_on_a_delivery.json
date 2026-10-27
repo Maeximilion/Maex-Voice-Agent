@@ -38,6 +38,10 @@
     },
     {
       "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -74,6 +78,9 @@
     "tools": [
       "check_delivery"
     ],
-    "order_type": "delivery"
+    "order_type": "delivery",
+    "consent": [
+      "yes"
+    ]
   }
 }

@@ -40,7 +40,7 @@ from api.agent.loop import (
     _local_times,
     _order_lines,
 )
-from api.agent.state import ConversationState, initial_state
+from api.agent.state import Allergy, ConversationState, initial_state
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 
@@ -1565,6 +1565,30 @@ def test_options_and_the_note_of_a_line_reach_the_card(state):
     assert _order_lines(state, 70) == (
         "1x 12 (Größe: groß; ohne Zwiebeln), 2x 12 (Größe: klein)"
     )
+
+
+def test_the_card_names_an_allergy_only_as_a_removal(state):
+    """Codex PR #369, P1: with the caller's consent the open order on a card
+    carried "WICHTIG: Keine Erdnuss. Grund: Allergie". The card is kept for
+    the period of a callback, the allergy only until the night after its
+    order (L13): the card says what to leave out, never why."""
+    pho = str(uuid.uuid4())
+    state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Zwiebeln"}]
+    state.allergies = [
+        Allergy(ingredient="Erdnuss", item=pho),
+        Allergy(ingredient="Sesam"),
+    ]
+    state.allergy_consent = "yes"
+
+    lines = _order_lines(state, 200)
+
+    assert lines == (
+        "1x 13 Pho Bo (ohne Erdnuss, ohne Zwiebeln), "
+        "für die ganze Bestellung: ohne Sesam"
+    )
+    assert "Allergie" not in lines
+    assert state.allergy_consent == "yes"
 
 
 def test_times_in_a_tool_result_reach_the_model_in_local_time(session, state):

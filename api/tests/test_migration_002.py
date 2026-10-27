@@ -22,6 +22,8 @@ STUFE_2_TABELLEN = {
     "orders",
     "order_items",
 }
+# Tables of later migrations: 009 the consent log (T-11.1).
+LATER_TABLES = {"consent_log"}
 
 
 def _table_names(url: str) -> set[str]:
@@ -35,7 +37,7 @@ def _table_names(url: str) -> set[str]:
 def test_upgrade_erzeugt_stufe2_tabellen(scratch_db_url):
     command.upgrade(_config(scratch_db_url), "head")
     assert _table_names(scratch_db_url) == (
-        STUFE_1_TABELLEN | STUFE_2_TABELLEN | {"alembic_version"}
+        STUFE_1_TABELLEN | STUFE_2_TABELLEN | LATER_TABLES | {"alembic_version"}
     )
 
 

@@ -24,6 +24,7 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
+from api.agent.consent import ALLERGY_QUESTION
 from api.agent.llm import FakeLLM, LLMTurn, Usage
 from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED
 from api.agent.state import ConversationState
@@ -892,6 +893,21 @@ def test_a_sentence_the_core_counts_as_heard_is_not_talked_over(session, tenant)
     assert QUESTIONS["phone"] in says[-1]  # the number is withheld
     assert says[-1] not in open_to_talk
     assert QUESTIONS["guest_name"] in " ".join(open_to_talk)
+
+
+def test_the_consent_question_is_not_talked_over(session, tenant):
+    """Codex PR #368, P1: an answer is consent only to a question the guest
+    heard to the end (L13), so the question for the allergy as a kitchen note
+    is played to the end like a read-back."""
+    apply(session, tenant.id, menu_plan(), now=NOW)
+    port = FakeTelephony()
+    case = load_call(
+        CASES / "allergie_0005_eigene_allergie_wird_hinweis_zur_positio.json"
+    )
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert ALLERGY_QUESTION in port.says(sid)
+    assert ALLERGY_QUESTION not in port.interruptible(sid)
 
 
 def test_what_is_said_before_a_transfer_is_not_talked_over(session, tenant):
