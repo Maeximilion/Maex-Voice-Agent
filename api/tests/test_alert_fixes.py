@@ -196,23 +196,22 @@ def test_files_match_exactly_with_spaces_renames_and_over_100_files():
     assert _line(answers).endswith("candidates, not confirmed as the fix: #4, #8")
 
 
-def test_lower_alerts_ask_no_pull_request_and_come_last():
+def test_every_dependabot_alert_blocks_and_lower_code_scanning_comes_last():
     answers = _answers(
-        [_dependabot(3, severity="medium"), _dependabot(2)],
+        [_dependabot(3, severity="low"), _dependabot(2)],
         [_code_scanning(13, level=None)],
         prs=[],
     )
     lines, errors = alert_fixes.report(_gh(answers))
     assert lines == [
         f"dependabot #2 critical certifi api/requirements.txt: {BLOCKS}",
+        f"dependabot #3 low certifi api/requirements.txt: {BLOCKS}",
         "code-scanning #13 error py/polynomial-redos api/domain/menu/wishes.py: "
         "below high: a suggestion next to the tasks",
-        "dependabot #3 medium certifi api/requirements.txt: "
-        "below high: the pin rides in the next feature PR",
     ]
     assert errors == []
     # Without a blocking alert no pull request is looked up at all.
-    quiet = _answers([_dependabot(3, severity="low")])
+    quiet = _answers([], [_code_scanning(13, level="medium")])
     del quiet[f"{R}/pulls?state=open&base=main&per_page=100"]
     assert len(alert_fixes.report(_gh(quiet))[0]) == 1
 
