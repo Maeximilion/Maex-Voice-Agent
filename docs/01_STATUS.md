@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.8
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.9
 
 ---
 
@@ -624,7 +624,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.11.8 · 28.10.2026:** A correction keeps every extra of an optional group and refuses a second choice in a required one, as draft_order does (repo audit finding 8)
+- **v2.11.9 · 28.10.2026:** A correction keeps every extra of an optional group and refuses a second choice in a required one, as draft_order does (repo audit finding 8)
 - **v2.11.7 · 27.10.2026:** Repo audit findings 12 to 14: dead code and duplicates removed (pytest-asyncio, new_id, menu_index, agent package re-exports, all_services, HoursData re-export, the outage sentence, WEEKDAYS, _clock, ACTION_CONFIRMED, ACTOR_TABLET); behaviour unchanged
 - **v2.11.5 · 27.10.2026:** A model-written callback summary that names an allergy is replaced by the sentence of its reason (repo audit finding 2, L13)
 - **v2.11.4 · 27.10.2026:** Tablet errors keep an error status: a database error no longer swaps JSON over the pause button (repo audit finding 1)
