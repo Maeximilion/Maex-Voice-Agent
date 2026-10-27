@@ -165,7 +165,11 @@ answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
 
 An allergy note stays on the order whatever the dish contains (Maxi,
 27.10.2026): the kitchen works with it, also where the allergen is in no
-dish of the order
+dish of the order. A guest who only names an allergy asks nothing: the core
+refuses an allergen lookup (`get_item_details`, `allergen_question: true`) on
+such a sentence without a question mark, or the model's own lookup ended
+the order with the team on every dish without maintained values
+(`guards._states_an_allergy`, real-model run of 27.10.2026)
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
