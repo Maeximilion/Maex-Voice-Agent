@@ -4,6 +4,10 @@ Fachcode wirft diese Klassen, nie HTTPException. Der Agent liest jede Antwort vo
 deshalb tragen Fehler einen Code, eine Meldung fürs Log und optional einen Satz (say).
 """
 
+# The sentence for every failure the guest cannot fix: the agent hands the call
+# to the team. Defined once here, so domain code needs no import of the HTTP hull.
+SAY_ON_FAILURE = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
+
 ERROR_CODES = (
     "invalid_input",
     "not_found",
