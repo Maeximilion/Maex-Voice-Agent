@@ -166,6 +166,98 @@ def test_an_extension_without_a_plan_gets_silence_and_a_log_line(out):
     assert log[-1]["frame_gap_max_ms"] is None
 
 
+CALLER = "+4917612345678"
+# A call of the product's dialplan (T-10.1 step 2): no extension in the URL, the
+# call and the caller as channel variables, as recorded from Asterisk.
+LINE_START = json.dumps(
+    {
+        **json.loads(MEDIA_START),
+        "channel_variables": {"__VOICE_CALL": "1791981993.2", "__VOICE_CALLER": CALLER},
+    }
+)
+
+
+def connect_line():
+    return TestClient(app).websocket_connect("/media", subprotocols=["media"])
+
+
+def test_a_line_call_is_answered_toned_echoed_and_logs_no_number(out):
+    speech = tone(300, 0.2, 16000)
+    with connect_line() as ws:
+        ws.send_text(LINE_START)
+        assert json.loads(ws.receive_text()) == {"command": "ANSWER"}
+        assert len(read_tone(ws)) == int(probe.LINE_PLAN.seconds * 16000 * 2)
+        for start in range(0, len(speech), FRAME):
+            ws.send_bytes(speech[start : start + FRAME])
+            assert ws.receive_bytes() == speech[start : start + FRAME]
+
+    text = next(out.glob("*.jsonl")).read_text(encoding="utf-8")
+    assert CALLER not in text and "12345678" not in text
+    log = log_of(out)
+    assert {"caller_seen": "+49xxxxxxxxx78", "live": 1}.items() <= log[2].items()
+    assert log[-1]["voice_in_seconds"] == pytest.approx(0.2, abs=0.02)
+    assert log[-1]["echoed_seconds"] == pytest.approx(0.2, abs=0.02)
+
+
+def test_a_line_call_hangs_up_once_after_its_time(out, monkeypatch):
+    monkeypatch.setattr(probe, "LINE_SECONDS", 0)
+    with connect_line() as ws:
+        ws.send_text(LINE_START)
+        ws.receive_text()
+        read_tone(ws)
+        ws.send_bytes(bytes(FRAME))
+        assert json.loads(ws.receive_text()) == {"command": "HANGUP"}
+        ws.send_bytes(bytes(FRAME))
+        ws.send_text('{"event": "QUEUE_DRAINED", "channel_id": "pbx-1.1"}')
+
+    sent = [r.get("text") for r in log_of(out) if r["dir"] == "out" and "text" in r]
+    assert sent.count('{"command": "HANGUP"}') == 1
+    assert log_of(out)[-1]["voice_in_seconds"] == 0.0
+
+
+def test_a_line_call_without_a_caller_is_answered_and_says_so(out):
+    start = json.dumps({**json.loads(LINE_START), "channel_variables": {}})
+    with connect_line() as ws:
+        ws.send_text(start)
+        assert json.loads(ws.receive_text()) == {"command": "ANSWER"}
+        read_tone(ws)
+
+    log = log_of(out)
+    assert [r for r in log if r.get("caller_seen") == "none"]
+    assert [r for r in log if "error" in r]
+
+
+def test_a_second_line_call_counts_two_live_calls(out):
+    with connect_line() as first, connect_line() as second:
+        first.send_text(LINE_START)
+        first.receive_text()
+        second.send_text(LINE_START)
+        second.receive_text()
+
+    lives = sorted(
+        json.loads(line)["live"]
+        for path in out.glob("*.jsonl")
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if '"live"' in line
+    )
+    assert lives == [1, 2]
+
+
+@pytest.mark.parametrize(
+    ("path", "body"), [("/calls/1791981993.2/ending", "hangup"), ("/health", "ok")]
+)
+def test_the_dialplan_is_told_hangup_so_a_test_call_never_rings_the_team(path, body):
+    assert TestClient(app).get(path).text == body
+
+
+@pytest.mark.parametrize(
+    ("number", "seen"),
+    [(None, "none"), ("0761234567", "076xxxxx67"), ("12345", "xxxxx")],
+)
+def test_masked_keeps_the_form_of_a_number_and_hides_the_rest(number, seen):
+    assert probe.masked(number) == seen
+
+
 @pytest.mark.parametrize("size", [0, -640, None, "x"])
 def test_an_unusable_frame_size_is_logged_and_the_call_goes_on(out, size):
     start = json.dumps({**json.loads(MEDIA_START), "optimal_frame_size": size})

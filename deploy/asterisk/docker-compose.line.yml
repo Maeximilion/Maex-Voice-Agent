@@ -1,0 +1,43 @@
+# T-10.1 step 2 on the workbench (docs/20 §10): the product's Asterisk
+# registered at the pilot's router over the VPN, with the probe of step 1
+# standing where `voice` stands. Somebody rings the test number; the probe
+# answers, plays a tone, sends back what the caller says and hangs up after a
+# minute, and tells the dialplan "hangup", so no test call rings the team.
+#
+#   docker compose -f deploy/asterisk/docker-compose.line.yml --env-file <.env> up -d --build
+#
+# The access (ACCESS_HOST, ACCESS_USER, ACCESS_PASSWORD), VOICE_NUMBER,
+# TEAM_PHONE and VOICE_MEDIA_TOKEN come from that .env, as in operation. The
+# probe's logs hold the caller's number only masked and live on a tmpfs: `down`
+# removes them.
+name: voice-line
+
+services:
+  voice:
+    build: ../../api
+    user: "10001:10001"
+    command: ["uvicorn", "api.telephony.probe:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      PROBE_OUT: /out
+    tmpfs: [/out]
+    volumes:
+      - ../../api:/app/api:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  asterisk:
+    extends:
+      file: ../../docker-compose.yml
+      service: asterisk
+    # Not behind the profile `voice` here: this file is started on purpose.
+    profiles: !reset []
+    restart: "no"
+    depends_on:
+      voice:
+        condition: service_healthy
+
+volumes:
+  announcements:
