@@ -14,7 +14,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.models import OpeningHours, SpecialDay
-from api.models.tenants import SERVICES
 
 Window = tuple[datetime, datetime]
 
@@ -100,7 +99,3 @@ def next_opening(
         if candidates:
             return min(candidates)
     return None
-
-
-def all_services() -> tuple[str, ...]:
-    return SERVICES

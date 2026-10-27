@@ -14,9 +14,9 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.time import utcnow
+from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Call, Callback
 
-ACTOR_TABLET = "gui:tablet"
 ACTION_DONE = "callback.done"
 OPEN = "open"
 DONE = "done"

@@ -1,11 +1,7 @@
-"""Kennungen: UUIDs und deterministische Idempotenz-Schlüssel (docs/11 §core)."""
+"""Deterministic idempotency keys (docs/11 §core)."""
 
 import hashlib
 import uuid
-
-
-def new_id() -> uuid.UUID:
-    return uuid.uuid4()
 
 
 def idempotency_key(call_id: uuid.UUID | str, tool: str, *parts: object) -> str:
