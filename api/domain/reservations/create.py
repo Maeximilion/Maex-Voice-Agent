@@ -9,7 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound, TeamDecides
+from api.core.errors import (
+    SAY_ON_FAILURE,
+    Conflict,
+    InvalidInput,
+    NotFound,
+    TeamDecides,
+)
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.reservations.capacity import lock_capacity_days
@@ -24,7 +30,6 @@ from api.schemas.reservations import (
 
 ACTOR_AGENT = "agent"
 ACTION_DRAFT_CREATED = "reservation.draft_created"
-SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 
 
 def create_reservation(
@@ -43,7 +48,7 @@ def create_reservation(
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
-        raise NotFound("Anruf unbekannt", say=SAY_CALL_UNKNOWN)
+        raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
 
     guest_name = req.guest_name.strip()
     if not guest_name:

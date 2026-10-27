@@ -26,23 +26,21 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
+from api.domain.ordering.confirm import ACTION_CONFIRMED
 from api.domain.ordering.labels import (
     ACTION_CORRECTED,
     current_labels_many,
     labels_for_rows,
 )
 from api.domain.ordering.ticket import last_reason, send_ticket
+from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Order, OrderItem, ServiceConfig
 
 CONFIRMED = "confirmed"
 APPROVED = "approved"
 FAILED = "failed"
-ACTOR_TABLET = "gui:tablet"
 ACTION_APPROVED = "order.approved"
 ACTION_RESENT = "order.resent"
-# The audit entry `confirm` writes at the guest's yes (domain/ordering/confirm.py):
-# from then on an order that needs "Passt" waits for the team.
-ACTION_CONFIRMED = "order.confirmed"
 # The order's creation is stamped by the application, the audit entry by the
 # database: how far the search for the entry reaches back before the creation.
 CLOCK_MARGIN = timedelta(hours=1)

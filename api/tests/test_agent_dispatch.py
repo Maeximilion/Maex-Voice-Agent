@@ -488,7 +488,7 @@ def test_a_tool_log_that_fails_leaves_the_session_usable(
 
     from sqlalchemy import text
 
-    # The module, not the function of the same name that `api.agent` exports.
+    # The module, not the function of the same name imported above.
     dispatch_module = sys.modules["api.agent.dispatch"]
 
     def failing(session, call_id, tenant_id, entry):
