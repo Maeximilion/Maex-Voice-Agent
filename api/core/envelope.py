@@ -4,9 +4,9 @@ from typing import Any
 
 from fastapi.responses import JSONResponse
 
+# Re-exported for the HTTP side (main.py, agent/loop.py); defined in core/errors.
+from api.core.errors import SAY_ON_FAILURE as SAY_ON_FAILURE
 from api.core.errors import AppError
-
-SAY_ON_FAILURE = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 
 
 def ok_body(data: dict[str, Any], say: str | None = None) -> dict[str, Any]:

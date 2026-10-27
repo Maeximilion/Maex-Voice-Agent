@@ -37,7 +37,7 @@ These six rules override any convenience. If a task violates them: **stop and as
 | DB | PostgreSQL 16, SQLAlchemy 2 + Alembic | Default |
 | GUI | FastAPI + Jinja2 + HTMX + SSE, Pico.css | Default, Alternative: React + Vite |
 | Automation (cold path) | n8n, self-hosted via Docker | Set |
-| Tests | pytest, pytest-asyncio, httpx | Default |
+| Tests | pytest, httpx | Default |
 | Lint/Format | ruff (Format + Lint), mypy non-strict mode | Default |
 | Operations | Docker Compose, Hosting in EU | Set |
 | Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, test phase on the workbench |

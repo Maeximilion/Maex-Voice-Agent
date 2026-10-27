@@ -18,7 +18,13 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound, ServiceUnavailable
+from api.core.errors import (
+    SAY_ON_FAILURE,
+    Conflict,
+    InvalidInput,
+    NotFound,
+    ServiceUnavailable,
+)
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
@@ -38,7 +44,6 @@ ACTOR_AGENT = "agent"
 # Gast nicht selbst; das Team sieht die Warnung am Entwurf.
 WARNING_READY_AFTER_CLOSE = "ready_after_close"
 
-SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 SAY_NO_DELIVERY = (
     "Lieferungen kann ich gerade noch nicht aufnehmen. Möchten Sie abholen?"
 )
@@ -61,7 +66,7 @@ def draft_order(
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
-        raise NotFound("Anruf unbekannt", say=SAY_CALL_UNKNOWN)
+        raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
     if req.type != PICKUP:
         raise InvalidInput("type: Lieferung erst ab T-6.5", say=SAY_NO_DELIVERY)
 
@@ -200,7 +205,7 @@ def _snapshot(session: Session, order_id: uuid.UUID) -> dict:
     if snapshot is None:
         # Entwurf und Audit-Zeile entstehen in derselben Transaktion; fehlt
         # die Zeile, ist der Zustand kaputt und der Anruf geht ans Team.
-        raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_CALL_UNKNOWN)
+        raise ServiceUnavailable("Entwurf ohne Audit-Zeile", say=SAY_ON_FAILURE)
     # Hat das Team im Tablet Positionen geaendert (T-4.7), passen die Namen
     # vom Anlegen nicht mehr zu den Zeilen; die Warnungen bleiben die vom Anruf.
     return {**snapshot, "labels": current_labels(session, order_id)}

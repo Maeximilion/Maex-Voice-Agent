@@ -8,7 +8,6 @@ alembic==1.*
 psycopg[binary]==3.*
 httpx==0.28.*
 pytest==9.*
-pytest-asyncio==1.4.*
 pytest-xdist==3.*
 ruff==0.17.*
 mypy==2.*

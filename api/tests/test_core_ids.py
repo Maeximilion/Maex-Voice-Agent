@@ -2,11 +2,7 @@
 
 import uuid
 
-from api.core.ids import idempotency_key, new_id
-
-
-def test_new_id_ist_uuid4():
-    assert new_id().version == 4
+from api.core.ids import idempotency_key
 
 
 def test_schluessel_deterministisch():

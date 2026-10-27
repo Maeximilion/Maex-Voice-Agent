@@ -39,7 +39,7 @@ def euro(cents: int) -> str:
     return f"{sign}{cents // 100},{cents % 100:02d} €"
 
 
-def _clock(value, tz_name: str) -> str:
+def clock(value, tz_name: str) -> str:
     return to_local(value, tz_name).strftime("%H:%M")
 
 
@@ -55,7 +55,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         # Nobody has tapped "Passt" within the restaurant's minutes (#252). The
         # clock time of the guest's yes, not a count of minutes: the card is
         # redrawn when something changes, and a count would stand still.
-        since = _clock(order.waiting_since, tz_name)
+        since = clock(order.waiting_since, tz_name)
         tone, state = "danger", f"Wartet seit {since} auf Freigabe"
     elif order.handover_state is None:
         tone, state = "warn", "Noch nicht an der Kasse"
@@ -65,7 +65,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         tone, state = "ok", "Zettel liegt an der Kasse"
     return {
         "id": str(order.order_id),
-        "time": _clock(order.created_at, tz_name),
+        "time": clock(order.created_at, tz_name),
         "type": TYPE_LABELS.get(order.type, order.type),
         "pickup_code": order.pickup_code,
         "name": order.customer_name,
@@ -73,7 +73,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "note": order.note,
         "lines": order.lines,
         "total": euro(order.total_cents),
-        "ready": _clock(order.ready_at, tz_name) if order.ready_at else None,
+        "ready": clock(order.ready_at, tz_name) if order.ready_at else None,
         "tone": tone,
         "state": state,
         "failed": order.handover_state == "failed",
