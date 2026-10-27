@@ -9,6 +9,7 @@ import pytest
 from fastapi import Request
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -365,6 +366,41 @@ def test_fremder_status_kommt_als_json(client, tenant_id):
     response = client.post("/gui/kopfzeile/wartezeit/abholung/20", headers=HX)
 
     assert response.headers["content-type"].startswith("application/json")
+
+
+class _BrokenSession:
+    """A database that went away mid-shift: every use raises."""
+
+    def __getattr__(self, _name):
+        raise OperationalError(
+            "SELECT 1", {}, Exception("server closed the connection")
+        )
+
+
+def test_unbehandelter_fehler_kommt_nicht_als_200(engine):
+    """Audit 27.10.2026: app.js swaps every answer below 400 into the page.
+
+    The JSON envelope answered 200 for an unhandled error, so a database outage
+    during "KI pausieren" put `{"ok":false,...}` where the header and its pause
+    button stood. Below /gui an error must carry an error status.
+    """
+    app.dependency_overrides[get_db] = lambda: _BrokenSession()
+    try:
+        c = TestClient(app, raise_server_exceptions=False)
+        c.cookies.set("csrf_token", "testtoken")
+        response = c.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert "server closed" not in response.text
+
+
+def test_ungueltige_eingabe_kommt_nicht_als_200(client):
+    response = client.post("/gui/rueckrufe/keine-uuid/erledigt", headers=HX)
+
+    assert response.status_code == 422
 
 
 # --- Spalte Rueckrufe (T-3.4) -------------------------------------------------

@@ -85,19 +85,32 @@ def calls_end(body: EndCallRequest, session: Session = Depends(get_db)) -> JSONR
     return envelope.ok(result.model_dump(mode="json"))
 
 
+def _status(request: Request, status: int, gui_status: int) -> int:
+    """The voice platform needs 200 to hand the envelope to the agent; htmx
+    swaps every answer below 400 into the page (app.js), so below /gui an error
+    keeps an error status."""
+    if status < 400 and request.url.path.startswith("/gui/"):
+        return gui_status
+    return status
+
+
 @app.exception_handler(AppError)
-def app_error_handler(_request: Request, exc: AppError) -> JSONResponse:
-    return envelope.from_error(exc)
+def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
+    response = envelope.from_error(exc)
+    response.status_code = _status(request, exc.status, 500)
+    return response
 
 
 @app.exception_handler(RequestValidationError)
 def validation_error_handler(
-    _request: Request, exc: RequestValidationError
+    request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     first = exc.errors()[0] if exc.errors() else {}
     field = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
     return envelope.fail(
-        "invalid_input", f"{field}: {first.get('msg', 'ungültige Eingabe')}"
+        "invalid_input",
+        f"{field}: {first.get('msg', 'ungültige Eingabe')}",
+        status=_status(request, 200, 422),
     )
 
 
@@ -114,8 +127,11 @@ def http_exception_handler(_request: Request, exc: HTTPException) -> JSONRespons
 
 
 @app.exception_handler(Exception)
-def unhandled_exception_handler(_request: Request, exc: Exception) -> JSONResponse:
+def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     logger.error("unbehandelter Fehler", exc_info=exc)
     return envelope.fail(
-        "service_unavailable", "interner Fehler", say=envelope.SAY_ON_FAILURE
+        "service_unavailable",
+        "interner Fehler",
+        say=envelope.SAY_ON_FAILURE,
+        status=_status(request, 200, 500),
     )
