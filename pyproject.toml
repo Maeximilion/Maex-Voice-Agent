@@ -1,4 +1,10 @@
 # Tool configuration. No package build: the API runs from the repo (api/ as a package).
+#
+# A change to this file makes GitHub re-run its own pip graph job for the root
+# ("pip in /", correlator dependabot-pip). That job also scans api/requirements*.txt
+# and only refreshes when this file changes, so its snapshot can lag behind a pin:
+# on 2026-10-27 it still listed filelock 4.1.2 and kept six Dependabot alerts open
+# although main pinned 4.2.1. If alerts stay open after a fixing bump, touch this file.
 
 [tool.ruff]
 # Single source of truth for lint and format. Without it the rule set depends on
