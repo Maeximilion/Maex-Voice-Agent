@@ -262,12 +262,15 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
             rest = rest.replace(own, " ")
     # A dish name the search delivered is menu data, not the model's claim:
     # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
-    # audit 27.10.2026). What the model says around the name still counts.
+    # audit 27.10.2026). Only a name that itself says "...frei", and only as
+    # a whole: a dish "Milch" must not cut "milchfrei" (Codex PR #388, P1).
+    # What the model says around the name still counts.
     names = [seen.get("name") for seen in state.seen_items.values()]
     names += [name for _, name in state.offered_items.values()]
     for name in names:
-        if name:
-            rest = re.sub(re.escape(name), " ", rest, flags=re.IGNORECASE)
+        if name and _ALWAYS.search(name.lower()):
+            whole = rf"(?<!\w){re.escape(name)}(?!\w)"
+            rest = re.sub(whole, " ", rest, flags=re.IGNORECASE)
     lowered = rest.lower()
     named = names_an_allergen(rest) or "allerg" in lowered
     if _ALWAYS.search(lowered) or (named and _ABSENT.search(lowered)):

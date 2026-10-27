@@ -992,3 +992,18 @@ def test_a_claim_next_to_the_dish_name_still_counts():
 
     assert allergen_claim(state, "Die Nudeln (glutenfrei) sind auch eifrei.") is True
     assert allergen_claim(state, "Das Pho Bo ist glutenfrei.") is True
+
+
+@pytest.mark.parametrize(
+    ("name", "say"),
+    [
+        # Codex on PR #388 (P1): a substring of a name removed part of a claim.
+        ("Milch", "Das Pho Bo ist milchfrei."),
+        ("Ei", "Das Pho Bo ist glutenfrei."),
+    ],
+)
+def test_a_short_dish_name_never_hides_a_claim(name, say):
+    state = _found(name)
+    state.allergy_talk = True
+
+    assert allergen_claim(state, say) is True
