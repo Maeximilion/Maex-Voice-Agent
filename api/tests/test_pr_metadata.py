@@ -108,7 +108,7 @@ def test_an_issue_without_assignee_gets_the_owner_and_nothing_else() -> None:
 
 
 def test_open_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:
-    first = [{"number": n} for n in range(100)]
+    first: list[dict] = [{"number": n} for n in range(100)]
     first[0]["pull_request"] = {"url": "x"}
     calls = []
 
