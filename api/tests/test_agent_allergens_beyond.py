@@ -83,6 +83,10 @@ def test_certainty_after_talk_of_allergies_is_beyond():
         "Ja, hundertprozentig.",
         "Ich komme ganz sicher um sieben.",
         "Ist das sicher bis sieben fertig?",
+        # Codex PR #369, P1: certainty about time, in an allergy call.
+        "Ist das wirklich sicher bis sieben fertig?",
+        "Können Sie garantieren, dass die Bestellung um 19 Uhr fertig ist?",
+        "Ist das ganz sicher pünktlich zum Abholen da?",
     ],
 )
 def test_certainty_stated_in_an_allergy_call_asks_nothing(said):

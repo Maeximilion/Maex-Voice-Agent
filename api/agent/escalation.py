@@ -101,6 +101,14 @@ _CERTAIN = re.compile(
     # "Ist das sicher?", "sicher für mich"; not "sicher bis sieben fertig".
     r"|\bsicher\b(?=\s*(?:\?|$|f(?:ü|ue)r\b))"
 )
+# Certainty about time or readiness is no allergen question: "Ist das wirklich
+# sicher bis sieben fertig?", "Können Sie garantieren, dass die Bestellung um
+# 19 Uhr fertig ist?" (Codex PR #369).
+_TIMING = re.compile(
+    r"\bfertig|\bbis\b|\buhr\b|p(?:ü|ue)nktlich|rechtzeitig|\babhol|\bminuten?\b"
+    r"|\b(?:um|ab|gegen) (?:\d|halb|viertel|ein|zwei|drei|vier|fünf|fuenf|sechs"
+    r"|sieben|acht|neun|zehn|elf|zw(?:ö|oe)lf)"
+)
 # Asked, not stated: "Ja, ganz sicher" answers the consent question and "Ich
 # komme ganz sicher um sieben" says when (own review of PR #369).
 _QUESTION = re.compile(
@@ -131,7 +139,11 @@ def asks_beyond_the_allergens(text: str, allergy_talk: bool) -> bool:
         and not _WITH_A_PERSON.search(lowered)
     ):
         return True
-    return talk and bool(_QUESTION.search(lowered) and _CERTAIN.search(lowered))
+    return talk and bool(
+        _QUESTION.search(lowered)
+        and _CERTAIN.search(lowered)
+        and not _TIMING.search(lowered)
+    )
 
 
 def check(text: str) -> EscalationReason | None:
