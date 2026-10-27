@@ -139,7 +139,33 @@ The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code g
 ```text
 get_item_details mit allergen_question: true
    known: true  → Codes nennen, aber keine medizinische Aussage
-   known: false → say aus dem Code vorlesen → create_callback
+   known: false → the core says the say of the tool and hands the call to
+                  the team, a callback when nobody answers; the call ends,
+                  no confirm (T-11.1, L17); with no number known, the core
+                  asks for one first, and the answer makes the callback
+
+The guest asks beyond the maintained values (L17, D24), in words that say
+nothing else: traces, contamination, the same oil, pan or fryer, or shared
+frying, in any call
+   → the core, before the model: "Dazu kann ich Ihnen keine verlässliche
+     Auskunft geben." and the same handover; an order that stands unplaced
+     goes onto the card and the guest hears "Ihre Bestellung ist damit noch
+     nicht aufgegeben.", a table read back and not confirmed likewise ("Ihre
+     Reservierung ist damit noch nicht bestätigt."); the card names the
+     question and the dish, never the guest's allergy; with no number known
+     the core asks for one, at most three times
+
+Contact, certainty and "frei von" (redesign of 27.10.2026, Maxi): the model
+reads the question and answers only with that fixed sentence; the core reads
+every model sentence in a call that speaks of allergies (or names an
+allergen) and hands over the same way when it claims what no database value
+answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
+"garantiert", separate preparation) or is the fixed sentence
+(`guards.allergen_claim`)
+
+An allergy note stays on the order whatever the dish contains (Maxi,
+27.10.2026): the kitchen works with it, also where the allergen is in no
+dish of the order
 
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
@@ -196,7 +222,7 @@ Sofort und ohne Diskussion:
 - Änderung oder Storno einer laufenden Bestellung
 - Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte
-- Allergie ohne gepflegten DB-Wert
+- Allergie ohne gepflegten DB-Wert, and any allergen question beyond the maintained values (traces, contact, a promise of safety): the core hands over before the model and before any `confirm` (T-11.1, L17)
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
 - Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
 - The guest waits longer than `turn_deadline_seconds` for the answer to one sentence (#252; the tenant's value, read with the same routing; phone line only). The guest hears the outage sentence of §6, not a new one. Once the voice layer can say "Bitte warten Sie einen Moment" while a turn runs (T-1.11), the value goes from 10 to 15 in the database (Maxi, 12.10.2026); the code does not change for that

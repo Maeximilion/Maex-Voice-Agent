@@ -181,7 +181,11 @@ class CallHandler:
         # closed as soon as the opening is done.
         self._ended_while_starting: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
-        self._named_phones: OrderedDict[str, tuple[str, float]] = OrderedDict()
+        # What a card for a team leg nobody answers needs and only this
+        # process knows: a number the guest named, the card the core wrote.
+        self._named_phones: OrderedDict[str, tuple[str | None, str | None, float]] = (
+            OrderedDict()
+        )
 
     # -- events from the line ----------------------------------------------------
 
@@ -301,7 +305,7 @@ class CallHandler:
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
             self._forget_old_named_phones()
-            phone, _ = self._named_phones.pop(session_id, (None, 0.0))
+            phone, summary, _ = self._named_phones.pop(session_id, (None, None, 0.0))
         session: Session | None = None
         try:
             session = self._session_factory()
@@ -310,6 +314,7 @@ class CallHandler:
                 self._tenant_id,
                 session_id,
                 phone=phone,
+                summary=summary,
                 now=self._now or utcnow(),
             )
         except Exception as exc:  # noqa: BLE001 - the caller hears "call again"
@@ -573,13 +578,17 @@ class CallHandler:
 
     def _keep_named_phone(self, live: _LiveCall) -> None:
         """Before the handover, so a report that comes at once finds it. Only a
-        number other than the caller id, which the call log has."""
+        number other than the caller id, which the call log has, and the card
+        the core wrote for the handover (`state.handoff_summary`)."""
         phone = live.state.slots.get("phone")
-        if not phone or phone == live.state.caller_phone:
+        if phone == live.state.caller_phone:
+            phone = None
+        summary = live.state.handoff_summary
+        if not phone and not summary:
             return
         with self._lock:
             self._forget_old_named_phones()
-            self._named_phones[live.session_id] = (phone, self._clock())
+            self._named_phones[live.session_id] = (phone, summary, self._clock())
             self._named_phones.move_to_end(live.session_id)
             while len(self._named_phones) > NAMED_PHONES_KEPT:
                 self._named_phones.popitem(last=False)
@@ -587,7 +596,7 @@ class CallHandler:
     def _forget_old_named_phones(self) -> None:
         """Under `_lock`. Oldest first, in the order they were kept."""
         while self._named_phones:
-            _, kept_at = next(iter(self._named_phones.values()))
+            *_, kept_at = next(iter(self._named_phones.values()))
             if self._clock() - kept_at <= NAMED_PHONE_SECONDS:
                 return
             self._named_phones.popitem(last=False)

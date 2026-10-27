@@ -93,6 +93,7 @@ def team_missed(
     external_session_id: str,
     *,
     phone: str | None = None,
+    summary: str | None = None,
     now: datetime | None = None,
 ) -> CallbackTask | None:
     """Nobody answered the team leg of a call: a callback card, the team's only
@@ -102,7 +103,10 @@ def team_missed(
     `external_session_id` is the id the line gave the call; our leg and its log
     may be closed already. `phone` is a number the guest named in the call,
     which only the line's process still knows; else the caller id, else the
-    number of an open card of the call. The call's outcome becomes "callback",
+    number of an open card of the call. `summary` is the card the core wrote
+    for the handover, which only that process knows too (an allergen question
+    beyond the database, L17); else the card says the reason. The call's
+    outcome becomes "callback",
     also when its log is still being written (`end_call` keeps it); an "error"
     stays, logged before or after."""
     now = now or utcnow()
@@ -146,7 +150,9 @@ def team_missed(
             phone=number,
             reason=_card_reason(reason),
             summary=" ".join(
-                part for part in (SUMMARY_MISSED, SUMMARY_BY_REASON.get(reason)) if part
+                part
+                for part in (SUMMARY_MISSED, summary or SUMMARY_BY_REASON.get(reason))
+                if part
             ),
         ),
         now=now,

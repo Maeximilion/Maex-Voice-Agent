@@ -22,10 +22,13 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
 from api.agent.llm import LLMTurn, ToolCall
+from api.agent.loop import SAY_ALLERGENS_BEYOND
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
+from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
 
@@ -66,6 +69,14 @@ OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
 ALLERGY_STEM = "allergi"
 # The parts of an opening sentence, with what joins them kept.
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
+# A question for safety or contact about allergens, which the prompt answers
+# with one fixed sentence (`prompts/system_v2.md`); the core hands the call to
+# the team on it (`guards.allergen_claim`, L17). Patterns, as everywhere here.
+_SAFETY = re.compile(
+    r"\b(?:wirklich|ganz|absolut) sicher|hundertprozentig|garantier"
+    r"|\bin kontakt|\bkontakt mit|\bist das sicher",
+    re.IGNORECASE,
+)
 PICKUP = ("abhol", "mitnehmen")
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
@@ -148,6 +159,9 @@ class ScriptedLLM:
         # The sentence that announced the pickup together with the guest's own
         # allergy, until the search shows whether the allergy reached a dish.
         self._opening_allergy: str | None = None
+        # The call spoke of allergies: a question for safety gets the fixed
+        # sentence of the prompt.
+        self._allergy_talk = False
 
     def next_turn(
         self,
@@ -160,6 +174,11 @@ class ScriptedLLM:
         if state_json.get("greeted"):
             # The phone line said the disclosure already (telephony/handler.py).
             self._greeted = True
+        if _as_tool_result(input_text) is None:
+            if speaks_of_allergies(input_text) or names_an_allergen(input_text):
+                self._allergy_talk = True
+            if self._allergy_talk and "?" in input_text and _SAFETY.search(input_text):
+                return LLMTurn(say=SAY_ALLERGENS_BEYOND)
         result = _as_tool_result(input_text)
         if result is not None:
             return self._after_tool(state_json, result)

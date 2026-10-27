@@ -615,6 +615,13 @@ def _allergens_named(word: str) -> tuple[set[str], set[str]]:
     )
 
 
+def names_an_allergen(text: str) -> bool:
+    """Does `text` name one of the 14 LMIV allergens or a kind of one ("Kommt
+    das mit Sesam in Kontakt?", "Garnelen")? Read word by word as above;
+    says nothing about a dish, only whether the guest named an allergen."""
+    return any(_allergens_named(word)[0] for word in re.findall(r"[a-z]+", fold(text)))
+
+
 def free_from_claim(name: str) -> set[str]:
     """Database letters of the allergens the name says are absent.
 

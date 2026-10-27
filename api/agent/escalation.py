@@ -14,6 +14,8 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
+from api.domain.menu.wishes import mentions_allergy
+
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
@@ -59,6 +61,42 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
         ),
     ),
 )
+
+
+# A question about allergens beyond the maintained values (legal check L17,
+# D24): traces and cross-contact are never in the database, so these words go
+# to the team in any call. A phone order is distance selling, and the answer
+# has to come before the contract, so before `confirm`.
+# ponytail: closed word lists. Add the word when the call log shows it.
+# Frying only as shared or separate frying: "Wan-Tan frittiert" is a dish on
+# the menu, and a guest who orders it asks nothing (Codex PR #369).
+_BEYOND = re.compile(
+    # "Spuren", also inside a word: "Erdnussspuren", "spurenfrei".
+    r"spuren|kontamin|verunreinig|kreuzkontakt"
+    # "dasselbe Öl", "in demselben Öl", "das gleiche Öl", "ein eigenes Öl".
+    r"|\b(?:(?:das|dem|den|der|die)?selben?|gleich(?:e[nmrs]?)?|eigene[nmrs]?"
+    r"|separate[nmrs]?|getrennte[nmrs]?) (?:öl|oel|pfanne|fritteuse|friteuse)"
+    # Shared frying with something: "zusammen mit den Garnelen frittiert",
+    # "mit Fisch zusammen frittiert"; not "alles zusammen, ... Wan-Tan
+    # frittiert" in an order (own review of PR #369).
+    r"|\bzusammen mit\b[^.?!]{0,40}\bfrittier|\bmit\b[^.?!]{0,40}\bzusammen (?:ge)?frittier"
+)
+
+
+def speaks_of_allergies(text: str) -> bool:
+    """The guest's own allergy ("Erdnussallergie", "ich vertrage keine
+    Erdnüsse") or the allergens of a dish ("Allergene")."""
+    return mentions_allergy(text) or "allergen" in text.lower()
+
+
+def asks_beyond_the_allergens(text: str) -> bool:
+    """Does the guest ask about allergens what no database value answers, in
+    words that say nothing else: traces, contamination, the same oil, pan or
+    fryer, shared frying? Contact and certainty are read on the model's
+    answer instead (`guards.allergen_claim`): as questions, word lists kept
+    finding sentences about payment, persons or time (redesign of PR #369,
+    Maxi, 27.10.2026)."""
+    return _BEYOND.search(text.lower()) is not None
 
 
 def check(text: str) -> EscalationReason | None:

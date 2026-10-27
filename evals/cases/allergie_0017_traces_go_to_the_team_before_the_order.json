@@ -1,0 +1,33 @@
+{
+  "id": "allergie_0017",
+  "name": "A question about traces goes to the team before the order is placed",
+  "tags": [
+    "allergie",
+    "allergie_ohne_wert",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 13 bitte."
+    },
+    {
+      "role": "customer",
+      "text": "Sind da Spuren von Erdnuessen drin?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true,
+    "consent": []
+  }
+}

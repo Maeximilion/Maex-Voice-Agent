@@ -26,10 +26,11 @@ from sqlalchemy.orm import Session
 
 from api.agent.consent import ALLERGY_QUESTION
 from api.agent.llm import FakeLLM, LLMTurn, Usage
-from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED
+from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED, SUMMARY_ALLERGENS
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
+from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
 from api.models import Call, Callback, MenuItem, Reservation, ServiceConfig
@@ -1689,6 +1690,29 @@ def test_a_team_leg_nobody_answered_becomes_a_callback_card(session, tenant):
     [card] = session.scalars(select(Callback)).all()
     assert (card.phone, card.reason) == ("+497215551234", "complaint")
     assert the_call(session, sid).outcome == "callback"
+
+
+def test_an_allergen_question_keeps_its_card_when_nobody_answers(session, tenant):
+    """Codex PR #369, P1: the core's card for an allergen question beyond the
+    database (L17) reaches the card of a team leg nobody answered, not the
+    generic one, and still names no allergy of the guest."""
+    case = {
+        "caller_id": "+497215551234",
+        "transcript": [
+            {"role": "customer", "text": "Sind da Spuren von Erdnuessen drin?"},
+        ],
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    sid = port.play(case, handler)
+    assert port.transfers(sid) == [TEAM_PHONE]
+
+    assert handler.on_team_missed(sid) is True
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary.startswith(SUMMARY_MISSED)
+    assert SUMMARY_ALLERGENS in card.summary
+    assert "Erdnuss" not in card.summary
 
 
 def test_a_number_the_guest_named_goes_on_the_card(session, tenant):
