@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 27.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.3
+> Status: 27.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.4
 
 ---
 
@@ -402,6 +402,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Point | Why still open | When due |
 |---|---|---|
+| Repo audit of 27.10.2026, findings 2 to 14 (finding 1, the tablet error status, is fixed) | Each one checked by two reviewers who tried to disprove it, none fixed yet. Should: (2) a model-written `create_callback` summary can carry the guest's allergy onto the card (`agent/guards.py` `_notes`, L13); (3) a correction after a print whose ack was lost goes out without "KORREKTUR" (`domain/ordering/correction.py:288-294`); (4) a special opening on a weekday without capacity rows answers "nichts frei" for every time (`domain/reservations/capacity.py`, `scripts/seed.py` seeds open weekdays only); (5) an import without `item_options.csv` deletes every option of the dishes in the file (`domain/menu/importer.py:696-697`); (6) a dish name with "-frei" that the model repeats hands the order to the team (`agent/guards.py` `allergen_claim`); (7) labelled dumps and `_before_restore_` databases have no deletion date against the 30 days of docs/03. Nice: a swap on the tablet keeps one extra per group; `reservation_max_days_ahead = 0` says "höchstens 0 Tage"; retention needs a check that `RETENTION_OUTBOX_ROW_DAYS` is at least `RETENTION_OUTBOX_UNSENT_DAYS`; database error text can name row values in the log (latent); pytest-asyncio unused; dead `new_id`, `open_questions`, `menu_index`, `api/agent/__init__.py` re-exports, `all_services`, `HoursData` re-export; the "technische Störung" sentence defined 7 times, `WEEKDAYS`, `_clock`, `ACTION_CONFIRMED`, `ACTOR_TABLET` twice or more | 2 and 3 before the first real call (2 is L13, 3 decides a slip and is `xhigh`); 4 before T-9.5; the rest with the next change in their file |
 | Two helpers where one does for the forms of a number (`deploy/asterisk/render.sh`, `e164` and `same`) | Ponytail review of PR #340 (P2), 20.10.2026: `e164` turns a number into `+...` and `same` strips the `+` again; one function that returns the bare digits (`+` and `00` dropped, a leading `0` becomes `49`) and a one-line `same` compare the same, 4 lines shorter. Not on PR #340: a new commit there needs CI and a review again, Maxi shipped it as it was. The render tests in `api/tests/test_asterisk_render.py` cover every form | With the next telephony PR |
 | `[global]` with `endpoint_identifier_order=ip` may do nothing (`deploy/asterisk/conf/pjsip.conf`) | Ponytail review of PR #340 (P2), 20.10.2026: the block's own comment says it does not switch identification by the From user off, `identify_by=ip` on the endpoint does; and Asterisk's default order is believed to start with `ip` already (not checked). Check `pjsip show settings` on the workbench with and without the block; same output and the drill "stranger" still green: delete the block and its comment, else keep it and say in the comment what it changes | With the next telephony PR |
 | The call handler is not safe for events of one call on two threads at once (`telephony/handler.py`) | Codex on `dd35c0f` (PR #310, P2), 15.10.2026: a failure and the end of the leg on two threads can still use the call's database session at the same time (the rollback of `_fail` next to the write of `_finish`). `CallSession` and the fake adapter report the events of a call one after another, and `port.CallEvents` now says so. Fix when an adapter that does not is added: a lock per call around its session. | With such an adapter |
@@ -623,6 +624,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.4 · 27.10.2026:** Tablet errors keep an error status: a database error no longer swaps JSON over the pause button (repo audit finding 1)
 - **v2.11.3 · 27.10.2026:** T-10.2 limit set by Maxi: the team telephone rings within 30 s of each outage
 - **v2.11.2 · 27.10.2026:** Security audit for T-10.1 step 2 recorded: component, no P1 or P2, one note on address translation
 - **v2.11.1 · 27.10.2026:** Real-model run after T-11.1; a stated allergy is no allergen question (the lookup ended orders with the team)
