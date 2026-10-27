@@ -811,6 +811,107 @@ def test_a_callback_card_never_quotes_an_allergy(session, state):
     assert "Allergie" not in callback.summary
 
 
+def callback(summary: str, reason: str = "out_of_scope") -> ToolCall:
+    return ToolCall(
+        "create_callback", {"phone": CALLER, "reason": reason, "summary": summary}
+    )
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "Gast hat Erdnussallergie, bitte zurückrufen",
+        "Frage zur Bestellung, verträgt keine Milch",
+        "Rückruf wegen Laktoseintoleranz des Kindes",
+        # Other words for it, which no kitchen note is read from (review).
+        "Gast hat Zöliakie, bitte zurückrufen",
+        "Sohn reagiert auf Nüsse",
+        "Gast muss Erdnüsse strikt meiden",
+    ],
+)
+def test_a_model_callback_summary_never_quotes_an_allergy(session, state, summary):
+    """Repo audit of 27.10.2026, finding 2: the model's own `summary` is
+    health data like a note (L13). The card is still made, with the sentence
+    of its reason, as the core's own cards: a refusal the model does not
+    retry would lose the guest."""
+    turn(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie, rufen Sie mich bitte zurück",
+        LLMTurn(tool_call=callback(summary)),
+        LLMTurn(say="Das Team ruft Sie zurück."),
+    )
+
+    session.expire_all()
+    [card] = session.scalars(select(Callback))
+    assert card.summary == "Anruf konnte nicht automatisch abgeschlossen werden."
+
+
+def test_an_ingredient_named_as_an_allergy_stays_off_the_card(session, state):
+    """The ingredient the guest named as an allergy in this call is the
+    allergy, whatever words the model puts around it."""
+    state.allergies = [Allergy(ingredient="Sesam")]
+
+    turn(
+        session,
+        state,
+        "Rufen Sie mich bitte zurück",
+        LLMTurn(tool_call=callback("Bitte zu Sesam in der Sauce beraten")),
+        LLMTurn(say="Das Team ruft Sie zurück."),
+    )
+
+    session.expire_all()
+    [card] = session.scalars(select(Callback))
+    assert "Sesam" not in card.summary
+
+
+def test_a_rewritten_card_keeps_its_reason_and_the_booking(session, state):
+    """The card of a complaint says so, and a booking of this call stands on
+    it, as on the core's own cards, or the team books a second time."""
+    state.booking_say = "Abholung um 18:30 Uhr, Abholcode 42."
+
+    turn(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie, rufen Sie mich bitte zurück",
+        LLMTurn(
+            tool_call=callback("Beschwerde, Gast hat Erdnussallergie", "complaint")
+        ),
+        LLMTurn(say="Das Team ruft Sie zurück."),
+    )
+
+    session.expire_all()
+    [card] = session.scalars(select(Callback))
+    assert card.summary == (
+        "Kunde hat sich beschwert. Bereits gebucht: Abholung um 18:30 Uhr, "
+        "Abholcode 42."
+    )
+
+
+def test_the_guests_own_words_for_coeliac_disease_stay_off_the_card(session, state):
+    state.slots["phone"] = CALLER
+
+    turn(session, state, "Ich will einen Menschen sprechen, ich habe Zöliakie")
+
+    callback_row = session.scalars(select(Callback)).one()
+    assert "Zöliakie" not in callback_row.summary
+
+
+def test_a_model_callback_summary_without_an_allergy_stays(session, state):
+    clean = "Gast möchte liefern lassen, ohne Zwiebeln"
+
+    turn(
+        session,
+        state,
+        "Können Sie liefern?",
+        LLMTurn(tool_call=callback(clean)),
+        LLMTurn(say="Das Team ruft Sie zurück."),
+    )
+
+    session.expire_all()
+    assert [card.summary for card in session.scalars(select(Callback))] == [clean]
+
+
 def test_a_human_question_while_the_question_waits_is_answered_first(session, state):
     """Merge of T-11.5 into T-11.1: "Sind Sie ein Mensch?" gets the truthful
     answer and the offer of the team (docs/09 L1) also while a draft waits for
