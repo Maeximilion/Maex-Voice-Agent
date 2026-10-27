@@ -95,7 +95,7 @@ def test_jedes_abgeleitete_label_existiert_im_repo() -> None:
 
 
 def test_an_issue_without_assignee_gets_the_owner_and_nothing_else() -> None:
-    issue = pull("T-8.6 Backup und Wiederherstellung", labels=["stufe-5", "chore"])
+    issue = pull("T-8.6 Backup and restore", labels=["stufe-5", "chore"])
     assert pr_metadata.missing_on_issue(issue, EIGENTUEMER) == {
         "assignees": [EIGENTUEMER]
     }
