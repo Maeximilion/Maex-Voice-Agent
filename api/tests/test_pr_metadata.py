@@ -92,3 +92,34 @@ def test_jedes_abgeleitete_label_existiert_im_repo() -> None:
     Setzen stillschweigend ein neues, graues Label an."""
     vorhanden = {"feature", "bug", "docs", "chore", "refactor", "test"}
     assert set(pr_metadata.TYPE_LABELS.values()) <= vorhanden
+
+
+def test_an_issue_without_assignee_gets_the_owner_and_nothing_else() -> None:
+    issue = pull("T-8.6 Backup und Wiederherstellung", labels=["stufe-5", "chore"])
+    assert pr_metadata.missing_on_issue(issue, EIGENTUEMER) == {
+        "assignees": [EIGENTUEMER]
+    }
+    # No label is derived for an issue, also when it has none.
+    assert pr_metadata.missing_on_issue(pull("fix: x"), EIGENTUEMER) == {
+        "assignees": [EIGENTUEMER]
+    }
+    done = pull("Daily code review", assignees=[EIGENTUEMER])
+    assert pr_metadata.missing_on_issue(done, EIGENTUEMER) == {}
+
+
+def test_open_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:
+    first = [{"number": n} for n in range(100)]
+    first[0]["pull_request"] = {"url": "x"}
+    calls = []
+
+    def rest(method, path, token, payload=None):
+        calls.append(path)
+        return first if path.endswith("page=1") else [{"number": 100}]
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    issues = pr_metadata.open_issues("o/r", "t")
+    assert [i["number"] for i in issues] == list(range(1, 101))
+    assert calls == [
+        "/repos/o/r/issues?state=open&per_page=100&page=1",
+        "/repos/o/r/issues?state=open&per_page=100&page=2",
+    ]

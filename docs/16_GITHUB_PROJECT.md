@@ -84,7 +84,7 @@ So that the merge takes the linked issue along, **every** pull request descripti
 
 Days are counted in Berlin time. What was set by hand stays. Issues get none of this: for them the iteration is planning, not fact.
 
-In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. It runs when a pull request opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
+In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
 
 **Only reported** is everything that needs a decision:
 

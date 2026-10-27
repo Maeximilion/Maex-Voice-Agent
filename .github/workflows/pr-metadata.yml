@@ -1,6 +1,7 @@
 name: pr-metadata
 
-# Assignee and type label as soon as a pull request opens, whoever opened it:
+# Assignee and type label as soon as a pull request opens, whoever opened it, and
+# the assignee of a new issue (Maxi, 2026-10-28):
 # `gh pr create` without the flags of /done step 7 (#390, 27.10.2026), Dependabot,
 # Codex. Before, only the daily project-maintenance run did this, at 03:00. The
 # script sets only what is missing and comes from the default branch:
@@ -9,6 +10,8 @@ name: pr-metadata
 # pull_request_target also gives Dependabot's pull requests a token that may write.
 on:
   pull_request_target:
+    types: [opened, reopened]
+  issues:
     types: [opened, reopened]
 
 permissions:
