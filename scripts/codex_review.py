@@ -19,8 +19,10 @@ request at all. Both had thread replies (each a review on the head) posted
 within seconds of the push; the runs without such replies finished. Hence:
 answer review threads before the push, and treat "stalled" (running for more
 than 10 minutes, or no review of the head started within 10 minutes of
-waiting) as the one case for a single `@codex review`. This script never
-comments.
+waiting) as the one case for a single `@codex review`. That request restarts the
+10 minutes: Codex keeps the old "running since" in its summary, and on PR #381
+(27.10.2026) the wait read "stalled" at once and the merge went ahead 25 seconds
+before the clean review of the head. This script never comments.
 
 How the result shows (seen on #370 and #371): the bot's summary comment carries
 `codex-review-state:v1 {...}`; done is `"status":"completed"`, whose
@@ -149,18 +151,27 @@ def _code(summary: str | None) -> dict:
     return json.loads(match.group(1))["code_review"] if match else {}
 
 
-def state(head: str, summary: str | None, reviews: list[dict], now: datetime) -> str:
+def state(
+    head: str,
+    summary: str | None,
+    reviews: list[dict],
+    now: datetime,
+    asked: datetime | None = None,
+) -> str:
     """Codex's state for `head` from its summary comment and its reviews.
 
     The state comment decides. A review by the bot on the head only stands in
     for the commit a completed state left out (`commit_sha: null`, PR #371): a
     reply of Codex to an old thread is a review on the head too, also while the
-    run is going on (Codex PR #373)."""
+    run is going on (Codex PR #373). `asked` is the newest `@codex review`
+    comment: a running review is timed from it when it came later."""
     code = _code(summary)
     sha, status = code.get("commit_sha"), code.get("status")
     if sha == head and status == "running":
         since = _SINCE.search(summary or "")
         started = datetime.fromisoformat(since.group(1)) if since else now
+        if asked and asked > started:
+            started = asked
         return "stalled" if now - started > STALLED_AFTER else "running"
     if status == "completed" and sha == head:
         return "findings" if code.get("has_any_findings") else "clean"
@@ -203,7 +214,8 @@ def look(
         first = reply["body"].strip().split("\n", 1)[0]
         return head, "declined", [{"reply": first}]
     reviews = gh(f"{REPO}/pulls/{pr}/reviews?per_page=100")
-    current = state(head, summary, reviews, now)
+    asked = datetime.fromisoformat(max(requests)) if requests else None
+    current = state(head, summary, reviews, now, asked)
     if current != "findings":
         return head, current, []
     ids = {
