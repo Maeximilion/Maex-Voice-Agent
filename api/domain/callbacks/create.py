@@ -12,7 +12,7 @@ from typing import cast
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from api.core.errors import InvalidInput, NotFound
+from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.events import enqueue
@@ -27,7 +27,6 @@ from api.schemas.callbacks import (
 
 ACTOR_AGENT = "agent"
 ACTION_CREATED = "callback.created"
-SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 SAY_NOTED = (
     "Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück."
 )
@@ -46,7 +45,7 @@ def create_callback(
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
-        raise NotFound("Anruf unbekannt", say=SAY_CALL_UNKNOWN)
+        raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
 
     summary = req.summary.strip()
     if not summary:

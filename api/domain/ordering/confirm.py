@@ -19,7 +19,7 @@ the direct one included (`_waits_for`). The guest's yes still confirms it.
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, NotFound
+from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.ordering.draft import draft_labels
 from api.events import enqueue
@@ -35,7 +35,6 @@ DIRECT_MODE = "primary"
 # ("A17" ist der Abholcode, "Nummer 17" ein Gericht). Format wie im Mockup.
 PICKUP_PREFIX = "A"
 
-SAY_STOERUNG = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 SAY_CANCELLED = (
     "Diese Bestellung wurde bereits storniert. Ich verbinde Sie mit dem Restaurant."
 )
@@ -58,7 +57,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
         or order.call_id != req.call_id
         or order.deleted_at is not None
     ):
-        raise NotFound("Bestellung unbekannt", say=SAY_STOERUNG)
+        raise NotFound("Bestellung unbekannt", say=SAY_ON_FAILURE)
 
     if order.status == "cancelled":
         raise Conflict("Bestellung ist storniert", say=SAY_CANCELLED)
@@ -82,7 +81,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
     ).scalar_one_or_none()
     tenant = session.get(Tenant, req.tenant_id)
     if config is None or tenant is None:
-        raise NotFound("Mandant ohne service_config", say=SAY_STOERUNG)
+        raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
 
     waits_for = _waits_for(order, config)
     direct = waits_for is None

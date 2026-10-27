@@ -11,7 +11,6 @@ Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 import secrets
 import uuid
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path
 from urllib.parse import parse_qs
 
@@ -25,7 +24,6 @@ from api.config import LOCAL_ENVS, settings
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
-from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
 from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
@@ -82,15 +80,11 @@ def _tenant_snapshot() -> tuple[uuid.UUID | None, str]:
         session.close()
 
 
-def _clock(value: datetime, tz_name: str) -> str:
-    return to_local(value, tz_name).strftime("%H:%M")
-
-
 def _today_rows(session: Session, tenant: Tenant) -> list[dict]:
     return [
         {
             "id": str(row.reservation_id),
-            "time": _clock(row.reserved_for, tenant.timezone),
+            "time": orders_view.clock(row.reserved_for, tenant.timezone),
             "party_size": row.party_size,
             "guest_name": row.guest_name,
             "phone": row.phone,
@@ -125,7 +119,7 @@ def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
         rows.append(
             {
                 "id": str(cb.callback_id),
-                "time": _clock(cb.created_at, tenant.timezone),
+                "time": orders_view.clock(cb.created_at, tenant.timezone),
                 "phone": cb.phone,
                 "number_note": CALLBACK_NUMBER_NOTES.get(origin),
                 "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
