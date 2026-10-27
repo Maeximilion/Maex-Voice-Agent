@@ -253,13 +253,21 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     answers, or say it cannot answer such a question? Safety words count in
     a call that speaks of allergies or a sentence that names an allergen,
     absence only where the sentence names one, the fixed sentence anywhere;
-    the core's own sentences (read-back, booking) are left out, as in
-    `false_booking`. The loop hands the call to the team instead of saying
+    the core's own sentences (read-back, booking) and the names of the dishes
+    the search delivered are left out, as in `false_booking`. The loop hands the call to the team instead of saying
     it (L17, redesign of PR #369)."""
     rest = say
     for own in (state.booking_say, state.readback):
         if own:
             rest = rest.replace(own, " ")
+    # A dish name the search delivered is menu data, not the model's claim:
+    # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
+    # audit 27.10.2026). What the model says around the name still counts.
+    names = [seen.get("name") for seen in state.seen_items.values()]
+    names += [name for _, name in state.offered_items.values()]
+    for name in names:
+        if name:
+            rest = re.sub(re.escape(name), " ", rest, flags=re.IGNORECASE)
     lowered = rest.lower()
     named = names_an_allergen(rest) or "allerg" in lowered
     if _ALWAYS.search(lowered) or (named and _ABSENT.search(lowered)):
