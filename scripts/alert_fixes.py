@@ -4,7 +4,8 @@
 /start step 5a (CLAUDE.md section 6 "Security alerts"), one line per open alert:
 every Dependabot alert and every critical or high code-scanning alert names the
 pull request that fixes it or blocks task work; a lower code-scanning alert is a
-suggestion next to the tasks. No output: no open alert.
+suggestion next to the tasks. A blocking Dependabot alert whose advisory has no
+patched version yet says so: no pin can fix it, so Maxi decides. No output: no open alert.
 
     python3 scripts/alert_fixes.py
 
@@ -81,6 +82,8 @@ def _alerts(gh: Gh, errors: list[str]) -> list[dict]:
                     "name": a["dependency"]["package"]["name"],
                     "path": a["dependency"]["manifest_path"],
                     "ghsa": a["security_advisory"]["ghsa_id"],
+                    "patched": a["security_vulnerability"]["first_patched_version"]
+                    is not None,
                 }
             )
     except GhError as exc:
@@ -184,6 +187,8 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
             lines.append(f"{head}: fixed by {', '.join(fixed)}")
             continue
         line = f"{head}: BLOCKS TASKS, no open PR into main fixes it"
+        if not a.get("patched", True):  # code-scanning alerts carry no version
+            line += "; no patched version exists: Maxi decides (dismiss or wait)"
         near = which(_candidate, a)
         if near:
             line += f"; candidates, not confirmed as the fix: {', '.join(near)}"

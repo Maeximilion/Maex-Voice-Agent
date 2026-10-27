@@ -30,10 +30,13 @@ def _gh(answers):
     return gh
 
 
-def _dependabot(number=2, severity="critical", name="certifi", path=LOCK):
+def _dependabot(number=2, severity="critical", name="certifi", path=LOCK, fixed="9"):
     return {
         "number": number,
         "security_advisory": {"severity": severity, "ghsa_id": GHSA},
+        "security_vulnerability": {
+            "first_patched_version": {"identifier": fixed} if fixed else None
+        },
         "dependency": {"package": {"name": name}, "manifest_path": path},
     }
 
@@ -214,6 +217,17 @@ def test_every_dependabot_alert_blocks_and_lower_code_scanning_comes_last():
     quiet = _answers([], [_code_scanning(13, level="medium")])
     del quiet[f"{R}/pulls?state=open&base=main&per_page=100"]
     assert len(alert_fixes.report(_gh(quiet))[0]) == 1
+
+
+def test_an_alert_without_a_patched_version_goes_to_maxi():
+    line = _line(_answers([_dependabot(fixed=None)]))
+    assert line == (
+        f"dependabot #2 critical certifi {LOCK}: {BLOCKS}; "
+        "no patched version exists: Maxi decides (dismiss or wait)"
+    )
+    # A pull request that drops the package still fixes it.
+    fixed = _answers([_dependabot(fixed=None)], prs=[_pr(5)], **{COMPARE: [_change()]})
+    assert _line(fixed).endswith("fixed by #5")
 
 
 def test_a_failed_source_is_an_error_never_zero(capsys):
