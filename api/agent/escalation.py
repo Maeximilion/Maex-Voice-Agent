@@ -71,11 +71,18 @@ _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
 # Frying only as shared or separate frying: "Wan-Tan frittiert" is a dish on
 # the menu, and a guest who orders it asks nothing (Codex PR #369).
 _BEYOND = re.compile(
-    r"\bspuren|kontamin|verunreinig|kreuzkontakt|\bin kontakt|\bkontakt mit"
-    r"|ber(?:ü|ue)hrung"
+    r"\bspuren|kontamin|verunreinig|kreuzkontakt"
     r"|\b(?:selben|gleichen|derselben|eigenen?|separaten?|getrennten?)"
     r" (?:öl|oel|pfanne|fritteuse)"
     r"|\bzusammen\b[^.?!]{0,40}\bfrittier"
+)
+# Contact or touch of food ("Kommt das mit Sesam in Kontakt?"), never contact
+# with a person: "damit Sie mit mir in Kontakt bleiben" gives a number, it
+# asks nothing about allergens (Codex PR #369).
+_CONTACT = re.compile(r"\bin kontakt|\bkontakt mit|ber(?:ü|ue)hr")
+_WITH_A_PERSON = re.compile(
+    r"\bmit (?:mir|uns|ihnen|dir|euch|jemandem|dem team)\b"
+    r"|\bkontakt (?:bleiben|aufnehmen|halten)|\bin kontakt (?:bleiben|treten|setzen)"
 )
 # Certainty asked for: only in a call that speaks of allergies ("Ist das
 # wirklich sicher?" after the allergens of a dish), not "Ist das sicher bis
@@ -97,6 +104,8 @@ def asks_beyond_the_allergens(text: str, allergy_talk: bool) -> bool:
     `allergy_talk`: the call has spoken of allergies before this sentence."""
     lowered = text.lower()
     if _BEYOND.search(lowered):
+        return True
+    if _CONTACT.search(lowered) and not _WITH_A_PERSON.search(lowered):
         return True
     return (allergy_talk or speaks_of_allergies(text)) and bool(
         _CERTAIN.search(lowered)

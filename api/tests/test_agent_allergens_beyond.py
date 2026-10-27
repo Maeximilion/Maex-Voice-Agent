@@ -72,6 +72,10 @@ def test_certainty_after_talk_of_allergies_is_beyond():
         "Ich habe eine Erdnussallergie.",
         # "Kontakt" alone is no contact with food.
         "Brauchen Sie meine Kontaktdaten?",
+        # Codex PR #369, P1: contact with a person, not with food.
+        "Ich gebe Ihnen meine Nummer, damit Sie mit mir in Kontakt bleiben können.",
+        "Wie kann ich mit Ihnen in Kontakt treten?",
+        "Ich setze mich morgen mit Ihnen in Kontakt.",
         # A fried dish ordered by its name (Codex PR #369): the eval menu
         # has "21;Wan-Tan frittiert".
         "Ich hätte gern Wantan frittiert.",
@@ -366,3 +370,22 @@ def test_without_a_number_in_the_answer_the_call_ends_honestly(session, known_te
     assert result.say == [SAY_NOBODY_REACHABLE]
     assert llm.calls == []
     assert session.scalars(select(Callback)).all() == []
+
+
+def test_a_human_question_with_the_number_hears_the_truth_first(session, known_tenant):
+    """Codex PR #369: the answer to the question for the number may ask
+    whether a person is on the line; the truthful sentence comes first, then
+    the callback (docs/09 L1)."""
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    result, _ = run(
+        session,
+        state,
+        "Sind Sie ein Mensch? Meine Nummer ist 07221 5551234.",
+        now=CLOSED,
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_NOT_A_PERSON
+    assert session.scalars(select(Callback)).one().phone == CALLER

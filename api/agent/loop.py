@@ -187,7 +187,14 @@ class ConversationLoop:
             # callback is made, without one the last resort; the call ends
             # either way, before the model and before any `confirm`.
             summary, state.callback_waits = state.callback_waits, None
-            return self._handoff(state, SAY_ESCALATION, "out_of_scope", summary=summary)
+            handed = self._handoff(
+                state, SAY_ESCALATION, "out_of_scope", summary=summary
+            )
+            if escalation.without_human_question(user_text) is not None:
+                # The truthful answer first, in every turn (docs/09 L1;
+                # Codex PR #369).
+                handed.say.insert(0, SAY_NOT_A_PERSON)
+            return handed
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
         noted = list(state.allergies)
