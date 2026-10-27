@@ -87,14 +87,16 @@ def may_hold_a_slip(session: Session, order: Order) -> bool:
     picked up and one superseded before its print are no slip. The card's
     state cannot tell: the watchdog turns it red after a lost ack, and a newer
     ticket's error turns it red while an older slip is at the register."""
-    return session.scalar(
-        select(
-            exists().where(
-                OutboxEvent.tenant_id == order.tenant_id,
-                OutboxEvent.event_type.in_(KITCHEN),
-                OutboxEvent.payload["order_id"].astext == str(order.id),
-                OutboxEvent.attempts > 0,
-                OutboxEvent.last_error.is_(None),
+    return bool(
+        session.scalar(
+            select(
+                exists().where(
+                    OutboxEvent.tenant_id == order.tenant_id,
+                    OutboxEvent.event_type.in_(KITCHEN),
+                    OutboxEvent.payload["order_id"].astext == str(order.id),
+                    OutboxEvent.attempts > 0,
+                    OutboxEvent.last_error.is_(None),
+                )
             )
         )
     )
