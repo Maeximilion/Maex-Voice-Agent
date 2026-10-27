@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from api.agent.consent import ALLERGY_QUESTION
 from api.agent.escalation import asks_beyond_the_allergens
+from api.agent.guards import note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
     SAY_CALLBACK_NUMBER,
@@ -388,4 +389,37 @@ def test_a_human_question_with_the_number_hears_the_truth_first(session, known_t
 
     assert result.ended
     assert result.say[0] == SAY_NOT_A_PERSON
+    assert session.scalars(select(Callback)).one().phone == CALLER
+
+
+def test_the_number_after_a_silence_prompt_still_makes_the_callback(
+    session, known_tenant
+):
+    """Codex PR #369, P1: the phone line's "Sind Sie noch da?" came between
+    the question for the number and the answer; the digits were no longer
+    read as a number to call, and the call ended without a callback."""
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+    note_said(state, "Sind Sie noch da?")
+
+    result, _ = run(session, state, "07221 5551234", now=CLOSED)
+
+    assert result.ended
+    assert session.scalars(select(Callback)).one().phone == CALLER
+
+
+def test_a_yes_to_a_silence_prompt_puts_the_number_question_again(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+    note_said(state, "Sind Sie noch da?")
+
+    result, llm = run(session, state, "Ja.", now=CLOSED)
+
+    assert not result.ended
+    assert result.say == [SAY_CALLBACK_NUMBER]
+    assert llm.calls == []
+    result, _ = run(session, state, "07221 5551234", now=CLOSED)
+    assert result.ended
     assert session.scalars(select(Callback)).one().phone == CALLER

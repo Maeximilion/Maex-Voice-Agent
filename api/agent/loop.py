@@ -181,7 +181,20 @@ class ConversationLoop:
         turn_started = None if self._turn_deadline is None else self._clock()
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
+        if state.callback_waits is not None:
+            # Still the answer to the question for the number, also after the
+            # phone line's "Sind Sie noch da?" came between (Codex PR #369).
+            state.asked_for_phone = True
         note_guest_details(state, user_text)
+        if (
+            state.callback_waits is not None
+            and not state.slots.get("phone")
+            and not (state.last_say or "").endswith(SAY_CALLBACK_NUMBER)
+        ):
+            # Another sentence came between and the answer gives no number:
+            # the question is put again rather than ending without one.
+            guards.note_said(state, SAY_CALLBACK_NUMBER)
+            return TurnResult(state=state, say=[SAY_CALLBACK_NUMBER])
         if state.callback_waits is not None:
             # The answer to the question for the number (L17): with one the
             # callback is made, without one the last resort; the call ends
