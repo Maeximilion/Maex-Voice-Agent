@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, NotFound
+from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
 from api.core.time import utcnow
 from api.domain.ordering.confirm import confirm_order
 from api.domain.reservations.capacity import has_room, lock_capacity_days
@@ -21,7 +21,6 @@ from api.models import AuditLog, Call, Reservation, ServiceConfig, Tenant
 from api.schemas.confirm import Confirmation, ConfirmRequest
 
 ACTOR_AGENT = "agent"
-SAY_STOERUNG = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 SAY_CANCELLED = (
     "Diese Reservierung wurde bereits storniert. Ich verbinde Sie mit dem Restaurant."
 )
@@ -44,7 +43,7 @@ def confirm(
 
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
-        raise NotFound("Anruf unbekannt", say=SAY_STOERUNG)
+        raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
 
     if req.entity == "reservation":
         return _confirm_reservation(session, req, tenant, now or utcnow())
@@ -71,7 +70,7 @@ def _confirm_reservation(
         or reservation.call_id != req.call_id
         or reservation.deleted_at is not None
     ):
-        raise NotFound("Reservierung unbekannt", say=SAY_STOERUNG)
+        raise NotFound("Reservierung unbekannt", say=SAY_ON_FAILURE)
 
     if reservation.status == "cancelled":
         raise Conflict("Reservierung ist storniert", say=SAY_CANCELLED)
@@ -87,7 +86,7 @@ def _confirm_reservation(
     # a draft, so that two late confirmations cannot both see the window empty.
     config = session.get(ServiceConfig, req.tenant_id)
     if config is None:
-        raise NotFound("Mandant ohne service_config", say=SAY_STOERUNG)
+        raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
     zone = ZoneInfo(tenant.timezone)
     lock_capacity_days(
         session, req.tenant_id, reservation.reserved_for.astimezone(zone).date()

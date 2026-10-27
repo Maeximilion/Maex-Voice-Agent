@@ -19,19 +19,19 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import InvalidInput, NotFound
+from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.callbacks.create import create_callback
 from api.domain.customers.phone import normalize_phone
-from api.domain.status.hours import all_services, load_hours, open_window_at
+from api.domain.status.hours import load_hours, open_window_at
 from api.models import AuditLog, Call, Callback, ServiceConfig, Tenant
+from api.models.tenants import SERVICES
 from api.schemas.callbacks import CallbackReason, CallbackTask, CreateCallbackRequest
 from api.schemas.transfer import TransferResult, TransferToTeamRequest
 
 ACTOR_AGENT = "agent"
 ACTOR_TELEPHONY = "telephony"
 ACTION_TRANSFERRED = "call.transferred"
-SAY_CALL_UNKNOWN = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
 # A call the line reports is at most this old: the dialplan's backstop of an
 # hour on our leg, then up to two team legs of 30 s. The line's ids repeat
 # after a restart of the telephone system; an older row of the same id is
@@ -64,7 +64,7 @@ def transfer_to_team(
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
     if call is None or call.tenant_id != req.tenant_id:
-        raise NotFound("Anruf unbekannt", say=SAY_CALL_UNKNOWN)
+        raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
 
     available = _team_reachable(session, req.tenant_id, tenant.timezone, now)
 
@@ -212,6 +212,5 @@ def _team_reachable(
     zone = ZoneInfo(timezone)
     data = load_hours(session, tenant_id, now.astimezone(zone).date())
     return any(
-        open_window_at(data, now, service, zone) is not None
-        for service in all_services()
+        open_window_at(data, now, service, zone) is not None for service in SERVICES
     )
