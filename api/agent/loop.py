@@ -12,6 +12,7 @@ anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -510,7 +511,9 @@ class ConversationLoop:
                 # The guest's allergies onto the draft, as their answer lets
                 # them be stored (L13). The state keeps the call as the model
                 # wrote it: the cart goes back to the model without them.
-                call = allergies.noted_call(state, turn.tool_call)
+                call = _card_without_allergy(
+                    state, allergies.noted_call(state, turn.tool_call)
+                )
                 result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if (
@@ -926,7 +929,7 @@ class ConversationLoop:
         `ask_number`: with neither a team nor a number, ask the guest for one
         instead of the last resort; the next turn makes the callback with
         `summary` (`state.callback_waits`, L17; Codex PR #369)."""
-        if detail and mentions_allergy(detail):
+        if detail and _names_health(state, detail):
             # The guest's sentence names an allergy, which is health data: it
             # is not written on a card. The caller agreed at most to a kitchen
             # note (L13), and the team asks when it calls back.
@@ -1038,6 +1041,50 @@ def _booked_say(
     if not name:
         return placed
     return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
+
+
+# Health data a card may not carry that `mentions_allergy` does not read: it
+# reads what can become a kitchen note, a card has to be stricter (review of
+# the repo audit fix, 27.10.2026).
+_HEALTH_ON_A_CARD = re.compile(
+    r"z(?:ö|oe)liak|reagier\w*\s+auf|darf\s+kein|\bmeiden\b", re.IGNORECASE
+)
+
+
+def _names_health(state: ConversationState, text: str) -> bool:
+    """Does `text` speak of the guest's allergy: in an allergy word, in other
+    words for one, or by an ingredient the guest named as one in this call?"""
+    folded = text.casefold()
+    # shortcut: the ingredient is matched as a substring, so a short one like
+    # "Ei" also hits "bei" and that card gets the sentence of its reason, the
+    # safe side; split it into words if the team misses requests on cards.
+    return (
+        mentions_allergy(text)
+        or bool(_HEALTH_ON_A_CARD.search(text))
+        or any(
+            allergy.ingredient and allergy.ingredient.casefold() in folded
+            for allergy in state.allergies
+        )
+    )
+
+
+def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
+    """A callback whose `summary` the model wrote names the guest's allergy:
+    health data on a card the guest never agreed to (L13). The card gets the
+    sentence of its reason instead, as the core's own cards (`_handoff`),
+    with a booking of this call, and the team asks when it calls back.
+    Rewritten, not refused: a refused callback the model does not retry
+    loses the guest (rule 5)."""
+    summary = call.args.get("summary")
+    if (
+        call.name != "create_callback"
+        or not isinstance(summary, str)
+        or not _names_health(state, summary)
+    ):
+        return call
+    reason = str(call.args.get("reason"))
+    card = _handoff_summary(reason, None, state.booking_say)
+    return ToolCall(call.name, {**call.args, "summary": card})
 
 
 def _handoff_summary(
