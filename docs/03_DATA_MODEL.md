@@ -46,6 +46,18 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | turn_deadline_seconds | INT ≥ 1 | how long a guest waits in silence for the answer to one sentence before the call goes to the team; default 10 (#252, migration 007). Read by the phone line with the routing at the start of every call (`domain/calls/routing.py`, `telephony/handler.py`) and kept by `agent/loop.py`; a changed value applies from the next call. The text phone and the evals have no deadline |
 | order_approval_overdue_minutes | INT ≥ 1 | how long an order may wait for "Passt" on the tablet before its card turns red; default 5 (#252, migration 008). Counted from the guest's yes, the audit entry `order.confirmed`. Read by the order board (`domain/ordering/board.py`); a changed value shows within the next poll of the tablet |
 | privacy_notice_address | TEXT NULL, not white space only | where the restaurant's privacy notice is, written the way a caller should hear it (`example.com/datenschutz` is only the repository placeholder); T-11.5, migration 009, docs/09 §1 L4. The phone greeting names it (`telephony/handler.py` `greeting`), read with the routing at the start of every call (`domain/calls/routing.py`); a change applies from the next call. Empty on every existing row: without it the greeting leaves the sentence out, and the duty of L4 stays open. The seed writes `PRIVACY_NOTICE_ADDRESS` into a new tenant; an existing one gets it by `UPDATE service_config SET privacy_notice_address = '…'` |
+| max_concurrent_calls | INT ≥ 1 | how many calls the agent takes at once outside a window of `call_limit_windows`; default 1, the test phase runs with one (D16, T-10.9, migration 011). A call above the limit rings the team; the phone line counts its own open calls in memory, so a call row a crash left open never keeps the agent off |
+
+### `call_limit_windows`
+
+A weekly window with a limit of its own for concurrent AI calls (D16: weekdays 1, Friday to Sunday evenings up to 3, which needs the SIP trunk, T-10.12). Migration 011; no row is written there.
+
+| Field | Type | Note |
+|---|---|---|
+| tenant_id | UUID FK | |
+| weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
+| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows |
+| max_calls | INT ≥ 1 | the limit while the window holds; where windows overlap, the lowest counts |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -370,5 +382,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 008 | `service_config.order_approval_overdue_minutes`: after how many minutes without "Passt" the card of a waiting order turns red (5); the downgrade drops the column |
 | 009 | `service_config.privacy_notice_address`: where the privacy notice is, named in the phone greeting (T-11.5, docs/09 L4); empty on existing rows, a text of white space only refused; the downgrade drops the column |
 | 010 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
+| 011 | `service_config.max_concurrent_calls` (1) and `call_limit_windows`: the limit of concurrent AI calls (D16, T-10.9); the downgrade drops both with every limit set since |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

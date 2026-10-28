@@ -72,6 +72,10 @@ class ServiceConfig(Timestamps, Base):
             name="ck_service_config_order_approval_overdue_minutes",
         ),
         CheckConstraint(
+            "max_concurrent_calls >= 1",
+            name="ck_service_config_max_concurrent_calls",
+        ),
+        CheckConstraint(
             r"privacy_notice_address ~ '\S'",
             name="ck_service_config_privacy_notice_address",
         ),
@@ -136,6 +140,34 @@ class ServiceConfig(Timestamps, Base):
     # the phone greeting names it (docs/09 L4, T-11.5, migration 009). Empty
     # until the notice is online: the greeting then leaves the sentence out.
     privacy_notice_address: Mapped[str | None] = mapped_column(Text)
+    # How many calls the agent takes at once outside a window of
+    # `call_limit_windows` (D16, T-10.9, migration 011); a call above the limit
+    # rings the team. 1 in the test phase: the router path allows 2 and the team
+    # needs its lines (docs/20 §3, §8).
+    max_concurrent_calls: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="1"
+    )
+
+
+class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """A weekly window with a limit of its own for concurrent AI calls (D16:
+    weekdays 1, Friday to Sunday evenings up to 3). Where windows overlap, the
+    lowest limit counts. A window ends before midnight; one across it is two
+    rows (T-10.9, migration 011)."""
+
+    __tablename__ = "call_limit_windows"
+    __table_args__ = (
+        CheckConstraint(
+            "weekday BETWEEN 0 AND 6", name="ck_call_limit_windows_weekday"
+        ),
+        CheckConstraint("starts_at < ends_at", name="ck_call_limit_windows_order"),
+        CheckConstraint("max_calls >= 1", name="ck_call_limit_windows_max_calls"),
+    )
+
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    starts_at: Mapped[time] = mapped_column(Time, nullable=False)
+    ends_at: Mapped[time] = mapped_column(Time, nullable=False)
+    max_calls: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class OpeningHours(UUIDPrimaryKey, TenantScoped, Timestamps, Base):

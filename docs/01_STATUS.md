@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.29
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.30
 
 ---
 
@@ -628,6 +628,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.30 · 28.10.2026:** T-10.9: the limit of concurrent AI calls with weekly windows (migration 011); a call above it rings the team
 - **v2.11.29 · 28.10.2026:** T-10.6: a phone call's cost covers the model, the ear and the mouth, in whole cents
 - **v2.11.28 · 28.10.2026:** T-3.7: the operations view goes on the tablet's home screen (manifest, icons); the check behind Caddy waits for the server
 - **v2.11.27 · 28.10.2026:** T-11.8 part 1: the manual procedure for requests of data subjects in docs/09 section 2; decisions of 28.10.2026 on #234, #252, #344, #319, #331, T-3.7 and T-11.8

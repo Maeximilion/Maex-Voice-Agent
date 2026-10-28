@@ -281,6 +281,27 @@ def test_ai_switched_off_sends_the_call_straight_to_the_team(session, tenant, mo
     assert the_call(session, sid).outcome == "transferred"
 
 
+def test_a_call_above_the_limit_rings_the_team_until_a_place_is_free(session, tenant):
+    """D16, T-10.9: with a limit of one, a second call while the first is open
+    goes to the team at once and silently; once the first leg has ended, the
+    agent takes the next call again."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+    assert port.transfers("s-2") == [TEAM_PHONE] and port.says("s-2") == []
+    assert port.says("s-1") and port.transfers("s-1") == []
+
+    handler.on_call_ended("s-1")
+    handler.on_call_ended("s-2")
+    port.open("s-3", caller_id="+497215551234")
+    handler.on_call_started("s-3")
+    assert port.says("s-3") and port.transfers("s-3") == []
+
+
 def test_switching_the_ai_off_takes_effect_on_the_next_call(session, tenant):
     """The emergency stop in the tablet header changes `call_mode` in another
     session; the next call must read it fresh, not from a cached row."""
@@ -416,7 +437,11 @@ def test_a_changed_address_is_said_from_the_next_call(session, tenant):
         other.execute(
             update(ServiceConfig)
             .where(ServiceConfig.tenant_id == tenant.id)
-            .values(privacy_notice_address="neu.example/datenschutz")
+            # Two calls at once: the limit of one would send the second to
+            # the team (T-10.9).
+            .values(
+                privacy_notice_address="neu.example/datenschutz", max_concurrent_calls=2
+            )
         )
         other.commit()
 

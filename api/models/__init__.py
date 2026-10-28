@@ -7,12 +7,20 @@ from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
 from api.models.reservations import Reservation
-from api.models.tenants import Capacity, OpeningHours, ServiceConfig, SpecialDay, Tenant
+from api.models.tenants import (
+    CallLimitWindow,
+    Capacity,
+    OpeningHours,
+    ServiceConfig,
+    SpecialDay,
+    Tenant,
+)
 
 __all__ = [
     "AuditLog",
     "Base",
     "Call",
+    "CallLimitWindow",
     "Callback",
     "Capacity",
     "ConsentLog",

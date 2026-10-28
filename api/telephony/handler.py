@@ -31,7 +31,7 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from fractions import Fraction
 from math import ceil
@@ -50,7 +50,13 @@ from api.core.logging import bind_call_id, get_logger
 from api.core.time import utcnow
 from api.domain.callbacks import team_missed
 from api.domain.callbacks.create import SAY_NOTED
-from api.domain.calls import CallRouting, call_routing, end_call, start_call
+from api.domain.calls import (
+    CallRouting,
+    call_routing,
+    end_call,
+    start_call,
+    takes_call,
+)
 from api.domain.menu.items import active_count
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
 from api.telephony.port import TelephonyPort
@@ -183,6 +189,10 @@ class CallHandler:
         # Calls whose leg ended while they were still being opened; they are
         # closed as soon as the opening is done.
         self._ended_while_starting: set[str] = set()
+        # The calls the agent took and whose leg has not ended: the count for
+        # the limit of concurrent AI calls (D16, T-10.9). In memory: a call row
+        # a crash left open in the database must not keep the agent off.
+        self._ai_calls: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
         # What a card for a team leg nobody answers needs and only this
         # process knows: a number the guest named, the card the core wrote.
@@ -249,11 +259,25 @@ class CallHandler:
             self._starting.discard(session_id)
             hung_up = session_id in self._ended_while_starting
             self._ended_while_starting.discard(session_id)
+            takes = False
             if hung_up:
                 self._remember_closed(session_id)
                 self._claim(live)
             else:
                 self._live[session_id] = live
+                # The decision and the place in one step: two calls that start
+                # at once cannot both take the last one (T-10.9).
+                takes = takes_call(routing, len(self._ai_calls))
+                if takes:
+                    self._ai_calls.add(session_id)
+        if routing.ai_answers and not takes and not hung_up:
+            logger.info(
+                "call limit reached, the team takes the call",
+                extra={
+                    "extra": {"session_id": session_id, "limit": routing.call_limit}
+                },
+            )
+        routing = replace(routing, ai_answers=takes)
         if hung_up:
             # The end of the leg came while the call row was written (#207):
             # no greeting into a dead line, and the log is closed now.
@@ -294,6 +318,7 @@ class CallHandler:
 
     def on_call_ended(self, session_id: str, speech: SpeechUsage | None = None) -> None:
         with self._lock:
+            self._ai_calls.discard(session_id)  # the leg is gone, its place is free
             if session_id in self._starting:
                 self._ended_while_starting.add(session_id)
                 return  # `on_call_started` closes it once the call is open
@@ -447,6 +472,7 @@ class CallHandler:
             self._live.pop(session_id, None)
             self._ending.pop(session_id, None)
             self._starting.discard(session_id)
+            self._ai_calls.discard(session_id)
             self._ended_while_starting.discard(session_id)
             self._remember_closed(session_id)
             # Not for a call whose end was handled already: an adapter on
