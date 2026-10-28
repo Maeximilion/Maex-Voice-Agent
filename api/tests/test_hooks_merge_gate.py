@@ -114,6 +114,28 @@ def gate(tmp_path):
         git(work, "switch", "-q", "feature")
         return sha
 
+    def stacked() -> str:
+        """The PR stacked on `pred`, after `pred` merged into main with a merge
+        commit: the head holds all of main but that commit."""
+        git(work, "switch", "-q", "-c", "pred", "main")
+        pred = commit("predecessor", "1.0.1")
+        git(work, "switch", "-q", "-c", "stacked")
+        sha = commit("stacked", "1.0.2")
+        git(work, "push", "-q", "-f", "origin", "HEAD:refs/pull/7/head")
+        git(work, "switch", "-q", "main")
+        git(work, "merge", "-q", "--no-ff", "--no-edit", pred)
+        git(work, "push", "-q", "origin", "main")
+        git(work, "switch", "-q", "feature")
+        return sha
+
+    def land_file_on_main(name: str) -> None:
+        git(work, "switch", "-q", "main")
+        (work / name).write_text("main\n", encoding="utf-8")
+        git(work, "add", "-A")
+        git(work, "commit", "-q", "-m", name)
+        git(work, "push", "-q", "origin", "main")
+        git(work, "switch", "-q", "feature")
+
     generated = side_branch(8, "README.md", ".github/assets/flow.svg")
     code = side_branch(9, "README.md", "api/app.py")
     versions = {
@@ -197,6 +219,8 @@ def gate(tmp_path):
         codex=codex,
         run=run,
         land_on_main=land_on_main,
+        land_file_on_main=land_file_on_main,
+        stacked=stacked,
         asked=fake / "asked",
     )
 
@@ -294,6 +318,27 @@ def test_a_check_that_ran_twice_counts_by_the_run_that_started_last(gate):
 
 def test_a_branch_behind_main_blocks(gate):
     gate.land_on_main("later")
+    done = gate.run()
+    assert done.returncode == 2
+    assert "behind main" in done.stderr
+
+
+def test_a_stacked_pr_whose_predecessor_merged_passes(gate):
+    """Maxi, 28.10.2026: the head lacks only main's merge commit of the PR it
+    was stacked on; merging main changes no file, so no new round is needed."""
+    head = gate.stacked()
+    gate.pr(sha=head)
+    gate.comments(gate.codex(head))
+
+    assert gate.run().returncode == 0
+
+
+def test_a_stacked_pr_blocks_when_main_has_more(gate):
+    head = gate.stacked()
+    gate.land_file_on_main("other.txt")
+    gate.pr(sha=head)
+    gate.comments(gate.codex(head))
+
     done = gate.run()
     assert done.returncode == 2
     assert "behind main" in done.stderr
