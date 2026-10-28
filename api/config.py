@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # of a call is unknown and stays empty; 0 is a price (a local model).
     llm_input_cents_per_mtok: int | None = Field(default=None, ge=0)
     llm_output_cents_per_mtok: int | None = Field(default=None, ge=0)
+    # Prices of the voice layer (docs/20 §7, §9, T-10.6), integer cents: the ear
+    # per hour of audio, the mouth per million characters, a transfer leg per
+    # hour. Without one the cost of a phone call is unknown and stays empty; 0
+    # is a price (the local engines and the router of the test phase).
+    voice_ear_cents_per_hour: int | None = Field(default=None, ge=0)
+    voice_mouth_cents_per_mchar: int | None = Field(default=None, ge=0)
+    voice_outbound_cents_per_hour: int | None = Field(default=None, ge=0)
 
     # Service `voice`, the own voice layer (docs/20 §7). It serves the tenant of
     # `tenant_name`. The telephone system presents the token as the password of Basic

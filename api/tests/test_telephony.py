@@ -42,8 +42,10 @@ from api.telephony.handler import (
     SAY_OUTAGE_FIRST,
     STILL_THERE,
     CallHandler,
+    call_cost_cents,
     key_terms,
 )
+from api.telephony.speech import SpeechUsage
 from evals.runner import menu_plan
 from scripts.seed import seed
 from sim.scripted_llm import QUESTIONS, ScriptedLLM
@@ -582,7 +584,7 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_dtmf(self, session_id, digits):
             self.events.append(("dtmf", digits))
 
-        def on_call_ended(self, session_id):
+        def on_call_ended(self, session_id, speech=None):
             self.events.append(("end", session_id))
 
     port = FakeTelephony()
@@ -1568,6 +1570,9 @@ def test_a_phone_call_logs_its_model_cost(session, tenant, monkeypatch, caplog):
     the exact tokens in the line "model usage" (#207)."""
     monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
     monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    # The local engines of the workbench cost nothing (T-10.6).
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 0)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
     usage = Usage(
         model="test-model", requests=2, prompt_tokens=18000, completion_tokens=800
     )
@@ -1589,6 +1594,39 @@ def test_a_phone_call_logs_its_model_cost(session, tenant, monkeypatch, caplog):
     assert call.cost_cents == 7
     lines = [r.extra for r in caplog.records if r.getMessage() == "model usage"]
     assert lines == [{"call_id": str(call.id), **asdict(usage), "cost_cents": 7}]
+
+
+PRICED = Usage(model="m", requests=1, prompt_tokens=10_000, completion_tokens=0)
+
+
+@pytest.mark.parametrize(
+    ("ear", "mouth", "outbound", "speech", "transferred", "cents"),
+    [
+        # 3 cents of model, 60 s of audio at 36 cents an hour (0.6), 2,000
+        # characters at 1,600 cents a million (3.2): 3 + ceil(3.8) = 7.
+        (36, 1600, 0, SpeechUsage(60.0, 2000), False, 7),
+        (0, 0, 0, SpeechUsage(60.0, 2000), True, 3),
+        # Unknown is never 0: a price or the measurement missing, or a priced
+        # transfer leg whose length the line does not report.
+        (None, 0, 0, SpeechUsage(60.0, 2000), False, None),
+        (0, None, 0, SpeechUsage(60.0, 2000), False, None),
+        (0, 0, 0, None, False, None),
+        (0, 0, 90, SpeechUsage(60.0, 2000), True, None),
+        (0, 0, None, SpeechUsage(60.0, 2000), True, None),
+        (0, 0, 90, SpeechUsage(60.0, 2000), False, 3),
+    ],
+)
+def test_the_cost_of_a_phone_call(
+    monkeypatch, ear, mouth, outbound, speech, transferred, cents
+):
+    """T-10.6: model, ear and mouth on the call log, in integer cents."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", ear)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", mouth)
+    monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", outbound)
+
+    assert call_cost_cents(PRICED, speech, transferred=transferred) == cents
 
 
 def test_a_phone_call_on_the_stand_in_logs_no_model(session, tenant, caplog):
@@ -1616,9 +1654,9 @@ def test_a_failure_in_the_gap_before_the_log_is_written_leaves_nothing_behind(
     handler.on_user_turn("s-1", WISH)
     finish = handler._finish
 
-    def failure_in_the_gap(live, outcome=None):
+    def failure_in_the_gap(live, outcome=None, **kwargs):
         handler._fail("s-1", live)  # the other thread
-        finish(live, outcome)
+        finish(live, outcome, **kwargs)
 
     monkeypatch.setattr(handler, "_finish", failure_in_the_gap)
     handler.on_call_ended("s-1")

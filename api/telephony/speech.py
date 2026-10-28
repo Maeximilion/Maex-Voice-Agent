@@ -52,6 +52,16 @@ class Heard:
     speech: bool = True
 
 
+@dataclass(frozen=True)
+class SpeechUsage:
+    """What one call cost the ear and the mouth: the seconds of audio fed to
+    the ear (a streaming service bills what it was sent) and the characters
+    given to the mouth (T-10.6)."""
+
+    heard_seconds: float = 0.0
+    spoken_characters: int = 0
+
+
 class Ear(Protocol):
     def open(self, sink: Callable[[Heard], None]) -> None:
         """Start listening for one call. Everything heard goes to `sink`, from
