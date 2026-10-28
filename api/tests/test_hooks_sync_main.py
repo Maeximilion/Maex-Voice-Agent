@@ -39,11 +39,14 @@ def repos(tmp_path, request):
     # a file, and there is none unless a test writes it. The real gh must never be
     # asked about a throwaway repository. A file next to it named `.fails` makes the
     # stand-in exit like a gh that is signed out; what it was asked lands in `.asked`.
+    # A shell script in `.meanwhile` runs while GitHub "thinks", as another session
+    # or a hand in the terminal could act during the real call.
     merged_heads = tmp_path / "merged_heads"
     fake_gh = tmp_path / "bin" / "gh"
     fake_gh.parent.mkdir()
     fake_gh.write_text(
         '#!/bin/sh\necho "$*" > "$FAKE_GH_MERGED.asked"\n'
+        '[ -e "$FAKE_GH_MERGED.meanwhile" ] && sh "$FAKE_GH_MERGED.meanwhile"\n'
         '[ -e "$FAKE_GH_MERGED.fails" ] && exit 4\n'
         'cat "$FAKE_GH_MERGED" 2>/dev/null\nexit 0\n',
         encoding="utf-8",
@@ -465,3 +468,121 @@ def test_a_conflicting_branch_is_not_taken_for_merged(repos):
     assert repos.run_hook() == ""
     assert repos.git(repos.main_checkout, "branch", "--show-current") == "deleter"
     assert not (repos.main_checkout / "tracked.txt").exists()
+
+
+def meanwhile(repos, folder: Path, *git_args: str) -> None:
+    """While the hook waits on GitHub, a git command runs in `folder`."""
+    args = " ".join(f"'{a}'" for a in git_args)
+    Path(f"{repos.merged_heads}.meanwhile").write_text(
+        f"git -C '{folder.as_posix()}' {args}\n", encoding="utf-8"
+    )
+
+
+def ignore_locally(repos, name: str, text: str) -> Path:
+    """An ignored file of the main folder, the way a local .env sits there."""
+    exclude = repos.main_checkout / ".git" / "info" / "exclude"
+    exclude.parent.mkdir(exist_ok=True)
+    with exclude.open("a", encoding="utf-8") as f:
+        f.write(f"{name}\n")
+    local = repos.main_checkout / name
+    local.write_text(text, encoding="utf-8")
+    return local
+
+
+def track_on_origin(repos, *names: str) -> None:
+    upstream = repos.tmp_path / "upstream"
+    repos.git(upstream, "pull", "-q", "origin", "main")
+    for name in names:
+        (upstream / name).write_text("from origin\n", encoding="utf-8")
+    repos.git(upstream, "add", *names)
+    repos.git(upstream, "commit", "-q", "-m", "tracked")
+    repos.git(upstream, "push", "-q", "origin", "main")
+
+
+def test_a_main_folder_switched_while_github_answers_stays_on_the_new_branch(repos):
+    # Audit of 15.10.2026: the branch was read before the GitHub call and the switch to
+    # main came after it, so a branch started in between was left again.
+    repos.finish_branch("squashed", squash=True)
+    repos.change_on_origin("squashed.txt")
+    tip = repos.git(repos.main_checkout, "rev-parse", "squashed")
+    repos.merged_heads.write_text(f"{tip}\n", encoding="utf-8")
+    meanwhile(repos, repos.main_checkout, "switch", "-q", "-c", "ongoing")
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "ongoing"
+
+
+def test_a_file_written_while_github_answers_keeps_the_folder_on_its_branch(repos):
+    repos.finish_branch("squashed", squash=True)
+    repos.change_on_origin("squashed.txt")
+    tip = repos.git(repos.main_checkout, "rev-parse", "squashed")
+    repos.merged_heads.write_text(f"{tip}\n", encoding="utf-8")
+    note = repos.main_checkout / "note.txt"
+    Path(f"{repos.merged_heads}.meanwhile").write_text(
+        f"echo mine > '{note.as_posix()}'\n", encoding="utf-8"
+    )
+
+    repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "squashed"
+    assert note.read_text(encoding="utf-8") == "mine\n"
+
+
+def test_a_main_folder_that_leaves_main_while_github_answers_is_not_merged_into(repos):
+    # Audit of 15.10.2026: the folder that had main was found before the GitHub call
+    # and fast-forwarded after it, whatever branch it was on by then.
+    repos.finish_branch("squashed", squash=True)
+    repos.change_on_origin("squashed.txt")
+    elsewhere = repos.tmp_path / "main_elsewhere"
+    repos.git(repos.main_checkout, "worktree", "add", "-q", str(elsewhere), "main")
+    before = repos.git(elsewhere, "rev-parse", "HEAD")
+    meanwhile(repos, elsewhere, "switch", "-q", "-c", "newtask")
+
+    repos.run_hook()
+
+    assert repos.git(elsewhere, "branch", "--show-current") == "newtask"
+    assert repos.git(elsewhere, "rev-parse", "newtask") == before
+    # main is checked out nowhere now and still moves to origin's.
+    assert repos.commits_behind() == 0
+
+
+def test_an_ignored_file_that_origin_starts_tracking_is_not_overwritten(repos):
+    # Audit of 15.10.2026: git takes ignored files as expendable, so a fast-forward
+    # that brings a tracked .env replaced the local one without a word.
+    local = ignore_locally(repos, ".env", "local secret\n")
+    track_on_origin(repos, ".env")
+
+    output = repos.run_hook()
+
+    assert local.read_text(encoding="utf-8") == "local secret\n"
+    assert "would overwrite the ignored files .env" in output
+    assert "local secret" not in output
+    assert repos.commits_behind() == 1
+
+
+def test_an_ignored_file_is_kept_when_origin_also_adds_a_new_file_after_it(repos):
+    # Codex PR #411: the scan's status was that of its last path, so a new file sorted
+    # after .env made it fail and the warning was skipped.
+    local = ignore_locally(repos, ".env", "local secret\n")
+    track_on_origin(repos, ".env", "znew.txt")
+
+    output = repos.run_hook()
+
+    assert local.read_text(encoding="utf-8") == "local secret\n"
+    assert "would overwrite the ignored files .env" in output
+    assert "znew.txt" not in output
+
+
+def test_the_switch_back_to_main_does_not_overwrite_an_ignored_file(repos):
+    repos.finish_branch("finished")
+    track_on_origin(repos, ".env")
+    repos.git(repos.main_checkout, "fetch", "-q", "origin")
+    repos.git(repos.main_checkout, "branch", "-f", "main", "origin/main")
+    local = ignore_locally(repos, ".env", "local secret\n")
+
+    output = repos.run_hook()
+
+    assert repos.git(repos.main_checkout, "branch", "--show-current") == "finished"
+    assert local.read_text(encoding="utf-8") == "local secret\n"
+    assert "would overwrite the ignored files .env" in output
