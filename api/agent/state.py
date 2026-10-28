@@ -169,8 +169,8 @@ class ConversationState(BaseModel):
     # a dish. A later "Ist das wirklich sicher?" asks beyond the maintained
     # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
     allergy_talk: bool = False
-    # How often the core asked "Wogegen?" while an allergy stayed open
-    # (`allergies.asked_out`, #207). Never sent.
+    # Answers to "Wogegen?" that left the allergy open since the last one
+    # that filled one (`allergies.asked_out`, #207). Never sent.
     which_asks: int = 0
     # The card the core wrote for a handover the team takes live, for the
     # phone line to use when nobody answers the team leg

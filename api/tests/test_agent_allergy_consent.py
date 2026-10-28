@@ -28,7 +28,11 @@ from api.agent.loop import (
     SAY_CALLBACK_NUMBER,
     SAY_HUMAN_ANSWER,
     SAY_NOT_A_PERSON,
+    SAY_ORDER_NOT_PLACED,
+    SAY_TABLE_NOT_BOOKED,
     SUMMARY_KITCHEN_NOTE,
+    SUMMARY_OPEN_ORDER,
+    SUMMARY_OPEN_TABLE,
     ConversationLoop,
 )
 from api.agent.state import Allergy, ConversationState, apply_tool_result
@@ -1260,11 +1264,40 @@ def test_wogegen_unanswered_twice_goes_to_the_team(session, state):
 
     said = turn(session, state, "Keine Ahnung.", LLMTurn(tool_call=table()))
 
-    assert said == [SAY_CALLBACK_NUMBER]
-    assert state.callback_waits is not None
-    assert state.callback_waits.startswith(SUMMARY_KITCHEN_NOTE)
-    assert "Allergie" not in state.callback_waits
+    assert said == [SAY_TABLE_NOT_BOOKED, SAY_CALLBACK_NUMBER]
+    assert state.callback_waits == (
+        f"{SUMMARY_KITCHEN_NOTE} {SUMMARY_OPEN_TABLE} 4 Personen, "
+        "16.09.2026 19:00 Uhr, Name Müller."
+    )
+    assert state.held_call is None
     assert reservations(session) == []
+
+
+def test_an_answer_that_fills_an_allergy_starts_the_count_again(session, state):
+    """Review of #207: the count ran over the whole call, so a guest who
+    answered every question was handed over at the third."""
+    said = turn(
+        session,
+        state,
+        f"{TABLE}. Ich habe eine Allergie. Meine Frau hat auch eine Allergie.",
+        LLMTurn(tool_call=table()),
+    )
+    assert allergies.asked_which(said[-1])
+    for answer in ("Erdnuss.", "Sesam."):
+        said = turn(session, state, answer, LLMTurn(tool_call=table()))
+        assert state.which_asks == 0
+    assert state.callback_waits is None
+    assert state.held_call is not None
+
+
+def test_a_question_put_in_between_costs_no_answer(session, state):
+    """Review of #207: "Sind Sie noch da?" from the phone line, answered
+    with a bare yes, puts "Wogegen?" again and is no answer to it."""
+    turn(session, state, f"{TABLE}, ich habe eine Allergie", LLMTurn(tool_call=table()))
+    for _ in range(3):
+        guards.note_said(state, "Sind Sie noch da?")
+        assert turn(session, state, "Ja.") == [SAY_ALLERGY_WHICH]
+    assert state.which_asks == 0
 
 
 def test_an_answered_wogegen_starts_the_count_again(session, state):
@@ -1290,9 +1323,9 @@ def test_many_allergies_share_one_notice(state):
 
     assert call.args["note"] == (
         "WICHTIG: Keine Erdnuss, Sesam, Senf, Sellerie, Lupine und Haselnuss. "
-        "Grund: Allergie"
+        "Grund: Allergie. Bitte klingeln"
     )
-    assert allergies.fits(state, call)
+    assert allergies.fits(call, call)
 
 
 def test_many_allergies_without_consent_share_one_ohne(state):
@@ -1305,7 +1338,7 @@ def test_many_allergies_without_consent_share_one_ohne(state):
     assert note.startswith("ohne Erdnusskerne, Sesamkerne, ")
     assert note.endswith(" und Paranusskerne")
     assert note.count("ohne") == 1
-    assert allergies.fits(state, call)
+    assert allergies.fits(call, call)
 
 
 def test_a_note_that_never_fits_goes_to_the_team(session, state):
@@ -1319,7 +1352,51 @@ def test_a_note_that_never_fits_goes_to_the_team(session, state):
 
     said = turn(session, state, TABLE, LLMTurn(tool_call=table()))
 
-    assert said == [SAY_CALLBACK_NUMBER]
+    assert said == [SAY_TABLE_NOT_BOOKED, SAY_CALLBACK_NUMBER]
     assert state.callback_waits is not None
     assert state.callback_waits.startswith(SUMMARY_KITCHEN_NOTE)
     assert reservations(session) == []
+
+
+def test_a_long_note_of_the_model_is_left_to_the_validation(state):
+    """Review of #207: only notes the core wrote decide a handover. A note
+    the model wrote too long on a line without an allergy stays its own."""
+    state.allergies = [Allergy(ingredient="Erdnuss", own=True, item="a")]
+    state.allergy_consent = "yes"
+    written = ToolCall(
+        "draft_order",
+        {
+            "items": [
+                {"menu_item_id": "a", "quantity": 1},
+                {"menu_item_id": "b", "quantity": 1, "note": "x" * 250},
+            ]
+        },
+    )
+
+    assert allergies.fits(allergies.noted_call(state, written), written)
+
+
+def test_the_model_s_part_stays_next_to_a_shared_notice(state):
+    state.allergies = [Allergy(ingredient=i, own=True) for i in INGREDIENTS]
+    state.allergy_consent = "yes"
+    call = allergies.noted_call(
+        state, ToolCall("draft_order", {"items": [], "note": "Bitte klingeln"})
+    )
+
+    assert call.args["note"].endswith(". Bitte klingeln")
+
+
+def test_an_order_not_yet_in_the_cart_goes_onto_the_card(session, state):
+    """Review of #207: a draft the model sent without a cart was neither on
+    the card nor named to the guest when its allergy went to the team."""
+    loop = ConversationLoop(session, FakeLLM([]), "system", now=NOW)
+    draft = ToolCall(
+        "draft_order",
+        {"items": [{"menu_item_id": str(uuid.uuid4()), "quantity": 2}]},
+    )
+
+    result = loop._note_to_team(state, draft)
+
+    assert result.say == [SAY_ORDER_NOT_PLACED, SAY_CALLBACK_NUMBER]
+    assert state.callback_waits is not None
+    assert f"{SUMMARY_OPEN_ORDER} " in state.callback_waits

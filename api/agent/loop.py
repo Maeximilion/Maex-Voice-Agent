@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, tzinfo
 from typing import Any, get_args
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,6 +34,7 @@ from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
+    cart_lines,
     draft_replaced,
     note_guest_details,
     note_intent,
@@ -123,8 +125,7 @@ SUMMARY_ALLERGENS = (
 # The card when the guest's allergy could not be noted: "Wogegen?" stayed
 # unanswered, or too many for one note (#207). It never names the allergy (L13).
 SUMMARY_KITCHEN_NOTE = (
-    "Hinweis für die Küche nicht vollständig aufgenommen, vor einer Bestellung "
-    "zu klären."
+    "Hinweis für die Küche nicht vollständig aufgenommen, mit dem Gast zu klären."
 )
 # How a card names a booking made earlier in the call (`_handoff_summary`).
 _BOOKED = " Bereits gebucht: "
@@ -292,9 +293,10 @@ class ConversationLoop:
                 user_text if rest is None else rest
             ):
                 if allergies.asked_out(state, question):
-                    handed = self._allergens_to_team(
-                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
+                    held_call = ToolCall(
+                        state.held_call["name"], state.held_call["args"]
                     )
+                    handed = self._note_to_team(state, held_call)
                     if asks:
                         handed.say.insert(0, SAY_NOT_A_PERSON)
                     return handed
@@ -502,9 +504,7 @@ class ConversationLoop:
             )
             if refused is None and question is not None:
                 if allergies.asked_out(state, question):
-                    return self._allergens_to_team(
-                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
-                    )
+                    return self._note_to_team(state, turn.tool_call)
                 # The core asks what the allergy note still lacks before
                 # anything is stored, and the draft waits for the answer
                 # (`_held_answered`).
@@ -531,10 +531,8 @@ class ConversationLoop:
                 call = _card_without_allergy(
                     state, allergies.noted_call(state, turn.tool_call)
                 )
-                if not allergies.fits(state, call):
-                    return self._allergens_to_team(
-                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
-                    )
+                if not allergies.fits(call, turn.tool_call):
+                    return self._note_to_team(state, turn.tool_call)
                 result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if (
@@ -856,6 +854,23 @@ class ConversationLoop:
             guards.note_said(state, " ".join(handed.say))
         return handed
 
+    def _note_to_team(self, state: ConversationState, call: ToolCall) -> TurnResult:
+        """The guest's allergy cannot go onto the draft `call` (#207): the
+        team takes the call, with the order or the table the draft asked for
+        on the card, and the guest hears that it is not booked. Nothing is
+        stored."""
+        state.held_call = None
+        table = None
+        if call.name == "create_reservation":
+            with suppress(ValueError, TypeError):
+                table = self._table_parts(state, call.args)
+        elif not state.cart:
+            with suppress(ValidationError):
+                state.cart = cart_lines(call.args.get("items"))
+        return self._allergens_to_team(
+            state, lead=None, table=table, card=SUMMARY_KITCHEN_NOTE
+        )
+
     def _open_table(self, state: ConversationState) -> str | None:
         """The table read back and not yet confirmed, as the team reads it on
         a card: party size, time in the restaurant's clock, the name."""
@@ -901,7 +916,11 @@ class ConversationLoop:
         return result
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
-        """The wish as the team reads it on the card. Party size and time are
+        """The wish as the team reads it on the card (`_table_parts`)."""
+        return f"{SUMMARY_TEAM_TABLE} {self._table_parts(state, args)}."
+
+    def _table_parts(self, state: ConversationState, args: dict[str, Any]) -> str:
+        """Party size, time and name of a table wish. Party size and time are
         read the way the tool read them (`CheckSlotRequest`), not from the raw
         arguments: a time a model wrote as seconds since 1970 or in another
         zone is shown as the restaurant's clock shows it. A name only when the
@@ -924,7 +943,7 @@ class ConversationLoop:
         parts = [f"{wish.party_size} Personen", f"{when:%d.%m.%Y %H:%M} Uhr"]
         if name:
             parts.append(f"Name {name}")
-        return f"{SUMMARY_TEAM_TABLE} {', '.join(parts)}."
+        return ", ".join(parts)
 
     def _handoff(
         self,
