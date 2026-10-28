@@ -195,3 +195,14 @@ def test_numbers_and_dish_names_of_a_line_are_judged():
     # Two positions in one sentence: the case judges them, not the number rule.
     assert "number" not in recognition("Zweimal die 23 und die 24.", "")
     assert recognition("Huhn bitte.", "Huhn bitte.") == {}
+
+
+def test_the_answer_is_a_yes_the_ear_heard_as_one():
+    heard = {
+        "Ja.": {"heard": None},
+        "Ja, passt so.": {"heard": "Der Passo."},
+        "Ja, genau.": {"heard": "Ja, genau."},
+        "Zweimal die 23.": {"heard": "Zweimal die 23."},
+    }
+    assert voice.answer_line(heard) == "Ja, genau."
+    assert voice.answer_line({"Ja.": {"heard": None}}) is None

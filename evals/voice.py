@@ -71,11 +71,21 @@ INSIDE, AFTER = 0.4, 1.0
 # with a final, a silent line reports nothing).
 NO_SPEECH_WAIT = 2.0
 NOISE_SECONDS = 3.0
-# The caller's answer to the read-back. Not a bare "Ja": in the caller's voice
-# it lasts 0.2 s, under the ear's 256 ms of speech, and is no utterance at all
-# (`adapters/stt_whisper.py`), so neither the check nor its control would say
-# anything (measured 29.10.2026).
-ANSWER = "Ja, passt so."
+
+
+def answer_line(heard: dict[str, dict[str, Any]]) -> str | None:
+    """The caller's answer to the read-back: the longest yes of the cases that
+    the ear heard as a yes on its own (part 1). So the check depends on the
+    session, not on whether the ear understands one fixed sentence: a bare
+    "Ja" lasts 0.2 s in the caller's voice, under the ear's 256 ms of speech,
+    and is no utterance at all (`adapters/stt_whisper.py`, 29.10.2026)."""
+    yeses = [
+        said
+        for said, row in heard.items()
+        if is_yes(said) and is_yes(row["heard"] or "")
+    ]
+    return max(yeses, key=len, default=None)
+
 
 # What a caller line turns into on the phone: the text the ear heard, or None
 # when it heard no speech and no turn begins.
@@ -517,6 +527,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cases", type=Path, default=CASES)
     parser.add_argument("--model", default="scripted")
     parser.add_argument("--limit", type=int, help="only the first N cases: a trial")
+    parser.add_argument(
+        "--voice", default=CALLER_VOICE, help="the caller's Piper voice in the kit"
+    )
     args = parser.parse_args(argv)
 
     from piper import PiperVoice
@@ -533,7 +546,7 @@ def main(argv: list[str] | None = None) -> int:
     make_ear = voice_app._whisper(watchdog)
     mouth = voice_app._piper(watchdog)()
     caller = PiperMouth(
-        Steady(PiperVoice.load(models / "piper" / f"{CALLER_VOICE}.onnx"))
+        Steady(PiperVoice.load(models / "piper" / f"{args.voice}.onnx"))
     )
 
     cases = load_cases(args.cases, [])[: args.limit]
@@ -571,15 +584,25 @@ def main(argv: list[str] | None = None) -> int:
         else None
     )
     print("a yes inside the read-back", flush=True)
-    yes, _ = pcm(caller, ANSWER)
+    answer = answer_line(heard)
     readbacks = [c.readback for c in voice_report.cases if c.readback]
-    checks = readback_checks(readbacks, telephone_line(yes), make_ear, mouth)
+    checks = []
+    if answer is not None:
+        yes, _ = pcm(caller, answer)
+        checks = readback_checks(readbacks, telephone_line(yes), make_ear, mouth)
 
     summary = summarize(
         heard, text_report, voice_report, noise_report, noise, checks, core_seconds
     )
     run_dir.mkdir(parents=True, exist_ok=True)
-    out = {"model": args.model, "summary": summary, "heard": heard, "readbacks": checks}
+    out = {
+        "model": args.model,
+        "voice": args.voice,
+        "answer": answer,
+        "summary": summary,
+        "heard": heard,
+        "readbacks": checks,
+    }
     (run_dir / "voice.json").write_text(
         json.dumps(out, ensure_ascii=False, indent=2), encoding="utf-8"
     )
