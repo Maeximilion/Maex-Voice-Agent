@@ -73,7 +73,7 @@ def test_a_yes_inside_the_read_back_never_reaches_the_core():
 
 def test_the_same_yes_after_the_read_back_is_the_callers_answer():
     """The control: without it the check above would pass on a deaf session."""
-    assert answer_to_readback(READBACK, YES, 0.3, EnergyEar(), LoudMouth()) == ["Ja"]
+    assert answer_to_readback(READBACK, YES, 1.0, EnergyEar(), LoudMouth()) == ["Ja"]
 
 
 def test_the_case_is_played_as_the_ear_heard_it(migrated_db_url, tmp_path):
@@ -120,6 +120,40 @@ def test_noise_heard_as_a_yes_is_a_confirm_after_noise(migrated_db_url, tmp_path
     summary = voice.summarize({}, report, report, report, "Ja.", [], None)
     assert summary["hard"]["confirm_after_noise"] == 1
     assert not summary["passed"]
+
+
+def test_a_deaf_ear_never_passes(migrated_db_url, tmp_path):
+    """Nothing heard: no read-back to check and no noise variant that got to
+    one, so both hard checks would be 0 for having checked nothing."""
+    report = run(
+        cases=noise_cases([_case()]),
+        db_url=migrated_db_url,
+        report_dir=tmp_path,
+        hear=lambda line: None,
+    )
+    summary = voice.summarize({}, report, report, report, None, [], None)
+    assert not any(summary["hard"].values())
+    assert summary["noise_reached_readback"] == "0/1"
+    assert not summary["passed"]
+
+
+def test_only_the_confirming_yes_becomes_noise():
+    """An earlier yes (a consent) stays, or the call never gets to the
+    read-back whose answer the noise stands for."""
+    case = _case()
+    case["transcript"].insert(1, {"role": "customer", "text": "Ja, genau."})
+    [variant] = noise_cases([case])
+    texts = [t["text"] for t in variant["transcript"]]
+    assert texts.count(voice.NOISE) == 1 and texts[-1] == voice.NOISE
+    assert "Ja, genau." in texts
+
+
+def test_a_noise_variant_sends_no_second_confirm():
+    """Without a first confirm the runner would call a missing second one red,
+    and the summary would count a confirm after noise that never was."""
+    repeated = {**_case(), "repeat_confirm": True}
+    [variant] = noise_cases([repeated])
+    assert "repeat_confirm" not in variant
 
 
 def test_only_cases_that_end_confirmed_get_a_noise_variant():

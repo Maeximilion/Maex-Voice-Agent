@@ -25,8 +25,9 @@ three parts:
    and the caller's "Ja" ends inside it; the session must not hand it to the
    core. The same "Ja" after the read-back is the control and must arrive.
 
-Latency by stage: the mouth to its first audio, the ear after the end of the
-audio, the core per turn. The silence that ends a turn is the ear's own (704 ms,
+Latency by stage: the agent's mouth to the first audio of a read-back, the
+ear after the last frame (fed faster than real time, so an upper bound), the
+core per turn with each case's setup (an upper bound). The silence that ends a turn is the ear's own (704 ms,
 `adapters/stt_whisper.py`) and is not measured again. Writes `voice.json` and
 `voice.md` into RUN; the runner's reports of both plays go to RUN/text and
 RUN/voice, never to `evals/reports/`, so a voice run is never a baseline of the
@@ -61,9 +62,14 @@ CALLER_VOICE = "de_DE-kerstin-low"
 PAD_BEFORE, PAD_AFTER = 1.0, 2.0
 # How long the ear may take for a final after the last frame.
 EAR_WAIT = 30.0
-# The caller's "Ja" ends this long before the read-back ends, or begins this
-# long after it.
-INSIDE, AFTER = 0.4, 0.3
+# The caller's answer ends this long before the read-back ends, or this long
+# after it. After: a second, because the voice ends a sentence with silence, so
+# its speech ends before its audio (one of five read-backs missed at 0.3 s).
+INSIDE, AFTER = 0.4, 1.0
+# Without a partial within this long after the last frame the ear found no
+# speech, and no final comes (`Heard`: every utterance a partial announced ends
+# with a final, a silent line reports nothing).
+NO_SPEECH_WAIT = 2.0
 NOISE_SECONDS = 3.0
 # The caller's answer to the read-back. Not a bare "Ja": in the caller's voice
 # it lasts 0.2 s, under the ear's 256 ms of speech, and is no utterance at all
@@ -99,7 +105,10 @@ def hear_audio(ear: Ear, audio: bytes) -> tuple[Heard | None, float]:
         for start in range(0, len(padded), FRAME):
             ear.feed(padded[start : start + FRAME], (start + FRAME) / 2 / SAMPLE_RATE)
         fed = time.monotonic()
-        while not any(h.final for h in heard) and time.monotonic() - fed < EAR_WAIT:
+        while not any(h.final for h in heard):
+            waited = time.monotonic() - fed
+            if waited > EAR_WAIT or (not heard and waited > NO_SPEECH_WAIT):
+                break
             time.sleep(0.01)
         took = time.monotonic() - fed
     finally:
@@ -147,7 +156,7 @@ def hear_lines(
     for said in dict.fromkeys(lines):
         audio, mouth_first = pcm(caller, said)
         final, ear_seconds = hear_audio(make_ear(), telephone_line(audio))
-        text = final.text if final is not None and final.speech else None
+        text = _text(final)
         out[said] = {
             "heard": text,
             "mouth_first_seconds": round(mouth_first, 3),
@@ -156,6 +165,14 @@ def hear_lines(
             **recognition(said, text),
         }
     return out
+
+
+def _text(final: Heard | None) -> str | None:
+    """What becomes a turn: speech with words. No final, noise or an empty
+    transcript is no turn, as in the session."""
+    if final is None or not final.speech:
+        return None
+    return final.text.strip() or None
 
 
 def telephone_line(audio: bytes) -> bytes:
@@ -183,24 +200,40 @@ def line_noise(seconds: float = NOISE_SECONDS, seed: int = 7) -> bytes:
 # --- 3. Hard: noise and the read-back ----------------------------------------------
 
 
+# Stands for the caller's last yes in a noise variant; `hear_with_noise` turns
+# it into what the ear made of line noise.
+NOISE = "\x00line noise"
+
+
 def noise_cases(cases: list[dict]) -> list[dict]:
-    """The cases that end confirmed, to be played with each yes of the caller
-    replaced by line noise (`hear_with_noise`). None of them may end confirmed:
+    """The cases that end confirmed, with the caller's last yes, the one that
+    confirms, replaced by line noise. Earlier yeses (a consent, "genau") stay:
+    without them the call never gets to its read-back. None may end confirmed:
     `expected` is only that."""
     out = []
     for case in cases:
         if not case["expected"].get("confirmed"):
             continue
         variant = copy.deepcopy(case)
+        yeses = [
+            turn
+            for turn in variant["transcript"]
+            if turn.get("role") == "customer" and is_yes(turn.get("text", ""))
+        ]
+        if not yeses:
+            continue
+        yeses[-1]["text"] = NOISE
         variant["id"] = f"{case['id']}+noise"
         variant["expected"] = {"confirmed": False}
+        # A second confirm sent after the call expects a first one.
+        variant.pop("repeat_confirm", None)
         out.append(variant)
     return out
 
 
 def hear_with_noise(hear: Hear, noise: str | None) -> Hear:
     def heard(line: str) -> str | None:
-        return noise if is_yes(line) else hear(line)
+        return noise if line == NOISE else hear(line)
 
     return heard
 
@@ -340,9 +373,17 @@ def readback_checks(
 ) -> list[dict[str, Any]]:
     rows = []
     for readback in dict.fromkeys(readbacks):
+        _, mouth_first = pcm(mouth, readback)
         inside = answer_to_readback(readback, yes, -INSIDE, make_ear(), mouth)
         after = answer_to_readback(readback, yes, AFTER, make_ear(), mouth)
-        rows.append({"readback": readback, "inside": inside, "after": after})
+        rows.append(
+            {
+                "readback": readback,
+                "inside": inside,
+                "after": after,
+                "mouth_first_seconds": round(mouth_first, 3),
+            }
+        )
     return rows
 
 
@@ -365,18 +406,32 @@ def summarize(
     dishes = [v for r in heard.values() for v in r.get("dishes", [])]
     text_ok = {c.id for c in text_report.cases if c.passed}
     voice_ok = {c.id for c in voice_report.cases if c.passed}
-    noise_confirmed = [c.id for c in noise_report.cases if not c.passed]
+    noise_cases_ = noise_report.cases if noise_report else []
+    noise_confirmed = [
+        c.id
+        for c in noise_cases_
+        if c.unconfirmed or any(d.startswith("confirmed:") for d in c.diffs)
+    ]
+    noise_broken = [c.id for c in noise_cases_ if c.error]
+    # A variant that never got to its read-back says nothing about the yes.
+    noise_reached = [c.id for c in noise_cases_ if c.readback]
     inside = [r for r in readbacks if r["inside"]]
     deaf = [r for r in readbacks if not r["after"]]
     hard = {
         "confirm_after_noise": len(noise_confirmed),
+        "noise_cases_broken": len(noise_broken),
         "yes_inside_readback": len(inside),
         "unconfirmed": sum(c.unconfirmed for c in voice_report.cases),
         "guessed_items": sum(c.guessed_items for c in voice_report.cases),
     }
     return {
         "hard": hard,
-        "passed": not any(hard.values()) and not deaf,
+        # Both checks must have had something to check: a deaf ear leaves no
+        # read-back and no noise variant that got to one (review T-10.7).
+        "passed": not any(hard.values())
+        and not deaf
+        and bool(readbacks)
+        and bool(noise_reached),
         "cases": {
             "text": f"{len(text_ok)}/{len(text_report.cases)}",
             "voice": f"{len(voice_ok)}/{len(voice_report.cases)}",
@@ -388,16 +443,21 @@ def summarize(
         "no_speech": [s for s, r in heard.items() if r["heard"] is None],
         "noise_heard_as": noise,
         "noise_confirmed": noise_confirmed,
+        "noise_reached_readback": f"{len(noise_reached)}/{len(noise_cases_)}",
         "readback": {
             "checked": len(readbacks),
             "inside_taken": [r["readback"] for r in inside],
             "control_missing": [r["readback"] for r in deaf],
         },
         "latency_seconds": {
-            "mouth_first_median": _median(heard, "mouth_first_seconds"),
+            "agent_mouth_first_median": _median(
+                {r["readback"]: r for r in readbacks}, "mouth_first_seconds"
+            ),
+            "caller_mouth_first_median": _median(heard, "mouth_first_seconds"),
             "ear_after_audio_median": _median(heard, "ear_seconds"),
             "ear_after_audio_max": _max(heard, "ear_seconds"),
-            "core_per_turn_mean": core_seconds,
+            # With the setup of each case (database, menu): an upper bound.
+            "core_per_turn_mean_with_setup": core_seconds,
         },
     }
 
@@ -424,7 +484,8 @@ def markdown(summary: dict[str, Any], model: str) -> str:
         f"- Lost by the ear: {', '.join(s['cases']['lost_by_the_ear']) or 'none'}",
         f"- Numbers: {s['numbers']}; dish names: {s['dishes']}",
         f"- No speech heard in {len(s['no_speech'])} lines",
-        f"- Line noise heard as: {s['noise_heard_as']!r}",
+        f"- Line noise heard as: {s['noise_heard_as']!r}; noise variants that got"
+        f" to their read-back {s['noise_reached_readback']}",
         f"- Read-backs checked: {s['readback']['checked']}, a yes inside taken "
         f"{len(s['readback']['inside_taken'])}, control missing "
         f"{len(s['readback']['control_missing'])}",
@@ -448,7 +509,7 @@ def main(argv: list[str] | None = None) -> int:
 
     models = Path(os.environ.get("SPEECH_MODELS", "/models"))
     voice_app.MODELS = models
-    device = os.environ.get("SPEECH_DEVICE", "cuda")
+    device = os.environ.get("SPEECH_DEVICE", settings.voice_ear_device)
     settings.voice_ear_device = "cpu" if device == "cpu" else "cuda"
     watchdog = voice_app.Watchdog()
     make_ear = voice_app._whisper(watchdog)
@@ -462,7 +523,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     heard = hear_lines(lines, caller, make_ear)
     noise_final, _ = hear_audio(make_ear(), telephone_line(line_noise()))
-    noise = noise_final.text if noise_final is not None and noise_final.speech else None
+    noise = _text(noise_final)
 
     def hear(line: str) -> str | None:
         return heard[line]["heard"]
@@ -478,11 +539,16 @@ def main(argv: list[str] | None = None) -> int:
     turns = sum(c.turns for c in voice_report.cases) or 1
     core_seconds = round((time.monotonic() - started) / turns, 3)
     print("noise for every yes", flush=True)
-    noise_report = run(
-        cases=noise_cases(cases),
-        model=args.model,
-        report_dir=run_dir / "noise",
-        hear=hear_with_noise(hear, noise),
+    variants = noise_cases(cases)
+    noise_report = (
+        run(
+            cases=variants,
+            model=args.model,
+            report_dir=run_dir / "noise",
+            hear=hear_with_noise(hear, noise),
+        )
+        if variants
+        else None
     )
     print("a yes inside the read-back", flush=True)
     yes, _ = pcm(caller, ANSWER)
