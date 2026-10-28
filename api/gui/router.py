@@ -446,7 +446,7 @@ def _order_tap(
         session.rollback()
         logger.info("Bestellung nicht umgestellt: %s", exc.message)
         if exc.code == "conflict":
-            problem = ORDER_FAILED
+            problem = exc.say or ORDER_FAILED
     return _orders_fragment(request, session, tenant, problem)
 
 
@@ -476,6 +476,26 @@ def resend_order_tap(
 ) -> HTMLResponse:
     return _order_tap(
         request, session, lambda t: order_board.resend_order(session, t, order_id)
+    )
+
+
+@router.post(
+    "/bestellungen/{order_id}/in-kasse/{version}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def register_mark_tap(
+    request: Request,
+    order_id: uuid.UUID,
+    version: str,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """ "In Kasse eingegeben" (T-11.6). No question back, like "Passt"."""
+    return _order_tap(
+        request,
+        session,
+        lambda t: order_board.mark_entered(session, t, order_id, version),
     )
 
 

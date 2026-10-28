@@ -76,6 +76,11 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     pickup_code: Mapped[str | None] = mapped_column(Text)
     # Übergabe an Küche/Kasse. Ein Entwurf wird nicht übergeben, deshalb leer.
     handover_state: Mapped[str | None] = mapped_column(Text)
+    # When the team marked it as typed into the register (T-11.6, L18). A
+    # correction clears it: the register holds the old state.
+    register_entered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class OrderItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):

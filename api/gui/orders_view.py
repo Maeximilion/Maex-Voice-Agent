@@ -14,8 +14,8 @@ import uuid
 from dataclasses import dataclass
 
 from api.core.errors import InvalidInput
-from api.core.time import to_local
-from api.domain.ordering.board import BoardOrder
+from api.core.time import business_day, to_local
+from api.domain.ordering.board import MARKABLE, BoardOrder
 from api.domain.ordering.correction import (
     MAX_QUANTITY,
     REASONS,
@@ -83,6 +83,30 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         # erreichbar war; eine rote Karte braucht "Nochmal senden".
         "can_approve": order.status == "confirmed" and order.handover_state != "failed",
         "corrected": REASONS.get(order.corrected) if order.corrected else None,
+        **_register(order, tz_name),
+    }
+
+
+def _register(order: BoardOrder, tz_name: str) -> dict:
+    """Whether the team has typed it into the register (T-11.6, docs/09 §1 L18).
+
+    The mark comes after "Passt": the team types the order in from the slip it
+    releases. Until then the card says so in words, from an earlier business
+    day in red with the day it was taken.
+    """
+    if order.register_entered_at is not None:
+        return {"register": None, "can_mark": False, "register_late": False}
+    if order.register_late:
+        # The business day, as in the daily push: 00:30 belongs to the day before.
+        day = business_day(order.created_at, tz_name).strftime("%d.%m.")
+        register = ("danger", f"Vom {day}, nicht als in der Kasse markiert")
+    else:
+        register = ("warn", "Noch nicht in der Kasse eingegeben")
+    return {
+        "register": register,
+        "can_mark": order.status in MARKABLE,
+        "register_late": order.register_late,
+        "version": order.version,
     }
 
 
