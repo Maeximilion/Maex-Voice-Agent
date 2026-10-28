@@ -1358,6 +1358,34 @@ def test_a_note_that_never_fits_goes_to_the_team(session, state):
     assert reservations(session) == []
 
 
+@pytest.mark.parametrize("between", ["Sind Sie ein Roboter?", "Wie bitte?"])
+def test_a_question_of_the_guest_costs_no_answer(session, state, between):
+    """Codex PR #414: a question of the guest's own after "Wogegen?" counted
+    as an answer that left the allergy open."""
+    turn(session, state, f"{TABLE}, ich habe eine Allergie", LLMTurn(tool_call=table()))
+    turn(session, state, "Weiß ich nicht.", LLMTurn(tool_call=table()))
+
+    turn(session, state, between, LLMTurn(say="Wogegen sind Sie allergisch?"))
+
+    assert state.which_asks == 1
+
+
+def test_a_corrected_draft_goes_onto_the_card(session, state):
+    """Codex PR #414: a correction the model sent without a `cart` reached the
+    card with the quantity of the older cart."""
+    loop = ConversationLoop(session, FakeLLM([]), "system", now=NOW)
+    dish = str(uuid.uuid4())
+    state.seen_items[dish] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": dish, "quantity": 1}]
+    draft = ToolCall("draft_order", {"items": [{"menu_item_id": dish, "quantity": 2}]})
+
+    loop._note_to_team(state, draft)
+
+    assert state.cart == [{"menu_item_id": dish, "quantity": 2}]
+    assert state.callback_waits is not None
+    assert "2x 13 Pho Bo" in state.callback_waits
+
+
 def test_a_long_note_of_the_model_is_left_to_the_validation(state):
     """Review of #207: only notes the core wrote decide a handover. A note
     the model wrote too long on a line without an allergy stays its own."""

@@ -865,7 +865,9 @@ class ConversationLoop:
         if call.name == "create_reservation":
             with suppress(ValueError, TypeError):
                 table = self._table_parts(state, call.args)
-        elif not state.cart:
+        else:
+            # The draft that met the allergy, also a correction the model
+            # sent without a `cart` (Codex PR #414).
             with suppress(ValidationError):
                 state.cart = cart_lines(call.args.get("items"))
         return self._allergens_to_team(
