@@ -11,6 +11,13 @@ are also the test material for the media adapter (T-1.11).
 Plain ASGI and standard library only: the kit on the host imports the plans from
 here without the API's packages. No database, no settings, nothing of a real call.
 The log directory is `PROBE_OUT` (default `/out`).
+
+A call without an extension is one of the product's dialplan (T-10.1 step 2,
+`deploy/asterisk/docker-compose.line.yml`): somebody rang the test number at the
+pilot's router. The probe answers it, plays a short tone, then sends back what
+the caller says, so the caller hears both directions, and hangs up after
+`LINE_SECONDS`. The caller's number is logged masked, and asked how a leg ended
+the probe says "hangup", so a test call never rings the team.
 """
 
 import asyncio
@@ -33,11 +40,12 @@ from api.telephony.adapters.asterisk import (
     MEDIA_START,
     QUEUE_DRAINED,
     ProtocolError,
+    call_of,
     command,
     parse_event,
     sample_rate,
 )
-from api.telephony.audio import dominant, tone, tone_seconds, tone_span
+from api.telephony.audio import dominant, loud_seconds, tone, tone_seconds, tone_span
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,9 @@ PLANS = {
 # What the softphone plays on these extensions, so each call is told apart. On
 # 610 its start is the mark that puts the recording and this log on one clock.
 CALLER_TONES = {"601": 1000, "602": 1200, "603": 1400, "610": 1000}
+# A call of the product's dialplan: a tone to say it is us, then the echo.
+LINE_PLAN = Plan(440, 1)
+LINE_SECONDS = 60
 # The key that stops the playback, as a caller speaking over a sentence would.
 STOP_KEY = "5"
 
@@ -66,6 +77,19 @@ STOP_KEY = "5"
 _KEEP_SECONDS = 60
 # What the media channel is dialed with; other rates are made when they turn up.
 _DIALED_RATE = 16000
+
+
+# Connections open right now: two at once is a point of step 2.
+_live = 0
+
+
+def masked(number: str | None) -> str:
+    """Enough of a number to tell its form and which phone it was, no more."""
+    if not number:
+        return "none"
+    if len(number) <= 5:
+        return "x" * len(number)
+    return number[:3] + "x" * (len(number) - 5) + number[-2:]
 
 
 @functools.cache
@@ -82,8 +106,15 @@ def _make_tones() -> None:
 class ProbeCall:
     """One call: takes frames, returns the frames to send, logs both."""
 
-    def __init__(self, exten: str, caller: str | None, out_dir: Path) -> None:
-        self.plan = PLANS.get(exten)
+    def __init__(
+        self, exten: str, caller: str | None, out_dir: Path, live: int = 1
+    ) -> None:
+        self.line = not exten
+        self.plan = LINE_PLAN if self.line else PLANS.get(exten)
+        self._live = live
+        self._answered = False
+        self._hung_up = False
+        self._echoed = 0
         self._started = time.monotonic()
         self._rate = 16000
         self._heard = bytearray()
@@ -106,12 +137,15 @@ class ProbeCall:
         self._write("probe", exten=exten, caller=caller, mono=self._started)
 
     def on_text(self, text: str) -> list[str | bytes]:
-        self._write("in", text=text)
         try:
             event = parse_event(text)
         except ProtocolError as exc:
+            self._write("in", text=text)
             self._write("probe", error=str(exc))
             return []
+        if self.line and event.name == MEDIA_START:
+            return self._sent(self._answer(event, text))
+        self._write("in", text=text)
         if event.name == MEDIA_START:
             return self._sent(self._start(event.data))
         if event.name == DTMF_END:
@@ -137,7 +171,26 @@ class ProbeCall:
             self._frame_starts.append(len(self._heard))
             self._frame_times.append(now)
             self._heard += data
-        return []
+        if not self._answered or self._hung_up:
+            return []
+        if now >= LINE_SECONDS:
+            return self.on_deadline()
+        # Queued behind the tone, so the caller hears themselves about a second late.
+        self._echoed += len(data)
+        return [data]
+
+    def seconds_left(self) -> float | None:
+        """Until a line call is hung up; None while no deadline runs. Also without
+        audio: a caller who puts the call on hold sends none."""
+        if not self._answered or self._hung_up:
+            return None
+        return max(0.0, LINE_SECONDS - self._elapsed())
+
+    def on_deadline(self) -> list[str | bytes]:
+        if not self._answered or self._hung_up:
+            return []
+        self._hung_up = True
+        return self._sent([command("HANGUP")])
 
     def close(self) -> None:
         """Analyse what was heard and end the log. Slow: not for the event loop."""
@@ -173,6 +226,8 @@ class ProbeCall:
             if self._longest_gap is None
             else round(self._longest_gap * 1000, 2),
             digits=self._digits,
+            voice_in_seconds=loud_seconds(heard, self._rate),
+            echoed_seconds=round(self._echoed / (self._rate * 2), 3),
         )
         self._log.close()
 
@@ -184,6 +239,20 @@ class ProbeCall:
             return None
         at = int(span[0] * self._rate) * 2
         return self._frame_times[bisect.bisect_right(self._frame_starts, at) - 1]
+
+    def _answer(self, start: Any, text: str) -> list[str | bytes]:
+        """A call of the product's dialplan: answered, toned, then echoed. The
+        number never reaches the log in full."""
+        caller = None
+        try:
+            caller = call_of(start).caller_id
+        except ProtocolError as exc:
+            self._write("probe", error=str(exc))
+        seen = masked(caller)
+        self._write("in", text=text.replace(caller, seen) if caller else text)
+        self._write("probe", caller_seen=seen, live=self._live)
+        self._answered = True
+        return [command("ANSWER"), *self._start(start.data)]
 
     def _start(self, data: dict[str, Any]) -> list[str | bytes]:
         try:
@@ -223,9 +292,12 @@ class ProbeCall:
 
 
 async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
+    global _live
     if scope["type"] == "http":  # the health check of the Compose service
+        # The product's dialplan asks how our leg ended: never the team for a test.
+        body = b"hangup" if scope["path"].endswith("/ending") else b"ok"
         await send({"type": "http.response.start", "status": 200, "headers": []})
-        await send({"type": "http.response.body", "body": b"ok"})
+        await send({"type": "http.response.body", "body": body})
         return
     if scope["type"] != "websocket":
         return
@@ -244,24 +316,31 @@ async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
         }
     )
     query = parse_qs(scope["query_string"].decode())
+    _live += 1
     call = ProbeCall(
         query.get("exten", [""])[0],
         query.get("caller", [None])[0],
         Path(os.environ.get("PROBE_OUT", "/out")),
+        _live,
     )
     try:
         while True:
-            message = await receive()
-            if message["type"] != "websocket.receive":
-                break
-            if message.get("text") is not None:
-                frames = call.on_text(message["text"])
+            try:
+                message = await asyncio.wait_for(receive(), call.seconds_left())
+            except TimeoutError:
+                frames = call.on_deadline()
             else:
-                frames = call.on_audio(message.get("bytes") or b"")
+                if message["type"] != "websocket.receive":
+                    break
+                if message.get("text") is not None:
+                    frames = call.on_text(message["text"])
+                else:
+                    frames = call.on_audio(message.get("bytes") or b"")
             for frame in frames:
                 key = "text" if isinstance(frame, str) else "bytes"
                 await send({"type": "websocket.send", key: frame})
     finally:
+        _live -= 1
         # In a thread: the analysis would stall the frames of every other call.
         # Shielded: when this task is cancelled (the server shuts down, a test
         # client leaves), a plain wait would cancel the job while it is still

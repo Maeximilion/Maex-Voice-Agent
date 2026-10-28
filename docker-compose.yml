@@ -277,6 +277,8 @@ services:
       TEAM_PHONE: ${TEAM_PHONE:-}
       TRANSFER_TARGETS: ${TRANSFER_TARGETS:-}
       ACCESS_HOST: ${ACCESS_HOST:-}
+      # Other addresses the access sends from (deploy/asterisk/render.sh), may be empty.
+      ACCESS_ALSO: ${ACCESS_ALSO:-}
       ACCESS_USER: ${ACCESS_USER:-}
       ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
     tmpfs:

@@ -87,6 +87,21 @@ A provider-supplied router without a registrar (as at Maxi's home) cannot serve 
 T-10.1 therefore has two steps: first on the workbench alone with a softphone, then against the
 pilot's router.
 
+**How the workbench reaches the router (T-10.1 step 2, 28.10.2026).** The router sends a call to
+the Contact the telephone registered, not to the address its registration came from. Behind the
+address translation of Docker Desktop, WSL and Windows that call never arrived, only the answers to
+our own requests did (408 in the router's event log, for the container's address and for the one
+the router saw). So the AI telephone has a WireGuard device of its own at the router, a second one
+next to the PC's, and Asterisk shares the network of a container that holds this tunnel
+(`deploy/asterisk/wireguard/up.sh`): the router sees the tunnel address in Contact, Via and SDP and
+reaches it. Only the networks behind the router go through the tunnel, never its DNS or a default
+route. The router names its public address in Via and Contact of a call, also towards a device in
+its tunnel, and the call comes from there: that address is on the ACL through `ACCESS_ALSO` (the
+router's MyFRITZ name), and answers to it go through the tunnel, the tunnel's own packets around
+it. Both are looked up once at the start, so a new public address of the router needs a restart.
+The PC's own WireGuard connection plays no part. The tunnel container exists only in the
+workbench's file `deploy/asterisk/docker-compose.line.yml` for now (§12).
+
 ---
 
 ## 4. Call session rules
@@ -313,10 +328,11 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
 | `voice` is stopped while the team telephone rings unanswered | no card, the caller hears to call again, from the file |
 | The files Asterisk plays | hold the code's two sentences |
 
-Numbers per run: §11. **Open for the access of T-10.1 step 2 and T-10.12:** the ACL and `match` hold
-the addresses of `ACCESS_HOST` and its SRV targets only. A VPN that rewrites the router's address,
-or a trunk whose calls come from other addresses than these, needs those addresses too; the drill
-"stranger" shows whether a call from an address not on the list is refused.
+Numbers per run: §11. **The access's addresses:** the ACL and `match` hold the addresses of
+`ACCESS_HOST`, its SRV targets and the names or addresses in `ACCESS_ALSO`. The pilot's router
+needs the last: it calls from its public address, also through its VPN (T-10.1 step 2, §3). A trunk
+whose calls come from other addresses than its SRV targets (T-10.12) needs them there too; the
+drill "stranger" shows whether a call from an address not on the list is refused.
 
 ---
 
@@ -608,6 +624,37 @@ What the media adapter (T-1.11) and the outage spike (T-10.2) can build on, all 
   judgement itself uses the probe's monotonic clock and the samples in the recording. For operation
   it means the server's clock has to be adjusted gradually, not in steps.
 
+### Handover: T-10.1 step 2, the AI telephone at the pilot's router (run 28.10.2026)
+
+| | |
+|---|---|
+| Start folder | the repository folder in the Ubuntu home directory (or a worktree of it), Ubuntu terminal |
+| The one command | `docker compose -f deploy/asterisk/docker-compose.line.yml --env-file ~/Maex-Voice-Agent/.env up -d --build`; the same with `down -v` stops it and removes the probe's logs |
+| Maxi has to have ready | Docker Desktop running. At the router: an IP telephone on the test number (never the main number) with `ACCESS_USER` and `ACCESS_PASSWORD`, `ACCESS_HOST` the router's address in its own network; a second WireGuard device for the AI telephone, its file outside the repository and named by `ACCESS_WIREGUARD_CONF`; the router's MyFRITZ name in `ACCESS_ALSO`. A telephone to call the test number from; a mobile shows the caller number |
+| What the result looks like | `pjsip show registrations` in the Asterisk container says `Registered` within about 8 s. A call hears a short tone, then its own voice about a second late, and is hung up after a minute. The probe's log per call (`/out` in `voice`, a tmpfs) holds the caller number masked, the frames, the keys and the seconds above its loudness floor |
+
+It is the product's Asterisk with its own configuration (`extends` of the main Compose file) and the
+probe of step 1 where `voice` stands. The probe answers a call without an extension, plays a tone,
+echoes what it hears and hangs up after `LINE_SECONDS`, and it answers the dialplan's question at
+the end with `hangup`, so a test call never rings the team.
+
+What the run of 28.10.2026 showed, for T-10.2 and the trunk:
+
+- A WireGuard peer of the router may register as an IP telephone, and calls reach it (§3). The
+  registration holds for 300 s and is renewed through the tunnel.
+- The caller number of a mobile arrives in national form (`017...`, not E.164); the core has to
+  normalise it as it does every number.
+- Keys arrive as `DTMF_END` over the router as on the workbench.
+- The probe counts 20 ms windows whose peak passes about -34 dBFS. Maxi's quiet but normal speech
+  over the mobile network and the router came to 3.6 s of a 28 s call, while every frame arrived
+  and he heard his own echo. The figure is a rough level, not speaking time; the thresholds of the
+  ear and the turn detector are set on real line levels in T-10.7.
+
+What step 2 does not answer yet: two calls at once over the router (no second telephone at hand on
+28.10.2026; three at once passed in step 1 on our side, and the router allows two per IP telephone
+by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
+(T-10.2).
+
 ### Handover: T-1.11, outage drills of the AI telephone (run 14.10.2026)
 
 | | |
@@ -710,6 +757,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 20.10.2026 | T-10.13 after the ultrareview of PR #340 | `python3 -m scripts.voice_drill` on the workbench with the SRV lookup, the cleaned list (given loosely, with `TEAM_PHONE` in its national form), `r` on the team legs and the stricter points: 20 of 20. The stranger's INVITE `403`; a number off the list refused by the dialplan, the team at `TEAM_PHONE` after 0.2 s; a busy listed number tried first, then `TEAM_PHONE`. `voice` down 4.0 s, frozen 4.2 s, frozen mid-call 5.9 s, database down 3.9 s, crash 0.4 s. `render.sh` in the image against real DNS: a SIP trunk provider's registrar name without an A record gives the six addresses of its three SRV targets | go |
 | 20.10.2026 | T-10.8 | `python3 -m scripts.voice_drill` on the workbench, with the router stand-in's team telephone busy (`TEAM_AWAY=busy`) or ringing past the 30 s (`ring`), the opening hours open around the clock for the drill (a special day) | **26 of 26 points.** Busy team after the core handed the call over (keys, model down): the team rang after 4.3 s, `voice` answered the report `noted`, one card under the caller's number, the call's outcome `callback`, the caller heard `missed_noted` (`PLAYBACKSTATUS` SUCCESS); the busy answer came while our leg's log could still be written. Paused line: a card, nothing played, the caller's leg never answered (BUSY). `voice` stopped while the team rang: no answer to the report, no card, the caller heard `missed_later` from the file, the call over 33.2 s after it was placed (36.7 s on the run after the review fixes, also 26 of 26). The files Asterisk plays hold the code's two sentences. The 20 points from before all green again; six new (team missed 3, paused 1, `voice` down 1, the sentences 1) |
 | 21.10.2026 | #252 finding 12 | `python3 -m scripts.voice_drill` on the workbench, the stranger sending a second INVITE from an invented caller's number | **27 of 27 points.** Both INVITEs refused with `403` by the ACL; Asterisk logged `SIP ACL: Rejecting` and `did not pass ACL test` with the sender's address and port, no From URI; the caller's number in no container's output. The 26 points from before green again, the team rang within 0.3 to 8.0 s |
+| 28.10.2026 | T-10.1 step 2 | `deploy/asterisk/docker-compose.line.yml` on the workbench: the product's Asterisk 22 registered at the pilot's router (FRITZ!Box 6591 Cable) as an IP telephone on the test number, through a WireGuard tunnel of its own; the probe in place of `voice`. Maxi called from his mobile, twice | **Go for step 2 except two calls at once, which is open.** Before the tunnel: registered, but every call ended at the router with 408 (the INVITE went to the address translation of Docker and WSL and stopped there), the caller heard "not reachable". With the tunnel: registered in 6 to 8 s, Contact the tunnel address, 300 s. The router sent calls from its public address: refused by the ACL (403) until `ACCESS_ALSO`, the answer sent past the tunnel until it was routed through it. Then both calls were answered with the tone, Maxi heard his echo. Call 1: 27.9 s of audio in, frames every 20.0 ms on average, longest gap 42 ms, caller number arrived (national form). Call 2: 21.2 s, longest gap 129 ms, keys 1 and 2 arrived as `DTMF_END`. Above the probe's floor 3.7 s and 3.6 s (quiet speech, §10). Not measured: two calls at once, delay from mouth to ear, transfer |
 
 ---
 
@@ -725,8 +773,14 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   offers in its network, whether the caller number is passed, what a forwarded minute costs, how
   long a no-answer forward waits; whether one number can be ported while the internet contract
   continues.
-- **Router path:** whether the router lets an IP telephone hand a call to a team telephone; whether a
-  VPN peer may register as an IP telephone; what a second and third caller hear.
+- **Router path:** whether the router lets an IP telephone hand a call to a team telephone; what a
+  second and third caller hear; whether two calls at once reach the AI telephone (T-10.1 step 2,
+  open). A VPN peer may register as an IP telephone and gets calls (28.10.2026, §3).
+- **The tunnel to the router outside the workbench's file (T-10.2):** the WireGuard container
+  exists only in `deploy/asterisk/docker-compose.line.yml`. The outage spike against the router
+  needs it with the product's `voice` as well, and the server of the test phase reaches the router
+  the same way or not at all. Its endpoint and `ACCESS_ALSO` are looked up once, so a new public
+  address of the router breaks the line until a restart.
 - **Legal (D21, answered 20.10.2026, `docs/09_OPERATIONS_LEGAL.md` §1 L6):** live audio streamed
   to a speech service without storage is no recording in the sense of E11, when the service keeps
   audio and transcript only for the request, stores nothing afterwards and does not train on it.

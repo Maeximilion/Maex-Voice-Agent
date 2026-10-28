@@ -150,6 +150,27 @@ if [ -n "$SRV_SERVERS" ]; then
 else
     addresses=$(ipv4 "$ACCESS_HOST")
 fi
+# ACCESS_ALSO: more names or addresses the access sends from, comma-separated,
+# may be empty. A router reached through its own WireGuard tunnel names its
+# public address in a call, not the one we register at (T-10.1 step 2,
+# 28.10.2026). Looked up once here like ACCESS_HOST; one without an IPv4
+# address stops the start.
+if [ -n "${ACCESS_ALSO:-}" ]; then
+    set -f
+    old_ifs=$IFS
+    IFS=,
+    for also in $ACCESS_ALSO; do
+        [ -n "$also" ] || continue
+        found=$(ipv4 "$also")
+        if [ -z "$found" ]; then
+            echo "asterisk does not start: ACCESS_ALSO $also has no IPv4 address" >&2
+            exit 1
+        fi
+        addresses="$addresses$newline$found"
+    done
+    IFS=$old_ifs
+    set +f
+fi
 ACCESS_ADDRESSES=$(printf '%s\n' "$addresses" |
     awk 'NF && !seen[$0]++ { printf "%s%s", sep, $0; sep = "," }')
 if [ -z "$ACCESS_ADDRESSES" ]; then

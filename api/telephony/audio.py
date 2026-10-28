@@ -18,6 +18,8 @@ FLOOR = 0.1
 # A tone counts as heard when it sounds at least this long, whatever surrounds it.
 MIN_TONE_SECONDS = 0.1
 FULL_SCALE = 32768
+# A voice counts from this peak on (about -34 dBFS); the hiss of a quiet line stays below.
+VOICE_FLOOR = 0.02
 
 
 def tone(
@@ -64,6 +66,20 @@ def tone_span(pcm: bytes, freq_hz: int, rate: int) -> tuple[float, float] | None
     if not sounding:
         return None
     return sounding[0] / rate, (sounding[-1] + rate // 50) / rate
+
+
+def loud_seconds(pcm: bytes, rate: int, floor: float = VOICE_FLOOR) -> float:
+    """Seconds of 20 ms windows whose peak reaches `floor` of full scale: a voice
+    on the line, whatever its pitch, where line noise stays below."""
+    samples = _samples(pcm)
+    window = rate // 50
+    peak = floor * FULL_SCALE
+    loud = sum(
+        1
+        for start in range(0, len(samples) - window + 1, window)
+        if max(map(abs, samples[start : start + window])) >= peak
+    )
+    return round(loud * window / rate, 2)
 
 
 def _sounding(pcm: bytes, freq_hz: int, rate: int) -> list[int]:

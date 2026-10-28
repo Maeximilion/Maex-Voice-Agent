@@ -1,0 +1,74 @@
+# T-10.1 step 2 on the workbench (docs/20 §10): the product's Asterisk
+# registered at the pilot's router over the VPN, with the probe of step 1
+# standing where `voice` stands. Somebody rings the test number; the probe
+# answers, plays a tone, sends back what the caller says and hangs up after a
+# minute, and tells the dialplan "hangup", so no test call rings the team.
+#
+#   docker compose -f deploy/asterisk/docker-compose.line.yml --env-file <.env> up -d --build
+#
+# The access (ACCESS_HOST, ACCESS_USER, ACCESS_PASSWORD), VOICE_NUMBER,
+# TEAM_PHONE and VOICE_MEDIA_TOKEN come from that .env, as in operation, and
+# ACCESS_WIREGUARD_CONF, the router's WireGuard file for the tunnel. The
+# probe's logs hold the caller's number only masked and live on a tmpfs: `down`
+# removes them.
+name: voice-line
+
+services:
+  voice:
+    build: ../../api
+    user: "10001:10001"
+    command: ["uvicorn", "api.telephony.probe:app", "--host", "0.0.0.0", "--port", "8001"]
+    environment:
+      PROBE_OUT: /out
+    # Owned by the probe's user: a tmpfs is root's otherwise, and the first
+    # call failed on its log (28.10.2026).
+    tmpfs: ["/out:uid=10001,gid=10001,mode=0700"]
+    volumes:
+      - ../../api:/app/api:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8001/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+  # The tunnel into the router (wireguard/up.sh). ACCESS_WIREGUARD_CONF in the
+  # .env names the file the router made for this device, kept outside the
+  # repository: a second WireGuard device next to the one of the PC.
+  wireguard:
+    build: ./wireguard
+    entrypoint: ["/bin/sh", "/up.sh"]
+    init: true
+    cap_drop: [ALL]
+    # NET_ADMIN for the link, DAC_OVERRIDE to read the owner's file as root.
+    cap_add: [NET_ADMIN, DAC_OVERRIDE]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ./wireguard/up.sh:/up.sh:ro
+      - ${ACCESS_WIREGUARD_CONF:?ACCESS_WIREGUARD_CONF in the .env names the router's WireGuard file}:/run/access-wg.conf:ro
+    # Healthy once the router answered the handshake.
+    healthcheck:
+      test: ["CMD-SHELL", "wg show wg0 latest-handshakes | awk '$$2 > 0 { ok = 1 } END { exit !ok }'"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  asterisk:
+    extends:
+      file: ../../docker-compose.yml
+      service: asterisk
+    # Not behind the profile `voice` here: this file is started on purpose.
+    profiles: !reset []
+    restart: "no"
+    # In the tunnel's network: the router sees the tunnel address in Contact,
+    # Via and SDP, and reaches it. `voice` is still found by name.
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy
+      voice:
+        condition: service_healthy
+
+volumes:
+  announcements:

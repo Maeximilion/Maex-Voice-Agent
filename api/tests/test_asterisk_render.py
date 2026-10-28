@@ -117,6 +117,28 @@ def test_valid_values_pass_every_check(render, targets, more):
     assert f"{more} more numbers for a transfer" in done.stdout
 
 
+def test_the_routers_public_address_is_taken_too(render, dns):
+    """A router reached through its tunnel calls from its public address
+    (T-10.1 step 2): ACCESS_ALSO joins the ACL and `match`, once."""
+    dns["a"] = "router.example.com 203.0.113.7\n"
+    done = render(ACCESS_ALSO="router.example.com,127.0.0.1")
+    assert reached_the_templates(done), done.stderr
+    assert "SIP only from 127.0.0.1,203.0.113.7\n" in done.stdout
+
+
+@pytest.mark.parametrize("also", ["", ",", ",127.0.0.1,"])
+def test_an_empty_also_or_stray_commas_change_nothing(render, also):
+    done = render(ACCESS_ALSO=also)
+    assert reached_the_templates(done), done.stderr
+    assert "SIP only from 127.0.0.1\n" in done.stdout
+
+
+def test_an_also_name_without_an_address_stops_the_start(render):
+    done = render(ACCESS_ALSO="nowhere.example.com")
+    assert "ACCESS_ALSO nowhere.example.com has no IPv4 address" in done.stderr
+    assert not reached_the_templates(done)
+
+
 @pytest.mark.parametrize(
     "form", ["+4972215550900", "004972215550900", "072215550900", "4972215550900"]
 )
