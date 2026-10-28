@@ -15,7 +15,9 @@
   {% for o in orders %}
   {# overdue: waits for "Passt" longer than the restaurant allows (#252). app.js
      reads data-overdue and rings once when a card turns red. #}
-  <li class="card order {{ 'failed' if o.failed }}{{ 'overdue' if o.overdue and not o.failed }}{{ ' awaiting' if o.awaiting and not o.failed and not o.overdue }}" data-id="{{ o.id }}"{% if o.overdue and not o.failed %} data-overdue="1"{% endif %}>
+  {# register_late: not marked as typed into the register since an earlier
+     business day (T-11.6); the red edge of an overdue card, no alarm. #}
+  <li class="card order {{ 'failed' if o.failed }}{{ 'overdue' if (o.overdue or o.register_late) and not o.failed }}{{ ' awaiting' if o.awaiting and not o.failed and not o.overdue and not o.register_late }}" data-id="{{ o.id }}"{% if o.overdue and not o.failed %} data-overdue="1"{% endif %}>
     <div class="res-head">
       <b class="time">{{ o.time }}</b>
       <span class="badge accent">{{ o.type }}</span>
@@ -39,6 +41,7 @@
     <div class="state">
       <span class="badge {{ o.tone }}">{{ o.state }}</span>
       {% if o.corrected %}<span class="badge accent">Korrigiert: {{ o.corrected }}</span>{% endif %}
+      {% if o.register %}<span class="badge {{ o.register[0] }}">{{ o.register[1] }}</span>{% endif %}
     </div>
     <div class="cb-actions">
       {% if o.failed %}
@@ -48,6 +51,12 @@
       {# Ausserhalb von primary ist Passt die Freigabe: der Knopf sagt es. #}
       <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/passt"
               hx-target="#bestellungen-liste" hx-swap="innerHTML">{{ "Passt, Zettel an die Kasse" if o.awaiting else "Passt" }}</button>
+      {% endif %}
+      {% if o.can_mark %}
+      {# The revision the card shows: a correction on another tablet in the
+         meantime is refused, the register holds what was typed (T-11.6). #}
+      <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/in-kasse/{{ o.revision }}"
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">In Kasse eingegeben</button>
       {% endif %}
       <button hx-get="/gui/bestellungen/{{ o.id }}/korrigieren"
               hx-target="#korrektur" hx-swap="innerHTML">Korrigieren</button>

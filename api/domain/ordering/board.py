@@ -1,10 +1,11 @@
 """Spalte "Neue Bestellungen" der Betriebsansicht (docs/06 §3, T-4.7).
 
 In der Spalte steht eine Bestellung, solange das Team etwas tun muss:
-- bestaetigt (`confirmed`) am laufenden Betriebstag und noch nicht mit "Passt"
-  abgehakt, oder
-- wartet noch auf die Freigabe (`confirmed`, kein `handover_state`), ohne
-  Tagesgrenze: die Kueche hat nichts, bis jemand "Passt" tippt, oder
+- bestaetigt und noch nicht als in die Kasse eingegeben markiert ("In Kasse
+  eingegeben", T-11.6, docs/09 §1 L18), ohne Tagesgrenze: every order the
+  guest said yes to is a sale the register has to book. That holds an order
+  waiting for "Passt" too; the mark comes after it. From the next business
+  day on an unmarked card is red until somebody marks it, oder
 - rot: Uebergabe an die Kueche fehlgeschlagen (`handover_state = failed`), auch
   nach "Passt" und ueber 05:00 hinaus - bis sie gelingt (docs/06 §3). Sonst
   hat die Kueche keinen Bon und niemand merkt es (CLAUDE.md §2 Regel 5).
@@ -13,7 +14,9 @@ Rote Karten zuerst, danach die aelteste: wer am laengsten wartet, kommt zuerst.
 
 "Passt" (`approve_order`) setzt `approved`. Ausserhalb von `primary` wartet die
 Bestellung bis dahin ohne Bon (domain/ordering/confirm.py) - dann ist "Passt"
-die Freigabe an die Kueche. Korrekturen stehen in `correction.py`.
+die Freigabe an die Kueche. The mark (`mark_entered`) comes after "Passt":
+the team types the order in from the slip it releases. Korrekturen stehen in
+`correction.py`; a correction clears the mark.
 """
 
 import uuid
@@ -26,13 +29,13 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
-from api.domain.ordering.confirm import ACTION_CONFIRMED
+from api.domain.ordering.confirm import ACTION_CONFIRMED, ALREADY_CONFIRMED
 from api.domain.ordering.labels import (
     ACTION_CORRECTED,
     current_labels_many,
     labels_for_rows,
 )
-from api.domain.ordering.ticket import last_reason, send_ticket
+from api.domain.ordering.ticket import last_reason, revision, send_ticket
 from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Order, OrderItem, ServiceConfig
 
@@ -41,6 +44,12 @@ APPROVED = "approved"
 FAILED = "failed"
 ACTION_APPROVED = "order.approved"
 ACTION_RESENT = "order.resent"
+ACTION_REGISTER_ENTERED = "order.register_entered"
+# The register is typed from the slip that "Passt" releases (docs/02 §2a).
+MARKABLE = (APPROVED, "handed_over")
+CORRECTED_SINCE = (
+    "Die Bestellung wurde inzwischen korrigiert. Bitte die neue Fassung eingeben."
+)
 # The order's creation is stamped by the application, the audit entry by the
 # database: how far the search for the entry reaches back before the creation.
 CLOCK_MARGIN = timedelta(hours=1)
@@ -82,6 +91,13 @@ class BoardOrder:
     # (`service_config.order_approval_overdue_minutes`, #252): nobody has
     # approved it, so nobody cooks it.
     overdue: bool = False
+    # Marked as typed into the register (T-11.6); a correction clears it.
+    register_entered_at: datetime | None = None
+    # Not marked, and from an earlier business day: the register may lack it.
+    register_late: bool = False
+    # How often the team corrected it. The mark names the revision it was typed
+    # from, so a tablet showing an older one cannot mark the newer one.
+    revision: int = 0
 
 
 def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
@@ -89,20 +105,15 @@ def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
     return business_day_bounds_utc(business_day(now, tz_name), tz_name)
 
 
-def _filters(tenant_id: uuid.UUID, start: datetime, end: datetime) -> tuple:
+def _filters(tenant_id: uuid.UUID) -> tuple:
     return (
         Order.tenant_id == tenant_id,
         Order.deleted_at.is_(None),
         or_(
-            and_(
-                Order.status == CONFIRMED,
-                Order.created_at >= start,
-                Order.created_at < end,
-            ),
-            # Ohne Tagesgrenze: wartet auf Freigabe, die Kueche hat noch nichts.
-            # Um 05:00 verschwaende sonst der einzige Knopf, der sie schickt
-            # (Codex PR #140).
-            and_(Order.status == CONFIRMED, Order.handover_state.is_(None)),
+            # Without a day limit: until somebody marks it as typed into the
+            # register (L18). This holds an order waiting for "Passt" too, whose
+            # only button would otherwise vanish at 05:00 (Codex PR #140).
+            _unmarked(),
             # Ohne Tagesgrenze: ein fehlender Bon wird um 05:00 nicht besser.
             and_(
                 Order.status.in_((CONFIRMED, APPROVED)),
@@ -112,17 +123,24 @@ def _filters(tenant_id: uuid.UUID, start: datetime, end: datetime) -> tuple:
     )
 
 
+def _unmarked():
+    """An order the guest said yes to that nobody has marked as typed in."""
+    return and_(
+        Order.status.in_(ALREADY_CONFIRMED), Order.register_entered_at.is_(None)
+    )
+
+
 def list_new(
     session: Session,
     tenant_id: uuid.UUID,
     tz_name: str,
     now: datetime | None = None,
 ) -> list[BoardOrder]:
-    start, end = _window(tz_name, now)
+    start, _ = _window(tz_name, now)
     failed_first = case((Order.handover_state == FAILED, 0), else_=1)
     orders = session.scalars(
         select(Order)
-        .where(*_filters(tenant_id, start, end))
+        .where(*_filters(tenant_id))
         .order_by(failed_first, Order.created_at, Order.id)
     ).all()
     if not orders:
@@ -130,11 +148,23 @@ def list_new(
     ids = [o.id for o in orders]
     waiting = _waiting_since(session, tenant_id)
     overdue = _overdue(session, tenant_id, waiting, now)
-    # Red cards stay first; among the rest the ones nobody has approved in time
-    # come before the ones that still have time. Stable: oldest first within each.
+    late = {
+        o.id for o in orders if o.register_entered_at is None and o.created_at < start
+    }
+    # Red cards stay first; then the ones nobody has approved in time, then the
+    # ones of an earlier day nobody has marked as typed in, then the rest.
+    # Stable: oldest first within each.
     orders = sorted(
         orders,
-        key=lambda o: 0 if o.handover_state == FAILED else 1 if o.id in overdue else 2,
+        key=lambda o: (
+            0
+            if o.handover_state == FAILED
+            else 1
+            if o.id in overdue
+            else 2
+            if o.id in late
+            else 3
+        ),
     )
 
     items: dict[uuid.UUID, list[OrderItem]] = {oid: [] for oid in ids}
@@ -146,7 +176,7 @@ def list_new(
         items[row.order_id].append(row)
 
     labels = current_labels_many(session, ids)
-    corrected = _last_correction_reasons(session, tenant_id, ids)
+    corrected, revisions = _corrections(session, tenant_id, ids)
     for oid in ids:
         labels[oid] = labels_for_rows(session, oid, items[oid], labels.get(oid))
     return [
@@ -175,6 +205,9 @@ def list_new(
             note=o.note,
             waiting_since=waiting.get(o.id),
             overdue=o.id in overdue,
+            register_entered_at=o.register_entered_at,
+            register_late=o.id in late,
+            revision=revisions.get(o.id, 0),
         )
         for o in orders
     ]
@@ -235,10 +268,13 @@ def _overdue(
     return {order_id for order_id, since in waiting.items() if since <= late}
 
 
-def _last_correction_reasons(
+def _corrections(
     session: Session, tenant_id: uuid.UUID, order_ids: list[uuid.UUID]
-) -> dict[uuid.UUID, str]:
+) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, int]]:
+    """Per order the reason of its newest correction and how many it had, the
+    count `ticket.revision` gives one order at a time."""
     reasons: dict[uuid.UUID, str] = {}
+    counts: dict[uuid.UUID, int] = {}
     for entity_id, payload in session.execute(
         select(AuditLog.entity_id, AuditLog.payload)
         .where(
@@ -250,7 +286,8 @@ def _last_correction_reasons(
         .order_by(AuditLog.id)
     ):
         reasons[entity_id] = payload["reason"]
-    return reasons
+        counts[entity_id] = counts.get(entity_id, 0) + 1
+    return reasons, counts
 
 
 def new_orders_change_token(
@@ -266,7 +303,7 @@ def new_orders_change_token(
     (Befund Codex PR #111); updated_at faengt eine Korrektur, die die Summe
     gleich laesst - `apply_correction` setzt es dafuer ausdruecklich.
     """
-    start, end = _window(tz_name, now)
+    start, _ = _window(tz_name, now)
     row = func.concat_ws(
         ":",
         cast(Order.id, Text),
@@ -274,6 +311,7 @@ def new_orders_change_token(
         func.coalesce(Order.handover_state, ""),
         cast(Order.total_cents, Text),
         cast(Order.updated_at, Text),
+        func.coalesce(cast(Order.register_entered_at, Text), ""),
     )
     count, digest = session.execute(
         select(
@@ -283,15 +321,16 @@ def new_orders_change_token(
                     func.string_agg(row, aggregate_order_by(literal(","), row)), ""
                 )
             ),
-        ).where(*_filters(tenant_id, start, end))
+        ).where(*_filters(tenant_id))
     ).one()
     # No row changes when an order becomes overdue, only the clock: which
     # orders are overdue is part of the fingerprint, or no tablet would redraw.
+    # The same for an unmarked card turning red at the start of a business day.
     waiting = _waiting_since(session, tenant_id)
     overdue = ",".join(
         sorted(str(i) for i in _overdue(session, tenant_id, waiting, now))
     )
-    return f"{count}:{digest}:{overdue}"
+    return f"{count}:{digest}:{overdue}:{start.isoformat()}"
 
 
 def _locked(session: Session, tenant_id: uuid.UUID, order_id: uuid.UUID) -> Order:
@@ -376,3 +415,64 @@ def resend_order(
     )
     session.commit()
     return order
+
+
+def mark_entered(
+    session: Session,
+    tenant_id: uuid.UUID,
+    order_id: uuid.UUID,
+    seen_revision: int,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
+) -> Order:
+    """ "In Kasse eingegeben" (T-11.6, docs/09 §1 L18). Twice tapped or on two
+    tablets: one mark.
+
+    `seen_revision` is the revision the tablet showed: the team typed that one.
+    A correction in between (`ticket.revision` grew) is refused, so a tablet
+    with an old card never marks a state the register does not hold.
+    """
+    order = _locked(session, tenant_id, order_id)
+    if order.register_entered_at is not None:
+        session.commit()
+        return order
+    if order.status not in MARKABLE:
+        raise Conflict(f"Bestellung {order.id} ist {order.status}")
+    current = revision(session, order)
+    if current != seen_revision:
+        raise Conflict(
+            f"Bestellung {order.id}: Revision {seen_revision} gesehen, {current} aktuell",
+            say=CORRECTED_SINCE,
+        )
+    order.register_entered_at = now or utcnow()
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=actor,
+            action=ACTION_REGISTER_ENTERED,
+            entity="order",
+            entity_id=order.id,
+            payload={"call_id": str(order.call_id), "revision": current},
+        )
+    )
+    session.commit()
+    return order
+
+
+def unmarked_before(
+    session: Session, tenant_id: uuid.UUID, before: datetime
+) -> list[Order]:
+    """The orders created before `before` that nobody has marked as typed into
+    the register, oldest first: the daily report (api/jobs/daily_report.py)."""
+    return list(
+        session.scalars(
+            select(Order)
+            .where(
+                Order.tenant_id == tenant_id,
+                Order.deleted_at.is_(None),
+                Order.created_at < before,
+                _unmarked(),
+            )
+            .order_by(Order.created_at, Order.id)
+        )
+    )

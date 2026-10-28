@@ -1,0 +1,212 @@
+"""The mark "In Kasse eingegeben" and the cards it ends (T-11.6, docs/09 §1 L18)."""
+
+import uuid
+from datetime import timedelta
+
+import pytest
+from sqlalchemy import create_engine, select, update
+from sqlalchemy.orm import Session
+
+from api.core.errors import Conflict, NotFound
+from api.domain.ordering.board import (
+    ACTION_REGISTER_ENTERED,
+    CORRECTED_SINCE,
+    approve_order,
+    list_new,
+    mark_entered,
+    new_orders_change_token,
+    unmarked_before,
+)
+from api.domain.ordering.correction import RowEdit
+from api.models import AuditLog, Order
+from api.tests.test_domain_confirm_order import _mode
+from api.tests.test_domain_draft_order import NOW, _call, _tenant
+from api.tests.test_domain_ordering_board import TZ, _ids, _order
+from api.tests.test_domain_ordering_correction import _fix, _rows
+from api.tests.test_gui_orders import _fresh
+
+DAY = timedelta(days=1)
+
+
+@pytest.fixture
+def session(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def tenant_id(session) -> uuid.UUID:
+    tid = _tenant(session, "Testbetrieb")
+    _mode(session, tid, "primary")
+    return tid
+
+
+@pytest.fixture
+def call_id(session, tenant_id) -> uuid.UUID:
+    return _call(session, tenant_id)
+
+
+def _marks(session, order_id) -> list[AuditLog]:
+    return list(
+        session.scalars(
+            select(AuditLog).where(
+                AuditLog.entity_id == order_id,
+                AuditLog.action == ACTION_REGISTER_ENTERED,
+            )
+        )
+    )
+
+
+def test_card_stays_after_passt_until_marked(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+
+    [card] = list_new(session, tenant_id, TZ, NOW)
+    assert card.order_id == order_id and card.status == "approved"
+    assert card.register_entered_at is None and not card.register_late
+
+    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    assert _ids(session, tenant_id) == []
+    assert _fresh(session, order_id).register_entered_at == NOW
+    [audit] = _marks(session, order_id)
+    assert audit.actor == "gui:tablet"
+    assert audit.payload == {"call_id": str(call_id), "revision": 0}
+
+
+def test_mark_twice_or_on_two_tablets_is_one_mark(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    mark_entered(session, tenant_id, order_id, 0, now=NOW + DAY)
+
+    assert _fresh(session, order_id).register_entered_at == NOW
+    assert len(_marks(session, order_id)) == 1
+
+
+@pytest.mark.parametrize("status", ["confirmed", "cancelled", "draft"])
+def test_mark_before_passt_or_on_a_cancelled_order_is_refused(
+    session, tenant_id, call_id, status
+):
+    order_id = _order(session, tenant_id, call_id)
+    session.execute(update(Order).where(Order.id == order_id).values(status=status))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    session.rollback()
+    assert _fresh(session, order_id).register_entered_at is None
+    assert _marks(session, order_id) == []
+
+
+def test_mark_of_another_tenant_is_not_found(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    other = _tenant(session, "Anderer Betrieb")
+
+    with pytest.raises(NotFound):
+        mark_entered(session, other, order_id, 0, now=NOW)
+    session.rollback()
+    assert _fresh(session, order_id).register_entered_at is None
+
+
+def test_correction_clears_the_mark_and_brings_the_card_back(
+    session, tenant_id, call_id
+):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    [row] = _rows(session, order_id)
+
+    _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+
+    assert _fresh(session, order_id).register_entered_at is None
+    [card] = list_new(session, tenant_id, TZ, NOW)
+    assert card.order_id == order_id
+    assert card.revision == 1 and card.corrected == "wrong_quantity"
+
+
+def test_tablet_with_the_card_from_before_a_correction_cannot_mark(
+    session, tenant_id, call_id
+):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    [row] = _rows(session, order_id)
+    _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+
+    with pytest.raises(Conflict) as stale:
+        mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    assert stale.value.say == CORRECTED_SINCE
+    session.rollback()
+    assert _fresh(session, order_id).register_entered_at is None
+
+    mark_entered(session, tenant_id, order_id, 1, now=NOW)
+    assert _fresh(session, order_id).register_entered_at == NOW
+
+
+def test_unmarked_order_of_an_earlier_day_stays_red_and_first(
+    session, tenant_id, call_id
+):
+    today = _order(session, tenant_id, call_id)
+    old = _order(session, tenant_id, call_id, now=NOW - 7 * DAY)
+    approve_order(session, tenant_id, old)
+    # Confirmed with a slip but nobody tapped "Passt": not in the register either.
+    unapproved = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    marked = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
+    approve_order(session, tenant_id, marked)
+    mark_entered(session, tenant_id, marked, 0, now=NOW - 3 * DAY)
+
+    cards = list_new(session, tenant_id, TZ, NOW)
+    assert [c.order_id for c in cards] == [old, unapproved, today]
+    assert [c.register_late for c in cards] == [True, True, False]
+
+
+def test_failed_slip_stays_after_the_mark(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    session.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="failed")
+    )
+    session.commit()
+
+    [card] = list_new(session, tenant_id, TZ, NOW)
+    assert card.order_id == order_id and not card.register_late
+
+
+def test_unmarked_before_counts_only_earlier_unmarked_orders(
+    session, tenant_id, call_id
+):
+    _order(session, tenant_id, call_id)  # today: the team still has time
+    oldest = _order(session, tenant_id, call_id, now=NOW - 5 * DAY)
+    second = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    approve_order(session, tenant_id, second)
+    marked = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    approve_order(session, tenant_id, marked)
+    mark_entered(session, tenant_id, marked, 0, now=NOW)
+    cancelled = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
+    deleted = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
+    session.execute(
+        update(Order).where(Order.id == cancelled).values(status="cancelled")
+    )
+    session.execute(update(Order).where(Order.id == deleted).values(deleted_at=NOW))
+    session.commit()
+    other = _tenant(session, "Anderer Betrieb")
+    _mode(session, other, "primary")
+    _order(session, other, _call(session, other), now=NOW - 5 * DAY)
+
+    found = unmarked_before(session, tenant_id, NOW - timedelta(hours=1))
+    assert [o.id for o in found] == [oldest, second]
+
+
+def test_change_token_follows_the_mark_and_the_day(session, tenant_id, call_id):
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    before = new_orders_change_token(session, tenant_id, TZ, NOW)
+
+    # The next business day turns the card red without any row changing.
+    assert new_orders_change_token(session, tenant_id, TZ, NOW + DAY) != before
+
+    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    assert new_orders_change_token(session, tenant_id, TZ, NOW) != before

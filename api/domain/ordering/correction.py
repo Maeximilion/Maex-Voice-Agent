@@ -259,6 +259,8 @@ def apply_correction(
     order.total_cents = items_total + order.delivery_fee_cents
     # Even with the same total: the event stream recognises the correction by this.
     order.updated_at = func.clock_timestamp()
+    # The register holds the state that was typed in, not this one (T-11.6).
+    order.register_entered_at = None
 
     session.add(
         AuditLog(

@@ -11,6 +11,7 @@ from api.core.errors import Conflict, NotFound
 from api.domain.ordering.board import (
     approve_order,
     list_new,
+    mark_entered,
     new_orders_change_token,
     resend_order,
 )
@@ -70,6 +71,12 @@ def _set(session, order_id, **values) -> None:
     session.commit()
 
 
+def _typed_in(session, tenant_id, order_id) -> None:
+    """ "Passt", then "In Kasse eingegeben": nothing left to do (T-11.6)."""
+    approve_order(session, tenant_id, order_id)
+    mark_entered(session, tenant_id, order_id, 0)
+
+
 def _ids(session, tenant_id, now=NOW) -> list[uuid.UUID]:
     return [o.order_id for o in list_new(session, tenant_id, TZ, now)]
 
@@ -96,14 +103,17 @@ def test_entwurf_storno_fremder_mandant_und_gestern_fehlen(session, tenant_id, c
     storniert = _order(session, tenant_id, call_id)
     _set(session, storniert, status="cancelled")
     gestern = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
+    eingegeben = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
+    _typed_in(session, tenant_id, eingegeben)
     fremd_tid = _tenant(session, "Anderer Betrieb")
     _mode(session, fremd_tid, "primary")
     _order(session, fremd_tid, _call(session, fremd_tid))
     geloescht = _order(session, tenant_id, call_id)
     _set(session, geloescht, deleted_at=NOW)
 
-    assert _ids(session, tenant_id) == []
-    # Eine Woche davor steht er am eigenen Betriebstag noch.
+    # Not typed into the register (T-11.6): last week's order stays, the typed
+    # one is gone, whatever the day.
+    assert _ids(session, tenant_id) == [gestern]
     assert _ids(session, tenant_id, NOW - timedelta(days=7)) == [gestern]
 
 
@@ -112,7 +122,7 @@ def test_rote_karte_zuerst_auch_nach_passt_und_ueber_den_tag(
 ):
     erste = _order(session, tenant_id, call_id)
     rot = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
-    approve_order(session, tenant_id, rot)
+    _typed_in(session, tenant_id, rot)
     assert rot not in _ids(session, tenant_id)
 
     _set(session, rot, handover_state="failed")
@@ -132,7 +142,8 @@ def test_passt_im_primaerbetrieb_hakt_ab_ohne_zweiten_bon(session, tenant_id, ca
     assert order.status == "approved"
     assert order.handover_state == "pending"
     assert len(_events(session, order_id)) == 1
-    assert _ids(session, tenant_id) == []
+    # Approved, still to type into the register (T-11.6): the card stays.
+    assert _ids(session, tenant_id) == [order_id]
     audit = session.scalar(
         select(AuditLog).where(
             AuditLog.entity_id == order_id, AuditLog.action == "order.approved"
@@ -233,6 +244,8 @@ def test_token_aendert_sich_bei_neu_passt_und_rot(session, tenant_id, call_id):
     assert new_orders_change_token(session, tenant_id, TZ, NOW) == neu
 
     approve_order(session, tenant_id, order_id)
+    assert new_orders_change_token(session, tenant_id, TZ, NOW) != neu
+    mark_entered(session, tenant_id, order_id, 0)
     abgehakt = new_orders_change_token(session, tenant_id, TZ, NOW)
     assert abgehakt == leer
 
@@ -247,9 +260,11 @@ def test_wartende_bestellung_bleibt_ueber_den_tageswechsel(session, tenant_id, c
     _mode(session, tenant_id, "primary")
     hat_bon = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
 
-    # Ohne Freigabe hat die Kueche nichts: sie steht noch da. Die mit Bon nicht.
-    ids = _ids(session, tenant_id)
-    assert wartet in ids
-    assert hat_bon not in ids
+    # Ohne Freigabe hat die Kueche nichts: sie steht noch da. The one with a
+    # slip too since T-11.6: nobody marked it as typed into the register.
+    assert _ids(session, tenant_id) == [wartet, hat_bon]
     approve_order(session, tenant_id, wartet)
+    assert _ids(session, tenant_id) == [wartet, hat_bon]
+    mark_entered(session, tenant_id, wartet, 0)
+    _typed_in(session, tenant_id, hat_bon)
     assert _ids(session, tenant_id) == []
