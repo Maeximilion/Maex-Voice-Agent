@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.13
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.14
 
 ---
 
@@ -624,6 +624,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.14 · 28.10.2026:** A menu import without item_options.csv or item_aliases.csv keeps options and aliases instead of removing them (repo audit finding 5)
 - **v2.11.13 · 28.10.2026:** A table at a time without capacity goes to the team instead of 'nichts frei'; a horizon of 0 days says today only (repo audit findings 4 and 9)
 - **v2.11.12 · 28.10.2026:** A corrected slip says KORREKTUR whenever the print bridge may hold an earlier one, also after a lost ack and on a resend (repo audit finding 3)
 - **v2.11.10 · 28.10.2026:** T-10.2 clock: the 30 s count from the call meeting the outage
